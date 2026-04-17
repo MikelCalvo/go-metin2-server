@@ -104,7 +104,8 @@ Expected outcomes:
 The client sends a movement packet and the server processes it in the live game phase.
 
 Expected outcomes:
-- the server updates the character position
+- the server updates the session-scoped selected character position
+- the server emits one deterministic movement replication/ack packet using the selected character VID
 - the client remains connected
 - the movement path becomes the first in-world behavior covered by tests
 

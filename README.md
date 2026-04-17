@@ -13,6 +13,7 @@ Current scope of the project:
 - A dedicated pprof/ops HTTP server for profiling goroutines, heap, allocs, mutex contention and blocking.
 - Minimal legacy TCP listeners wired into both `authd` and `gamed`.
 - A stub-compatible binary smoke path that reaches `GAME` with the current public bootstrap flows.
+- A deterministic single-character `MOVE` round-trip wired through the current bootstrap runtime.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
 
 ## Near-term goal
@@ -70,8 +71,8 @@ Legend:
 
 ### 6. First in-world behavior
 - [ ] minimal world state
-- [ ] basic movement handling
-- [ ] movement replication/ack path
+- [x] basic movement handling
+- [x] movement replication/ack path
 
 ### 7. Hardening and expansion
 - [~] persistence layer that matches the compatibility target
@@ -181,13 +182,14 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> GAME`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> GAME -> MOVE`
 
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
 - shared authd -> gamed login tickets
 - file-backed bootstrap account snapshots for the stub login
 - character creation that survives fresh auth/game sessions
+- deterministic single-character `MOVE` replication/ack using the selected character VID
 
 What still does not exist yet:
 - compatibility-grade persistence matching the legacy target

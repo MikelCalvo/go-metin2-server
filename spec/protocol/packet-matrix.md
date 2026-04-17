@@ -55,7 +55,7 @@ Status values:
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `MOVE` | client -> server | `0x0301` | game | documented | first in-world action |
-| `MOVE` | server -> client | `0x0302` | game | planned | replication/ack path |
+| `MOVE` | server -> client | `0x0302` | game | documented | deterministic single-character replication/ack path frozen by tests |
 | `SYNC_POSITION` | client -> server | `0x0303` | game | planned | not part of the first movement milestone |
 | `SYNC_POSITION` | server -> client | `0x0304` | game | planned | not part of the first movement milestone |
 | `WARP` | client -> server | `0x0305` | game | planned | out of early scope |
