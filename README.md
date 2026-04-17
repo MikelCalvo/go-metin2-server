@@ -26,11 +26,62 @@ It is a minimal but complete TMP4-compatible boot path:
 - spawn in a minimal world,
 - basic movement.
 
+## Roadmap
+
+Legend:
+- `[x]` done
+- `[~]` in progress
+- `[ ]` not started
+
+### 1. Project foundation
+- [x] Go 1.26 baseline
+- [x] clean-room policy and repository bootstrap
+- [x] separate `authd` and `gamed` entrypoints
+- [x] profiling/ops endpoints
+- [x] CI and container baseline
+
+### 2. Protocol foundation
+- [x] frame envelope contract
+- [x] session phase model
+- [x] initial boot-path packet matrix
+- [x] protocol docs owned by this repository
+
+### 3. Control-plane handshake
+- [x] control packet primitives (`PHASE`, `PING`, `PONG`)
+- [x] key exchange packet layouts (`KEY_CHALLENGE`, `KEY_RESPONSE`, `KEY_COMPLETE`)
+- [x] server-side handshake flow
+- [ ] socket-level handshake proof with the real client
+
+### 4. Authentication and selection surface
+- [ ] login request handling
+- [ ] login success/failure path
+- [ ] character list surface
+- [ ] empire selection support if required
+- [ ] character creation and selection
+
+### 5. World entry
+- [ ] loading/bootstrap packets
+- [ ] main character bootstrap
+- [ ] player points/stat bootstrap
+- [ ] enter-game flow
+
+### 6. First in-world behavior
+- [ ] minimal world state
+- [ ] basic movement handling
+- [ ] movement replication/ack path
+
+### 7. Hardening and expansion
+- [ ] persistence layer that matches the compatibility target
+- [ ] observability and operator tooling beyond pprof/health
+- [ ] additional gameplay systems after the boot path is stable
+- [ ] production packaging and deployment guidance
+
 ## Project layout
 
 - `cmd/authd` — auth daemon entrypoint
 - `cmd/gamed` — game daemon entrypoint
 - `internal/config` — runtime config loading
+- `internal/handshake` — server-side control-plane handshake flow
 - `internal/ops` — health and pprof endpoints
 - `internal/service` — shared service bootstrap / shutdown helpers
 - `docs/` — engineering and clean-room documentation
@@ -46,6 +97,7 @@ It is a minimal but complete TMP4-compatible boot path:
 - `spec/protocol/README.md`
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
+- `spec/protocol/control-handshake.md`
 - `spec/protocol/boot-path.md`
 - `spec/protocol/packet-matrix.md`
 

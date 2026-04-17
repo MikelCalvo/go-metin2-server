@@ -89,13 +89,26 @@ Notes:
 - `encrypted_token` is preserved here as opaque compatibility bytes
 - cryptographic validation and token semantics will be handled in a later slice
 
-## Working handshake intent
+## Working handshake flow
 
-The current working handshake intent is:
+The current server-owned handshake flow is:
 
-1. session starts in `HANDSHAKE`
-2. server sends control-plane packets required by the client
-3. client answers `PONG` and `KEY_RESPONSE` as required
-4. server finishes the key exchange and can transition the session to `LOGIN`
+1. the TCP session starts in `HANDSHAKE`
+2. the server emits `KEY_CHALLENGE`
+3. the client may emit `PONG` at any time during `HANDSHAKE`; it is accepted but does not advance the phase
+4. the client emits `KEY_RESPONSE`
+5. if the response is accepted, the server emits `KEY_COMPLETE`
+6. the server transitions the session to `LOGIN`
+7. the server emits `PHASE(LOGIN)`
 
-The exact socket-level sequence must be frozen by dedicated session tests before any auth handler depends on it.
+## Slice scope
+
+This slice only freezes the control-plane flow and phase transition behavior.
+
+It does not yet freeze:
+- real cryptographic verification of `KEY_RESPONSE`
+- socket scheduling, retries, or timeouts
+- auth-server-specific forks such as a separate `PHASE_AUTH`
+- end-to-end proof against the real client
+
+The current implementation is allowed to treat a syntactically valid `KEY_RESPONSE` as acceptable until the crypto slice lands.
