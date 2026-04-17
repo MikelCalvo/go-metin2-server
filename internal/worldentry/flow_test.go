@@ -7,6 +7,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
@@ -51,6 +52,68 @@ func TestHandleClientFrameAcceptsCharacterSelectAndTransitionsToLoading(t *testi
 
 	if machine.Current() != session.PhaseLoading {
 		t.Fatalf("expected phase %q, got %q", session.PhaseLoading, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsCharacterCreateAndStaysInSelect(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseSelect)
+	flow := NewFlow(machine, Config{
+		CreateCharacter: func(packet worldproto.CharacterCreatePacket) CreateResult {
+			if packet.Index != 2 || packet.Name != "FreshSura" || packet.RaceNum != 2 || packet.Shape != 1 {
+				t.Fatalf("unexpected create packet: %+v", packet)
+			}
+			return CreateResult{Accepted: true, Player: worldproto.PlayerCreateSuccessPacket{Index: 2, Player: sampleCreatedPlayer()}}
+		},
+	})
+
+	raw, err := worldproto.EncodeCharacterCreate(worldproto.CharacterCreatePacket{Index: 2, Name: "FreshSura", RaceNum: 2, Shape: 1})
+	if err != nil {
+		t.Fatalf("unexpected create encode error: %v", err)
+	}
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("unexpected create error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	want, err := worldproto.EncodePlayerCreateSuccess(worldproto.PlayerCreateSuccessPacket{Index: 2, Player: sampleCreatedPlayer()})
+	if err != nil {
+		t.Fatalf("unexpected create success encode error: %v", err)
+	}
+	if !bytes.Equal(out[0], want) {
+		t.Fatalf("unexpected create success frame: got %x want %x", out[0], want)
+	}
+	if machine.Current() != session.PhaseSelect {
+		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, machine.Current())
+	}
+}
+
+func TestHandleClientFrameReturnsCreateFailurePacketAndKeepsSelectPhase(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseSelect)
+	flow := NewFlow(machine, Config{
+		CreateCharacter: func(worldproto.CharacterCreatePacket) CreateResult {
+			return CreateResult{Accepted: false, FailureType: 1}
+		},
+	})
+
+	raw, err := worldproto.EncodeCharacterCreate(worldproto.CharacterCreatePacket{Index: 2, Name: "FreshSura", RaceNum: 2, Shape: 1})
+	if err != nil {
+		t.Fatalf("unexpected create encode error: %v", err)
+	}
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("unexpected create failure error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	want := worldproto.EncodePlayerCreateFailure(worldproto.PlayerCreateFailurePacket{Type: 1})
+	if !bytes.Equal(out[0], want) {
+		t.Fatalf("unexpected create failure frame: got %x want %x", out[0], want)
+	}
+	if machine.Current() != session.PhaseSelect {
+		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, machine.Current())
 	}
 }
 
@@ -161,4 +224,27 @@ func samplePlayerPoints() worldproto.PlayerPointsPacket {
 	points.Points[7] = 999999
 	points.Points[8] = 50
 	return points
+}
+
+func sampleCreatedPlayer() loginproto.SimplePlayer {
+	return loginproto.SimplePlayer{
+		ID:          3,
+		Name:        "FreshSura",
+		Job:         2,
+		Level:       1,
+		PlayMinutes: 0,
+		ST:          5,
+		HT:          3,
+		DX:          3,
+		IQ:          5,
+		MainPart:    1,
+		ChangeName:  0,
+		HairPart:    0,
+		Dummy:       [4]byte{},
+		X:           1500,
+		Y:           2500,
+		Addr:        0x0100007f,
+		Port:        13000,
+		SkillGroup:  0,
+	}
 }
