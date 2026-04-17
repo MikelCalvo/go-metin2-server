@@ -2,6 +2,7 @@ package boot
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
@@ -9,7 +10,9 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
+	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
+	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 )
 
 func TestStartBeginsWithTheHandshakeChallenge(t *testing.T) {
@@ -27,6 +30,21 @@ func TestStartBeginsWithTheHandshakeChallenge(t *testing.T) {
 
 	if !bytes.Equal(out[0], want) {
 		t.Fatalf("unexpected key challenge bytes: got %x want %x", out[0], want)
+	}
+
+	if flow.CurrentPhase() != session.PhaseHandshake {
+		t.Fatalf("expected phase %q, got %q", session.PhaseHandshake, flow.CurrentPhase())
+	}
+}
+
+func TestStartRejectsAConflictingHandshakeNextPhase(t *testing.T) {
+	cfg := testConfig()
+	cfg.Handshake.NextPhase = session.PhaseAuth
+	flow := NewFlow(cfg)
+
+	_, err := flow.Start()
+	if !errors.Is(err, ErrConflictingHandshakeNextPhase) {
+		t.Fatalf("expected ErrConflictingHandshakeNextPhase, got %v", err)
 	}
 
 	if flow.CurrentPhase() != session.PhaseHandshake {
@@ -136,6 +154,79 @@ func TestHandleClientFrameReturnsLoginFailureWithoutLeavingLogin(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameRoutesCharacterSelectAndEnterGameToGame(t *testing.T) {
+	flow := NewFlow(testConfig())
+
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+
+	_, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+
+	_, err = flow.HandleClientFrame(decodeSingleFrame(t, login2Raw))
+	if err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+
+	selectRaw := worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1})
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, selectRaw))
+	if err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+
+	wantPhaseLoading, err := control.EncodePhase(session.PhaseLoading)
+	if err != nil {
+		t.Fatalf("unexpected loading phase encode error: %v", err)
+	}
+	wantMain, err := worldproto.EncodeMainCharacter(sampleMainCharacter())
+	if err != nil {
+		t.Fatalf("unexpected main character encode error: %v", err)
+	}
+	wantPoints := worldproto.EncodePlayerPoints(samplePlayerPoints())
+	wantSelect := [][]byte{wantPhaseLoading, wantMain, wantPoints}
+
+	if len(selectOut) != len(wantSelect) {
+		t.Fatalf("expected %d select frames, got %d", len(wantSelect), len(selectOut))
+	}
+	for i := range wantSelect {
+		if !bytes.Equal(selectOut[i], wantSelect[i]) {
+			t.Fatalf("unexpected select frame %d: got %x want %x", i, selectOut[i], wantSelect[i])
+		}
+	}
+
+	if flow.CurrentPhase() != session.PhaseLoading {
+		t.Fatalf("expected phase %q after character select, got %q", session.PhaseLoading, flow.CurrentPhase())
+	}
+
+	enterGameOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected game phase encode error: %v", err)
+	}
+	if len(enterGameOut) != 1 || !bytes.Equal(enterGameOut[0], wantPhaseGame) {
+		t.Fatalf("unexpected entergame output: got %x want %x", enterGameOut, wantPhaseGame)
+	}
+
+	if flow.CurrentPhase() != session.PhaseGame {
+		t.Fatalf("expected phase %q after entergame, got %q", session.PhaseGame, flow.CurrentPhase())
+	}
+}
+
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 	t.Helper()
 
@@ -176,6 +267,18 @@ func testConfig() Config {
 				}
 
 				return loginflow.Result{Accepted: false, FailureStatus: "NOID"}
+			},
+		},
+		WorldEntry: worldentry.Config{
+			SelectCharacter: func(index uint8) worldentry.Result {
+				if index != 1 {
+					return worldentry.Result{Accepted: false}
+				}
+				return worldentry.Result{
+					Accepted:      true,
+					MainCharacter: sampleMainCharacter(),
+					PlayerPoints:  samplePlayerPoints(),
+				}
 			},
 		},
 	}
@@ -237,6 +340,35 @@ func sampleLoginSuccessPacket() loginproto.LoginSuccess4Packet {
 	}
 
 	return packet
+}
+
+func sampleMainCharacter() worldproto.MainCharacterPacket {
+	return worldproto.MainCharacterPacket{
+		VID:        0x01020304,
+		RaceNum:    2,
+		Name:       "Mkmk",
+		BGMName:    "",
+		BGMVolume:  0,
+		X:          1000,
+		Y:          2000,
+		Z:          0,
+		Empire:     2,
+		SkillGroup: 1,
+	}
+}
+
+func samplePlayerPoints() worldproto.PlayerPointsPacket {
+	var points worldproto.PlayerPointsPacket
+	points.Points[0] = 15
+	points.Points[1] = 1234
+	points.Points[2] = 5678
+	points.Points[3] = 900
+	points.Points[4] = 1000
+	points.Points[5] = 200
+	points.Points[6] = 300
+	points.Points[7] = 999999
+	points.Points[8] = 50
+	return points
 }
 
 func sequentialBytes32(start byte) [32]byte {
