@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
@@ -16,7 +17,8 @@ import (
 )
 
 func TestNewAuthSessionFactoryAcceptsStubCredentials(t *testing.T) {
-	flow := NewAuthSessionFactory()()
+	store := loginticket.NewFileStore(t.TempDir())
+	flow := newAuthSessionFactory(store, func() (uint32, error) { return 0x01020304, nil })()
 
 	startOut, err := flow.Start()
 	if err != nil {
@@ -66,13 +68,26 @@ func TestNewAuthSessionFactoryAcceptsStubCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected auth success decode error: %v", err)
 	}
-	if success.LoginKey != StubLoginKey || success.Result != 1 {
+	if success.LoginKey != 0x01020304 || success.Result != 1 {
 		t.Fatalf("unexpected auth success packet: %+v", success)
+	}
+
+	issued, err := store.Consume(StubLogin, success.LoginKey)
+	if err != nil {
+		t.Fatalf("expected issued login ticket, got error: %v", err)
+	}
+	if len(issued.Characters) != 2 {
+		t.Fatalf("expected 2 stub characters in issued ticket, got %d", len(issued.Characters))
 	}
 }
 
 func TestNewGameSessionFactoryAdvertisesConfiguredPublicAddrAndPort(t *testing.T) {
-	factory, err := NewGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "192.168.1.101"})
+	store := loginticket.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "192.168.1.101"}, store)
 	if err != nil {
 		t.Fatalf("unexpected game session factory error: %v", err)
 	}
@@ -90,7 +105,7 @@ func TestNewGameSessionFactoryAdvertisesConfiguredPublicAddrAndPort(t *testing.T
 		t.Fatalf("unexpected handshake error: %v", err)
 	}
 
-	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: StubLoginKey})
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
 		t.Fatalf("unexpected login2 encode error: %v", err)
 	}
@@ -118,10 +133,21 @@ func TestNewGameSessionFactoryAdvertisesConfiguredPublicAddrAndPort(t *testing.T
 	if success.Players[0].Port != 13000 {
 		t.Fatalf("expected advertised port 13000, got %d", success.Players[0].Port)
 	}
+	if success.Players[0].Name != "MkmkWar" {
+		t.Fatalf("expected first advertised character MkmkWar, got %q", success.Players[0].Name)
+	}
+	if success.Players[1].Name != "MkmkSura" {
+		t.Fatalf("expected second advertised character MkmkSura, got %q", success.Players[1].Name)
+	}
 }
 
 func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
-	factory, err := NewGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"})
+	store := loginticket.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
 	if err != nil {
 		t.Fatalf("unexpected game session factory error: %v", err)
 	}
@@ -138,7 +164,7 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 		t.Fatalf("unexpected handshake error: %v", err)
 	}
 
-	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: StubLoginKey})
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
 		t.Fatalf("unexpected login2 encode error: %v", err)
 	}
@@ -147,7 +173,7 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 		t.Fatalf("unexpected login error: %v", err)
 	}
 
-	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, frame.Encode(worldproto.HeaderCharacterSelect, []byte{0})))
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, frame.Encode(worldproto.HeaderCharacterSelect, []byte{1})))
 	if err != nil {
 		t.Fatalf("unexpected character select error: %v", err)
 	}
@@ -160,6 +186,13 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	}
 	if !bytes.Equal(selectOut[0], wantPhaseLoading) {
 		t.Fatalf("unexpected loading phase frame: got %x want %x", selectOut[0], wantPhaseLoading)
+	}
+	mainCharacter, err := worldproto.DecodeMainCharacter(decodeSingleFrame(t, selectOut[1]))
+	if err != nil {
+		t.Fatalf("decode main character: %v", err)
+	}
+	if mainCharacter.Name != "MkmkSura" {
+		t.Fatalf("expected selected character MkmkSura, got %q", mainCharacter.Name)
 	}
 
 	enterGameOut, err := flow.HandleClientFrame(decodeSingleFrame(t, frame.Encode(worldproto.HeaderEnterGame, nil)))
