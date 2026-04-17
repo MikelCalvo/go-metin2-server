@@ -60,7 +60,7 @@ Legend:
 - [x] login success/failure path
 - [x] character list surface
 - [x] minimal `authd` and `gamed` runtime listeners
-- [ ] empire selection support if required
+- [x] empire selection support for empty-account bootstrap flow
 - [x] character creation and selection
 
 ### 5. World entry
@@ -182,7 +182,7 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> GAME -> MOVE`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> GAME -> MOVE`
 
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
@@ -191,6 +191,7 @@ What exists today:
 - character creation that survives fresh auth/game sessions
 - deterministic single-character `MOVE` replication/ack using the selected character VID
 - bootstrap movement updates character coordinates and persists them across fresh auth/game sessions
+- empty-account bootstrap flow can select empire before first character creation, and that choice persists across fresh auth/game sessions
 
 What still does not exist yet:
 - compatibility-grade persistence matching the legacy target

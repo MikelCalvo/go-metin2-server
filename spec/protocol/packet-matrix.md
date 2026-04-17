@@ -33,7 +33,7 @@ Status values:
 | `LOGIN_KEY` | server -> client | `0x0107` | login | candidate | not part of the current minimal login-by-key happy path |
 | `AUTH_SUCCESS` | server -> client | `0x0108` | auth | documented | minimal authd success path with issued login key frozen by tests |
 | `EMPIRE` | server -> client | `0x0109` | login/select | documented | selection surface empire state frozen by tests |
-| `EMPIRE` | client -> server | `0x010A` | select | planned | known selection request path, not yet frozen by tests |
+| `EMPIRE` | client -> server | `0x010A` | select | documented | minimal empire selection request for empty-account bootstrap flow |
 
 ## Character lifecycle
 

@@ -6,14 +6,16 @@ The goal of this slice is narrow:
 - accept `LOGIN2` in `LOGIN`
 - return a deterministic success or failure path
 - reach the selection surface in `SELECT`
+- allow empty accounts to choose an empire before character creation
 
-It does not yet freeze character creation, character selection, or world bootstrap.
+It does not yet freeze full multi-step account setup beyond that bootstrap path.
 
 ## Covered packets
 
 - `LOGIN2`
 - `LOGIN_FAILURE`
 - `EMPIRE`
+- `EMPIRE` selection request
 - `LOGIN_SUCCESS4`
 
 ## Envelope
@@ -38,6 +40,8 @@ The current project-owned login flow is:
    - `PHASE(SELECT)`
    - `LOGIN_SUCCESS4`
 5. the session transitions to `SELECT`
+6. if the account has no chosen empire and no characters yet, the client may send `EMPIRE` selection (`0x010A`)
+7. on accepted empire selection, the server emits `EMPIRE` with the chosen value and stays in `SELECT`
 
 This is intentionally narrower than the full legacy stack:
 - no DB round-trip is required in this slice
@@ -96,6 +100,24 @@ Payload layout:
 
 Frame length:
 - `5` bytes total (`4 + 1`)
+
+### `EMPIRE` selection request
+
+Direction:
+- client -> server
+
+Header:
+- `0x010A`
+
+Payload layout:
+- `empire` — `uint8`
+
+Frame length:
+- `5` bytes total (`4 + 1`)
+
+Notes:
+- this minimal slice only accepts values `1..3`
+- it is only meaningful for empty-account bootstrap flows
 
 ### `LOGIN_SUCCESS4`
 

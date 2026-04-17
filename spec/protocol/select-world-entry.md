@@ -5,6 +5,7 @@ This document freezes the minimal packet and phase choreography needed to move f
 The goal of this slice is narrow:
 - accept `CHARACTER_CREATE` in `SELECT`
 - return `PLAYER_CREATE_SUCCESS` or `PLAYER_CREATE_FAILURE`
+- accept `EMPIRE` selection in `SELECT` when the account is empty
 - accept `CHARACTER_SELECT`
 - enter `LOADING`
 - send the minimum bootstrap packets
@@ -38,18 +39,20 @@ See `frame-layout.md` for the envelope contract.
 The current project-owned selection/world-entry flow is:
 
 1. the session is in `SELECT`
-2. the client may send `CHARACTER_CREATE`
-3. on create success, the server emits `PLAYER_CREATE_SUCCESS` and stays in `SELECT`
-4. on create failure, the server emits `PLAYER_CREATE_FAILURE` and stays in `SELECT`
-5. the client sends `CHARACTER_SELECT`
-6. the server validates the slot and transitions to `LOADING`
-7. the server emits:
+2. if the account is empty and has no chosen empire yet, the client may send `EMPIRE` selection (`0x010A`)
+3. on accepted empire selection, the server emits `EMPIRE` and stays in `SELECT`
+4. the client may send `CHARACTER_CREATE`
+5. on create success, the server emits `PLAYER_CREATE_SUCCESS` and stays in `SELECT`
+6. on create failure, the server emits `PLAYER_CREATE_FAILURE` and stays in `SELECT`
+7. the client sends `CHARACTER_SELECT`
+8. the server validates the slot and transitions to `LOADING`
+9. the server emits:
    - `PHASE(LOADING)`
    - `MAIN_CHARACTER`
    - `PLAYER_POINTS`
-8. the client sends `ENTERGAME`
-9. the server transitions to `GAME`
-10. the server emits `PHASE(GAME)`
+10. the client sends `ENTERGAME`
+11. the server transitions to `GAME`
+12. the server emits `PHASE(GAME)`
 
 This slice keeps the bootstrap minimal on purpose:
 - no item stream is required yet
