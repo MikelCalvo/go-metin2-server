@@ -53,9 +53,9 @@ Legend:
 - [ ] socket-level handshake proof with the real client
 
 ### 4. Authentication and selection surface
-- [ ] login request handling
-- [ ] login success/failure path
-- [ ] character list surface
+- [~] login request handling
+- [~] login success/failure path
+- [~] character list surface
 - [ ] empire selection support if required
 - [ ] character creation and selection
 
@@ -80,8 +80,10 @@ Legend:
 
 - `cmd/authd` — auth daemon entrypoint
 - `cmd/gamed` — game daemon entrypoint
+- `internal/boot` — minimal connect -> handshake -> login boot flow composition
 - `internal/config` — runtime config loading
 - `internal/handshake` — server-side control-plane handshake flow
+- `internal/login` — login-by-key flow and selection-surface transition
 - `internal/ops` — health and pprof endpoints
 - `internal/service` — shared service bootstrap / shutdown helpers
 - `docs/` — engineering and clean-room documentation
@@ -98,6 +100,7 @@ Legend:
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
 - `spec/protocol/control-handshake.md`
+- `spec/protocol/login-selection.md`
 - `spec/protocol/boot-path.md`
 - `spec/protocol/packet-matrix.md`
 
