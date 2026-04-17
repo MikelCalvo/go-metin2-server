@@ -1,41 +1,94 @@
 package service
 
 import (
-    "context"
-    "errors"
-    "fmt"
-    "log/slog"
-    "net/http"
-    "time"
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"sync"
+	"time"
 
-    "github.com/MikelCalvo/go-metin2-server/internal/config"
-    "github.com/MikelCalvo/go-metin2-server/internal/ops"
+	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/ops"
 )
 
-func Run(ctx context.Context, cfg config.Service, logger *slog.Logger) error {
-    mux := ops.NewPprofMux(cfg.Name)
-    server := &http.Server{
-        Addr:              cfg.PprofAddr,
-        Handler:           mux,
-        ReadHeaderTimeout: 5 * time.Second,
-    }
+func Run(ctx context.Context, cfg config.Service, logger *slog.Logger, newSession SessionFactory) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-    errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
+	var wg sync.WaitGroup
 
-    go func() {
-        logger.Info("ops server listening", "addr", cfg.PprofAddr)
-        if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-            errCh <- fmt.Errorf("listen and serve: %w", err)
-        }
-    }()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := serveOps(runCtx, cfg, logger); err != nil {
+			select {
+			case errCh <- err:
+			default:
+			}
+		}
+	}()
 
-    select {
-    case <-ctx.Done():
-        shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
-        logger.Info("shutdown requested")
-        return server.Shutdown(shutdownCtx)
-    case err := <-errCh:
-        return err
-    }
+	if cfg.LegacyAddr != "" && newSession != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := ListenAndServeLegacy(runCtx, cfg.LegacyAddr, logger, newSession); err != nil {
+				select {
+				case errCh <- err:
+				default:
+				}
+			}
+		}()
+	}
+
+	select {
+	case <-ctx.Done():
+		cancel()
+		wg.Wait()
+		select {
+		case err := <-errCh:
+			return err
+		default:
+			return nil
+		}
+	case err := <-errCh:
+		cancel()
+		wg.Wait()
+		return err
+	}
+}
+
+func serveOps(ctx context.Context, cfg config.Service, logger *slog.Logger) error {
+	mux := ops.NewPprofMux(cfg.Name)
+	server := &http.Server{
+		Addr:              cfg.PprofAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		if logger != nil {
+			logger.Info("ops server listening", "addr", cfg.PprofAddr)
+		}
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- fmt.Errorf("listen and serve: %w", err)
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if logger != nil {
+			logger.Info("shutdown requested")
+		}
+		return server.Shutdown(shutdownCtx)
+	case err := <-errCh:
+		return err
+	}
 }
