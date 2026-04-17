@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	authflow "github.com/MikelCalvo/go-metin2-server/internal/auth"
 	"github.com/MikelCalvo/go-metin2-server/internal/authboot"
 	"github.com/MikelCalvo/go-metin2-server/internal/boot"
@@ -39,12 +40,23 @@ var (
 type loginKeyGenerator func() (uint32, error)
 
 func NewAuthSessionFactory() service.SessionFactory {
-	return newAuthSessionFactory(loginticket.NewFileStore(defaultTicketStoreDir()), randomLoginKey)
+	return newAuthSessionFactoryWithAccountStore(
+		loginticket.NewFileStore(defaultTicketStoreDir()),
+		accountstore.NewFileStore(defaultAccountStoreDir()),
+		randomLoginKey,
+	)
 }
 
 func newAuthSessionFactory(store loginticket.Store, generateLoginKey loginKeyGenerator) service.SessionFactory {
+	return newAuthSessionFactoryWithAccountStore(store, accountstore.NewFileStore(defaultAccountStoreDir()), generateLoginKey)
+}
+
+func newAuthSessionFactoryWithAccountStore(store loginticket.Store, accounts accountstore.Store, generateLoginKey loginKeyGenerator) service.SessionFactory {
 	if store == nil {
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
+	}
+	if accounts == nil {
+		accounts = accountstore.NewFileStore(defaultAccountStoreDir())
 	}
 	if generateLoginKey == nil {
 		generateLoginKey = randomLoginKey
@@ -62,7 +74,11 @@ func newAuthSessionFactory(store loginticket.Store, generateLoginKey loginKeyGen
 						return authflow.Result{Accepted: false, FailureStatus: "WRONGPWD"}
 					}
 
-					loginKey, ok := issueLoginTicket(store, packet.Login, generateLoginKey)
+					characters, ok := loadOrCreateAccountCharacters(accounts, packet.Login)
+					if !ok {
+						return authflow.Result{Accepted: false, FailureStatus: "FAILED"}
+					}
+					loginKey, ok := issueLoginTicket(store, packet.Login, characters, generateLoginKey)
 					if !ok {
 						return authflow.Result{Accepted: false, FailureStatus: "FAILED"}
 					}
@@ -75,10 +91,18 @@ func newAuthSessionFactory(store loginticket.Store, generateLoginKey loginKeyGen
 }
 
 func NewGameSessionFactory(cfg config.Service) (service.SessionFactory, error) {
-	return newGameSessionFactory(cfg, loginticket.NewFileStore(defaultTicketStoreDir()))
+	return newGameSessionFactoryWithAccountStore(
+		cfg,
+		loginticket.NewFileStore(defaultTicketStoreDir()),
+		accountstore.NewFileStore(defaultAccountStoreDir()),
+	)
 }
 
 func newGameSessionFactory(cfg config.Service, store loginticket.Store) (service.SessionFactory, error) {
+	return newGameSessionFactoryWithAccountStore(cfg, store, accountstore.NewFileStore(defaultAccountStoreDir()))
+}
+
+func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store) (service.SessionFactory, error) {
 	advertisedPort, err := parsePort(cfg.LegacyAddr)
 	if err != nil {
 		return nil, err
@@ -91,6 +115,9 @@ func newGameSessionFactory(cfg config.Service, store loginticket.Store) (service
 
 	if store == nil {
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
+	}
+	if accounts == nil {
+		accounts = accountstore.NewFileStore(defaultAccountStoreDir())
 	}
 
 	return func() service.SessionFlow {
@@ -126,6 +153,9 @@ func newGameSessionFactory(cfg config.Service, store loginticket.Store) (service
 					created, failureType, ok := createCharacterInTicket(&sessionTicket, packet, ticketEmpire(sessionTicket))
 					if !ok {
 						return worldentry.CreateResult{Accepted: false, FailureType: failureType}
+					}
+					if !saveAccountCharacters(accounts, sessionTicket.Login, sessionTicket.Characters) {
+						return worldentry.CreateResult{Accepted: false, FailureType: 0}
 					}
 					return worldentry.CreateResult{
 						Accepted: true,
@@ -190,7 +220,10 @@ func defaultKeyComplete() control.KeyCompletePacket {
 	}
 }
 
-func issueLoginTicket(store loginticket.Store, login string, generateLoginKey loginKeyGenerator) (uint32, bool) {
+func issueLoginTicket(store loginticket.Store, login string, characters []loginticket.Character, generateLoginKey loginKeyGenerator) (uint32, bool) {
+	if len(characters) == 0 {
+		characters = stubCharacters()
+	}
 	for range 8 {
 		loginKey, err := generateLoginKey()
 		if err != nil || loginKey == 0 {
@@ -200,7 +233,7 @@ func issueLoginTicket(store loginticket.Store, login string, generateLoginKey lo
 		err = store.Issue(loginticket.Ticket{
 			Login:      login,
 			LoginKey:   loginKey,
-			Characters: stubCharacters(),
+			Characters: cloneCharacters(characters),
 		})
 		if err == nil {
 			return loginKey, true
@@ -212,6 +245,40 @@ func issueLoginTicket(store loginticket.Store, login string, generateLoginKey lo
 	}
 
 	return 0, false
+}
+
+func loadOrCreateAccountCharacters(store accountstore.Store, login string) ([]loginticket.Character, bool) {
+	if store == nil {
+		return cloneCharacters(stubCharacters()), true
+	}
+	account, err := store.Load(login)
+	if err == nil {
+		return cloneCharacters(account.Characters), true
+	}
+	if !errors.Is(err, accountstore.ErrAccountNotFound) {
+		return nil, false
+	}
+	characters := cloneCharacters(stubCharacters())
+	if err := store.Save(accountstore.Account{Login: login, Characters: characters}); err != nil {
+		return nil, false
+	}
+	return cloneCharacters(characters), true
+}
+
+func saveAccountCharacters(store accountstore.Store, login string, characters []loginticket.Character) bool {
+	if store == nil {
+		return true
+	}
+	return store.Save(accountstore.Account{Login: login, Characters: cloneCharacters(characters)}) == nil
+}
+
+func cloneCharacters(characters []loginticket.Character) []loginticket.Character {
+	if len(characters) == 0 {
+		return nil
+	}
+	cloned := make([]loginticket.Character, len(characters))
+	copy(cloned, characters)
+	return cloned
 }
 
 func randomLoginKey() (uint32, error) {
@@ -547,6 +614,10 @@ func stubCharacters() []loginticket.Character {
 
 func defaultTicketStoreDir() string {
 	return filepath.Join(os.TempDir(), "go-metin2-server-login-tickets")
+}
+
+func defaultAccountStoreDir() string {
+	return filepath.Join(os.TempDir(), "go-metin2-server-accounts")
 }
 
 func sequentialBytes32(start byte) [32]byte {
