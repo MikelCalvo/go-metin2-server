@@ -1,0 +1,17 @@
+# Binaries and build artifacts
+bin/
+dist/
+coverage.out
+*.test
+*.out
+
+# IDEs / editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local runtime data
+.env
+.env.local
+.pprof/
