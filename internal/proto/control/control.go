@@ -10,9 +10,21 @@ import (
 )
 
 const (
-	HeaderPong  uint16 = 0x0006
-	HeaderPing  uint16 = 0x0007
-	HeaderPhase uint16 = 0x0008
+	HeaderPong         uint16 = 0x0006
+	HeaderPing         uint16 = 0x0007
+	HeaderPhase        uint16 = 0x0008
+	HeaderKeyResponse  uint16 = 0x000A
+	HeaderKeyChallenge uint16 = 0x000B
+	HeaderKeyComplete  uint16 = 0x000C
+
+	keySize                = 32
+	challengeSize          = 32
+	challengeResponseSize  = 32
+	encryptedTokenSize     = 48
+	nonceSize              = 24
+	keyChallengePayloadLen = keySize + challengeSize + 4
+	keyResponsePayloadLen  = keySize + challengeResponseSize
+	keyCompletePayloadLen  = encryptedTokenSize + nonceSize
 )
 
 var (
@@ -27,6 +39,22 @@ type PhasePacket struct {
 
 type PingPacket struct {
 	ServerTime uint32
+}
+
+type KeyChallengePacket struct {
+	ServerPublicKey [keySize]byte
+	Challenge       [challengeSize]byte
+	ServerTime      uint32
+}
+
+type KeyResponsePacket struct {
+	ClientPublicKey   [keySize]byte
+	ChallengeResponse [challengeResponseSize]byte
+}
+
+type KeyCompletePacket struct {
+	EncryptedToken [encryptedTokenSize]byte
+	Nonce          [nonceSize]byte
 }
 
 func EncodePhase(phase session.Phase) ([]byte, error) {
@@ -69,6 +97,80 @@ func DecodePing(f frame.Frame) (PingPacket, error) {
 
 func EncodePong() []byte {
 	return frame.Encode(HeaderPong, nil)
+}
+
+func EncodeKeyChallenge(packet KeyChallengePacket) []byte {
+	payload := make([]byte, keyChallengePayloadLen)
+	copy(payload[0:keySize], packet.ServerPublicKey[:])
+	copy(payload[keySize:keySize+challengeSize], packet.Challenge[:])
+	binary.LittleEndian.PutUint32(payload[keySize+challengeSize:], packet.ServerTime)
+
+	return frame.Encode(HeaderKeyChallenge, payload)
+}
+
+func DecodeKeyChallenge(f frame.Frame) (KeyChallengePacket, error) {
+	if f.Header != HeaderKeyChallenge {
+		return KeyChallengePacket{}, ErrUnexpectedHeader
+	}
+
+	if len(f.Payload) != keyChallengePayloadLen {
+		return KeyChallengePacket{}, ErrInvalidPayload
+	}
+
+	var packet KeyChallengePacket
+	copy(packet.ServerPublicKey[:], f.Payload[0:keySize])
+	copy(packet.Challenge[:], f.Payload[keySize:keySize+challengeSize])
+	packet.ServerTime = binary.LittleEndian.Uint32(f.Payload[keySize+challengeSize:])
+
+	return packet, nil
+}
+
+func EncodeKeyResponse(packet KeyResponsePacket) []byte {
+	payload := make([]byte, keyResponsePayloadLen)
+	copy(payload[0:keySize], packet.ClientPublicKey[:])
+	copy(payload[keySize:], packet.ChallengeResponse[:])
+
+	return frame.Encode(HeaderKeyResponse, payload)
+}
+
+func DecodeKeyResponse(f frame.Frame) (KeyResponsePacket, error) {
+	if f.Header != HeaderKeyResponse {
+		return KeyResponsePacket{}, ErrUnexpectedHeader
+	}
+
+	if len(f.Payload) != keyResponsePayloadLen {
+		return KeyResponsePacket{}, ErrInvalidPayload
+	}
+
+	var packet KeyResponsePacket
+	copy(packet.ClientPublicKey[:], f.Payload[0:keySize])
+	copy(packet.ChallengeResponse[:], f.Payload[keySize:])
+
+	return packet, nil
+}
+
+func EncodeKeyComplete(packet KeyCompletePacket) []byte {
+	payload := make([]byte, keyCompletePayloadLen)
+	copy(payload[0:encryptedTokenSize], packet.EncryptedToken[:])
+	copy(payload[encryptedTokenSize:], packet.Nonce[:])
+
+	return frame.Encode(HeaderKeyComplete, payload)
+}
+
+func DecodeKeyComplete(f frame.Frame) (KeyCompletePacket, error) {
+	if f.Header != HeaderKeyComplete {
+		return KeyCompletePacket{}, ErrUnexpectedHeader
+	}
+
+	if len(f.Payload) != keyCompletePayloadLen {
+		return KeyCompletePacket{}, ErrInvalidPayload
+	}
+
+	var packet KeyCompletePacket
+	copy(packet.EncryptedToken[:], f.Payload[0:encryptedTokenSize])
+	copy(packet.Nonce[:], f.Payload[encryptedTokenSize:])
+
+	return packet, nil
 }
 
 func encodePhaseValue(phase session.Phase) (byte, error) {

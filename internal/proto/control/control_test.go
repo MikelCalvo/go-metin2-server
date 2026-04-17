@@ -107,3 +107,146 @@ func TestEncodePongBuildsAHeaderOnlyControlFrame(t *testing.T) {
 		t.Fatalf("unexpected pong frame bytes: got %x want %x", got, want)
 	}
 }
+
+func TestEncodeKeyChallengeBuildsAControlFrame(t *testing.T) {
+	want := loadHexFixture(t, "key-challenge-frame.hex")
+
+	got := EncodeKeyChallenge(KeyChallengePacket{
+		ServerPublicKey: sequentialBytes32(0x00),
+		Challenge:       sequentialBytes32(0x20),
+		ServerTime:      0x01020304,
+	})
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected key challenge frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeKeyChallengeReturnsExpectedFields(t *testing.T) {
+	decoder := frame.NewDecoder(1024)
+	frames, err := decoder.Feed(loadHexFixture(t, "key-challenge-frame.hex"))
+	if err != nil {
+		t.Fatalf("unexpected frame decode error: %v", err)
+	}
+
+	packet, err := DecodeKeyChallenge(frames[0])
+	if err != nil {
+		t.Fatalf("unexpected key challenge decode error: %v", err)
+	}
+
+	if packet.ServerPublicKey != sequentialBytes32(0x00) {
+		t.Fatalf("unexpected server public key: got %x want %x", packet.ServerPublicKey, sequentialBytes32(0x00))
+	}
+
+	if packet.Challenge != sequentialBytes32(0x20) {
+		t.Fatalf("unexpected challenge bytes: got %x want %x", packet.Challenge, sequentialBytes32(0x20))
+	}
+
+	if packet.ServerTime != 0x01020304 {
+		t.Fatalf("unexpected server time: got %#08x want %#08x", packet.ServerTime, uint32(0x01020304))
+	}
+}
+
+func TestDecodeKeyChallengeRejectsInvalidPayloadLength(t *testing.T) {
+	badFrame := frame.Frame{Header: HeaderKeyChallenge, Length: 71, Payload: make([]byte, 67)}
+
+	_, err := DecodeKeyChallenge(badFrame)
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestEncodeKeyResponseBuildsAControlFrame(t *testing.T) {
+	want := loadHexFixture(t, "key-response-frame.hex")
+
+	got := EncodeKeyResponse(KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected key response frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeKeyResponseReturnsExpectedFields(t *testing.T) {
+	decoder := frame.NewDecoder(1024)
+	frames, err := decoder.Feed(loadHexFixture(t, "key-response-frame.hex"))
+	if err != nil {
+		t.Fatalf("unexpected frame decode error: %v", err)
+	}
+
+	packet, err := DecodeKeyResponse(frames[0])
+	if err != nil {
+		t.Fatalf("unexpected key response decode error: %v", err)
+	}
+
+	if packet.ClientPublicKey != sequentialBytes32(0x40) {
+		t.Fatalf("unexpected client public key: got %x want %x", packet.ClientPublicKey, sequentialBytes32(0x40))
+	}
+
+	if packet.ChallengeResponse != sequentialBytes32(0x60) {
+		t.Fatalf("unexpected challenge response bytes: got %x want %x", packet.ChallengeResponse, sequentialBytes32(0x60))
+	}
+}
+
+func TestEncodeKeyCompleteBuildsAControlFrame(t *testing.T) {
+	want := loadHexFixture(t, "key-complete-frame.hex")
+
+	got := EncodeKeyComplete(KeyCompletePacket{
+		EncryptedToken: sequentialBytes48(0x80),
+		Nonce:          sequentialBytes24(0xb0),
+	})
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected key complete frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeKeyCompleteReturnsExpectedFields(t *testing.T) {
+	decoder := frame.NewDecoder(1024)
+	frames, err := decoder.Feed(loadHexFixture(t, "key-complete-frame.hex"))
+	if err != nil {
+		t.Fatalf("unexpected frame decode error: %v", err)
+	}
+
+	packet, err := DecodeKeyComplete(frames[0])
+	if err != nil {
+		t.Fatalf("unexpected key complete decode error: %v", err)
+	}
+
+	if packet.EncryptedToken != sequentialBytes48(0x80) {
+		t.Fatalf("unexpected encrypted token bytes: got %x want %x", packet.EncryptedToken, sequentialBytes48(0x80))
+	}
+
+	if packet.Nonce != sequentialBytes24(0xb0) {
+		t.Fatalf("unexpected nonce bytes: got %x want %x", packet.Nonce, sequentialBytes24(0xb0))
+	}
+}
+
+func sequentialBytes32(start byte) [32]byte {
+	var out [32]byte
+	for i := range out {
+		out[i] = start + byte(i)
+	}
+
+	return out
+}
+
+func sequentialBytes48(start byte) [48]byte {
+	var out [48]byte
+	for i := range out {
+		out[i] = start + byte(i)
+	}
+
+	return out
+}
+
+func sequentialBytes24(start byte) [24]byte {
+	var out [24]byte
+	for i := range out {
+		out[i] = start + byte(i)
+	}
+
+	return out
+}

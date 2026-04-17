@@ -6,6 +6,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 
 - `session-phases.md` — working session model and allowed transitions
 - `frame-layout.md` — stream envelope and control-packet framing assumptions
+- `control-handshake.md` — control-plane packet layouts for phase, ping, pong, and key exchange
 - `boot-path.md` — first milestone from connect to basic movement
 - `packet-matrix.md` — working inventory for the first protocol slice
 
