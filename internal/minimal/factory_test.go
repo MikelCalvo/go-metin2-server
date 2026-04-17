@@ -211,6 +211,68 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+
+	createRaw, err := worldproto.EncodeCharacterCreate(worldproto.CharacterCreatePacket{Index: 2, Name: "FreshSura", RaceNum: 2, Shape: 1})
+	if err != nil {
+		t.Fatalf("encode character create: %v", err)
+	}
+	createOut, err := flow.HandleClientFrame(decodeSingleFrame(t, createRaw))
+	if err != nil {
+		t.Fatalf("unexpected character create error: %v", err)
+	}
+	if len(createOut) != 1 {
+		t.Fatalf("expected 1 create frame, got %d", len(createOut))
+	}
+	created, err := worldproto.DecodePlayerCreateSuccess(decodeSingleFrame(t, createOut[0]))
+	if err != nil {
+		t.Fatalf("decode player create success: %v", err)
+	}
+	if created.Index != 2 || created.Player.Name != "FreshSura" || created.Player.Job != 2 || created.Player.Level != 1 {
+		t.Fatalf("unexpected created player packet: %+v", created)
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 2})))
+	if err != nil {
+		t.Fatalf("unexpected select after create error: %v", err)
+	}
+	mainCharacter, err := worldproto.DecodeMainCharacter(decodeSingleFrame(t, selectOut[1]))
+	if err != nil {
+		t.Fatalf("decode main character: %v", err)
+	}
+	if mainCharacter.Name != "FreshSura" || mainCharacter.RaceNum != 2 {
+		t.Fatalf("unexpected created main character: %+v", mainCharacter)
+	}
+}
+
 func TestNewGameSessionFactoryRejectsInvalidPublicAddr(t *testing.T) {
 	_, err := NewGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "not-an-ip"})
 	if !errors.Is(err, ErrInvalidPublicAddr) {

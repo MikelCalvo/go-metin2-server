@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	authflow "github.com/MikelCalvo/go-metin2-server/internal/auth"
 	"github.com/MikelCalvo/go-metin2-server/internal/authboot"
@@ -118,12 +119,28 @@ func newGameSessionFactory(cfg config.Service, store loginticket.Store) (service
 				},
 			},
 			WorldEntry: worldentry.Config{
+				CreateCharacter: func(packet worldproto.CharacterCreatePacket) worldentry.CreateResult {
+					if !hasTicket {
+						return worldentry.CreateResult{Accepted: false, FailureType: 0}
+					}
+					created, failureType, ok := createCharacterInTicket(&sessionTicket, packet, ticketEmpire(sessionTicket))
+					if !ok {
+						return worldentry.CreateResult{Accepted: false, FailureType: failureType}
+					}
+					return worldentry.CreateResult{
+						Accepted: true,
+						Player:   ticketPlayerCreateSuccessPacket(created, packet.Index, advertisedAddr, advertisedPort),
+					}
+				},
 				SelectCharacter: func(index uint8) worldentry.Result {
 					if !hasTicket || int(index) >= len(sessionTicket.Characters) {
 						return worldentry.Result{Accepted: false}
 					}
 
 					selected := sessionTicket.Characters[index]
+					if selected.ID == 0 {
+						return worldentry.Result{Accepted: false}
+					}
 					return worldentry.Result{
 						Accepted:      true,
 						MainCharacter: ticketMainCharacterPacket(selected),
@@ -277,6 +294,185 @@ func ticketMainCharacterPacket(character loginticket.Character) worldproto.MainC
 
 func ticketPlayerPointsPacket(character loginticket.Character) worldproto.PlayerPointsPacket {
 	return worldproto.PlayerPointsPacket{Points: character.Points}
+}
+
+func ticketPlayerCreateSuccessPacket(character loginticket.Character, index uint8, addr uint32, port uint16) worldproto.PlayerCreateSuccessPacket {
+	return worldproto.PlayerCreateSuccessPacket{
+		Index: index,
+		Player: loginproto.SimplePlayer{
+			ID:          character.ID,
+			Name:        character.Name,
+			Job:         character.Job,
+			Level:       character.Level,
+			PlayMinutes: character.PlayMinutes,
+			ST:          character.ST,
+			HT:          character.HT,
+			DX:          character.DX,
+			IQ:          character.IQ,
+			MainPart:    character.MainPart,
+			ChangeName:  character.ChangeName,
+			HairPart:    character.HairPart,
+			Dummy:       character.Dummy,
+			X:           character.X,
+			Y:           character.Y,
+			Addr:        addr,
+			Port:        port,
+			SkillGroup:  character.SkillGroup,
+		},
+	}
+}
+
+func createCharacterInTicket(ticket *loginticket.Ticket, packet worldproto.CharacterCreatePacket, empire uint8) (loginticket.Character, uint8, bool) {
+	if ticket == nil || packet.Index >= loginproto.PlayerCount {
+		return loginticket.Character{}, 0, false
+	}
+	if !isValidCharacterName(packet.Name) || !isValidCreateRace(packet.RaceNum) || packet.Shape > 1 {
+		return loginticket.Character{}, 0, false
+	}
+	if hasDuplicateCharacterName(ticket.Characters, packet.Name) {
+		return loginticket.Character{}, 1, false
+	}
+
+	index := int(packet.Index)
+	if index < len(ticket.Characters) && ticket.Characters[index].ID != 0 {
+		return loginticket.Character{}, 0, false
+	}
+	if len(ticket.Characters) <= index {
+		extended := make([]loginticket.Character, index+1)
+		copy(extended, ticket.Characters)
+		ticket.Characters = extended
+	}
+
+	character := buildCreatedCharacter(nextCharacterID(ticket.Characters), nextCharacterVID(ticket.Characters), packet, empire)
+	ticket.Characters[index] = character
+	return character, 0, true
+}
+
+type initialCharacterStats struct {
+	ST    uint8
+	HT    uint8
+	DX    uint8
+	IQ    uint8
+	MaxHP int32
+	MaxSP int32
+}
+
+func buildCreatedCharacter(id uint32, vid uint32, packet worldproto.CharacterCreatePacket, empire uint8) loginticket.Character {
+	stats := initialStatsForRace(packet.RaceNum)
+	x, y := spawnPositionForSlot(packet.Index)
+	points := initialPointsForRace(packet.RaceNum)
+	return loginticket.Character{
+		ID:          id,
+		VID:         vid,
+		Name:        packet.Name,
+		Job:         uint8(packet.RaceNum),
+		RaceNum:     packet.RaceNum,
+		Level:       1,
+		PlayMinutes: 0,
+		ST:          stats.ST,
+		HT:          stats.HT,
+		DX:          stats.DX,
+		IQ:          stats.IQ,
+		MainPart:    uint16(packet.Shape),
+		ChangeName:  0,
+		HairPart:    0,
+		Dummy:       [4]byte{},
+		X:           x,
+		Y:           y,
+		Z:           0,
+		Empire:      empire,
+		SkillGroup:  0,
+		Points:      points,
+	}
+}
+
+func initialStatsForRace(race uint16) initialCharacterStats {
+	switch race {
+	case 0, 4:
+		return initialCharacterStats{ST: 6, HT: 4, DX: 3, IQ: 3, MaxHP: 600, MaxSP: 200}
+	case 1, 5:
+		return initialCharacterStats{ST: 4, HT: 3, DX: 6, IQ: 3, MaxHP: 650, MaxSP: 200}
+	case 2, 6:
+		return initialCharacterStats{ST: 5, HT: 3, DX: 3, IQ: 5, MaxHP: 650, MaxSP: 200}
+	case 3, 7:
+		return initialCharacterStats{ST: 3, HT: 4, DX: 3, IQ: 6, MaxHP: 700, MaxSP: 200}
+	default:
+		return initialCharacterStats{}
+	}
+}
+
+func initialPointsForRace(race uint16) [worldproto.PointCount]int32 {
+	stats := initialStatsForRace(race)
+	var points [worldproto.PointCount]int32
+	points[0] = 1
+	points[1] = stats.MaxHP
+	points[2] = stats.MaxSP
+	return points
+}
+
+func spawnPositionForSlot(index uint8) (int32, int32) {
+	return 1000 + int32(index)*100, 2000 + int32(index)*100
+}
+
+func nextCharacterID(characters []loginticket.Character) uint32 {
+	var maxID uint32
+	for _, character := range characters {
+		if character.ID > maxID {
+			maxID = character.ID
+		}
+	}
+	if maxID == 0 {
+		return 1
+	}
+	return maxID + 1
+}
+
+func nextCharacterVID(characters []loginticket.Character) uint32 {
+	var maxVID uint32
+	for _, character := range characters {
+		if character.VID > maxVID {
+			maxVID = character.VID
+		}
+	}
+	if maxVID == 0 {
+		return 0x01020304
+	}
+	return maxVID + 1
+}
+
+func isValidCreateRace(race uint16) bool {
+	switch race {
+	case 0, 1, 2, 3, 4, 5, 6, 7:
+		return true
+	default:
+		return false
+	}
+}
+
+func isValidCharacterName(name string) bool {
+	if name == "" || len(name) >= worldproto.CharacterNameFieldSize {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func hasDuplicateCharacterName(characters []loginticket.Character, name string) bool {
+	for _, character := range characters {
+		if character.ID != 0 && strings.EqualFold(character.Name, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func stubCharacters() []loginticket.Character {
