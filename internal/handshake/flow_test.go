@@ -99,6 +99,67 @@ func TestHandleClientFrameCompletesTheHandshakeAndTransitionsToLogin(t *testing.
 	}
 }
 
+func TestHandleClientFrameTransitionsToAuthWhenConfigured(t *testing.T) {
+	cfg := testConfig()
+	cfg.NextPhase = session.PhaseAuth
+	machine := session.NewStateMachine()
+	flow := NewFlow(machine, cfg)
+
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+
+	incoming := decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	}))
+
+	out, err := flow.HandleClientFrame(incoming)
+	if err != nil {
+		t.Fatalf("unexpected key response handling error: %v", err)
+	}
+
+	if len(out) != 2 {
+		t.Fatalf("expected 2 outgoing frames, got %d", len(out))
+	}
+
+	wantPhase, err := control.EncodePhase(session.PhaseAuth)
+	if err != nil {
+		t.Fatalf("unexpected phase encode error: %v", err)
+	}
+
+	want := [][]byte{
+		control.EncodeKeyComplete(cfg.KeyComplete),
+		wantPhase,
+	}
+
+	for i := range want {
+		if !bytes.Equal(out[i], want[i]) {
+			t.Fatalf("unexpected outgoing frame %d: got %x want %x", i, out[i], want[i])
+		}
+	}
+
+	if machine.Current() != session.PhaseAuth {
+		t.Fatalf("expected phase %q, got %q", session.PhaseAuth, machine.Current())
+	}
+}
+
+func TestStartRejectsAnInvalidConfiguredNextPhase(t *testing.T) {
+	cfg := testConfig()
+	cfg.NextPhase = session.PhaseGame
+	machine := session.NewStateMachine()
+	flow := NewFlow(machine, cfg)
+
+	_, err := flow.Start()
+	if !errors.Is(err, ErrInvalidNextPhase) {
+		t.Fatalf("expected ErrInvalidNextPhase, got %v", err)
+	}
+
+	if machine.Current() != session.PhaseHandshake {
+		t.Fatalf("expected phase %q, got %q", session.PhaseHandshake, machine.Current())
+	}
+}
+
 func TestHandleClientFrameRejectsKeyResponseBeforeTheChallengeIsStarted(t *testing.T) {
 	machine := session.NewStateMachine()
 	flow := NewFlow(machine, testConfig())

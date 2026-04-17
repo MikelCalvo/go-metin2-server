@@ -14,6 +14,7 @@ var (
 	ErrHandshakeAlreadyStart  = errors.New("handshake flow has already started")
 	ErrUnexpectedClientPacket = errors.New("unexpected client packet during handshake")
 	ErrKeyResponseRejected    = errors.New("key response rejected")
+	ErrInvalidNextPhase       = errors.New("invalid handshake next phase")
 )
 
 type VerifyKeyResponseFunc func(control.KeyResponsePacket) bool
@@ -22,6 +23,7 @@ type Config struct {
 	KeyChallenge      control.KeyChallengePacket
 	KeyComplete       control.KeyCompletePacket
 	VerifyKeyResponse VerifyKeyResponseFunc
+	NextPhase         session.Phase
 }
 
 type Flow struct {
@@ -29,6 +31,8 @@ type Flow struct {
 	keyChallenge      control.KeyChallengePacket
 	keyComplete       control.KeyCompletePacket
 	verifyKeyResponse VerifyKeyResponseFunc
+	nextPhase         session.Phase
+	configErr         error
 	started           bool
 }
 
@@ -40,15 +44,29 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		}
 	}
 
+	nextPhase := cfg.NextPhase
+	configErr := error(nil)
+	if nextPhase == "" {
+		nextPhase = session.PhaseLogin
+	} else if !isValidNextPhase(nextPhase) {
+		configErr = ErrInvalidNextPhase
+	}
+
 	return &Flow{
 		machine:           machine,
 		keyChallenge:      cfg.KeyChallenge,
 		keyComplete:       cfg.KeyComplete,
 		verifyKeyResponse: verify,
+		nextPhase:         nextPhase,
+		configErr:         configErr,
 	}
 }
 
 func (f *Flow) Start() ([][]byte, error) {
+	if f.configErr != nil {
+		return nil, f.configErr
+	}
+
 	if f.machine.Current() != session.PhaseHandshake {
 		return nil, ErrInvalidPhase
 	}
@@ -62,6 +80,10 @@ func (f *Flow) Start() ([][]byte, error) {
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
+	if f.configErr != nil {
+		return nil, f.configErr
+	}
+
 	if f.machine.Current() != session.PhaseHandshake {
 		return nil, ErrInvalidPhase
 	}
@@ -88,20 +110,24 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, ErrKeyResponseRejected
 		}
 
-		if err := f.machine.Transition(session.PhaseLogin); err != nil {
+		if err := f.machine.Transition(f.nextPhase); err != nil {
 			return nil, err
 		}
 
-		phaseLogin, err := control.EncodePhase(session.PhaseLogin)
+		phaseNext, err := control.EncodePhase(f.nextPhase)
 		if err != nil {
 			return nil, err
 		}
 
 		return [][]byte{
 			control.EncodeKeyComplete(f.keyComplete),
-			phaseLogin,
+			phaseNext,
 		}, nil
 	default:
 		return nil, ErrUnexpectedClientPacket
 	}
+}
+
+func isValidNextPhase(phase session.Phase) bool {
+	return phase == session.PhaseLogin || phase == session.PhaseAuth
 }
