@@ -189,6 +189,8 @@ func encodePhaseValue(phase session.Phase) (byte, error) {
 		return 0x05, nil
 	case session.PhaseDead:
 		return 0x06, nil
+	case session.PhaseAuth:
+		return 0x0A, nil
 	default:
 		return 0, fmt.Errorf("%w: %q", ErrUnknownPhaseValue, phase)
 	}
@@ -210,6 +212,8 @@ func decodePhaseValue(value byte) (session.Phase, error) {
 		return session.PhaseGame, nil
 	case 0x06:
 		return session.PhaseDead, nil
+	case 0x0A:
+		return session.PhaseAuth, nil
 	default:
 		return "", fmt.Errorf("%w: 0x%02x", ErrUnknownPhaseValue, value)
 	}

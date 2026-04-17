@@ -34,9 +34,22 @@ func TestStateMachineAllowsTheBootPathInOrder(t *testing.T) {
 	}
 }
 
+func TestStateMachineAllowsAuthFromHandshake(t *testing.T) {
+	machine := NewStateMachine()
+
+	if err := machine.Transition(PhaseAuth); err != nil {
+		t.Fatalf("expected auth transition to succeed: %v", err)
+	}
+
+	if machine.Current() != PhaseAuth {
+		t.Fatalf("expected current phase %q, got %q", PhaseAuth, machine.Current())
+	}
+}
+
 func TestStateMachineAllowsCloseFromAnyPhase(t *testing.T) {
 	phases := []Phase{
 		PhaseHandshake,
+		PhaseAuth,
 		PhaseLogin,
 		PhaseSelect,
 		PhaseLoading,

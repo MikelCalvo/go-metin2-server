@@ -6,6 +6,7 @@ type Phase string
 
 const (
 	PhaseHandshake Phase = "HANDSHAKE"
+	PhaseAuth      Phase = "AUTH"
 	PhaseLogin     Phase = "LOGIN"
 	PhaseSelect    Phase = "SELECT"
 	PhaseLoading   Phase = "LOADING"
@@ -59,7 +60,9 @@ func (m *StateMachine) CanTransition(next Phase) bool {
 
 	switch m.current {
 	case PhaseHandshake:
-		return next == PhaseLogin
+		return next == PhaseAuth || next == PhaseLogin
+	case PhaseAuth:
+		return false
 	case PhaseLogin:
 		return next == PhaseSelect
 	case PhaseSelect:
@@ -75,7 +78,7 @@ func (m *StateMachine) CanTransition(next Phase) bool {
 
 func isKnownPhase(phase Phase) bool {
 	switch phase {
-	case PhaseHandshake, PhaseLogin, PhaseSelect, PhaseLoading, PhaseGame, PhaseDead, PhaseClose:
+	case PhaseHandshake, PhaseAuth, PhaseLogin, PhaseSelect, PhaseLoading, PhaseGame, PhaseDead, PhaseClose:
 		return true
 	default:
 		return false

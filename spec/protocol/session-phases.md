@@ -16,6 +16,7 @@ Current working phase-byte mapping for the initial target:
 - `LOADING` = `0x04`
 - `GAME` = `0x05`
 - `DEAD` = `0x06`
+- `AUTH` = `0x0A`
 
 These values should be treated as compatibility data and frozen by automated tests.
 
@@ -32,8 +33,24 @@ Typical traffic in this phase:
 
 Exit condition:
 - the connection is ready to authenticate
+- depending on the service role, the next phase is either `AUTH` or `LOGIN`
 
-## 2. `LOGIN`
+## 2. `AUTH`
+
+Purpose:
+- authenticate credentials on the auth server
+- issue a login key that the client can present to `gamed`
+
+Typical traffic in this phase:
+- `LOGIN3`
+- `LOGIN_FAILURE`
+- `AUTH_SUCCESS`
+
+Exit condition:
+- success -> client disconnects and reconnects to `gamed` with `LOGIN2`
+- failure -> stay in `AUTH` or close, depending on the final policy we standardize
+
+## 3. `LOGIN`
 
 Purpose:
 - authenticate the account/session
@@ -104,6 +121,7 @@ Purpose:
 
 The working transition graph is:
 
+- `HANDSHAKE -> AUTH`
 - `HANDSHAKE -> LOGIN`
 - `LOGIN -> SELECT`
 - `SELECT -> LOADING`
@@ -120,6 +138,11 @@ A packet decoder may still parse them, but the session layer must not process th
 - no gameplay packets are accepted
 - no character selection packets are accepted
 - the session has not been authenticated yet
+
+### `AUTH`
+- only auth-server credential packets are valid here
+- no selection or in-world packets are accepted
+- a successful auth result should issue a login key, not enter the world directly
 
 ### `LOGIN`
 - the session is not yet bound to a selected character

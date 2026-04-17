@@ -99,6 +99,36 @@ func TestEncodePhaseSupportsDeadPhaseValue(t *testing.T) {
 	}
 }
 
+func TestEncodePhaseSupportsAuthPhaseValue(t *testing.T) {
+	want := loadHexFixture(t, "phase-auth-frame.hex")
+
+	got, err := EncodePhase(session.PhaseAuth)
+	if err != nil {
+		t.Fatalf("unexpected encode error: %v", err)
+	}
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected auth phase frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodePhaseReturnsTheExpectedAuthSessionPhase(t *testing.T) {
+	decoder := frame.NewDecoder(1024)
+	frames, err := decoder.Feed(loadHexFixture(t, "phase-auth-frame.hex"))
+	if err != nil {
+		t.Fatalf("unexpected frame decode error: %v", err)
+	}
+
+	packet, err := DecodePhase(frames[0])
+	if err != nil {
+		t.Fatalf("unexpected phase decode error: %v", err)
+	}
+
+	if packet.Phase != session.PhaseAuth {
+		t.Fatalf("unexpected phase: got %q want %q", packet.Phase, session.PhaseAuth)
+	}
+}
+
 func TestEncodePongBuildsAHeaderOnlyControlFrame(t *testing.T) {
 	want := loadHexFixture(t, "pong-frame.hex")
 	got := EncodePong()
