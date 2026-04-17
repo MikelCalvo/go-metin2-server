@@ -60,7 +60,7 @@ Legend:
 - [x] character list surface
 - [x] minimal `authd` and `gamed` runtime listeners
 - [ ] empire selection support if required
-- [ ] character creation and selection
+- [x] character creation and selection
 
 ### 5. World entry
 - [x] loading/bootstrap packets
@@ -180,9 +180,16 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> LOADING -> GAME`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> GAME`
 
-This is still a bootstrap runtime, not full gameplay or real auth/game state sharing.
+This is still a bootstrap runtime, not full gameplay.
+What exists today:
+- shared authd -> gamed login tickets
+- session-scoped character creation that can be selected immediately
+
+What still does not exist yet:
+- durable account/character persistence across fresh sessions
+- full gameplay/world state beyond the boot path
 
 ## Development
 

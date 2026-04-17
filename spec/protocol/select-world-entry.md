@@ -3,6 +3,8 @@
 This document freezes the minimal packet and phase choreography needed to move from the selection surface into the live world.
 
 The goal of this slice is narrow:
+- accept `CHARACTER_CREATE` in `SELECT`
+- return `PLAYER_CREATE_SUCCESS` or `PLAYER_CREATE_FAILURE`
 - accept `CHARACTER_SELECT`
 - enter `LOADING`
 - send the minimum bootstrap packets
@@ -13,6 +15,9 @@ It does not yet freeze the full visible-world packet set.
 
 ## Covered packets
 
+- `CHARACTER_CREATE`
+- `PLAYER_CREATE_SUCCESS`
+- `PLAYER_CREATE_FAILURE`
 - `CHARACTER_SELECT`
 - `ENTERGAME`
 - `MAIN_CHARACTER`
@@ -33,15 +38,18 @@ See `frame-layout.md` for the envelope contract.
 The current project-owned selection/world-entry flow is:
 
 1. the session is in `SELECT`
-2. the client sends `CHARACTER_SELECT`
-3. the server validates the slot and transitions to `LOADING`
-4. the server emits:
+2. the client may send `CHARACTER_CREATE`
+3. on create success, the server emits `PLAYER_CREATE_SUCCESS` and stays in `SELECT`
+4. on create failure, the server emits `PLAYER_CREATE_FAILURE` and stays in `SELECT`
+5. the client sends `CHARACTER_SELECT`
+6. the server validates the slot and transitions to `LOADING`
+7. the server emits:
    - `PHASE(LOADING)`
    - `MAIN_CHARACTER`
    - `PLAYER_POINTS`
-5. the client sends `ENTERGAME`
-6. the server transitions to `GAME`
-7. the server emits `PHASE(GAME)`
+8. the client sends `ENTERGAME`
+9. the server transitions to `GAME`
+10. the server emits `PHASE(GAME)`
 
 This slice keeps the bootstrap minimal on purpose:
 - no item stream is required yet
@@ -50,6 +58,53 @@ This slice keeps the bootstrap minimal on purpose:
 - those can be layered in later slices once a client can cross the boundary reliably
 
 ## Packet layouts
+
+### `CHARACTER_CREATE`
+
+Direction:
+- client -> server
+
+Header:
+- `0x0201`
+
+Payload layout:
+- `index` — `uint8`
+- `name` — fixed `65` bytes (`CHARACTER_NAME_MAX_LEN + 1`)
+- `race_num` — `uint16`
+- `shape` — `uint8`
+- `con`, `int`, `str`, `dex` — `uint8` each
+
+Frame length:
+- `76` bytes total (`4 + 72`)
+
+### `PLAYER_CREATE_SUCCESS`
+
+Direction:
+- server -> client
+
+Header:
+- `0x020C`
+
+Payload layout:
+- `index` — `uint8`
+- `player` — packed `SimplePlayer` record (`103` bytes)
+
+Frame length:
+- `108` bytes total (`4 + 1 + 103`)
+
+### `PLAYER_CREATE_FAILURE`
+
+Direction:
+- server -> client
+
+Header:
+- `0x020D`
+
+Payload layout:
+- `type` — `uint8`
+
+Frame length:
+- `5` bytes total (`4 + 1`)
 
 ### `CHARACTER_SELECT`
 
@@ -116,12 +171,9 @@ Frame length:
 
 ## Slice scope
 
-This slice freezes only the minimal `SELECT -> LOADING -> GAME` boundary.
+This slice freezes the minimal `SELECT -> LOADING -> GAME` boundary, including in-phase character creation.
 
 It does not yet freeze:
-- `CHARACTER_CREATE`
-- `PLAYER_CREATE_SUCCESS`
-- `PLAYER_CREATE_FAILURE`
 - quickslot bootstrap
 - skill-level bootstrap
 - item bootstrap
