@@ -48,15 +48,12 @@ func NewAuthSessionFactory() service.SessionFactory {
 }
 
 func newAuthSessionFactory(store loginticket.Store, generateLoginKey loginKeyGenerator) service.SessionFactory {
-	return newAuthSessionFactoryWithAccountStore(store, accountstore.NewFileStore(defaultAccountStoreDir()), generateLoginKey)
+	return newAuthSessionFactoryWithAccountStore(store, nil, generateLoginKey)
 }
 
 func newAuthSessionFactoryWithAccountStore(store loginticket.Store, accounts accountstore.Store, generateLoginKey loginKeyGenerator) service.SessionFactory {
 	if store == nil {
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
-	}
-	if accounts == nil {
-		accounts = accountstore.NewFileStore(defaultAccountStoreDir())
 	}
 	if generateLoginKey == nil {
 		generateLoginKey = randomLoginKey
@@ -99,7 +96,7 @@ func NewGameSessionFactory(cfg config.Service) (service.SessionFactory, error) {
 }
 
 func newGameSessionFactory(cfg config.Service, store loginticket.Store) (service.SessionFactory, error) {
-	return newGameSessionFactoryWithAccountStore(cfg, store, accountstore.NewFileStore(defaultAccountStoreDir()))
+	return newGameSessionFactoryWithAccountStore(cfg, store, nil)
 }
 
 func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store) (service.SessionFactory, error) {
@@ -115,9 +112,6 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 
 	if store == nil {
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
-	}
-	if accounts == nil {
-		accounts = accountstore.NewFileStore(defaultAccountStoreDir())
 	}
 
 	return func() service.SessionFlow {
