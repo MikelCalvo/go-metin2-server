@@ -1,25 +1,36 @@
 package config
 
 import (
-    "os"
-    "strings"
+	"os"
+	"strings"
 )
 
 type Service struct {
-    Name      string
-    PprofAddr string
+	Name       string
+	PprofAddr  string
+	LegacyAddr string
+	PublicAddr string
 }
 
-func LoadService(name string, defaultPprofAddr string) Service {
-    upperName := strings.ToUpper(name)
+func LoadService(name string, defaultPprofAddr string, defaultLegacyAddr string, defaultPublicAddr string) Service {
+	upperName := strings.ToUpper(name)
 
-    if serviceAddr := os.Getenv("METIN2_" + upperName + "_PPROF_ADDR"); serviceAddr != "" {
-        return Service{Name: name, PprofAddr: serviceAddr}
-    }
+	return Service{
+		Name:       name,
+		PprofAddr:  loadOverride(upperName, "PPROF_ADDR", defaultPprofAddr),
+		LegacyAddr: loadOverride(upperName, "LEGACY_ADDR", defaultLegacyAddr),
+		PublicAddr: loadOverride(upperName, "PUBLIC_ADDR", defaultPublicAddr),
+	}
+}
 
-    if globalAddr := os.Getenv("METIN2_PPROF_ADDR"); globalAddr != "" {
-        return Service{Name: name, PprofAddr: globalAddr}
-    }
+func loadOverride(upperName string, suffix string, fallback string) string {
+	if serviceValue := os.Getenv("METIN2_" + upperName + "_" + suffix); serviceValue != "" {
+		return serviceValue
+	}
 
-    return Service{Name: name, PprofAddr: defaultPprofAddr}
+	if globalValue := os.Getenv("METIN2_" + suffix); globalValue != "" {
+		return globalValue
+	}
+
+	return fallback
 }
