@@ -1,8 +1,16 @@
 # Protocol notes
 
-The repository targets TMP4-era client compatibility, but the protocol contract will be documented here in project-owned language.
+The repository targets TMP4-era client compatibility, but the protocol contract is documented here in project-owned language.
 
-This directory will hold:
+## Protocol documents
+
+- `session-phases.md` — working session model and allowed transitions
+- `frame-layout.md` — stream envelope and control-packet framing assumptions
+- `boot-path.md` — first milestone from connect to basic movement
+- `packet-matrix.md` — working inventory for the first protocol slice
+
+## What belongs here
+
 - boot-path packet inventory
 - session phase matrix
 - frame layout notes

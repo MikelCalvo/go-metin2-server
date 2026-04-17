@@ -36,6 +36,19 @@ It is a minimal but complete TMP4-compatible boot path:
 - `docs/` — engineering and clean-room documentation
 - `spec/protocol` — protocol notes and packet inventory
 
+## Key documents
+
+- `docs/workflow.md`
+- `docs/testing-strategy.md`
+- `docs/clean-room-policy.md`
+- `docs/development.md`
+- `docs/debugging-and-profiling.md`
+- `spec/protocol/README.md`
+- `spec/protocol/session-phases.md`
+- `spec/protocol/frame-layout.md`
+- `spec/protocol/boot-path.md`
+- `spec/protocol/packet-matrix.md`
+
 ## pprof
 
 Both binaries expose an ops server with:
@@ -109,9 +122,3 @@ Why this Dockerfile keeps debug information:
 
 This repository must only contain code, documentation and fixtures produced for this project.
 Do not copy legacy Metin2 server/client source into this repository.
-
-See:
-- `docs/clean-room-policy.md`
-- `docs/development.md`
-- `docs/debugging-and-profiling.md`
-- `spec/protocol/README.md`

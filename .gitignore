@@ -15,3 +15,6 @@ coverage.out
 .env
 .env.local
 .pprof/
+
+# Local agent/planning state
+.hermes/
