@@ -16,12 +16,14 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/authboot"
 	"github.com/MikelCalvo/go-metin2-server/internal/boot"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
@@ -117,6 +119,8 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 	return func() service.SessionFlow {
 		var sessionTicket loginticket.Ticket
 		var hasTicket bool
+		var selectedIndex uint8
+		var hasSelected bool
 
 		return boot.NewFlow(boot.Config{
 			Handshake: handshake.Config{
@@ -132,6 +136,8 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 
 					sessionTicket = ticket
 					hasTicket = true
+					hasSelected = false
+					selectedIndex = 0
 					return loginflow.Result{
 						Accepted:      true,
 						Empire:        ticketEmpire(ticket),
@@ -165,11 +171,28 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					if selected.ID == 0 {
 						return worldentry.Result{Accepted: false}
 					}
+					selectedIndex = index
+					hasSelected = true
 					return worldentry.Result{
 						Accepted:      true,
 						MainCharacter: ticketMainCharacterPacket(selected),
 						PlayerPoints:  ticketPlayerPointsPacket(selected),
 					}
+				},
+			},
+			Game: gameflow.Config{
+				HandleMove: func(packet movep.MovePacket) gameflow.Result {
+					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+						return gameflow.Result{Accepted: false}
+					}
+					selected := sessionTicket.Characters[selectedIndex]
+					if selected.ID == 0 {
+						return gameflow.Result{Accepted: false}
+					}
+					selected.X = packet.X
+					selected.Y = packet.Y
+					sessionTicket.Characters[selectedIndex] = selected
+					return gameflow.Result{Accepted: true, Replication: ticketMoveAckPacket(selected, packet)}
 				},
 			},
 		})
@@ -355,6 +378,19 @@ func ticketMainCharacterPacket(character loginticket.Character) worldproto.MainC
 
 func ticketPlayerPointsPacket(character loginticket.Character) worldproto.PlayerPointsPacket {
 	return worldproto.PlayerPointsPacket{Points: character.Points}
+}
+
+func ticketMoveAckPacket(character loginticket.Character, packet movep.MovePacket) movep.MoveAckPacket {
+	return movep.MoveAckPacket{
+		Func:     packet.Func,
+		Arg:      packet.Arg,
+		Rot:      packet.Rot,
+		VID:      character.VID,
+		X:        packet.X,
+		Y:        packet.Y,
+		Time:     packet.Time,
+		Duration: 250,
+	}
 }
 
 func ticketPlayerCreateSuccessPacket(character loginticket.Character, index uint8, addr uint32, port uint16) worldproto.PlayerCreateSuccessPacket {

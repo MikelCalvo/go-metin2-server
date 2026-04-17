@@ -12,6 +12,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
@@ -273,11 +274,126 @@ func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryMovesTheSelectedCharacterInGame(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(sampleMovePacket())))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 move frame, got %d", len(moveOut))
+	}
+	ack, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode move ack: %v", err)
+	}
+	if ack.VID != 0x01020305 || ack.Func != 1 || ack.Rot != 12 || ack.X != 12345 || ack.Y != 23456 || ack.Time != 0x01020304 || ack.Duration != 250 {
+		t.Fatalf("unexpected move ack: %+v", ack)
+	}
+}
+
+func TestNewGameSessionFactoryMovesTheCreatedCharacterInGame(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	createRaw, err := worldproto.EncodeCharacterCreate(worldproto.CharacterCreatePacket{Index: 2, Name: "FreshSura", RaceNum: 2, Shape: 1})
+	if err != nil {
+		t.Fatalf("encode character create: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, createRaw)); err != nil {
+		t.Fatalf("unexpected character create error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 2}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(sampleMovePacket())))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 move frame, got %d", len(moveOut))
+	}
+	ack, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode move ack: %v", err)
+	}
+	if ack.VID != 0x01020306 || ack.Func != 1 || ack.Rot != 12 || ack.X != 12345 || ack.Y != 23456 || ack.Time != 0x01020304 || ack.Duration != 250 {
+		t.Fatalf("unexpected move ack: %+v", ack)
+	}
+}
+
 func TestNewGameSessionFactoryRejectsInvalidPublicAddr(t *testing.T) {
 	_, err := NewGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "not-an-ip"})
 	if !errors.Is(err, ErrInvalidPublicAddr) {
 		t.Fatalf("expected ErrInvalidPublicAddr, got %v", err)
 	}
+}
+
+func sampleMovePacket() movep.MovePacket {
+	return movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 12345, Y: 23456, Time: 0x01020304}
 }
 
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
