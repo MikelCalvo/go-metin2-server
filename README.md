@@ -190,6 +190,7 @@ What exists today:
 - file-backed bootstrap account snapshots for the stub login
 - character creation that survives fresh auth/game sessions
 - deterministic single-character `MOVE` replication/ack using the selected character VID
+- bootstrap movement updates character coordinates and persists them across fresh auth/game sessions
 
 What still does not exist yet:
 - compatibility-grade persistence matching the legacy target
