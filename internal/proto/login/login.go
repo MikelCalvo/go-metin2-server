@@ -46,6 +46,10 @@ type EmpirePacket struct {
 	Empire uint8
 }
 
+type EmpireSelectPacket struct {
+	Empire uint8
+}
+
 type SimplePlayer struct {
 	ID          uint32
 	Name        string
@@ -125,6 +129,10 @@ func EncodeEmpire(packet EmpirePacket) []byte {
 	return frame.Encode(HeaderEmpire, []byte{packet.Empire})
 }
 
+func EncodeEmpireSelect(packet EmpireSelectPacket) []byte {
+	return frame.Encode(HeaderEmpireSelect, []byte{packet.Empire})
+}
+
 func DecodeEmpire(f frame.Frame) (EmpirePacket, error) {
 	if f.Header != HeaderEmpire {
 		return EmpirePacket{}, ErrUnexpectedHeader
@@ -135,6 +143,18 @@ func DecodeEmpire(f frame.Frame) (EmpirePacket, error) {
 	}
 
 	return EmpirePacket{Empire: f.Payload[0]}, nil
+}
+
+func DecodeEmpireSelect(f frame.Frame) (EmpireSelectPacket, error) {
+	if f.Header != HeaderEmpireSelect {
+		return EmpireSelectPacket{}, ErrUnexpectedHeader
+	}
+
+	if len(f.Payload) != 1 {
+		return EmpireSelectPacket{}, ErrInvalidPayload
+	}
+
+	return EmpireSelectPacket{Empire: f.Payload[0]}, nil
 }
 
 func EncodeLoginSuccess4(packet LoginSuccess4Packet) ([]byte, error) {

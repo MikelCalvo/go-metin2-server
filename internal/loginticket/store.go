@@ -45,6 +45,7 @@ type Character struct {
 type Ticket struct {
 	Login      string      `json:"login"`
 	LoginKey   uint32      `json:"login_key"`
+	Empire     uint8       `json:"empire"`
 	IssuedAt   time.Time   `json:"issued_at"`
 	Characters []Character `json:"characters"`
 }

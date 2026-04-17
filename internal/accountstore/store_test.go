@@ -11,7 +11,8 @@ import (
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	want := Account{
-		Login: "mkmk",
+		Login:  "mkmk",
+		Empire: 2,
 		Characters: []loginticket.Character{{
 			ID:         1,
 			VID:        0x01020304,

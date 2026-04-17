@@ -15,6 +15,7 @@ func TestFileStoreIssueThenConsumeRoundTrip(t *testing.T) {
 	want := Ticket{
 		Login:    "mkmk",
 		LoginKey: 0x01020304,
+		Empire:   2,
 		IssuedAt: issuedAt,
 		Characters: []Character{
 			{

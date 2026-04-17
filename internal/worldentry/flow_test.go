@@ -89,6 +89,33 @@ func TestHandleClientFrameAcceptsCharacterCreateAndStaysInSelect(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsEmpireSelectAndStaysInSelect(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseSelect)
+	flow := NewFlow(machine, Config{
+		SelectEmpire: func(empire uint8) EmpireResult {
+			if empire != 3 {
+				t.Fatalf("unexpected empire selection: %d", empire)
+			}
+			return EmpireResult{Accepted: true, Empire: 3}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, loginproto.EncodeEmpireSelect(loginproto.EmpireSelectPacket{Empire: 3})))
+	if err != nil {
+		t.Fatalf("unexpected empire select error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	want := loginproto.EncodeEmpire(loginproto.EmpirePacket{Empire: 3})
+	if !bytes.Equal(out[0], want) {
+		t.Fatalf("unexpected empire select response: got %x want %x", out[0], want)
+	}
+	if machine.Current() != session.PhaseSelect {
+		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, machine.Current())
+	}
+}
+
 func TestHandleClientFrameReturnsCreateFailurePacketAndKeepsSelectPhase(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseSelect)
 	flow := NewFlow(machine, Config{

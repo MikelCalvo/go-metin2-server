@@ -73,11 +73,11 @@ func newAuthSessionFactoryWithAccountStore(store loginticket.Store, accounts acc
 						return authflow.Result{Accepted: false, FailureStatus: "WRONGPWD"}
 					}
 
-					characters, ok := loadOrCreateAccountCharacters(accounts, packet.Login)
+					account, ok := loadOrCreateAccount(accounts, packet.Login)
 					if !ok {
 						return authflow.Result{Accepted: false, FailureStatus: "FAILED"}
 					}
-					loginKey, ok := issueLoginTicket(store, packet.Login, characters, generateLoginKey)
+					loginKey, ok := issueLoginTicket(store, account.Login, account.Empire, account.Characters, generateLoginKey)
 					if !ok {
 						return authflow.Result{Accepted: false, FailureStatus: "FAILED"}
 					}
@@ -146,6 +146,16 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 				},
 			},
 			WorldEntry: worldentry.Config{
+				SelectEmpire: func(empire uint8) worldentry.EmpireResult {
+					if !hasTicket || !isValidEmpire(empire) || hasAnyCharacters(sessionTicket.Characters) {
+						return worldentry.EmpireResult{Accepted: false}
+					}
+					sessionTicket.Empire = empire
+					if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters) {
+						return worldentry.EmpireResult{Accepted: false}
+					}
+					return worldentry.EmpireResult{Accepted: true, Empire: empire}
+				},
 				CreateCharacter: func(packet worldproto.CharacterCreatePacket) worldentry.CreateResult {
 					if !hasTicket {
 						return worldentry.CreateResult{Accepted: false, FailureType: 0}
@@ -154,7 +164,7 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					if !ok {
 						return worldentry.CreateResult{Accepted: false, FailureType: failureType}
 					}
-					if !saveAccountCharacters(accounts, sessionTicket.Login, sessionTicket.Characters) {
+					if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters) {
 						return worldentry.CreateResult{Accepted: false, FailureType: 0}
 					}
 					return worldentry.CreateResult{
@@ -192,7 +202,7 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					selected.X = packet.X
 					selected.Y = packet.Y
 					sessionTicket.Characters[selectedIndex] = selected
-					if !saveAccountCharacters(accounts, sessionTicket.Login, sessionTicket.Characters) {
+					if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters) {
 						return gameflow.Result{Accepted: false}
 					}
 					return gameflow.Result{Accepted: true, Replication: ticketMoveAckPacket(selected, packet)}
@@ -240,10 +250,7 @@ func defaultKeyComplete() control.KeyCompletePacket {
 	}
 }
 
-func issueLoginTicket(store loginticket.Store, login string, characters []loginticket.Character, generateLoginKey loginKeyGenerator) (uint32, bool) {
-	if len(characters) == 0 {
-		characters = stubCharacters()
-	}
+func issueLoginTicket(store loginticket.Store, login string, empire uint8, characters []loginticket.Character, generateLoginKey loginKeyGenerator) (uint32, bool) {
 	for range 8 {
 		loginKey, err := generateLoginKey()
 		if err != nil || loginKey == 0 {
@@ -253,6 +260,7 @@ func issueLoginTicket(store loginticket.Store, login string, characters []logint
 		err = store.Issue(loginticket.Ticket{
 			Login:      login,
 			LoginKey:   loginKey,
+			Empire:     empire,
 			Characters: cloneCharacters(characters),
 		})
 		if err == nil {
@@ -267,29 +275,33 @@ func issueLoginTicket(store loginticket.Store, login string, characters []logint
 	return 0, false
 }
 
-func loadOrCreateAccountCharacters(store accountstore.Store, login string) ([]loginticket.Character, bool) {
+func loadOrCreateAccount(store accountstore.Store, login string) (accountstore.Account, bool) {
 	if store == nil {
-		return cloneCharacters(stubCharacters()), true
+		characters := cloneCharacters(stubCharacters())
+		return accountstore.Account{Login: login, Empire: ticketEmpire(loginticket.Ticket{Characters: characters}), Characters: characters}, true
 	}
 	account, err := store.Load(login)
 	if err == nil {
-		return cloneCharacters(account.Characters), true
+		account.Characters = cloneCharacters(account.Characters)
+		return account, true
 	}
 	if !errors.Is(err, accountstore.ErrAccountNotFound) {
-		return nil, false
+		return accountstore.Account{}, false
 	}
 	characters := cloneCharacters(stubCharacters())
-	if err := store.Save(accountstore.Account{Login: login, Characters: characters}); err != nil {
-		return nil, false
+	account = accountstore.Account{Login: login, Empire: ticketEmpire(loginticket.Ticket{Characters: characters}), Characters: characters}
+	if err := store.Save(account); err != nil {
+		return accountstore.Account{}, false
 	}
-	return cloneCharacters(characters), true
+	account.Characters = cloneCharacters(account.Characters)
+	return account, true
 }
 
-func saveAccountCharacters(store accountstore.Store, login string, characters []loginticket.Character) bool {
+func saveAccountSnapshot(store accountstore.Store, login string, empire uint8, characters []loginticket.Character) bool {
 	if store == nil {
 		return true
 	}
-	return store.Save(accountstore.Account{Login: login, Characters: cloneCharacters(characters)}) == nil
+	return store.Save(accountstore.Account{Login: login, Empire: empire, Characters: cloneCharacters(characters)}) == nil
 }
 
 func cloneCharacters(characters []loginticket.Character) []loginticket.Character {
@@ -317,13 +329,15 @@ func randomLoginKey() (uint32, error) {
 }
 
 func ticketEmpire(ticket loginticket.Ticket) uint8 {
-	if len(ticket.Characters) == 0 {
-		return 2
+	if ticket.Empire != 0 {
+		return ticket.Empire
 	}
-	if ticket.Characters[0].Empire == 0 {
-		return 2
+	for _, character := range ticket.Characters {
+		if character.ID != 0 && character.Empire != 0 {
+			return character.Empire
+		}
 	}
-	return ticket.Characters[0].Empire
+	return 0
 }
 
 func ticketLoginSuccessPacket(ticket loginticket.Ticket, addr uint32, port uint16) loginproto.LoginSuccess4Packet {
@@ -424,6 +438,9 @@ func ticketPlayerCreateSuccessPacket(character loginticket.Character, index uint
 
 func createCharacterInTicket(ticket *loginticket.Ticket, packet worldproto.CharacterCreatePacket, empire uint8) (loginticket.Character, uint8, bool) {
 	if ticket == nil || packet.Index >= loginproto.PlayerCount {
+		return loginticket.Character{}, 0, false
+	}
+	if !isValidEmpire(empire) {
 		return loginticket.Character{}, 0, false
 	}
 	if !isValidCharacterName(packet.Name) || !isValidCreateRace(packet.RaceNum) || packet.Shape > 1 {
@@ -538,6 +555,24 @@ func nextCharacterVID(characters []loginticket.Character) uint32 {
 		return 0x01020304
 	}
 	return maxVID + 1
+}
+
+func isValidEmpire(empire uint8) bool {
+	switch empire {
+	case 1, 2, 3:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasAnyCharacters(characters []loginticket.Character) bool {
+	for _, character := range characters {
+		if character.ID != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func isValidCreateRace(race uint16) bool {

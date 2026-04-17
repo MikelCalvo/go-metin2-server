@@ -5,6 +5,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
@@ -13,15 +14,24 @@ var (
 	ErrInvalidPhase            = errors.New("world-entry flow is not in select/loading phase")
 	ErrUnexpectedClientPacket  = errors.New("unexpected client packet during world entry")
 	ErrCharacterSelectRejected = errors.New("character select rejected")
+	ErrEmpireSelectRejected    = errors.New("empire select rejected")
 )
+
+type EmpireSelectFunc func(empire uint8) EmpireResult
 
 type CreateCharacterFunc func(worldproto.CharacterCreatePacket) CreateResult
 
 type SelectCharacterFunc func(index uint8) Result
 
 type Config struct {
+	SelectEmpire    EmpireSelectFunc
 	CreateCharacter CreateCharacterFunc
 	SelectCharacter SelectCharacterFunc
+}
+
+type EmpireResult struct {
+	Accepted bool
+	Empire   uint8
 }
 
 type CreateResult struct {
@@ -38,11 +48,16 @@ type Result struct {
 
 type Flow struct {
 	machine         *session.StateMachine
+	selectEmpire    EmpireSelectFunc
 	createCharacter CreateCharacterFunc
 	selectCharacter SelectCharacterFunc
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
+	empireSelector := cfg.SelectEmpire
+	if empireSelector == nil {
+		empireSelector = func(uint8) EmpireResult { return EmpireResult{Accepted: false} }
+	}
 	creator := cfg.CreateCharacter
 	if creator == nil {
 		creator = func(worldproto.CharacterCreatePacket) CreateResult {
@@ -53,13 +68,23 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if selector == nil {
 		selector = func(uint8) Result { return Result{Accepted: false} }
 	}
-	return &Flow{machine: machine, createCharacter: creator, selectCharacter: selector}
+	return &Flow{machine: machine, selectEmpire: empireSelector, createCharacter: creator, selectCharacter: selector}
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 	switch f.machine.Current() {
 	case session.PhaseSelect:
 		switch in.Header {
+		case loginproto.HeaderEmpireSelect:
+			packet, err := loginproto.DecodeEmpireSelect(in)
+			if err != nil {
+				return nil, err
+			}
+			result := f.selectEmpire(packet.Empire)
+			if !result.Accepted {
+				return nil, ErrEmpireSelectRejected
+			}
+			return [][]byte{loginproto.EncodeEmpire(loginproto.EmpirePacket{Empire: result.Empire})}, nil
 		case worldproto.HeaderCharacterCreate:
 			packet, err := worldproto.DecodeCharacterCreate(in)
 			if err != nil {

@@ -447,3 +447,186 @@ func TestMovedCharacterPositionPersistsAcrossFreshAuthAndGameSessions(t *testing
 		t.Fatalf("expected persisted main character position (54321,65432), got (%d,%d)", mainCharacter.X, mainCharacter.Y)
 	}
 }
+
+func TestEmptyAccountRequiresEmpireSelectionBeforeCharacterCreate(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	if err := accountStore.Save(accountstore.Account{Login: StubLogin}); err != nil {
+		t.Fatalf("seed empty account: %v", err)
+	}
+	keys := []uint32{0x0badf00d, 0x0badf00e}
+	keyIndex := 0
+	authFactory := newAuthSessionFactoryWithAccountStore(ticketStore, accountStore, func() (uint32, error) {
+		key := keys[keyIndex]
+		keyIndex++
+		return key, nil
+	})
+	gameFactory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountStore)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	firstAuthFlow := authFactory()
+	if _, err := firstAuthFlow.Start(); err != nil {
+		t.Fatalf("unexpected first auth start error: %v", err)
+	}
+	_, err = firstAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first auth handshake error: %v", err)
+	}
+	login3Raw, err := authproto.EncodeLogin3(authproto.Login3Packet{Login: StubLogin, Password: StubPassword})
+	if err != nil {
+		t.Fatalf("encode login3: %v", err)
+	}
+	firstAuthOut, err := firstAuthFlow.HandleClientFrame(decodeSingleFrame(t, login3Raw))
+	if err != nil {
+		t.Fatalf("unexpected first auth error: %v", err)
+	}
+	firstAuthSuccess, err := authproto.DecodeAuthSuccess(decodeSingleFrame(t, firstAuthOut[0]))
+	if err != nil {
+		t.Fatalf("decode first auth success: %v", err)
+	}
+
+	firstGameFlow := gameFactory()
+	if _, err := firstGameFlow.Start(); err != nil {
+		t.Fatalf("unexpected first game start error: %v", err)
+	}
+	_, err = firstGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first game handshake error: %v", err)
+	}
+	firstLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: firstAuthSuccess.LoginKey})
+	if err != nil {
+		t.Fatalf("encode first login2: %v", err)
+	}
+	firstLoginOut, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, firstLogin2Raw))
+	if err != nil {
+		t.Fatalf("unexpected first game login error: %v", err)
+	}
+	firstEmpire, err := loginproto.DecodeEmpire(decodeSingleFrame(t, firstLoginOut[0]))
+	if err != nil {
+		t.Fatalf("decode first empire packet: %v", err)
+	}
+	if firstEmpire.Empire != 0 {
+		t.Fatalf("expected empty account empire 0 before selection, got %d", firstEmpire.Empire)
+	}
+	firstLoginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, firstLoginOut[2]))
+	if err != nil {
+		t.Fatalf("decode first login success: %v", err)
+	}
+	if firstLoginSuccess.Players[0].ID != 0 || firstLoginSuccess.Players[0].Name != "" {
+		t.Fatalf("expected empty first slot before empire selection, got %+v", firstLoginSuccess.Players[0])
+	}
+
+	createRaw, err := worldproto.EncodeCharacterCreate(worldproto.CharacterCreatePacket{Index: 0, Name: "EmpireWar", RaceNum: 0, Shape: 0})
+	if err != nil {
+		t.Fatalf("encode character create: %v", err)
+	}
+	createBeforeEmpireOut, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, createRaw))
+	if err != nil {
+		t.Fatalf("unexpected pre-empire create error: %v", err)
+	}
+	createFailure, err := worldproto.DecodePlayerCreateFailure(decodeSingleFrame(t, createBeforeEmpireOut[0]))
+	if err != nil {
+		t.Fatalf("decode pre-empire create failure: %v", err)
+	}
+	if createFailure.Type != 0 {
+		t.Fatalf("expected failure type 0 before empire selection, got %d", createFailure.Type)
+	}
+
+	empireSelectOut, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, loginproto.EncodeEmpireSelect(loginproto.EmpireSelectPacket{Empire: 3})))
+	if err != nil {
+		t.Fatalf("unexpected empire select error: %v", err)
+	}
+	selectedEmpire, err := loginproto.DecodeEmpire(decodeSingleFrame(t, empireSelectOut[0]))
+	if err != nil {
+		t.Fatalf("decode selected empire response: %v", err)
+	}
+	if selectedEmpire.Empire != 3 {
+		t.Fatalf("expected selected empire 3, got %d", selectedEmpire.Empire)
+	}
+
+	createAfterEmpireOut, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, createRaw))
+	if err != nil {
+		t.Fatalf("unexpected post-empire create error: %v", err)
+	}
+	created, err := worldproto.DecodePlayerCreateSuccess(decodeSingleFrame(t, createAfterEmpireOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-empire create success: %v", err)
+	}
+	if created.Player.Name != "EmpireWar" {
+		t.Fatalf("expected created character EmpireWar, got %q", created.Player.Name)
+	}
+
+	secondAuthFlow := authFactory()
+	if _, err := secondAuthFlow.Start(); err != nil {
+		t.Fatalf("unexpected second auth start error: %v", err)
+	}
+	_, err = secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected second auth handshake error: %v", err)
+	}
+	secondAuthOut, err := secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, login3Raw))
+	if err != nil {
+		t.Fatalf("unexpected second auth error: %v", err)
+	}
+	secondAuthSuccess, err := authproto.DecodeAuthSuccess(decodeSingleFrame(t, secondAuthOut[0]))
+	if err != nil {
+		t.Fatalf("decode second auth success: %v", err)
+	}
+
+	secondGameFlow := gameFactory()
+	if _, err := secondGameFlow.Start(); err != nil {
+		t.Fatalf("unexpected second game start error: %v", err)
+	}
+	_, err = secondGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected second game handshake error: %v", err)
+	}
+	secondLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: secondAuthSuccess.LoginKey})
+	if err != nil {
+		t.Fatalf("encode second login2: %v", err)
+	}
+	secondLoginOut, err := secondGameFlow.HandleClientFrame(decodeSingleFrame(t, secondLogin2Raw))
+	if err != nil {
+		t.Fatalf("unexpected second game login error: %v", err)
+	}
+	secondEmpire, err := loginproto.DecodeEmpire(decodeSingleFrame(t, secondLoginOut[0]))
+	if err != nil {
+		t.Fatalf("decode second empire packet: %v", err)
+	}
+	if secondEmpire.Empire != 3 {
+		t.Fatalf("expected persisted empire 3 after selection, got %d", secondEmpire.Empire)
+	}
+	secondLoginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, secondLoginOut[2]))
+	if err != nil {
+		t.Fatalf("decode second login success: %v", err)
+	}
+	if secondLoginSuccess.Players[0].Name != "EmpireWar" {
+		t.Fatalf("expected created character EmpireWar after relog, got %q", secondLoginSuccess.Players[0].Name)
+	}
+
+	selectOut, err := secondGameFlow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0})))
+	if err != nil {
+		t.Fatalf("unexpected created character select after relog: %v", err)
+	}
+	mainCharacter, err := worldproto.DecodeMainCharacter(decodeSingleFrame(t, selectOut[1]))
+	if err != nil {
+		t.Fatalf("decode main character after relog: %v", err)
+	}
+	if mainCharacter.Empire != 3 || mainCharacter.Name != "EmpireWar" {
+		t.Fatalf("expected persisted created character with empire 3 after relog, got %+v", mainCharacter)
+	}
+}

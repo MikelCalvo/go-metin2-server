@@ -93,6 +93,24 @@ func TestEncodeEmpireBuildsAServerFrame(t *testing.T) {
 	}
 }
 
+func TestEncodeEmpireSelectBuildsAClientFrame(t *testing.T) {
+	want := frame.Encode(HeaderEmpireSelect, []byte{3})
+	got := EncodeEmpireSelect(EmpireSelectPacket{Empire: 3})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected empire select frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeEmpireSelectReturnsExpectedValue(t *testing.T) {
+	packet, err := DecodeEmpireSelect(decodeSingleFrame(t, frame.Encode(HeaderEmpireSelect, []byte{3})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.Empire != 3 {
+		t.Fatalf("unexpected empire select value: got %d want %d", packet.Empire, 3)
+	}
+}
+
 func TestDecodeEmpireReturnsExpectedValue(t *testing.T) {
 	packet, err := DecodeEmpire(decodeSingleFrame(t, loadHexFixture(t, "empire-frame.hex")))
 	if err != nil {

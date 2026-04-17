@@ -19,7 +19,8 @@ var (
 )
 
 type Account struct {
-	Login      string                `json:"login"`
+	Login      string                  `json:"login"`
+	Empire     uint8                   `json:"empire"`
 	Characters []loginticket.Character `json:"characters"`
 }
 
