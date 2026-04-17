@@ -98,7 +98,7 @@ Payload layout:
 - `skill_group` — `uint8`
 
 Frame length:
-- `110` bytes total (`4 + 106`)
+- `118` bytes total (`4 + 114`)
 
 ### `PLAYER_POINTS`
 
