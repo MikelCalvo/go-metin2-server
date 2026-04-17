@@ -23,10 +23,13 @@ type CreateCharacterFunc func(worldproto.CharacterCreatePacket) CreateResult
 
 type SelectCharacterFunc func(index uint8) Result
 
+type EnterGameFunc func() EnterGameResult
+
 type Config struct {
 	SelectEmpire    EmpireSelectFunc
 	CreateCharacter CreateCharacterFunc
 	SelectCharacter SelectCharacterFunc
+	EnterGame       EnterGameFunc
 }
 
 type EmpireResult struct {
@@ -46,11 +49,16 @@ type Result struct {
 	PlayerPoints  worldproto.PlayerPointsPacket
 }
 
+type EnterGameResult struct {
+	Frames [][]byte
+}
+
 type Flow struct {
 	machine         *session.StateMachine
 	selectEmpire    EmpireSelectFunc
 	createCharacter CreateCharacterFunc
 	selectCharacter SelectCharacterFunc
+	enterGame       EnterGameFunc
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -68,7 +76,11 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if selector == nil {
 		selector = func(uint8) Result { return Result{Accepted: false} }
 	}
-	return &Flow{machine: machine, selectEmpire: empireSelector, createCharacter: creator, selectCharacter: selector}
+	enterGame := cfg.EnterGame
+	if enterGame == nil {
+		enterGame = func() EnterGameResult { return EnterGameResult{} }
+	}
+	return &Flow{machine: machine, selectEmpire: empireSelector, createCharacter: creator, selectCharacter: selector, enterGame: enterGame}
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
@@ -138,7 +150,11 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		if err := f.machine.Transition(session.PhaseGame); err != nil {
 			return nil, err
 		}
-		return [][]byte{phaseGame}, nil
+		result := f.enterGame()
+		out := make([][]byte, 0, 1+len(result.Frames))
+		out = append(out, phaseGame)
+		out = append(out, result.Frames...)
+		return out, nil
 	default:
 		return nil, ErrInvalidPhase
 	}

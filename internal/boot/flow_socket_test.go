@@ -322,3 +322,54 @@ func TestBootFlowMovesInGameOverTCP(t *testing.T) {
 		t.Fatalf("expected server phase %q after move, got %q", session.PhaseGame, got)
 	}
 }
+
+func TestBootFlowReturnsVisibleWorldBootstrapOverTCP(t *testing.T) {
+	server := startBootTestServer(t, testVisibleWorldConfig())
+	client := newBootTestClient(t, server.address())
+
+	_ = client.readFrame(t)
+	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	}))
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	client.writeFrame(t, login2Raw)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	client.writeFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	client.writeFrame(t, worldproto.EncodeEnterGame())
+
+	phaseGame := client.readFrame(t)
+	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected game phase encode error: %v", err)
+	}
+	if !bytes.Equal(phaseGame.Raw, wantPhaseGame) {
+		t.Fatalf("unexpected game phase bytes: got %x want %x", phaseGame.Raw, wantPhaseGame)
+	}
+	characterAdd := client.readFrame(t)
+	wantCharacterAdd := worldproto.EncodeCharacterAdd(sampleVisibleCharacterAddPacket())
+	if !bytes.Equal(characterAdd.Raw, wantCharacterAdd) {
+		t.Fatalf("unexpected character add bytes: got %x want %x", characterAdd.Raw, wantCharacterAdd)
+	}
+	characterInfo := client.readFrame(t)
+	wantCharacterInfo, err := worldproto.EncodeCharacterAdditionalInfo(sampleVisibleCharacterAdditionalInfoPacket())
+	if err != nil {
+		t.Fatalf("unexpected character additional info encode error: %v", err)
+	}
+	if !bytes.Equal(characterInfo.Raw, wantCharacterInfo) {
+		t.Fatalf("unexpected character additional info bytes: got %x want %x", characterInfo.Raw, wantCharacterInfo)
+	}
+	if got := server.currentPhase(); got != session.PhaseGame {
+		t.Fatalf("expected server phase %q after visible bootstrap, got %q", session.PhaseGame, got)
+	}
+}

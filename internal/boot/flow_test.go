@@ -334,6 +334,53 @@ func TestHandleClientFrameRoutesMoveInGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameReturnsVisibleWorldBootstrapAfterEnterGame(t *testing.T) {
+	flow := NewFlow(testVisibleWorldConfig())
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+
+	enterGameOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected game phase encode error: %v", err)
+	}
+	wantCharacterAdd := worldproto.EncodeCharacterAdd(sampleVisibleCharacterAddPacket())
+	wantCharacterInfo, err := worldproto.EncodeCharacterAdditionalInfo(sampleVisibleCharacterAdditionalInfoPacket())
+	if err != nil {
+		t.Fatalf("unexpected character additional info encode error: %v", err)
+	}
+	want := [][]byte{wantPhaseGame, wantCharacterAdd, wantCharacterInfo}
+	if len(enterGameOut) != len(want) {
+		t.Fatalf("expected %d entergame frames, got %d", len(want), len(enterGameOut))
+	}
+	for i := range want {
+		if !bytes.Equal(enterGameOut[i], want[i]) {
+			t.Fatalf("unexpected entergame frame %d: got %x want %x", i, enterGameOut[i], want[i])
+		}
+	}
+}
+
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 	t.Helper()
 
@@ -410,6 +457,16 @@ func testConfig() Config {
 			},
 		},
 	}
+}
+
+func testVisibleWorldConfig() Config {
+	cfg := testConfig()
+	cfg.WorldEntry.EnterGame = func() worldentry.EnterGameResult {
+		addRaw := worldproto.EncodeCharacterAdd(sampleVisibleCharacterAddPacket())
+		infoRaw, _ := worldproto.EncodeCharacterAdditionalInfo(sampleVisibleCharacterAdditionalInfoPacket())
+		return worldentry.EnterGameResult{Frames: [][]byte{addRaw, infoRaw}}
+	}
+	return cfg
 }
 
 func sampleLoginSuccessPacket() loginproto.LoginSuccess4Packet {
@@ -551,6 +608,36 @@ func sampleMovePacket() movep.MovePacket {
 
 func sampleMoveAckPacket() movep.MoveAckPacket {
 	return movep.MoveAckPacket{Func: 1, Arg: 0, Rot: 12, VID: 0x01020304, X: 12345, Y: 23456, Time: 0x11121314, Duration: 250}
+}
+
+func sampleVisibleCharacterAddPacket() worldproto.CharacterAddPacket {
+	return worldproto.CharacterAddPacket{
+		VID:         0x01020304,
+		Angle:       90.5,
+		X:           1000,
+		Y:           2000,
+		Z:           0,
+		Type:        6,
+		RaceNum:     2,
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   2,
+		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
+	}
+}
+
+func sampleVisibleCharacterAdditionalInfoPacket() worldproto.CharacterAdditionalInfoPacket {
+	return worldproto.CharacterAdditionalInfoPacket{
+		VID:       0x01020304,
+		Name:      "Mkmk",
+		Parts:     [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 201},
+		Empire:    2,
+		GuildID:   10,
+		Level:     15,
+		Alignment: 0,
+		PKMode:    0,
+		MountVnum: 0,
+	}
 }
 
 func sequentialBytes32(start byte) [32]byte {

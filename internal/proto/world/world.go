@@ -6,30 +6,36 @@ import (
 	"errors"
 	"math"
 
-	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 )
 
 const (
-	HeaderCharacterCreate      uint16 = 0x0201
-	HeaderCharacterSelect      uint16 = 0x0203
-	HeaderEnterGame            uint16 = 0x0204
-	HeaderPlayerCreateSuccess  uint16 = 0x020C
-	HeaderPlayerCreateFailure  uint16 = 0x020D
-	HeaderMainCharacter        uint16 = 0x0210
-	HeaderPlayerPoints         uint16 = 0x0214
+	HeaderCharacterCreate         uint16 = 0x0201
+	HeaderCharacterSelect         uint16 = 0x0203
+	HeaderEnterGame               uint16 = 0x0204
+	HeaderCharacterAdd            uint16 = 0x0205
+	HeaderCharacterAdditionalInfo uint16 = 0x0207
+	HeaderPlayerCreateSuccess     uint16 = 0x020C
+	HeaderPlayerCreateFailure     uint16 = 0x020D
+	HeaderMainCharacter           uint16 = 0x0210
+	HeaderPlayerPoints            uint16 = 0x0214
 
-	CharacterNameFieldSize = 65
-	BGMNameFieldSize       = 25
-	PointCount             = 255
+	CharacterNameFieldSize      = 65
+	BGMNameFieldSize            = 25
+	PointCount                  = 255
+	CharacterEquipmentPartCount = 4
+	AffectFlagCount             = 2
 
-	characterCreatePayloadSize     = 1 + CharacterNameFieldSize + 2 + 1 + 4
-	characterSelectPayloadSize     = 1
-	playerCreateSuccessPayloadSize = 1 + simplePlayerPayloadSize
-	playerCreateFailurePayloadSize = 1
-	mainCharacterPayloadSize       = 114
-	playerPointsPayloadSize        = PointCount * 4
-	simplePlayerPayloadSize        = 103
+	characterCreatePayloadSize         = 1 + CharacterNameFieldSize + 2 + 1 + 4
+	characterSelectPayloadSize         = 1
+	characterAddPayloadSize            = 34
+	characterAdditionalInfoPayloadSize = 93
+	playerCreateSuccessPayloadSize     = 1 + simplePlayerPayloadSize
+	playerCreateFailurePayloadSize     = 1
+	mainCharacterPayloadSize           = 114
+	playerPointsPayloadSize            = PointCount * 4
+	simplePlayerPayloadSize            = 103
 )
 
 var (
@@ -60,6 +66,32 @@ type PlayerCreateSuccessPacket struct {
 
 type PlayerCreateFailurePacket struct {
 	Type uint8
+}
+
+type CharacterAddPacket struct {
+	VID         uint32
+	Angle       float32
+	X           int32
+	Y           int32
+	Z           int32
+	Type        uint8
+	RaceNum     uint16
+	MovingSpeed uint8
+	AttackSpeed uint8
+	StateFlag   uint8
+	AffectFlags [AffectFlagCount]uint32
+}
+
+type CharacterAdditionalInfoPacket struct {
+	VID       uint32
+	Name      string
+	Parts     [CharacterEquipmentPartCount]uint16
+	Empire    uint8
+	GuildID   uint32
+	Level     uint32
+	Alignment int16
+	PKMode    uint8
+	MountVnum uint32
 }
 
 type MainCharacterPacket struct {
@@ -189,6 +221,130 @@ func DecodePlayerCreateFailure(f frame.Frame) (PlayerCreateFailurePacket, error)
 		return PlayerCreateFailurePacket{}, ErrInvalidPayload
 	}
 	return PlayerCreateFailurePacket{Type: f.Payload[0]}, nil
+}
+
+func EncodeCharacterAdd(packet CharacterAddPacket) []byte {
+	payload := make([]byte, characterAddPayloadSize)
+	offset := 0
+	binary.LittleEndian.PutUint32(payload[offset:], packet.VID)
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], math.Float32bits(packet.Angle))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.X))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.Y))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.Z))
+	offset += 4
+	payload[offset] = packet.Type
+	offset++
+	binary.LittleEndian.PutUint16(payload[offset:], packet.RaceNum)
+	offset += 2
+	payload[offset] = packet.MovingSpeed
+	offset++
+	payload[offset] = packet.AttackSpeed
+	offset++
+	payload[offset] = packet.StateFlag
+	offset++
+	for _, affect := range packet.AffectFlags {
+		binary.LittleEndian.PutUint32(payload[offset:], affect)
+		offset += 4
+	}
+	return frame.Encode(HeaderCharacterAdd, payload)
+}
+
+func DecodeCharacterAdd(f frame.Frame) (CharacterAddPacket, error) {
+	if f.Header != HeaderCharacterAdd {
+		return CharacterAddPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != characterAddPayloadSize {
+		return CharacterAddPacket{}, ErrInvalidPayload
+	}
+	var packet CharacterAddPacket
+	offset := 0
+	packet.VID = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	packet.Angle = math.Float32frombits(binary.LittleEndian.Uint32(f.Payload[offset:]))
+	offset += 4
+	packet.X = int32(binary.LittleEndian.Uint32(f.Payload[offset:]))
+	offset += 4
+	packet.Y = int32(binary.LittleEndian.Uint32(f.Payload[offset:]))
+	offset += 4
+	packet.Z = int32(binary.LittleEndian.Uint32(f.Payload[offset:]))
+	offset += 4
+	packet.Type = f.Payload[offset]
+	offset++
+	packet.RaceNum = binary.LittleEndian.Uint16(f.Payload[offset:])
+	offset += 2
+	packet.MovingSpeed = f.Payload[offset]
+	offset++
+	packet.AttackSpeed = f.Payload[offset]
+	offset++
+	packet.StateFlag = f.Payload[offset]
+	offset++
+	for i := range packet.AffectFlags {
+		packet.AffectFlags[i] = binary.LittleEndian.Uint32(f.Payload[offset:])
+		offset += 4
+	}
+	return packet, nil
+}
+
+func EncodeCharacterAdditionalInfo(packet CharacterAdditionalInfoPacket) ([]byte, error) {
+	payload := make([]byte, characterAdditionalInfoPayloadSize)
+	offset := 0
+	binary.LittleEndian.PutUint32(payload[offset:], packet.VID)
+	offset += 4
+	if err := putFixedString(payload[offset:offset+CharacterNameFieldSize], packet.Name); err != nil {
+		return nil, err
+	}
+	offset += CharacterNameFieldSize
+	for _, part := range packet.Parts {
+		binary.LittleEndian.PutUint16(payload[offset:], part)
+		offset += 2
+	}
+	payload[offset] = packet.Empire
+	offset++
+	binary.LittleEndian.PutUint32(payload[offset:], packet.GuildID)
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], packet.Level)
+	offset += 4
+	binary.LittleEndian.PutUint16(payload[offset:], uint16(packet.Alignment))
+	offset += 2
+	payload[offset] = packet.PKMode
+	offset++
+	binary.LittleEndian.PutUint32(payload[offset:], packet.MountVnum)
+	return frame.Encode(HeaderCharacterAdditionalInfo, payload), nil
+}
+
+func DecodeCharacterAdditionalInfo(f frame.Frame) (CharacterAdditionalInfoPacket, error) {
+	if f.Header != HeaderCharacterAdditionalInfo {
+		return CharacterAdditionalInfoPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != characterAdditionalInfoPayloadSize {
+		return CharacterAdditionalInfoPacket{}, ErrInvalidPayload
+	}
+	var packet CharacterAdditionalInfoPacket
+	offset := 0
+	packet.VID = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	packet.Name = parseFixedString(f.Payload[offset : offset+CharacterNameFieldSize])
+	offset += CharacterNameFieldSize
+	for i := range packet.Parts {
+		packet.Parts[i] = binary.LittleEndian.Uint16(f.Payload[offset:])
+		offset += 2
+	}
+	packet.Empire = f.Payload[offset]
+	offset++
+	packet.GuildID = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	packet.Level = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	packet.Alignment = int16(binary.LittleEndian.Uint16(f.Payload[offset:]))
+	offset += 2
+	packet.PKMode = f.Payload[offset]
+	offset++
+	packet.MountVnum = binary.LittleEndian.Uint32(f.Payload[offset:])
+	return packet, nil
 }
 
 func EncodeMainCharacter(packet MainCharacterPacket) ([]byte, error) {

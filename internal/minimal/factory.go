@@ -189,6 +189,23 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						PlayerPoints:  ticketPlayerPointsPacket(selected),
 					}
 				},
+				EnterGame: func() worldentry.EnterGameResult {
+					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+						return worldentry.EnterGameResult{}
+					}
+					selected := sessionTicket.Characters[selectedIndex]
+					if selected.ID == 0 {
+						return worldentry.EnterGameResult{}
+					}
+					infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(ticketCharacterAdditionalInfoPacket(selected))
+					if err != nil {
+						return worldentry.EnterGameResult{}
+					}
+					return worldentry.EnterGameResult{Frames: [][]byte{
+						worldproto.EncodeCharacterAdd(ticketCharacterAddPacket(selected)),
+						infoRaw,
+					}}
+				},
 			},
 			Game: gameflow.Config{
 				HandleMove: func(packet movep.MovePacket) gameflow.Result {
@@ -395,6 +412,36 @@ func ticketMainCharacterPacket(character loginticket.Character) worldproto.MainC
 
 func ticketPlayerPointsPacket(character loginticket.Character) worldproto.PlayerPointsPacket {
 	return worldproto.PlayerPointsPacket{Points: character.Points}
+}
+
+func ticketCharacterAddPacket(character loginticket.Character) worldproto.CharacterAddPacket {
+	return worldproto.CharacterAddPacket{
+		VID:         character.VID,
+		Angle:       90.5,
+		X:           character.X,
+		Y:           character.Y,
+		Z:           character.Z,
+		Type:        6,
+		RaceNum:     character.RaceNum,
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   2,
+		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
+	}
+}
+
+func ticketCharacterAdditionalInfoPacket(character loginticket.Character) worldproto.CharacterAdditionalInfoPacket {
+	return worldproto.CharacterAdditionalInfoPacket{
+		VID:       character.VID,
+		Name:      character.Name,
+		Parts:     [worldproto.CharacterEquipmentPartCount]uint16{character.MainPart, 0, 0, character.HairPart},
+		Empire:    character.Empire,
+		GuildID:   character.GuildID,
+		Level:     uint32(character.Level),
+		Alignment: 0,
+		PKMode:    0,
+		MountVnum: 0,
+	}
 }
 
 func ticketMoveAckPacket(character loginticket.Character, packet movep.MovePacket) movep.MoveAckPacket {

@@ -174,6 +174,42 @@ func TestHandleClientFrameReturnsToGameWhenEnterGameArrivesInLoading(t *testing.
 	}
 }
 
+func TestHandleClientFrameReturnsVisibleWorldBootstrapAfterEnterGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseLoading)
+	addRaw := worldproto.EncodeCharacterAdd(sampleCharacterAdd())
+	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(sampleCharacterAdditionalInfo())
+	if err != nil {
+		t.Fatalf("encode additional info: %v", err)
+	}
+	flow := NewFlow(machine, Config{
+		EnterGame: func() EnterGameResult {
+			return EnterGameResult{Frames: [][]byte{addRaw, infoRaw}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	wantPhase, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected phase encode error: %v", err)
+	}
+	want := [][]byte{wantPhase, addRaw, infoRaw}
+	if len(out) != len(want) {
+		t.Fatalf("expected %d outgoing frames, got %d", len(want), len(out))
+	}
+	for i := range want {
+		if !bytes.Equal(out[i], want[i]) {
+			t.Fatalf("unexpected outgoing frame %d: got %x want %x", i, out[i], want[i])
+		}
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameKeepsTheSessionInSelectWhenCharacterSelectionFails(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseSelect)
 	flow := NewFlow(machine, Config{
@@ -273,5 +309,35 @@ func sampleCreatedPlayer() loginproto.SimplePlayer {
 		Addr:        0x0100007f,
 		Port:        13000,
 		SkillGroup:  0,
+	}
+}
+
+func sampleCharacterAdd() worldproto.CharacterAddPacket {
+	return worldproto.CharacterAddPacket{
+		VID:         0x01020304,
+		Angle:       90.5,
+		X:           1000,
+		Y:           2000,
+		Z:           0,
+		Type:        6,
+		RaceNum:     2,
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   2,
+		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
+	}
+}
+
+func sampleCharacterAdditionalInfo() worldproto.CharacterAdditionalInfoPacket {
+	return worldproto.CharacterAdditionalInfoPacket{
+		VID:       0x01020304,
+		Name:      "Mkmk",
+		Parts:     [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 201},
+		Empire:    2,
+		GuildID:   10,
+		Level:     15,
+		Alignment: 0,
+		PKMode:    0,
+		MountVnum: 0,
 	}
 }

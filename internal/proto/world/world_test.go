@@ -5,13 +5,14 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 )
 
 func loadHexFixture(t *testing.T, name string) []byte {
@@ -100,6 +101,47 @@ func TestEncodeEnterGameBuildsAHeaderOnlyClientFrame(t *testing.T) {
 func TestDecodeEnterGameAcceptsAHeaderOnlyClientFrame(t *testing.T) {
 	if err := DecodeEnterGame(decodeSingleFrame(t, loadHexFixture(t, "entergame-frame.hex"))); err != nil {
 		t.Fatalf("unexpected decode error: %v", err)
+	}
+}
+
+func TestEncodeCharacterAddBuildsAServerFrame(t *testing.T) {
+	packet := sampleCharacterAddPacket()
+	want := expectedCharacterAddFrame(packet)
+	got := EncodeCharacterAdd(packet)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected character add frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeCharacterAddReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeCharacterAdd(decodeSingleFrame(t, expectedCharacterAddFrame(sampleCharacterAddPacket())))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != sampleCharacterAddPacket() {
+		t.Fatalf("unexpected character add packet: %+v", packet)
+	}
+}
+
+func TestEncodeCharacterAdditionalInfoBuildsAServerFrame(t *testing.T) {
+	packet := sampleCharacterAdditionalInfoPacket()
+	want := expectedCharacterAdditionalInfoFrame(packet)
+	got, err := EncodeCharacterAdditionalInfo(packet)
+	if err != nil {
+		t.Fatalf("unexpected encode error: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected character additional info frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeCharacterAdditionalInfoReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeCharacterAdditionalInfo(decodeSingleFrame(t, expectedCharacterAdditionalInfoFrame(sampleCharacterAdditionalInfoPacket())))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != sampleCharacterAdditionalInfoPacket() {
+		t.Fatalf("unexpected character additional info packet: %+v", packet)
 	}
 }
 
@@ -219,6 +261,20 @@ func TestDecodeCharacterSelectRejectsUnexpectedHeader(t *testing.T) {
 	}
 }
 
+func TestDecodeCharacterAddRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeCharacterAdd(frame.Frame{Header: HeaderCharacterAdditionalInfo, Length: 97, Payload: make([]byte, characterAdditionalInfoPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeCharacterAdditionalInfoRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeCharacterAdditionalInfo(frame.Frame{Header: HeaderCharacterAdditionalInfo, Length: 96, Payload: make([]byte, characterAdditionalInfoPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 	t.Helper()
 	decoder := frame.NewDecoder(4096)
@@ -248,6 +304,61 @@ func expectedCharacterCreateFrame(packet CharacterCreatePacket) []byte {
 	offset++
 	payload[offset] = packet.Dex
 	return frame.Encode(HeaderCharacterCreate, payload)
+}
+
+func expectedCharacterAddFrame(packet CharacterAddPacket) []byte {
+	payload := make([]byte, characterAddPayloadSize)
+	offset := 0
+	binary.LittleEndian.PutUint32(payload[offset:], packet.VID)
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], math.Float32bits(packet.Angle))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.X))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.Y))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.Z))
+	offset += 4
+	payload[offset] = packet.Type
+	offset++
+	binary.LittleEndian.PutUint16(payload[offset:], packet.RaceNum)
+	offset += 2
+	payload[offset] = packet.MovingSpeed
+	offset++
+	payload[offset] = packet.AttackSpeed
+	offset++
+	payload[offset] = packet.StateFlag
+	offset++
+	for _, affect := range packet.AffectFlags {
+		binary.LittleEndian.PutUint32(payload[offset:], affect)
+		offset += 4
+	}
+	return frame.Encode(HeaderCharacterAdd, payload)
+}
+
+func expectedCharacterAdditionalInfoFrame(packet CharacterAdditionalInfoPacket) []byte {
+	payload := make([]byte, characterAdditionalInfoPayloadSize)
+	offset := 0
+	binary.LittleEndian.PutUint32(payload[offset:], packet.VID)
+	offset += 4
+	copy(payload[offset:offset+CharacterNameFieldSize], packet.Name)
+	offset += CharacterNameFieldSize
+	for _, part := range packet.Parts {
+		binary.LittleEndian.PutUint16(payload[offset:], part)
+		offset += 2
+	}
+	payload[offset] = packet.Empire
+	offset++
+	binary.LittleEndian.PutUint32(payload[offset:], packet.GuildID)
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], packet.Level)
+	offset += 4
+	binary.LittleEndian.PutUint16(payload[offset:], uint16(packet.Alignment))
+	offset += 2
+	payload[offset] = packet.PKMode
+	offset++
+	binary.LittleEndian.PutUint32(payload[offset:], packet.MountVnum)
+	return frame.Encode(HeaderCharacterAdditionalInfo, payload)
 }
 
 func expectedPlayerCreateSuccessFrame(packet PlayerCreateSuccessPacket) []byte {
@@ -318,6 +429,36 @@ func sampleCreatedPlayer() loginproto.SimplePlayer {
 		Addr:        0x0100007f,
 		Port:        13000,
 		SkillGroup:  0,
+	}
+}
+
+func sampleCharacterAddPacket() CharacterAddPacket {
+	return CharacterAddPacket{
+		VID:         0x01020304,
+		Angle:       90.5,
+		X:           1000,
+		Y:           2000,
+		Z:           0,
+		Type:        6,
+		RaceNum:     2,
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   2,
+		AffectFlags: [AffectFlagCount]uint32{0x11111111, 0x22222222},
+	}
+}
+
+func sampleCharacterAdditionalInfoPacket() CharacterAdditionalInfoPacket {
+	return CharacterAdditionalInfoPacket{
+		VID:       0x01020304,
+		Name:      "Mkmk",
+		Parts:     [CharacterEquipmentPartCount]uint16{101, 0, 0, 201},
+		Empire:    2,
+		GuildID:   10,
+		Level:     15,
+		Alignment: 0,
+		PKMode:    0,
+		MountVnum: 0,
 	}
 }
 

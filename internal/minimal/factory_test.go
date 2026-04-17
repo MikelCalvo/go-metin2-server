@@ -144,7 +144,7 @@ func TestNewGameSessionFactoryAdvertisesConfiguredPublicAddrAndPort(t *testing.T
 
 func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: stubCharacters()}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
 	}
 
@@ -200,8 +200,8 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected entergame error: %v", err)
 	}
-	if len(enterGameOut) != 1 {
-		t.Fatalf("expected 1 game frame, got %d", len(enterGameOut))
+	if len(enterGameOut) != 3 {
+		t.Fatalf("expected 3 game bootstrap frames, got %d", len(enterGameOut))
 	}
 	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
 	if err != nil {
@@ -210,11 +210,25 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	if !bytes.Equal(enterGameOut[0], wantPhaseGame) {
 		t.Fatalf("unexpected game phase frame: got %x want %x", enterGameOut[0], wantPhaseGame)
 	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, enterGameOut[1]))
+	if err != nil {
+		t.Fatalf("decode character add: %v", err)
+	}
+	if added.VID != 0x01020305 || added.RaceNum != 3 || added.Type != 6 || added.X != 1200 || added.Y != 2100 {
+		t.Fatalf("unexpected character add packet: %+v", added)
+	}
+	info, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, enterGameOut[2]))
+	if err != nil {
+		t.Fatalf("decode character additional info: %v", err)
+	}
+	if info.VID != 0x01020305 || info.Name != "MkmkSura" || info.Empire != 2 || info.Parts[0] != 102 || info.Parts[3] != 202 || info.Level != 12 {
+		t.Fatalf("unexpected character additional info packet: %+v", info)
+	}
 }
 
 func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: stubCharacters()}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
 	}
 
@@ -271,6 +285,69 @@ func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	}
 	if mainCharacter.Name != "FreshSura" || mainCharacter.RaceNum != 2 {
 		t.Fatalf("unexpected created main character: %+v", mainCharacter)
+	}
+}
+
+func TestNewGameSessionFactoryReturnsVisibleWorldBootstrapForCreatedCharacter(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: stubCharacters()}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	createRaw, err := worldproto.EncodeCharacterCreate(worldproto.CharacterCreatePacket{Index: 2, Name: "FreshSura", RaceNum: 2, Shape: 1})
+	if err != nil {
+		t.Fatalf("encode character create: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, createRaw)); err != nil {
+		t.Fatalf("unexpected character create error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 2}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+
+	enterGameOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	if len(enterGameOut) != 3 {
+		t.Fatalf("expected 3 game bootstrap frames, got %d", len(enterGameOut))
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, enterGameOut[1]))
+	if err != nil {
+		t.Fatalf("decode character add: %v", err)
+	}
+	if added.VID != 0x01020306 || added.RaceNum != 2 || added.Type != 6 || added.X != 1200 || added.Y != 2200 {
+		t.Fatalf("unexpected created character add packet: %+v", added)
+	}
+	info, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, enterGameOut[2]))
+	if err != nil {
+		t.Fatalf("decode character additional info: %v", err)
+	}
+	if info.VID != 0x01020306 || info.Name != "FreshSura" || info.Empire != 2 || info.Parts[0] != 1 || info.Parts[3] != 0 || info.Level != 1 {
+		t.Fatalf("unexpected created character additional info packet: %+v", info)
 	}
 }
 
