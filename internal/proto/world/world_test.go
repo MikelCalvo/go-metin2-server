@@ -2,6 +2,7 @@ package world
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 )
 
@@ -47,6 +49,46 @@ func TestDecodeCharacterSelectReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeCharacterCreateBuildsAClientFrame(t *testing.T) {
+	packet := CharacterCreatePacket{
+		Index:   2,
+		Name:    "FreshSura",
+		RaceNum: 2,
+		Shape:   1,
+		Con:     0,
+		Int:     0,
+		Str:     0,
+		Dex:     0,
+	}
+	want := expectedCharacterCreateFrame(packet)
+	got, err := EncodeCharacterCreate(packet)
+	if err != nil {
+		t.Fatalf("unexpected encode error: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected character create frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeCharacterCreateReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeCharacterCreate(decodeSingleFrame(t, expectedCharacterCreateFrame(CharacterCreatePacket{
+		Index:   2,
+		Name:    "FreshSura",
+		RaceNum: 2,
+		Shape:   1,
+		Con:     0,
+		Int:     0,
+		Str:     0,
+		Dex:     0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.Index != 2 || packet.Name != "FreshSura" || packet.RaceNum != 2 || packet.Shape != 1 {
+		t.Fatalf("unexpected create packet: %+v", packet)
+	}
+}
+
 func TestEncodeEnterGameBuildsAHeaderOnlyClientFrame(t *testing.T) {
 	want := loadHexFixture(t, "entergame-frame.hex")
 	got := EncodeEnterGame()
@@ -58,6 +100,52 @@ func TestEncodeEnterGameBuildsAHeaderOnlyClientFrame(t *testing.T) {
 func TestDecodeEnterGameAcceptsAHeaderOnlyClientFrame(t *testing.T) {
 	if err := DecodeEnterGame(decodeSingleFrame(t, loadHexFixture(t, "entergame-frame.hex"))); err != nil {
 		t.Fatalf("unexpected decode error: %v", err)
+	}
+}
+
+func TestEncodePlayerCreateSuccessBuildsAServerFrame(t *testing.T) {
+	packet := PlayerCreateSuccessPacket{Index: 2, Player: sampleCreatedPlayer()}
+	want := expectedPlayerCreateSuccessFrame(packet)
+	got, err := EncodePlayerCreateSuccess(packet)
+	if err != nil {
+		t.Fatalf("unexpected encode error: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected player create success frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodePlayerCreateSuccessReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodePlayerCreateSuccess(decodeSingleFrame(t, expectedPlayerCreateSuccessFrame(PlayerCreateSuccessPacket{
+		Index:  2,
+		Player: sampleCreatedPlayer(),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.Index != 2 {
+		t.Fatalf("unexpected slot index: got %d want %d", packet.Index, 2)
+	}
+	if packet.Player.Name != "FreshSura" || packet.Player.Job != 2 || packet.Player.Level != 1 {
+		t.Fatalf("unexpected created player summary: %+v", packet.Player)
+	}
+}
+
+func TestEncodePlayerCreateFailureBuildsAServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderPlayerCreateFailure, []byte{1})
+	got := EncodePlayerCreateFailure(PlayerCreateFailurePacket{Type: 1})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected player create failure frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodePlayerCreateFailureReturnsExpectedType(t *testing.T) {
+	packet, err := DecodePlayerCreateFailure(decodeSingleFrame(t, frame.Encode(HeaderPlayerCreateFailure, []byte{1})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.Type != 1 {
+		t.Fatalf("unexpected failure type: got %d want %d", packet.Type, 1)
 	}
 }
 
@@ -142,6 +230,95 @@ func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 		t.Fatalf("expected 1 frame, got %d", len(frames))
 	}
 	return frames[0]
+}
+
+func expectedCharacterCreateFrame(packet CharacterCreatePacket) []byte {
+	payload := make([]byte, 1+CharacterNameFieldSize+2+1+4)
+	payload[0] = packet.Index
+	copy(payload[1:1+CharacterNameFieldSize], packet.Name)
+	binary.LittleEndian.PutUint16(payload[1+CharacterNameFieldSize:], packet.RaceNum)
+	offset := 1 + CharacterNameFieldSize + 2
+	payload[offset] = packet.Shape
+	offset++
+	payload[offset] = packet.Con
+	offset++
+	payload[offset] = packet.Int
+	offset++
+	payload[offset] = packet.Str
+	offset++
+	payload[offset] = packet.Dex
+	return frame.Encode(HeaderCharacterCreate, payload)
+}
+
+func expectedPlayerCreateSuccessFrame(packet PlayerCreateSuccessPacket) []byte {
+	payload := make([]byte, 1+103)
+	payload[0] = packet.Index
+	copy(payload[1:], expectedSimplePlayerPayload(packet.Player))
+	return frame.Encode(HeaderPlayerCreateSuccess, payload)
+}
+
+func expectedSimplePlayerPayload(player loginproto.SimplePlayer) []byte {
+	payload := make([]byte, 103)
+	offset := 0
+	binary.LittleEndian.PutUint32(payload[offset:], player.ID)
+	offset += 4
+	copy(payload[offset:offset+loginproto.CharacterNameFieldSize], player.Name)
+	offset += loginproto.CharacterNameFieldSize
+	payload[offset] = player.Job
+	offset++
+	payload[offset] = player.Level
+	offset++
+	binary.LittleEndian.PutUint32(payload[offset:], player.PlayMinutes)
+	offset += 4
+	payload[offset] = player.ST
+	offset++
+	payload[offset] = player.HT
+	offset++
+	payload[offset] = player.DX
+	offset++
+	payload[offset] = player.IQ
+	offset++
+	binary.LittleEndian.PutUint16(payload[offset:], player.MainPart)
+	offset += 2
+	payload[offset] = player.ChangeName
+	offset++
+	binary.LittleEndian.PutUint16(payload[offset:], player.HairPart)
+	offset += 2
+	copy(payload[offset:offset+4], player.Dummy[:])
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(player.X))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(player.Y))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], player.Addr)
+	offset += 4
+	binary.LittleEndian.PutUint16(payload[offset:], player.Port)
+	offset += 2
+	payload[offset] = player.SkillGroup
+	return payload
+}
+
+func sampleCreatedPlayer() loginproto.SimplePlayer {
+	return loginproto.SimplePlayer{
+		ID:          3,
+		Name:        "FreshSura",
+		Job:         2,
+		Level:       1,
+		PlayMinutes: 0,
+		ST:          5,
+		HT:          3,
+		DX:          3,
+		IQ:          5,
+		MainPart:    1,
+		ChangeName:  0,
+		HairPart:    0,
+		Dummy:       [4]byte{},
+		X:           1500,
+		Y:           2500,
+		Addr:        0x0100007f,
+		Port:        13000,
+		SkillGroup:  0,
+	}
 }
 
 func samplePoints() [PointCount]int32 {
