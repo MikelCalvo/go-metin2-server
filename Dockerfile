@@ -1,11 +1,10 @@
 # syntax=docker/dockerfile:1.7
 
-FROM golang:1.26-bookworm AS build
+FROM docker.io/library/golang:1.26-bookworm AS build
 WORKDIR /src
 
 COPY go.mod ./
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
+RUN go mod download
 
 COPY . .
 
@@ -13,8 +12,7 @@ ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 ENV CGO_ENABLED=0
 
-RUN --mount=type=cache,target=/root/.cache/go-build \
-    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true -o /out/authd ./cmd/authd && \
+RUN GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true -o /out/authd ./cmd/authd && \
     GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath=false -buildvcs=true -o /out/gamed ./cmd/gamed
 
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
