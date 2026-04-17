@@ -25,12 +25,13 @@ Status values:
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `LOGIN2` | client -> server | `0x0101` | login | documented | minimal login-by-key request frozen by tests |
-| `LOGIN3` | client -> server | `0x0102` | login | candidate | keep under review until captures lock the exact path |
+| `LOGIN3` | client -> server | `0x0102` | auth | planned | minimal auth-server credential request for real-client bring-up |
 | `LOGIN_SECURE` | client -> server | `0x0103` | login | candidate | not part of the first implementation unless required |
 | `LOGIN_SUCCESS3` | server -> client | `0x0104` | login/select | candidate | possible older character-list success shape |
 | `LOGIN_SUCCESS4` | server -> client | `0x0105` | login/select | documented | minimal selection-surface success path frozen by tests |
-| `LOGIN_FAILURE` | server -> client | `0x0106` | login | documented | negative login path frozen by tests |
+| `LOGIN_FAILURE` | server -> client | `0x0106` | auth/login | documented | negative auth/login path frozen by tests |
 | `LOGIN_KEY` | server -> client | `0x0107` | login | candidate | not part of the current minimal login-by-key happy path |
+| `AUTH_SUCCESS` | server -> client | `0x0108` | auth | planned | minimal authd success path with issued login key |
 | `EMPIRE` | server -> client | `0x0109` | login/select | documented | selection surface empire state frozen by tests |
 | `EMPIRE` | client -> server | `0x010A` | select | planned | known selection request path, not yet frozen by tests |
 

@@ -100,7 +100,9 @@ Legend:
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
 - `spec/protocol/control-handshake.md`
+- `spec/protocol/auth-login.md`
 - `spec/protocol/login-selection.md`
+- `spec/protocol/select-world-entry.md`
 - `spec/protocol/boot-path.md`
 - `spec/protocol/packet-matrix.md`
 
