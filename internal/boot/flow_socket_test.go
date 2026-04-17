@@ -6,6 +6,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
@@ -275,5 +276,49 @@ func TestBootFlowCreatesCharacterAndEntersGameOverTCP(t *testing.T) {
 	}
 	if got := server.currentPhase(); got != session.PhaseGame {
 		t.Fatalf("expected server phase %q, got %q", session.PhaseGame, got)
+	}
+}
+
+func TestBootFlowMovesInGameOverTCP(t *testing.T) {
+	server := startBootTestServer(t, testConfig())
+	client := newBootTestClient(t, server.address())
+
+	_ = client.readFrame(t)
+	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	}))
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	client.writeFrame(t, login2Raw)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	client.writeFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	client.writeFrame(t, worldproto.EncodeEnterGame())
+	phaseGame := client.readFrame(t)
+	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected game phase encode error: %v", err)
+	}
+	if !bytes.Equal(phaseGame.Raw, wantPhaseGame) {
+		t.Fatalf("unexpected game phase bytes: got %x want %x", phaseGame.Raw, wantPhaseGame)
+	}
+
+	client.writeFrame(t, movep.EncodeMove(sampleMovePacket()))
+	moveAck := client.readFrame(t)
+	wantMoveAck := movep.EncodeMoveAck(sampleMoveAckPacket())
+	if !bytes.Equal(moveAck.Raw, wantMoveAck) {
+		t.Fatalf("unexpected move ack bytes: got %x want %x", moveAck.Raw, wantMoveAck)
+	}
+	if got := server.currentPhase(); got != session.PhaseGame {
+		t.Fatalf("expected server phase %q after move, got %q", session.PhaseGame, got)
 	}
 }

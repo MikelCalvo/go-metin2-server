@@ -5,11 +5,13 @@ import (
 	"errors"
 	"testing"
 
+	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
@@ -287,8 +289,48 @@ func TestHandleClientFrameRoutesCharacterCreateThenSelectToGame(t *testing.T) {
 	}
 	for i := range wantSelect {
 		if !bytes.Equal(selectOut[i], wantSelect[i]) {
-				 t.Fatalf("unexpected created select frame %d: got %x want %x", i, selectOut[i], wantSelect[i])
+			t.Fatalf("unexpected created select frame %d: got %x want %x", i, selectOut[i], wantSelect[i])
 		}
+	}
+}
+
+func TestHandleClientFrameRoutesMoveInGame(t *testing.T) {
+	flow := NewFlow(testConfig())
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	moveRaw := movep.EncodeMove(sampleMovePacket())
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, moveRaw))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	wantMove := movep.EncodeMoveAck(sampleMoveAckPacket())
+	if len(moveOut) != 1 || !bytes.Equal(moveOut[0], wantMove) {
+		t.Fatalf("unexpected move output: got %x want %x", moveOut, wantMove)
+	}
+	if flow.CurrentPhase() != session.PhaseGame {
+		t.Fatalf("expected phase %q after move, got %q", session.PhaseGame, flow.CurrentPhase())
 	}
 }
 
@@ -357,6 +399,14 @@ func testConfig() Config {
 					MainCharacter: sampleMainCharacter(),
 					PlayerPoints:  samplePlayerPoints(),
 				}
+			},
+		},
+		Game: gameflow.Config{
+			HandleMove: func(packet movep.MovePacket) gameflow.Result {
+				if packet != sampleMovePacket() {
+					return gameflow.Result{Accepted: false}
+				}
+				return gameflow.Result{Accepted: true, Replication: sampleMoveAckPacket()}
 			},
 		},
 	}
@@ -493,6 +543,14 @@ func sampleCreatedPlayerPoints() worldproto.PlayerPointsPacket {
 	points.Points[1] = 650
 	points.Points[2] = 200
 	return points
+}
+
+func sampleMovePacket() movep.MovePacket {
+	return movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 12345, Y: 23456, Time: 0x01020304}
+}
+
+func sampleMoveAckPacket() movep.MoveAckPacket {
+	return movep.MoveAckPacket{Func: 1, Arg: 0, Rot: 12, VID: 0x01020304, X: 12345, Y: 23456, Time: 0x11121314, Duration: 250}
 }
 
 func sequentialBytes32(start byte) [32]byte {
