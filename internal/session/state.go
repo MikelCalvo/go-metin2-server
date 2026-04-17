@@ -10,6 +10,7 @@ const (
 	PhaseSelect    Phase = "SELECT"
 	PhaseLoading   Phase = "LOADING"
 	PhaseGame      Phase = "GAME"
+	PhaseDead      Phase = "DEAD"
 	PhaseClose     Phase = "CLOSE"
 )
 
@@ -65,7 +66,7 @@ func (m *StateMachine) CanTransition(next Phase) bool {
 		return next == PhaseLoading
 	case PhaseLoading:
 		return next == PhaseGame
-	case PhaseGame, PhaseClose:
+	case PhaseGame, PhaseDead, PhaseClose:
 		return false
 	default:
 		return false
@@ -74,7 +75,7 @@ func (m *StateMachine) CanTransition(next Phase) bool {
 
 func isKnownPhase(phase Phase) bool {
 	switch phase {
-	case PhaseHandshake, PhaseLogin, PhaseSelect, PhaseLoading, PhaseGame, PhaseClose:
+	case PhaseHandshake, PhaseLogin, PhaseSelect, PhaseLoading, PhaseGame, PhaseDead, PhaseClose:
 		return true
 	default:
 		return false

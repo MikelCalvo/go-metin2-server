@@ -41,6 +41,7 @@ func TestStateMachineAllowsCloseFromAnyPhase(t *testing.T) {
 		PhaseSelect,
 		PhaseLoading,
 		PhaseGame,
+		PhaseDead,
 	}
 
 	for _, start := range phases {

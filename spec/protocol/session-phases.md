@@ -7,6 +7,18 @@ Exact phase byte values should be locked by tests and captures once the first co
 
 ## Phase list
 
+Current working phase-byte mapping for the initial target:
+
+- `CLOSE` = `0x00`
+- `HANDSHAKE` = `0x01`
+- `LOGIN` = `0x02`
+- `SELECT` = `0x03`
+- `LOADING` = `0x04`
+- `GAME` = `0x05`
+- `DEAD` = `0x06`
+
+These values should be treated as compatibility data and frozen by automated tests.
+
 ## 1. `HANDSHAKE`
 
 Purpose:
