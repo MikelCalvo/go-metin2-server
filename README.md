@@ -11,6 +11,8 @@ Current scope of the project:
 - Clean-room process: no legacy server/client code is vendored into this repository.
 - Separate `authd` and `gamed` binaries from day zero.
 - A dedicated pprof/ops HTTP server for profiling goroutines, heap, allocs, mutex contention and blocking.
+- Minimal legacy TCP listeners wired into both `authd` and `gamed`.
+- A stub-compatible binary smoke path that reaches `GAME` with the current public bootstrap flows.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
 
 ## Near-term goal
@@ -50,20 +52,21 @@ Legend:
 - [x] control packet primitives (`PHASE`, `PING`, `PONG`)
 - [x] key exchange packet layouts (`KEY_CHALLENGE`, `KEY_RESPONSE`, `KEY_COMPLETE`)
 - [x] server-side handshake flow
-- [ ] socket-level handshake proof with the real client
+- [x] socket-level server-side handshake validation
 
 ### 4. Authentication and selection surface
-- [~] login request handling
-- [~] login success/failure path
-- [~] character list surface
+- [x] login request handling
+- [x] login success/failure path
+- [x] character list surface
+- [x] minimal `authd` and `gamed` runtime listeners
 - [ ] empire selection support if required
 - [ ] character creation and selection
 
 ### 5. World entry
-- [ ] loading/bootstrap packets
-- [ ] main character bootstrap
-- [ ] player points/stat bootstrap
-- [ ] enter-game flow
+- [x] loading/bootstrap packets
+- [x] main character bootstrap
+- [x] player points/stat bootstrap
+- [x] enter-game flow
 
 ### 6. First in-world behavior
 - [ ] minimal world state
@@ -84,6 +87,7 @@ Legend:
 - `internal/config` — runtime config loading
 - `internal/handshake` — server-side control-plane handshake flow
 - `internal/login` — login-by-key flow and selection-surface transition
+- `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
 - `internal/ops` — health and pprof endpoints
 - `internal/service` — shared service bootstrap / shutdown helpers
 - `docs/` — engineering and clean-room documentation
@@ -140,6 +144,45 @@ curl http://127.0.0.1:6060/debug/pprof/goroutine?debug=1
 ```
 
 Do not expose pprof directly to the public internet.
+
+## Legacy listener runtime
+
+Current default legacy listener addresses:
+- `authd`: `:11002`
+- `gamed`: `:13000`
+
+Global override:
+- `METIN2_LEGACY_ADDR`
+
+Per-service overrides:
+- `METIN2_AUTHD_LEGACY_ADDR`
+- `METIN2_GAMED_LEGACY_ADDR`
+
+Current advertised/public host default:
+- `127.0.0.1`
+
+Global override:
+- `METIN2_PUBLIC_ADDR`
+
+Per-service overrides:
+- `METIN2_AUTHD_PUBLIC_ADDR`
+- `METIN2_GAMED_PUBLIC_ADDR`
+
+Notes:
+- `gamed` currently advertises `PublicAddr + port(LegacyAddr)` in `LOGIN_SUCCESS4`.
+- For local testing, `127.0.0.1` is fine.
+- For a remote Windows client, set `METIN2_GAMED_PUBLIC_ADDR` to the host/IP the client should connect to.
+
+Current stub bootstrap credentials:
+- login: `mkmk`
+- password: `hunter2`
+- auth login key: `0x01020304`
+
+Current minimal runtime path exposed by the shipped binaries:
+- `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> LOADING -> GAME`
+
+This is still a bootstrap runtime, not full gameplay or real auth/game state sharing.
 
 ## Development
 
