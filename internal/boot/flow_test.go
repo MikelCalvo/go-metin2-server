@@ -227,6 +227,71 @@ func TestHandleClientFrameRoutesCharacterSelectAndEnterGameToGame(t *testing.T) 
 	}
 }
 
+func TestHandleClientFrameRoutesCharacterCreateThenSelectToGame(t *testing.T) {
+	flow := NewFlow(testConfig())
+
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	_, err = flow.HandleClientFrame(decodeSingleFrame(t, login2Raw))
+	if err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+
+	createRaw, err := worldproto.EncodeCharacterCreate(worldproto.CharacterCreatePacket{Index: 2, Name: "FreshSura", RaceNum: 2, Shape: 1})
+	if err != nil {
+		t.Fatalf("unexpected create encode error: %v", err)
+	}
+	createOut, err := flow.HandleClientFrame(decodeSingleFrame(t, createRaw))
+	if err != nil {
+		t.Fatalf("unexpected character create error: %v", err)
+	}
+	wantCreate, err := worldproto.EncodePlayerCreateSuccess(worldproto.PlayerCreateSuccessPacket{Index: 2, Player: sampleCreatedPlayer()})
+	if err != nil {
+		t.Fatalf("unexpected create success encode error: %v", err)
+	}
+	if len(createOut) != 1 || !bytes.Equal(createOut[0], wantCreate) {
+		t.Fatalf("unexpected create output: got %x want %x", createOut, wantCreate)
+	}
+	if flow.CurrentPhase() != session.PhaseSelect {
+		t.Fatalf("expected phase %q after create, got %q", session.PhaseSelect, flow.CurrentPhase())
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 2})))
+	if err != nil {
+		t.Fatalf("unexpected select after create error: %v", err)
+	}
+	wantPhaseLoading, err := control.EncodePhase(session.PhaseLoading)
+	if err != nil {
+		t.Fatalf("unexpected loading phase encode error: %v", err)
+	}
+	wantMain, err := worldproto.EncodeMainCharacter(sampleCreatedMainCharacter())
+	if err != nil {
+		t.Fatalf("unexpected created main character encode error: %v", err)
+	}
+	wantPoints := worldproto.EncodePlayerPoints(sampleCreatedPlayerPoints())
+	wantSelect := [][]byte{wantPhaseLoading, wantMain, wantPoints}
+	if len(selectOut) != len(wantSelect) {
+		t.Fatalf("expected %d select frames, got %d", len(wantSelect), len(selectOut))
+	}
+	for i := range wantSelect {
+		if !bytes.Equal(selectOut[i], wantSelect[i]) {
+				 t.Fatalf("unexpected created select frame %d: got %x want %x", i, selectOut[i], wantSelect[i])
+		}
+	}
+}
+
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 	t.Helper()
 
@@ -270,7 +335,20 @@ func testConfig() Config {
 			},
 		},
 		WorldEntry: worldentry.Config{
+			CreateCharacter: func(packet worldproto.CharacterCreatePacket) worldentry.CreateResult {
+				if packet.Index != 2 || packet.Name != "FreshSura" || packet.RaceNum != 2 || packet.Shape != 1 {
+					return worldentry.CreateResult{Accepted: false, FailureType: 0}
+				}
+				return worldentry.CreateResult{Accepted: true, Player: worldproto.PlayerCreateSuccessPacket{Index: 2, Player: sampleCreatedPlayer()}}
+			},
 			SelectCharacter: func(index uint8) worldentry.Result {
+				if index == 2 {
+					return worldentry.Result{
+						Accepted:      true,
+						MainCharacter: sampleCreatedMainCharacter(),
+						PlayerPoints:  sampleCreatedPlayerPoints(),
+					}
+				}
 				if index != 1 {
 					return worldentry.Result{Accepted: false}
 				}
@@ -368,6 +446,52 @@ func samplePlayerPoints() worldproto.PlayerPointsPacket {
 	points.Points[6] = 300
 	points.Points[7] = 999999
 	points.Points[8] = 50
+	return points
+}
+
+func sampleCreatedPlayer() loginproto.SimplePlayer {
+	return loginproto.SimplePlayer{
+		ID:          3,
+		Name:        "FreshSura",
+		Job:         2,
+		Level:       1,
+		PlayMinutes: 0,
+		ST:          5,
+		HT:          3,
+		DX:          3,
+		IQ:          5,
+		MainPart:    1,
+		ChangeName:  0,
+		HairPart:    0,
+		Dummy:       [4]byte{},
+		X:           1200,
+		Y:           2200,
+		Addr:        0x0100007f,
+		Port:        13000,
+		SkillGroup:  0,
+	}
+}
+
+func sampleCreatedMainCharacter() worldproto.MainCharacterPacket {
+	return worldproto.MainCharacterPacket{
+		VID:        0x01020306,
+		RaceNum:    2,
+		Name:       "FreshSura",
+		BGMName:    "",
+		BGMVolume:  0,
+		X:          1200,
+		Y:          2200,
+		Z:          0,
+		Empire:     2,
+		SkillGroup: 0,
+	}
+}
+
+func sampleCreatedPlayerPoints() worldproto.PlayerPointsPacket {
+	var points worldproto.PlayerPointsPacket
+	points.Points[0] = 1
+	points.Points[1] = 650
+	points.Points[2] = 200
 	return points
 }
 

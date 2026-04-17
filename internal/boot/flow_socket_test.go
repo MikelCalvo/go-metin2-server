@@ -176,3 +176,104 @@ func TestBootFlowEntersGameOverTCP(t *testing.T) {
 		t.Fatalf("expected server phase %q, got %q", session.PhaseGame, got)
 	}
 }
+
+func TestBootFlowCreatesCharacterAndEntersGameOverTCP(t *testing.T) {
+	server := startBootTestServer(t, testConfig())
+	client := newBootTestClient(t, server.address())
+
+	challenge := client.readFrame(t)
+	wantChallenge := control.EncodeKeyChallenge(testConfig().Handshake.KeyChallenge)
+	if !bytes.Equal(challenge.Raw, wantChallenge) {
+		t.Fatalf("unexpected key challenge bytes: got %x want %x", challenge.Raw, wantChallenge)
+	}
+	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	}))
+	complete := client.readFrame(t)
+	wantComplete := control.EncodeKeyComplete(testConfig().Handshake.KeyComplete)
+	if !bytes.Equal(complete.Raw, wantComplete) {
+		t.Fatalf("unexpected key complete bytes: got %x want %x", complete.Raw, wantComplete)
+	}
+	phaseLogin := client.readFrame(t)
+	wantPhaseLogin, err := control.EncodePhase(session.PhaseLogin)
+	if err != nil {
+		t.Fatalf("unexpected phase encode error: %v", err)
+	}
+	if !bytes.Equal(phaseLogin.Raw, wantPhaseLogin) {
+		t.Fatalf("unexpected login phase bytes: got %x want %x", phaseLogin.Raw, wantPhaseLogin)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	client.writeFrame(t, login2Raw)
+	if empire := client.readFrame(t); !bytes.Equal(empire.Raw, loginproto.EncodeEmpire(loginproto.EmpirePacket{Empire: 2})) {
+		t.Fatalf("unexpected empire bytes: got %x", empire.Raw)
+	}
+	phaseSelect := client.readFrame(t)
+	wantPhaseSelect, err := control.EncodePhase(session.PhaseSelect)
+	if err != nil {
+		t.Fatalf("unexpected phase encode error: %v", err)
+	}
+	if !bytes.Equal(phaseSelect.Raw, wantPhaseSelect) {
+		t.Fatalf("unexpected select phase bytes: got %x want %x", phaseSelect.Raw, wantPhaseSelect)
+	}
+	loginSuccess := client.readFrame(t)
+	wantSuccess, err := loginproto.EncodeLoginSuccess4(sampleLoginSuccessPacket())
+	if err != nil {
+		t.Fatalf("unexpected login success encode error: %v", err)
+	}
+	if !bytes.Equal(loginSuccess.Raw, wantSuccess) {
+		t.Fatalf("unexpected login success bytes: got %x want %x", loginSuccess.Raw, wantSuccess)
+	}
+
+	createRaw, err := worldproto.EncodeCharacterCreate(worldproto.CharacterCreatePacket{Index: 2, Name: "FreshSura", RaceNum: 2, Shape: 1})
+	if err != nil {
+		t.Fatalf("unexpected create encode error: %v", err)
+	}
+	client.writeFrame(t, createRaw)
+	createSuccess := client.readFrame(t)
+	wantCreateSuccess, err := worldproto.EncodePlayerCreateSuccess(worldproto.PlayerCreateSuccessPacket{Index: 2, Player: sampleCreatedPlayer()})
+	if err != nil {
+		t.Fatalf("unexpected create success encode error: %v", err)
+	}
+	if !bytes.Equal(createSuccess.Raw, wantCreateSuccess) {
+		t.Fatalf("unexpected create success bytes: got %x want %x", createSuccess.Raw, wantCreateSuccess)
+	}
+
+	client.writeFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 2}))
+	phaseLoading := client.readFrame(t)
+	wantPhaseLoading, err := control.EncodePhase(session.PhaseLoading)
+	if err != nil {
+		t.Fatalf("unexpected loading phase encode error: %v", err)
+	}
+	if !bytes.Equal(phaseLoading.Raw, wantPhaseLoading) {
+		t.Fatalf("unexpected loading phase bytes: got %x want %x", phaseLoading.Raw, wantPhaseLoading)
+	}
+	mainCharacter := client.readFrame(t)
+	wantMainCharacter, err := worldproto.EncodeMainCharacter(sampleCreatedMainCharacter())
+	if err != nil {
+		t.Fatalf("unexpected created main character encode error: %v", err)
+	}
+	if !bytes.Equal(mainCharacter.Raw, wantMainCharacter) {
+		t.Fatalf("unexpected created main character bytes: got %x want %x", mainCharacter.Raw, wantMainCharacter)
+	}
+	playerPoints := client.readFrame(t)
+	wantPlayerPoints := worldproto.EncodePlayerPoints(sampleCreatedPlayerPoints())
+	if !bytes.Equal(playerPoints.Raw, wantPlayerPoints) {
+		t.Fatalf("unexpected created player points bytes: got %x want %x", playerPoints.Raw, wantPlayerPoints)
+	}
+	client.writeFrame(t, worldproto.EncodeEnterGame())
+	phaseGame := client.readFrame(t)
+	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected game phase encode error: %v", err)
+	}
+	if !bytes.Equal(phaseGame.Raw, wantPhaseGame) {
+		t.Fatalf("unexpected game phase bytes: got %x want %x", phaseGame.Raw, wantPhaseGame)
+	}
+	if got := server.currentPhase(); got != session.PhaseGame {
+		t.Fatalf("expected server phase %q, got %q", session.PhaseGame, got)
+	}
+}
