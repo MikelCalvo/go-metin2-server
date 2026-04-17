@@ -23,6 +23,8 @@ It does not yet freeze the full visible-world packet set.
 - `ENTERGAME`
 - `MAIN_CHARACTER`
 - `PLAYER_POINTS`
+- `CHARACTER_ADD`
+- `CHAR_ADDITIONAL_INFO`
 
 ## Envelope
 
@@ -52,7 +54,10 @@ The current project-owned selection/world-entry flow is:
    - `PLAYER_POINTS`
 10. the client sends `ENTERGAME`
 11. the server transitions to `GAME`
-12. the server emits `PHASE(GAME)`
+12. the server emits:
+   - `PHASE(GAME)`
+   - `CHARACTER_ADD`
+   - `CHAR_ADDITIONAL_INFO`
 
 This slice keeps the bootstrap minimal on purpose:
 - no item stream is required yet
@@ -180,5 +185,5 @@ It does not yet freeze:
 - quickslot bootstrap
 - skill-level bootstrap
 - item bootstrap
-- visible-world insert packets after `ENTERGAME`
+- visible-world insert packets for other entities after `ENTERGAME`
 - time/channel/world metadata packets

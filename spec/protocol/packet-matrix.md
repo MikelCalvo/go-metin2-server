@@ -43,6 +43,8 @@ Status values:
 | `CHARACTER_DELETE` | client -> server | `0x0202` | select | planned | not required for the first milestone |
 | `CHARACTER_SELECT` | client -> server | `0x0203` | select | documented | choose active character |
 | `ENTERGAME` | client -> server | `0x0204` | loading | documented | enter-world request |
+| `CHARACTER_ADD` | server -> client | `0x0205` | game bootstrap | documented | first visible-world insert for the selected character |
+| `CHAR_ADDITIONAL_INFO` | server -> client | `0x0207` | game bootstrap | documented | metadata companion for the visible-world insert |
 | `PLAYER_CREATE_SUCCESS` | server -> client | `0x020C` | select | documented | create success result |
 | `PLAYER_CREATE_FAILURE` | server -> client | `0x020D` | select | documented | create failure result |
 | `PLAYER_DELETE_SUCCESS` | server -> client | `0x020E` | select | planned | later milestone |

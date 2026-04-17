@@ -94,11 +94,12 @@ Expected outcomes:
 
 ## 8. Enter game succeeds
 The client sends the enter-game request.
-The server transitions the session into `GAME` and places the main actor in a minimal world state.
+The server transitions the session into `GAME`, places the main actor in a minimal world state, and emits the first visible-world bootstrap packets for the selected character.
 
 Expected outcomes:
 - the client appears in-world
 - the server keeps the session stable after the transition
+- the selected character is inserted into the visible world with deterministic bootstrap packets
 
 ## 9. Basic movement works
 The client sends a movement packet and the server processes it in the live game phase.
