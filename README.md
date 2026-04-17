@@ -74,7 +74,7 @@ Legend:
 - [ ] movement replication/ack path
 
 ### 7. Hardening and expansion
-- [ ] persistence layer that matches the compatibility target
+- [~] persistence layer that matches the compatibility target
 - [ ] observability and operator tooling beyond pprof/health
 - [ ] additional gameplay systems after the boot path is stable
 - [ ] production packaging and deployment guidance
@@ -88,6 +88,7 @@ Legend:
 - `internal/handshake` — server-side control-plane handshake flow
 - `internal/login` — login-by-key flow and selection-surface transition
 - `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
+- `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/ops` — health and pprof endpoints
 - `internal/service` — shared service bootstrap / shutdown helpers
 - `docs/` — engineering and clean-room documentation
@@ -185,10 +186,11 @@ Current minimal runtime path exposed by the shipped binaries:
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
 - shared authd -> gamed login tickets
-- session-scoped character creation that can be selected immediately
+- file-backed bootstrap account snapshots for the stub login
+- character creation that survives fresh auth/game sessions
 
 What still does not exist yet:
-- durable account/character persistence across fresh sessions
+- compatibility-grade persistence matching the legacy target
 - full gameplay/world state beyond the boot path
 
 ## Development
