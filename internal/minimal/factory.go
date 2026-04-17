@@ -192,6 +192,9 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					selected.X = packet.X
 					selected.Y = packet.Y
 					sessionTicket.Characters[selectedIndex] = selected
+					if !saveAccountCharacters(accounts, sessionTicket.Login, sessionTicket.Characters) {
+						return gameflow.Result{Accepted: false}
+					}
 					return gameflow.Result{Accepted: true, Replication: ticketMoveAckPacket(selected, packet)}
 				},
 			},

@@ -9,6 +9,7 @@ import (
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
 
@@ -312,5 +313,137 @@ func TestCreatedCharacterPersistsAcrossFreshAuthAndGameSessions(t *testing.T) {
 	}
 	if mainCharacter.Name != "FreshSura" {
 		t.Fatalf("expected persisted main character FreshSura, got %q", mainCharacter.Name)
+	}
+}
+
+func TestMovedCharacterPositionPersistsAcrossFreshAuthAndGameSessions(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	keys := []uint32{0x0badf00d, 0x0badf00e}
+	keyIndex := 0
+	authFactory := newAuthSessionFactoryWithAccountStore(ticketStore, accountStore, func() (uint32, error) {
+		key := keys[keyIndex]
+		keyIndex++
+		return key, nil
+	})
+	gameFactory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountStore)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	firstAuthFlow := authFactory()
+	if _, err := firstAuthFlow.Start(); err != nil {
+		t.Fatalf("unexpected first auth start error: %v", err)
+	}
+	_, err = firstAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first auth handshake error: %v", err)
+	}
+	login3Raw, err := authproto.EncodeLogin3(authproto.Login3Packet{Login: StubLogin, Password: StubPassword})
+	if err != nil {
+		t.Fatalf("encode login3: %v", err)
+	}
+	firstAuthOut, err := firstAuthFlow.HandleClientFrame(decodeSingleFrame(t, login3Raw))
+	if err != nil {
+		t.Fatalf("unexpected first auth error: %v", err)
+	}
+	firstAuthSuccess, err := authproto.DecodeAuthSuccess(decodeSingleFrame(t, firstAuthOut[0]))
+	if err != nil {
+		t.Fatalf("decode first auth success: %v", err)
+	}
+
+	firstGameFlow := gameFactory()
+	if _, err := firstGameFlow.Start(); err != nil {
+		t.Fatalf("unexpected first game start error: %v", err)
+	}
+	_, err = firstGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first game handshake error: %v", err)
+	}
+	firstLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: firstAuthSuccess.LoginKey})
+	if err != nil {
+		t.Fatalf("encode first login2: %v", err)
+	}
+	if _, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, firstLogin2Raw)); err != nil {
+		t.Fatalf("unexpected first game login error: %v", err)
+	}
+	if _, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected first character select error: %v", err)
+	}
+	if _, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected first entergame error: %v", err)
+	}
+	moveRaw := movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 54321, Y: 65432, Time: 0x01020304})
+	moveOut, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, moveRaw))
+	if err != nil {
+		t.Fatalf("unexpected first move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 move frame, got %d", len(moveOut))
+	}
+
+	secondAuthFlow := authFactory()
+	if _, err := secondAuthFlow.Start(); err != nil {
+		t.Fatalf("unexpected second auth start error: %v", err)
+	}
+	_, err = secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected second auth handshake error: %v", err)
+	}
+	secondAuthOut, err := secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, login3Raw))
+	if err != nil {
+		t.Fatalf("unexpected second auth error: %v", err)
+	}
+	secondAuthSuccess, err := authproto.DecodeAuthSuccess(decodeSingleFrame(t, secondAuthOut[0]))
+	if err != nil {
+		t.Fatalf("decode second auth success: %v", err)
+	}
+
+	secondGameFlow := gameFactory()
+	if _, err := secondGameFlow.Start(); err != nil {
+		t.Fatalf("unexpected second game start error: %v", err)
+	}
+	_, err = secondGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected second game handshake error: %v", err)
+	}
+	secondLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: secondAuthSuccess.LoginKey})
+	if err != nil {
+		t.Fatalf("encode second login2: %v", err)
+	}
+	secondLoginOut, err := secondGameFlow.HandleClientFrame(decodeSingleFrame(t, secondLogin2Raw))
+	if err != nil {
+		t.Fatalf("unexpected second game login error: %v", err)
+	}
+	loginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, secondLoginOut[2]))
+	if err != nil {
+		t.Fatalf("decode second login success: %v", err)
+	}
+	if loginSuccess.Players[1].X != 54321 || loginSuccess.Players[1].Y != 65432 {
+		t.Fatalf("expected persisted character position (54321,65432), got (%d,%d)", loginSuccess.Players[1].X, loginSuccess.Players[1].Y)
+	}
+
+	selectOut, err := secondGameFlow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1})))
+	if err != nil {
+		t.Fatalf("unexpected second character select error: %v", err)
+	}
+	mainCharacter, err := worldproto.DecodeMainCharacter(decodeSingleFrame(t, selectOut[1]))
+	if err != nil {
+		t.Fatalf("decode persisted moved main character: %v", err)
+	}
+	if mainCharacter.X != 54321 || mainCharacter.Y != 65432 {
+		t.Fatalf("expected persisted main character position (54321,65432), got (%d,%d)", mainCharacter.X, mainCharacter.Y)
 	}
 }
