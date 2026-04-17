@@ -199,7 +199,7 @@ func runBootConn(conn net.Conn, cfg Config, phaseStore *atomic.Value) error {
 			}
 
 			phaseStore.Store(flow.CurrentPhase())
-			if flow.CurrentPhase() == session.PhaseSelect {
+			if flow.CurrentPhase() == session.PhaseGame {
 				return nil
 			}
 		}
