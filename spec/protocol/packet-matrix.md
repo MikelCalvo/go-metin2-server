@@ -70,9 +70,9 @@ Status values:
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `CHAT` | client -> server | `0x0601` | game | documented | current slice accepts `CHAT_TYPE_TALKING`, bootstrap `CHAT_TYPE_PARTY`, bootstrap `CHAT_TYPE_GUILD`, bootstrap `CHAT_TYPE_SHOUT`, bootstrap `CHAT_TYPE_INFO`, and bootstrap `CHAT_TYPE_NOTICE` with variable text payload |
+| `CHAT` | client -> server | `0x0601` | game | documented | current slice accepts `CHAT_TYPE_TALKING`, bootstrap `CHAT_TYPE_PARTY`, bootstrap `CHAT_TYPE_GUILD`, bootstrap `CHAT_TYPE_SHOUT`, and bootstrap `CHAT_TYPE_INFO`; client-originated `CHAT_TYPE_NOTICE` is currently rejected |
 | `WHISPER` | client -> server | `0x0602` | game | documented | current slice routes by exact target character name with variable text payload |
-| `CHAT` | server -> client | `0x0603` | game | documented | deterministic sender echo for talking/party/guild/shout, sender-only bootstrap system info with `vid = 0`, and bootstrap system notice broadcast with `vid = 0` |
+| `CHAT` | server -> client | `0x0603` | game | documented | deterministic sender echo for talking/party/guild/shout and sender-only bootstrap system info with `vid = 0`; notice remains reserved for a future server-originated path |
 | `WHISPER` | server -> client | `0x0604` | game | documented | direct whisper delivery to the named target on success and current `WHISPER_TYPE_NOT_EXIST` sender feedback for unknown targets |
 
 ## Notes
