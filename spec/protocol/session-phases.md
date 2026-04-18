@@ -114,6 +114,7 @@ Typical traffic in this phase:
 - control-plane `PING`/`PONG` that should not disturb the live phase
 - visible peer `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` / `CHARACTER_DEL`
 - queued peer `MOVE` replication
+- queued peer `SYNC_POSITION` replication
 - minimal world updates
 
 ## 6. `CLOSE`

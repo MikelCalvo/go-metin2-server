@@ -29,7 +29,6 @@ This slice freezes:
 - mover and peer seeing the same updated coordinates for that move event
 
 It does not yet freeze:
-- `SYNC_POSITION` fanout
 - movement range filtering
 - late-join replay beyond the existing shared snapshot behavior
 - interpolation or timing policy beyond the currently carried wire fields

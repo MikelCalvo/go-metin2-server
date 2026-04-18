@@ -61,8 +61,8 @@ Status values:
 | --- | --- | --- | --- | --- | --- |
 | `MOVE` | client -> server | `0x0301` | game | documented | first in-world action |
 | `MOVE` | server -> client | `0x0302` | game | documented | deterministic self ack for the mover and current queued replication payload for already-visible peers |
-| `SYNC_POSITION` | client -> server | `0x0303` | game | documented | first self-only position reconciliation path in `GAME` |
-| `SYNC_POSITION` | server -> client | `0x0304` | game | documented | deterministic selected-character sync reply frozen by tests |
+| `SYNC_POSITION` | client -> server | `0x0303` | game | documented | first selected-character position reconciliation path in `GAME` |
+| `SYNC_POSITION` | server -> client | `0x0304` | game | documented | deterministic selected-character sync reply for the sender and current queued replication payload for already-visible peers |
 | `WARP` | client -> server | `0x0305` | game | planned | out of early scope |
 | `WARP` | server -> client | `0x0306` | game | planned | out of early scope |
 

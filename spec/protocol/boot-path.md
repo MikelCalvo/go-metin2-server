@@ -29,7 +29,7 @@ In scope:
 - loading/bootstrap
 - enter game
 - basic movement
-- first self-only sync-position reconciliation
+- first sync-position reconciliation
 
 Out of scope for this milestone:
 - combat
@@ -121,9 +121,10 @@ Expected outcomes:
 The client sends a minimal `SYNC_POSITION` packet after entering `GAME` and the server reconciles the selected character without dropping the session.
 
 Expected outcomes:
-- the server accepts a self-only sync-position payload for the selected character VID
+- the server accepts a selected-character sync-position payload for the selected character VID
 - the server updates the selected character coordinates in the bootstrap runtime
 - the server emits one deterministic `SYNC_POSITION` reply for the selected character
+- already-visible peers receive one queued `SYNC_POSITION` replication carrying the same reconciled position
 - the client remains connected after the reconciliation path
 
 ## Milestone acceptance criteria
@@ -145,6 +146,7 @@ This document depends on:
 - `spec/protocol/game-ping-pong.md`
 - `spec/protocol/shared-world-peer-visibility.md`
 - `spec/protocol/move-peer-fanout.md`
+- `spec/protocol/sync-position-peer-fanout.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
 - `spec/protocol/sync-position-bootstrap.md`
