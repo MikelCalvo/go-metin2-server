@@ -22,11 +22,11 @@ Current scope of the project:
 - Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime.
 - Minimal MOVE fanout so visible peers receive queued movement replication from other connected players.
 - Minimal `SYNC_POSITION` fanout so visible peers receive queued reconciliation updates from other connected players.
-- Minimal local talking chat fanout so visible peers receive queued `GC_CHAT` deliveries from other connected players.
+- Minimal local talking chat fanout so same-empire visible peers receive queued `GC_CHAT` deliveries from other connected players.
 - Minimal whisper routing by exact character name across currently connected bootstrap sessions.
 - Minimal bootstrap `CHAT_TYPE_PARTY` fanout across the currently connected `GAME` sessions.
-- Minimal bootstrap `CHAT_TYPE_GUILD` fanout across the currently connected `GAME` sessions.
-- Minimal bootstrap `CHAT_TYPE_SHOUT` fanout across the currently connected `GAME` sessions.
+- Minimal bootstrap `CHAT_TYPE_GUILD` fanout across connected `GAME` sessions that share the same non-zero `GuildID`.
+- Minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions in the same empire.
 - Minimal bootstrap system `CHAT_TYPE_INFO` self-delivery in `GAME`, with client-originated `CHAT_TYPE_NOTICE` now rejected pending a server-originated notice path.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
@@ -137,6 +137,7 @@ Legend:
 - `spec/protocol/guild-chat-bootstrap.md`
 - `spec/protocol/shout-chat-bootstrap.md`
 - `spec/protocol/info-notice-bootstrap.md`
+- `spec/protocol/chat-scope-first-hardening.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -235,11 +236,11 @@ What exists today:
 - already-connected peers receive queued `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` when a new player enters and `CHARACTER_DEL` when that peer disconnects
 - already-connected peers receive queued `MOVE` replication when a visible peer moves
 - already-connected peers receive queued `SYNC_POSITION` replication when a visible peer reconciles position
-- already-connected peers receive queued local talking `GC_CHAT` deliveries when a visible peer chats
+- same-empire already-connected peers receive queued local talking `GC_CHAT` deliveries when a visible peer chats
 - named connected peers receive direct `GC_WHISPER` delivery when another player whispers them, while unknown targets return `WHISPER_TYPE_NOT_EXIST` to the sender
 - currently connected `GAME` sessions act as one temporary bootstrap party for `CHAT_TYPE_PARTY` fanout
-- currently connected `GAME` sessions act as one temporary bootstrap guild for `CHAT_TYPE_GUILD` fanout
-- currently connected `GAME` sessions act as one temporary bootstrap shout scope for `CHAT_TYPE_SHOUT` fanout
+- connected `GAME` sessions with the same non-zero `GuildID` receive bootstrap `CHAT_TYPE_GUILD` fanout
+- connected `GAME` sessions in the same empire receive bootstrap `CHAT_TYPE_SHOUT` fanout
 - `CHAT_TYPE_INFO` currently acts as a bootstrap system/self channel with `vid = 0` and raw message text
 - client-originated `CHAT_TYPE_NOTICE` is now rejected in `GAME`; a server-originated bootstrap notice path is still pending
 

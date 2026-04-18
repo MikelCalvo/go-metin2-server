@@ -25,13 +25,13 @@ The current bootstrap runtime behavior is:
    - `empire = 0`
    - `message = "PlayerName : original message"`
 4. player B receives that `GC_CHAT` delivery directly as the sender echo
-5. player A receives the same `GC_CHAT` delivery through the queued server-frame path
+5. if player A is in the same empire, player A receives the same `GC_CHAT` delivery through the queued server-frame path
 
 ## Current scope
 
 This slice freezes:
 - local talking chat only
-- sender echo plus queued peer fanout
+- sender echo plus queued peer fanout to already-visible peers in the same empire
 - reuse of the same `GC_CHAT` payload for sender and already-visible peers
 - `Name : message` formatting in the payload text
 
@@ -42,4 +42,4 @@ It does not yet freeze:
 - shout
 - slash-command handling
 - mute/block/spam systems
-- range/sector filtering beyond the current shared-world visibility scope
+- map/channel/range filtering beyond the current empire-scoped shared-world chat policy

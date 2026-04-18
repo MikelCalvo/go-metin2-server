@@ -111,11 +111,11 @@ Initial milestone scope:
 Typical traffic in this phase:
 - move
 - sync position
-- local talking chat
+- local talking chat (same-empire fanout)
 - whisper by character name
 - bootstrap party chat
-- bootstrap guild chat
-- bootstrap shout chat
+- bootstrap guild chat (same non-zero `GuildID` fanout)
+- bootstrap shout chat (same-empire fanout)
 - bootstrap system info chat
 - bootstrap system notice chat
 - control-plane `PING`/`PONG` that should not disturb the live phase
