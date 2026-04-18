@@ -9,6 +9,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 )
@@ -99,6 +100,50 @@ func TestNewGameSessionFactoryQueuesPeerEntryAndExitForExistingPlayer(t *testing
 	}
 	if removed.VID != peerTwo.VID {
 		t.Fatalf("expected queued peer delete for VID %#08x, got %#08x", peerTwo.VID, removed.VID)
+	}
+}
+
+func TestNewGameSessionFactoryQueuesPeerMoveForVisiblePlayers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	moveOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
+	}
+	selfAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode self move ack: %v", err)
+	}
+	if selfAck.VID != peerTwo.VID || selfAck.X != 1500 || selfAck.Y != 2600 {
+		t.Fatalf("unexpected self move ack: %+v", selfAck)
+	}
+
+	peerMove := flushServerFrames(t, flowOne)
+	if len(peerMove) != 1 {
+		t.Fatalf("expected 1 queued peer move frame, got %d", len(peerMove))
+	}
+	peerAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, peerMove[0]))
+	if err != nil {
+		t.Fatalf("decode peer move ack: %v", err)
+	}
+	if peerAck.VID != peerTwo.VID || peerAck.X != 1500 || peerAck.Y != 2600 || peerAck.Time != 0x11121314 {
+		t.Fatalf("unexpected peer move ack: %+v", peerAck)
 	}
 }
 

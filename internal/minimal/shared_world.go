@@ -160,6 +160,22 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 	r.sessions[id] = session
 }
 
+func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][]byte) {
+	if r == nil || originID == 0 || len(frames) == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for id, session := range r.sessions {
+		if id == originID {
+			continue
+		}
+		session.pending.enqueue(frames)
+	}
+}
+
 func encodePeerVisibilityFrames(character loginticket.Character) [][]byte {
 	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(ticketCharacterAdditionalInfoPacket(character))
 	if err != nil {

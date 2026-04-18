@@ -252,7 +252,11 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					if joinedSharedWorld {
 						sharedWorld.UpdateCharacter(sharedWorldID, selected)
 					}
-					return gameflow.Result{Accepted: true, Replication: ticketMoveAckPacket(selected, packet)}
+					ack := ticketMoveAckPacket(selected, packet)
+					if joinedSharedWorld {
+						sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{movep.EncodeMoveAck(ack)})
+					}
+					return gameflow.Result{Accepted: true, Replication: ack}
 				},
 				HandleSyncPosition: func(packet movep.SyncPositionPacket) gameflow.SyncPositionResult {
 					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
