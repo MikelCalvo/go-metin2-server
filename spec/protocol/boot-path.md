@@ -144,6 +144,7 @@ This document depends on:
 - `spec/protocol/client-version-loading.md`
 - `spec/protocol/game-ping-pong.md`
 - `spec/protocol/shared-world-peer-visibility.md`
+- `spec/protocol/move-peer-fanout.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
 - `spec/protocol/sync-position-bootstrap.md`
