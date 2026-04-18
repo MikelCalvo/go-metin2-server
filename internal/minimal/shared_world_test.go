@@ -369,6 +369,50 @@ func TestNewGameSessionFactoryQueuesGuildChatForConnectedPeers(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryQueuesShoutChatForConnectedPeers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	shoutOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeShout, Message: "hola shout"})))
+	if err != nil {
+		t.Fatalf("unexpected shout chat error: %v", err)
+	}
+	if len(shoutOut) != 1 {
+		t.Fatalf("expected 1 sender shout chat frame, got %d", len(shoutOut))
+	}
+	selfShout, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, shoutOut[0]))
+	if err != nil {
+		t.Fatalf("decode sender shout chat: %v", err)
+	}
+	if selfShout.Type != chatproto.ChatTypeShout || selfShout.VID != peerTwo.VID || selfShout.Message != "PeerTwo : hola shout" {
+		t.Fatalf("unexpected sender shout chat: %+v", selfShout)
+	}
+
+	peerShout := flushServerFrames(t, flowOne)
+	if len(peerShout) != 1 {
+		t.Fatalf("expected 1 queued shout chat frame, got %d", len(peerShout))
+	}
+	peerDelivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerShout[0]))
+	if err != nil {
+		t.Fatalf("decode peer shout chat: %v", err)
+	}
+	if peerDelivery.Type != chatproto.ChatTypeShout || peerDelivery.VID != peerTwo.VID || peerDelivery.Message != "PeerTwo : hola shout" {
+		t.Fatalf("unexpected peer shout chat delivery: %+v", peerDelivery)
+	}
+}
+
 func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

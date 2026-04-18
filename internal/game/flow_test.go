@@ -199,6 +199,36 @@ func TestHandleClientFrameAcceptsGuildChatInGameAndReturnsDelivery(t *testing.T)
 	}
 }
 
+func TestHandleClientFrameAcceptsShoutChatInGameAndReturnsDelivery(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleChat: func(packet chatproto.ClientChatPacket) ChatResult {
+			if packet.Type != chatproto.ChatTypeShout || packet.Message != "hola shout" {
+				t.Fatalf("unexpected shout chat packet: %+v", packet)
+			}
+			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeShout, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola shout"}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeShout, Message: "hola shout"})))
+	if err != nil {
+		t.Fatalf("unexpected shout chat error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode shout chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeShout || delivery.VID != 0x02040102 || delivery.Message != "PeerTwo : hola shout" {
+		t.Fatalf("unexpected shout chat delivery: %+v", delivery)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameRejectsUnexpectedPacketsInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
