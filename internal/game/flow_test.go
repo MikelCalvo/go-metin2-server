@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
@@ -35,6 +35,42 @@ func TestHandleClientFrameAcceptsMoveInGameAndReturnsReplication(t *testing.T) {
 	}
 	if ack.VID != 0x01020304 || ack.Duration != 250 || ack.X != 12345 || ack.Y != 23456 {
 		t.Fatalf("unexpected move ack: %+v", ack)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsSyncPositionInGameAndReturnsSynchronization(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleSyncPosition: func(packet movep.SyncPositionPacket) SyncPositionResult {
+			if len(packet.Elements) != 2 {
+				t.Fatalf("expected 2 sync elements, got %d", len(packet.Elements))
+			}
+			if packet.Elements[0].VID != 0x01020304 || packet.Elements[0].X != 12345 || packet.Elements[0].Y != 23456 {
+				t.Fatalf("unexpected first sync element: %+v", packet.Elements[0])
+			}
+			return SyncPositionResult{Accepted: true, Synchronization: movep.SyncPositionAckPacket{Elements: []movep.SyncPositionElement{{VID: 0x01020304, X: 12345, Y: 23456}}}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: 0x01020304, X: 12345, Y: 23456}, {VID: 0x01020305, X: 34567, Y: 45678}}})))
+	if err != nil {
+		t.Fatalf("unexpected sync position error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	ack, err := movep.DecodeSyncPositionAck(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode sync position ack: %v", err)
+	}
+	if len(ack.Elements) != 1 {
+		t.Fatalf("expected 1 sync ack element, got %d", len(ack.Elements))
+	}
+	if ack.Elements[0].VID != 0x01020304 || ack.Elements[0].X != 12345 || ack.Elements[0].Y != 23456 {
+		t.Fatalf("unexpected sync ack element: %+v", ack.Elements[0])
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())

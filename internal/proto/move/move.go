@@ -8,11 +8,14 @@ import (
 )
 
 const (
-	HeaderMove    uint16 = 0x0301
-	HeaderMoveAck uint16 = 0x0302
+	HeaderMove            uint16 = 0x0301
+	HeaderMoveAck         uint16 = 0x0302
+	HeaderSyncPosition    uint16 = 0x0303
+	HeaderSyncPositionAck uint16 = 0x0304
 
-	movePayloadSize    = 15
-	moveAckPayloadSize = 23
+	movePayloadSize         = 15
+	moveAckPayloadSize      = 23
+	syncPositionElementSize = 12
 )
 
 var (
@@ -38,6 +41,20 @@ type MoveAckPacket struct {
 	Y        int32
 	Time     uint32
 	Duration uint32
+}
+
+type SyncPositionElement struct {
+	VID uint32
+	X   int32
+	Y   int32
+}
+
+type SyncPositionPacket struct {
+	Elements []SyncPositionElement
+}
+
+type SyncPositionAckPacket struct {
+	Elements []SyncPositionElement
 }
 
 func EncodeMove(packet MovePacket) []byte {
@@ -98,4 +115,63 @@ func DecodeMoveAck(f frame.Frame) (MoveAckPacket, error) {
 		Time:     binary.LittleEndian.Uint32(f.Payload[15:]),
 		Duration: binary.LittleEndian.Uint32(f.Payload[19:]),
 	}, nil
+}
+
+func EncodeSyncPosition(packet SyncPositionPacket) []byte {
+	return frame.Encode(HeaderSyncPosition, encodeSyncPositionElements(packet.Elements))
+}
+
+func DecodeSyncPosition(f frame.Frame) (SyncPositionPacket, error) {
+	if f.Header != HeaderSyncPosition {
+		return SyncPositionPacket{}, ErrUnexpectedHeader
+	}
+	elements, err := decodeSyncPositionElements(f.Payload)
+	if err != nil {
+		return SyncPositionPacket{}, err
+	}
+	return SyncPositionPacket{Elements: elements}, nil
+}
+
+func EncodeSyncPositionAck(packet SyncPositionAckPacket) []byte {
+	return frame.Encode(HeaderSyncPositionAck, encodeSyncPositionElements(packet.Elements))
+}
+
+func DecodeSyncPositionAck(f frame.Frame) (SyncPositionAckPacket, error) {
+	if f.Header != HeaderSyncPositionAck {
+		return SyncPositionAckPacket{}, ErrUnexpectedHeader
+	}
+	elements, err := decodeSyncPositionElements(f.Payload)
+	if err != nil {
+		return SyncPositionAckPacket{}, err
+	}
+	return SyncPositionAckPacket{Elements: elements}, nil
+}
+
+func encodeSyncPositionElements(elements []SyncPositionElement) []byte {
+	payload := make([]byte, len(elements)*syncPositionElementSize)
+	offset := 0
+	for _, element := range elements {
+		binary.LittleEndian.PutUint32(payload[offset:], element.VID)
+		offset += 4
+		binary.LittleEndian.PutUint32(payload[offset:], uint32(element.X))
+		offset += 4
+		binary.LittleEndian.PutUint32(payload[offset:], uint32(element.Y))
+		offset += 4
+	}
+	return payload
+}
+
+func decodeSyncPositionElements(payload []byte) ([]SyncPositionElement, error) {
+	if len(payload)%syncPositionElementSize != 0 {
+		return nil, ErrInvalidPayload
+	}
+	elements := make([]SyncPositionElement, 0, len(payload)/syncPositionElementSize)
+	for offset := 0; offset < len(payload); offset += syncPositionElementSize {
+		elements = append(elements, SyncPositionElement{
+			VID: binary.LittleEndian.Uint32(payload[offset:]),
+			X:   int32(binary.LittleEndian.Uint32(payload[offset+4:])),
+			Y:   int32(binary.LittleEndian.Uint32(payload[offset+8:])),
+		})
+	}
+	return elements, nil
 }

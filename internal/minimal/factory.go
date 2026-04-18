@@ -212,20 +212,33 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 			},
 			Game: gameflow.Config{
 				HandleMove: func(packet movep.MovePacket) gameflow.Result {
-					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+					updatedCharacters, selected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedIndex, packet.X, packet.Y)
+					if !ok {
 						return gameflow.Result{Accepted: false}
+					}
+					sessionTicket.Characters = updatedCharacters
+					return gameflow.Result{Accepted: true, Replication: ticketMoveAckPacket(selected, packet)}
+				},
+				HandleSyncPosition: func(packet movep.SyncPositionPacket) gameflow.SyncPositionResult {
+					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+						return gameflow.SyncPositionResult{Accepted: false}
 					}
 					selected := sessionTicket.Characters[selectedIndex]
 					if selected.ID == 0 {
-						return gameflow.Result{Accepted: false}
+						return gameflow.SyncPositionResult{Accepted: false}
 					}
-					selected.X = packet.X
-					selected.Y = packet.Y
-					sessionTicket.Characters[selectedIndex] = selected
-					if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters) {
-						return gameflow.Result{Accepted: false}
+					for _, element := range packet.Elements {
+						if element.VID != selected.VID {
+							continue
+						}
+						updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedIndex, element.X, element.Y)
+						if !ok {
+							return gameflow.SyncPositionResult{Accepted: false}
+						}
+						sessionTicket.Characters = updatedCharacters
+						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ticketSyncPositionAckPacket(updatedSelected)}
 					}
-					return gameflow.Result{Accepted: true, Replication: ticketMoveAckPacket(selected, packet)}
+					return gameflow.SyncPositionResult{Accepted: false}
 				},
 			},
 		})
@@ -322,6 +335,25 @@ func saveAccountSnapshot(store accountstore.Store, login string, empire uint8, c
 		return true
 	}
 	return store.Save(accountstore.Account{Login: login, Empire: empire, Characters: cloneCharacters(characters)}) == nil
+}
+
+func updateSelectedCharacterPosition(store accountstore.Store, login string, empire uint8, characters []loginticket.Character, selectedIndex uint8, x int32, y int32) ([]loginticket.Character, loginticket.Character, bool) {
+	index := int(selectedIndex)
+	if index < 0 || index >= len(characters) {
+		return nil, loginticket.Character{}, false
+	}
+	selected := characters[index]
+	if selected.ID == 0 {
+		return nil, loginticket.Character{}, false
+	}
+	updatedCharacters := cloneCharacters(characters)
+	selected.X = x
+	selected.Y = y
+	updatedCharacters[index] = selected
+	if !saveAccountSnapshot(store, login, empire, updatedCharacters) {
+		return nil, loginticket.Character{}, false
+	}
+	return updatedCharacters, selected, true
 }
 
 func cloneCharacters(characters []loginticket.Character) []loginticket.Character {
@@ -458,6 +490,10 @@ func ticketMoveAckPacket(character loginticket.Character, packet movep.MovePacke
 		Time:     packet.Time,
 		Duration: 250,
 	}
+}
+
+func ticketSyncPositionAckPacket(character loginticket.Character) movep.SyncPositionAckPacket {
+	return movep.SyncPositionAckPacket{Elements: []movep.SyncPositionElement{{VID: character.VID, X: character.X, Y: character.Y}}}
 }
 
 func ticketPlayerCreateSuccessPacket(character loginticket.Character, index uint8, addr uint32, port uint16) worldproto.PlayerCreateSuccessPacket {

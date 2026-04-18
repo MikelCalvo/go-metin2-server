@@ -334,6 +334,46 @@ func TestHandleClientFrameRoutesMoveInGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameRoutesSyncPositionInGame(t *testing.T) {
+	flow := NewFlow(testConfig())
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	syncRaw := movep.EncodeSyncPosition(sampleSyncPositionPacket())
+	syncOut, err := flow.HandleClientFrame(decodeSingleFrame(t, syncRaw))
+	if err != nil {
+		t.Fatalf("unexpected sync position error: %v", err)
+	}
+	wantSync := movep.EncodeSyncPositionAck(sampleSyncPositionAckPacket())
+	if len(syncOut) != 1 || !bytes.Equal(syncOut[0], wantSync) {
+		t.Fatalf("unexpected sync position output: got %x want %x", syncOut, wantSync)
+	}
+	if flow.CurrentPhase() != session.PhaseGame {
+		t.Fatalf("expected phase %q after sync position, got %q", session.PhaseGame, flow.CurrentPhase())
+	}
+}
+
 func TestHandleClientFrameReturnsVisibleWorldBootstrapAfterEnterGame(t *testing.T) {
 	flow := NewFlow(testVisibleWorldConfig())
 	if _, err := flow.Start(); err != nil {
@@ -454,6 +494,17 @@ func testConfig() Config {
 					return gameflow.Result{Accepted: false}
 				}
 				return gameflow.Result{Accepted: true, Replication: sampleMoveAckPacket()}
+			},
+			HandleSyncPosition: func(packet movep.SyncPositionPacket) gameflow.SyncPositionResult {
+				if len(packet.Elements) != len(sampleSyncPositionPacket().Elements) {
+					return gameflow.SyncPositionResult{Accepted: false}
+				}
+				for i := range packet.Elements {
+					if packet.Elements[i] != sampleSyncPositionPacket().Elements[i] {
+						return gameflow.SyncPositionResult{Accepted: false}
+					}
+				}
+				return gameflow.SyncPositionResult{Accepted: true, Synchronization: sampleSyncPositionAckPacket()}
 			},
 		},
 	}
@@ -608,6 +659,14 @@ func sampleMovePacket() movep.MovePacket {
 
 func sampleMoveAckPacket() movep.MoveAckPacket {
 	return movep.MoveAckPacket{Func: 1, Arg: 0, Rot: 12, VID: 0x01020304, X: 12345, Y: 23456, Time: 0x11121314, Duration: 250}
+}
+
+func sampleSyncPositionPacket() movep.SyncPositionPacket {
+	return movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: 0x01020304, X: 12345, Y: 23456}, {VID: 0x01020305, X: 34567, Y: 45678}}}
+}
+
+func sampleSyncPositionAckPacket() movep.SyncPositionAckPacket {
+	return movep.SyncPositionAckPacket{Elements: []movep.SyncPositionElement{{VID: 0x01020304, X: 12345, Y: 23456}}}
 }
 
 func sampleVisibleCharacterAddPacket() worldproto.CharacterAddPacket {

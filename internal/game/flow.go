@@ -3,8 +3,8 @@ package game
 import (
 	"errors"
 
-	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
@@ -15,8 +15,11 @@ var (
 
 type HandleMoveFunc func(movep.MovePacket) Result
 
+type HandleSyncPositionFunc func(movep.SyncPositionPacket) SyncPositionResult
+
 type Config struct {
-	HandleMove HandleMoveFunc
+	HandleMove         HandleMoveFunc
+	HandleSyncPosition HandleSyncPositionFunc
 }
 
 type Result struct {
@@ -24,9 +27,15 @@ type Result struct {
 	Replication movep.MoveAckPacket
 }
 
+type SyncPositionResult struct {
+	Accepted        bool
+	Synchronization movep.SyncPositionAckPacket
+}
+
 type Flow struct {
-	machine    *session.StateMachine
-	handleMove HandleMoveFunc
+	machine            *session.StateMachine
+	handleMove         HandleMoveFunc
+	handleSyncPosition HandleSyncPositionFunc
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -34,23 +43,39 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if handler == nil {
 		handler = func(movep.MovePacket) Result { return Result{Accepted: false} }
 	}
-	return &Flow{machine: machine, handleMove: handler}
+	syncHandler := cfg.HandleSyncPosition
+	if syncHandler == nil {
+		syncHandler = func(movep.SyncPositionPacket) SyncPositionResult { return SyncPositionResult{Accepted: false} }
+	}
+	return &Flow{machine: machine, handleMove: handler, handleSyncPosition: syncHandler}
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 	if f.machine.Current() != session.PhaseGame {
 		return nil, ErrInvalidPhase
 	}
-	if in.Header != movep.HeaderMove {
+	switch in.Header {
+	case movep.HeaderMove:
+		packet, err := movep.DecodeMove(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleMove(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return [][]byte{movep.EncodeMoveAck(result.Replication)}, nil
+	case movep.HeaderSyncPosition:
+		packet, err := movep.DecodeSyncPosition(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleSyncPosition(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return [][]byte{movep.EncodeSyncPositionAck(result.Synchronization)}, nil
+	default:
 		return nil, ErrUnexpectedClientPacket
 	}
-	packet, err := movep.DecodeMove(in)
-	if err != nil {
-		return nil, err
-	}
-	result := f.handleMove(packet)
-	if !result.Accepted {
-		return nil, nil
-	}
-	return [][]byte{movep.EncodeMoveAck(result.Replication)}, nil
 }

@@ -6,6 +6,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
@@ -450,6 +451,61 @@ func TestNewGameSessionFactoryMovesTheSelectedCharacterInGame(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactorySynchronizesTheSelectedCharacterInGame(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	syncOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(sampleSelectedSyncPositionPacket())))
+	if err != nil {
+		t.Fatalf("unexpected sync position error: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected 1 sync frame, got %d", len(syncOut))
+	}
+	ack, err := movep.DecodeSyncPositionAck(decodeSingleFrame(t, syncOut[0]))
+	if err != nil {
+		t.Fatalf("decode sync position ack: %v", err)
+	}
+	if len(ack.Elements) != 1 {
+		t.Fatalf("expected 1 sync ack element, got %d", len(ack.Elements))
+	}
+	if ack.Elements[0].VID != 0x01020305 || ack.Elements[0].X != 1400 || ack.Elements[0].Y != 2500 {
+		t.Fatalf("unexpected sync position ack: %+v", ack.Elements[0])
+	}
+}
+
 func TestNewGameSessionFactoryMovesTheCreatedCharacterInGame(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
@@ -509,6 +565,49 @@ func TestNewGameSessionFactoryMovesTheCreatedCharacterInGame(t *testing.T) {
 	}
 }
 
+func TestUpdateSelectedCharacterPositionDoesNotMutateOnSaveFailure(t *testing.T) {
+	characters := stubCharacters()
+	original := characters[1]
+	updated, selected, ok := updateSelectedCharacterPosition(&failingAccountStore{}, StubLogin, 2, characters, 1, 1400, 2500)
+	if ok {
+		t.Fatal("expected position update to fail when account store save fails")
+	}
+	if updated != nil {
+		t.Fatalf("expected no updated character slice on failure, got %+v", updated)
+	}
+	if selected != (loginticket.Character{}) {
+		t.Fatalf("expected zero selected character on failure, got %+v", selected)
+	}
+	if characters[1].X != original.X || characters[1].Y != original.Y {
+		t.Fatalf("expected original character position to stay (%d,%d), got (%d,%d)", original.X, original.Y, characters[1].X, characters[1].Y)
+	}
+}
+
+func TestUpdateSelectedCharacterPositionReturnsPersistedCloneOnSuccess(t *testing.T) {
+	store := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	updated, selected, ok := updateSelectedCharacterPosition(store, StubLogin, 2, characters, 1, 1400, 2500)
+	if !ok {
+		t.Fatal("expected position update to succeed")
+	}
+	if selected.VID != 0x01020305 || selected.X != 1400 || selected.Y != 2500 {
+		t.Fatalf("unexpected updated selected character: %+v", selected)
+	}
+	if updated[1].X != 1400 || updated[1].Y != 2500 {
+		t.Fatalf("expected updated clone position (1400,2500), got (%d,%d)", updated[1].X, updated[1].Y)
+	}
+	if characters[1].X != 1200 || characters[1].Y != 2100 {
+		t.Fatalf("expected original slice to remain unchanged, got (%d,%d)", characters[1].X, characters[1].Y)
+	}
+	account, err := store.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if account.Characters[1].X != 1400 || account.Characters[1].Y != 2500 {
+		t.Fatalf("expected persisted position (1400,2500), got (%d,%d)", account.Characters[1].X, account.Characters[1].Y)
+	}
+}
+
 func TestNewGameSessionFactoryRejectsInvalidPublicAddr(t *testing.T) {
 	_, err := NewGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "not-an-ip"})
 	if !errors.Is(err, ErrInvalidPublicAddr) {
@@ -516,8 +615,22 @@ func TestNewGameSessionFactoryRejectsInvalidPublicAddr(t *testing.T) {
 	}
 }
 
+type failingAccountStore struct{}
+
+func (f *failingAccountStore) Load(string) (accountstore.Account, error) {
+	return accountstore.Account{}, accountstore.ErrAccountNotFound
+}
+
+func (f *failingAccountStore) Save(accountstore.Account) error {
+	return errors.New("save failed")
+}
+
 func sampleMovePacket() movep.MovePacket {
 	return movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 12345, Y: 23456, Time: 0x01020304}
+}
+
+func sampleSelectedSyncPositionPacket() movep.SyncPositionPacket {
+	return movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: 0x01020305, X: 1400, Y: 2500}}}
 }
 
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
