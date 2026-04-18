@@ -37,6 +37,7 @@ func TestFileStoreIssueThenConsumeRoundTrip(t *testing.T) {
 				X:           1000,
 				Y:           2000,
 				Z:           0,
+				MapIndex:    21,
 				Empire:      2,
 				SkillGroup:  1,
 				GuildID:     10,

@@ -38,6 +38,7 @@ const (
 
 const bootstrapPlayerPointType uint8 = 1
 const bootstrapPlayerPointValueIndex = 1
+const bootstrapMapIndex uint32 = 1
 
 var (
 	ErrInvalidLegacyAddr = errors.New("invalid legacy addr")
@@ -256,7 +257,7 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					}
 					ack := ticketMoveAckPacket(selected, packet)
 					if joinedSharedWorld {
-						sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{movep.EncodeMoveAck(ack)})
+						sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{movep.EncodeMoveAck(ack)})
 					}
 					return gameflow.Result{Accepted: true, Replication: ack}
 				},
@@ -282,7 +283,7 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						}
 						ack := ticketSyncPositionAckPacket(updatedSelected)
 						if joinedSharedWorld {
-							sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{movep.EncodeSyncPositionAck(ack)})
+							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, updatedSelected, [][]byte{movep.EncodeSyncPositionAck(ack)})
 						}
 						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ack}
 					}
@@ -300,7 +301,7 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					case chatproto.ChatTypeTalking:
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
 						if joinedSharedWorld {
-							sharedWorld.EnqueueToOtherSessionsInEmpire(sharedWorldID, selected.Empire, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+							sharedWorld.EnqueueToOtherSessionsInEmpireOnMap(sharedWorldID, selected, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
 						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 					case chatproto.ChatTypeParty:
@@ -773,6 +774,7 @@ func buildCreatedCharacter(id uint32, vid uint32, packet worldproto.CharacterCre
 		X:           x,
 		Y:           y,
 		Z:           0,
+		MapIndex:    bootstrapMapIndex,
 		Empire:      empire,
 		SkillGroup:  0,
 		Points:      points,
@@ -906,6 +908,7 @@ func stubCharacters() []loginticket.Character {
 		X:           1000,
 		Y:           2000,
 		Z:           0,
+		MapIndex:    bootstrapMapIndex,
 		Empire:      2,
 		SkillGroup:  1,
 		GuildID:     10,
@@ -940,6 +943,7 @@ func stubCharacters() []loginticket.Character {
 		X:           1200,
 		Y:           2100,
 		Z:           0,
+		MapIndex:    bootstrapMapIndex,
 		Empire:      2,
 		SkillGroup:  2,
 	}

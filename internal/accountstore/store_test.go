@@ -28,6 +28,7 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 			HairPart:   201,
 			X:          1000,
 			Y:          2000,
+			MapIndex:   21,
 			Empire:     2,
 			SkillGroup: 1,
 		}},

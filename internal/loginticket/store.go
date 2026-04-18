@@ -35,6 +35,7 @@ type Character struct {
 	X           int32      `json:"x"`
 	Y           int32      `json:"y"`
 	Z           int32      `json:"z"`
+	MapIndex    uint32     `json:"map_index"`
 	Empire      uint8      `json:"empire"`
 	SkillGroup  uint8      `json:"skill_group"`
 	GuildID     uint32     `json:"guild_id"`

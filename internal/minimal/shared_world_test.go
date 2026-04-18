@@ -104,6 +104,35 @@ func TestNewGameSessionFactoryQueuesPeerEntryAndExitForExistingPlayer(t *testing
 	}
 }
 
+func TestNewGameSessionFactoryDoesNotBootstrapPeerVisibilityAcrossMaps(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerTwo.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, firstEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(firstEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for first player, got %d", len(firstEnter))
+	}
+
+	_, secondEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(secondEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for second player on another map, got %d", len(secondEnter))
+	}
+
+	peerEntry := flushServerFrames(t, flowOne)
+	if len(peerEntry) != 0 {
+		t.Fatalf("expected no queued peer-entry frames across maps, got %d", len(peerEntry))
+	}
+}
+
 func TestNewGameSessionFactoryQueuesPeerMoveForVisiblePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -145,6 +174,70 @@ func TestNewGameSessionFactoryQueuesPeerMoveForVisiblePlayers(t *testing.T) {
 	}
 	if peerAck.VID != peerTwo.VID || peerAck.X != 1500 || peerAck.Y != 2600 || peerAck.Time != 0x11121314 {
 		t.Fatalf("unexpected peer move ack: %+v", peerAck)
+	}
+}
+
+func TestNewGameSessionFactoryDoesNotQueuePeerMoveAcrossMaps(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerTwo.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	moveOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
+	}
+
+	peerMove := flushServerFrames(t, flowOne)
+	if len(peerMove) != 0 {
+		t.Fatalf("expected no queued peer move frames across maps, got %d", len(peerMove))
+	}
+}
+
+func TestNewGameSessionFactoryDoesNotQueuePeerSyncPositionAcrossMaps(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerTwo.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	syncOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: peerTwo.VID, X: 1700, Y: 2800}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected 1 self sync_position ack frame, got %d", len(syncOut))
+	}
+
+	peerSync := flushServerFrames(t, flowOne)
+	if len(peerSync) != 0 {
+		t.Fatalf("expected no queued peer sync_position frames across maps, got %d", len(peerSync))
 	}
 }
 
@@ -272,6 +365,37 @@ func TestNewGameSessionFactoryDoesNotQueueLocalChatAcrossEmpires(t *testing.T) {
 	peerChat := flushServerFrames(t, flowOne)
 	if len(peerChat) != 0 {
 		t.Fatalf("expected no queued peer chat frames across empires, got %d", len(peerChat))
+	}
+}
+
+func TestNewGameSessionFactoryDoesNotQueueLocalChatAcrossMaps(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerTwo.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	chatOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "hola"})))
+	if err != nil {
+		t.Fatalf("unexpected chat error: %v", err)
+	}
+	if len(chatOut) != 1 {
+		t.Fatalf("expected 1 self chat frame, got %d", len(chatOut))
+	}
+
+	peerChat := flushServerFrames(t, flowOne)
+	if len(peerChat) != 0 {
+		t.Fatalf("expected no queued peer chat frames across maps, got %d", len(peerChat))
 	}
 }
 
@@ -707,6 +831,7 @@ func peerVisibilityCharacter(name string, id uint32, vid uint32, x int32, y int3
 	character.X = x
 	character.Y = y
 	character.Z = 0
+	character.MapIndex = bootstrapMapIndex
 	character.Empire = 2
 	character.SkillGroup = 1
 	character.GuildID = 0

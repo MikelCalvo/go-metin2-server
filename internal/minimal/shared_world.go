@@ -114,6 +114,9 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 	existing := make([]loginticket.Character, 0, len(r.sessions))
 	peerFrames := encodePeerVisibilityFrames(character)
 	for _, session := range r.sessions {
+		if !charactersShareVisibleWorld(character, session.character) {
+			continue
+		}
 		existing = append(existing, session.character)
 		session.pending.enqueue(peerFrames)
 	}
@@ -140,6 +143,9 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 
 	removeRaw := worldproto.EncodeCharacterDeleteNotice(worldproto.CharacterDeleteNoticePacket{VID: session.character.VID})
 	for _, peer := range r.sessions {
+		if !charactersShareVisibleWorld(session.character, peer.character) {
+			continue
+		}
 		peer.pending.enqueue([][]byte{removeRaw})
 	}
 }
@@ -176,6 +182,22 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][
 	}
 }
 
+func (r *sharedWorldRegistry) EnqueueToVisibleSessions(originID uint64, origin loginticket.Character, frames [][]byte) {
+	if r == nil || originID == 0 || len(frames) == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for id, session := range r.sessions {
+		if id == originID || !charactersShareVisibleWorld(origin, session.character) {
+			continue
+		}
+		session.pending.enqueue(frames)
+	}
+}
+
 func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpire(originID uint64, empire uint8, frames [][]byte) {
 	if r == nil || originID == 0 || empire == 0 || len(frames) == 0 {
 		return
@@ -186,6 +208,22 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpire(originID uint64, em
 
 	for id, session := range r.sessions {
 		if id == originID || session.character.Empire != empire {
+			continue
+		}
+		session.pending.enqueue(frames)
+	}
+}
+
+func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpireOnMap(originID uint64, origin loginticket.Character, frames [][]byte) {
+	if r == nil || originID == 0 || origin.Empire == 0 || len(frames) == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for id, session := range r.sessions {
+		if id == originID || session.character.Empire != origin.Empire || !charactersShareVisibleWorld(origin, session.character) {
 			continue
 		}
 		session.pending.enqueue(frames)
@@ -224,6 +262,17 @@ func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byt
 		return true
 	}
 	return false
+}
+
+func charactersShareVisibleWorld(left loginticket.Character, right loginticket.Character) bool {
+	return characterMapIndex(left) == characterMapIndex(right)
+}
+
+func characterMapIndex(character loginticket.Character) uint32 {
+	if character.MapIndex == 0 {
+		return bootstrapMapIndex
+	}
+	return character.MapIndex
 }
 
 func encodePeerVisibilityFrames(character loginticket.Character) [][]byte {

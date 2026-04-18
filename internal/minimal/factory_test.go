@@ -290,11 +290,12 @@ func TestNewGameSessionFactoryRespondsToStateCheckerDuringHandshake(t *testing.T
 
 func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: stubCharacters()}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
 	}
 
-	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
 	if err != nil {
 		t.Fatalf("unexpected game session factory error: %v", err)
 	}
@@ -347,6 +348,17 @@ func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	}
 	if mainCharacter.Name != "FreshSura" || mainCharacter.RaceNum != 2 {
 		t.Fatalf("unexpected created main character: %+v", mainCharacter)
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account after create: %v", err)
+	}
+	if account.Characters[2].Name != "FreshSura" {
+		t.Fatalf("expected created character in persisted slot 2, got %+v", account.Characters[2])
+	}
+	if account.Characters[2].MapIndex != 1 {
+		t.Fatalf("expected created character bootstrap map index 1, got %d", account.Characters[2].MapIndex)
 	}
 }
 
