@@ -1,9 +1,12 @@
 # First Chat Scope Hardening
 
-This document freezes the first non-global chat scoping pass that the bootstrap runtime can support with its current persisted character data.
+This document freezes the first non-global chat scoping pass that the bootstrap runtime could support with its initial persisted character data.
 
-The runtime does not yet persist or model map index, channel topology, sector culling, or real party membership.
-Because of that, this slice intentionally uses the scope boundaries that do already exist in the bootstrap runtime:
+That first pass has since been tightened further by `map-index-world-scope-hardening.md`.
+The empire/guild boundaries introduced here still matter, but local talking chat is no longer only same-empire; it is now same-map and same-empire.
+
+At the time of this first hardening slice, the runtime did not yet persist or model map index, channel topology, sector culling, or real party membership.
+Because of that, this slice intentionally used the scope boundaries that already existed then:
 
 - `Empire`
 - `GuildID`
@@ -13,7 +16,8 @@ Because of that, this slice intentionally uses the scope boundaries that do alre
 ### `CHAT_TYPE_TALKING`
 
 - sender still receives a deterministic direct echo
-- queued peer fanout now reaches only connected peers in the same empire
+- this first hardening pass limited queued peer fanout to connected peers in the same empire
+- later map-index hardening further restricted local talking to the same bootstrap `MapIndex`
 
 ### `CHAT_TYPE_SHOUT`
 
@@ -40,7 +44,6 @@ The bootstrap runtime now starts honoring real scope boundaries where it already
 
 This slice does not yet add:
 
-- map-index scoping
 - channel scoping
 - sector/range culling
 - language-ring behavior

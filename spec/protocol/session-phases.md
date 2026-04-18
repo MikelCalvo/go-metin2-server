@@ -111,17 +111,17 @@ Initial milestone scope:
 Typical traffic in this phase:
 - move
 - sync position
-- local talking chat (same-empire fanout)
+- local talking chat (same-map, same-empire fanout)
 - whisper by character name
 - bootstrap party chat
 - bootstrap guild chat (same non-zero `GuildID` fanout)
 - bootstrap shout chat (same-empire fanout)
 - bootstrap system info chat
-- bootstrap system notice chat
+- reserved server-originated notice path
 - control-plane `PING`/`PONG` that should not disturb the live phase
-- visible peer `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` / `CHARACTER_DEL`
-- queued peer `MOVE` replication
-- queued peer `SYNC_POSITION` replication
+- visible peer `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` / `CHARACTER_DEL` on the same bootstrap `MapIndex`
+- queued peer `MOVE` replication on the same bootstrap `MapIndex`
+- queued peer `SYNC_POSITION` replication on the same bootstrap `MapIndex`
 - queued peer `CHAT` delivery
 - direct target `WHISPER` delivery
 - minimal world updates

@@ -19,10 +19,10 @@ Current scope of the project:
 - A tolerant `PONG` control path accepted in `GAME` for server-driven ping probes.
 - Character deletion on the selection surface with deterministic success/failure responses.
 - A first visible-world bootstrap that inserts the selected character into the game world after `ENTERGAME`.
-- Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime.
-- Minimal MOVE fanout so visible peers receive queued movement replication from other connected players.
-- Minimal `SYNC_POSITION` fanout so visible peers receive queued reconciliation updates from other connected players.
-- Minimal local talking chat fanout so same-empire visible peers receive queued `GC_CHAT` deliveries from other connected players.
+- Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime and share the same bootstrap `MapIndex`.
+- Minimal MOVE fanout so visible peers on the same bootstrap `MapIndex` receive queued movement replication from other connected players.
+- Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players.
+- Minimal local talking chat fanout so same-empire visible peers on the same bootstrap `MapIndex` receive queued `GC_CHAT` deliveries from other connected players.
 - Minimal whisper routing by exact character name across currently connected bootstrap sessions.
 - Minimal bootstrap `CHAT_TYPE_PARTY` fanout across the currently connected `GAME` sessions.
 - Minimal bootstrap `CHAT_TYPE_GUILD` fanout across connected `GAME` sessions that share the same non-zero `GuildID`.
@@ -138,6 +138,7 @@ Legend:
 - `spec/protocol/shout-chat-bootstrap.md`
 - `spec/protocol/info-notice-bootstrap.md`
 - `spec/protocol/chat-scope-first-hardening.md`
+- `spec/protocol/map-index-world-scope-hardening.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -223,6 +224,7 @@ What exists today:
 - file-backed bootstrap account snapshots for the stub login
 - character creation that survives fresh auth/game sessions
 - character deletion that persists an empty slot across fresh auth/game sessions
+- bootstrap character snapshots now persist `MapIndex`, with new characters defaulting to bootstrap map `1`
 - deterministic single-character `MOVE` replication/ack using the selected character VID
 - deterministic selected-character `SYNC_POSITION` reconciliation in `GAME`
 - deterministic selected-character local talking `GC_CHAT` echo in `GAME`
@@ -232,11 +234,11 @@ What exists today:
 - tolerant `CLIENT_VERSION` acceptance in `LOADING` with no phase transition and no server response
 - tolerant `PONG` acceptance in `GAME` with no phase transition and no server response
 - the selected character is inserted into the visible world after `ENTERGAME` via minimal `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` + `PLAYER_POINT_CHANGE`
-- a later entering player receives already-connected peers as `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap frames
-- already-connected peers receive queued `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` when a new player enters and `CHARACTER_DEL` when that peer disconnects
-- already-connected peers receive queued `MOVE` replication when a visible peer moves
-- already-connected peers receive queued `SYNC_POSITION` replication when a visible peer reconciles position
-- same-empire already-connected peers receive queued local talking `GC_CHAT` deliveries when a visible peer chats
+- a later entering player receives already-connected peers as `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap frames when they share the same bootstrap `MapIndex`
+- already-connected peers receive queued `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` when a new player enters and `CHARACTER_DEL` when that peer disconnects, again within the same bootstrap `MapIndex`
+- already-connected peers on the same bootstrap `MapIndex` receive queued `MOVE` replication when a visible peer moves
+- already-connected peers on the same bootstrap `MapIndex` receive queued `SYNC_POSITION` replication when a visible peer reconciles position
+- same-empire already-connected peers on the same bootstrap `MapIndex` receive queued local talking `GC_CHAT` deliveries when a visible peer chats
 - named connected peers receive direct `GC_WHISPER` delivery when another player whispers them, while unknown targets return `WHISPER_TYPE_NOT_EXIST` to the sender
 - currently connected `GAME` sessions act as one temporary bootstrap party for `CHAT_TYPE_PARTY` fanout
 - connected `GAME` sessions with the same non-zero `GuildID` receive bootstrap `CHAT_TYPE_GUILD` fanout

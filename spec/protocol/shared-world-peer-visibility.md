@@ -24,14 +24,14 @@ The current bootstrap runtime behavior is:
 1. player A enters `GAME`
 2. player A receives only the existing self-bootstrap burst
 3. player B later enters `GAME`
-4. player B receives:
+4. if player A and player B share the same bootstrap `MapIndex`, player B receives:
    - the normal self-bootstrap burst
    - one visibility burst for player A:
      - `CHARACTER_ADD`
      - `CHAR_ADDITIONAL_INFO`
      - `CHARACTER_UPDATE`
-5. player A receives the same three peer-visibility frames for player B via the queued server-frame runtime hook
-6. when player B disconnects, player A receives `CHARACTER_DEL` carrying player B's `vid`
+5. if player A and player B share the same bootstrap `MapIndex`, player A receives the same three peer-visibility frames for player B via the queued server-frame runtime hook
+6. when player B disconnects, player A receives `CHARACTER_DEL` carrying player B's `vid` only if they shared the same bootstrap `MapIndex`
 
 ## `CHARACTER_DEL`
 
@@ -54,9 +54,9 @@ Notes:
 ## Current scope limits
 
 This slice freezes:
-- peer snapshot bootstrap for players already connected when a new player enters
-- queued peer enter notifications for already-connected sessions
-- queued peer remove notifications on disconnect
+- peer snapshot bootstrap for players already connected on the same bootstrap `MapIndex` when a new player enters
+- queued peer enter notifications for already-connected sessions on the same bootstrap `MapIndex`
+- queued peer remove notifications on disconnect within the same bootstrap `MapIndex`
 - reuse of the existing `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` payloads for visible peers
 
 It does not yet freeze:

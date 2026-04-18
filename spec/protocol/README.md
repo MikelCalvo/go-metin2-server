@@ -23,6 +23,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `shout-chat-bootstrap.md` — minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions
 - `info-notice-bootstrap.md` — minimal bootstrap system-chat handling for `CHAT_TYPE_INFO` and `CHAT_TYPE_NOTICE`
 - `chat-scope-first-hardening.md` — first non-global scoping pass for talking/guild/shout using currently available runtime data
+- `map-index-world-scope-hardening.md` — first map-index-backed visible-world scoping pass for visibility, movement, sync, and local talking chat
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`
 - `sync-position-bootstrap.md` — first self-only sync-position reconciliation after entering `GAME`
