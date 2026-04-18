@@ -27,7 +27,7 @@ Current scope of the project:
 - Minimal bootstrap `CHAT_TYPE_PARTY` fanout across the currently connected `GAME` sessions.
 - Minimal bootstrap `CHAT_TYPE_GUILD` fanout across connected `GAME` sessions that share the same non-zero `GuildID`.
 - Minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions in the same empire.
-- Minimal bootstrap system `CHAT_TYPE_INFO` self-delivery in `GAME`, plus a programmatic server-originated `CHAT_TYPE_NOTICE` broadcast path; client-originated `CHAT_TYPE_NOTICE` remains rejected.
+- Minimal bootstrap system `CHAT_TYPE_INFO` self-delivery in `GAME`, plus a server-originated `CHAT_TYPE_NOTICE` broadcast path exposed through a local-only `gamed` ops endpoint; client-originated `CHAT_TYPE_NOTICE` remains rejected.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
@@ -160,6 +160,12 @@ Both binaries expose an ops server with:
 - `/debug/pprof/mutex`
 - `/debug/pprof/trace`
 
+`gamed` also exposes:
+- `POST /local/notice`
+  - loopback clients only
+  - raw request body = notice text
+  - queues a bootstrap `CHAT_TYPE_NOTICE` broadcast to connected `GAME` sessions
+
 Default addresses:
 - `gamed`: `:6060`
 - `authd`: `:6061`
@@ -178,6 +184,7 @@ go tool pprof http://127.0.0.1:6060/debug/pprof/heap
 go tool pprof http://127.0.0.1:6060/debug/pprof/goroutine
 go tool pprof http://127.0.0.1:6060/debug/pprof/profile?seconds=30
 curl http://127.0.0.1:6060/debug/pprof/goroutine?debug=1
+curl -X POST http://127.0.0.1:6060/local/notice --data 'server maintenance'
 ```
 
 Do not expose pprof directly to the public internet.
@@ -245,7 +252,7 @@ What exists today:
 - connected `GAME` sessions with the same non-zero `GuildID` receive bootstrap `CHAT_TYPE_GUILD` fanout
 - connected `GAME` sessions in the same empire receive bootstrap `CHAT_TYPE_SHOUT` fanout
 - `CHAT_TYPE_INFO` currently acts as a bootstrap system/self channel with `vid = 0` and raw message text
-- a programmatic server-originated `CHAT_TYPE_NOTICE` path now queues raw system notices with `vid = 0` to connected `GAME` sessions, while client-originated `CHAT_TYPE_NOTICE` remains rejected
+- a server-originated `CHAT_TYPE_NOTICE` path now queues raw system notices with `vid = 0` to connected `GAME` sessions, and `gamed` exposes that path through loopback-only `POST /local/notice`; client-originated `CHAT_TYPE_NOTICE` remains rejected
 
 What still does not exist yet:
 - compatibility-grade persistence matching the legacy target
