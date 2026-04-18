@@ -20,6 +20,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `whisper-name-routing.md` — minimal exact-name whisper routing among connected `GAME` sessions
 - `party-chat-bootstrap.md` — minimal bootstrap `CHAT_TYPE_PARTY` fanout across connected `GAME` sessions
 - `guild-chat-bootstrap.md` — minimal bootstrap `CHAT_TYPE_GUILD` fanout across connected `GAME` sessions
+- `shout-chat-bootstrap.md` — minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`
 - `sync-position-bootstrap.md` — first self-only sync-position reconciliation after entering `GAME`
