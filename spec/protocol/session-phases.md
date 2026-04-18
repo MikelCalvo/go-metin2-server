@@ -113,6 +113,7 @@ Typical traffic in this phase:
 - sync position
 - local talking chat
 - whisper by character name
+- bootstrap party chat
 - control-plane `PING`/`PONG` that should not disturb the live phase
 - visible peer `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` / `CHARACTER_DEL`
 - queued peer `MOVE` replication
