@@ -21,6 +21,20 @@ go run ./cmd/authd
 go run ./cmd/gamed
 ```
 
+## Public CI
+
+The repository ships with a GitHub Actions baseline workflow in `.github/workflows/ci.yml`.
+
+It currently validates:
+
+- `gofmt` cleanliness
+- `go test ./...`
+- `go vet ./...`
+- daemon builds for `authd` and `gamed`
+- Docker runtime and debug image builds
+
+The intent is simple: every small slice should be pushable and publicly re-checkable.
+
 ## Runtime configuration
 
 ### authd

@@ -69,7 +69,7 @@ For code changes, use this loop:
 5. run the test again
 6. run the broader suite
 7. commit the smallest coherent unit
-8. push so CI validates the result
+8. push so CI validates the result publicly via `.github/workflows/ci.yml`
 
 For documentation-only changes, a failing test is not required, but the docs must still be concrete and tied to current project reality.
 

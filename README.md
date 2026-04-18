@@ -96,6 +96,86 @@ Legend:
 - [ ] additional gameplay systems after the boot path is stable
 - [ ] production packaging and deployment guidance
 
+## Global system status
+
+Legend:
+- `[x]` implemented and exercised in the repository
+- `[~]` bootstrap, partial, or intentionally simplified
+- `[ ]` not started yet
+
+### Protocol and boot path
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Frame envelope and packet codecs | [x] | Core control/login/world/move/chat packet families are owned by this repository. |
+| Session phases and handshake | [x] | `HANDSHAKE -> AUTH/LOGIN -> SELECT -> LOADING -> GAME` is documented and tested. |
+| Auth/login surface | [x] | `authd` and `gamed` split, login-key path working. |
+| Character list / selection surface | [x] | login success, empire selection, create/delete/select all exist in bootstrap form. |
+| Enter-game bootstrap | [x] | main character, visible insert, point refresh, and phase transition are in place. |
+| Real capture/golden fixture library | [~] | Protocol docs and tests exist, but a richer project-owned fixture corpus is still ahead. |
+
+### World runtime
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Shared player visibility | [~] | Peer enter/leave visibility exists for players on the same bootstrap `MapIndex`. |
+| Movement replication | [~] | `MOVE` and `SYNC_POSITION` fan out to already-visible peers on the same bootstrap `MapIndex`. |
+| Map boundaries | [~] | `MapIndex` is persisted and used for visibility/chat scoping, but there is no warp flow yet. |
+| Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
+| Interest management / culling | [ ] | No range-, sector-, or AOI-based visibility yet. |
+| Warp / map transfer | [ ] | No world migration or re-bootstrap path between maps yet. |
+| Entity runtime beyond players | [ ] | No NPC, mob, item-ground, or generic entity layer yet. |
+
+### Social, chat, and operator surfaces
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Local talking chat | [~] | Same-map + same-empire fanout exists; still bootstrap scope. |
+| Whisper | [x] | Exact-name whisper routing works across connected bootstrap sessions. |
+| Party chat | [~] | Bootstrap-only fanout; no real party membership system yet. |
+| Guild chat | [~] | Scoped by non-zero `GuildID`, but no guild lifecycle/roster system exists yet. |
+| Shout | [~] | Same-empire bootstrap fanout exists; no real world/channel topology behind it yet. |
+| System info / notice | [~] | `INFO` self-delivery, server-originated `NOTICE`, and local-only notice trigger exist. |
+| Operator/admin surface | [~] | Loopback-only `POST /local/notice` exists on `gamed`; broader admin/auth tooling does not. |
+
+### Character systems and gameplay
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, and chat slices. |
+| Inventory | [ ] | Not started. |
+| Equipment | [ ] | Not started. |
+| Item use / consumables | [ ] | Not started. |
+| Derived stats / combat formulas | [ ] | Not started. |
+| Combat loop | [ ] | No targeting, attacks, damage, or death loop yet. |
+| Respawn / death handling | [ ] | Not started. |
+| NPCs / shops | [ ] | Not started. |
+| Mobs / AI / spawn groups | [ ] | Not started. |
+| Quest / script runtime | [ ] | Not started. |
+
+### Persistence, packaging, and public-project maturity
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Login tickets | [x] | Working file-backed ticket flow between `authd` and `gamed`. |
+| Bootstrap account snapshots | [~] | File-backed account/character persistence exists, but it is not compatibility-grade yet. |
+| Database schema / migrations | [ ] | No real DB-backed persistence layer or live migrations yet. |
+| Observability | [~] | Health, pprof, and a small local-only notice endpoint exist; metrics/logging/admin depth still needs work. |
+| CI / public validation | [x] | GitHub Actions baseline checks formatting, tests, vet, daemon builds, and runtime/debug image builds. |
+| Release/deploy guidance | [ ] | No production-grade release/deployment story yet. |
+
+## Milestone ladder
+
+| Milestone | Status | Exit criteria |
+| --- | --- | --- |
+| M0 — Protocol-owned boot path | [x] | Handshake, auth/login, selection, create/delete/select, enter-game, and first movement loop are stable. |
+| M1 — Shared-world pre-alpha | [~] | Players can see each other, move, chat, and receive notices with real map/channel boundaries. |
+| M2 — Entity/world runtime foundation | [ ] | Real world/map/channel ownership, warp flow, and a reusable entity runtime replace the current bootstrap shortcuts. |
+| M3 — Character systems | [ ] | Inventory, equipment, item use, and character-state persistence exist in usable form. |
+| M4 — Combat vertical slice | [ ] | Targeting, attacks, damage, death, and respawn work for at least one minimal content path. |
+| M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime are available. |
+| M6 — Compatibility-grade persistence and operations | [ ] | DB-backed persistence, richer observability/admin tooling, CI maturity, and deploy guidance are in place. |
+
 ## Project layout
 
 - `cmd/authd` — auth daemon entrypoint
@@ -118,6 +198,8 @@ Legend:
 - `docs/clean-room-policy.md`
 - `docs/development.md`
 - `docs/debugging-and-profiling.md`
+- `docs/roadmaps/2026-04-18-global-project-assessment.md`
+- `docs/plans/2026-04-18-open-mt2-style-next-steps-roadmap.md`
 - `spec/protocol/README.md`
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
