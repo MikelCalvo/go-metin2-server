@@ -201,8 +201,8 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected entergame error: %v", err)
 	}
-	if len(enterGameOut) != 4 {
-		t.Fatalf("expected 4 game bootstrap frames, got %d", len(enterGameOut))
+	if len(enterGameOut) != 5 {
+		t.Fatalf("expected 5 game bootstrap frames, got %d", len(enterGameOut))
 	}
 	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
 	if err != nil {
@@ -231,6 +231,13 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	}
 	if update.VID != 0x01020305 || update.Parts[0] != 102 || update.Parts[3] != 202 || update.MovingSpeed != 150 || update.AttackSpeed != 100 || update.GuildID != 0 {
 		t.Fatalf("unexpected character update packet: %+v", update)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, enterGameOut[4]))
+	if err != nil {
+		t.Fatalf("decode player point change: %v", err)
+	}
+	if pointChange.VID != 0x01020305 || pointChange.Type != 1 || pointChange.Amount != 900 || pointChange.Value != 900 {
+		t.Fatalf("unexpected player point change packet: %+v", pointChange)
 	}
 }
 
@@ -387,8 +394,8 @@ func TestNewGameSessionFactoryReturnsVisibleWorldBootstrapForCreatedCharacter(t 
 	if err != nil {
 		t.Fatalf("unexpected entergame error: %v", err)
 	}
-	if len(enterGameOut) != 4 {
-		t.Fatalf("expected 4 game bootstrap frames, got %d", len(enterGameOut))
+	if len(enterGameOut) != 5 {
+		t.Fatalf("expected 5 game bootstrap frames, got %d", len(enterGameOut))
 	}
 	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, enterGameOut[1]))
 	if err != nil {
@@ -410,6 +417,13 @@ func TestNewGameSessionFactoryReturnsVisibleWorldBootstrapForCreatedCharacter(t 
 	}
 	if update.VID != 0x01020306 || update.Parts[0] != 1 || update.Parts[3] != 0 || update.MovingSpeed != 150 || update.AttackSpeed != 100 || update.GuildID != 0 {
 		t.Fatalf("unexpected created character update packet: %+v", update)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, enterGameOut[4]))
+	if err != nil {
+		t.Fatalf("decode player point change: %v", err)
+	}
+	if pointChange.VID != 0x01020306 || pointChange.Type != 1 || pointChange.Amount != 650 || pointChange.Value != 650 {
+		t.Fatalf("unexpected created player point change packet: %+v", pointChange)
 	}
 }
 

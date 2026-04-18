@@ -455,6 +455,11 @@ func TestBootFlowReturnsVisibleWorldBootstrapOverTCP(t *testing.T) {
 	if !bytes.Equal(characterUpdate.Raw, wantCharacterUpdate) {
 		t.Fatalf("unexpected character update bytes: got %x want %x", characterUpdate.Raw, wantCharacterUpdate)
 	}
+	pointChange := client.readFrame(t)
+	wantPointChange := worldproto.EncodePlayerPointChange(sampleVisiblePlayerPointChangePacket())
+	if !bytes.Equal(pointChange.Raw, wantPointChange) {
+		t.Fatalf("unexpected player point change bytes: got %x want %x", pointChange.Raw, wantPointChange)
+	}
 	if got := server.currentPhase(); got != session.PhaseGame {
 		t.Fatalf("expected server phase %q after visible bootstrap, got %q", session.PhaseGame, got)
 	}

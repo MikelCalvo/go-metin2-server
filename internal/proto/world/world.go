@@ -21,6 +21,7 @@ const (
 	HeaderPlayerCreateFailure     uint16 = 0x020D
 	HeaderMainCharacter           uint16 = 0x0210
 	HeaderPlayerPoints            uint16 = 0x0214
+	HeaderPlayerPointChange       uint16 = 0x0215
 
 	CharacterNameFieldSize      = 65
 	BGMNameFieldSize            = 25
@@ -37,6 +38,7 @@ const (
 	playerCreateFailurePayloadSize     = 1
 	mainCharacterPayloadSize           = 114
 	playerPointsPayloadSize            = PointCount * 4
+	playerPointChangePayloadSize       = 13
 	simplePlayerPayloadSize            = 103
 )
 
@@ -124,6 +126,13 @@ type MainCharacterPacket struct {
 
 type PlayerPointsPacket struct {
 	Points [PointCount]int32
+}
+
+type PlayerPointChangePacket struct {
+	VID    uint32
+	Type   uint8
+	Amount int32
+	Value  int32
 }
 
 func EncodeCharacterCreate(packet CharacterCreatePacket) ([]byte, error) {
@@ -509,6 +518,38 @@ func DecodePlayerPoints(f frame.Frame) (PlayerPointsPacket, error) {
 		packet.Points[i] = int32(binary.LittleEndian.Uint32(f.Payload[offset:]))
 		offset += 4
 	}
+	return packet, nil
+}
+
+func EncodePlayerPointChange(packet PlayerPointChangePacket) []byte {
+	payload := make([]byte, playerPointChangePayloadSize)
+	offset := 0
+	binary.LittleEndian.PutUint32(payload[offset:], packet.VID)
+	offset += 4
+	payload[offset] = packet.Type
+	offset++
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.Amount))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.Value))
+	return frame.Encode(HeaderPlayerPointChange, payload)
+}
+
+func DecodePlayerPointChange(f frame.Frame) (PlayerPointChangePacket, error) {
+	if f.Header != HeaderPlayerPointChange {
+		return PlayerPointChangePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != playerPointChangePayloadSize {
+		return PlayerPointChangePacket{}, ErrInvalidPayload
+	}
+	offset := 0
+	packet := PlayerPointChangePacket{}
+	packet.VID = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	packet.Type = f.Payload[offset]
+	offset++
+	packet.Amount = int32(binary.LittleEndian.Uint32(f.Payload[offset:]))
+	offset += 4
+	packet.Value = int32(binary.LittleEndian.Uint32(f.Payload[offset:]))
 	return packet, nil
 }
 

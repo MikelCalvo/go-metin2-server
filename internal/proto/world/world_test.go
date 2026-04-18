@@ -273,6 +273,25 @@ func TestDecodePlayerPointsReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodePlayerPointChangeBuildsAServerFrame(t *testing.T) {
+	packet := samplePlayerPointChangePacket()
+	want := expectedPlayerPointChangeFrame(packet)
+	got := EncodePlayerPointChange(packet)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected player point change frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodePlayerPointChangeReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodePlayerPointChange(decodeSingleFrame(t, expectedPlayerPointChangeFrame(samplePlayerPointChangePacket())))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != samplePlayerPointChangePacket() {
+		t.Fatalf("unexpected player point change packet: %+v", packet)
+	}
+}
+
 func TestDecodeCharacterSelectRejectsUnexpectedHeader(t *testing.T) {
 	_, err := DecodeCharacterSelect(frame.Frame{Header: HeaderMainCharacter, Length: 118, Payload: make([]byte, mainCharacterPayloadSize)})
 	if !errors.Is(err, ErrUnexpectedHeader) {
@@ -303,6 +322,20 @@ func TestDecodeCharacterUpdateRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeCharacterUpdateRejectsInvalidPayload(t *testing.T) {
 	_, err := DecodeCharacterUpdate(frame.Frame{Header: HeaderCharacterUpdate, Length: 37, Payload: make([]byte, characterUpdatePayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodePlayerPointChangeRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodePlayerPointChange(frame.Frame{Header: HeaderPlayerPoints, Length: 1024, Payload: make([]byte, playerPointsPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodePlayerPointChangeRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodePlayerPointChange(frame.Frame{Header: HeaderPlayerPointChange, Length: 16, Payload: make([]byte, playerPointChangePayloadSize-1)})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}
@@ -423,6 +456,19 @@ func expectedCharacterUpdateFrame(packet CharacterUpdatePacket) []byte {
 	return frame.Encode(HeaderCharacterUpdate, payload)
 }
 
+func expectedPlayerPointChangeFrame(packet PlayerPointChangePacket) []byte {
+	payload := make([]byte, playerPointChangePayloadSize)
+	offset := 0
+	binary.LittleEndian.PutUint32(payload[offset:], packet.VID)
+	offset += 4
+	payload[offset] = packet.Type
+	offset++
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.Amount))
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], uint32(packet.Value))
+	return frame.Encode(HeaderPlayerPointChange, payload)
+}
+
 func expectedPlayerCreateSuccessFrame(packet PlayerCreateSuccessPacket) []byte {
 	payload := make([]byte, 1+103)
 	payload[0] = packet.Index
@@ -537,6 +583,10 @@ func sampleCharacterUpdatePacket() CharacterUpdatePacket {
 		PKMode:      0,
 		MountVnum:   0,
 	}
+}
+
+func samplePlayerPointChangePacket() PlayerPointChangePacket {
+	return PlayerPointChangePacket{VID: 0x01020304, Type: 1, Amount: 1234, Value: 1234}
 }
 
 func samplePoints() [PointCount]int32 {

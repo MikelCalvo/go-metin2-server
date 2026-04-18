@@ -411,7 +411,8 @@ func TestHandleClientFrameReturnsVisibleWorldBootstrapAfterEnterGame(t *testing.
 		t.Fatalf("unexpected character additional info encode error: %v", err)
 	}
 	wantCharacterUpdate := worldproto.EncodeCharacterUpdate(sampleVisibleCharacterUpdatePacket())
-	want := [][]byte{wantPhaseGame, wantCharacterAdd, wantCharacterInfo, wantCharacterUpdate}
+	wantPointChange := worldproto.EncodePlayerPointChange(sampleVisiblePlayerPointChangePacket())
+	want := [][]byte{wantPhaseGame, wantCharacterAdd, wantCharacterInfo, wantCharacterUpdate, wantPointChange}
 	if len(enterGameOut) != len(want) {
 		t.Fatalf("expected %d entergame frames, got %d", len(want), len(enterGameOut))
 	}
@@ -517,7 +518,8 @@ func testVisibleWorldConfig() Config {
 		addRaw := worldproto.EncodeCharacterAdd(sampleVisibleCharacterAddPacket())
 		infoRaw, _ := worldproto.EncodeCharacterAdditionalInfo(sampleVisibleCharacterAdditionalInfoPacket())
 		updateRaw := worldproto.EncodeCharacterUpdate(sampleVisibleCharacterUpdatePacket())
-		return worldentry.EnterGameResult{Frames: [][]byte{addRaw, infoRaw, updateRaw}}
+		pointChangeRaw := worldproto.EncodePlayerPointChange(sampleVisiblePlayerPointChangePacket())
+		return worldentry.EnterGameResult{Frames: [][]byte{addRaw, infoRaw, updateRaw, pointChangeRaw}}
 	}
 	return cfg
 }
@@ -714,6 +716,10 @@ func sampleVisibleCharacterUpdatePacket() worldproto.CharacterUpdatePacket {
 		PKMode:      0,
 		MountVnum:   0,
 	}
+}
+
+func sampleVisiblePlayerPointChangePacket() worldproto.PlayerPointChangePacket {
+	return worldproto.PlayerPointChangePacket{VID: 0x01020304, Type: 1, Amount: 1234, Value: 1234}
 }
 
 func sequentialBytes32(start byte) [32]byte {

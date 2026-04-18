@@ -34,6 +34,9 @@ const (
 	StubPassword = "hunter2"
 )
 
+const bootstrapPlayerPointType uint8 = 1
+const bootstrapPlayerPointValueIndex = 1
+
 var (
 	ErrInvalidLegacyAddr = errors.New("invalid legacy addr")
 	ErrInvalidPublicAddr = errors.New("invalid public addr")
@@ -208,6 +211,7 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						worldproto.EncodeCharacterAdd(ticketCharacterAddPacket(selected)),
 						infoRaw,
 						worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(selected)),
+						worldproto.EncodePlayerPointChange(ticketPlayerPointChangePacket(selected)),
 					}}
 				},
 			},
@@ -492,6 +496,15 @@ func ticketCharacterUpdatePacket(character loginticket.Character) worldproto.Cha
 		Alignment:   0,
 		PKMode:      0,
 		MountVnum:   0,
+	}
+}
+
+func ticketPlayerPointChangePacket(character loginticket.Character) worldproto.PlayerPointChangePacket {
+	return worldproto.PlayerPointChangePacket{
+		VID:    character.VID,
+		Type:   bootstrapPlayerPointType,
+		Amount: character.Points[bootstrapPlayerPointValueIndex],
+		Value:  character.Points[bootstrapPlayerPointValueIndex],
 	}
 }
 
