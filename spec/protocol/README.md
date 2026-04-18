@@ -10,6 +10,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `auth-login.md` — minimal auth-server credential exchange and login-key issuance
 - `login-selection.md` — minimal login-by-key and selection-surface packet layouts
 - `select-world-entry.md` — minimal selection, loading, and enter-game packet choreography
+- `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `sync-position-bootstrap.md` — first self-only sync-position reconciliation after entering `GAME`
 - `boot-path.md` — first milestone from connect to basic movement
 - `packet-matrix.md` — working inventory for the first protocol slice

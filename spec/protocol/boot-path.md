@@ -102,6 +102,7 @@ Expected outcomes:
 - the client appears in-world
 - the server keeps the session stable after the transition
 - the selected character is inserted into the visible world with deterministic bootstrap packets
+- the selected character receives a first deterministic `CHARACTER_UPDATE` refresh after the visible insert
 
 ## 9. Basic movement works
 The client sends a movement packet and the server processes it in the live game phase.
@@ -135,5 +136,6 @@ This document depends on:
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
 - `spec/protocol/packet-matrix.md`
+- `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/sync-position-bootstrap.md`
 - `docs/testing-strategy.md`
