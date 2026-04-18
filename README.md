@@ -27,6 +27,7 @@ Current scope of the project:
 - Minimal bootstrap `CHAT_TYPE_PARTY` fanout across the currently connected `GAME` sessions.
 - Minimal bootstrap `CHAT_TYPE_GUILD` fanout across the currently connected `GAME` sessions.
 - Minimal bootstrap `CHAT_TYPE_SHOUT` fanout across the currently connected `GAME` sessions.
+- Minimal bootstrap system `CHAT_TYPE_INFO` self-delivery and `CHAT_TYPE_NOTICE` broadcast across the currently connected `GAME` sessions.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
@@ -135,6 +136,7 @@ Legend:
 - `spec/protocol/party-chat-bootstrap.md`
 - `spec/protocol/guild-chat-bootstrap.md`
 - `spec/protocol/shout-chat-bootstrap.md`
+- `spec/protocol/info-notice-bootstrap.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -212,7 +214,7 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_DELETE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> peer CHARACTER_ADD/CHAR_ADDITIONAL_INFO/CHARACTER_UPDATE/CHARACTER_DEL -> peer MOVE/SYNC_POSITION/CHAT -> MOVE/SYNC_POSITION/CHAT/WHISPER/PARTY_CHAT/GUILD_CHAT/SHOUT_CHAT`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_DELETE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> peer CHARACTER_ADD/CHAR_ADDITIONAL_INFO/CHARACTER_UPDATE/CHARACTER_DEL -> peer MOVE/SYNC_POSITION/CHAT -> MOVE/SYNC_POSITION/CHAT/WHISPER/PARTY_CHAT/GUILD_CHAT/SHOUT_CHAT/INFO_CHAT/NOTICE_CHAT`
 
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
@@ -238,6 +240,8 @@ What exists today:
 - currently connected `GAME` sessions act as one temporary bootstrap party for `CHAT_TYPE_PARTY` fanout
 - currently connected `GAME` sessions act as one temporary bootstrap guild for `CHAT_TYPE_GUILD` fanout
 - currently connected `GAME` sessions act as one temporary bootstrap shout scope for `CHAT_TYPE_SHOUT` fanout
+- `CHAT_TYPE_INFO` currently acts as a bootstrap system/self channel with `vid = 0` and raw message text
+- `CHAT_TYPE_NOTICE` currently acts as a bootstrap system/broadcast channel with `vid = 0` and raw message text
 
 What still does not exist yet:
 - compatibility-grade persistence matching the legacy target

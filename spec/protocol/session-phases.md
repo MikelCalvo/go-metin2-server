@@ -116,6 +116,8 @@ Typical traffic in this phase:
 - bootstrap party chat
 - bootstrap guild chat
 - bootstrap shout chat
+- bootstrap system info chat
+- bootstrap system notice chat
 - control-plane `PING`/`PONG` that should not disturb the live phase
 - visible peer `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` / `CHARACTER_DEL`
 - queued peer `MOVE` replication

@@ -21,6 +21,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `party-chat-bootstrap.md` — minimal bootstrap `CHAT_TYPE_PARTY` fanout across connected `GAME` sessions
 - `guild-chat-bootstrap.md` — minimal bootstrap `CHAT_TYPE_GUILD` fanout across connected `GAME` sessions
 - `shout-chat-bootstrap.md` — minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions
+- `info-notice-bootstrap.md` — minimal bootstrap system-chat handling for `CHAT_TYPE_INFO` and `CHAT_TYPE_NOTICE`
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`
 - `sync-position-bootstrap.md` — first self-only sync-position reconciliation after entering `GAME`
