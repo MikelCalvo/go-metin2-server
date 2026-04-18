@@ -28,6 +28,28 @@ func TestEncodeDecodeChatDelivery(t *testing.T) {
 	}
 }
 
+func TestEncodeDecodeClientWhisper(t *testing.T) {
+	raw := EncodeClientWhisper(ClientWhisperPacket{Target: "PeerOne", Message: "hola privado"})
+	decoded, err := DecodeClientWhisper(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode client whisper: %v", err)
+	}
+	if decoded.Target != "PeerOne" || decoded.Message != "hola privado" {
+		t.Fatalf("unexpected decoded client whisper: %+v", decoded)
+	}
+}
+
+func TestEncodeDecodeServerWhisper(t *testing.T) {
+	raw := EncodeServerWhisper(ServerWhisperPacket{Type: WhisperTypeChat, FromName: "PeerTwo", Message: "hola privado"})
+	decoded, err := DecodeServerWhisper(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server whisper: %v", err)
+	}
+	if decoded.Type != WhisperTypeChat || decoded.FromName != "PeerTwo" || decoded.Message != "hola privado" {
+		t.Fatalf("unexpected decoded server whisper: %+v", decoded)
+	}
+}
+
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 	t.Helper()
 	decoder := frame.NewDecoder(4096)

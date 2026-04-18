@@ -244,6 +244,70 @@ func TestNewGameSessionFactoryQueuesPeerChatForVisiblePlayers(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryRoutesWhisperToNamedPeer(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	whisperOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientWhisper(chatproto.ClientWhisperPacket{Target: "PeerOne", Message: "hola privado"})))
+	if err != nil {
+		t.Fatalf("unexpected whisper error: %v", err)
+	}
+	if len(whisperOut) != 0 {
+		t.Fatalf("expected no direct sender whisper frames on success, got %d", len(whisperOut))
+	}
+
+	recipientWhisper := flushServerFrames(t, flowOne)
+	if len(recipientWhisper) != 1 {
+		t.Fatalf("expected 1 queued whisper frame for target, got %d", len(recipientWhisper))
+	}
+	delivery, err := chatproto.DecodeServerWhisper(decodeSingleFrame(t, recipientWhisper[0]))
+	if err != nil {
+		t.Fatalf("decode recipient whisper: %v", err)
+	}
+	if delivery.Type != chatproto.WhisperTypeChat || delivery.FromName != "PeerTwo" || delivery.Message != "hola privado" {
+		t.Fatalf("unexpected recipient whisper: %+v", delivery)
+	}
+}
+
+func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	whisperOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientWhisper(chatproto.ClientWhisperPacket{Target: "MissingPeer", Message: "hola privado"})))
+	if err != nil {
+		t.Fatalf("unexpected whisper error: %v", err)
+	}
+	if len(whisperOut) != 1 {
+		t.Fatalf("expected 1 sender whisper error frame, got %d", len(whisperOut))
+	}
+	errorPacket, err := chatproto.DecodeServerWhisper(decodeSingleFrame(t, whisperOut[0]))
+	if err != nil {
+		t.Fatalf("decode not-exist whisper: %v", err)
+	}
+	if errorPacket.Type != chatproto.WhisperTypeNotExist || errorPacket.FromName != "MissingPeer" || errorPacket.Message != "" {
+		t.Fatalf("unexpected not-exist whisper packet: %+v", errorPacket)
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 

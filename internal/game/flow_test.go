@@ -109,6 +109,36 @@ func TestHandleClientFrameAcceptsChatInGameAndReturnsDelivery(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsWhisperInGameAndReturnsDelivery(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleWhisper: func(packet chatproto.ClientWhisperPacket) WhisperResult {
+			if packet.Target != "PeerOne" || packet.Message != "hola privado" {
+				t.Fatalf("unexpected whisper packet: %+v", packet)
+			}
+			return WhisperResult{Accepted: true, Delivery: &chatproto.ServerWhisperPacket{Type: chatproto.WhisperTypeChat, FromName: "PeerTwo", Message: "hola privado"}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientWhisper(chatproto.ClientWhisperPacket{Target: "PeerOne", Message: "hola privado"})))
+	if err != nil {
+		t.Fatalf("unexpected whisper error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeServerWhisper(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode whisper delivery: %v", err)
+	}
+	if delivery.Type != chatproto.WhisperTypeChat || delivery.FromName != "PeerTwo" || delivery.Message != "hola privado" {
+		t.Fatalf("unexpected whisper delivery: %+v", delivery)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameRejectsUnexpectedPacketsInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})

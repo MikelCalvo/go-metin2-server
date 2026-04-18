@@ -302,6 +302,24 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					}
 					return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 				},
+				HandleWhisper: func(packet chatproto.ClientWhisperPacket) gameflow.WhisperResult {
+					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+						return gameflow.WhisperResult{Accepted: false}
+					}
+					selected := sessionTicket.Characters[selectedIndex]
+					if selected.ID == 0 || packet.Target == "" || packet.Message == "" {
+						return gameflow.WhisperResult{Accepted: false}
+					}
+					if packet.Target == selected.Name {
+						return gameflow.WhisperResult{Accepted: true}
+					}
+					delivery := ticketWhisperDeliveryPacket(selected, packet)
+					if joinedSharedWorld && sharedWorld.EnqueueToCharacterName(packet.Target, [][]byte{chatproto.EncodeServerWhisper(delivery)}) {
+						return gameflow.WhisperResult{Accepted: true}
+					}
+					notFound := ticketWhisperNotExistPacket(packet.Target)
+					return gameflow.WhisperResult{Accepted: true, Delivery: &notFound}
+				},
 			},
 		})
 		return newQueuedSessionFlow(inner, pending, func() {
@@ -613,6 +631,21 @@ func ticketChatDeliveryPacket(character loginticket.Character, packet chatproto.
 		VID:     character.VID,
 		Empire:  0,
 		Message: fmt.Sprintf("%s : %s", character.Name, packet.Message),
+	}
+}
+
+func ticketWhisperDeliveryPacket(character loginticket.Character, packet chatproto.ClientWhisperPacket) chatproto.ServerWhisperPacket {
+	return chatproto.ServerWhisperPacket{
+		Type:     chatproto.WhisperTypeChat,
+		FromName: character.Name,
+		Message:  packet.Message,
+	}
+}
+
+func ticketWhisperNotExistPacket(target string) chatproto.ServerWhisperPacket {
+	return chatproto.ServerWhisperPacket{
+		Type:     chatproto.WhisperTypeNotExist,
+		FromName: target,
 	}
 }
 

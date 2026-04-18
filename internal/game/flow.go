@@ -21,10 +21,13 @@ type HandleSyncPositionFunc func(movep.SyncPositionPacket) SyncPositionResult
 
 type HandleChatFunc func(chatproto.ClientChatPacket) ChatResult
 
+type HandleWhisperFunc func(chatproto.ClientWhisperPacket) WhisperResult
+
 type Config struct {
 	HandleMove         HandleMoveFunc
 	HandleSyncPosition HandleSyncPositionFunc
 	HandleChat         HandleChatFunc
+	HandleWhisper      HandleWhisperFunc
 }
 
 type Result struct {
@@ -42,11 +45,17 @@ type ChatResult struct {
 	Delivery chatproto.ChatDeliveryPacket
 }
 
+type WhisperResult struct {
+	Accepted bool
+	Delivery *chatproto.ServerWhisperPacket
+}
+
 type Flow struct {
 	machine            *session.StateMachine
 	handleMove         HandleMoveFunc
 	handleSyncPosition HandleSyncPositionFunc
 	handleChat         HandleChatFunc
+	handleWhisper      HandleWhisperFunc
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -62,7 +71,11 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if chatHandler == nil {
 		chatHandler = func(chatproto.ClientChatPacket) ChatResult { return ChatResult{Accepted: false} }
 	}
-	return &Flow{machine: machine, handleMove: handler, handleSyncPosition: syncHandler, handleChat: chatHandler}
+	whisperHandler := cfg.HandleWhisper
+	if whisperHandler == nil {
+		whisperHandler = func(chatproto.ClientWhisperPacket) WhisperResult { return WhisperResult{Accepted: false} }
+	}
+	return &Flow{machine: machine, handleMove: handler, handleSyncPosition: syncHandler, handleChat: chatHandler, handleWhisper: whisperHandler}
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
@@ -105,6 +118,19 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, nil
 		}
 		return [][]byte{chatproto.EncodeChatDelivery(result.Delivery)}, nil
+	case chatproto.HeaderClientWhisper:
+		packet, err := chatproto.DecodeClientWhisper(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleWhisper(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		if result.Delivery == nil {
+			return nil, nil
+		}
+		return [][]byte{chatproto.EncodeServerWhisper(*result.Delivery)}, nil
 	default:
 		return nil, ErrUnexpectedClientPacket
 	}

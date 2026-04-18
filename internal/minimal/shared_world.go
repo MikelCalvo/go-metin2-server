@@ -176,6 +176,24 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][
 	}
 }
 
+func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byte) bool {
+	if r == nil || name == "" || len(frames) == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, session := range r.sessions {
+		if session.character.Name != name {
+			continue
+		}
+		session.pending.enqueue(frames)
+		return true
+	}
+	return false
+}
+
 func encodePeerVisibilityFrames(character loginticket.Character) [][]byte {
 	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(ticketCharacterAdditionalInfoPacket(character))
 	if err != nil {
