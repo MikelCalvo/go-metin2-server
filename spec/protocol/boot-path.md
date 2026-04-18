@@ -106,6 +106,7 @@ Expected outcomes:
 - the selected character is inserted into the visible world with deterministic bootstrap packets
 - the selected character receives a first deterministic `CHARACTER_UPDATE` refresh after the visible insert
 - the selected character receives a first deterministic `PLAYER_POINT_CHANGE` refresh during the same bootstrap burst
+- if another player is already present in the bootstrap runtime, that peer also appears via the current minimal visibility burst
 
 ## 9. Basic movement works
 The client sends a movement packet and the server processes it in the live game phase.
@@ -142,6 +143,7 @@ This document depends on:
 - `spec/protocol/character-delete-selection.md`
 - `spec/protocol/client-version-loading.md`
 - `spec/protocol/game-ping-pong.md`
+- `spec/protocol/shared-world-peer-visibility.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
 - `spec/protocol/sync-position-bootstrap.md`

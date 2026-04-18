@@ -43,9 +43,10 @@ Status values:
 | `CHARACTER_DELETE` | client -> server | `0x0202` | select | documented | delete character request with private-code field |
 | `CHARACTER_SELECT` | client -> server | `0x0203` | select | documented | choose active character |
 | `ENTERGAME` | client -> server | `0x0204` | loading | documented | enter-world request |
-| `CHARACTER_ADD` | server -> client | `0x0205` | game bootstrap | documented | first visible-world insert for the selected character |
-| `CHAR_ADDITIONAL_INFO` | server -> client | `0x0207` | game bootstrap | documented | metadata companion for the visible-world insert |
-| `CHARACTER_UPDATE` | server -> client | `0x0209` | game bootstrap | documented | first self-only state refresh after the visible-world insert |
+| `CHARACTER_ADD` | server -> client | `0x0205` | game bootstrap/visibility | documented | used for the selected-character bootstrap and for peer visibility |
+| `CHAR_ADDITIONAL_INFO` | server -> client | `0x0207` | game bootstrap/visibility | documented | metadata companion for visible player inserts |
+| `CHARACTER_DEL` | server -> client | `0x0208` | game visibility | documented | removes a visible peer by `vid` when that actor leaves the local world |
+| `CHARACTER_UPDATE` | server -> client | `0x0209` | game bootstrap/visibility | documented | first self-only state refresh after the visible-world insert and the current peer-visibility refresh payload |
 | `PLAYER_CREATE_SUCCESS` | server -> client | `0x020C` | select | documented | create success result |
 | `PLAYER_CREATE_FAILURE` | server -> client | `0x020D` | select | documented | create failure result |
 | `PLAYER_DELETE_SUCCESS` | server -> client | `0x020E` | select | documented | delete success result carrying the cleared account slot |

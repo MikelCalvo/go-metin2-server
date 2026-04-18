@@ -5,9 +5,10 @@ This document freezes the first minimal visible-world packets emitted after `ENT
 The goal of this slice is narrow:
 - transition from `LOADING` to `GAME`
 - emit the first visible-world insert for the selected character
-- keep the bootstrap deterministic and self-character only
+- keep the bootstrap deterministic for the selected character before wider peer visibility is layered on top
 
-It does not yet freeze the broader entity stream for NPCs, mobs, items, or other players.
+Peer visibility beyond the selected character now lives in `shared-world-peer-visibility.md`.
+It is documented separately so the original self-bootstrap burst stays easy to reason about.
 
 ## Covered packets
 

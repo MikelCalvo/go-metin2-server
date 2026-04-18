@@ -19,6 +19,7 @@ Current scope of the project:
 - A tolerant `PONG` control path accepted in `GAME` for server-driven ping probes.
 - Character deletion on the selection surface with deterministic success/failure responses.
 - A first visible-world bootstrap that inserts the selected character into the game world after `ENTERGAME`.
+- Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
@@ -119,6 +120,7 @@ Legend:
 - `spec/protocol/character-delete-selection.md`
 - `spec/protocol/client-version-loading.md`
 - `spec/protocol/game-ping-pong.md`
+- `spec/protocol/shared-world-peer-visibility.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -196,7 +198,7 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_DELETE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> MOVE/SYNC_POSITION`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_DELETE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> peer CHARACTER_ADD/CHAR_ADDITIONAL_INFO/CHARACTER_UPDATE/CHARACTER_DEL -> MOVE/SYNC_POSITION`
 
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
@@ -211,6 +213,8 @@ What exists today:
 - tolerant `CLIENT_VERSION` acceptance in `LOADING` with no phase transition and no server response
 - tolerant `PONG` acceptance in `GAME` with no phase transition and no server response
 - the selected character is inserted into the visible world after `ENTERGAME` via minimal `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` + `PLAYER_POINT_CHANGE`
+- a later entering player receives already-connected peers as `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap frames
+- already-connected peers receive queued `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` when a new player enters and `CHARACTER_DEL` when that peer disconnects
 
 What still does not exist yet:
 - compatibility-grade persistence matching the legacy target
