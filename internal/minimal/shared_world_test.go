@@ -281,6 +281,50 @@ func TestNewGameSessionFactoryRoutesWhisperToNamedPeer(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryQueuesPartyChatForConnectedPeers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	partyOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeParty, Message: "hola party"})))
+	if err != nil {
+		t.Fatalf("unexpected party chat error: %v", err)
+	}
+	if len(partyOut) != 1 {
+		t.Fatalf("expected 1 sender party chat frame, got %d", len(partyOut))
+	}
+	selfParty, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, partyOut[0]))
+	if err != nil {
+		t.Fatalf("decode sender party chat: %v", err)
+	}
+	if selfParty.Type != chatproto.ChatTypeParty || selfParty.VID != peerTwo.VID || selfParty.Message != "PeerTwo : hola party" {
+		t.Fatalf("unexpected sender party chat: %+v", selfParty)
+	}
+
+	peerParty := flushServerFrames(t, flowOne)
+	if len(peerParty) != 1 {
+		t.Fatalf("expected 1 queued party chat frame, got %d", len(peerParty))
+	}
+	peerDelivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerParty[0]))
+	if err != nil {
+		t.Fatalf("decode peer party chat: %v", err)
+	}
+	if peerDelivery.Type != chatproto.ChatTypeParty || peerDelivery.VID != peerTwo.VID || peerDelivery.Message != "PeerTwo : hola party" {
+		t.Fatalf("unexpected peer party chat delivery: %+v", peerDelivery)
+	}
+}
+
 func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

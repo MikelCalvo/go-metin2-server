@@ -139,6 +139,36 @@ func TestHandleClientFrameAcceptsWhisperInGameAndReturnsDelivery(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsPartyChatInGameAndReturnsDelivery(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleChat: func(packet chatproto.ClientChatPacket) ChatResult {
+			if packet.Type != chatproto.ChatTypeParty || packet.Message != "hola party" {
+				t.Fatalf("unexpected party chat packet: %+v", packet)
+			}
+			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeParty, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola party"}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeParty, Message: "hola party"})))
+	if err != nil {
+		t.Fatalf("unexpected party chat error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode party chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeParty || delivery.VID != 0x02040102 || delivery.Message != "PeerTwo : hola party" {
+		t.Fatalf("unexpected party chat delivery: %+v", delivery)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameRejectsUnexpectedPacketsInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
