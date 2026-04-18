@@ -14,6 +14,10 @@ import (
 )
 
 func Run(ctx context.Context, cfg config.Service, logger *slog.Logger, newSession SessionFactory) error {
+	return RunWithOpsHandler(ctx, cfg, logger, newSession, nil)
+}
+
+func RunWithOpsHandler(ctx context.Context, cfg config.Service, logger *slog.Logger, newSession SessionFactory, opsHandler http.Handler) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -23,7 +27,7 @@ func Run(ctx context.Context, cfg config.Service, logger *slog.Logger, newSessio
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := serveOps(runCtx, cfg, logger); err != nil {
+		if err := serveOps(runCtx, cfg, logger, opsHandler); err != nil {
 			select {
 			case errCh <- err:
 			default:
@@ -61,11 +65,13 @@ func Run(ctx context.Context, cfg config.Service, logger *slog.Logger, newSessio
 	}
 }
 
-func serveOps(ctx context.Context, cfg config.Service, logger *slog.Logger) error {
-	mux := ops.NewPprofMux(cfg.Name)
+func serveOps(ctx context.Context, cfg config.Service, logger *slog.Logger, handler http.Handler) error {
+	if handler == nil {
+		handler = ops.NewPprofMux(cfg.Name)
+	}
 	server := &http.Server{
 		Addr:              cfg.PprofAddr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

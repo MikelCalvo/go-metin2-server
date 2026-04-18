@@ -52,6 +52,14 @@ type gameRuntime struct {
 	sharedWorld    *sharedWorldRegistry
 }
 
+func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
+	return newGameRuntimeWithAccountStore(
+		cfg,
+		loginticket.NewFileStore(defaultTicketStoreDir()),
+		accountstore.NewFileStore(defaultAccountStoreDir()),
+	)
+}
+
 func (r *gameRuntime) SessionFactory() service.SessionFactory {
 	if r == nil {
 		return nil

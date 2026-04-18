@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -152,6 +153,60 @@ func TestRunStartsOpsAndLegacyServers(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timeout waiting for Run to stop")
+	}
+}
+
+func TestRunWithOpsHandlerServesCustomOpsEndpoint(t *testing.T) {
+	pprofAddr := reserveLocalAddr(t)
+	legacyAddr := reserveLocalAddr(t)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "custom ok\n")
+	})
+	mux.HandleFunc("/local/notice", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "queued 1\n")
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunWithOpsHandler(ctx, config.Service{
+			Name:       "gamed",
+			PprofAddr:  pprofAddr,
+			LegacyAddr: legacyAddr,
+			PublicAddr: "127.0.0.1",
+		}, testLogger(), newTestSessionFlow, mux)
+	}()
+
+	waitForHealthz(t, pprofAddr, "custom ok\n")
+
+	resp, err := http.Post("http://"+pprofAddr+"/local/notice", "text/plain", strings.NewReader("maintenance"))
+	if err != nil {
+		t.Fatalf("post local notice: %v", err)
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if readErr != nil {
+		t.Fatalf("read local notice body: %v", readErr)
+	}
+	if resp.StatusCode != http.StatusOK || string(body) != "queued 1\n" {
+		t.Fatalf("unexpected local notice response: status=%d body=%q", resp.StatusCode, string(body))
+	}
+
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("run with custom ops handler returned error: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timeout waiting for RunWithOpsHandler to stop")
 	}
 }
 

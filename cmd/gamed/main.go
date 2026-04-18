@@ -11,6 +11,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/minimal"
+	"github.com/MikelCalvo/go-metin2-server/internal/ops"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 )
 
@@ -26,14 +27,15 @@ func main() {
 	defer stop()
 
 	cfg := config.LoadService("gamed", ":6060", ":13000", "127.0.0.1")
-	gameSessionFactory, err := minimal.NewGameSessionFactory(cfg)
+	gameRuntime, err := minimal.NewGameRuntime(cfg)
 	if err != nil {
-		logger.Error("invalid game session factory configuration", "err", err)
+		logger.Error("invalid game runtime configuration", "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
-	if err := service.Run(ctx, cfg, logger, gameSessionFactory); err != nil {
+	opsHandler := ops.NewPprofMuxWithLocalNotice("gamed", gameRuntime.BroadcastNotice)
+	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {
 		logger.Error("service stopped with error", "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
