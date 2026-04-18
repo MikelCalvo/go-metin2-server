@@ -4,6 +4,7 @@ dist/
 coverage.out
 *.test
 *.out
+.coverprofile
 
 # IDEs / editors
 .vscode/
