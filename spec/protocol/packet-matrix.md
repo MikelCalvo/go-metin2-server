@@ -66,6 +66,13 @@ Status values:
 | `WARP` | client -> server | `0x0305` | game | planned | out of early scope |
 | `WARP` | server -> client | `0x0306` | game | planned | out of early scope |
 
+## Chat
+
+| Name | Direction | Header | Phase | Status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `CHAT` | client -> server | `0x0601` | game | documented | current slice accepts only `CHAT_TYPE_TALKING` with variable text payload |
+| `CHAT` | server -> client | `0x0603` | game | documented | deterministic sender echo and current queued local talking delivery payload for already-visible peers |
+
 ## Notes
 
 - This matrix is a working contract, not a dump of every observed packet family.
