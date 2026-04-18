@@ -145,6 +145,9 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					}
 				},
 			},
+			StateChecker: boot.StateCheckerConfig{
+				Channels: []control.ChannelStatus{{Port: int16(advertisedPort), Status: control.ChannelStatusNormal}},
+			},
 			WorldEntry: worldentry.Config{
 				SelectEmpire: func(empire uint8) worldentry.EmpireResult {
 					if !hasTicket || !isValidEmpire(empire) || hasAnyCharacters(sessionTicket.Characters) {

@@ -6,6 +6,7 @@ import (
 	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
+	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
@@ -17,19 +18,25 @@ var (
 )
 
 type Config struct {
-	Handshake  handshake.Config
-	Login      loginflow.Config
-	WorldEntry worldentry.Config
-	Game       gameflow.Config
+	Handshake    handshake.Config
+	Login        loginflow.Config
+	StateChecker StateCheckerConfig
+	WorldEntry   worldentry.Config
+	Game         gameflow.Config
+}
+
+type StateCheckerConfig struct {
+	Channels []control.ChannelStatus
 }
 
 type Flow struct {
-	machine    *session.StateMachine
-	handshake  *handshake.Flow
-	login      *loginflow.Flow
-	worldEntry *worldentry.Flow
-	game       *gameflow.Flow
-	configErr  error
+	machine      *session.StateMachine
+	handshake    *handshake.Flow
+	login        *loginflow.Flow
+	worldEntry   *worldentry.Flow
+	game         *gameflow.Flow
+	stateChecker StateCheckerConfig
+	configErr    error
 }
 
 func NewFlow(cfg Config) *Flow {
@@ -43,12 +50,13 @@ func NewFlow(cfg Config) *Flow {
 	handshakeCfg.NextPhase = session.PhaseLogin
 
 	return &Flow{
-		machine:    machine,
-		handshake:  handshake.NewFlow(machine, handshakeCfg),
-		login:      loginflow.NewFlow(machine, cfg.Login),
-		worldEntry: worldentry.NewFlow(machine, cfg.WorldEntry),
-		game:       gameflow.NewFlow(machine, cfg.Game),
-		configErr:  configErr,
+		machine:      machine,
+		handshake:    handshake.NewFlow(machine, handshakeCfg),
+		login:        loginflow.NewFlow(machine, cfg.Login),
+		worldEntry:   worldentry.NewFlow(machine, cfg.WorldEntry),
+		game:         gameflow.NewFlow(machine, cfg.Game),
+		stateChecker: cfg.StateChecker,
+		configErr:    configErr,
 	}
 }
 
@@ -67,6 +75,12 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 
 	switch f.machine.Current() {
 	case session.PhaseHandshake:
+		if len(f.stateChecker.Channels) > 0 && in.Header == control.HeaderStateChecker {
+			if _, err := control.DecodeStateChecker(in); err != nil {
+				return nil, err
+			}
+			return [][]byte{control.EncodeRespondChannelStatus(control.RespondChannelStatusPacket{Channels: f.stateChecker.Channels})}, nil
+		}
 		return f.handshake.HandleClientFrame(in)
 	case session.PhaseLogin:
 		return f.login.HandleClientFrame(in)

@@ -138,6 +138,57 @@ func TestEncodePongBuildsAHeaderOnlyControlFrame(t *testing.T) {
 	}
 }
 
+func TestEncodeStateCheckerBuildsAHeaderOnlyControlFrame(t *testing.T) {
+	want := frame.Encode(HeaderStateChecker, nil)
+	got := EncodeStateChecker()
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected state checker frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeStateCheckerAcceptsHeaderOnlyControlFrame(t *testing.T) {
+	decoder := frame.NewDecoder(1024)
+	frames, err := decoder.Feed(EncodeStateChecker())
+	if err != nil {
+		t.Fatalf("unexpected frame decode error: %v", err)
+	}
+
+	if _, err := DecodeStateChecker(frames[0]); err != nil {
+		t.Fatalf("unexpected state checker decode error: %v", err)
+	}
+}
+
+func TestEncodeRespondChannelStatusRoundTripsPackedStatusEntries(t *testing.T) {
+	want := []ChannelStatus{
+		{Port: 13000, Status: ChannelStatusNormal},
+		{Port: 13001, Status: 0},
+	}
+
+	raw := EncodeRespondChannelStatus(RespondChannelStatusPacket{Channels: want})
+
+	decoder := frame.NewDecoder(1024)
+	frames, err := decoder.Feed(raw)
+	if err != nil {
+		t.Fatalf("unexpected frame decode error: %v", err)
+	}
+
+	packet, err := DecodeRespondChannelStatus(frames[0])
+	if err != nil {
+		t.Fatalf("unexpected respond channel status decode error: %v", err)
+	}
+
+	if len(packet.Channels) != len(want) {
+		t.Fatalf("unexpected channel count: got %d want %d", len(packet.Channels), len(want))
+	}
+
+	for i := range want {
+		if packet.Channels[i] != want[i] {
+			t.Fatalf("unexpected channel status %d: got %+v want %+v", i, packet.Channels[i], want[i])
+		}
+	}
+}
+
 func TestEncodeKeyChallengeBuildsAControlFrame(t *testing.T) {
 	want := loadHexFixture(t, "key-challenge-frame.hex")
 

@@ -76,6 +76,43 @@ func TestBootFlowCompletesHandshakeAndLoginOverTCP(t *testing.T) {
 	}
 }
 
+func TestBootFlowRespondsToStateCheckerProbeOverTCP(t *testing.T) {
+	cfg := testConfig()
+	cfg.StateChecker = StateCheckerConfig{
+		Channels: []control.ChannelStatus{{Port: 13000, Status: control.ChannelStatusNormal}},
+	}
+
+	server := startBootTestServer(t, cfg)
+	client := newBootTestClient(t, server.address())
+
+	challenge := client.readFrame(t)
+	wantChallenge := control.EncodeKeyChallenge(cfg.Handshake.KeyChallenge)
+	if !bytes.Equal(challenge.Raw, wantChallenge) {
+		t.Fatalf("unexpected key challenge bytes: got %x want %x", challenge.Raw, wantChallenge)
+	}
+
+	client.writeFrame(t, control.EncodeStateChecker())
+
+	respond := client.readFrame(t)
+	packet, err := control.DecodeRespondChannelStatus(respond.Frame)
+	if err != nil {
+		t.Fatalf("decode respond channel status: %v", err)
+	}
+	if len(packet.Channels) != 1 {
+		t.Fatalf("expected 1 channel status entry, got %d", len(packet.Channels))
+	}
+	if packet.Channels[0].Port != 13000 {
+		t.Fatalf("expected channel port 13000, got %d", packet.Channels[0].Port)
+	}
+	if packet.Channels[0].Status != control.ChannelStatusNormal {
+		t.Fatalf("expected channel status %d, got %d", control.ChannelStatusNormal, packet.Channels[0].Status)
+	}
+
+	if got := server.currentPhase(); got != session.PhaseHandshake {
+		t.Fatalf("expected server phase %q, got %q", session.PhaseHandshake, got)
+	}
+}
+
 func TestBootFlowEntersGameOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testConfig())
 	client := newBootTestClient(t, server.address())

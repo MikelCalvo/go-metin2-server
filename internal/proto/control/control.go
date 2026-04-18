@@ -10,18 +10,23 @@ import (
 )
 
 const (
-	HeaderPong         uint16 = 0x0006
-	HeaderPing         uint16 = 0x0007
-	HeaderPhase        uint16 = 0x0008
-	HeaderKeyResponse  uint16 = 0x000A
-	HeaderKeyChallenge uint16 = 0x000B
-	HeaderKeyComplete  uint16 = 0x000C
+	HeaderPong                 uint16 = 0x0006
+	HeaderPing                 uint16 = 0x0007
+	HeaderPhase                uint16 = 0x0008
+	HeaderKeyResponse          uint16 = 0x000A
+	HeaderKeyChallenge         uint16 = 0x000B
+	HeaderKeyComplete          uint16 = 0x000C
+	HeaderStateChecker         uint16 = 0x000F
+	HeaderRespondChannelStatus uint16 = 0x0010
+	ChannelStatusNormal        uint8  = 1
 
 	keySize                = 32
 	challengeSize          = 32
 	challengeResponseSize  = 32
 	encryptedTokenSize     = 48
 	nonceSize              = 24
+	channelStatusSize      = 3
+	channelStatusCountSize = 4
 	keyChallengePayloadLen = keySize + challengeSize + 4
 	keyResponsePayloadLen  = keySize + challengeResponseSize
 	keyCompletePayloadLen  = encryptedTokenSize + nonceSize
@@ -55,6 +60,17 @@ type KeyResponsePacket struct {
 type KeyCompletePacket struct {
 	EncryptedToken [encryptedTokenSize]byte
 	Nonce          [nonceSize]byte
+}
+
+type StateCheckerPacket struct{}
+
+type ChannelStatus struct {
+	Port   int16
+	Status uint8
+}
+
+type RespondChannelStatusPacket struct {
+	Channels []ChannelStatus
 }
 
 func EncodePhase(phase session.Phase) ([]byte, error) {
@@ -97,6 +113,68 @@ func DecodePing(f frame.Frame) (PingPacket, error) {
 
 func EncodePong() []byte {
 	return frame.Encode(HeaderPong, nil)
+}
+
+func EncodeStateChecker() []byte {
+	return frame.Encode(HeaderStateChecker, nil)
+}
+
+func DecodeStateChecker(f frame.Frame) (StateCheckerPacket, error) {
+	if f.Header != HeaderStateChecker {
+		return StateCheckerPacket{}, ErrUnexpectedHeader
+	}
+
+	if len(f.Payload) != 0 {
+		return StateCheckerPacket{}, ErrInvalidPayload
+	}
+
+	return StateCheckerPacket{}, nil
+}
+
+func EncodeRespondChannelStatus(packet RespondChannelStatusPacket) []byte {
+	payload := make([]byte, channelStatusCountSize+len(packet.Channels)*channelStatusSize)
+	binary.LittleEndian.PutUint32(payload[:channelStatusCountSize], uint32(len(packet.Channels)))
+
+	offset := channelStatusCountSize
+	for _, channel := range packet.Channels {
+		binary.LittleEndian.PutUint16(payload[offset:offset+2], uint16(channel.Port))
+		payload[offset+2] = channel.Status
+		offset += channelStatusSize
+	}
+
+	return frame.Encode(HeaderRespondChannelStatus, payload)
+}
+
+func DecodeRespondChannelStatus(f frame.Frame) (RespondChannelStatusPacket, error) {
+	if f.Header != HeaderRespondChannelStatus {
+		return RespondChannelStatusPacket{}, ErrUnexpectedHeader
+	}
+
+	if len(f.Payload) < channelStatusCountSize {
+		return RespondChannelStatusPacket{}, ErrInvalidPayload
+	}
+
+	count := binary.LittleEndian.Uint32(f.Payload[:channelStatusCountSize])
+	if count > uint32((len(f.Payload)-channelStatusCountSize)/channelStatusSize) {
+		return RespondChannelStatusPacket{}, ErrInvalidPayload
+	}
+
+	expectedLen := channelStatusCountSize + int(count)*channelStatusSize
+	if len(f.Payload) != expectedLen {
+		return RespondChannelStatusPacket{}, ErrInvalidPayload
+	}
+
+	packet := RespondChannelStatusPacket{Channels: make([]ChannelStatus, int(count))}
+	offset := channelStatusCountSize
+	for i := range packet.Channels {
+		packet.Channels[i] = ChannelStatus{
+			Port:   int16(binary.LittleEndian.Uint16(f.Payload[offset : offset+2])),
+			Status: f.Payload[offset+2],
+		}
+		offset += channelStatusSize
+	}
+
+	return packet, nil
 }
 
 func EncodeKeyChallenge(packet KeyChallengePacket) []byte {

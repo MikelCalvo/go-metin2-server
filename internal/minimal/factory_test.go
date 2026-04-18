@@ -226,6 +226,53 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryRespondsToStateCheckerDuringHandshake(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	startOut, err := flow.Start()
+	if err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected 1 handshake start frame, got %d", len(startOut))
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeStateChecker()))
+	if err != nil {
+		t.Fatalf("unexpected state checker handling error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 state checker frame, got %d", len(out))
+	}
+
+	packet, err := control.DecodeRespondChannelStatus(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode respond channel status: %v", err)
+	}
+	if len(packet.Channels) != 1 {
+		t.Fatalf("expected 1 channel status entry, got %d", len(packet.Channels))
+	}
+	if packet.Channels[0].Port != 13000 {
+		t.Fatalf("expected channel port 13000, got %d", packet.Channels[0].Port)
+	}
+	if packet.Channels[0].Status != control.ChannelStatusNormal {
+		t.Fatalf("expected channel status %d, got %d", control.ChannelStatusNormal, packet.Channels[0].Status)
+	}
+
+	phaseAware, ok := flow.(interface{ CurrentPhase() session.Phase })
+	if !ok {
+		t.Fatal("expected game session flow to expose CurrentPhase")
+	}
+	if got := phaseAware.CurrentPhase(); got != session.PhaseHandshake {
+		t.Fatalf("expected phase %q, got %q", session.PhaseHandshake, got)
+	}
+}
+
 func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: stubCharacters()}); err != nil {
