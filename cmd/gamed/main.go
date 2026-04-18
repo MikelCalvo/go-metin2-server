@@ -40,6 +40,7 @@ func main() {
 		gameRuntime.RelocateCharacter,
 		func() any { return gameRuntime.ConnectedCharacters() },
 		func() any { return gameRuntime.CharacterVisibility() },
+		func() any { return gameRuntime.MapOccupancy() },
 	)
 	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {
 		logger.Error("service stopped with error", "err", err)

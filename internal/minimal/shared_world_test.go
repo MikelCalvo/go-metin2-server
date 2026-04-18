@@ -1233,6 +1233,75 @@ func TestGameRuntimeCharacterVisibilityReflectsRelocatedPeers(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeMapOccupancyGroupsCharactersByEffectiveMap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerZulu := peerVisibilityCharacter("Zulu", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerBravo := peerVisibilityCharacter("Bravo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerAlpha := peerVisibilityCharacter("Alpha", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerBravo.MapIndex = 42
+	peerAlpha.MapIndex = 42
+	issuePeerTicket(t, store, "peer-zulu", 0x11111111, peerZulu)
+	issuePeerTicket(t, store, "peer-bravo", 0x22222222, peerBravo)
+	issuePeerTicket(t, store, "peer-alpha", 0x33333333, peerAlpha)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-zulu", 0x11111111)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-bravo", 0x22222222)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-alpha", 0x33333333)
+
+	snapshots := runtime.MapOccupancy()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 map occupancy snapshots, got %d", len(snapshots))
+	}
+	if snapshots[0].MapIndex != bootstrapMapIndex || snapshots[0].CharacterCount != 1 || len(snapshots[0].Characters) != 1 || snapshots[0].Characters[0].Name != "Zulu" {
+		t.Fatalf("unexpected bootstrap map occupancy snapshot: %+v", snapshots[0])
+	}
+	if snapshots[1].MapIndex != 42 || snapshots[1].CharacterCount != 2 || len(snapshots[1].Characters) != 2 || snapshots[1].Characters[0].Name != "Alpha" || snapshots[1].Characters[1].Name != "Bravo" {
+		t.Fatalf("unexpected destination map occupancy snapshot: %+v", snapshots[1])
+	}
+}
+
+func TestGameRuntimeMapOccupancyReflectsRelocatedCharacter(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+
+	if !runtime.RelocateCharacter("PeerTwo", 42, 1700, 2800) {
+		t.Fatal("expected relocate to succeed")
+	}
+
+	snapshots := runtime.MapOccupancy()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 map occupancy snapshots, got %d", len(snapshots))
+	}
+	if snapshots[0].MapIndex != bootstrapMapIndex || snapshots[0].CharacterCount != 1 || len(snapshots[0].Characters) != 1 || snapshots[0].Characters[0].Name != "PeerOne" {
+		t.Fatalf("unexpected source map occupancy snapshot after relocate: %+v", snapshots[0])
+	}
+	if snapshots[1].MapIndex != 42 || snapshots[1].CharacterCount != 2 || len(snapshots[1].Characters) != 2 || snapshots[1].Characters[0].Name != "PeerThree" || snapshots[1].Characters[1].Name != "PeerTwo" {
+		t.Fatalf("unexpected destination map occupancy snapshot after relocate: %+v", snapshots[1])
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 

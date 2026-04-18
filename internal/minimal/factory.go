@@ -65,6 +65,12 @@ type CharacterVisibilitySnapshot struct {
 	VisiblePeers []ConnectedCharacterSnapshot `json:"visible_peers"`
 }
 
+type MapOccupancySnapshot struct {
+	MapIndex       uint32                       `json:"map_index"`
+	CharacterCount int                          `json:"character_count"`
+	Characters     []ConnectedCharacterSnapshot `json:"characters"`
+}
+
 type gameRuntime struct {
 	sessionFactory service.SessionFactory
 	sharedWorld    *sharedWorldRegistry
@@ -111,6 +117,13 @@ func (r *gameRuntime) CharacterVisibility() []CharacterVisibilitySnapshot {
 		return nil
 	}
 	return r.sharedWorld.CharacterVisibility()
+}
+
+func (r *gameRuntime) MapOccupancy() []MapOccupancySnapshot {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	return r.sharedWorld.MapOccupancy()
 }
 
 func NewAuthSessionFactory() service.SessionFactory {

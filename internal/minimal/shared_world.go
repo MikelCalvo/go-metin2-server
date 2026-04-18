@@ -304,6 +304,37 @@ func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapsho
 	return snapshots
 }
 
+func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	characters := make([]loginticket.Character, 0, len(r.sessions))
+	for _, session := range r.sessions {
+		characters = append(characters, session.character)
+	}
+	r.mu.Unlock()
+
+	byMap := make(map[uint32][]ConnectedCharacterSnapshot)
+	for _, character := range characters {
+		mapIndex := characterMapIndex(character)
+		byMap[mapIndex] = append(byMap[mapIndex], connectedCharacterSnapshot(character))
+	}
+
+	snapshots := make([]MapOccupancySnapshot, 0, len(byMap))
+	for mapIndex, characters := range byMap {
+		sortConnectedCharacterSnapshots(characters)
+		snapshots = append(snapshots, MapOccupancySnapshot{
+			MapIndex:       mapIndex,
+			CharacterCount: len(characters),
+			Characters:     characters,
+		})
+	}
+	sortMapOccupancySnapshots(snapshots)
+	return snapshots
+}
+
 func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][]byte) {
 	if r == nil || originID == 0 || len(frames) == 0 {
 		return
@@ -463,6 +494,12 @@ func sortCharacterVisibilitySnapshots(snapshots []CharacterVisibilitySnapshot) {
 			return snapshots[i].VID < snapshots[j].VID
 		}
 		return snapshots[i].Name < snapshots[j].Name
+	})
+}
+
+func sortMapOccupancySnapshots(snapshots []MapOccupancySnapshot) {
+	sort.Slice(snapshots, func(i int, j int) bool {
+		return snapshots[i].MapIndex < snapshots[j].MapIndex
 	})
 }
 

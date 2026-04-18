@@ -26,6 +26,7 @@ Current scope of the project:
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state.
 - A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules.
+- A loopback-only `gamed` runtime map-occupancy endpoint that groups currently connected bootstrap characters by effective `MapIndex`.
 - Minimal local talking chat fanout so same-empire visible peers on the same bootstrap `MapIndex` receive queued `GC_CHAT` deliveries from other connected players.
 - Minimal whisper routing by exact character name across currently connected bootstrap sessions.
 - Minimal bootstrap `CHAT_TYPE_PARTY` fanout across the currently connected `GAME` sessions.
@@ -140,7 +141,7 @@ Legend:
 | Guild chat | [~] | Scoped by non-zero `GuildID`, but no guild lifecycle/roster system exists yet. |
 | Shout | [~] | Same-empire bootstrap fanout exists; no real world/channel topology behind it yet. |
 | System info / notice | [~] | `INFO` self-delivery, server-originated `NOTICE`, and local-only notice trigger exist. |
-| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `GET /local/players`, and `GET /local/visibility` exist on `gamed`; broader admin/auth tooling does not. |
+| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `GET /local/players`, `GET /local/visibility`, and `GET /local/maps` exist on `gamed`; broader admin/auth tooling does not. |
 
 ### Character systems and gameplay
 
@@ -164,7 +165,7 @@ Legend:
 | Login tickets | [x] | Working file-backed ticket flow between `authd` and `gamed`. |
 | Bootstrap account snapshots | [~] | File-backed account/character persistence exists, but it is not compatibility-grade yet. |
 | Database schema / migrations | [ ] | No real DB-backed persistence layer or live migrations yet. |
-| Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection endpoints exist; metrics/logging/admin depth still needs work. |
+| Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection/map-occupancy endpoints exist; metrics/logging/admin depth still needs work. |
 | CI / public validation | [x] | GitHub Actions baseline checks formatting, tests, vet, daemon builds, and runtime/debug image builds. |
 | Release/deploy guidance | [ ] | No production-grade release/deployment story yet. |
 
@@ -264,6 +265,10 @@ Both binaries expose an ops server with:
   - loopback clients only
   - returns a JSON snapshot of currently connected bootstrap characters plus the peers each one can currently see under the shared-world bootstrap rules
   - each entry exposes the same effective runtime location fields plus a `visible_peers` array
+- `GET /local/maps`
+  - loopback clients only
+  - returns a JSON snapshot of effective `MapIndex` occupancy in the current bootstrap runtime
+  - each entry exposes `map_index`, `character_count`, and a `characters` array sorted by name
 
 Default addresses:
 - `gamed`: `:6060`
@@ -289,6 +294,7 @@ curl -X POST http://127.0.0.1:6060/local/relocate \
   --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
 curl http://127.0.0.1:6060/local/players
 curl http://127.0.0.1:6060/local/visibility
+curl http://127.0.0.1:6060/local/maps
 ```
 
 Do not expose pprof directly to the public internet.
@@ -360,6 +366,7 @@ What exists today:
 - `gamed` also exposes loopback-only `POST /local/relocate` so an already-connected bootstrap character can be moved to another `MapIndex` by exact name while the runtime rebuilds visible peers and updates the bootstrap snapshot
 - `gamed` also exposes loopback-only `GET /local/players` so the current connected bootstrap-character snapshot can be inspected before and after operator-driven runtime changes
 - `gamed` also exposes loopback-only `GET /local/visibility` so the current shared-world visibility graph can be inspected before and after operator-driven runtime changes
+- `gamed` also exposes loopback-only `GET /local/maps` so effective `MapIndex` occupancy can be inspected before and after operator-driven runtime changes
 
 What still does not exist yet:
 - compatibility-grade persistence matching the legacy target

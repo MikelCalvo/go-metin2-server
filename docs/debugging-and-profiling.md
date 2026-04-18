@@ -67,6 +67,18 @@ Each entry includes the same effective runtime location fields exposed by `/loca
 The `visible_peers` array is sorted by peer name and reflects the current bootstrap shared-world rule set.
 At the moment that means visibility is gated by effective `MapIndex` only.
 
+### `GET /local/maps`
+
+Returns a JSON snapshot of current effective `MapIndex` occupancy in the bootstrap runtime, sorted by `map_index`.
+
+Each entry includes:
+
+- `map_index`
+- `character_count`
+- `characters`
+
+The `characters` array is sorted by name and each character uses the same effective runtime location fields exposed by `/local/players`.
+
 ## Examples
 
 Collect a CPU profile for 30 seconds:
@@ -117,6 +129,12 @@ Inspect the current bootstrap shared-world visibility graph:
 
 ```bash
 curl http://127.0.0.1:6060/local/visibility
+```
+
+Inspect current bootstrap map occupancy:
+
+```bash
+curl http://127.0.0.1:6060/local/maps
 ```
 
 ## Docker note

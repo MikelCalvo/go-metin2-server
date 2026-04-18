@@ -266,7 +266,7 @@ func TestLocalPlayersEndpointRejectsWrongMethod(t *testing.T) {
 
 func TestLocalVisibilityEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubCharacterVisibilitySnapshotter{snapshots: []map[string]any{{"name": "Alpha", "map_index": 42, "visible_peers": []map[string]any{{"name": "PeerTwo", "map_index": 42}}}, {"name": "Zulu", "map_index": uint32(1), "visible_peers": []map[string]any{}}}}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, snapshotter.CharacterVisibility)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, snapshotter.CharacterVisibility, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/visibility", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -294,7 +294,7 @@ func TestLocalVisibilityEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) 
 
 func TestLocalVisibilityEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	snapshotter := &stubCharacterVisibilitySnapshotter{}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, snapshotter.CharacterVisibility)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, snapshotter.CharacterVisibility, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/visibility", nil)
 	req.RemoteAddr = "198.51.100.10:12345"
@@ -312,7 +312,7 @@ func TestLocalVisibilityEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 
 func TestLocalVisibilityEndpointRejectsWrongMethod(t *testing.T) {
 	snapshotter := &stubCharacterVisibilitySnapshotter{}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, snapshotter.CharacterVisibility)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, snapshotter.CharacterVisibility, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/visibility", strings.NewReader("ignored"))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -325,6 +325,70 @@ func TestLocalVisibilityEndpointRejectsWrongMethod(t *testing.T) {
 	}
 	if snapshotter.calls != 0 {
 		t.Fatalf("expected visibility snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalMapsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubMapOccupancySnapshotter{snapshots: []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "Zulu"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "Alpha"}, {"name": "PeerTwo"}}}}}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, snapshotter.MapOccupancy)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected map snapshotter to be called once, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"map_index":42`) || !strings.Contains(string(body), `"character_count":2`) || !strings.Contains(string(body), `"name":"PeerTwo"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalMapsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubMapOccupancySnapshotter{}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, snapshotter.MapOccupancy)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected map snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalMapsEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubMapOccupancySnapshotter{}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, snapshotter.MapOccupancy)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/maps", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected map snapshotter not to be called, got %d calls", snapshotter.calls)
 	}
 }
 
@@ -374,6 +438,16 @@ type stubCharacterVisibilitySnapshotter struct {
 }
 
 func (s *stubCharacterVisibilitySnapshotter) CharacterVisibility() any {
+	s.calls++
+	return s.snapshots
+}
+
+type stubMapOccupancySnapshotter struct {
+	snapshots []map[string]any
+	calls     int
+}
+
+func (s *stubMapOccupancySnapshotter) MapOccupancy() any {
 	s.calls++
 	return s.snapshots
 }
