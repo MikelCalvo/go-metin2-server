@@ -18,14 +18,18 @@ type localRelocationRequest struct {
 }
 
 func NewPprofMux(serviceName string) *http.ServeMux {
-	return NewPprofMuxWithLocalRelocation(serviceName, nil, nil)
+	return NewPprofMuxWithLocalRuntimeSnapshot(serviceName, nil, nil, nil)
 }
 
 func NewPprofMuxWithLocalNotice(serviceName string, broadcastNotice func(string) int) *http.ServeMux {
-	return NewPprofMuxWithLocalRelocation(serviceName, broadcastNotice, nil)
+	return NewPprofMuxWithLocalRuntimeSnapshot(serviceName, broadcastNotice, nil, nil)
 }
 
 func NewPprofMuxWithLocalRelocation(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool) *http.ServeMux {
+	return NewPprofMuxWithLocalRuntimeSnapshot(serviceName, broadcastNotice, relocateCharacter, nil)
+}
+
+func NewPprofMuxWithLocalRuntimeSnapshot(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, connectedCharacters func() any) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -103,6 +107,23 @@ func NewPprofMuxWithLocalRelocation(serviceName string, broadcastNotice func(str
 			}
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			_, _ = io.WriteString(w, "relocated 1\n")
+		})
+	}
+
+	if connectedCharacters != nil {
+		mux.HandleFunc("/local/players", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if err := json.NewEncoder(w).Encode(connectedCharacters()); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
 		})
 	}
 

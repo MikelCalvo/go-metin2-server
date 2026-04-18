@@ -200,6 +200,70 @@ func TestLocalRelocateEndpointReturnsNotFoundForUnknownTarget(t *testing.T) {
 	}
 }
 
+func TestLocalPlayersEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubConnectedCharactersSnapshotter{characters: []map[string]any{{"name": "Alpha", "map_index": 42, "x": int32(1700), "y": int32(2800)}, {"name": "Zulu", "map_index": uint32(1), "x": int32(1100), "y": int32(2100)}}}
+	mux := NewPprofMuxWithLocalRuntimeSnapshot("gamed", nil, nil, snapshotter.ConnectedCharacters)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/players", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected snapshotter to be called once, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"name":"Alpha"`) || !strings.Contains(string(body), `"name":"Zulu"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalPlayersEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubConnectedCharactersSnapshotter{}
+	mux := NewPprofMuxWithLocalRuntimeSnapshot("gamed", nil, nil, snapshotter.ConnectedCharacters)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/players", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalPlayersEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubConnectedCharactersSnapshotter{}
+	mux := NewPprofMuxWithLocalRuntimeSnapshot("gamed", nil, nil, snapshotter.ConnectedCharacters)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/players", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
 type stubNoticeBroadcaster struct {
 	delivered   int
 	calls       int
@@ -228,4 +292,14 @@ func (r *stubCharacterRelocator) RelocateCharacter(name string, mapIndex uint32,
 	r.lastX = x
 	r.lastY = y
 	return r.relocated
+}
+
+type stubConnectedCharactersSnapshotter struct {
+	characters []map[string]any
+	calls      int
+}
+
+func (s *stubConnectedCharactersSnapshotter) ConnectedCharacters() any {
+	s.calls++
+	return s.characters
 }

@@ -2,7 +2,7 @@
 
 The project ships with a dedicated ops HTTP server that exposes standard Go pprof handlers.
 
-## Endpoints
+## Standard endpoints
 
 - `/healthz`
 - `/debug/pprof/`
@@ -14,6 +14,47 @@ The project ships with a dedicated ops HTTP server that exposes standard Go ppro
 - `/debug/pprof/profile`
 - `/debug/pprof/threadcreate`
 - `/debug/pprof/trace`
+
+## Local-only `gamed` operator endpoints
+
+These endpoints are intentionally loopback-only and exist to help inspect or steer the bootstrap runtime safely during development.
+They are not the gameplay protocol.
+
+### `POST /local/notice`
+
+- request body: raw plain-text notice message
+- success response: `queued N`
+- rejects non-loopback callers with `403`
+
+### `POST /local/relocate`
+
+- request body: JSON
+- example:
+
+```json
+{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}
+```
+
+- relocates an already-connected bootstrap character by exact name
+- rebuilds visible peers for the destination `MapIndex`
+- success response: `relocated 1`
+- rejects non-loopback callers with `403`
+
+### `GET /local/players`
+
+Returns a JSON snapshot of the currently connected bootstrap characters, sorted by name.
+
+Current fields:
+
+- `name`
+- `vid`
+- `map_index`
+- `x`
+- `y`
+- `empire`
+- `guild_id`
+
+The `map_index` field reflects the effective runtime map boundary currently used by the shared-world bootstrap.
 
 ## Examples
 
@@ -39,6 +80,26 @@ Open the interactive pprof UI locally:
 
 ```bash
 go tool pprof -http=:0 http://127.0.0.1:6060/debug/pprof/heap
+```
+
+Send a local-only notice:
+
+```bash
+curl -X POST http://127.0.0.1:6060/local/notice --data 'server maintenance'
+```
+
+Relocate a connected bootstrap character locally:
+
+```bash
+curl -X POST http://127.0.0.1:6060/local/relocate \
+  -H 'Content-Type: application/json' \
+  --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
+```
+
+Inspect currently connected bootstrap characters:
+
+```bash
+curl http://127.0.0.1:6060/local/players
 ```
 
 ## Docker note

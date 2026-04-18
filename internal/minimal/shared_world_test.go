@@ -1111,6 +1111,60 @@ func TestGameRuntimeRelocateCharacterDoesNotMutateWorldOnSaveFailure(t *testing.
 	}
 }
 
+func TestGameRuntimeConnectedCharactersReturnsSortedSnapshots(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerZulu := peerVisibilityCharacter("Zulu", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerAlpha := peerVisibilityCharacter("Alpha", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerAlpha.MapIndex = 42
+	issuePeerTicket(t, store, "peer-zulu", 0x11111111, peerZulu)
+	issuePeerTicket(t, store, "peer-alpha", 0x22222222, peerAlpha)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-zulu", 0x11111111)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-alpha", 0x22222222)
+
+	snapshots := runtime.ConnectedCharacters()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 connected character snapshots, got %d", len(snapshots))
+	}
+	if snapshots[0].Name != "Alpha" || snapshots[0].MapIndex != 42 || snapshots[0].X != 1300 || snapshots[0].Y != 2300 || snapshots[0].Empire != 2 || snapshots[0].GuildID != 0 {
+		t.Fatalf("unexpected first connected character snapshot: %+v", snapshots[0])
+	}
+	if snapshots[1].Name != "Zulu" || snapshots[1].MapIndex != bootstrapMapIndex || snapshots[1].X != 1100 || snapshots[1].Y != 2100 || snapshots[1].Empire != 2 || snapshots[1].GuildID != 0 {
+		t.Fatalf("unexpected second connected character snapshot: %+v", snapshots[1])
+	}
+}
+
+func TestGameRuntimeConnectedCharactersReflectsRelocatedLocation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+
+	if !runtime.RelocateCharacter("PeerTwo", 42, 1700, 2800) {
+		t.Fatal("expected relocate to succeed")
+	}
+
+	snapshots := runtime.ConnectedCharacters()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 connected character snapshot, got %d", len(snapshots))
+	}
+	if snapshots[0].Name != "PeerTwo" || snapshots[0].MapIndex != 42 || snapshots[0].X != 1700 || snapshots[0].Y != 2800 {
+		t.Fatalf("unexpected relocated connected character snapshot: %+v", snapshots[0])
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 

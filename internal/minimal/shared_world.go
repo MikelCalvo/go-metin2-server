@@ -1,6 +1,7 @@
 package minimal
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -250,6 +251,35 @@ func (r *sharedWorldRegistry) RelocateCharacter(name string, mapIndex uint32, x 
 		return false
 	}
 	return relocate(mapIndex, x, y)
+}
+
+func (r *sharedWorldRegistry) ConnectedCharacters() []ConnectedCharacterSnapshot {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	snapshots := make([]ConnectedCharacterSnapshot, 0, len(r.sessions))
+	for _, session := range r.sessions {
+		snapshots = append(snapshots, ConnectedCharacterSnapshot{
+			Name:     session.character.Name,
+			VID:      session.character.VID,
+			MapIndex: characterMapIndex(session.character),
+			X:        session.character.X,
+			Y:        session.character.Y,
+			Empire:   session.character.Empire,
+			GuildID:  session.character.GuildID,
+		})
+	}
+	r.mu.Unlock()
+
+	sort.Slice(snapshots, func(i int, j int) bool {
+		if snapshots[i].Name == snapshots[j].Name {
+			return snapshots[i].VID < snapshots[j].VID
+		}
+		return snapshots[i].Name < snapshots[j].Name
+	})
+	return snapshots
 }
 
 func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][]byte) {

@@ -50,6 +50,16 @@ type loginKeyGenerator func() (uint32, error)
 
 type sharedWorldSessionRelocator func(mapIndex uint32, x int32, y int32) bool
 
+type ConnectedCharacterSnapshot struct {
+	Name     string `json:"name"`
+	VID      uint32 `json:"vid"`
+	MapIndex uint32 `json:"map_index"`
+	X        int32  `json:"x"`
+	Y        int32  `json:"y"`
+	Empire   uint8  `json:"empire"`
+	GuildID  uint32 `json:"guild_id"`
+}
+
 type gameRuntime struct {
 	sessionFactory service.SessionFactory
 	sharedWorld    *sharedWorldRegistry
@@ -82,6 +92,13 @@ func (r *gameRuntime) RelocateCharacter(name string, mapIndex uint32, x int32, y
 		return false
 	}
 	return r.sharedWorld.RelocateCharacter(name, mapIndex, x, y)
+}
+
+func (r *gameRuntime) ConnectedCharacters() []ConnectedCharacterSnapshot {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	return r.sharedWorld.ConnectedCharacters()
 }
 
 func NewAuthSessionFactory() service.SessionFactory {
