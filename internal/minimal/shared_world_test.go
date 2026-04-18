@@ -244,6 +244,37 @@ func TestNewGameSessionFactoryQueuesPeerChatForVisiblePlayers(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryDoesNotQueueLocalChatAcrossEmpires(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerTwo.Empire = 3
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	chatOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "hola"})))
+	if err != nil {
+		t.Fatalf("unexpected chat error: %v", err)
+	}
+	if len(chatOut) != 1 {
+		t.Fatalf("expected 1 self chat frame, got %d", len(chatOut))
+	}
+
+	peerChat := flushServerFrames(t, flowOne)
+	if len(peerChat) != 0 {
+		t.Fatalf("expected no queued peer chat frames across empires, got %d", len(peerChat))
+	}
+}
+
 func TestNewGameSessionFactoryRoutesWhisperToNamedPeer(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -329,6 +360,10 @@ func TestNewGameSessionFactoryQueuesGuildChatForConnectedPeers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerOne.GuildID = 10
+	peerOne.GuildName = "Alpha"
+	peerTwo.GuildID = 10
+	peerTwo.GuildName = "Alpha"
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
 
@@ -366,6 +401,40 @@ func TestNewGameSessionFactoryQueuesGuildChatForConnectedPeers(t *testing.T) {
 	}
 	if peerDelivery.Type != chatproto.ChatTypeGuild || peerDelivery.VID != peerTwo.VID || peerDelivery.Message != "PeerTwo : hola guild" {
 		t.Fatalf("unexpected peer guild chat delivery: %+v", peerDelivery)
+	}
+}
+
+func TestNewGameSessionFactoryDoesNotQueueGuildChatAcrossDifferentGuilds(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerOne.GuildID = 10
+	peerOne.GuildName = "Alpha"
+	peerTwo.GuildID = 20
+	peerTwo.GuildName = "Beta"
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	guildOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeGuild, Message: "hola guild"})))
+	if err != nil {
+		t.Fatalf("unexpected guild chat error: %v", err)
+	}
+	if len(guildOut) != 1 {
+		t.Fatalf("expected 1 sender guild chat frame, got %d", len(guildOut))
+	}
+
+	peerGuild := flushServerFrames(t, flowOne)
+	if len(peerGuild) != 0 {
+		t.Fatalf("expected no queued guild chat frames across different guilds, got %d", len(peerGuild))
 	}
 }
 
@@ -410,6 +479,37 @@ func TestNewGameSessionFactoryQueuesShoutChatForConnectedPeers(t *testing.T) {
 	}
 	if peerDelivery.Type != chatproto.ChatTypeShout || peerDelivery.VID != peerTwo.VID || peerDelivery.Message != "PeerTwo : hola shout" {
 		t.Fatalf("unexpected peer shout chat delivery: %+v", peerDelivery)
+	}
+}
+
+func TestNewGameSessionFactoryDoesNotQueueShoutAcrossEmpires(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerTwo.Empire = 3
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	shoutOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeShout, Message: "hola shout"})))
+	if err != nil {
+		t.Fatalf("unexpected shout chat error: %v", err)
+	}
+	if len(shoutOut) != 1 {
+		t.Fatalf("expected 1 sender shout chat frame, got %d", len(shoutOut))
+	}
+
+	peerShout := flushServerFrames(t, flowOne)
+	if len(peerShout) != 0 {
+		t.Fatalf("expected no queued shout chat frames across empires, got %d", len(peerShout))
 	}
 }
 

@@ -297,10 +297,31 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						return gameflow.ChatResult{Accepted: false}
 					}
 					switch packet.Type {
-					case chatproto.ChatTypeTalking, chatproto.ChatTypeParty, chatproto.ChatTypeGuild, chatproto.ChatTypeShout:
+					case chatproto.ChatTypeTalking:
+						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
+						if joinedSharedWorld {
+							sharedWorld.EnqueueToOtherSessionsInEmpire(sharedWorldID, selected.Empire, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+						}
+						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
+					case chatproto.ChatTypeParty:
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
 						if joinedSharedWorld {
 							sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+						}
+						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
+					case chatproto.ChatTypeGuild:
+						if selected.GuildID == 0 {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
+						if joinedSharedWorld {
+							sharedWorld.EnqueueToOtherSessionsInGuild(sharedWorldID, selected.GuildID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+						}
+						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
+					case chatproto.ChatTypeShout:
+						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
+						if joinedSharedWorld {
+							sharedWorld.EnqueueToOtherSessionsInEmpire(sharedWorldID, selected.Empire, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
 						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 					case chatproto.ChatTypeInfo:

@@ -176,6 +176,38 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][
 	}
 }
 
+func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpire(originID uint64, empire uint8, frames [][]byte) {
+	if r == nil || originID == 0 || empire == 0 || len(frames) == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for id, session := range r.sessions {
+		if id == originID || session.character.Empire != empire {
+			continue
+		}
+		session.pending.enqueue(frames)
+	}
+}
+
+func (r *sharedWorldRegistry) EnqueueToOtherSessionsInGuild(originID uint64, guildID uint32, frames [][]byte) {
+	if r == nil || originID == 0 || guildID == 0 || len(frames) == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for id, session := range r.sessions {
+		if id == originID || session.character.GuildID != guildID {
+			continue
+		}
+		session.pending.enqueue(frames)
+	}
+}
+
 func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byte) bool {
 	if r == nil || name == "" || len(frames) == 0 {
 		return false
