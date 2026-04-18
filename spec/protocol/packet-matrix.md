@@ -51,7 +51,7 @@ Status values:
 | `PLAYER_DELETE_SUCCESS` | server -> client | `0x020E` | select | planned | later milestone |
 | `MAIN_CHARACTER` | server -> client | `0x0210` | loading | documented | main actor bootstrap |
 | `PLAYER_POINTS` | server -> client | `0x0214` | loading/game bootstrap | documented | initial stat payload |
-| `PLAYER_POINT_CHANGE` | server -> client | `0x0215` | game | planned | likely needed shortly after bootstrap |
+| `PLAYER_POINT_CHANGE` | server -> client | `0x0215` | game bootstrap | documented | first self-only point refresh after the selected-character bootstrap |
 
 ## Movement
 

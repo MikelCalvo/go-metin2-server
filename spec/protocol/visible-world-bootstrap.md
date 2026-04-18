@@ -15,6 +15,7 @@ It does not yet freeze the broader entity stream for NPCs, mobs, items, or other
 - `CHARACTER_ADD`
 - `CHAR_ADDITIONAL_INFO`
 - `CHARACTER_UPDATE`
+- `PLAYER_POINT_CHANGE`
 
 ## Working flow
 
@@ -28,10 +29,12 @@ The current project-owned world bootstrap after `ENTERGAME` is:
    - `CHARACTER_ADD`
    - `CHAR_ADDITIONAL_INFO`
    - `CHARACTER_UPDATE`
+   - `PLAYER_POINT_CHANGE`
 
 This slice is intentionally narrow:
 - only the selected character is announced
 - only the selected character gets a deterministic self-update refresh
+- only the selected character gets a deterministic self-only point refresh
 - no item/NPC/mob bursts are required yet
 - no fanout to other sessions is required yet
 
@@ -91,7 +94,7 @@ The bootstrap runtime currently uses deterministic values for the visible insert
 - a fixed self-insert type for player characters
 - deterministic movement/attack speed values
 - deterministic state bootstrap
-- selected character coordinates, race, empire, level, visible parts, and self-update state
+- selected character coordinates, race, empire, level, visible parts, self-update state, and one self-only point refresh
 
 This is good enough for the first visible-world slice, but not yet the final compatibility target.
 
