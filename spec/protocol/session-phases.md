@@ -117,7 +117,7 @@ Typical traffic in this phase:
 - bootstrap guild chat (same non-zero `GuildID` fanout)
 - bootstrap shout chat (same-empire fanout)
 - bootstrap system info chat
-- reserved server-originated notice path
+- programmatic server-originated notice path
 - control-plane `PING`/`PONG` that should not disturb the live phase
 - visible peer `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` / `CHARACTER_DEL` on the same bootstrap `MapIndex`
 - queued peer `MOVE` replication on the same bootstrap `MapIndex`

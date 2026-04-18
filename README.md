@@ -27,7 +27,7 @@ Current scope of the project:
 - Minimal bootstrap `CHAT_TYPE_PARTY` fanout across the currently connected `GAME` sessions.
 - Minimal bootstrap `CHAT_TYPE_GUILD` fanout across connected `GAME` sessions that share the same non-zero `GuildID`.
 - Minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions in the same empire.
-- Minimal bootstrap system `CHAT_TYPE_INFO` self-delivery in `GAME`, with client-originated `CHAT_TYPE_NOTICE` now rejected pending a server-originated notice path.
+- Minimal bootstrap system `CHAT_TYPE_INFO` self-delivery in `GAME`, plus a programmatic server-originated `CHAT_TYPE_NOTICE` broadcast path; client-originated `CHAT_TYPE_NOTICE` remains rejected.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
@@ -137,6 +137,7 @@ Legend:
 - `spec/protocol/guild-chat-bootstrap.md`
 - `spec/protocol/shout-chat-bootstrap.md`
 - `spec/protocol/info-notice-bootstrap.md`
+- `spec/protocol/server-notice-broadcast.md`
 - `spec/protocol/chat-scope-first-hardening.md`
 - `spec/protocol/map-index-world-scope-hardening.md`
 - `spec/protocol/visible-world-bootstrap.md`
@@ -244,7 +245,7 @@ What exists today:
 - connected `GAME` sessions with the same non-zero `GuildID` receive bootstrap `CHAT_TYPE_GUILD` fanout
 - connected `GAME` sessions in the same empire receive bootstrap `CHAT_TYPE_SHOUT` fanout
 - `CHAT_TYPE_INFO` currently acts as a bootstrap system/self channel with `vid = 0` and raw message text
-- client-originated `CHAT_TYPE_NOTICE` is now rejected in `GAME`; a server-originated bootstrap notice path is still pending
+- a programmatic server-originated `CHAT_TYPE_NOTICE` path now queues raw system notices with `vid = 0` to connected `GAME` sessions, while client-originated `CHAT_TYPE_NOTICE` remains rejected
 
 What still does not exist yet:
 - compatibility-grade persistence matching the legacy target

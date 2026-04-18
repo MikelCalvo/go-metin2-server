@@ -1,9 +1,10 @@
 # Info and Notice Bootstrap
 
-This document freezes the current bootstrap behavior for `CHAT_TYPE_INFO` and `CHAT_TYPE_NOTICE`.
+This document freezes the current bootstrap behavior for `CHAT_TYPE_INFO` and the client-originated side of `CHAT_TYPE_NOTICE`.
 
 These chat types commonly behave as server-originated system messages in the compatibility target.
-The current bootstrap runtime keeps `CHAT_TYPE_INFO` exposed through the existing `CHAT` request path for deterministic testing, while client-originated `CHAT_TYPE_NOTICE` is now rejected until a server-originated notice path is introduced.
+The current bootstrap runtime keeps `CHAT_TYPE_INFO` exposed through the existing `CHAT` request path for deterministic testing, while client-originated `CHAT_TYPE_NOTICE` remains rejected.
+The actual server-originated notice path now lives in `server-notice-broadcast.md`.
 
 ## Covered packets
 
@@ -54,11 +55,11 @@ This slice freezes:
 - `vid = 0` for bootstrap `INFO` system-message delivery
 - raw message passthrough with no `Name : ` prefix
 - sender-only behavior for bootstrap `INFO`
+- separation between client-originated `INFO` handling here and server-originated notice broadcasting documented separately
 
 It does not yet freeze:
 - real event-driven server info messages
-- server-originated bootstrap notices
-- GM/operator notice tooling
+- operator/GM notice tooling
 - timed or scheduled notices
 - localization/event pipelines
 - any permission model around who may trigger a notice
