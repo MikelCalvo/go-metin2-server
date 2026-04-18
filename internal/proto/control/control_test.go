@@ -86,6 +86,15 @@ func TestDecodePingReturnsServerTime(t *testing.T) {
 	}
 }
 
+func TestEncodePingBuildsAControlFrame(t *testing.T) {
+	want := loadHexFixture(t, "ping-frame.hex")
+	got := EncodePing(PingPacket{ServerTime: 0x01020304})
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected ping frame bytes: got %x want %x", got, want)
+	}
+}
+
 func TestEncodePhaseSupportsDeadPhaseValue(t *testing.T) {
 	want := loadHexFixture(t, "phase-dead-frame.hex")
 
@@ -135,6 +144,32 @@ func TestEncodePongBuildsAHeaderOnlyControlFrame(t *testing.T) {
 
 	if !bytes.Equal(got, want) {
 		t.Fatalf("unexpected pong frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodePongAcceptsAHeaderOnlyControlFrame(t *testing.T) {
+	decoder := frame.NewDecoder(1024)
+	frames, err := decoder.Feed(loadHexFixture(t, "pong-frame.hex"))
+	if err != nil {
+		t.Fatalf("unexpected frame decode error: %v", err)
+	}
+
+	if _, err := DecodePong(frames[0]); err != nil {
+		t.Fatalf("unexpected pong decode error: %v", err)
+	}
+}
+
+func TestDecodePongRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodePong(frame.Frame{Header: HeaderPing, Length: 8, Payload: make([]byte, 4)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodePongRejectsUnexpectedPayload(t *testing.T) {
+	_, err := DecodePong(frame.Frame{Header: HeaderPong, Length: 5, Payload: []byte{0x01}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}
 }
 

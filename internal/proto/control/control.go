@@ -50,6 +50,8 @@ type PingPacket struct {
 	ServerTime uint32
 }
 
+type PongPacket struct{}
+
 type ClientVersionPacket struct {
 	ExecutableName string
 	Timestamp      string
@@ -108,6 +110,12 @@ func DecodePhase(f frame.Frame) (PhasePacket, error) {
 	return PhasePacket{Phase: phase}, nil
 }
 
+func EncodePing(packet PingPacket) []byte {
+	payload := make([]byte, 4)
+	binary.LittleEndian.PutUint32(payload, packet.ServerTime)
+	return frame.Encode(HeaderPing, payload)
+}
+
 func DecodePing(f frame.Frame) (PingPacket, error) {
 	if f.Header != HeaderPing {
 		return PingPacket{}, ErrUnexpectedHeader
@@ -122,6 +130,18 @@ func DecodePing(f frame.Frame) (PingPacket, error) {
 
 func EncodePong() []byte {
 	return frame.Encode(HeaderPong, nil)
+}
+
+func DecodePong(f frame.Frame) (PongPacket, error) {
+	if f.Header != HeaderPong {
+		return PongPacket{}, ErrUnexpectedHeader
+	}
+
+	if len(f.Payload) != 0 {
+		return PongPacket{}, ErrInvalidPayload
+	}
+
+	return PongPacket{}, nil
 }
 
 func EncodeClientVersion(packet ClientVersionPacket) ([]byte, error) {

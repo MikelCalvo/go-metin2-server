@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
@@ -83,6 +84,33 @@ func TestHandleClientFrameRejectsUnexpectedPacketsInGame(t *testing.T) {
 	_, err := flow.HandleClientFrame(frame.Frame{Header: movep.HeaderMoveAck, Length: 23, Payload: make([]byte, 23)})
 	if !errors.Is(err, ErrUnexpectedClientPacket) {
 		t.Fatalf("expected ErrUnexpectedClientPacket, got %v", err)
+	}
+}
+
+func TestHandleClientFrameAcceptsPongInGameAsNoOp(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodePong()))
+	if err != nil {
+		t.Fatalf("unexpected pong error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing frames for pong, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsMalformedPongInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	_, err := flow.HandleClientFrame(frame.Frame{Header: control.HeaderPong, Length: 5, Payload: []byte{0x01}})
+	if !errors.Is(err, control.ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
 	}
 }
 

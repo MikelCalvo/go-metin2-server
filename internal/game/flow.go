@@ -3,6 +3,7 @@ package game
 import (
 	"errors"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
@@ -55,6 +56,11 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		return nil, ErrInvalidPhase
 	}
 	switch in.Header {
+	case control.HeaderPong:
+		if _, err := control.DecodePong(in); err != nil {
+			return nil, err
+		}
+		return nil, nil
 	case movep.HeaderMove:
 		packet, err := movep.DecodeMove(in)
 		if err != nil {
