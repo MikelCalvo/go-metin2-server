@@ -11,6 +11,7 @@ The milestone is complete when a compatible client can:
 - select a character
 - enter the world
 - move the main character
+- reconcile the main character position with a first `SYNC_POSITION` round-trip
 
 ## Target scope
 
@@ -28,6 +29,7 @@ In scope:
 - loading/bootstrap
 - enter game
 - basic movement
+- first self-only sync-position reconciliation
 
 Out of scope for this milestone:
 - combat
@@ -110,6 +112,15 @@ Expected outcomes:
 - the client remains connected
 - the movement path becomes the first in-world behavior covered by tests
 
+## 10. First sync-position reconciliation works
+The client sends a minimal `SYNC_POSITION` packet after entering `GAME` and the server reconciles the selected character without dropping the session.
+
+Expected outcomes:
+- the server accepts a self-only sync-position payload for the selected character VID
+- the server updates the selected character coordinates in the bootstrap runtime
+- the server emits one deterministic `SYNC_POSITION` reply for the selected character
+- the client remains connected after the reconciliation path
+
 ## Milestone acceptance criteria
 
 The boot-path milestone is done only when:
@@ -124,4 +135,5 @@ This document depends on:
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
 - `spec/protocol/packet-matrix.md`
+- `spec/protocol/sync-position-bootstrap.md`
 - `docs/testing-strategy.md`

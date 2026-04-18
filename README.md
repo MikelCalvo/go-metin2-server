@@ -14,6 +14,7 @@ Current scope of the project:
 - Minimal legacy TCP listeners wired into both `authd` and `gamed`.
 - A stub-compatible binary smoke path that reaches `GAME` with the current public bootstrap flows.
 - A deterministic single-character `MOVE` round-trip wired through the current bootstrap runtime.
+- A deterministic selected-character `SYNC_POSITION` reconciliation path wired through the current bootstrap runtime.
 - A first visible-world bootstrap that inserts the selected character into the game world after `ENTERGAME`.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
 
@@ -111,6 +112,7 @@ Legend:
 - `spec/protocol/login-selection.md`
 - `spec/protocol/select-world-entry.md`
 - `spec/protocol/visible-world-bootstrap.md`
+- `spec/protocol/sync-position-bootstrap.md`
 - `spec/protocol/boot-path.md`
 - `spec/protocol/packet-matrix.md`
 
@@ -184,7 +186,7 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> MOVE`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> MOVE/SYNC_POSITION`
 
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
@@ -192,6 +194,7 @@ What exists today:
 - file-backed bootstrap account snapshots for the stub login
 - character creation that survives fresh auth/game sessions
 - deterministic single-character `MOVE` replication/ack using the selected character VID
+- deterministic selected-character `SYNC_POSITION` reconciliation in `GAME`
 - bootstrap movement updates character coordinates and persists them across fresh auth/game sessions
 - empty-account bootstrap flow can select empire before first character creation, and that choice persists across fresh auth/game sessions
 - the selected character is inserted into the visible world after `ENTERGAME` via minimal `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO`

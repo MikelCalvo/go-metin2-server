@@ -99,7 +99,6 @@ This slice does not yet freeze:
 - `CHARACTER_ADD2`
 - `CHARACTER_UPDATE`
 - `CHARACTER_UPDATE2`
-- `SYNC_POSITION`
 - visible-world packets for other entities
 - item ground packets
 - targeting/combat packets
