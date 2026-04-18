@@ -98,7 +98,7 @@ Legend:
 - `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/ops` — health and pprof endpoints
-- `internal/service` — shared service bootstrap / shutdown helpers
+- `internal/service` — shared service bootstrap / shutdown helpers and legacy session runtime hooks
 - `docs/` — engineering and clean-room documentation
 - `spec/protocol` — protocol notes and packet inventory
 

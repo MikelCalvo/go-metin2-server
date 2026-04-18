@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,7 @@ const (
 	testHeaderStart uint16 = 0x9001
 	testHeaderPing  uint16 = 0x9002
 	testHeaderPong  uint16 = 0x9003
+	testHeaderAsync uint16 = 0x9004
 )
 
 func TestServeLegacyServesSessionFlowOverTCP(t *testing.T) {
@@ -153,10 +155,113 @@ func TestRunStartsOpsAndLegacyServers(t *testing.T) {
 	}
 }
 
+func TestServeLegacyFlushesServerInitiatedFramesWithoutIncomingTraffic(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeLegacy(ctx, listener, testLogger(), newAsyncTestSessionFlow)
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial tcp: %v", err)
+	}
+	defer conn.Close()
+
+	frames := readFrames(t, conn, 2)
+	start := frames[0]
+	if start.Header != testHeaderStart || string(start.Payload) != "hello" {
+		t.Fatalf("unexpected start frame: header=0x%04x payload=%q", start.Header, string(start.Payload))
+	}
+
+	async := frames[1]
+	if async.Header != testHeaderAsync || string(async.Payload) != "async" {
+		t.Fatalf("unexpected async frame: header=0x%04x payload=%q", async.Header, string(async.Payload))
+	}
+
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("serve legacy returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ServeLegacy to stop")
+	}
+}
+
+func TestServeLegacyCallsFlowCloserWhenConnectionEnds(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	flow := newClosableTestSessionFlow()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeLegacy(ctx, listener, testLogger(), func() SessionFlow { return flow })
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial tcp: %v", err)
+	}
+
+	_ = readFrame(t, conn)
+	_ = conn.Close()
+
+	select {
+	case <-flow.closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for flow close hook")
+	}
+
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("serve legacy returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ServeLegacy to stop")
+	}
+}
+
 type testSessionFlow struct{}
+
+type asyncTestSessionFlow struct {
+	pending [][]byte
+}
+
+type closableTestSessionFlow struct {
+	closed chan struct{}
+	once   sync.Once
+}
 
 func newTestSessionFlow() SessionFlow {
 	return &testSessionFlow{}
+}
+
+func newAsyncTestSessionFlow() SessionFlow {
+	return &asyncTestSessionFlow{pending: [][]byte{frame.Encode(testHeaderAsync, []byte("async"))}}
+}
+
+func newClosableTestSessionFlow() *closableTestSessionFlow {
+	return &closableTestSessionFlow{closed: make(chan struct{})}
 }
 
 func (f *testSessionFlow) Start() ([][]byte, error) {
@@ -171,6 +276,33 @@ func (f *testSessionFlow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		return nil, fmt.Errorf("unexpected payload: %q", string(in.Payload))
 	}
 	return [][]byte{frame.Encode(testHeaderPong, []byte("pong"))}, nil
+}
+
+func (f *asyncTestSessionFlow) Start() ([][]byte, error) {
+	return [][]byte{frame.Encode(testHeaderStart, []byte("hello"))}, nil
+}
+
+func (f *asyncTestSessionFlow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
+	return nil, fmt.Errorf("unexpected header: 0x%04x", in.Header)
+}
+
+func (f *asyncTestSessionFlow) FlushServerFrames() ([][]byte, error) {
+	out := f.pending
+	f.pending = nil
+	return out, nil
+}
+
+func (f *closableTestSessionFlow) Start() ([][]byte, error) {
+	return [][]byte{frame.Encode(testHeaderStart, []byte("hello"))}, nil
+}
+
+func (f *closableTestSessionFlow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
+	return nil, fmt.Errorf("unexpected header: 0x%04x", in.Header)
+}
+
+func (f *closableTestSessionFlow) Close() error {
+	f.once.Do(func() { close(f.closed) })
+	return nil
 }
 
 func testLogger() *slog.Logger {
@@ -217,11 +349,17 @@ func waitForHealthz(t *testing.T, addr string, want string) {
 
 func readFrame(t *testing.T, conn net.Conn) frame.Frame {
 	t.Helper()
+	return readFrames(t, conn, 1)[0]
+}
+
+func readFrames(t *testing.T, conn net.Conn, count int) []frame.Frame {
+	t.Helper()
 
 	decoder := frame.NewDecoder(1024)
 	buffer := make([]byte, 1024)
+	frames := make([]frame.Frame, 0, count)
 
-	for {
+	for len(frames) < count {
 		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 			t.Fatalf("set read deadline: %v", err)
 		}
@@ -231,17 +369,15 @@ func readFrame(t *testing.T, conn net.Conn) frame.Frame {
 			t.Fatalf("read frame: %v", err)
 		}
 
-		frames, err := decoder.Feed(buffer[:n])
+		decoded, err := decoder.Feed(buffer[:n])
 		if err != nil {
 			t.Fatalf("decode frame: %v", err)
 		}
 
-		if len(frames) == 0 {
-			continue
-		}
-
-		return frames[0]
+		frames = append(frames, decoded...)
 	}
+
+	return frames[:count]
 }
 
 func writeFrame(t *testing.T, conn net.Conn, raw []byte) {

@@ -18,6 +18,10 @@ type SessionFlow interface {
 	HandleClientFrame(frame.Frame) ([][]byte, error)
 }
 
+type ServerFrameSource interface {
+	FlushServerFrames() ([][]byte, error)
+}
+
 type SessionFactory func() SessionFlow
 
 func ListenAndServeLegacy(ctx context.Context, addr string, logger *slog.Logger, newSession SessionFactory) error {
@@ -74,6 +78,10 @@ func ServeLegacy(ctx context.Context, listener net.Listener, logger *slog.Logger
 }
 
 func serveLegacyConn(ctx context.Context, conn net.Conn, flow SessionFlow) error {
+	if closer, ok := flow.(io.Closer); ok {
+		defer func() { _ = closer.Close() }()
+	}
+
 	out, err := flow.Start()
 	if err != nil {
 		return fmt.Errorf("start session flow: %w", err)
@@ -91,6 +99,10 @@ func serveLegacyConn(ctx context.Context, conn net.Conn, flow SessionFlow) error
 	for {
 		if ctx.Err() != nil {
 			return nil
+		}
+
+		if err := flushServerFrames(conn, flow); err != nil {
+			return err
 		}
 
 		if err := conn.SetReadDeadline(time.Now().Add(250 * time.Millisecond)); err != nil {
@@ -130,6 +142,26 @@ func serveLegacyConn(ctx context.Context, conn net.Conn, flow SessionFlow) error
 			return fmt.Errorf("read legacy frame: %w", err)
 		}
 	}
+}
+
+func flushServerFrames(conn net.Conn, flow SessionFlow) error {
+	source, ok := flow.(ServerFrameSource)
+	if !ok {
+		return nil
+	}
+
+	out, err := source.FlushServerFrames()
+	if err != nil {
+		return fmt.Errorf("flush server frames: %w", err)
+	}
+
+	for _, raw := range out {
+		if err := writeLegacyFrame(conn, raw); err != nil {
+			return fmt.Errorf("write server frame: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func writeLegacyFrame(conn net.Conn, raw []byte) error {
