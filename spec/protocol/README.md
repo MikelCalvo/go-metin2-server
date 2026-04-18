@@ -10,6 +10,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `auth-login.md` — minimal auth-server credential exchange and login-key issuance
 - `login-selection.md` — minimal login-by-key and selection-surface packet layouts
 - `select-world-entry.md` — minimal selection, loading, and enter-game packet choreography
+- `character-delete-selection.md` — deterministic character deletion in `SELECT`
 - `client-version-loading.md` — tolerant `CLIENT_VERSION` metadata path during `LOADING`
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`

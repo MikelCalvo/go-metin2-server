@@ -40,7 +40,7 @@ Status values:
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `CHARACTER_CREATE` | client -> server | `0x0201` | select | documented | create character request |
-| `CHARACTER_DELETE` | client -> server | `0x0202` | select | planned | not required for the first milestone |
+| `CHARACTER_DELETE` | client -> server | `0x0202` | select | documented | delete character request with private-code field |
 | `CHARACTER_SELECT` | client -> server | `0x0203` | select | documented | choose active character |
 | `ENTERGAME` | client -> server | `0x0204` | loading | documented | enter-world request |
 | `CHARACTER_ADD` | server -> client | `0x0205` | game bootstrap | documented | first visible-world insert for the selected character |
@@ -48,7 +48,8 @@ Status values:
 | `CHARACTER_UPDATE` | server -> client | `0x0209` | game bootstrap | documented | first self-only state refresh after the visible-world insert |
 | `PLAYER_CREATE_SUCCESS` | server -> client | `0x020C` | select | documented | create success result |
 | `PLAYER_CREATE_FAILURE` | server -> client | `0x020D` | select | documented | create failure result |
-| `PLAYER_DELETE_SUCCESS` | server -> client | `0x020E` | select | planned | later milestone |
+| `PLAYER_DELETE_SUCCESS` | server -> client | `0x020E` | select | documented | delete success result carrying the cleared account slot |
+| `PLAYER_DELETE_FAILURE` | server -> client | `0x020F` | select | documented | minimal delete rejection placeholder using a header-only failure frame |
 | `MAIN_CHARACTER` | server -> client | `0x0210` | loading | documented | main actor bootstrap |
 | `PLAYER_POINTS` | server -> client | `0x0214` | loading/game bootstrap | documented | initial stat payload |
 | `PLAYER_POINT_CHANGE` | server -> client | `0x0215` | game bootstrap | documented | first self-only point refresh after the selected-character bootstrap |

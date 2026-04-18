@@ -152,6 +152,7 @@ A packet decoder may still parse them, but the session layer must not process th
 ### `SELECT`
 - authentication is already complete
 - character creation is allowed
+- character deletion is allowed
 - selection is allowed
 - no in-world movement is allowed
 

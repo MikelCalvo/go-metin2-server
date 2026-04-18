@@ -16,6 +16,7 @@ Current scope of the project:
 - A deterministic single-character `MOVE` round-trip wired through the current bootstrap runtime.
 - A deterministic selected-character `SYNC_POSITION` reconciliation path wired through the current bootstrap runtime.
 - A tolerant `CLIENT_VERSION` metadata path accepted during `LOADING` before `ENTERGAME`.
+- Character deletion on the selection surface with deterministic success/failure responses.
 - A first visible-world bootstrap that inserts the selected character into the game world after `ENTERGAME`.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
@@ -66,7 +67,7 @@ Legend:
 - [x] character list surface
 - [x] minimal `authd` and `gamed` runtime listeners
 - [x] empire selection support for empty-account bootstrap flow
-- [x] character creation and selection
+- [x] character creation, deletion and selection
 
 ### 5. World entry
 - [x] loading/bootstrap packets
@@ -114,6 +115,7 @@ Legend:
 - `spec/protocol/auth-login.md`
 - `spec/protocol/login-selection.md`
 - `spec/protocol/select-world-entry.md`
+- `spec/protocol/character-delete-selection.md`
 - `spec/protocol/client-version-loading.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
@@ -192,13 +194,14 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> MOVE/SYNC_POSITION`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_DELETE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> MOVE/SYNC_POSITION`
 
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
 - shared authd -> gamed login tickets
 - file-backed bootstrap account snapshots for the stub login
 - character creation that survives fresh auth/game sessions
+- character deletion that persists an empty slot across fresh auth/game sessions
 - deterministic single-character `MOVE` replication/ack using the selected character VID
 - deterministic selected-character `SYNC_POSITION` reconciliation in `GAME`
 - bootstrap movement updates character coordinates and persists them across fresh auth/game sessions

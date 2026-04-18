@@ -68,7 +68,7 @@ If the account has no characters yet, empire selection or creation support must 
 
 Expected outcomes:
 - the client can display the selection screen
-- the client can issue create/select actions without desynchronizing the session
+- the client can issue create/delete/select actions without desynchronizing the session
 
 ## 5. Character creation works
 The client can create a valid character in an empty slot.
@@ -139,6 +139,7 @@ This document depends on:
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
 - `spec/protocol/packet-matrix.md`
+- `spec/protocol/character-delete-selection.md`
 - `spec/protocol/client-version-loading.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`

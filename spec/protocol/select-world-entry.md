@@ -5,6 +5,8 @@ This document freezes the minimal packet and phase choreography needed to move f
 The goal of this slice is narrow:
 - accept `CHARACTER_CREATE` in `SELECT`
 - return `PLAYER_CREATE_SUCCESS` or `PLAYER_CREATE_FAILURE`
+- accept `CHARACTER_DELETE` in `SELECT`
+- return `PLAYER_DELETE_SUCCESS` or `PLAYER_DELETE_FAILURE`
 - accept `EMPIRE` selection in `SELECT` when the account is empty
 - accept `CHARACTER_SELECT`
 - enter `LOADING`
@@ -19,6 +21,9 @@ It does not yet freeze the full visible-world packet set.
 - `CHARACTER_CREATE`
 - `PLAYER_CREATE_SUCCESS`
 - `PLAYER_CREATE_FAILURE`
+- `CHARACTER_DELETE`
+- `PLAYER_DELETE_SUCCESS`
+- `PLAYER_DELETE_FAILURE`
 - `CHARACTER_SELECT`
 - `CLIENT_VERSION`
 - `ENTERGAME`
@@ -47,16 +52,19 @@ The current project-owned selection/world-entry flow is:
 4. the client may send `CHARACTER_CREATE`
 5. on create success, the server emits `PLAYER_CREATE_SUCCESS` and stays in `SELECT`
 6. on create failure, the server emits `PLAYER_CREATE_FAILURE` and stays in `SELECT`
-7. the client sends `CHARACTER_SELECT`
-8. the server validates the slot and transitions to `LOADING`
-9. the server emits:
+7. the client may send `CHARACTER_DELETE`
+8. on delete success, the server emits `PLAYER_DELETE_SUCCESS` and stays in `SELECT`
+9. on delete failure, the server emits `PLAYER_DELETE_FAILURE` and stays in `SELECT`
+10. the client sends `CHARACTER_SELECT`
+11. the server validates the slot and transitions to `LOADING`
+12. the server emits:
    - `PHASE(LOADING)`
    - `MAIN_CHARACTER`
    - `PLAYER_POINTS`
-10. the client may send `CLIENT_VERSION` metadata while staying in `LOADING`
-11. the client sends `ENTERGAME`
-12. the server transitions to `GAME`
-13. the server emits:
+13. the client may send `CLIENT_VERSION` metadata while staying in `LOADING`
+14. the client sends `ENTERGAME`
+15. the server transitions to `GAME`
+16. the server emits:
    - `PHASE(GAME)`
    - `CHARACTER_ADD`
    - `CHAR_ADDITIONAL_INFO`
