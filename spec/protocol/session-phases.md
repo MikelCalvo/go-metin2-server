@@ -111,6 +111,7 @@ Initial milestone scope:
 Typical traffic in this phase:
 - move
 - sync position
+- control-plane `PING`/`PONG` that should not disturb the live phase
 - minimal world updates
 
 ## 6. `CLOSE`
@@ -165,6 +166,7 @@ A packet decoder may still parse them, but the session layer must not process th
 ### `GAME`
 - a character is bound to the connection
 - movement is allowed
+- control-plane `PONG` may be accepted here without changing phase
 - later milestones may enable additional systems here
 
 ## Notes for implementation

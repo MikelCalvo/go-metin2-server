@@ -16,6 +16,7 @@ Current scope of the project:
 - A deterministic single-character `MOVE` round-trip wired through the current bootstrap runtime.
 - A deterministic selected-character `SYNC_POSITION` reconciliation path wired through the current bootstrap runtime.
 - A tolerant `CLIENT_VERSION` metadata path accepted during `LOADING` before `ENTERGAME`.
+- A tolerant `PONG` control path accepted in `GAME` for server-driven ping probes.
 - Character deletion on the selection surface with deterministic success/failure responses.
 - A first visible-world bootstrap that inserts the selected character into the game world after `ENTERGAME`.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
@@ -117,6 +118,7 @@ Legend:
 - `spec/protocol/select-world-entry.md`
 - `spec/protocol/character-delete-selection.md`
 - `spec/protocol/client-version-loading.md`
+- `spec/protocol/game-ping-pong.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -207,6 +209,7 @@ What exists today:
 - bootstrap movement updates character coordinates and persists them across fresh auth/game sessions
 - empty-account bootstrap flow can select empire before first character creation, and that choice persists across fresh auth/game sessions
 - tolerant `CLIENT_VERSION` acceptance in `LOADING` with no phase transition and no server response
+- tolerant `PONG` acceptance in `GAME` with no phase transition and no server response
 - the selected character is inserted into the visible world after `ENTERGAME` via minimal `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` + `PLAYER_POINT_CHANGE`
 
 What still does not exist yet:

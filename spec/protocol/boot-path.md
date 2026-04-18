@@ -141,6 +141,7 @@ This document depends on:
 - `spec/protocol/packet-matrix.md`
 - `spec/protocol/character-delete-selection.md`
 - `spec/protocol/client-version-loading.md`
+- `spec/protocol/game-ping-pong.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
 - `spec/protocol/sync-position-bootstrap.md`
