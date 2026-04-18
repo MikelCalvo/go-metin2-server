@@ -294,6 +294,196 @@ func TestNewGameSessionFactoryQueuesPeerSyncPositionForVisiblePlayers(t *testing
 	}
 }
 
+func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMove(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	flowThree, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+
+	moveOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(moveOut) != 0 {
+		t.Fatalf("expected no self move reply while gameplay transfer uses bootstrap trigger contract, got %d frames", len(moveOut))
+	}
+
+	moverFrames := flushServerFrames(t, flowTwo)
+	if len(moverFrames) != 4 {
+		t.Fatalf("expected 4 mover frames after triggered transfer, got %d", len(moverFrames))
+	}
+	removedPeer, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, moverFrames[0]))
+	if err != nil {
+		t.Fatalf("decode mover delete notice: %v", err)
+	}
+	if removedPeer.VID != peerOne.VID {
+		t.Fatalf("expected mover delete notice for old-map peer %#08x, got %#08x", peerOne.VID, removedPeer.VID)
+	}
+	addedPeer, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moverFrames[1]))
+	if err != nil {
+		t.Fatalf("decode mover peer add: %v", err)
+	}
+	if addedPeer.VID != peerThree.VID || addedPeer.X != peerThree.X || addedPeer.Y != peerThree.Y {
+		t.Fatalf("unexpected mover peer add: %+v", addedPeer)
+	}
+
+	oldMapFrames := flushServerFrames(t, flowOne)
+	if len(oldMapFrames) != 1 {
+		t.Fatalf("expected 1 old-map frame after triggered transfer, got %d", len(oldMapFrames))
+	}
+	removedMover, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, oldMapFrames[0]))
+	if err != nil {
+		t.Fatalf("decode old-map delete notice: %v", err)
+	}
+	if removedMover.VID != peerTwo.VID {
+		t.Fatalf("expected old-map delete notice for moved peer %#08x, got %#08x", peerTwo.VID, removedMover.VID)
+	}
+
+	newMapFrames := flushServerFrames(t, flowThree)
+	if len(newMapFrames) != 3 {
+		t.Fatalf("expected 3 destination-map frames after triggered transfer, got %d", len(newMapFrames))
+	}
+	newPeerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, newMapFrames[0]))
+	if err != nil {
+		t.Fatalf("decode destination-map peer add: %v", err)
+	}
+	if newPeerAdd.VID != peerTwo.VID || newPeerAdd.X != 1700 || newPeerAdd.Y != 2800 {
+		t.Fatalf("unexpected destination-map peer add: %+v", newPeerAdd)
+	}
+
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 3 || snapshots[2].Name != "PeerTwo" || snapshots[2].MapIndex != 42 || snapshots[2].X != 1700 || snapshots[2].Y != 2800 {
+		t.Fatalf("expected connected character snapshot to reflect triggered transfer, got %+v", snapshots)
+	}
+}
+
+func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnSyncPosition(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	flowThree, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+
+	syncOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: peerTwo.VID, X: 1500, Y: 2600}}})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error: %v", err)
+	}
+	if len(syncOut) != 0 {
+		t.Fatalf("expected no self sync_position reply while gameplay transfer uses bootstrap trigger contract, got %d frames", len(syncOut))
+	}
+
+	if queued := flushServerFrames(t, flowOne); len(queued) != 1 {
+		t.Fatalf("expected 1 old-map frame after triggered sync_position transfer, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowTwo); len(queued) != 4 {
+		t.Fatalf("expected 4 mover frames after triggered sync_position transfer, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowThree); len(queued) != 3 {
+		t.Fatalf("expected 3 destination-map frames after triggered sync_position transfer, got %d", len(queued))
+	}
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 3 || snapshots[2].Name != "PeerTwo" || snapshots[2].MapIndex != 42 || snapshots[2].X != 1700 || snapshots[2].Y != 2800 {
+		t.Fatalf("expected connected character snapshot to reflect triggered sync_position transfer, got %+v", snapshots)
+	}
+}
+
+func TestNewGameSessionFactoryDoesNotMutateWorldWhenTransferTriggerSaveFails(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, &failingAccountStore{}, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	flowThree, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+	beforeCharacters := runtime.ConnectedCharacters()
+
+	moveOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(moveOut) != 0 {
+		t.Fatalf("expected no self frames on failed trigger transfer, got %d", len(moveOut))
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no old-map frames on failed triggered transfer, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowTwo); len(queued) != 0 {
+		t.Fatalf("expected no mover frames on failed triggered transfer, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowThree); len(queued) != 0 {
+		t.Fatalf("expected no destination-map frames on failed triggered transfer, got %d", len(queued))
+	}
+	if afterCharacters := runtime.ConnectedCharacters(); !reflect.DeepEqual(afterCharacters, beforeCharacters) {
+		t.Fatalf("expected connected characters to remain unchanged on failed triggered transfer, before=%+v after=%+v", beforeCharacters, afterCharacters)
+	}
+}
+
 func TestNewGameSessionFactoryQueuesPeerChatForVisiblePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

@@ -43,6 +43,29 @@ func TestHandleClientFrameAcceptsMoveInGameAndReturnsReplication(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsMoveInGameWithExplicitEmptyFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleMove: func(packet movep.MovePacket) Result {
+			if packet.X != 12345 || packet.Y != 23456 {
+				t.Fatalf("unexpected move packet: %+v", packet)
+			}
+			return Result{Accepted: true, Frames: [][]byte{}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 12345, Y: 23456, Time: 0x01020304})))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsSyncPositionInGameAndReturnsSynchronization(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{
@@ -73,6 +96,29 @@ func TestHandleClientFrameAcceptsSyncPositionInGameAndReturnsSynchronization(t *
 	}
 	if ack.Elements[0].VID != 0x01020304 || ack.Elements[0].X != 12345 || ack.Elements[0].Y != 23456 {
 		t.Fatalf("unexpected sync ack element: %+v", ack.Elements[0])
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsSyncPositionInGameWithExplicitEmptyFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleSyncPosition: func(packet movep.SyncPositionPacket) SyncPositionResult {
+			if len(packet.Elements) != 1 || packet.Elements[0].VID != 0x01020304 || packet.Elements[0].X != 12345 || packet.Elements[0].Y != 23456 {
+				t.Fatalf("unexpected sync position packet: %+v", packet)
+			}
+			return SyncPositionResult{Accepted: true, Frames: [][]byte{}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: 0x01020304, X: 12345, Y: 23456}}})))
+	if err != nil {
+		t.Fatalf("unexpected sync position error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing frames, got %d", len(out))
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())

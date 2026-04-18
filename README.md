@@ -149,7 +149,8 @@ Legend:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, and chat slices. |
+| Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, chat, and bootstrap transfer-trigger slices. |
+| Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; final self-facing warp/loading packet is still not frozen. |
 | Inventory | [ ] | Not started. |
 | Equipment | [ ] | Not started. |
 | Item use / consumables | [ ] | Not started. |
@@ -385,6 +386,7 @@ What exists today:
 - `gamed` also exposes loopback-only `POST /local/relocate` so an already-connected bootstrap character can still be moved to another `MapIndex` by exact name through the older operator shim
 - `gamed` also exposes loopback-only `POST /local/relocate-preview` so operators can inspect visible-peer and map-occupancy changes before applying a bootstrap relocation
 - `gamed` also exposes loopback-only `POST /local/transfer` as the minimal structured bootstrap map-transfer contract, returning the applied transfer result when the commit succeeds
+- the first gameplay-side transfer trigger now exists too: an internal exact-position trigger can commit that same bootstrap transfer contract from `MOVE` / `SYNC_POSITION`, while deliberately leaving the final self-facing warp/loading reply for a later slice
 - `gamed` also exposes loopback-only `GET /local/players` so the current connected bootstrap-character snapshot can be inspected before and after operator-driven runtime changes
 - `gamed` also exposes loopback-only `GET /local/visibility` so the current shared-world visibility graph can be inspected before and after operator-driven runtime changes
 - `gamed` also exposes loopback-only `GET /local/maps` so effective `MapIndex` occupancy can be inspected before and after operator-driven runtime changes

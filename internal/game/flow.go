@@ -33,11 +33,13 @@ type Config struct {
 type Result struct {
 	Accepted    bool
 	Replication movep.MoveAckPacket
+	Frames      [][]byte
 }
 
 type SyncPositionResult struct {
 	Accepted        bool
 	Synchronization movep.SyncPositionAckPacket
+	Frames          [][]byte
 }
 
 type ChatResult struct {
@@ -97,6 +99,9 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		if !result.Accepted {
 			return nil, nil
 		}
+		if result.Frames != nil {
+			return result.Frames, nil
+		}
 		return [][]byte{movep.EncodeMoveAck(result.Replication)}, nil
 	case movep.HeaderSyncPosition:
 		packet, err := movep.DecodeSyncPosition(in)
@@ -106,6 +111,9 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		result := f.handleSyncPosition(packet)
 		if !result.Accepted {
 			return nil, nil
+		}
+		if result.Frames != nil {
+			return result.Frames, nil
 		}
 		return [][]byte{movep.EncodeSyncPositionAck(result.Synchronization)}, nil
 	case chatproto.HeaderClientChat:

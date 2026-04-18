@@ -50,6 +50,15 @@ type loginKeyGenerator func() (uint32, error)
 
 type sharedWorldSessionRelocator func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool)
 
+type bootstrapTransferTrigger struct {
+	SourceMapIndex uint32
+	SourceX        int32
+	SourceY        int32
+	TargetMapIndex uint32
+	TargetX        int32
+	TargetY        int32
+}
+
 type ConnectedCharacterSnapshot struct {
 	Name     string `json:"name"`
 	VID      uint32 `json:"vid"`
@@ -232,6 +241,10 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 }
 
 func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store) (*gameRuntime, error) {
+	return newGameRuntimeWithAccountStoreAndTransferTriggers(cfg, store, accounts, nil)
+}
+
+func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store loginticket.Store, accounts accountstore.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
 	advertisedPort, err := parsePort(cfg.LegacyAddr)
 	if err != nil {
 		return nil, err
@@ -247,6 +260,7 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 	}
 	sharedWorld := newSharedWorldRegistry()
 	runtime := &gameRuntime{sharedWorld: sharedWorld}
+	transferTriggers = cloneBootstrapTransferTriggers(transferTriggers)
 
 	runtime.sessionFactory = func() service.SessionFlow {
 		var sessionTicket loginticket.Ticket
@@ -257,6 +271,22 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 		pending := newPendingServerFrames()
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
+		applySelectedCharacterTransfer := func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
+			updatedCharacters, updatedSelected, ok := selectedCharacterLocationUpdate(sessionTicket.Characters, selectedIndex, mapIndex, x, y)
+			if !ok || !joinedSharedWorld || sharedWorldID == 0 {
+				return RelocationPreview{}, false
+			}
+			if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+				return RelocationPreview{}, false
+			}
+			transferResult, ok := sharedWorld.Transfer(sharedWorldID, updatedSelected)
+			if !ok {
+				_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
+				return RelocationPreview{}, false
+			}
+			sessionTicket.Characters = updatedCharacters
+			return transferResult, true
+		}
 
 		inner := boot.NewFlow(boot.Config{
 			Handshake: handshake.Config{
@@ -383,21 +413,7 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 						sharedWorldID, existingPeers = sharedWorld.Join(selected, pending, func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
 							stateMu.Lock()
 							defer stateMu.Unlock()
-
-							updatedCharacters, updatedSelected, ok := selectedCharacterLocationUpdate(sessionTicket.Characters, selectedIndex, mapIndex, x, y)
-							if !ok || !joinedSharedWorld || sharedWorldID == 0 {
-								return RelocationPreview{}, false
-							}
-							if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
-								return RelocationPreview{}, false
-							}
-							transferResult, ok := sharedWorld.Transfer(sharedWorldID, updatedSelected)
-							if !ok {
-								_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
-								return RelocationPreview{}, false
-							}
-							sessionTicket.Characters = updatedCharacters
-							return transferResult, true
+							return applySelectedCharacterTransfer(mapIndex, x, y)
 						})
 						joinedSharedWorld = sharedWorldID != 0
 						for _, peer := range existingPeers {
@@ -411,6 +427,20 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 				HandleMove: func(packet movep.MovePacket) gameflow.Result {
 					stateMu.Lock()
 					defer stateMu.Unlock()
+
+					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+						return gameflow.Result{Accepted: false}
+					}
+					selected := sessionTicket.Characters[selectedIndex]
+					if selected.ID == 0 {
+						return gameflow.Result{Accepted: false}
+					}
+					if trigger, ok := findBootstrapTransferTrigger(transferTriggers, selected, packet.X, packet.Y); ok {
+						if _, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY); !ok {
+							return gameflow.Result{Accepted: false}
+						}
+						return gameflow.Result{Accepted: true, Frames: [][]byte{}}
+					}
 
 					updatedCharacters, selected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedIndex, packet.X, packet.Y)
 					if !ok {
@@ -440,6 +470,12 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					for _, element := range packet.Elements {
 						if element.VID != selected.VID {
 							continue
+						}
+						if trigger, ok := findBootstrapTransferTrigger(transferTriggers, selected, element.X, element.Y); ok {
+							if _, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY); !ok {
+								return gameflow.SyncPositionResult{Accepted: false}
+							}
+							return gameflow.SyncPositionResult{Accepted: true, Frames: [][]byte{}}
 						}
 						updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedIndex, element.X, element.Y)
 						if !ok {
@@ -648,6 +684,28 @@ func deleteCharacterFromTicket(store accountstore.Store, login string, empire ui
 		return nil, 0, false
 	}
 	return updatedCharacters, packet.Index, true
+}
+
+func cloneBootstrapTransferTriggers(triggers []bootstrapTransferTrigger) []bootstrapTransferTrigger {
+	if len(triggers) == 0 {
+		return nil
+	}
+	cloned := make([]bootstrapTransferTrigger, len(triggers))
+	copy(cloned, triggers)
+	return cloned
+}
+
+func findBootstrapTransferTrigger(triggers []bootstrapTransferTrigger, selected loginticket.Character, x int32, y int32) (bootstrapTransferTrigger, bool) {
+	for _, trigger := range triggers {
+		if trigger.SourceMapIndex != selected.MapIndex || trigger.SourceMapIndex == 0 {
+			continue
+		}
+		if trigger.SourceX != x || trigger.SourceY != y || trigger.TargetMapIndex == 0 {
+			continue
+		}
+		return trigger, true
+	}
+	return bootstrapTransferTrigger{}, false
 }
 
 func updateSelectedCharacterPosition(store accountstore.Store, login string, empire uint8, characters []loginticket.Character, selectedIndex uint8, x int32, y int32) ([]loginticket.Character, loginticket.Character, bool) {

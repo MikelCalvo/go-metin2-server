@@ -10,6 +10,7 @@ What is frozen here is the minimum server-side transfer contract that future war
 
 This contract covers only an already-connected bootstrap player that moves from one effective `MapIndex` to another.
 It is built on top of the already-owned visible-world rebuild primitive documented in `map-relocation-visibility-rebuild.md`.
+The first gameplay-side trigger that is allowed to invoke this contract is documented separately in `exact-position-bootstrap-transfer-trigger.md`.
 
 ## Contract shape
 
