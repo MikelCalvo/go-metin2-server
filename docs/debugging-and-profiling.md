@@ -35,8 +35,8 @@ They are not the gameplay protocol.
 {"name":"PeerTwo","map_index":42,"x":1700,"y":2800}
 ```
 
-- relocates an already-connected bootstrap character by exact name
-- rebuilds visible peers for the destination `MapIndex`
+- compatibility/operator shim for the older plain-text relocation trigger
+- still applies the bootstrap map transfer
 - success response: `relocated 1`
 - rejects non-loopback callers with `403`
 
@@ -51,6 +51,7 @@ They are not the gameplay protocol.
 
 - previews the visibility and map-occupancy effects of that relocation without mutating runtime state
 - returns JSON with:
+  - `applied`
   - `character`
   - `target`
   - `current_visible_peers`
@@ -58,6 +59,19 @@ They are not the gameplay protocol.
   - `removed_visible_peers`
   - `added_visible_peers`
   - `map_occupancy_changes`
+- rejects non-loopback callers with `403`
+
+### `POST /local/transfer`
+
+- request body: JSON
+- example:
+
+```json
+{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}
+```
+
+- commits the minimal structured bootstrap map-transfer contract
+- returns the same JSON shape as preview, but with `applied = true`
 - rejects non-loopback callers with `403`
 
 ### `GET /local/players`
@@ -143,6 +157,14 @@ Preview a bootstrap relocation without mutating runtime state:
 
 ```bash
 curl -X POST http://127.0.0.1:6060/local/relocate-preview \
+  -H 'Content-Type: application/json' \
+  --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
+```
+
+Commit a bootstrap transfer and get the structured applied result:
+
+```bash
+curl -X POST http://127.0.0.1:6060/local/transfer \
   -H 'Content-Type: application/json' \
   --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
 ```

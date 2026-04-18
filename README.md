@@ -25,6 +25,7 @@ Current scope of the project:
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation.
+- A loopback-only `gamed` structured transfer endpoint that commits the minimal bootstrap map-transfer contract and returns the applied transfer result.
 - A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state.
 - A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules.
 - A loopback-only `gamed` runtime map-occupancy endpoint that groups currently connected bootstrap characters by effective `MapIndex`.
@@ -142,7 +143,7 @@ Legend:
 | Guild chat | [~] | Scoped by non-zero `GuildID`, but no guild lifecycle/roster system exists yet. |
 | Shout | [~] | Same-empire bootstrap fanout exists; no real world/channel topology behind it yet. |
 | System info / notice | [~] | `INFO` self-delivery, server-originated `NOTICE`, and local-only notice trigger exist. |
-| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `GET /local/players`, `GET /local/visibility`, and `GET /local/maps` exist on `gamed`; broader admin/auth tooling does not. |
+| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/players`, `GET /local/visibility`, and `GET /local/maps` exist on `gamed`; broader admin/auth tooling does not. |
 
 ### Character systems and gameplay
 
@@ -166,7 +167,7 @@ Legend:
 | Login tickets | [x] | Working file-backed ticket flow between `authd` and `gamed`. |
 | Bootstrap account snapshots | [~] | File-backed account/character persistence exists, but it is not compatibility-grade yet. |
 | Database schema / migrations | [ ] | No real DB-backed persistence layer or live migrations yet. |
-| Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection/map-occupancy/dry-run endpoints exist; metrics/logging/admin depth still needs work. |
+| Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection/map-occupancy/dry-run/transfer endpoints exist; metrics/logging/admin depth still needs work. |
 | CI / public validation | [x] | GitHub Actions baseline checks formatting, tests, vet, daemon builds, and runtime/debug image builds. |
 | Release/deploy guidance | [ ] | No production-grade release/deployment story yet. |
 
@@ -229,6 +230,7 @@ Legend:
 - `spec/protocol/chat-scope-first-hardening.md`
 - `spec/protocol/map-index-world-scope-hardening.md`
 - `spec/protocol/map-relocation-visibility-rebuild.md`
+- `spec/protocol/bootstrap-map-transfer-contract.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -257,12 +259,17 @@ Both binaries expose an ops server with:
 - `POST /local/relocate`
   - loopback clients only
   - JSON body: `{\"name\":\"CharacterName\",\"map_index\":42,\"x\":1700,\"y\":2800}`
-  - relocates an already-connected bootstrap character by exact name and rebuilds visible peers for the destination `MapIndex`
+  - compatibility/operator shim that applies the same bootstrap map transfer but only returns plain-text success/failure
 - `POST /local/relocate-preview`
   - loopback clients only
   - JSON body: `{\"name\":\"CharacterName\",\"map_index\":42,\"x\":1700,\"y\":2800}`
   - previews the visibility and map-occupancy effects of that relocation without mutating runtime state
   - returns JSON with the current snapshot, target snapshot, removed/added visible peers, and map occupancy deltas
+- `POST /local/transfer`
+  - loopback clients only
+  - JSON body: `{\"name\":\"CharacterName\",\"map_index\":42,\"x\":1700,\"y\":2800}`
+  - commits the minimal structured bootstrap map-transfer contract
+  - returns JSON with `applied = true` plus the committed transfer result
 - `GET /local/players`
   - loopback clients only
   - returns a JSON snapshot of currently connected bootstrap characters, sorted by name
@@ -299,6 +306,9 @@ curl -X POST http://127.0.0.1:6060/local/relocate \
   -H 'Content-Type: application/json' \
   --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
 curl -X POST http://127.0.0.1:6060/local/relocate-preview \
+  -H 'Content-Type: application/json' \
+  --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
+curl -X POST http://127.0.0.1:6060/local/transfer \
   -H 'Content-Type: application/json' \
   --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
 curl http://127.0.0.1:6060/local/players
@@ -372,8 +382,9 @@ What exists today:
 - connected `GAME` sessions in the same empire receive bootstrap `CHAT_TYPE_SHOUT` fanout
 - `CHAT_TYPE_INFO` currently acts as a bootstrap system/self channel with `vid = 0` and raw message text
 - a server-originated `CHAT_TYPE_NOTICE` path now queues raw system notices with `vid = 0` to connected `GAME` sessions, and `gamed` exposes that path through loopback-only `POST /local/notice`; client-originated `CHAT_TYPE_NOTICE` remains rejected
-- `gamed` also exposes loopback-only `POST /local/relocate` so an already-connected bootstrap character can be moved to another `MapIndex` by exact name while the runtime rebuilds visible peers and updates the bootstrap snapshot
+- `gamed` also exposes loopback-only `POST /local/relocate` so an already-connected bootstrap character can still be moved to another `MapIndex` by exact name through the older operator shim
 - `gamed` also exposes loopback-only `POST /local/relocate-preview` so operators can inspect visible-peer and map-occupancy changes before applying a bootstrap relocation
+- `gamed` also exposes loopback-only `POST /local/transfer` as the minimal structured bootstrap map-transfer contract, returning the applied transfer result when the commit succeeds
 - `gamed` also exposes loopback-only `GET /local/players` so the current connected bootstrap-character snapshot can be inspected before and after operator-driven runtime changes
 - `gamed` also exposes loopback-only `GET /local/visibility` so the current shared-world visibility graph can be inspected before and after operator-driven runtime changes
 - `gamed` also exposes loopback-only `GET /local/maps` so effective `MapIndex` occupancy can be inspected before and after operator-driven runtime changes

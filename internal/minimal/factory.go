@@ -48,7 +48,7 @@ var (
 
 type loginKeyGenerator func() (uint32, error)
 
-type sharedWorldSessionRelocator func(mapIndex uint32, x int32, y int32) bool
+type sharedWorldSessionRelocator func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool)
 
 type ConnectedCharacterSnapshot struct {
 	Name     string `json:"name"`
@@ -78,6 +78,7 @@ type MapOccupancyChange struct {
 }
 
 type RelocationPreview struct {
+	Applied             bool                         `json:"applied"`
 	Character           ConnectedCharacterSnapshot   `json:"character"`
 	Target              ConnectedCharacterSnapshot   `json:"target"`
 	CurrentVisiblePeers []ConnectedCharacterSnapshot `json:"current_visible_peers"`
@@ -115,10 +116,15 @@ func (r *gameRuntime) BroadcastNotice(message string) int {
 }
 
 func (r *gameRuntime) RelocateCharacter(name string, mapIndex uint32, x int32, y int32) bool {
+	_, ok := r.TransferCharacter(name, mapIndex, x, y)
+	return ok
+}
+
+func (r *gameRuntime) TransferCharacter(name string, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
 	if r == nil || r.sharedWorld == nil {
-		return false
+		return RelocationPreview{}, false
 	}
-	return r.sharedWorld.RelocateCharacter(name, mapIndex, x, y)
+	return r.sharedWorld.TransferCharacter(name, mapIndex, x, y)
 }
 
 func (r *gameRuntime) PreviewRelocation(name string, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
@@ -374,23 +380,24 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					}
 					if !joinedSharedWorld {
 						var existingPeers []loginticket.Character
-						sharedWorldID, existingPeers = sharedWorld.Join(selected, pending, func(mapIndex uint32, x int32, y int32) bool {
+						sharedWorldID, existingPeers = sharedWorld.Join(selected, pending, func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
 							stateMu.Lock()
 							defer stateMu.Unlock()
 
 							updatedCharacters, updatedSelected, ok := selectedCharacterLocationUpdate(sessionTicket.Characters, selectedIndex, mapIndex, x, y)
 							if !ok || !joinedSharedWorld || sharedWorldID == 0 {
-								return false
+								return RelocationPreview{}, false
 							}
 							if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
-								return false
+								return RelocationPreview{}, false
 							}
-							if !sharedWorld.Relocate(sharedWorldID, updatedSelected) {
+							transferResult, ok := sharedWorld.Transfer(sharedWorldID, updatedSelected)
+							if !ok {
 								_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
-								return false
+								return RelocationPreview{}, false
 							}
 							sessionTicket.Characters = updatedCharacters
-							return true
+							return transferResult, true
 						})
 						joinedSharedWorld = sharedWorldID != 0
 						for _, peer := range existingPeers {

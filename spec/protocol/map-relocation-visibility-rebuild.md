@@ -2,6 +2,9 @@
 
 This document freezes the first server-side visibility rebuild primitive for a connected player that is relocated from one bootstrap `MapIndex` to another.
 
+This primitive now sits underneath the higher-level minimal transfer contract documented in `bootstrap-map-transfer-contract.md`.
+That newer document freezes the shared preview/commit result shape used by the bootstrap runtime and local operator surface.
+
 This is intentionally narrower than a full warp flow.
 The runtime reuses the existing peer-visibility packets to rebuild the visible player set, but it does not yet freeze any client-originated warp packet, loading-screen choreography, or full world transfer semantics.
 The primitive now has two controlled entry points:

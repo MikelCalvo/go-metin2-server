@@ -200,6 +200,113 @@ func TestLocalRelocateEndpointReturnsNotFoundForUnknownTarget(t *testing.T) {
 	}
 }
 
+func TestLocalTransferEndpointReturnsStructuredJSONForLoopbackPost(t *testing.T) {
+	transferer := &stubCharacterTransferer{found: true, result: map[string]any{
+		"applied":               true,
+		"character":             map[string]any{"name": "PeerTwo", "map_index": uint32(1), "x": int32(1300), "y": int32(2300)},
+		"target":                map[string]any{"name": "PeerTwo", "map_index": uint32(42), "x": int32(1700), "y": int32(2800)},
+		"removed_visible_peers": []map[string]any{{"name": "PeerOne"}},
+		"added_visible_peers":   []map[string]any{{"name": "PeerThree"}},
+		"map_occupancy_changes": []map[string]any{{"map_index": uint32(1), "before_count": 2, "after_count": 1}, {"map_index": uint32(42), "before_count": 1, "after_count": 2}},
+	}}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, transferer.TransferCharacter, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/transfer", strings.NewReader(`{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if transferer.calls != 1 || transferer.lastName != "PeerTwo" || transferer.lastMapIndex != 42 || transferer.lastX != 1700 || transferer.lastY != 2800 {
+		t.Fatalf("unexpected transferer call state: %+v", transferer)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"applied":true`) || !strings.Contains(string(body), `"map_occupancy_changes"`) || !strings.Contains(string(body), `"name":"PeerThree"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalTransferEndpointRejectsInvalidBody(t *testing.T) {
+	transferer := &stubCharacterTransferer{found: true}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, transferer.TransferCharacter, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/transfer", strings.NewReader(`{"name":"PeerTwo","map_index":0,"x":1700,"y":2800}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if transferer.calls != 0 {
+		t.Fatalf("expected transferer not to be called, got %d calls", transferer.calls)
+	}
+}
+
+func TestLocalTransferEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	transferer := &stubCharacterTransferer{found: true}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, transferer.TransferCharacter, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/transfer", strings.NewReader(`{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if transferer.calls != 0 {
+		t.Fatalf("expected transferer not to be called, got %d calls", transferer.calls)
+	}
+}
+
+func TestLocalTransferEndpointReturnsNotFoundForUnknownTarget(t *testing.T) {
+	transferer := &stubCharacterTransferer{found: false}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, transferer.TransferCharacter, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/transfer", strings.NewReader(`{"name":"MissingPeer","map_index":42,"x":1700,"y":2800}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if transferer.calls != 1 {
+		t.Fatalf("expected transferer to be called once, got %d calls", transferer.calls)
+	}
+}
+
+func TestLocalTransferEndpointRejectsWrongMethod(t *testing.T) {
+	transferer := &stubCharacterTransferer{found: true}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, transferer.TransferCharacter, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/transfer", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if transferer.calls != 0 {
+		t.Fatalf("expected transferer not to be called, got %d calls", transferer.calls)
+	}
+}
+
 func TestLocalRelocatePreviewEndpointReturnsJSONSnapshotForLoopbackPost(t *testing.T) {
 	previewer := &stubRelocationPreviewer{found: true, preview: map[string]any{
 		"character":             map[string]any{"name": "PeerTwo", "map_index": uint32(1), "x": int32(1300), "y": int32(2300)},
@@ -208,7 +315,7 @@ func TestLocalRelocatePreviewEndpointReturnsJSONSnapshotForLoopbackPost(t *testi
 		"added_visible_peers":   []map[string]any{{"name": "PeerThree"}},
 		"map_occupancy_changes": []map[string]any{{"map_index": uint32(1), "before_count": 2, "after_count": 1}, {"map_index": uint32(42), "before_count": 1, "after_count": 2}},
 	}}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/relocate-preview", strings.NewReader(`{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}`))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -236,7 +343,7 @@ func TestLocalRelocatePreviewEndpointReturnsJSONSnapshotForLoopbackPost(t *testi
 
 func TestLocalRelocatePreviewEndpointRejectsInvalidBody(t *testing.T) {
 	previewer := &stubRelocationPreviewer{found: true}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/relocate-preview", strings.NewReader(`{"name":"PeerTwo","map_index":0,"x":1700,"y":2800}`))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -254,7 +361,7 @@ func TestLocalRelocatePreviewEndpointRejectsInvalidBody(t *testing.T) {
 
 func TestLocalRelocatePreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	previewer := &stubRelocationPreviewer{found: true}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/relocate-preview", strings.NewReader(`{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}`))
 	req.RemoteAddr = "198.51.100.10:12345"
@@ -272,7 +379,7 @@ func TestLocalRelocatePreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) 
 
 func TestLocalRelocatePreviewEndpointReturnsNotFoundForUnknownTarget(t *testing.T) {
 	previewer := &stubRelocationPreviewer{found: false}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/relocate-preview", strings.NewReader(`{"name":"MissingPeer","map_index":42,"x":1700,"y":2800}`))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -290,7 +397,7 @@ func TestLocalRelocatePreviewEndpointReturnsNotFoundForUnknownTarget(t *testing.
 
 func TestLocalRelocatePreviewEndpointRejectsWrongMethod(t *testing.T) {
 	previewer := &stubRelocationPreviewer{found: true}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/relocate-preview", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -372,7 +479,7 @@ func TestLocalPlayersEndpointRejectsWrongMethod(t *testing.T) {
 
 func TestLocalVisibilityEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubCharacterVisibilitySnapshotter{snapshots: []map[string]any{{"name": "Alpha", "map_index": 42, "visible_peers": []map[string]any{{"name": "PeerTwo", "map_index": 42}}}, {"name": "Zulu", "map_index": uint32(1), "visible_peers": []map[string]any{}}}}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, snapshotter.CharacterVisibility, nil)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, snapshotter.CharacterVisibility, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/visibility", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -400,7 +507,7 @@ func TestLocalVisibilityEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) 
 
 func TestLocalVisibilityEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	snapshotter := &stubCharacterVisibilitySnapshotter{}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, snapshotter.CharacterVisibility, nil)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, snapshotter.CharacterVisibility, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/visibility", nil)
 	req.RemoteAddr = "198.51.100.10:12345"
@@ -418,7 +525,7 @@ func TestLocalVisibilityEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 
 func TestLocalVisibilityEndpointRejectsWrongMethod(t *testing.T) {
 	snapshotter := &stubCharacterVisibilitySnapshotter{}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, snapshotter.CharacterVisibility, nil)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, snapshotter.CharacterVisibility, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/visibility", strings.NewReader("ignored"))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -436,7 +543,7 @@ func TestLocalVisibilityEndpointRejectsWrongMethod(t *testing.T) {
 
 func TestLocalMapsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubMapOccupancySnapshotter{snapshots: []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "Zulu"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "Alpha"}, {"name": "PeerTwo"}}}}}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, snapshotter.MapOccupancy)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, nil, snapshotter.MapOccupancy)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/maps", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -464,7 +571,7 @@ func TestLocalMapsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 
 func TestLocalMapsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	snapshotter := &stubMapOccupancySnapshotter{}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, snapshotter.MapOccupancy)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, nil, snapshotter.MapOccupancy)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/maps", nil)
 	req.RemoteAddr = "198.51.100.10:12345"
@@ -482,7 +589,7 @@ func TestLocalMapsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 
 func TestLocalMapsEndpointRejectsWrongMethod(t *testing.T) {
 	snapshotter := &stubMapOccupancySnapshotter{}
-	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, snapshotter.MapOccupancy)
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, nil, snapshotter.MapOccupancy)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/maps", strings.NewReader("ignored"))
 	req.RemoteAddr = "127.0.0.1:12345"
@@ -575,4 +682,23 @@ func (p *stubRelocationPreviewer) PreviewRelocation(name string, mapIndex uint32
 	p.lastX = x
 	p.lastY = y
 	return p.preview, p.found
+}
+
+type stubCharacterTransferer struct {
+	result       map[string]any
+	found        bool
+	calls        int
+	lastName     string
+	lastMapIndex uint32
+	lastX        int32
+	lastY        int32
+}
+
+func (t *stubCharacterTransferer) TransferCharacter(name string, mapIndex uint32, x int32, y int32) (any, bool) {
+	t.calls++
+	t.lastName = name
+	t.lastMapIndex = mapIndex
+	t.lastX = x
+	t.lastY = y
+	return t.result, t.found
 }

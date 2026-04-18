@@ -1065,6 +1065,114 @@ func TestGameRuntimeRelocateCharacterMovesConnectedSessionAcrossMaps(t *testing.
 	}
 }
 
+func TestGameRuntimeTransferCharacterReturnsStructuredResult(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	flowThree, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+
+	result, ok := runtime.TransferCharacter("PeerTwo", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected transfer to succeed")
+	}
+	if !result.Applied {
+		t.Fatal("expected transfer result to be marked applied")
+	}
+	if result.Character.Name != "PeerTwo" || result.Character.MapIndex != bootstrapMapIndex || result.Character.X != 1300 || result.Character.Y != 2300 {
+		t.Fatalf("unexpected source transfer snapshot: %+v", result.Character)
+	}
+	if result.Target.Name != "PeerTwo" || result.Target.MapIndex != 42 || result.Target.X != 1700 || result.Target.Y != 2800 {
+		t.Fatalf("unexpected target transfer snapshot: %+v", result.Target)
+	}
+	if len(result.CurrentVisiblePeers) != 1 || result.CurrentVisiblePeers[0].Name != "PeerOne" {
+		t.Fatalf("unexpected current visible peers: %+v", result.CurrentVisiblePeers)
+	}
+	if len(result.TargetVisiblePeers) != 1 || result.TargetVisiblePeers[0].Name != "PeerThree" {
+		t.Fatalf("unexpected target visible peers: %+v", result.TargetVisiblePeers)
+	}
+	if len(result.RemovedVisiblePeers) != 1 || result.RemovedVisiblePeers[0].Name != "PeerOne" {
+		t.Fatalf("unexpected removed visible peers: %+v", result.RemovedVisiblePeers)
+	}
+	if len(result.AddedVisiblePeers) != 1 || result.AddedVisiblePeers[0].Name != "PeerThree" {
+		t.Fatalf("unexpected added visible peers: %+v", result.AddedVisiblePeers)
+	}
+	if len(result.MapOccupancyChanges) != 2 || result.MapOccupancyChanges[0].MapIndex != bootstrapMapIndex || result.MapOccupancyChanges[0].BeforeCount != 2 || result.MapOccupancyChanges[0].AfterCount != 1 || result.MapOccupancyChanges[1].MapIndex != 42 || result.MapOccupancyChanges[1].BeforeCount != 1 || result.MapOccupancyChanges[1].AfterCount != 2 {
+		t.Fatalf("unexpected map occupancy changes: %+v", result.MapOccupancyChanges)
+	}
+
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 3 || snapshots[2].Name != "PeerTwo" || snapshots[2].MapIndex != 42 || snapshots[2].X != 1700 || snapshots[2].Y != 2800 {
+		t.Fatalf("expected connected character snapshot to reflect transfer, got %+v", snapshots)
+	}
+}
+
+func TestGameRuntimeTransferCharacterRejectsUnknownTarget(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.TransferCharacter("MissingPeer", 42, 1700, 2800); ok {
+		t.Fatal("expected transfer to reject unknown target")
+	}
+}
+
+func TestGameRuntimeTransferCharacterDoesNotMutateWorldOnSaveFailure(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, &failingAccountStore{})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	flowThree, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+	beforeCharacters := runtime.ConnectedCharacters()
+
+	if _, ok := runtime.TransferCharacter("PeerTwo", 42, 1700, 2800); ok {
+		t.Fatal("expected transfer to fail when account snapshot save fails")
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no old-map frames on failed transfer, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowTwo); len(queued) != 0 {
+		t.Fatalf("expected no mover frames on failed transfer, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowThree); len(queued) != 0 {
+		t.Fatalf("expected no destination-map frames on failed transfer, got %d", len(queued))
+	}
+	if afterCharacters := runtime.ConnectedCharacters(); !reflect.DeepEqual(afterCharacters, beforeCharacters) {
+		t.Fatalf("expected connected characters to remain unchanged on failed transfer, before=%+v after=%+v", beforeCharacters, afterCharacters)
+	}
+}
+
 func TestGameRuntimeRelocateCharacterRejectsUnknownTarget(t *testing.T) {
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
 	if err != nil {

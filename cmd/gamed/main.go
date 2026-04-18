@@ -45,6 +45,13 @@ func main() {
 			}
 			return preview, true
 		},
+		func(name string, mapIndex uint32, x int32, y int32) (any, bool) {
+			result, ok := gameRuntime.TransferCharacter(name, mapIndex, x, y)
+			if !ok {
+				return nil, false
+			}
+			return result, true
+		},
 		func() any { return gameRuntime.ConnectedCharacters() },
 		func() any { return gameRuntime.CharacterVisibility() },
 		func() any { return gameRuntime.MapOccupancy() },

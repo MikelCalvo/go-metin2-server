@@ -170,8 +170,40 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 }
 
 func (r *sharedWorldRegistry) Relocate(id uint64, character loginticket.Character) bool {
+	_, ok := r.Transfer(id, character)
+	return ok
+}
+
+func (r *sharedWorldRegistry) RelocateCharacter(name string, mapIndex uint32, x int32, y int32) bool {
+	_, ok := r.TransferCharacter(name, mapIndex, x, y)
+	return ok
+}
+
+func (r *sharedWorldRegistry) TransferCharacter(name string, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
+	if r == nil || name == "" || mapIndex == 0 {
+		return RelocationPreview{}, false
+	}
+
+	r.mu.Lock()
+	var relocate sharedWorldSessionRelocator
+	for _, session := range r.sessions {
+		if session.character.Name != name {
+			continue
+		}
+		relocate = session.relocate
+		break
+	}
+	r.mu.Unlock()
+
+	if relocate == nil {
+		return RelocationPreview{}, false
+	}
+	return relocate(mapIndex, x, y)
+}
+
+func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Character) (RelocationPreview, bool) {
 	if r == nil || id == 0 {
-		return false
+		return RelocationPreview{}, false
 	}
 
 	r.mu.Lock()
@@ -179,10 +211,16 @@ func (r *sharedWorldRegistry) Relocate(id uint64, character loginticket.Characte
 
 	session, ok := r.sessions[id]
 	if !ok {
-		return false
+		return RelocationPreview{}, false
 	}
 
 	previous := session.character
+	currentCharacters := make([]loginticket.Character, 0, len(r.sessions))
+	for _, candidate := range r.sessions {
+		currentCharacters = append(currentCharacters, candidate.character)
+	}
+	currentVisiblePeers := make([]ConnectedCharacterSnapshot, 0)
+	targetVisiblePeers := make([]ConnectedCharacterSnapshot, 0)
 	oldPeers := make(map[uint64]sharedWorldSession)
 	newPeers := make(map[uint64]sharedWorldSession)
 	for peerID, peer := range r.sessions {
@@ -191,10 +229,34 @@ func (r *sharedWorldRegistry) Relocate(id uint64, character loginticket.Characte
 		}
 		if charactersShareVisibleWorld(previous, peer.character) {
 			oldPeers[peerID] = peer
+			currentVisiblePeers = append(currentVisiblePeers, connectedCharacterSnapshot(peer.character))
 		}
 		if charactersShareVisibleWorld(character, peer.character) {
 			newPeers[peerID] = peer
+			targetVisiblePeers = append(targetVisiblePeers, connectedCharacterSnapshot(peer.character))
 		}
+	}
+	sortConnectedCharacterSnapshots(currentVisiblePeers)
+	sortConnectedCharacterSnapshots(targetVisiblePeers)
+	removedVisiblePeers, addedVisiblePeers := diffVisiblePeerSnapshots(currentVisiblePeers, targetVisiblePeers)
+
+	afterCharacters := append([]loginticket.Character(nil), currentCharacters...)
+	for i := range afterCharacters {
+		if afterCharacters[i].VID != previous.VID {
+			continue
+		}
+		afterCharacters[i] = character
+		break
+	}
+	result := RelocationPreview{
+		Applied:             true,
+		Character:           connectedCharacterSnapshot(previous),
+		Target:              connectedCharacterSnapshot(character),
+		CurrentVisiblePeers: currentVisiblePeers,
+		TargetVisiblePeers:  targetVisiblePeers,
+		RemovedVisiblePeers: removedVisiblePeers,
+		AddedVisiblePeers:   addedVisiblePeers,
+		MapOccupancyChanges: buildMapOccupancyChanges(buildMapOccupancySnapshots(currentCharacters), buildMapOccupancySnapshots(afterCharacters)),
 	}
 
 	for peerID, peer := range oldPeers {
@@ -228,29 +290,7 @@ func (r *sharedWorldRegistry) Relocate(id uint64, character loginticket.Characte
 		peer.pending.enqueue(movedFrames)
 	}
 
-	return true
-}
-
-func (r *sharedWorldRegistry) RelocateCharacter(name string, mapIndex uint32, x int32, y int32) bool {
-	if r == nil || name == "" || mapIndex == 0 {
-		return false
-	}
-
-	r.mu.Lock()
-	var relocate sharedWorldSessionRelocator
-	for _, session := range r.sessions {
-		if session.character.Name != name {
-			continue
-		}
-		relocate = session.relocate
-		break
-	}
-	r.mu.Unlock()
-
-	if relocate == nil {
-		return false
-	}
-	return relocate(mapIndex, x, y)
+	return result, true
 }
 
 func (r *sharedWorldRegistry) ConnectedCharacters() []ConnectedCharacterSnapshot {
@@ -323,6 +363,7 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 	removedVisiblePeers, addedVisiblePeers := diffVisiblePeerSnapshots(currentVisiblePeers, targetVisiblePeers)
 
 	return RelocationPreview{
+		Applied:             false,
 		Character:           connectedCharacterSnapshot(current),
 		Target:              connectedCharacterSnapshot(target),
 		CurrentVisiblePeers: currentVisiblePeers,
