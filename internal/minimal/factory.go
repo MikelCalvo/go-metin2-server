@@ -293,7 +293,7 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						return gameflow.ChatResult{Accepted: false}
 					}
 					selected := sessionTicket.Characters[selectedIndex]
-					if selected.ID == 0 || (packet.Type != chatproto.ChatTypeTalking && packet.Type != chatproto.ChatTypeParty) || packet.Message == "" {
+					if selected.ID == 0 || (packet.Type != chatproto.ChatTypeTalking && packet.Type != chatproto.ChatTypeParty && packet.Type != chatproto.ChatTypeGuild) || packet.Message == "" {
 						return gameflow.ChatResult{Accepted: false}
 					}
 					chatDelivery := ticketChatDeliveryPacket(selected, packet)
