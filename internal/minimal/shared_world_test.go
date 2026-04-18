@@ -147,6 +147,58 @@ func TestNewGameSessionFactoryQueuesPeerMoveForVisiblePlayers(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryQueuesPeerSyncPositionForVisiblePlayers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	syncOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: peerTwo.VID, X: 1700, Y: 2800}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected 1 self sync_position ack frame, got %d", len(syncOut))
+	}
+	selfAck, err := movep.DecodeSyncPositionAck(decodeSingleFrame(t, syncOut[0]))
+	if err != nil {
+		t.Fatalf("decode self sync_position ack: %v", err)
+	}
+	if len(selfAck.Elements) != 1 {
+		t.Fatalf("expected 1 self sync_position ack element, got %d", len(selfAck.Elements))
+	}
+	if selfAck.Elements[0].VID != peerTwo.VID || selfAck.Elements[0].X != 1700 || selfAck.Elements[0].Y != 2800 {
+		t.Fatalf("unexpected self sync_position ack: %+v", selfAck)
+	}
+
+	peerSync := flushServerFrames(t, flowOne)
+	if len(peerSync) != 1 {
+		t.Fatalf("expected 1 queued peer sync_position frame, got %d", len(peerSync))
+	}
+	peerAck, err := movep.DecodeSyncPositionAck(decodeSingleFrame(t, peerSync[0]))
+	if err != nil {
+		t.Fatalf("decode peer sync_position ack: %v", err)
+	}
+	if len(peerAck.Elements) != 1 {
+		t.Fatalf("expected 1 queued peer sync_position element, got %d", len(peerAck.Elements))
+	}
+	if peerAck.Elements[0].VID != peerTwo.VID || peerAck.Elements[0].X != 1700 || peerAck.Elements[0].Y != 2800 {
+		t.Fatalf("unexpected peer sync_position ack: %+v", peerAck)
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 
