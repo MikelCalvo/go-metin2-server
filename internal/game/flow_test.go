@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
@@ -72,6 +73,36 @@ func TestHandleClientFrameAcceptsSyncPositionInGameAndReturnsSynchronization(t *
 	}
 	if ack.Elements[0].VID != 0x01020304 || ack.Elements[0].X != 12345 || ack.Elements[0].Y != 23456 {
 		t.Fatalf("unexpected sync ack element: %+v", ack.Elements[0])
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsChatInGameAndReturnsDelivery(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleChat: func(packet chatproto.ClientChatPacket) ChatResult {
+			if packet.Type != chatproto.ChatTypeTalking || packet.Message != "hola" {
+				t.Fatalf("unexpected chat packet: %+v", packet)
+			}
+			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeTalking, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola"}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "hola"})))
+	if err != nil {
+		t.Fatalf("unexpected chat error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeTalking || delivery.VID != 0x02040102 || delivery.Message != "PeerTwo : hola" {
+		t.Fatalf("unexpected chat delivery: %+v", delivery)
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())

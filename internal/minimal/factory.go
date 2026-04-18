@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"math"
 	"net"
 	"os"
@@ -21,6 +22,7 @@ import (
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
+	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
@@ -285,6 +287,20 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ack}
 					}
 					return gameflow.SyncPositionResult{Accepted: false}
+				},
+				HandleChat: func(packet chatproto.ClientChatPacket) gameflow.ChatResult {
+					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+						return gameflow.ChatResult{Accepted: false}
+					}
+					selected := sessionTicket.Characters[selectedIndex]
+					if selected.ID == 0 || packet.Type != chatproto.ChatTypeTalking || packet.Message == "" {
+						return gameflow.ChatResult{Accepted: false}
+					}
+					chatDelivery := ticketChatDeliveryPacket(selected, packet)
+					if joinedSharedWorld {
+						sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+					}
+					return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 				},
 			},
 		})
@@ -589,6 +605,15 @@ func ticketMoveAckPacket(character loginticket.Character, packet movep.MovePacke
 
 func ticketSyncPositionAckPacket(character loginticket.Character) movep.SyncPositionAckPacket {
 	return movep.SyncPositionAckPacket{Elements: []movep.SyncPositionElement{{VID: character.VID, X: character.X, Y: character.Y}}}
+}
+
+func ticketChatDeliveryPacket(character loginticket.Character, packet chatproto.ClientChatPacket) chatproto.ChatDeliveryPacket {
+	return chatproto.ChatDeliveryPacket{
+		Type:    packet.Type,
+		VID:     character.VID,
+		Empire:  0,
+		Message: fmt.Sprintf("%s : %s", character.Name, packet.Message),
+	}
 }
 
 func ticketPlayerCreateSuccessPacket(character loginticket.Character, index uint8, addr uint32, port uint16) worldproto.PlayerCreateSuccessPacket {

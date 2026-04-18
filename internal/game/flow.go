@@ -3,6 +3,7 @@ package game
 import (
 	"errors"
 
+	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
@@ -18,9 +19,12 @@ type HandleMoveFunc func(movep.MovePacket) Result
 
 type HandleSyncPositionFunc func(movep.SyncPositionPacket) SyncPositionResult
 
+type HandleChatFunc func(chatproto.ClientChatPacket) ChatResult
+
 type Config struct {
 	HandleMove         HandleMoveFunc
 	HandleSyncPosition HandleSyncPositionFunc
+	HandleChat         HandleChatFunc
 }
 
 type Result struct {
@@ -33,10 +37,16 @@ type SyncPositionResult struct {
 	Synchronization movep.SyncPositionAckPacket
 }
 
+type ChatResult struct {
+	Accepted bool
+	Delivery chatproto.ChatDeliveryPacket
+}
+
 type Flow struct {
 	machine            *session.StateMachine
 	handleMove         HandleMoveFunc
 	handleSyncPosition HandleSyncPositionFunc
+	handleChat         HandleChatFunc
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -48,7 +58,11 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if syncHandler == nil {
 		syncHandler = func(movep.SyncPositionPacket) SyncPositionResult { return SyncPositionResult{Accepted: false} }
 	}
-	return &Flow{machine: machine, handleMove: handler, handleSyncPosition: syncHandler}
+	chatHandler := cfg.HandleChat
+	if chatHandler == nil {
+		chatHandler = func(chatproto.ClientChatPacket) ChatResult { return ChatResult{Accepted: false} }
+	}
+	return &Flow{machine: machine, handleMove: handler, handleSyncPosition: syncHandler, handleChat: chatHandler}
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
@@ -81,6 +95,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, nil
 		}
 		return [][]byte{movep.EncodeSyncPositionAck(result.Synchronization)}, nil
+	case chatproto.HeaderClientChat:
+		packet, err := chatproto.DecodeClientChat(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleChat(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return [][]byte{chatproto.EncodeChatDelivery(result.Delivery)}, nil
 	default:
 		return nil, ErrUnexpectedClientPacket
 	}
