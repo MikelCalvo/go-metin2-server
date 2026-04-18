@@ -201,8 +201,8 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected entergame error: %v", err)
 	}
-	if len(enterGameOut) != 3 {
-		t.Fatalf("expected 3 game bootstrap frames, got %d", len(enterGameOut))
+	if len(enterGameOut) != 4 {
+		t.Fatalf("expected 4 game bootstrap frames, got %d", len(enterGameOut))
 	}
 	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
 	if err != nil {
@@ -224,6 +224,13 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	}
 	if info.VID != 0x01020305 || info.Name != "MkmkSura" || info.Empire != 2 || info.Parts[0] != 102 || info.Parts[3] != 202 || info.Level != 12 {
 		t.Fatalf("unexpected character additional info packet: %+v", info)
+	}
+	update, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, enterGameOut[3]))
+	if err != nil {
+		t.Fatalf("decode character update: %v", err)
+	}
+	if update.VID != 0x01020305 || update.Parts[0] != 102 || update.Parts[3] != 202 || update.MovingSpeed != 150 || update.AttackSpeed != 100 || update.GuildID != 0 {
+		t.Fatalf("unexpected character update packet: %+v", update)
 	}
 }
 
@@ -380,8 +387,8 @@ func TestNewGameSessionFactoryReturnsVisibleWorldBootstrapForCreatedCharacter(t 
 	if err != nil {
 		t.Fatalf("unexpected entergame error: %v", err)
 	}
-	if len(enterGameOut) != 3 {
-		t.Fatalf("expected 3 game bootstrap frames, got %d", len(enterGameOut))
+	if len(enterGameOut) != 4 {
+		t.Fatalf("expected 4 game bootstrap frames, got %d", len(enterGameOut))
 	}
 	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, enterGameOut[1]))
 	if err != nil {
@@ -396,6 +403,13 @@ func TestNewGameSessionFactoryReturnsVisibleWorldBootstrapForCreatedCharacter(t 
 	}
 	if info.VID != 0x01020306 || info.Name != "FreshSura" || info.Empire != 2 || info.Parts[0] != 1 || info.Parts[3] != 0 || info.Level != 1 {
 		t.Fatalf("unexpected created character additional info packet: %+v", info)
+	}
+	update, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, enterGameOut[3]))
+	if err != nil {
+		t.Fatalf("decode character update: %v", err)
+	}
+	if update.VID != 0x01020306 || update.Parts[0] != 1 || update.Parts[3] != 0 || update.MovingSpeed != 150 || update.AttackSpeed != 100 || update.GuildID != 0 {
+		t.Fatalf("unexpected created character update packet: %+v", update)
 	}
 }
 

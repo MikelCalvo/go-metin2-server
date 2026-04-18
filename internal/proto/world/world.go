@@ -16,6 +16,7 @@ const (
 	HeaderEnterGame               uint16 = 0x0204
 	HeaderCharacterAdd            uint16 = 0x0205
 	HeaderCharacterAdditionalInfo uint16 = 0x0207
+	HeaderCharacterUpdate         uint16 = 0x0209
 	HeaderPlayerCreateSuccess     uint16 = 0x020C
 	HeaderPlayerCreateFailure     uint16 = 0x020D
 	HeaderMainCharacter           uint16 = 0x0210
@@ -31,6 +32,7 @@ const (
 	characterSelectPayloadSize         = 1
 	characterAddPayloadSize            = 34
 	characterAdditionalInfoPayloadSize = 93
+	characterUpdatePayloadSize         = 34
 	playerCreateSuccessPayloadSize     = 1 + simplePlayerPayloadSize
 	playerCreateFailurePayloadSize     = 1
 	mainCharacterPayloadSize           = 114
@@ -92,6 +94,19 @@ type CharacterAdditionalInfoPacket struct {
 	Alignment int16
 	PKMode    uint8
 	MountVnum uint32
+}
+
+type CharacterUpdatePacket struct {
+	VID         uint32
+	Parts       [CharacterEquipmentPartCount]uint16
+	MovingSpeed uint8
+	AttackSpeed uint8
+	StateFlag   uint8
+	AffectFlags [AffectFlagCount]uint32
+	GuildID     uint32
+	Alignment   int16
+	PKMode      uint8
+	MountVnum   uint32
 }
 
 type MainCharacterPacket struct {
@@ -338,6 +353,70 @@ func DecodeCharacterAdditionalInfo(f frame.Frame) (CharacterAdditionalInfoPacket
 	packet.GuildID = binary.LittleEndian.Uint32(f.Payload[offset:])
 	offset += 4
 	packet.Level = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	packet.Alignment = int16(binary.LittleEndian.Uint16(f.Payload[offset:]))
+	offset += 2
+	packet.PKMode = f.Payload[offset]
+	offset++
+	packet.MountVnum = binary.LittleEndian.Uint32(f.Payload[offset:])
+	return packet, nil
+}
+
+func EncodeCharacterUpdate(packet CharacterUpdatePacket) []byte {
+	payload := make([]byte, characterUpdatePayloadSize)
+	offset := 0
+	binary.LittleEndian.PutUint32(payload[offset:], packet.VID)
+	offset += 4
+	for _, part := range packet.Parts {
+		binary.LittleEndian.PutUint16(payload[offset:], part)
+		offset += 2
+	}
+	payload[offset] = packet.MovingSpeed
+	offset++
+	payload[offset] = packet.AttackSpeed
+	offset++
+	payload[offset] = packet.StateFlag
+	offset++
+	for _, affect := range packet.AffectFlags {
+		binary.LittleEndian.PutUint32(payload[offset:], affect)
+		offset += 4
+	}
+	binary.LittleEndian.PutUint32(payload[offset:], packet.GuildID)
+	offset += 4
+	binary.LittleEndian.PutUint16(payload[offset:], uint16(packet.Alignment))
+	offset += 2
+	payload[offset] = packet.PKMode
+	offset++
+	binary.LittleEndian.PutUint32(payload[offset:], packet.MountVnum)
+	return frame.Encode(HeaderCharacterUpdate, payload)
+}
+
+func DecodeCharacterUpdate(f frame.Frame) (CharacterUpdatePacket, error) {
+	if f.Header != HeaderCharacterUpdate {
+		return CharacterUpdatePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != characterUpdatePayloadSize {
+		return CharacterUpdatePacket{}, ErrInvalidPayload
+	}
+	var packet CharacterUpdatePacket
+	offset := 0
+	packet.VID = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	for i := range packet.Parts {
+		packet.Parts[i] = binary.LittleEndian.Uint16(f.Payload[offset:])
+		offset += 2
+	}
+	packet.MovingSpeed = f.Payload[offset]
+	offset++
+	packet.AttackSpeed = f.Payload[offset]
+	offset++
+	packet.StateFlag = f.Payload[offset]
+	offset++
+	for i := range packet.AffectFlags {
+		packet.AffectFlags[i] = binary.LittleEndian.Uint32(f.Payload[offset:])
+		offset += 4
+	}
+	packet.GuildID = binary.LittleEndian.Uint32(f.Payload[offset:])
 	offset += 4
 	packet.Alignment = int16(binary.LittleEndian.Uint16(f.Payload[offset:]))
 	offset += 2

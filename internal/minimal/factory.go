@@ -207,6 +207,7 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					return worldentry.EnterGameResult{Frames: [][]byte{
 						worldproto.EncodeCharacterAdd(ticketCharacterAddPacket(selected)),
 						infoRaw,
+						worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(selected)),
 					}}
 				},
 			},
@@ -476,6 +477,21 @@ func ticketCharacterAdditionalInfoPacket(character loginticket.Character) worldp
 		Alignment: 0,
 		PKMode:    0,
 		MountVnum: 0,
+	}
+}
+
+func ticketCharacterUpdatePacket(character loginticket.Character) worldproto.CharacterUpdatePacket {
+	return worldproto.CharacterUpdatePacket{
+		VID:         character.VID,
+		Parts:       [worldproto.CharacterEquipmentPartCount]uint16{character.MainPart, 0, 0, character.HairPart},
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   2,
+		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
+		GuildID:     character.GuildID,
+		Alignment:   0,
+		PKMode:      0,
+		MountVnum:   0,
 	}
 }
 

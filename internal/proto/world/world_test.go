@@ -145,6 +145,25 @@ func TestDecodeCharacterAdditionalInfoReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeCharacterUpdateBuildsAServerFrame(t *testing.T) {
+	packet := sampleCharacterUpdatePacket()
+	want := expectedCharacterUpdateFrame(packet)
+	got := EncodeCharacterUpdate(packet)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected character update frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeCharacterUpdateReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeCharacterUpdate(decodeSingleFrame(t, expectedCharacterUpdateFrame(sampleCharacterUpdatePacket())))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != sampleCharacterUpdatePacket() {
+		t.Fatalf("unexpected character update packet: %+v", packet)
+	}
+}
+
 func TestEncodePlayerCreateSuccessBuildsAServerFrame(t *testing.T) {
 	packet := PlayerCreateSuccessPacket{Index: 2, Player: sampleCreatedPlayer()}
 	want := expectedPlayerCreateSuccessFrame(packet)
@@ -275,6 +294,20 @@ func TestDecodeCharacterAdditionalInfoRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestDecodeCharacterUpdateRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeCharacterUpdate(frame.Frame{Header: HeaderCharacterAdd, Length: 38, Payload: make([]byte, characterAddPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeCharacterUpdateRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeCharacterUpdate(frame.Frame{Header: HeaderCharacterUpdate, Length: 37, Payload: make([]byte, characterUpdatePayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 	t.Helper()
 	decoder := frame.NewDecoder(4096)
@@ -359,6 +392,35 @@ func expectedCharacterAdditionalInfoFrame(packet CharacterAdditionalInfoPacket) 
 	offset++
 	binary.LittleEndian.PutUint32(payload[offset:], packet.MountVnum)
 	return frame.Encode(HeaderCharacterAdditionalInfo, payload)
+}
+
+func expectedCharacterUpdateFrame(packet CharacterUpdatePacket) []byte {
+	payload := make([]byte, characterUpdatePayloadSize)
+	offset := 0
+	binary.LittleEndian.PutUint32(payload[offset:], packet.VID)
+	offset += 4
+	for _, part := range packet.Parts {
+		binary.LittleEndian.PutUint16(payload[offset:], part)
+		offset += 2
+	}
+	payload[offset] = packet.MovingSpeed
+	offset++
+	payload[offset] = packet.AttackSpeed
+	offset++
+	payload[offset] = packet.StateFlag
+	offset++
+	for _, affect := range packet.AffectFlags {
+		binary.LittleEndian.PutUint32(payload[offset:], affect)
+		offset += 4
+	}
+	binary.LittleEndian.PutUint32(payload[offset:], packet.GuildID)
+	offset += 4
+	binary.LittleEndian.PutUint16(payload[offset:], uint16(packet.Alignment))
+	offset += 2
+	payload[offset] = packet.PKMode
+	offset++
+	binary.LittleEndian.PutUint32(payload[offset:], packet.MountVnum)
+	return frame.Encode(HeaderCharacterUpdate, payload)
 }
 
 func expectedPlayerCreateSuccessFrame(packet PlayerCreateSuccessPacket) []byte {
@@ -459,6 +521,21 @@ func sampleCharacterAdditionalInfoPacket() CharacterAdditionalInfoPacket {
 		Alignment: 0,
 		PKMode:    0,
 		MountVnum: 0,
+	}
+}
+
+func sampleCharacterUpdatePacket() CharacterUpdatePacket {
+	return CharacterUpdatePacket{
+		VID:         0x01020304,
+		Parts:       [CharacterEquipmentPartCount]uint16{101, 0, 0, 201},
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   2,
+		AffectFlags: [AffectFlagCount]uint32{0x11111111, 0x22222222},
+		GuildID:     10,
+		Alignment:   0,
+		PKMode:      0,
+		MountVnum:   0,
 	}
 }
 

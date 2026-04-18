@@ -410,7 +410,8 @@ func TestHandleClientFrameReturnsVisibleWorldBootstrapAfterEnterGame(t *testing.
 	if err != nil {
 		t.Fatalf("unexpected character additional info encode error: %v", err)
 	}
-	want := [][]byte{wantPhaseGame, wantCharacterAdd, wantCharacterInfo}
+	wantCharacterUpdate := worldproto.EncodeCharacterUpdate(sampleVisibleCharacterUpdatePacket())
+	want := [][]byte{wantPhaseGame, wantCharacterAdd, wantCharacterInfo, wantCharacterUpdate}
 	if len(enterGameOut) != len(want) {
 		t.Fatalf("expected %d entergame frames, got %d", len(want), len(enterGameOut))
 	}
@@ -515,7 +516,8 @@ func testVisibleWorldConfig() Config {
 	cfg.WorldEntry.EnterGame = func() worldentry.EnterGameResult {
 		addRaw := worldproto.EncodeCharacterAdd(sampleVisibleCharacterAddPacket())
 		infoRaw, _ := worldproto.EncodeCharacterAdditionalInfo(sampleVisibleCharacterAdditionalInfoPacket())
-		return worldentry.EnterGameResult{Frames: [][]byte{addRaw, infoRaw}}
+		updateRaw := worldproto.EncodeCharacterUpdate(sampleVisibleCharacterUpdatePacket())
+		return worldentry.EnterGameResult{Frames: [][]byte{addRaw, infoRaw, updateRaw}}
 	}
 	return cfg
 }
@@ -696,6 +698,21 @@ func sampleVisibleCharacterAdditionalInfoPacket() worldproto.CharacterAdditional
 		Alignment: 0,
 		PKMode:    0,
 		MountVnum: 0,
+	}
+}
+
+func sampleVisibleCharacterUpdatePacket() worldproto.CharacterUpdatePacket {
+	return worldproto.CharacterUpdatePacket{
+		VID:         0x01020304,
+		Parts:       [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 201},
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   2,
+		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
+		GuildID:     10,
+		Alignment:   0,
+		PKMode:      0,
+		MountVnum:   0,
 	}
 }
 
