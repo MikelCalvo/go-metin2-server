@@ -17,6 +17,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `move-peer-fanout.md` — minimal queued `MOVE` replication to already-visible peers
 - `sync-position-peer-fanout.md` — minimal queued `SYNC_POSITION` replication to already-visible peers
 - `local-chat-peer-fanout.md` — minimal local talking chat fanout to already-visible peers
+- `whisper-name-routing.md` — minimal exact-name whisper routing among connected `GAME` sessions
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`
 - `sync-position-bootstrap.md` — first self-only sync-position reconciliation after entering `GAME`

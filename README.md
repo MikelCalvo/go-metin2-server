@@ -23,6 +23,7 @@ Current scope of the project:
 - Minimal MOVE fanout so visible peers receive queued movement replication from other connected players.
 - Minimal `SYNC_POSITION` fanout so visible peers receive queued reconciliation updates from other connected players.
 - Minimal local talking chat fanout so visible peers receive queued `GC_CHAT` deliveries from other connected players.
+- Minimal whisper routing by exact character name across currently connected bootstrap sessions.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
@@ -127,6 +128,7 @@ Legend:
 - `spec/protocol/move-peer-fanout.md`
 - `spec/protocol/sync-position-peer-fanout.md`
 - `spec/protocol/local-chat-peer-fanout.md`
+- `spec/protocol/whisper-name-routing.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -204,7 +206,7 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_DELETE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> peer CHARACTER_ADD/CHAR_ADDITIONAL_INFO/CHARACTER_UPDATE/CHARACTER_DEL -> peer MOVE/SYNC_POSITION/CHAT -> MOVE/SYNC_POSITION/CHAT`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_DELETE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> peer CHARACTER_ADD/CHAR_ADDITIONAL_INFO/CHARACTER_UPDATE/CHARACTER_DEL -> peer MOVE/SYNC_POSITION/CHAT -> MOVE/SYNC_POSITION/CHAT/WHISPER`
 
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
@@ -215,6 +217,7 @@ What exists today:
 - deterministic single-character `MOVE` replication/ack using the selected character VID
 - deterministic selected-character `SYNC_POSITION` reconciliation in `GAME`
 - deterministic selected-character local talking `GC_CHAT` echo in `GAME`
+- deterministic selected-character whisper `WHISPER_TYPE_NOT_EXIST` sender feedback for unknown targets in `GAME`
 - bootstrap movement updates character coordinates and persists them across fresh auth/game sessions
 - empty-account bootstrap flow can select empire before first character creation, and that choice persists across fresh auth/game sessions
 - tolerant `CLIENT_VERSION` acceptance in `LOADING` with no phase transition and no server response
@@ -225,6 +228,7 @@ What exists today:
 - already-connected peers receive queued `MOVE` replication when a visible peer moves
 - already-connected peers receive queued `SYNC_POSITION` replication when a visible peer reconciles position
 - already-connected peers receive queued local talking `GC_CHAT` deliveries when a visible peer chats
+- named connected peers receive direct `GC_WHISPER` delivery when another player whispers them, while unknown targets return `WHISPER_TYPE_NOT_EXIST` to the sender
 
 What still does not exist yet:
 - compatibility-grade persistence matching the legacy target

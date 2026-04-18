@@ -71,7 +71,9 @@ Status values:
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `CHAT` | client -> server | `0x0601` | game | documented | current slice accepts only `CHAT_TYPE_TALKING` with variable text payload |
+| `WHISPER` | client -> server | `0x0602` | game | documented | current slice routes by exact target character name with variable text payload |
 | `CHAT` | server -> client | `0x0603` | game | documented | deterministic sender echo and current queued local talking delivery payload for already-visible peers |
+| `WHISPER` | server -> client | `0x0604` | game | documented | direct whisper delivery to the named target on success and current `WHISPER_TYPE_NOT_EXIST` sender feedback for unknown targets |
 
 ## Notes
 
