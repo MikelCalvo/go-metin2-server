@@ -2,6 +2,7 @@ package minimal
 
 import (
 	"io"
+	"reflect"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
@@ -1299,6 +1300,116 @@ func TestGameRuntimeMapOccupancyReflectsRelocatedCharacter(t *testing.T) {
 	}
 	if snapshots[1].MapIndex != 42 || snapshots[1].CharacterCount != 2 || len(snapshots[1].Characters) != 2 || snapshots[1].Characters[0].Name != "PeerThree" || snapshots[1].Characters[1].Name != "PeerTwo" {
 		t.Fatalf("unexpected destination map occupancy snapshot after relocate: %+v", snapshots[1])
+	}
+}
+
+func TestGameRuntimePreviewRelocationReturnsVisibilityAndMapChanges(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+
+	preview, ok := runtime.PreviewRelocation("PeerTwo", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected relocate preview to succeed")
+	}
+	if preview.Character.Name != "PeerTwo" || preview.Character.MapIndex != bootstrapMapIndex || preview.Character.X != 1300 || preview.Character.Y != 2300 {
+		t.Fatalf("unexpected current preview character snapshot: %+v", preview.Character)
+	}
+	if preview.Target.Name != "PeerTwo" || preview.Target.MapIndex != 42 || preview.Target.X != 1700 || preview.Target.Y != 2800 {
+		t.Fatalf("unexpected target preview character snapshot: %+v", preview.Target)
+	}
+	if len(preview.CurrentVisiblePeers) != 1 || preview.CurrentVisiblePeers[0].Name != "PeerOne" {
+		t.Fatalf("unexpected current visible peers: %+v", preview.CurrentVisiblePeers)
+	}
+	if len(preview.TargetVisiblePeers) != 1 || preview.TargetVisiblePeers[0].Name != "PeerThree" {
+		t.Fatalf("unexpected target visible peers: %+v", preview.TargetVisiblePeers)
+	}
+	if len(preview.RemovedVisiblePeers) != 1 || preview.RemovedVisiblePeers[0].Name != "PeerOne" {
+		t.Fatalf("unexpected removed visible peers: %+v", preview.RemovedVisiblePeers)
+	}
+	if len(preview.AddedVisiblePeers) != 1 || preview.AddedVisiblePeers[0].Name != "PeerThree" {
+		t.Fatalf("unexpected added visible peers: %+v", preview.AddedVisiblePeers)
+	}
+	if len(preview.MapOccupancyChanges) != 2 {
+		t.Fatalf("expected 2 map occupancy changes, got %d", len(preview.MapOccupancyChanges))
+	}
+	if preview.MapOccupancyChanges[0].MapIndex != bootstrapMapIndex || preview.MapOccupancyChanges[0].BeforeCount != 2 || preview.MapOccupancyChanges[0].AfterCount != 1 {
+		t.Fatalf("unexpected source map occupancy change: %+v", preview.MapOccupancyChanges[0])
+	}
+	if preview.MapOccupancyChanges[1].MapIndex != 42 || preview.MapOccupancyChanges[1].BeforeCount != 1 || preview.MapOccupancyChanges[1].AfterCount != 2 {
+		t.Fatalf("unexpected destination map occupancy change: %+v", preview.MapOccupancyChanges[1])
+	}
+}
+
+func TestGameRuntimePreviewRelocationDoesNotMutateWorld(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+
+	beforeCharacters := runtime.ConnectedCharacters()
+	beforeVisibility := runtime.CharacterVisibility()
+	beforeMaps := runtime.MapOccupancy()
+
+	preview, ok := runtime.PreviewRelocation("PeerTwo", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected relocate preview to succeed")
+	}
+	if preview.Target.MapIndex != 42 {
+		t.Fatalf("unexpected preview target: %+v", preview.Target)
+	}
+
+	afterCharacters := runtime.ConnectedCharacters()
+	afterVisibility := runtime.CharacterVisibility()
+	afterMaps := runtime.MapOccupancy()
+
+	if !reflect.DeepEqual(afterCharacters, beforeCharacters) {
+		t.Fatalf("expected connected characters to remain unchanged, before=%+v after=%+v", beforeCharacters, afterCharacters)
+	}
+	if !reflect.DeepEqual(afterVisibility, beforeVisibility) {
+		t.Fatalf("expected character visibility to remain unchanged, before=%+v after=%+v", beforeVisibility, afterVisibility)
+	}
+	if !reflect.DeepEqual(afterMaps, beforeMaps) {
+		t.Fatalf("expected map occupancy to remain unchanged, before=%+v after=%+v", beforeMaps, afterMaps)
+	}
+}
+
+func TestGameRuntimePreviewRelocationRejectsUnknownTarget(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.PreviewRelocation("MissingPeer", 42, 1700, 2800); ok {
+		t.Fatal("expected relocate preview to reject unknown target")
 	}
 }
 

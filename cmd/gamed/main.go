@@ -38,6 +38,13 @@ func main() {
 		"gamed",
 		gameRuntime.BroadcastNotice,
 		gameRuntime.RelocateCharacter,
+		func(name string, mapIndex uint32, x int32, y int32) (any, bool) {
+			preview, ok := gameRuntime.PreviewRelocation(name, mapIndex, x, y)
+			if !ok {
+				return nil, false
+			}
+			return preview, true
+		},
 		func() any { return gameRuntime.ConnectedCharacters() },
 		func() any { return gameRuntime.CharacterVisibility() },
 		func() any { return gameRuntime.MapOccupancy() },

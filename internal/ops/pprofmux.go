@@ -18,22 +18,22 @@ type localRelocationRequest struct {
 }
 
 func NewPprofMux(serviceName string) *http.ServeMux {
-	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, nil, nil, nil, nil, nil)
+	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, nil, nil, nil, nil, nil, nil)
 }
 
 func NewPprofMuxWithLocalNotice(serviceName string, broadcastNotice func(string) int) *http.ServeMux {
-	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, nil, nil, nil, nil)
+	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, nil, nil, nil, nil, nil)
 }
 
 func NewPprofMuxWithLocalRelocation(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool) *http.ServeMux {
-	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, relocateCharacter, nil, nil, nil)
+	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, relocateCharacter, nil, nil, nil, nil)
 }
 
 func NewPprofMuxWithLocalRuntimeSnapshot(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, connectedCharacters func() any) *http.ServeMux {
-	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, relocateCharacter, connectedCharacters, nil, nil)
+	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, relocateCharacter, nil, connectedCharacters, nil, nil)
 }
 
-func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, connectedCharacters func() any, characterVisibility func() any, mapOccupancy func() any) *http.ServeMux {
+func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, previewRelocation func(string, uint32, int32, int32) (any, bool), connectedCharacters func() any, characterVisibility func() any, mapOccupancy func() any) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -88,20 +88,8 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
-			var request localRelocationRequest
-			decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&request); err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			var trailing struct{}
-			if err := decoder.Decode(&trailing); err != io.EOF {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-			request.Name = strings.TrimSpace(request.Name)
-			if request.Name == "" || request.MapIndex == 0 {
+			request, ok := decodeLocalRelocationRequest(r)
+			if !ok {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -111,6 +99,33 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 			}
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			_, _ = io.WriteString(w, "relocated 1\n")
+		})
+	}
+
+	if previewRelocation != nil {
+		mux.HandleFunc("/local/relocate-preview", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			request, ok := decodeLocalRelocationRequest(r)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			preview, ok := previewRelocation(request.Name, request.MapIndex, request.X, request.Y)
+			if !ok {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if err := json.NewEncoder(w).Encode(preview); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
 		})
 	}
 
@@ -166,6 +181,24 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 	}
 
 	return mux
+}
+
+func decodeLocalRelocationRequest(r *http.Request) (localRelocationRequest, bool) {
+	var request localRelocationRequest
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		return localRelocationRequest{}, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return localRelocationRequest{}, false
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	if request.Name == "" || request.MapIndex == 0 {
+		return localRelocationRequest{}, false
+	}
+	return request, true
 }
 
 func isLoopbackRemoteAddr(remoteAddr string) bool {

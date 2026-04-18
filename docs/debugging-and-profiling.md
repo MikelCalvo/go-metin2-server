@@ -40,6 +40,26 @@ They are not the gameplay protocol.
 - success response: `relocated 1`
 - rejects non-loopback callers with `403`
 
+### `POST /local/relocate-preview`
+
+- request body: JSON
+- example:
+
+```json
+{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}
+```
+
+- previews the visibility and map-occupancy effects of that relocation without mutating runtime state
+- returns JSON with:
+  - `character`
+  - `target`
+  - `current_visible_peers`
+  - `target_visible_peers`
+  - `removed_visible_peers`
+  - `added_visible_peers`
+  - `map_occupancy_changes`
+- rejects non-loopback callers with `403`
+
 ### `GET /local/players`
 
 Returns a JSON snapshot of the currently connected bootstrap characters, sorted by name.
@@ -115,6 +135,14 @@ Relocate a connected bootstrap character locally:
 
 ```bash
 curl -X POST http://127.0.0.1:6060/local/relocate \
+  -H 'Content-Type: application/json' \
+  --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
+```
+
+Preview a bootstrap relocation without mutating runtime state:
+
+```bash
+curl -X POST http://127.0.0.1:6060/local/relocate-preview \
   -H 'Content-Type: application/json' \
   --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
 ```

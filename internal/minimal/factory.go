@@ -71,6 +71,22 @@ type MapOccupancySnapshot struct {
 	Characters     []ConnectedCharacterSnapshot `json:"characters"`
 }
 
+type MapOccupancyChange struct {
+	MapIndex    uint32 `json:"map_index"`
+	BeforeCount int    `json:"before_count"`
+	AfterCount  int    `json:"after_count"`
+}
+
+type RelocationPreview struct {
+	Character           ConnectedCharacterSnapshot   `json:"character"`
+	Target              ConnectedCharacterSnapshot   `json:"target"`
+	CurrentVisiblePeers []ConnectedCharacterSnapshot `json:"current_visible_peers"`
+	TargetVisiblePeers  []ConnectedCharacterSnapshot `json:"target_visible_peers"`
+	RemovedVisiblePeers []ConnectedCharacterSnapshot `json:"removed_visible_peers"`
+	AddedVisiblePeers   []ConnectedCharacterSnapshot `json:"added_visible_peers"`
+	MapOccupancyChanges []MapOccupancyChange         `json:"map_occupancy_changes"`
+}
+
 type gameRuntime struct {
 	sessionFactory service.SessionFactory
 	sharedWorld    *sharedWorldRegistry
@@ -103,6 +119,13 @@ func (r *gameRuntime) RelocateCharacter(name string, mapIndex uint32, x int32, y
 		return false
 	}
 	return r.sharedWorld.RelocateCharacter(name, mapIndex, x, y)
+}
+
+func (r *gameRuntime) PreviewRelocation(name string, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return RelocationPreview{}, false
+	}
+	return r.sharedWorld.PreviewRelocation(name, mapIndex, x, y)
 }
 
 func (r *gameRuntime) ConnectedCharacters() []ConnectedCharacterSnapshot {
