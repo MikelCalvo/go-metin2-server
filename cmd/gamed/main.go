@@ -34,11 +34,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	opsHandler := ops.NewPprofMuxWithLocalRuntimeSnapshot(
+	opsHandler := ops.NewPprofMuxWithLocalRuntimeIntrospection(
 		"gamed",
 		gameRuntime.BroadcastNotice,
 		gameRuntime.RelocateCharacter,
 		func() any { return gameRuntime.ConnectedCharacters() },
+		func() any { return gameRuntime.CharacterVisibility() },
 	)
 	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {
 		logger.Error("service stopped with error", "err", err)

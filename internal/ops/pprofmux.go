@@ -18,18 +18,22 @@ type localRelocationRequest struct {
 }
 
 func NewPprofMux(serviceName string) *http.ServeMux {
-	return NewPprofMuxWithLocalRuntimeSnapshot(serviceName, nil, nil, nil)
+	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, nil, nil, nil, nil)
 }
 
 func NewPprofMuxWithLocalNotice(serviceName string, broadcastNotice func(string) int) *http.ServeMux {
-	return NewPprofMuxWithLocalRuntimeSnapshot(serviceName, broadcastNotice, nil, nil)
+	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, nil, nil, nil)
 }
 
 func NewPprofMuxWithLocalRelocation(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool) *http.ServeMux {
-	return NewPprofMuxWithLocalRuntimeSnapshot(serviceName, broadcastNotice, relocateCharacter, nil)
+	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, relocateCharacter, nil, nil)
 }
 
 func NewPprofMuxWithLocalRuntimeSnapshot(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, connectedCharacters func() any) *http.ServeMux {
+	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, relocateCharacter, connectedCharacters, nil)
+}
+
+func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, connectedCharacters func() any, characterVisibility func() any) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -122,6 +126,23 @@ func NewPprofMuxWithLocalRuntimeSnapshot(serviceName string, broadcastNotice fun
 			}
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			if err := json.NewEncoder(w).Encode(connectedCharacters()); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		})
+	}
+
+	if characterVisibility != nil {
+		mux.HandleFunc("/local/visibility", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if err := json.NewEncoder(w).Encode(characterVisibility()); err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		})

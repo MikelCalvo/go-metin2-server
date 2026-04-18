@@ -56,6 +56,17 @@ Current fields:
 
 The `map_index` field reflects the effective runtime map boundary currently used by the shared-world bootstrap.
 
+### `GET /local/visibility`
+
+Returns a JSON snapshot of the current shared-world visibility graph, sorted by character name.
+
+Each entry includes the same effective runtime location fields exposed by `/local/players`, plus:
+
+- `visible_peers`
+
+The `visible_peers` array is sorted by peer name and reflects the current bootstrap shared-world rule set.
+At the moment that means visibility is gated by effective `MapIndex` only.
+
 ## Examples
 
 Collect a CPU profile for 30 seconds:
@@ -100,6 +111,12 @@ Inspect currently connected bootstrap characters:
 
 ```bash
 curl http://127.0.0.1:6060/local/players
+```
+
+Inspect the current bootstrap shared-world visibility graph:
+
+```bash
+curl http://127.0.0.1:6060/local/visibility
 ```
 
 ## Docker note

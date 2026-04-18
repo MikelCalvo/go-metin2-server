@@ -60,6 +60,11 @@ type ConnectedCharacterSnapshot struct {
 	GuildID  uint32 `json:"guild_id"`
 }
 
+type CharacterVisibilitySnapshot struct {
+	ConnectedCharacterSnapshot
+	VisiblePeers []ConnectedCharacterSnapshot `json:"visible_peers"`
+}
+
 type gameRuntime struct {
 	sessionFactory service.SessionFactory
 	sharedWorld    *sharedWorldRegistry
@@ -99,6 +104,13 @@ func (r *gameRuntime) ConnectedCharacters() []ConnectedCharacterSnapshot {
 		return nil
 	}
 	return r.sharedWorld.ConnectedCharacters()
+}
+
+func (r *gameRuntime) CharacterVisibility() []CharacterVisibilitySnapshot {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	return r.sharedWorld.CharacterVisibility()
 }
 
 func NewAuthSessionFactory() service.SessionFactory {

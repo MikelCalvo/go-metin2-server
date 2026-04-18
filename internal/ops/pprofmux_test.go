@@ -264,6 +264,70 @@ func TestLocalPlayersEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalVisibilityEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubCharacterVisibilitySnapshotter{snapshots: []map[string]any{{"name": "Alpha", "map_index": 42, "visible_peers": []map[string]any{{"name": "PeerTwo", "map_index": 42}}}, {"name": "Zulu", "map_index": uint32(1), "visible_peers": []map[string]any{}}}}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, snapshotter.CharacterVisibility)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/visibility", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected visibility snapshotter to be called once, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"name":"Alpha"`) || !strings.Contains(string(body), `"visible_peers":[`) || !strings.Contains(string(body), `"name":"PeerTwo"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalVisibilityEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubCharacterVisibilitySnapshotter{}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, snapshotter.CharacterVisibility)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/visibility", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected visibility snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalVisibilityEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubCharacterVisibilitySnapshotter{}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, snapshotter.CharacterVisibility)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/visibility", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected visibility snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
 type stubNoticeBroadcaster struct {
 	delivered   int
 	calls       int
@@ -302,4 +366,14 @@ type stubConnectedCharactersSnapshotter struct {
 func (s *stubConnectedCharactersSnapshotter) ConnectedCharacters() any {
 	s.calls++
 	return s.characters
+}
+
+type stubCharacterVisibilitySnapshotter struct {
+	snapshots []map[string]any
+	calls     int
+}
+
+func (s *stubCharacterVisibilitySnapshotter) CharacterVisibility() any {
+	s.calls++
+	return s.snapshots
 }

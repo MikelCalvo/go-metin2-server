@@ -259,26 +259,48 @@ func (r *sharedWorldRegistry) ConnectedCharacters() []ConnectedCharacterSnapshot
 	}
 
 	r.mu.Lock()
-	snapshots := make([]ConnectedCharacterSnapshot, 0, len(r.sessions))
+	characters := make([]loginticket.Character, 0, len(r.sessions))
 	for _, session := range r.sessions {
-		snapshots = append(snapshots, ConnectedCharacterSnapshot{
-			Name:     session.character.Name,
-			VID:      session.character.VID,
-			MapIndex: characterMapIndex(session.character),
-			X:        session.character.X,
-			Y:        session.character.Y,
-			Empire:   session.character.Empire,
-			GuildID:  session.character.GuildID,
-		})
+		characters = append(characters, session.character)
 	}
 	r.mu.Unlock()
 
-	sort.Slice(snapshots, func(i int, j int) bool {
-		if snapshots[i].Name == snapshots[j].Name {
-			return snapshots[i].VID < snapshots[j].VID
+	snapshots := make([]ConnectedCharacterSnapshot, 0, len(characters))
+	for _, character := range characters {
+		snapshots = append(snapshots, connectedCharacterSnapshot(character))
+	}
+	sortConnectedCharacterSnapshots(snapshots)
+	return snapshots
+}
+
+func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapshot {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	characters := make([]loginticket.Character, 0, len(r.sessions))
+	for _, session := range r.sessions {
+		characters = append(characters, session.character)
+	}
+	r.mu.Unlock()
+
+	snapshots := make([]CharacterVisibilitySnapshot, 0, len(characters))
+	for i, character := range characters {
+		visiblePeers := make([]ConnectedCharacterSnapshot, 0, len(characters))
+		for j, peer := range characters {
+			if i == j || !charactersShareVisibleWorld(character, peer) {
+				continue
+			}
+			visiblePeers = append(visiblePeers, connectedCharacterSnapshot(peer))
 		}
-		return snapshots[i].Name < snapshots[j].Name
-	})
+		sortConnectedCharacterSnapshots(visiblePeers)
+		snapshots = append(snapshots, CharacterVisibilitySnapshot{
+			ConnectedCharacterSnapshot: connectedCharacterSnapshot(character),
+			VisiblePeers:               visiblePeers,
+		})
+	}
+	sortCharacterVisibilitySnapshots(snapshots)
 	return snapshots
 }
 
@@ -412,6 +434,36 @@ func characterMapIndex(character loginticket.Character) uint32 {
 		return bootstrapMapIndex
 	}
 	return character.MapIndex
+}
+
+func connectedCharacterSnapshot(character loginticket.Character) ConnectedCharacterSnapshot {
+	return ConnectedCharacterSnapshot{
+		Name:     character.Name,
+		VID:      character.VID,
+		MapIndex: characterMapIndex(character),
+		X:        character.X,
+		Y:        character.Y,
+		Empire:   character.Empire,
+		GuildID:  character.GuildID,
+	}
+}
+
+func sortConnectedCharacterSnapshots(snapshots []ConnectedCharacterSnapshot) {
+	sort.Slice(snapshots, func(i int, j int) bool {
+		if snapshots[i].Name == snapshots[j].Name {
+			return snapshots[i].VID < snapshots[j].VID
+		}
+		return snapshots[i].Name < snapshots[j].Name
+	})
+}
+
+func sortCharacterVisibilitySnapshots(snapshots []CharacterVisibilitySnapshot) {
+	sort.Slice(snapshots, func(i int, j int) bool {
+		if snapshots[i].Name == snapshots[j].Name {
+			return snapshots[i].VID < snapshots[j].VID
+		}
+		return snapshots[i].Name < snapshots[j].Name
+	})
 }
 
 func encodeCharacterDeleteFrame(character loginticket.Character) []byte {
