@@ -118,14 +118,18 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 	if store == nil {
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
 	}
+	sharedWorld := newSharedWorldRegistry()
 
 	return func() service.SessionFlow {
 		var sessionTicket loginticket.Ticket
 		var hasTicket bool
 		var selectedIndex uint8
 		var hasSelected bool
+		pending := newPendingServerFrames()
+		var sharedWorldID uint64
+		var joinedSharedWorld bool
 
-		return boot.NewFlow(boot.Config{
+		inner := boot.NewFlow(boot.Config{
 			Handshake: handshake.Config{
 				KeyChallenge: defaultKeyChallenge(),
 				KeyComplete:  defaultKeyComplete(),
@@ -221,12 +225,21 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 					if err != nil {
 						return worldentry.EnterGameResult{}
 					}
-					return worldentry.EnterGameResult{Frames: [][]byte{
+					frames := [][]byte{
 						worldproto.EncodeCharacterAdd(ticketCharacterAddPacket(selected)),
 						infoRaw,
 						worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(selected)),
 						worldproto.EncodePlayerPointChange(ticketPlayerPointChangePacket(selected)),
-					}}
+					}
+					if !joinedSharedWorld {
+						var existingPeers []loginticket.Character
+						sharedWorldID, existingPeers = sharedWorld.Join(selected, pending)
+						joinedSharedWorld = sharedWorldID != 0
+						for _, peer := range existingPeers {
+							frames = append(frames, encodePeerVisibilityFrames(peer)...)
+						}
+					}
+					return worldentry.EnterGameResult{Frames: frames}
 				},
 			},
 			Game: gameflow.Config{
@@ -236,6 +249,9 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						return gameflow.Result{Accepted: false}
 					}
 					sessionTicket.Characters = updatedCharacters
+					if joinedSharedWorld {
+						sharedWorld.UpdateCharacter(sharedWorldID, selected)
+					}
 					return gameflow.Result{Accepted: true, Replication: ticketMoveAckPacket(selected, packet)}
 				},
 				HandleSyncPosition: func(packet movep.SyncPositionPacket) gameflow.SyncPositionResult {
@@ -255,11 +271,20 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 							return gameflow.SyncPositionResult{Accepted: false}
 						}
 						sessionTicket.Characters = updatedCharacters
+						if joinedSharedWorld {
+							sharedWorld.UpdateCharacter(sharedWorldID, updatedSelected)
+						}
 						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ticketSyncPositionAckPacket(updatedSelected)}
 					}
 					return gameflow.SyncPositionResult{Accepted: false}
 				},
 			},
+		})
+		return newQueuedSessionFlow(inner, pending, func() {
+			if joinedSharedWorld {
+				sharedWorld.Leave(sharedWorldID)
+				joinedSharedWorld = false
+			}
 		})
 	}, nil
 }

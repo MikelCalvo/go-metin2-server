@@ -263,6 +263,24 @@ func TestDecodePlayerDeleteFailureAcceptsHeaderOnlyServerFrame(t *testing.T) {
 	}
 }
 
+func TestEncodeCharacterDeleteNoticeBuildsAServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderCharacterDeleteNotice, []byte{0x04, 0x03, 0x02, 0x01})
+	got := EncodeCharacterDeleteNotice(CharacterDeleteNoticePacket{VID: 0x01020304})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected character delete notice frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeCharacterDeleteNoticeReturnsExpectedVID(t *testing.T) {
+	packet, err := DecodeCharacterDeleteNotice(decodeSingleFrame(t, frame.Encode(HeaderCharacterDeleteNotice, []byte{0x04, 0x03, 0x02, 0x01})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.VID != 0x01020304 {
+		t.Fatalf("unexpected delete notice vid: got %#08x want %#08x", packet.VID, uint32(0x01020304))
+	}
+}
+
 func TestEncodeMainCharacterBuildsAServerFrame(t *testing.T) {
 	want := loadHexFixture(t, "main-character-frame.hex")
 	got, err := EncodeMainCharacter(MainCharacterPacket{

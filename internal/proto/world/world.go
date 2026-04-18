@@ -17,6 +17,7 @@ const (
 	HeaderEnterGame               uint16 = 0x0204
 	HeaderCharacterAdd            uint16 = 0x0205
 	HeaderCharacterAdditionalInfo uint16 = 0x0207
+	HeaderCharacterDeleteNotice   uint16 = 0x0208
 	HeaderCharacterUpdate         uint16 = 0x0209
 	HeaderPlayerCreateSuccess     uint16 = 0x020C
 	HeaderPlayerCreateFailure     uint16 = 0x020D
@@ -38,6 +39,7 @@ const (
 	characterSelectPayloadSize         = 1
 	characterAddPayloadSize            = 34
 	characterAdditionalInfoPayloadSize = 93
+	characterDeleteNoticePayloadSize   = 4
 	characterUpdatePayloadSize         = 34
 	playerCreateSuccessPayloadSize     = 1 + simplePlayerPayloadSize
 	playerCreateFailurePayloadSize     = 1
@@ -85,6 +87,10 @@ type PlayerCreateFailurePacket struct {
 
 type PlayerDeleteSuccessPacket struct {
 	Index uint8
+}
+
+type CharacterDeleteNoticePacket struct {
+	VID uint32
 }
 
 type CharacterAddPacket struct {
@@ -307,6 +313,22 @@ func DecodePlayerDeleteFailure(f frame.Frame) error {
 		return ErrInvalidPayload
 	}
 	return nil
+}
+
+func EncodeCharacterDeleteNotice(packet CharacterDeleteNoticePacket) []byte {
+	payload := make([]byte, characterDeleteNoticePayloadSize)
+	binary.LittleEndian.PutUint32(payload, packet.VID)
+	return frame.Encode(HeaderCharacterDeleteNotice, payload)
+}
+
+func DecodeCharacterDeleteNotice(f frame.Frame) (CharacterDeleteNoticePacket, error) {
+	if f.Header != HeaderCharacterDeleteNotice {
+		return CharacterDeleteNoticePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != characterDeleteNoticePayloadSize {
+		return CharacterDeleteNoticePacket{}, ErrInvalidPayload
+	}
+	return CharacterDeleteNoticePacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
 }
 
 func EncodeCharacterAdd(packet CharacterAddPacket) []byte {
