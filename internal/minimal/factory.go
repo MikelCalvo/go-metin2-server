@@ -293,14 +293,27 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						return gameflow.ChatResult{Accepted: false}
 					}
 					selected := sessionTicket.Characters[selectedIndex]
-					if selected.ID == 0 || (packet.Type != chatproto.ChatTypeTalking && packet.Type != chatproto.ChatTypeParty && packet.Type != chatproto.ChatTypeGuild && packet.Type != chatproto.ChatTypeShout) || packet.Message == "" {
+					if selected.ID == 0 || packet.Message == "" {
 						return gameflow.ChatResult{Accepted: false}
 					}
-					chatDelivery := ticketChatDeliveryPacket(selected, packet)
-					if joinedSharedWorld {
-						sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+					switch packet.Type {
+					case chatproto.ChatTypeTalking, chatproto.ChatTypeParty, chatproto.ChatTypeGuild, chatproto.ChatTypeShout:
+						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
+						if joinedSharedWorld {
+							sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+						}
+						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
+					case chatproto.ChatTypeInfo:
+						return gameflow.ChatResult{Accepted: true, Delivery: ticketSystemChatDeliveryPacket(packet)}
+					case chatproto.ChatTypeNotice:
+						chatDelivery := ticketSystemChatDeliveryPacket(packet)
+						if joinedSharedWorld {
+							sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+						}
+						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
+					default:
+						return gameflow.ChatResult{Accepted: false}
 					}
-					return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 				},
 				HandleWhisper: func(packet chatproto.ClientWhisperPacket) gameflow.WhisperResult {
 					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
@@ -625,12 +638,21 @@ func ticketSyncPositionAckPacket(character loginticket.Character) movep.SyncPosi
 	return movep.SyncPositionAckPacket{Elements: []movep.SyncPositionElement{{VID: character.VID, X: character.X, Y: character.Y}}}
 }
 
-func ticketChatDeliveryPacket(character loginticket.Character, packet chatproto.ClientChatPacket) chatproto.ChatDeliveryPacket {
+func ticketActorChatDeliveryPacket(character loginticket.Character, packet chatproto.ClientChatPacket) chatproto.ChatDeliveryPacket {
 	return chatproto.ChatDeliveryPacket{
 		Type:    packet.Type,
 		VID:     character.VID,
 		Empire:  0,
 		Message: fmt.Sprintf("%s : %s", character.Name, packet.Message),
+	}
+}
+
+func ticketSystemChatDeliveryPacket(packet chatproto.ClientChatPacket) chatproto.ChatDeliveryPacket {
+	return chatproto.ChatDeliveryPacket{
+		Type:    packet.Type,
+		VID:     0,
+		Empire:  0,
+		Message: packet.Message,
 	}
 }
 

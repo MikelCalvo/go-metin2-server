@@ -229,6 +229,66 @@ func TestHandleClientFrameAcceptsShoutChatInGameAndReturnsDelivery(t *testing.T)
 	}
 }
 
+func TestHandleClientFrameAcceptsInfoChatInGameAndReturnsDelivery(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleChat: func(packet chatproto.ClientChatPacket) ChatResult {
+			if packet.Type != chatproto.ChatTypeInfo || packet.Message != "mensaje info" {
+				t.Fatalf("unexpected info chat packet: %+v", packet)
+			}
+			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: "mensaje info"}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeInfo, Message: "mensaje info"})))
+	if err != nil {
+		t.Fatalf("unexpected info chat error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode info chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != "mensaje info" {
+		t.Fatalf("unexpected info chat delivery: %+v", delivery)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsNoticeChatInGameAndReturnsDelivery(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleChat: func(packet chatproto.ClientChatPacket) ChatResult {
+			if packet.Type != chatproto.ChatTypeNotice || packet.Message != "mensaje notice" {
+				t.Fatalf("unexpected notice chat packet: %+v", packet)
+			}
+			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeNotice, VID: 0, Empire: 0, Message: "mensaje notice"}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeNotice, Message: "mensaje notice"})))
+	if err != nil {
+		t.Fatalf("unexpected notice chat error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode notice chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeNotice || delivery.VID != 0 || delivery.Message != "mensaje notice" {
+		t.Fatalf("unexpected notice chat delivery: %+v", delivery)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameRejectsUnexpectedPacketsInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})

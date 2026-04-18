@@ -413,6 +413,87 @@ func TestNewGameSessionFactoryQueuesShoutChatForConnectedPeers(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryReturnsInfoChatOnlyToSenderAsSystemMessage(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	infoOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeInfo, Message: "mensaje info"})))
+	if err != nil {
+		t.Fatalf("unexpected info chat error: %v", err)
+	}
+	if len(infoOut) != 1 {
+		t.Fatalf("expected 1 sender info chat frame, got %d", len(infoOut))
+	}
+	selfInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, infoOut[0]))
+	if err != nil {
+		t.Fatalf("decode sender info chat: %v", err)
+	}
+	if selfInfo.Type != chatproto.ChatTypeInfo || selfInfo.VID != 0 || selfInfo.Message != "mensaje info" {
+		t.Fatalf("unexpected sender info chat: %+v", selfInfo)
+	}
+
+	peerInfo := flushServerFrames(t, flowOne)
+	if len(peerInfo) != 0 {
+		t.Fatalf("expected no queued info chat frames for peers, got %d", len(peerInfo))
+	}
+}
+
+func TestNewGameSessionFactoryQueuesNoticeChatAsSystemBroadcast(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+
+	noticeOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeNotice, Message: "mensaje notice"})))
+	if err != nil {
+		t.Fatalf("unexpected notice chat error: %v", err)
+	}
+	if len(noticeOut) != 1 {
+		t.Fatalf("expected 1 sender notice chat frame, got %d", len(noticeOut))
+	}
+	selfNotice, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, noticeOut[0]))
+	if err != nil {
+		t.Fatalf("decode sender notice chat: %v", err)
+	}
+	if selfNotice.Type != chatproto.ChatTypeNotice || selfNotice.VID != 0 || selfNotice.Message != "mensaje notice" {
+		t.Fatalf("unexpected sender notice chat: %+v", selfNotice)
+	}
+
+	peerNotice := flushServerFrames(t, flowOne)
+	if len(peerNotice) != 1 {
+		t.Fatalf("expected 1 queued notice chat frame, got %d", len(peerNotice))
+	}
+	peerDelivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerNotice[0]))
+	if err != nil {
+		t.Fatalf("decode peer notice chat: %v", err)
+	}
+	if peerDelivery.Type != chatproto.ChatTypeNotice || peerDelivery.VID != 0 || peerDelivery.Message != "mensaje notice" {
+		t.Fatalf("unexpected peer notice chat delivery: %+v", peerDelivery)
+	}
+}
+
 func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
