@@ -20,6 +20,7 @@ It does not yet freeze the full visible-world packet set.
 - `PLAYER_CREATE_SUCCESS`
 - `PLAYER_CREATE_FAILURE`
 - `CHARACTER_SELECT`
+- `CLIENT_VERSION`
 - `ENTERGAME`
 - `MAIN_CHARACTER`
 - `PLAYER_POINTS`
@@ -52,9 +53,10 @@ The current project-owned selection/world-entry flow is:
    - `PHASE(LOADING)`
    - `MAIN_CHARACTER`
    - `PLAYER_POINTS`
-10. the client sends `ENTERGAME`
-11. the server transitions to `GAME`
-12. the server emits:
+10. the client may send `CLIENT_VERSION` metadata while staying in `LOADING`
+11. the client sends `ENTERGAME`
+12. the server transitions to `GAME`
+13. the server emits:
    - `PHASE(GAME)`
    - `CHARACTER_ADD`
    - `CHAR_ADDITIONAL_INFO`

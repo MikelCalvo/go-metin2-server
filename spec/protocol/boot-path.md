@@ -89,9 +89,11 @@ Expected outcomes:
 ## 7. Loading/bootstrap completes
 The server sends the minimum required bootstrap data for the selected character.
 This typically includes the main character and player points, plus any other mandatory world bootstrap packets.
+During this phase the client may also emit `CLIENT_VERSION` metadata before it proceeds to `ENTERGAME`.
 
 Expected outcomes:
 - the client accepts the selected character context
+- the server tolerates `CLIENT_VERSION` in `LOADING` without changing phase
 - the client can issue the enter-game action
 
 ## 8. Enter game succeeds
@@ -137,6 +139,7 @@ This document depends on:
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
 - `spec/protocol/packet-matrix.md`
+- `spec/protocol/client-version-loading.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
 - `spec/protocol/sync-position-bootstrap.md`

@@ -15,6 +15,7 @@ Current scope of the project:
 - A stub-compatible binary smoke path that reaches `GAME` with the current public bootstrap flows.
 - A deterministic single-character `MOVE` round-trip wired through the current bootstrap runtime.
 - A deterministic selected-character `SYNC_POSITION` reconciliation path wired through the current bootstrap runtime.
+- A tolerant `CLIENT_VERSION` metadata path accepted during `LOADING` before `ENTERGAME`.
 - A first visible-world bootstrap that inserts the selected character into the game world after `ENTERGAME`.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
@@ -113,6 +114,7 @@ Legend:
 - `spec/protocol/auth-login.md`
 - `spec/protocol/login-selection.md`
 - `spec/protocol/select-world-entry.md`
+- `spec/protocol/client-version-loading.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -190,7 +192,7 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> MOVE/SYNC_POSITION`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> MOVE/SYNC_POSITION`
 
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
@@ -201,6 +203,7 @@ What exists today:
 - deterministic selected-character `SYNC_POSITION` reconciliation in `GAME`
 - bootstrap movement updates character coordinates and persists them across fresh auth/game sessions
 - empty-account bootstrap flow can select empire before first character creation, and that choice persists across fresh auth/game sessions
+- tolerant `CLIENT_VERSION` acceptance in `LOADING` with no phase transition and no server response
 - the selected character is inserted into the visible world after `ENTERGAME` via minimal `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` + `PLAYER_POINT_CHANGE`
 
 What still does not exist yet:

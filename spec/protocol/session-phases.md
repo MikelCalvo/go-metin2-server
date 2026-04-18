@@ -91,6 +91,7 @@ Purpose:
 Typical traffic in this phase:
 - main character bootstrap packet(s)
 - player points / stats
+- `CLIENT_VERSION` metadata from the client
 - optional time/channel/world bootstrap data
 - enter-game request from the client
 
@@ -157,6 +158,7 @@ A packet decoder may still parse them, but the session layer must not process th
 ### `LOADING`
 - a concrete character choice already exists
 - world bootstrap is in progress
+- `CLIENT_VERSION` metadata may be accepted here without changing phase
 - arbitrary in-world actions are still invalid
 
 ### `GAME`

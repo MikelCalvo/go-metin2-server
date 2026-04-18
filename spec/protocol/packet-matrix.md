@@ -18,7 +18,7 @@ Status values:
 | `KEY_RESPONSE` | client -> server | `0x000A` | handshake | documented | cryptographic response path |
 | `KEY_CHALLENGE` | server -> client | `0x000B` | handshake | documented | challenge + server key material |
 | `KEY_COMPLETE` | server -> client | `0x000C` | handshake | documented | completes key exchange |
-| `CLIENT_VERSION` | client -> server | `0x000D` | late handshake/loading | planned | exact timing to be locked by tests |
+| `CLIENT_VERSION` | client -> server | `0x000D` | loading | documented | accepted as metadata in `LOADING`; no server response and no phase transition |
 
 ## Authentication and selection surface
 
