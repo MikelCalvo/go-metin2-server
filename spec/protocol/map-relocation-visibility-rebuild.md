@@ -4,7 +4,9 @@ This document freezes the first server-side visibility rebuild primitive for a c
 
 This is intentionally narrower than a full warp flow.
 The runtime reuses the existing peer-visibility packets to rebuild the visible player set, but it does not yet freeze any client-originated warp packet, loading-screen choreography, or full world transfer semantics.
-The primitive exists in the shared-world runtime internals and is not yet wired into a client-facing warp flow.
+The primitive now has two controlled entry points:
+- a programmatic runtime method addressed by exact character name
+- a loopback-only `gamed` ops endpoint: `POST /local/relocate`
 
 ## Covered packets
 
@@ -21,7 +23,7 @@ When the current relocation primitive is invoked, it behaves as follows:
 
 1. player A and player B are already connected and visible on bootstrap `MapIndex = 1`
 2. player C is already connected on bootstrap `MapIndex = 42`
-3. the server-side runtime relocates player B from `MapIndex = 1` to `MapIndex = 42`
+3. the server-side runtime relocates player B by exact name from `MapIndex = 1` to `MapIndex = 42`, also updating the connected session snapshot
 4. player A receives `CHARACTER_DEL` for player B
 5. player B receives:
    - `CHARACTER_DEL` for player A
@@ -32,6 +34,26 @@ When the current relocation primitive is invoked, it behaves as follows:
 6. player C receives the same visibility burst for player B, using player B's relocated snapshot on the destination `MapIndex`
 
 If the relocation keeps the player on the same `MapIndex`, the runtime updates the stored snapshot but does not emit any visibility rebuild frames.
+
+## Controlled runtime trigger
+
+The current local-only operator surface for this primitive is:
+
+- method: `POST`
+- path: `/local/relocate`
+- request body: JSON
+  - `name` — exact connected character name
+  - `map_index` — destination bootstrap map index, must be non-zero
+  - `x` — destination x coordinate
+  - `y` — destination y coordinate
+- success response: `200 OK` with body `relocated 1` plus a trailing newline
+- invalid body or invalid fields: `400 Bad Request`
+- non-loopback caller: `403 Forbidden`
+- target not found or relocation not applied: `404 Not Found`
+- wrong method: `405 Method Not Allowed`
+
+This endpoint is intentionally for local operator testing only.
+It is not the public gameplay warp contract.
 
 ## Why this slice exists
 
@@ -50,7 +72,6 @@ This slice does not yet add:
 
 - a client packet for requesting a warp
 - a server packet that freezes final warp/loading semantics
-- persistence writeback for relocated snapshots across fresh sessions
 - channel topology or inter-channel migration
 - sector/range/AOI culling
 - NPC, mob, item, or generic entity relocation

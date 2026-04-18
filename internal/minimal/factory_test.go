@@ -710,6 +710,49 @@ func TestUpdateSelectedCharacterPositionReturnsPersistedCloneOnSuccess(t *testin
 	}
 }
 
+func TestUpdateSelectedCharacterLocationDoesNotMutateOnSaveFailure(t *testing.T) {
+	characters := stubCharacters()
+	original := characters[1]
+	updated, selected, ok := updateSelectedCharacterLocation(&failingAccountStore{}, StubLogin, 2, characters, 1, 42, 1700, 2800)
+	if ok {
+		t.Fatal("expected location update to fail when account store save fails")
+	}
+	if updated != nil {
+		t.Fatalf("expected no updated character slice on failure, got %+v", updated)
+	}
+	if selected != (loginticket.Character{}) {
+		t.Fatalf("expected zero selected character on failure, got %+v", selected)
+	}
+	if characters[1].MapIndex != original.MapIndex || characters[1].X != original.X || characters[1].Y != original.Y {
+		t.Fatalf("expected original character location to stay map=%d x=%d y=%d, got map=%d x=%d y=%d", original.MapIndex, original.X, original.Y, characters[1].MapIndex, characters[1].X, characters[1].Y)
+	}
+}
+
+func TestUpdateSelectedCharacterLocationReturnsPersistedCloneOnSuccess(t *testing.T) {
+	store := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	updated, selected, ok := updateSelectedCharacterLocation(store, StubLogin, 2, characters, 1, 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected location update to succeed")
+	}
+	if selected.VID != 0x01020305 || selected.MapIndex != 42 || selected.X != 1700 || selected.Y != 2800 {
+		t.Fatalf("unexpected updated selected character: %+v", selected)
+	}
+	if updated[1].MapIndex != 42 || updated[1].X != 1700 || updated[1].Y != 2800 {
+		t.Fatalf("expected updated clone location map=42 x=1700 y=2800, got map=%d x=%d y=%d", updated[1].MapIndex, updated[1].X, updated[1].Y)
+	}
+	if characters[1].MapIndex != bootstrapMapIndex || characters[1].X != 1200 || characters[1].Y != 2100 {
+		t.Fatalf("expected original slice to remain unchanged, got map=%d x=%d y=%d", characters[1].MapIndex, characters[1].X, characters[1].Y)
+	}
+	account, err := store.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if account.Characters[1].MapIndex != 42 || account.Characters[1].X != 1700 || account.Characters[1].Y != 2800 {
+		t.Fatalf("expected persisted location map=42 x=1700 y=2800, got map=%d x=%d y=%d", account.Characters[1].MapIndex, account.Characters[1].X, account.Characters[1].Y)
+	}
+}
+
 func TestNewGameSessionFactoryRejectsInvalidPublicAddr(t *testing.T) {
 	_, err := NewGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "not-an-ip"})
 	if !errors.Is(err, ErrInvalidPublicAddr) {

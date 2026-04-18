@@ -800,9 +800,9 @@ func TestSharedWorldRegistryRelocateRebuildsVisibilityAcrossMaps(t *testing.T) {
 	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
 	peerThree.MapIndex = 42
 
-	_, _ = registry.Join(peerOne, pendingOne)
-	idTwo, _ := registry.Join(peerTwo, pendingTwo)
-	_, _ = registry.Join(peerThree, pendingThree)
+	_, _ = registry.Join(peerOne, pendingOne, nil)
+	idTwo, _ := registry.Join(peerTwo, pendingTwo, nil)
+	_, _ = registry.Join(peerThree, pendingThree, nil)
 	_ = pendingOne.flush()
 	_ = pendingTwo.flush()
 	_ = pendingThree.flush()
@@ -897,9 +897,9 @@ func TestSharedWorldRegistryRelocateUsesPreviousVIDForOldPeerDelete(t *testing.T
 	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
 	peerThree.MapIndex = 42
 
-	_, _ = registry.Join(peerOne, pendingOne)
-	idTwo, _ := registry.Join(peerTwo, pendingTwo)
-	_, _ = registry.Join(peerThree, pendingThree)
+	_, _ = registry.Join(peerOne, pendingOne, nil)
+	idTwo, _ := registry.Join(peerTwo, pendingTwo, nil)
+	_, _ = registry.Join(peerThree, pendingThree, nil)
 	_ = pendingOne.flush()
 	_ = pendingTwo.flush()
 	_ = pendingThree.flush()
@@ -932,8 +932,8 @@ func TestSharedWorldRegistryRelocateUpdatesSnapshotWithoutVisibilityRebuildOnSam
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
 
-	_, _ = registry.Join(peerOne, pendingOne)
-	idTwo, _ := registry.Join(peerTwo, pendingTwo)
+	_, _ = registry.Join(peerOne, pendingOne, nil)
+	idTwo, _ := registry.Join(peerTwo, pendingTwo, nil)
 	_ = pendingOne.flush()
 	_ = pendingTwo.flush()
 
@@ -951,7 +951,7 @@ func TestSharedWorldRegistryRelocateUpdatesSnapshotWithoutVisibilityRebuildOnSam
 
 	pendingThree := newPendingServerFrames()
 	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
-	_, existing := registry.Join(peerThree, pendingThree)
+	_, existing := registry.Join(peerThree, pendingThree, nil)
 	if len(existing) != 2 {
 		t.Fatalf("expected 2 existing peers for later join, got %d", len(existing))
 	}
@@ -968,6 +968,146 @@ func TestSharedWorldRegistryRelocateUpdatesSnapshotWithoutVisibilityRebuildOnSam
 	}
 	if !foundRelocatedPeer {
 		t.Fatal("expected later join to see relocated peer snapshot")
+	}
+}
+
+func TestGameRuntimeRelocateCharacterMovesConnectedSessionAcrossMaps(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	flowThree, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+
+	if !runtime.RelocateCharacter("PeerTwo", 42, 1700, 2800) {
+		t.Fatal("expected relocate to succeed")
+	}
+
+	oldPeerFrames := flushServerFrames(t, flowOne)
+	if len(oldPeerFrames) != 1 {
+		t.Fatalf("expected 1 queued old-peer delete frame, got %d", len(oldPeerFrames))
+	}
+	oldPeerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, oldPeerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode old-peer delete: %v", err)
+	}
+	if oldPeerDelete.VID != peerTwo.VID {
+		t.Fatalf("expected old peer delete for VID %#08x, got %#08x", peerTwo.VID, oldPeerDelete.VID)
+	}
+
+	moverFrames := flushServerFrames(t, flowTwo)
+	if len(moverFrames) != 4 {
+		t.Fatalf("expected 4 queued mover rebuild frames, got %d", len(moverFrames))
+	}
+	moverDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, moverFrames[0]))
+	if err != nil {
+		t.Fatalf("decode mover delete: %v", err)
+	}
+	if moverDelete.VID != peerOne.VID {
+		t.Fatalf("expected mover delete for old peer VID %#08x, got %#08x", peerOne.VID, moverDelete.VID)
+	}
+	moverAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moverFrames[1]))
+	if err != nil {
+		t.Fatalf("decode mover add: %v", err)
+	}
+	if moverAdd.VID != peerThree.VID || moverAdd.X != peerThree.X || moverAdd.Y != peerThree.Y {
+		t.Fatalf("unexpected mover add packet: %+v", moverAdd)
+	}
+
+	newPeerFrames := flushServerFrames(t, flowThree)
+	if len(newPeerFrames) != 3 {
+		t.Fatalf("expected 3 queued new-peer visibility frames, got %d", len(newPeerFrames))
+	}
+	newPeerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, newPeerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode new-peer add: %v", err)
+	}
+	if newPeerAdd.VID != peerTwo.VID || newPeerAdd.X != 1700 || newPeerAdd.Y != 2800 {
+		t.Fatalf("unexpected new-peer add packet: %+v", newPeerAdd)
+	}
+
+	moveOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1750, Y: 2850, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move after relocate error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame after relocate, got %d", len(moveOut))
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no old-map queued move frames after relocate, got %d", len(queued))
+	}
+	peerMove := flushServerFrames(t, flowThree)
+	if len(peerMove) != 1 {
+		t.Fatalf("expected 1 destination-map queued move frame after relocate, got %d", len(peerMove))
+	}
+	peerAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, peerMove[0]))
+	if err != nil {
+		t.Fatalf("decode destination-map peer move: %v", err)
+	}
+	if peerAck.VID != peerTwo.VID || peerAck.X != 1750 || peerAck.Y != 2850 || peerAck.Time != 0x21222324 {
+		t.Fatalf("unexpected destination-map peer move ack: %+v", peerAck)
+	}
+}
+
+func TestGameRuntimeRelocateCharacterRejectsUnknownTarget(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if runtime.RelocateCharacter("MissingPeer", 42, 1700, 2800) {
+		t.Fatal("expected relocate to reject unknown target")
+	}
+}
+
+func TestGameRuntimeRelocateCharacterDoesNotMutateWorldOnSaveFailure(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, &failingAccountStore{})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	flowThree, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+
+	if runtime.RelocateCharacter("PeerTwo", 42, 1700, 2800) {
+		t.Fatal("expected relocate to fail when account snapshot save fails")
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no old-map frames on failed relocate, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowTwo); len(queued) != 0 {
+		t.Fatalf("expected no mover frames on failed relocate, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowThree); len(queued) != 0 {
+		t.Fatalf("expected no destination-map frames on failed relocate, got %d", len(queued))
 	}
 }
 

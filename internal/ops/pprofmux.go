@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -9,11 +10,22 @@ import (
 	"strings"
 )
 
+type localRelocationRequest struct {
+	Name     string `json:"name"`
+	MapIndex uint32 `json:"map_index"`
+	X        int32  `json:"x"`
+	Y        int32  `json:"y"`
+}
+
 func NewPprofMux(serviceName string) *http.ServeMux {
-	return NewPprofMuxWithLocalNotice(serviceName, nil)
+	return NewPprofMuxWithLocalRelocation(serviceName, nil, nil)
 }
 
 func NewPprofMuxWithLocalNotice(serviceName string, broadcastNotice func(string) int) *http.ServeMux {
+	return NewPprofMuxWithLocalRelocation(serviceName, broadcastNotice, nil)
+}
+
+func NewPprofMuxWithLocalRelocation(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -55,6 +67,42 @@ func NewPprofMuxWithLocalNotice(serviceName string, broadcastNotice func(string)
 			}
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			_, _ = fmt.Fprintf(w, "queued %d\n", broadcastNotice(message))
+		})
+	}
+
+	if relocateCharacter != nil {
+		mux.HandleFunc("/local/relocate", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			var request localRelocationRequest
+			decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&request); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			var trailing struct{}
+			if err := decoder.Decode(&trailing); err != io.EOF {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			request.Name = strings.TrimSpace(request.Name)
+			if request.Name == "" || request.MapIndex == 0 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if !relocateCharacter(request.Name, request.MapIndex, request.X, request.Y) {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			_, _ = io.WriteString(w, "relocated 1\n")
 		})
 	}
 

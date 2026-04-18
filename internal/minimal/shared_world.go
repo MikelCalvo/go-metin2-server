@@ -33,6 +33,7 @@ type sharedWorldRegistry struct {
 type sharedWorldSession struct {
 	character loginticket.Character
 	pending   *pendingServerFrames
+	relocate  sharedWorldSessionRelocator
 }
 
 func newQueuedSessionFlow(inner service.SessionFlow, pending *pendingServerFrames, onClose func()) *queuedSessionFlow {
@@ -104,7 +105,7 @@ func newSharedWorldRegistry() *sharedWorldRegistry {
 	return &sharedWorldRegistry{sessions: make(map[uint64]sharedWorldSession)}
 }
 
-func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pendingServerFrames) (uint64, []loginticket.Character) {
+func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pendingServerFrames, relocate sharedWorldSessionRelocator) (uint64, []loginticket.Character) {
 	if r == nil {
 		return 0, nil
 	}
@@ -124,7 +125,7 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 
 	r.nextID++
 	id := r.nextID
-	r.sessions[id] = sharedWorldSession{character: character, pending: pending}
+	r.sessions[id] = sharedWorldSession{character: character, pending: pending, relocate: relocate}
 	return id, existing
 }
 
@@ -227,6 +228,28 @@ func (r *sharedWorldRegistry) Relocate(id uint64, character loginticket.Characte
 	}
 
 	return true
+}
+
+func (r *sharedWorldRegistry) RelocateCharacter(name string, mapIndex uint32, x int32, y int32) bool {
+	if r == nil || name == "" || mapIndex == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	var relocate sharedWorldSessionRelocator
+	for _, session := range r.sessions {
+		if session.character.Name != name {
+			continue
+		}
+		relocate = session.relocate
+		break
+	}
+	r.mu.Unlock()
+
+	if relocate == nil {
+		return false
+	}
+	return relocate(mapIndex, x, y)
 }
 
 func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][]byte) {

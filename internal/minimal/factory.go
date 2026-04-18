@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	authflow "github.com/MikelCalvo/go-metin2-server/internal/auth"
@@ -47,6 +48,8 @@ var (
 
 type loginKeyGenerator func() (uint32, error)
 
+type sharedWorldSessionRelocator func(mapIndex uint32, x int32, y int32) bool
+
 type gameRuntime struct {
 	sessionFactory service.SessionFactory
 	sharedWorld    *sharedWorldRegistry
@@ -72,6 +75,13 @@ func (r *gameRuntime) BroadcastNotice(message string) int {
 		return 0
 	}
 	return r.sharedWorld.EnqueueSystemNotice(message)
+}
+
+func (r *gameRuntime) RelocateCharacter(name string, mapIndex uint32, x int32, y int32) bool {
+	if r == nil || r.sharedWorld == nil {
+		return false
+	}
+	return r.sharedWorld.RelocateCharacter(name, mapIndex, x, y)
 }
 
 func NewAuthSessionFactory() service.SessionFactory {
@@ -172,6 +182,7 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 		var hasTicket bool
 		var selectedIndex uint8
 		var hasSelected bool
+		var stateMu sync.Mutex
 		pending := newPendingServerFrames()
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
@@ -183,6 +194,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 			},
 			Login: loginflow.Config{
 				Authenticate: func(packet loginproto.Login2Packet) loginflow.Result {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					ticket, err := store.Consume(packet.Login, packet.LoginKey)
 					if err != nil {
 						return loginflow.Result{Accepted: false, FailureStatus: "NOID"}
@@ -204,6 +218,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 			},
 			WorldEntry: worldentry.Config{
 				SelectEmpire: func(empire uint8) worldentry.EmpireResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					if !hasTicket || !isValidEmpire(empire) || hasAnyCharacters(sessionTicket.Characters) {
 						return worldentry.EmpireResult{Accepted: false}
 					}
@@ -214,6 +231,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					return worldentry.EmpireResult{Accepted: true, Empire: empire}
 				},
 				CreateCharacter: func(packet worldproto.CharacterCreatePacket) worldentry.CreateResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					if !hasTicket {
 						return worldentry.CreateResult{Accepted: false, FailureType: 0}
 					}
@@ -230,6 +250,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					}
 				},
 				DeleteCharacter: func(packet worldproto.CharacterDeletePacket) worldentry.DeleteResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					if !hasTicket {
 						return worldentry.DeleteResult{Accepted: false}
 					}
@@ -244,6 +267,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					return worldentry.DeleteResult{Accepted: true, Index: deletedIndex}
 				},
 				SelectCharacter: func(index uint8) worldentry.Result {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					if !hasTicket || int(index) >= len(sessionTicket.Characters) {
 						return worldentry.Result{Accepted: false}
 					}
@@ -261,6 +287,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					}
 				},
 				EnterGame: func() worldentry.EnterGameResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
 						return worldentry.EnterGameResult{}
 					}
@@ -280,7 +309,24 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					}
 					if !joinedSharedWorld {
 						var existingPeers []loginticket.Character
-						sharedWorldID, existingPeers = sharedWorld.Join(selected, pending)
+						sharedWorldID, existingPeers = sharedWorld.Join(selected, pending, func(mapIndex uint32, x int32, y int32) bool {
+							stateMu.Lock()
+							defer stateMu.Unlock()
+
+							updatedCharacters, updatedSelected, ok := selectedCharacterLocationUpdate(sessionTicket.Characters, selectedIndex, mapIndex, x, y)
+							if !ok || !joinedSharedWorld || sharedWorldID == 0 {
+								return false
+							}
+							if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+								return false
+							}
+							if !sharedWorld.Relocate(sharedWorldID, updatedSelected) {
+								_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
+								return false
+							}
+							sessionTicket.Characters = updatedCharacters
+							return true
+						})
 						joinedSharedWorld = sharedWorldID != 0
 						for _, peer := range existingPeers {
 							frames = append(frames, encodePeerVisibilityFrames(peer)...)
@@ -291,6 +337,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 			},
 			Game: gameflow.Config{
 				HandleMove: func(packet movep.MovePacket) gameflow.Result {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					updatedCharacters, selected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedIndex, packet.X, packet.Y)
 					if !ok {
 						return gameflow.Result{Accepted: false}
@@ -306,6 +355,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					return gameflow.Result{Accepted: true, Replication: ack}
 				},
 				HandleSyncPosition: func(packet movep.SyncPositionPacket) gameflow.SyncPositionResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
 						return gameflow.SyncPositionResult{Accepted: false}
 					}
@@ -334,6 +386,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					return gameflow.SyncPositionResult{Accepted: false}
 				},
 				HandleChat: func(packet chatproto.ClientChatPacket) gameflow.ChatResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
 						return gameflow.ChatResult{Accepted: false}
 					}
@@ -376,6 +431,9 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 					}
 				},
 				HandleWhisper: func(packet chatproto.ClientWhisperPacket) gameflow.WhisperResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
 					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
 						return gameflow.WhisperResult{Accepted: false}
 					}
@@ -396,9 +454,13 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 			},
 		})
 		return newQueuedSessionFlow(inner, pending, func() {
-			if joinedSharedWorld {
-				sharedWorld.Leave(sharedWorldID)
-				joinedSharedWorld = false
+			stateMu.Lock()
+			leaveID := sharedWorldID
+			shouldLeave := joinedSharedWorld
+			joinedSharedWorld = false
+			stateMu.Unlock()
+			if shouldLeave {
+				sharedWorld.Leave(leaveID)
 			}
 		})
 	}
@@ -532,6 +594,34 @@ func updateSelectedCharacterPosition(store accountstore.Store, login string, emp
 	if !saveAccountSnapshot(store, login, empire, updatedCharacters) {
 		return nil, loginticket.Character{}, false
 	}
+	return updatedCharacters, selected, true
+}
+
+func updateSelectedCharacterLocation(store accountstore.Store, login string, empire uint8, characters []loginticket.Character, selectedIndex uint8, mapIndex uint32, x int32, y int32) ([]loginticket.Character, loginticket.Character, bool) {
+	updatedCharacters, selected, ok := selectedCharacterLocationUpdate(characters, selectedIndex, mapIndex, x, y)
+	if !ok {
+		return nil, loginticket.Character{}, false
+	}
+	if !saveAccountSnapshot(store, login, empire, updatedCharacters) {
+		return nil, loginticket.Character{}, false
+	}
+	return updatedCharacters, selected, true
+}
+
+func selectedCharacterLocationUpdate(characters []loginticket.Character, selectedIndex uint8, mapIndex uint32, x int32, y int32) ([]loginticket.Character, loginticket.Character, bool) {
+	index := int(selectedIndex)
+	if index < 0 || index >= len(characters) || mapIndex == 0 {
+		return nil, loginticket.Character{}, false
+	}
+	selected := characters[index]
+	if selected.ID == 0 {
+		return nil, loginticket.Character{}, false
+	}
+	updatedCharacters := cloneCharacters(characters)
+	selected.MapIndex = mapIndex
+	selected.X = x
+	selected.Y = y
+	updatedCharacters[index] = selected
 	return updatedCharacters, selected, true
 }
 

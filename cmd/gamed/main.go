@@ -34,7 +34,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	opsHandler := ops.NewPprofMuxWithLocalNotice("gamed", gameRuntime.BroadcastNotice)
+	opsHandler := ops.NewPprofMuxWithLocalRelocation("gamed", gameRuntime.BroadcastNotice, gameRuntime.RelocateCharacter)
 	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {
 		logger.Error("service stopped with error", "err", err)
 		fmt.Fprintln(os.Stderr, err)
