@@ -294,6 +294,60 @@ func TestHandleClientFrameRoutesCharacterCreateThenSelectToGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsClientVersionDuringLoadingBeforeEnterGame(t *testing.T) {
+	flow := NewFlow(testConfig())
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if flow.CurrentPhase() != session.PhaseLoading {
+		t.Fatalf("expected phase %q before client version, got %q", session.PhaseLoading, flow.CurrentPhase())
+	}
+
+	clientVersionRaw, err := control.EncodeClientVersion(control.ClientVersionPacket{ExecutableName: "metin2client.bin", Timestamp: "1215955205"})
+	if err != nil {
+		t.Fatalf("unexpected client version encode error: %v", err)
+	}
+	clientVersionOut, err := flow.HandleClientFrame(decodeSingleFrame(t, clientVersionRaw))
+	if err != nil {
+		t.Fatalf("unexpected client version error: %v", err)
+	}
+	if len(clientVersionOut) != 0 {
+		t.Fatalf("expected no outgoing client version frames, got %d", len(clientVersionOut))
+	}
+	if flow.CurrentPhase() != session.PhaseLoading {
+		t.Fatalf("expected phase %q after client version, got %q", session.PhaseLoading, flow.CurrentPhase())
+	}
+
+	enterGameOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected game phase encode error: %v", err)
+	}
+	if len(enterGameOut) != 1 || !bytes.Equal(enterGameOut[0], wantPhaseGame) {
+		t.Fatalf("unexpected entergame output after client version: got %x want %x", enterGameOut, wantPhaseGame)
+	}
+}
+
 func TestHandleClientFrameRoutesMoveInGame(t *testing.T) {
 	flow := NewFlow(testConfig())
 	if _, err := flow.Start(); err != nil {

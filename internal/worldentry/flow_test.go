@@ -210,6 +210,27 @@ func TestHandleClientFrameReturnsVisibleWorldBootstrapAfterEnterGame(t *testing.
 	}
 }
 
+func TestHandleClientFrameAcceptsClientVersionInLoadingAndKeepsThePhase(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseLoading)
+	flow := NewFlow(machine, Config{})
+
+	clientVersionRaw, err := control.EncodeClientVersion(control.ClientVersionPacket{ExecutableName: "metin2client.bin", Timestamp: "1215955205"})
+	if err != nil {
+		t.Fatalf("unexpected client version encode error: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, clientVersionRaw))
+	if err != nil {
+		t.Fatalf("unexpected client version error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseLoading {
+		t.Fatalf("expected phase %q, got %q", session.PhaseLoading, machine.Current())
+	}
+}
+
 func TestHandleClientFrameKeepsTheSessionInSelectWhenCharacterSelectionFails(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseSelect)
 	flow := NewFlow(machine, Config{

@@ -16,26 +16,30 @@ const (
 	HeaderKeyResponse          uint16 = 0x000A
 	HeaderKeyChallenge         uint16 = 0x000B
 	HeaderKeyComplete          uint16 = 0x000C
+	HeaderClientVersion        uint16 = 0x000D
 	HeaderStateChecker         uint16 = 0x000F
 	HeaderRespondChannelStatus uint16 = 0x0010
 	ChannelStatusNormal        uint8  = 1
 
-	keySize                = 32
-	challengeSize          = 32
-	challengeResponseSize  = 32
-	encryptedTokenSize     = 48
-	nonceSize              = 24
-	channelStatusSize      = 3
-	channelStatusCountSize = 4
-	keyChallengePayloadLen = keySize + challengeSize + 4
-	keyResponsePayloadLen  = keySize + challengeResponseSize
-	keyCompletePayloadLen  = encryptedTokenSize + nonceSize
+	keySize                 = 32
+	challengeSize           = 32
+	challengeResponseSize   = 32
+	encryptedTokenSize      = 48
+	nonceSize               = 24
+	clientVersionFieldSize  = 33
+	channelStatusSize       = 3
+	channelStatusCountSize  = 4
+	keyChallengePayloadLen  = keySize + challengeSize + 4
+	keyResponsePayloadLen   = keySize + challengeResponseSize
+	keyCompletePayloadLen   = encryptedTokenSize + nonceSize
+	clientVersionPayloadLen = clientVersionFieldSize * 2
 )
 
 var (
 	ErrUnexpectedHeader  = errors.New("unexpected control packet header")
 	ErrInvalidPayload    = errors.New("invalid control packet payload")
 	ErrUnknownPhaseValue = errors.New("unknown phase value")
+	ErrStringTooLong     = errors.New("string does not fit fixed-width wire field")
 )
 
 type PhasePacket struct {
@@ -44,6 +48,11 @@ type PhasePacket struct {
 
 type PingPacket struct {
 	ServerTime uint32
+}
+
+type ClientVersionPacket struct {
+	ExecutableName string
+	Timestamp      string
 }
 
 type KeyChallengePacket struct {
@@ -113,6 +122,30 @@ func DecodePing(f frame.Frame) (PingPacket, error) {
 
 func EncodePong() []byte {
 	return frame.Encode(HeaderPong, nil)
+}
+
+func EncodeClientVersion(packet ClientVersionPacket) ([]byte, error) {
+	payload := make([]byte, clientVersionPayloadLen)
+	if err := putFixedString(payload[:clientVersionFieldSize], packet.ExecutableName); err != nil {
+		return nil, err
+	}
+	if err := putFixedString(payload[clientVersionFieldSize:], packet.Timestamp); err != nil {
+		return nil, err
+	}
+	return frame.Encode(HeaderClientVersion, payload), nil
+}
+
+func DecodeClientVersion(f frame.Frame) (ClientVersionPacket, error) {
+	if f.Header != HeaderClientVersion {
+		return ClientVersionPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientVersionPayloadLen {
+		return ClientVersionPacket{}, ErrInvalidPayload
+	}
+	return ClientVersionPacket{
+		ExecutableName: parseFixedString(f.Payload[:clientVersionFieldSize]),
+		Timestamp:      parseFixedString(f.Payload[clientVersionFieldSize:]),
+	}, nil
 }
 
 func EncodeStateChecker() []byte {
@@ -249,6 +282,25 @@ func DecodeKeyComplete(f frame.Frame) (KeyCompletePacket, error) {
 	copy(packet.Nonce[:], f.Payload[encryptedTokenSize:])
 
 	return packet, nil
+}
+
+func putFixedString(dst []byte, value string) error {
+	if len(value) > len(dst) {
+		return ErrStringTooLong
+	}
+	copy(dst, value)
+	return nil
+}
+
+func parseFixedString(src []byte) string {
+	end := len(src)
+	for i, b := range src {
+		if b == 0 {
+			end = i
+			break
+		}
+	}
+	return string(src[:end])
 }
 
 func encodePhaseValue(phase session.Phase) (byte, error) {

@@ -305,6 +305,42 @@ func TestDecodeKeyCompleteReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeClientVersionRoundTripsFilenameAndTimestamp(t *testing.T) {
+	raw, err := EncodeClientVersion(ClientVersionPacket{ExecutableName: "metin2client.bin", Timestamp: "1215955205"})
+	if err != nil {
+		t.Fatalf("unexpected client version encode error: %v", err)
+	}
+
+	decoder := frame.NewDecoder(1024)
+	frames, err := decoder.Feed(raw)
+	if err != nil {
+		t.Fatalf("unexpected frame decode error: %v", err)
+	}
+	if len(frames) != 1 {
+		t.Fatalf("expected 1 frame, got %d", len(frames))
+	}
+
+	packet, err := DecodeClientVersion(frames[0])
+	if err != nil {
+		t.Fatalf("unexpected client version decode error: %v", err)
+	}
+	if packet.ExecutableName != "metin2client.bin" {
+		t.Fatalf("unexpected executable name: got %q want %q", packet.ExecutableName, "metin2client.bin")
+	}
+	if packet.Timestamp != "1215955205" {
+		t.Fatalf("unexpected timestamp: got %q want %q", packet.Timestamp, "1215955205")
+	}
+}
+
+func TestDecodeClientVersionRejectsInvalidPayloadLength(t *testing.T) {
+	badFrame := frame.Frame{Header: HeaderClientVersion, Length: 69, Payload: make([]byte, 65)}
+
+	_, err := DecodeClientVersion(badFrame)
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func sequentialBytes32(start byte) [32]byte {
 	var out [32]byte
 	for i := range out {

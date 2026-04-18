@@ -137,24 +137,31 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, ErrUnexpectedClientPacket
 		}
 	case session.PhaseLoading:
-		if in.Header != worldproto.HeaderEnterGame {
+		switch in.Header {
+		case control.HeaderClientVersion:
+			if _, err := control.DecodeClientVersion(in); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		case worldproto.HeaderEnterGame:
+			if err := worldproto.DecodeEnterGame(in); err != nil {
+				return nil, err
+			}
+			phaseGame, err := control.EncodePhase(session.PhaseGame)
+			if err != nil {
+				return nil, err
+			}
+			if err := f.machine.Transition(session.PhaseGame); err != nil {
+				return nil, err
+			}
+			result := f.enterGame()
+			out := make([][]byte, 0, 1+len(result.Frames))
+			out = append(out, phaseGame)
+			out = append(out, result.Frames...)
+			return out, nil
+		default:
 			return nil, ErrUnexpectedClientPacket
 		}
-		if err := worldproto.DecodeEnterGame(in); err != nil {
-			return nil, err
-		}
-		phaseGame, err := control.EncodePhase(session.PhaseGame)
-		if err != nil {
-			return nil, err
-		}
-		if err := f.machine.Transition(session.PhaseGame); err != nil {
-			return nil, err
-		}
-		result := f.enterGame()
-		out := make([][]byte, 0, 1+len(result.Frames))
-		out = append(out, phaseGame)
-		out = append(out, result.Frames...)
-		return out, nil
 	default:
 		return nil, ErrInvalidPhase
 	}
