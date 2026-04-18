@@ -47,6 +47,25 @@ var (
 
 type loginKeyGenerator func() (uint32, error)
 
+type gameRuntime struct {
+	sessionFactory service.SessionFactory
+	sharedWorld    *sharedWorldRegistry
+}
+
+func (r *gameRuntime) SessionFactory() service.SessionFactory {
+	if r == nil {
+		return nil
+	}
+	return r.sessionFactory
+}
+
+func (r *gameRuntime) BroadcastNotice(message string) int {
+	if r == nil || r.sharedWorld == nil {
+		return 0
+	}
+	return r.sharedWorld.EnqueueSystemNotice(message)
+}
+
 func NewAuthSessionFactory() service.SessionFactory {
 	return newAuthSessionFactoryWithAccountStore(
 		loginticket.NewFileStore(defaultTicketStoreDir()),
@@ -96,18 +115,34 @@ func newAuthSessionFactoryWithAccountStore(store loginticket.Store, accounts acc
 }
 
 func NewGameSessionFactory(cfg config.Service) (service.SessionFactory, error) {
-	return newGameSessionFactoryWithAccountStore(
+	runtime, err := newGameRuntimeWithAccountStore(
 		cfg,
 		loginticket.NewFileStore(defaultTicketStoreDir()),
 		accountstore.NewFileStore(defaultAccountStoreDir()),
 	)
+	if err != nil {
+		return nil, err
+	}
+	return runtime.SessionFactory(), nil
 }
 
 func newGameSessionFactory(cfg config.Service, store loginticket.Store) (service.SessionFactory, error) {
-	return newGameSessionFactoryWithAccountStore(cfg, store, nil)
+	runtime, err := newGameRuntimeWithAccountStore(cfg, store, nil)
+	if err != nil {
+		return nil, err
+	}
+	return runtime.SessionFactory(), nil
 }
 
 func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store) (service.SessionFactory, error) {
+	runtime, err := newGameRuntimeWithAccountStore(cfg, store, accounts)
+	if err != nil {
+		return nil, err
+	}
+	return runtime.SessionFactory(), nil
+}
+
+func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store) (*gameRuntime, error) {
 	advertisedPort, err := parsePort(cfg.LegacyAddr)
 	if err != nil {
 		return nil, err
@@ -122,8 +157,9 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
 	}
 	sharedWorld := newSharedWorldRegistry()
+	runtime := &gameRuntime{sharedWorld: sharedWorld}
 
-	return func() service.SessionFlow {
+	runtime.sessionFactory = func() service.SessionFlow {
 		var sessionTicket loginticket.Ticket
 		var hasTicket bool
 		var selectedIndex uint8
@@ -357,7 +393,8 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 				joinedSharedWorld = false
 			}
 		})
-	}, nil
+	}
+	return runtime, nil
 }
 
 func parsePort(addr string) (uint16, error) {

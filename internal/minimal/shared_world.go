@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
@@ -262,6 +263,29 @@ func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byt
 		return true
 	}
 	return false
+}
+
+func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
+	if r == nil || message == "" {
+		return 0
+	}
+
+	noticeRaw := chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeNotice,
+		VID:     0,
+		Empire:  0,
+		Message: message,
+	})
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delivered := 0
+	for _, session := range r.sessions {
+		session.pending.enqueue([][]byte{noticeRaw})
+		delivered++
+	}
+	return delivered
 }
 
 func charactersShareVisibleWorld(left loginticket.Character, right loginticket.Character) bool {

@@ -704,6 +704,64 @@ func TestNewGameSessionFactoryRejectsClientOriginatedNoticeChat(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeBroadcastNoticeQueuesSystemMessageToConnectedSessions(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+
+	delivered := runtime.BroadcastNotice("server maintenance")
+	if delivered != 2 {
+		t.Fatalf("expected notice to be queued for 2 connected sessions, got %d", delivered)
+	}
+
+	noticeOne := flushServerFrames(t, flowOne)
+	if len(noticeOne) != 1 {
+		t.Fatalf("expected 1 queued server notice for first player, got %d", len(noticeOne))
+	}
+	decodedOne, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, noticeOne[0]))
+	if err != nil {
+		t.Fatalf("decode first server notice: %v", err)
+	}
+	if decodedOne.Type != chatproto.ChatTypeNotice || decodedOne.VID != 0 || decodedOne.Message != "server maintenance" {
+		t.Fatalf("unexpected first server notice: %+v", decodedOne)
+	}
+
+	noticeTwo := flushServerFrames(t, flowTwo)
+	if len(noticeTwo) != 1 {
+		t.Fatalf("expected 1 queued server notice for second player, got %d", len(noticeTwo))
+	}
+	decodedTwo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, noticeTwo[0]))
+	if err != nil {
+		t.Fatalf("decode second server notice: %v", err)
+	}
+	if decodedTwo.Type != chatproto.ChatTypeNotice || decodedTwo.VID != 0 || decodedTwo.Message != "server maintenance" {
+		t.Fatalf("unexpected second server notice: %+v", decodedTwo)
+	}
+}
+
+func TestGameRuntimeBroadcastNoticeRejectsEmptyMessage(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if delivered := runtime.BroadcastNotice(""); delivered != 0 {
+		t.Fatalf("expected empty notice to queue for 0 sessions, got %d", delivered)
+	}
+}
+
 func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
