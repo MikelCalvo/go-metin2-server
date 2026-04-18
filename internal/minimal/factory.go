@@ -305,12 +305,6 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 					case chatproto.ChatTypeInfo:
 						return gameflow.ChatResult{Accepted: true, Delivery: ticketSystemChatDeliveryPacket(packet)}
-					case chatproto.ChatTypeNotice:
-						chatDelivery := ticketSystemChatDeliveryPacket(packet)
-						if joinedSharedWorld {
-							sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
-						}
-						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 					default:
 						return gameflow.ChatResult{Accepted: false}
 					}
