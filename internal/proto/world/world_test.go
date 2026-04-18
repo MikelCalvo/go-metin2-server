@@ -90,6 +90,27 @@ func TestDecodeCharacterCreateReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeCharacterDeleteBuildsAClientFrame(t *testing.T) {
+	want := expectedCharacterDeleteFrame(CharacterDeletePacket{Index: 1, PrivateCode: "1234567"})
+	got, err := EncodeCharacterDelete(CharacterDeletePacket{Index: 1, PrivateCode: "1234567"})
+	if err != nil {
+		t.Fatalf("unexpected encode error: %v", err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected character delete frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeCharacterDeleteReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeCharacterDelete(decodeSingleFrame(t, expectedCharacterDeleteFrame(CharacterDeletePacket{Index: 1, PrivateCode: "1234567"})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.Index != 1 || packet.PrivateCode != "1234567" {
+		t.Fatalf("unexpected delete packet: %+v", packet)
+	}
+}
+
 func TestEncodeEnterGameBuildsAHeaderOnlyClientFrame(t *testing.T) {
 	want := loadHexFixture(t, "entergame-frame.hex")
 	got := EncodeEnterGame()
@@ -207,6 +228,38 @@ func TestDecodePlayerCreateFailureReturnsExpectedType(t *testing.T) {
 	}
 	if packet.Type != 1 {
 		t.Fatalf("unexpected failure type: got %d want %d", packet.Type, 1)
+	}
+}
+
+func TestEncodePlayerDeleteSuccessBuildsAServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderPlayerDeleteSuccess, []byte{1})
+	got := EncodePlayerDeleteSuccess(PlayerDeleteSuccessPacket{Index: 1})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected player delete success frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodePlayerDeleteSuccessReturnsExpectedIndex(t *testing.T) {
+	packet, err := DecodePlayerDeleteSuccess(decodeSingleFrame(t, frame.Encode(HeaderPlayerDeleteSuccess, []byte{1})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.Index != 1 {
+		t.Fatalf("unexpected delete success index: got %d want %d", packet.Index, 1)
+	}
+}
+
+func TestEncodePlayerDeleteFailureBuildsAHeaderOnlyServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderPlayerDeleteFailure, nil)
+	got := EncodePlayerDeleteFailure()
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected player delete failure frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodePlayerDeleteFailureAcceptsHeaderOnlyServerFrame(t *testing.T) {
+	if err := DecodePlayerDeleteFailure(decodeSingleFrame(t, frame.Encode(HeaderPlayerDeleteFailure, nil))); err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
 	}
 }
 
@@ -353,13 +406,13 @@ func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 	}
 	return frames[0]
 }
-
 func expectedCharacterCreateFrame(packet CharacterCreatePacket) []byte {
-	payload := make([]byte, 1+CharacterNameFieldSize+2+1+4)
+	payload := make([]byte, characterCreatePayloadSize)
 	payload[0] = packet.Index
 	copy(payload[1:1+CharacterNameFieldSize], packet.Name)
-	binary.LittleEndian.PutUint16(payload[1+CharacterNameFieldSize:], packet.RaceNum)
-	offset := 1 + CharacterNameFieldSize + 2
+	offset := 1 + CharacterNameFieldSize
+	binary.LittleEndian.PutUint16(payload[offset:], packet.RaceNum)
+	offset += 2
 	payload[offset] = packet.Shape
 	offset++
 	payload[offset] = packet.Con
@@ -370,6 +423,13 @@ func expectedCharacterCreateFrame(packet CharacterCreatePacket) []byte {
 	offset++
 	payload[offset] = packet.Dex
 	return frame.Encode(HeaderCharacterCreate, payload)
+}
+
+func expectedCharacterDeleteFrame(packet CharacterDeletePacket) []byte {
+	payload := make([]byte, characterDeletePayloadSize)
+	payload[0] = packet.Index
+	copy(payload[1:], packet.PrivateCode)
+	return frame.Encode(HeaderCharacterDelete, payload)
 }
 
 func expectedCharacterAddFrame(packet CharacterAddPacket) []byte {

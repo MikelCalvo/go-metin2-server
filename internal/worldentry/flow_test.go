@@ -89,6 +89,65 @@ func TestHandleClientFrameAcceptsCharacterCreateAndStaysInSelect(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsCharacterDeleteAndStaysInSelect(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseSelect)
+	flow := NewFlow(machine, Config{
+		DeleteCharacter: func(packet worldproto.CharacterDeletePacket) DeleteResult {
+			if packet.Index != 1 || packet.PrivateCode != "1234567" {
+				t.Fatalf("unexpected delete packet: %+v", packet)
+			}
+			return DeleteResult{Accepted: true, Index: 1}
+		},
+	})
+
+	raw, err := worldproto.EncodeCharacterDelete(worldproto.CharacterDeletePacket{Index: 1, PrivateCode: "1234567"})
+	if err != nil {
+		t.Fatalf("unexpected delete encode error: %v", err)
+	}
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("unexpected delete error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	want := worldproto.EncodePlayerDeleteSuccess(worldproto.PlayerDeleteSuccessPacket{Index: 1})
+	if !bytes.Equal(out[0], want) {
+		t.Fatalf("unexpected delete success frame: got %x want %x", out[0], want)
+	}
+	if machine.Current() != session.PhaseSelect {
+		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, machine.Current())
+	}
+}
+
+func TestHandleClientFrameReturnsDeleteFailurePacketAndKeepsSelectPhase(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseSelect)
+	flow := NewFlow(machine, Config{
+		DeleteCharacter: func(worldproto.CharacterDeletePacket) DeleteResult {
+			return DeleteResult{Accepted: false}
+		},
+	})
+
+	raw, err := worldproto.EncodeCharacterDelete(worldproto.CharacterDeletePacket{Index: 1, PrivateCode: "0000000"})
+	if err != nil {
+		t.Fatalf("unexpected delete encode error: %v", err)
+	}
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("unexpected delete failure error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	want := worldproto.EncodePlayerDeleteFailure()
+	if !bytes.Equal(out[0], want) {
+		t.Fatalf("unexpected delete failure frame: got %x want %x", out[0], want)
+	}
+	if machine.Current() != session.PhaseSelect {
+		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsEmpireSelectAndStaysInSelect(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseSelect)
 	flow := NewFlow(machine, Config{

@@ -12,6 +12,7 @@ import (
 
 const (
 	HeaderCharacterCreate         uint16 = 0x0201
+	HeaderCharacterDelete         uint16 = 0x0202
 	HeaderCharacterSelect         uint16 = 0x0203
 	HeaderEnterGame               uint16 = 0x0204
 	HeaderCharacterAdd            uint16 = 0x0205
@@ -19,23 +20,28 @@ const (
 	HeaderCharacterUpdate         uint16 = 0x0209
 	HeaderPlayerCreateSuccess     uint16 = 0x020C
 	HeaderPlayerCreateFailure     uint16 = 0x020D
+	HeaderPlayerDeleteSuccess     uint16 = 0x020E
+	HeaderPlayerDeleteFailure     uint16 = 0x020F
 	HeaderMainCharacter           uint16 = 0x0210
 	HeaderPlayerPoints            uint16 = 0x0214
 	HeaderPlayerPointChange       uint16 = 0x0215
 
 	CharacterNameFieldSize      = 65
 	BGMNameFieldSize            = 25
+	PrivateCodeFieldSize        = 8
 	PointCount                  = 255
 	CharacterEquipmentPartCount = 4
 	AffectFlagCount             = 2
 
 	characterCreatePayloadSize         = 1 + CharacterNameFieldSize + 2 + 1 + 4
+	characterDeletePayloadSize         = 1 + PrivateCodeFieldSize
 	characterSelectPayloadSize         = 1
 	characterAddPayloadSize            = 34
 	characterAdditionalInfoPayloadSize = 93
 	characterUpdatePayloadSize         = 34
 	playerCreateSuccessPayloadSize     = 1 + simplePlayerPayloadSize
 	playerCreateFailurePayloadSize     = 1
+	playerDeleteSuccessPayloadSize     = 1
 	mainCharacterPayloadSize           = 114
 	playerPointsPayloadSize            = PointCount * 4
 	playerPointChangePayloadSize       = 13
@@ -59,6 +65,11 @@ type CharacterCreatePacket struct {
 	Dex     uint8
 }
 
+type CharacterDeletePacket struct {
+	Index       uint8
+	PrivateCode string
+}
+
 type CharacterSelectPacket struct {
 	Index uint8
 }
@@ -70,6 +81,10 @@ type PlayerCreateSuccessPacket struct {
 
 type PlayerCreateFailurePacket struct {
 	Type uint8
+}
+
+type PlayerDeleteSuccessPacket struct {
+	Index uint8
 }
 
 type CharacterAddPacket struct {
@@ -180,6 +195,25 @@ func DecodeCharacterCreate(f frame.Frame) (CharacterCreatePacket, error) {
 	return packet, nil
 }
 
+func EncodeCharacterDelete(packet CharacterDeletePacket) ([]byte, error) {
+	payload := make([]byte, characterDeletePayloadSize)
+	payload[0] = packet.Index
+	if err := putFixedString(payload[1:], packet.PrivateCode); err != nil {
+		return nil, err
+	}
+	return frame.Encode(HeaderCharacterDelete, payload), nil
+}
+
+func DecodeCharacterDelete(f frame.Frame) (CharacterDeletePacket, error) {
+	if f.Header != HeaderCharacterDelete {
+		return CharacterDeletePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != characterDeletePayloadSize {
+		return CharacterDeletePacket{}, ErrInvalidPayload
+	}
+	return CharacterDeletePacket{Index: f.Payload[0], PrivateCode: parseFixedString(f.Payload[1:])}, nil
+}
+
 func EncodeCharacterSelect(packet CharacterSelectPacket) []byte {
 	return frame.Encode(HeaderCharacterSelect, []byte{packet.Index})
 }
@@ -245,6 +279,34 @@ func DecodePlayerCreateFailure(f frame.Frame) (PlayerCreateFailurePacket, error)
 		return PlayerCreateFailurePacket{}, ErrInvalidPayload
 	}
 	return PlayerCreateFailurePacket{Type: f.Payload[0]}, nil
+}
+
+func EncodePlayerDeleteSuccess(packet PlayerDeleteSuccessPacket) []byte {
+	return frame.Encode(HeaderPlayerDeleteSuccess, []byte{packet.Index})
+}
+
+func DecodePlayerDeleteSuccess(f frame.Frame) (PlayerDeleteSuccessPacket, error) {
+	if f.Header != HeaderPlayerDeleteSuccess {
+		return PlayerDeleteSuccessPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != playerDeleteSuccessPayloadSize {
+		return PlayerDeleteSuccessPacket{}, ErrInvalidPayload
+	}
+	return PlayerDeleteSuccessPacket{Index: f.Payload[0]}, nil
+}
+
+func EncodePlayerDeleteFailure() []byte {
+	return frame.Encode(HeaderPlayerDeleteFailure, nil)
+}
+
+func DecodePlayerDeleteFailure(f frame.Frame) error {
+	if f.Header != HeaderPlayerDeleteFailure {
+		return ErrUnexpectedHeader
+	}
+	if len(f.Payload) != 0 {
+		return ErrInvalidPayload
+	}
+	return nil
 }
 
 func EncodeCharacterAdd(packet CharacterAddPacket) []byte {

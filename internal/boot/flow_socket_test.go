@@ -360,6 +360,48 @@ func TestBootFlowMovesInGameOverTCP(t *testing.T) {
 	}
 }
 
+func TestBootFlowDeletesCharacterInSelectOverTCP(t *testing.T) {
+	server := startBootTestServer(t, testConfig())
+	client := newBootTestClient(t, server.address())
+
+	_ = client.readFrame(t)
+	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	}))
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	client.writeFrame(t, login2Raw)
+	_ = client.readFrame(t)
+	phaseSelect := client.readFrame(t)
+	wantPhaseSelect, err := control.EncodePhase(session.PhaseSelect)
+	if err != nil {
+		t.Fatalf("unexpected select phase encode error: %v", err)
+	}
+	if !bytes.Equal(phaseSelect.Raw, wantPhaseSelect) {
+		t.Fatalf("unexpected select phase bytes: got %x want %x", phaseSelect.Raw, wantPhaseSelect)
+	}
+	_ = client.readFrame(t)
+
+	deleteRaw, err := worldproto.EncodeCharacterDelete(worldproto.CharacterDeletePacket{Index: 1, PrivateCode: "1234567"})
+	if err != nil {
+		t.Fatalf("unexpected delete encode error: %v", err)
+	}
+	client.writeFrame(t, deleteRaw)
+	deleteSuccess := client.readFrame(t)
+	wantDelete := worldproto.EncodePlayerDeleteSuccess(worldproto.PlayerDeleteSuccessPacket{Index: 1})
+	if !bytes.Equal(deleteSuccess.Raw, wantDelete) {
+		t.Fatalf("unexpected delete success bytes: got %x want %x", deleteSuccess.Raw, wantDelete)
+	}
+	if got := server.currentPhase(); got != session.PhaseSelect {
+		t.Fatalf("expected server phase %q after delete, got %q", session.PhaseSelect, got)
+	}
+}
+
 func TestBootFlowAcceptsClientVersionDuringLoadingOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testConfig())
 	client := newBootTestClient(t, server.address())

@@ -294,6 +294,43 @@ func TestHandleClientFrameRoutesCharacterCreateThenSelectToGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameRoutesCharacterDeleteInSelect(t *testing.T) {
+	flow := NewFlow(testConfig())
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+
+	deleteRaw, err := worldproto.EncodeCharacterDelete(worldproto.CharacterDeletePacket{Index: 1, PrivateCode: "1234567"})
+	if err != nil {
+		t.Fatalf("unexpected delete encode error: %v", err)
+	}
+	deleteOut, err := flow.HandleClientFrame(decodeSingleFrame(t, deleteRaw))
+	if err != nil {
+		t.Fatalf("unexpected delete error: %v", err)
+	}
+	wantDelete := worldproto.EncodePlayerDeleteSuccess(worldproto.PlayerDeleteSuccessPacket{Index: 1})
+	if len(deleteOut) != 1 || !bytes.Equal(deleteOut[0], wantDelete) {
+		t.Fatalf("unexpected delete output: got %x want %x", deleteOut, wantDelete)
+	}
+	if flow.CurrentPhase() != session.PhaseSelect {
+		t.Fatalf("expected phase %q after delete, got %q", session.PhaseSelect, flow.CurrentPhase())
+	}
+}
+
 func TestHandleClientFrameAcceptsClientVersionDuringLoadingBeforeEnterGame(t *testing.T) {
 	flow := NewFlow(testConfig())
 	if _, err := flow.Start(); err != nil {
@@ -525,6 +562,12 @@ func testConfig() Config {
 					return worldentry.CreateResult{Accepted: false, FailureType: 0}
 				}
 				return worldentry.CreateResult{Accepted: true, Player: worldproto.PlayerCreateSuccessPacket{Index: 2, Player: sampleCreatedPlayer()}}
+			},
+			DeleteCharacter: func(packet worldproto.CharacterDeletePacket) worldentry.DeleteResult {
+				if packet.Index != 1 || packet.PrivateCode != "1234567" {
+					return worldentry.DeleteResult{Accepted: false}
+				}
+				return worldentry.DeleteResult{Accepted: true, Index: 1}
 			},
 			SelectCharacter: func(index uint8) worldentry.Result {
 				if index == 2 {

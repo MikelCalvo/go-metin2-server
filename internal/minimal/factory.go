@@ -178,6 +178,20 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 						Player:   ticketPlayerCreateSuccessPacket(created, packet.Index, advertisedAddr, advertisedPort),
 					}
 				},
+				DeleteCharacter: func(packet worldproto.CharacterDeletePacket) worldentry.DeleteResult {
+					if !hasTicket {
+						return worldentry.DeleteResult{Accepted: false}
+					}
+					updatedCharacters, deletedIndex, ok := deleteCharacterFromTicket(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, packet)
+					if !ok {
+						return worldentry.DeleteResult{Accepted: false}
+					}
+					sessionTicket.Characters = updatedCharacters
+					if hasSelected && selectedIndex == deletedIndex {
+						hasSelected = false
+					}
+					return worldentry.DeleteResult{Accepted: true, Index: deletedIndex}
+				},
 				SelectCharacter: func(index uint8) worldentry.Result {
 					if !hasTicket || int(index) >= len(sessionTicket.Characters) {
 						return worldentry.Result{Accepted: false}
@@ -340,6 +354,25 @@ func saveAccountSnapshot(store accountstore.Store, login string, empire uint8, c
 		return true
 	}
 	return store.Save(accountstore.Account{Login: login, Empire: empire, Characters: cloneCharacters(characters)}) == nil
+}
+
+func deleteCharacterFromTicket(store accountstore.Store, login string, empire uint8, characters []loginticket.Character, packet worldproto.CharacterDeletePacket) ([]loginticket.Character, uint8, bool) {
+	index := int(packet.Index)
+	if index < 0 || index >= len(characters) {
+		return nil, 0, false
+	}
+	if strings.TrimSpace(packet.PrivateCode) == "" {
+		return nil, 0, false
+	}
+	if characters[index].ID == 0 {
+		return nil, 0, false
+	}
+	updatedCharacters := cloneCharacters(characters)
+	updatedCharacters[index] = loginticket.Character{}
+	if !saveAccountSnapshot(store, login, empire, updatedCharacters) {
+		return nil, 0, false
+	}
+	return updatedCharacters, packet.Index, true
 }
 
 func updateSelectedCharacterPosition(store accountstore.Store, login string, empire uint8, characters []loginticket.Character, selectedIndex uint8, x int32, y int32) ([]loginticket.Character, loginticket.Character, bool) {

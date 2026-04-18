@@ -350,6 +350,68 @@ func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryDeletesCharacterAndPersistsTheEmptySlot(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: stubCharacters()}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	if _, err := flow.Start(); err != nil {
+		t.Fatalf("unexpected start error: %v", err)
+	}
+	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected handshake error: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+
+	deleteRaw, err := worldproto.EncodeCharacterDelete(worldproto.CharacterDeletePacket{Index: 1, PrivateCode: "1234567"})
+	if err != nil {
+		t.Fatalf("encode character delete: %v", err)
+	}
+	deleteOut, err := flow.HandleClientFrame(decodeSingleFrame(t, deleteRaw))
+	if err != nil {
+		t.Fatalf("unexpected character delete error: %v", err)
+	}
+	if len(deleteOut) != 1 {
+		t.Fatalf("expected 1 delete frame, got %d", len(deleteOut))
+	}
+	deleted, err := worldproto.DecodePlayerDeleteSuccess(decodeSingleFrame(t, deleteOut[0]))
+	if err != nil {
+		t.Fatalf("decode player delete success: %v", err)
+	}
+	if deleted.Index != 1 {
+		t.Fatalf("unexpected delete success index: got %d want %d", deleted.Index, 1)
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if account.Characters[1] != (loginticket.Character{}) {
+		t.Fatalf("expected deleted slot to be empty, got %+v", account.Characters[1])
+	}
+	if account.Characters[0].Name != "MkmkWar" {
+		t.Fatalf("expected other slot to stay intact, got %+v", account.Characters[0])
+	}
+}
+
 func TestNewGameSessionFactoryReturnsVisibleWorldBootstrapForCreatedCharacter(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: stubCharacters()}); err != nil {

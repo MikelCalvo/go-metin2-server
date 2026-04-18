@@ -21,6 +21,8 @@ type EmpireSelectFunc func(empire uint8) EmpireResult
 
 type CreateCharacterFunc func(worldproto.CharacterCreatePacket) CreateResult
 
+type DeleteCharacterFunc func(worldproto.CharacterDeletePacket) DeleteResult
+
 type SelectCharacterFunc func(index uint8) Result
 
 type EnterGameFunc func() EnterGameResult
@@ -28,6 +30,7 @@ type EnterGameFunc func() EnterGameResult
 type Config struct {
 	SelectEmpire    EmpireSelectFunc
 	CreateCharacter CreateCharacterFunc
+	DeleteCharacter DeleteCharacterFunc
 	SelectCharacter SelectCharacterFunc
 	EnterGame       EnterGameFunc
 }
@@ -41,6 +44,11 @@ type CreateResult struct {
 	Accepted    bool
 	FailureType uint8
 	Player      worldproto.PlayerCreateSuccessPacket
+}
+
+type DeleteResult struct {
+	Accepted bool
+	Index    uint8
 }
 
 type Result struct {
@@ -57,6 +65,7 @@ type Flow struct {
 	machine         *session.StateMachine
 	selectEmpire    EmpireSelectFunc
 	createCharacter CreateCharacterFunc
+	deleteCharacter DeleteCharacterFunc
 	selectCharacter SelectCharacterFunc
 	enterGame       EnterGameFunc
 }
@@ -72,6 +81,12 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 			return CreateResult{Accepted: false, FailureType: 0}
 		}
 	}
+	deleter := cfg.DeleteCharacter
+	if deleter == nil {
+		deleter = func(worldproto.CharacterDeletePacket) DeleteResult {
+			return DeleteResult{Accepted: false}
+		}
+	}
 	selector := cfg.SelectCharacter
 	if selector == nil {
 		selector = func(uint8) Result { return Result{Accepted: false} }
@@ -80,7 +95,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if enterGame == nil {
 		enterGame = func() EnterGameResult { return EnterGameResult{} }
 	}
-	return &Flow{machine: machine, selectEmpire: empireSelector, createCharacter: creator, selectCharacter: selector, enterGame: enterGame}
+	return &Flow{machine: machine, selectEmpire: empireSelector, createCharacter: creator, deleteCharacter: deleter, selectCharacter: selector, enterGame: enterGame}
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
@@ -111,6 +126,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 				return nil, err
 			}
 			return [][]byte{success}, nil
+		case worldproto.HeaderCharacterDelete:
+			packet, err := worldproto.DecodeCharacterDelete(in)
+			if err != nil {
+				return nil, err
+			}
+			result := f.deleteCharacter(packet)
+			if !result.Accepted {
+				return [][]byte{worldproto.EncodePlayerDeleteFailure()}, nil
+			}
+			return [][]byte{worldproto.EncodePlayerDeleteSuccess(worldproto.PlayerDeleteSuccessPacket{Index: result.Index})}, nil
 		case worldproto.HeaderCharacterSelect:
 			packet, err := worldproto.DecodeCharacterSelect(in)
 			if err != nil {
