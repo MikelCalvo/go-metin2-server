@@ -789,6 +789,188 @@ func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.
 	}
 }
 
+func TestSharedWorldRegistryRelocateRebuildsVisibilityAcrossMaps(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	pendingOne := newPendingServerFrames()
+	pendingTwo := newPendingServerFrames()
+	pendingThree := newPendingServerFrames()
+
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+
+	_, _ = registry.Join(peerOne, pendingOne)
+	idTwo, _ := registry.Join(peerTwo, pendingTwo)
+	_, _ = registry.Join(peerThree, pendingThree)
+	_ = pendingOne.flush()
+	_ = pendingTwo.flush()
+	_ = pendingThree.flush()
+
+	peerTwo.MapIndex = 42
+	peerTwo.X = 1700
+	peerTwo.Y = 2800
+	if !registry.Relocate(idTwo, peerTwo) {
+		t.Fatal("expected relocate to succeed")
+	}
+
+	oldPeerFrames := pendingOne.flush()
+	if len(oldPeerFrames) != 1 {
+		t.Fatalf("expected 1 queued old-peer visibility frame, got %d", len(oldPeerFrames))
+	}
+	oldPeerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, oldPeerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode old-peer delete: %v", err)
+	}
+	if oldPeerDelete.VID != peerTwo.VID {
+		t.Fatalf("expected old peer delete for VID %#08x, got %#08x", peerTwo.VID, oldPeerDelete.VID)
+	}
+
+	moverFrames := pendingTwo.flush()
+	if len(moverFrames) != 4 {
+		t.Fatalf("expected 4 queued mover visibility-rebuild frames, got %d", len(moverFrames))
+	}
+	moverDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, moverFrames[0]))
+	if err != nil {
+		t.Fatalf("decode mover delete: %v", err)
+	}
+	if moverDelete.VID != peerOne.VID {
+		t.Fatalf("expected mover delete for old peer VID %#08x, got %#08x", peerOne.VID, moverDelete.VID)
+	}
+	moverAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moverFrames[1]))
+	if err != nil {
+		t.Fatalf("decode mover peer add: %v", err)
+	}
+	if moverAdd.VID != peerThree.VID || moverAdd.X != peerThree.X || moverAdd.Y != peerThree.Y {
+		t.Fatalf("unexpected mover peer add packet: %+v", moverAdd)
+	}
+	moverInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moverFrames[2]))
+	if err != nil {
+		t.Fatalf("decode mover peer additional info: %v", err)
+	}
+	if moverInfo.VID != peerThree.VID || moverInfo.Name != peerThree.Name {
+		t.Fatalf("unexpected mover peer additional info packet: %+v", moverInfo)
+	}
+	moverUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, moverFrames[3]))
+	if err != nil {
+		t.Fatalf("decode mover peer update: %v", err)
+	}
+	if moverUpdate.VID != peerThree.VID {
+		t.Fatalf("expected mover peer update for VID %#08x, got %#08x", peerThree.VID, moverUpdate.VID)
+	}
+
+	newPeerFrames := pendingThree.flush()
+	if len(newPeerFrames) != 3 {
+		t.Fatalf("expected 3 queued new-peer visibility frames, got %d", len(newPeerFrames))
+	}
+	newPeerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, newPeerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode new-peer add: %v", err)
+	}
+	if newPeerAdd.VID != peerTwo.VID || newPeerAdd.X != peerTwo.X || newPeerAdd.Y != peerTwo.Y {
+		t.Fatalf("unexpected new-peer add packet: %+v", newPeerAdd)
+	}
+	newPeerInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, newPeerFrames[1]))
+	if err != nil {
+		t.Fatalf("decode new-peer additional info: %v", err)
+	}
+	if newPeerInfo.VID != peerTwo.VID || newPeerInfo.Name != peerTwo.Name {
+		t.Fatalf("unexpected new-peer additional info packet: %+v", newPeerInfo)
+	}
+	newPeerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, newPeerFrames[2]))
+	if err != nil {
+		t.Fatalf("decode new-peer update: %v", err)
+	}
+	if newPeerUpdate.VID != peerTwo.VID {
+		t.Fatalf("expected new-peer update for VID %#08x, got %#08x", peerTwo.VID, newPeerUpdate.VID)
+	}
+}
+
+func TestSharedWorldRegistryRelocateUsesPreviousVIDForOldPeerDelete(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	pendingOne := newPendingServerFrames()
+	pendingTwo := newPendingServerFrames()
+	pendingThree := newPendingServerFrames()
+
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+
+	_, _ = registry.Join(peerOne, pendingOne)
+	idTwo, _ := registry.Join(peerTwo, pendingTwo)
+	_, _ = registry.Join(peerThree, pendingThree)
+	_ = pendingOne.flush()
+	_ = pendingTwo.flush()
+	_ = pendingThree.flush()
+
+	relocated := peerTwo
+	relocated.VID = 0x0badf00d
+	relocated.MapIndex = 42
+	if !registry.Relocate(idTwo, relocated) {
+		t.Fatal("expected relocate to succeed")
+	}
+
+	oldPeerFrames := pendingOne.flush()
+	if len(oldPeerFrames) != 1 {
+		t.Fatalf("expected 1 queued old-peer delete frame, got %d", len(oldPeerFrames))
+	}
+	oldPeerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, oldPeerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode old-peer delete: %v", err)
+	}
+	if oldPeerDelete.VID != peerTwo.VID {
+		t.Fatalf("expected old peer delete for previous VID %#08x, got %#08x", peerTwo.VID, oldPeerDelete.VID)
+	}
+}
+
+func TestSharedWorldRegistryRelocateUpdatesSnapshotWithoutVisibilityRebuildOnSameMap(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	pendingOne := newPendingServerFrames()
+	pendingTwo := newPendingServerFrames()
+
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+
+	_, _ = registry.Join(peerOne, pendingOne)
+	idTwo, _ := registry.Join(peerTwo, pendingTwo)
+	_ = pendingOne.flush()
+	_ = pendingTwo.flush()
+
+	peerTwo.X = 1700
+	peerTwo.Y = 2800
+	if !registry.Relocate(idTwo, peerTwo) {
+		t.Fatal("expected relocate to succeed")
+	}
+	if queued := pendingOne.flush(); len(queued) != 0 {
+		t.Fatalf("expected no old-peer rebuild frames on same-map relocate, got %d", len(queued))
+	}
+	if queued := pendingTwo.flush(); len(queued) != 0 {
+		t.Fatalf("expected no mover rebuild frames on same-map relocate, got %d", len(queued))
+	}
+
+	pendingThree := newPendingServerFrames()
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	_, existing := registry.Join(peerThree, pendingThree)
+	if len(existing) != 2 {
+		t.Fatalf("expected 2 existing peers for later join, got %d", len(existing))
+	}
+
+	foundRelocatedPeer := false
+	for _, existingCharacter := range existing {
+		if existingCharacter.VID != peerTwo.VID {
+			continue
+		}
+		foundRelocatedPeer = true
+		if existingCharacter.X != peerTwo.X || existingCharacter.Y != peerTwo.Y {
+			t.Fatalf("expected relocated peer snapshot at (%d, %d), got (%d, %d)", peerTwo.X, peerTwo.Y, existingCharacter.X, existingCharacter.Y)
+		}
+	}
+	if !foundRelocatedPeer {
+		t.Fatal("expected later join to see relocated peer snapshot")
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 

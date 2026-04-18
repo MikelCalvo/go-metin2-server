@@ -142,7 +142,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	}
 	delete(r.sessions, id)
 
-	removeRaw := worldproto.EncodeCharacterDeleteNotice(worldproto.CharacterDeleteNoticePacket{VID: session.character.VID})
+	removeRaw := encodeCharacterDeleteFrame(session.character)
 	for _, peer := range r.sessions {
 		if !charactersShareVisibleWorld(session.character, peer.character) {
 			continue
@@ -165,6 +165,68 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 	}
 	session.character = character
 	r.sessions[id] = session
+}
+
+func (r *sharedWorldRegistry) Relocate(id uint64, character loginticket.Character) bool {
+	if r == nil || id == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	session, ok := r.sessions[id]
+	if !ok {
+		return false
+	}
+
+	previous := session.character
+	oldPeers := make(map[uint64]sharedWorldSession)
+	newPeers := make(map[uint64]sharedWorldSession)
+	for peerID, peer := range r.sessions {
+		if peerID == id {
+			continue
+		}
+		if charactersShareVisibleWorld(previous, peer.character) {
+			oldPeers[peerID] = peer
+		}
+		if charactersShareVisibleWorld(character, peer.character) {
+			newPeers[peerID] = peer
+		}
+	}
+
+	for peerID, peer := range oldPeers {
+		if _, stillVisible := newPeers[peerID]; stillVisible {
+			continue
+		}
+		session.pending.enqueue([][]byte{encodeCharacterDeleteFrame(peer.character)})
+	}
+	for peerID, peer := range newPeers {
+		if _, alreadyVisible := oldPeers[peerID]; alreadyVisible {
+			continue
+		}
+		session.pending.enqueue(encodePeerVisibilityFrames(peer.character))
+	}
+
+	session.character = character
+	r.sessions[id] = session
+
+	movedDelete := encodeCharacterDeleteFrame(previous)
+	movedFrames := encodePeerVisibilityFrames(character)
+	for peerID, peer := range oldPeers {
+		if _, stillVisible := newPeers[peerID]; stillVisible {
+			continue
+		}
+		peer.pending.enqueue([][]byte{movedDelete})
+	}
+	for peerID, peer := range newPeers {
+		if _, alreadyVisible := oldPeers[peerID]; alreadyVisible {
+			continue
+		}
+		peer.pending.enqueue(movedFrames)
+	}
+
+	return true
 }
 
 func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][]byte) {
@@ -297,6 +359,10 @@ func characterMapIndex(character loginticket.Character) uint32 {
 		return bootstrapMapIndex
 	}
 	return character.MapIndex
+}
+
+func encodeCharacterDeleteFrame(character loginticket.Character) []byte {
+	return worldproto.EncodeCharacterDeleteNotice(worldproto.CharacterDeleteNoticePacket{VID: character.VID})
 }
 
 func encodePeerVisibilityFrames(character loginticket.Character) [][]byte {

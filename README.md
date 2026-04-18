@@ -22,6 +22,7 @@ Current scope of the project:
 - Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime and share the same bootstrap `MapIndex`.
 - Minimal MOVE fanout so visible peers on the same bootstrap `MapIndex` receive queued movement replication from other connected players.
 - Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players.
+- An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - Minimal local talking chat fanout so same-empire visible peers on the same bootstrap `MapIndex` receive queued `GC_CHAT` deliveries from other connected players.
 - Minimal whisper routing by exact character name across currently connected bootstrap sessions.
 - Minimal bootstrap `CHAT_TYPE_PARTY` fanout across the currently connected `GAME` sessions.
@@ -123,7 +124,7 @@ Legend:
 | Map boundaries | [~] | `MapIndex` is persisted and used for visibility/chat scoping, but there is no warp flow yet. |
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [ ] | No range-, sector-, or AOI-based visibility yet. |
-| Warp / map transfer | [ ] | No world migration or re-bootstrap path between maps yet. |
+| Warp / map transfer | [~] | A server-side visibility-rebuild primitive exists for `MapIndex` relocation, but there is no end-to-end client/server warp flow yet. |
 | Entity runtime beyond players | [ ] | No NPC, mob, item-ground, or generic entity layer yet. |
 
 ### Social, chat, and operator surfaces
@@ -222,6 +223,7 @@ Legend:
 - `spec/protocol/server-notice-broadcast.md`
 - `spec/protocol/chat-scope-first-hardening.md`
 - `spec/protocol/map-index-world-scope-hardening.md`
+- `spec/protocol/map-relocation-visibility-rebuild.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
