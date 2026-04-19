@@ -3,12 +3,34 @@ package securecipher
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
+
+func TestComputeChallengeResponseMatchesLibsodiumCryptoAuth(t *testing.T) {
+	challenge := make([]byte, 32)
+	for i := range challenge {
+		challenge[i] = byte(i)
+	}
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 32)
+	}
+	wantHex := "9297f97e0fdeab723fecc446393b98cbd7ab57c83381d36630ca620cecbd46ed"
+	want, err := hex.DecodeString(wantHex)
+	if err != nil {
+		t.Fatalf("decode expected mac: %v", err)
+	}
+
+	got := computeChallengeResponse(challenge, key)
+	if !bytes.Equal(got[:], want) {
+		t.Fatalf("unexpected challenge response: got %x want %x", got, want)
+	}
+}
 
 func TestServerAndClientSessionsCompleteSecureHandshakeAndExchangeEncryptedTraffic(t *testing.T) {
 	server := NewServerSession(ServerConfig{

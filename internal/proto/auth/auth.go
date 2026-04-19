@@ -13,7 +13,7 @@ const (
 	HeaderAuthSuccess uint16 = 0x0108
 
 	loginFieldSize    = 31
-	passwordFieldSize = 31
+	passwordFieldSize = 17
 	login3PayloadSize = loginFieldSize + passwordFieldSize
 )
 

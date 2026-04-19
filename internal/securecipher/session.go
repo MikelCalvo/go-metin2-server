@@ -325,10 +325,11 @@ func deriveSharedKeys(privateKey *ecdh.PrivateKey, peerPublicBytes []byte, clien
 }
 
 func computeChallengeResponse(challenge []byte, key []byte) [32]byte {
-	mac := hmac.New(sha512.New512_256, key)
+	mac := hmac.New(sha512.New, key)
 	_, _ = mac.Write(challenge)
+	sum := mac.Sum(nil)
 	var response [32]byte
-	copy(response[:], mac.Sum(nil))
+	copy(response[:], sum[:32])
 	return response
 }
 
