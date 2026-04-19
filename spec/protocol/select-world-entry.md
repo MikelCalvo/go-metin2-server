@@ -13,8 +13,9 @@ The goal of this slice is narrow:
 - send the minimum bootstrap packets
 - accept `ENTERGAME`
 - transition into `GAME`
+- hand off to the exact loading-to-game bootstrap burst owned by `loading-to-game-bootstrap-burst.md`
 
-It does not yet freeze the full visible-world packet set.
+It does not yet freeze the broader long-term visible-world contract beyond that current bootstrap burst.
 
 ## Covered packets
 
@@ -31,6 +32,8 @@ It does not yet freeze the full visible-world packet set.
 - `PLAYER_POINTS`
 - `CHARACTER_ADD`
 - `CHAR_ADDITIONAL_INFO`
+- `CHARACTER_UPDATE`
+- `PLAYER_POINT_CHANGE`
 
 ## Envelope
 
@@ -64,10 +67,7 @@ The current project-owned selection/world-entry flow is:
 13. the client may send `CLIENT_VERSION` metadata while staying in `LOADING`
 14. the client sends `ENTERGAME`
 15. the server transitions to `GAME`
-16. the server emits:
-   - `PHASE(GAME)`
-   - `CHARACTER_ADD`
-   - `CHAR_ADDITIONAL_INFO`
+16. the server emits the current loading-to-game bootstrap burst defined in `loading-to-game-bootstrap-burst.md`
 
 This slice keeps the bootstrap minimal on purpose:
 - no item stream is required yet

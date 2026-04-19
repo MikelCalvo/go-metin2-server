@@ -38,6 +38,14 @@ These logs are intended to help real-client debugging around:
 - selection-to-loading transition
 - loading-to-game transition
 
+When debugging the `LOADING -> GAME` boundary, the current expected server-owned burst after accepted `ENTERGAME` is:
+- `PHASE(GAME)`
+- selected-character `CHARACTER_ADD`
+- selected-character `CHAR_ADDITIONAL_INFO`
+- selected-character `CHARACTER_UPDATE`
+- selected-character `PLAYER_POINT_CHANGE`
+- then any trailing peer-visibility frames for already-visible players
+
 ## Local-only `gamed` operator endpoints
 
 These endpoints are intentionally loopback-only and exist to help inspect or steer the bootstrap runtime safely during development.

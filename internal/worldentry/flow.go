@@ -58,7 +58,8 @@ type Result struct {
 }
 
 type EnterGameResult struct {
-	Frames [][]byte
+	BootstrapFrames [][]byte
+	TrailingFrames  [][]byte
 }
 
 type Flow struct {
@@ -180,9 +181,10 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 				return nil, err
 			}
 			result := f.enterGame()
-			out := make([][]byte, 0, 1+len(result.Frames))
+			out := make([][]byte, 0, 1+len(result.BootstrapFrames)+len(result.TrailingFrames))
 			out = append(out, phaseGame)
-			out = append(out, result.Frames...)
+			out = append(out, result.BootstrapFrames...)
+			out = append(out, result.TrailingFrames...)
 			return out, nil
 		default:
 			return nil, ErrUnexpectedClientPacket

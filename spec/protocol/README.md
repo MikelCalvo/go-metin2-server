@@ -10,6 +10,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `auth-login.md` — minimal auth-server credential exchange and login-key issuance
 - `login-selection.md` — minimal login-by-key and selection-surface packet layouts
 - `select-world-entry.md` — minimal selection, loading, and enter-game packet choreography
+- `loading-to-game-bootstrap-burst.md` — exact server-owned burst emitted when `ENTERGAME` moves the session from `LOADING` to `GAME`
 - `character-delete-selection.md` — deterministic character deletion in `SELECT`
 - `client-version-loading.md` — tolerant `CLIENT_VERSION` metadata path during `LOADING`
 - `game-ping-pong.md` — minimal control-plane `PING`/`PONG` behavior once the session is in `GAME`

@@ -103,10 +103,11 @@ The server transitions the session into `GAME`, places the main actor in a minim
 Expected outcomes:
 - the client appears in-world
 - the server keeps the session stable after the transition
+- the loading-to-game bootstrap burst is deterministic: `PHASE(GAME)` then selected-character bootstrap, then any trailing peer visibility frames
 - the selected character is inserted into the visible world with deterministic bootstrap packets
 - the selected character receives a first deterministic `CHARACTER_UPDATE` refresh after the visible insert
 - the selected character receives a first deterministic `PLAYER_POINT_CHANGE` refresh during the same bootstrap burst
-- if another player is already present in the bootstrap runtime, that peer also appears via the current minimal visibility burst
+- if another player is already present in the bootstrap runtime, that peer also appears via the current minimal trailing visibility burst
 
 ## 9. Basic movement works
 The client sends a movement packet and the server processes it in the live game phase.
@@ -142,8 +143,10 @@ This document depends on:
 - `spec/protocol/frame-layout.md`
 - `spec/protocol/packet-matrix.md`
 - `spec/protocol/character-delete-selection.md`
+- `spec/protocol/loading-to-game-bootstrap-burst.md`
 - `spec/protocol/client-version-loading.md`
 - `spec/protocol/game-ping-pong.md`
+
 - `spec/protocol/shared-world-peer-visibility.md`
 - `spec/protocol/move-peer-fanout.md`
 - `spec/protocol/sync-position-peer-fanout.md`

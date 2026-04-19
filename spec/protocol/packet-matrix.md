@@ -42,7 +42,7 @@ Status values:
 | `CHARACTER_CREATE` | client -> server | `0x0201` | select | documented | create character request |
 | `CHARACTER_DELETE` | client -> server | `0x0202` | select | documented | delete character request with private-code field |
 | `CHARACTER_SELECT` | client -> server | `0x0203` | select | documented | choose active character |
-| `ENTERGAME` | client -> server | `0x0204` | loading | documented | enter-world request |
+| `ENTERGAME` | client -> server | `0x0204` | loading | documented | accepted request; current exact `LOADING -> GAME` burst is frozen by `loading-to-game-bootstrap-burst.md` |
 | `CHARACTER_ADD` | server -> client | `0x0205` | game bootstrap/visibility | documented | used for the selected-character bootstrap and for peer visibility |
 | `CHAR_ADDITIONAL_INFO` | server -> client | `0x0207` | game bootstrap/visibility | documented | metadata companion for visible player inserts |
 | `CHARACTER_DEL` | server -> client | `0x0208` | game visibility | documented | removes a visible peer by `vid` when that actor leaves the local world |

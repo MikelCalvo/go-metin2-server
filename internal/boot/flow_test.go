@@ -616,7 +616,7 @@ func testVisibleWorldConfig() Config {
 		infoRaw, _ := worldproto.EncodeCharacterAdditionalInfo(sampleVisibleCharacterAdditionalInfoPacket())
 		updateRaw := worldproto.EncodeCharacterUpdate(sampleVisibleCharacterUpdatePacket())
 		pointChangeRaw := worldproto.EncodePlayerPointChange(sampleVisiblePlayerPointChangePacket())
-		return worldentry.EnterGameResult{Frames: [][]byte{addRaw, infoRaw, updateRaw, pointChangeRaw}}
+		return worldentry.EnterGameResult{BootstrapFrames: [][]byte{addRaw, infoRaw, updateRaw, pointChangeRaw}}
 	}
 	return cfg
 }

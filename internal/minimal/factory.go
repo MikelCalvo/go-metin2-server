@@ -402,12 +402,13 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if err != nil {
 						return worldentry.EnterGameResult{}
 					}
-					frames := [][]byte{
+					bootstrapFrames := [][]byte{
 						worldproto.EncodeCharacterAdd(ticketCharacterAddPacket(selected)),
 						infoRaw,
 						worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(selected)),
 						worldproto.EncodePlayerPointChange(ticketPlayerPointChangePacket(selected)),
 					}
+					var trailingFrames [][]byte
 					if !joinedSharedWorld {
 						var existingPeers []loginticket.Character
 						sharedWorldID, existingPeers = sharedWorld.Join(selected, pending, func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
@@ -417,10 +418,10 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						})
 						joinedSharedWorld = sharedWorldID != 0
 						for _, peer := range existingPeers {
-							frames = append(frames, encodePeerVisibilityFrames(peer)...)
+							trailingFrames = append(trailingFrames, encodePeerVisibilityFrames(peer)...)
 						}
 					}
-					return worldentry.EnterGameResult{Frames: frames}
+					return worldentry.EnterGameResult{BootstrapFrames: bootstrapFrames, TrailingFrames: trailingFrames}
 				},
 			},
 			Game: gameflow.Config{

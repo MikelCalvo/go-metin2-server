@@ -18,7 +18,7 @@ Current scope of the project:
 - A tolerant `CLIENT_VERSION` metadata path accepted during `LOADING` before `ENTERGAME`.
 - A tolerant `PONG` control path accepted in `GAME` for server-driven ping probes.
 - Character deletion on the selection surface with deterministic success/failure responses.
-- A first visible-world bootstrap that inserts the selected character into the game world after `ENTERGAME`.
+- A first exact loading-to-game bootstrap burst after `ENTERGAME`: `PHASE(GAME)`, selected-character `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`, `PLAYER_POINT_CHANGE`, then any trailing peer visibility frames.
 - Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime and share the same bootstrap `MapIndex`.
 - Minimal MOVE fanout so visible peers on the same bootstrap `MapIndex` receive queued movement replication from other connected players.
 - Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players.

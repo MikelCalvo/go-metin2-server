@@ -233,16 +233,20 @@ func TestHandleClientFrameReturnsToGameWhenEnterGameArrivesInLoading(t *testing.
 	}
 }
 
-func TestHandleClientFrameReturnsVisibleWorldBootstrapAfterEnterGame(t *testing.T) {
+func TestHandleClientFrameReturnsBootstrapBurstThenTrailingFramesAfterEnterGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseLoading)
 	addRaw := worldproto.EncodeCharacterAdd(sampleCharacterAdd())
 	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(sampleCharacterAdditionalInfo())
 	if err != nil {
 		t.Fatalf("encode additional info: %v", err)
 	}
+	peerAddRaw := worldproto.EncodeCharacterAdd(samplePeerCharacterAdd())
 	flow := NewFlow(machine, Config{
 		EnterGame: func() EnterGameResult {
-			return EnterGameResult{Frames: [][]byte{addRaw, infoRaw}}
+			return EnterGameResult{
+				BootstrapFrames: [][]byte{addRaw, infoRaw},
+				TrailingFrames:  [][]byte{peerAddRaw},
+			}
 		},
 	})
 
@@ -255,7 +259,7 @@ func TestHandleClientFrameReturnsVisibleWorldBootstrapAfterEnterGame(t *testing.
 	if err != nil {
 		t.Fatalf("unexpected phase encode error: %v", err)
 	}
-	want := [][]byte{wantPhase, addRaw, infoRaw}
+	want := [][]byte{wantPhase, addRaw, infoRaw, peerAddRaw}
 	if len(out) != len(want) {
 		t.Fatalf("expected %d outgoing frames, got %d", len(want), len(out))
 	}
@@ -405,6 +409,22 @@ func sampleCharacterAdd() worldproto.CharacterAddPacket {
 		AttackSpeed: 100,
 		StateFlag:   2,
 		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
+	}
+}
+
+func samplePeerCharacterAdd() worldproto.CharacterAddPacket {
+	return worldproto.CharacterAddPacket{
+		VID:         0x05060708,
+		Angle:       45,
+		X:           1500,
+		Y:           2500,
+		Z:           0,
+		Type:        6,
+		RaceNum:     3,
+		MovingSpeed: 140,
+		AttackSpeed: 95,
+		StateFlag:   1,
+		AffectFlags: [worldproto.AffectFlagCount]uint32{0x33333333, 0x44444444},
 	}
 }
 
