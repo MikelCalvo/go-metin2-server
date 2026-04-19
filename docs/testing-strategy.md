@@ -82,6 +82,9 @@ Manual validation should confirm:
 - the client does not hang or disconnect unexpectedly
 - `pprof` and logs remain usable when the server is under interaction
 
+The reusable manual checklist for current real-client coverage lives at:
+- `docs/qa/manual-client-checklist.md`
+
 Manual validation must be documented in commit messages, issue notes, or follow-up docs when it proves something important.
 
 ## Test-first rule

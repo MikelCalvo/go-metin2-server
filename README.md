@@ -203,6 +203,7 @@ Legend:
 
 - `docs/workflow.md`
 - `docs/testing-strategy.md`
+- `docs/qa/manual-client-checklist.md`
 - `docs/clean-room-policy.md`
 - `docs/development.md`
 - `docs/debugging-and-profiling.md`
