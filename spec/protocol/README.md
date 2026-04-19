@@ -7,9 +7,12 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `session-phases.md` — working session model and allowed transitions
 - `frame-layout.md` — stream envelope and control-packet framing assumptions
 - `control-handshake.md` — control-plane packet layouts for phase, ping, pong, and key exchange
+- `client-subsystems.md` — observed behavioral differences among the main stream, auth connector, and state checker
 - `auth-login.md` — minimal auth-server credential exchange and login-key issuance
+- `client-auth-and-selection-flow.md` — client-side auth-to-select choreography and selection-surface gotchas
 - `login-selection.md` — minimal login-by-key and selection-surface packet layouts
 - `select-world-entry.md` — minimal selection, loading, and enter-game packet choreography
+- `client-game-entry-sequence.md` — client-side loading, enter-game, self bootstrap, and early movement expectations
 - `loading-to-game-bootstrap-burst.md` — exact server-owned burst emitted when `ENTERGAME` moves the session from `LOADING` to `GAME`
 - `character-delete-selection.md` — deterministic character deletion in `SELECT`
 - `client-version-loading.md` — tolerant `CLIENT_VERSION` metadata path during `LOADING`

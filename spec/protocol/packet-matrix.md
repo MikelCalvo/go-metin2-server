@@ -14,11 +14,13 @@ Status values:
 | --- | --- | --- | --- | --- | --- |
 | `PONG` | client -> server | `0x0006` | handshake/game control | documented | accepted as a header-only reply to server `PING`; phase-stable in `HANDSHAKE` and `GAME` |
 | `PING` | server -> client | `0x0007` | handshake/game control | documented | carries `server_time`; current slice freezes the codec and the matching `PONG` reply path |
-| `PHASE` | server -> client | `0x0008` | control | documented | phase transition control packet |
+| `PHASE` | server -> client | `0x0008` | control | documented | phase transition control packet; on the main game socket the observed client bootstrap expects `PHASE(HANDSHAKE)` before the first `KEY_CHALLENGE` |
 | `KEY_RESPONSE` | client -> server | `0x000A` | handshake | documented | cryptographic response path |
-| `KEY_CHALLENGE` | server -> client | `0x000B` | handshake | documented | challenge + server key material |
+| `KEY_CHALLENGE` | server -> client | `0x000B` | handshake | documented | challenge + server key material; authd may send it immediately after connect, while the main game socket should follow the observed `PHASE(HANDSHAKE)` prelude |
 | `KEY_COMPLETE` | server -> client | `0x000C` | handshake | documented | completes key exchange |
 | `CLIENT_VERSION` | client -> server | `0x000D` | loading | documented | accepted as metadata in `LOADING`; no server response and no phase transition |
+| `STATE_CHECKER` | client -> server | `0x000F` | control probe | documented | separate channel-status probe socket; header-only request outside the normal login/game choreography |
+| `RESPOND_CHANNELSTATUS` | server -> client | `0x0010` | control probe | documented | channel-status response consumed by the dedicated state-checker client path |
 
 ## Authentication and selection surface
 

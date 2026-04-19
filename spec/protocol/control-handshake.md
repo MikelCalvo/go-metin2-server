@@ -89,21 +89,43 @@ Notes:
 - `encrypted_token` is an XChaCha20-Poly1305 ciphertext of a 32-byte session token using the server->client session key
 - `nonce` is the 24-byte XChaCha20-Poly1305 nonce used for that one-time token encryption
 
-## Working handshake flow
+## Working handshake flows
 
-The current server-owned handshake flow is:
+The project now treats the secure handshake as one shared packet family with subsystem-specific socket choreography.
 
-1. the TCP session starts in `HANDSHAKE`
-2. the server generates a fresh X25519 keypair and challenge, then emits `KEY_CHALLENGE`
-3. the client may emit `PONG` at any time during `HANDSHAKE`; it is accepted but does not advance the phase
-4. the client emits `KEY_RESPONSE`
-5. the server derives libsodium-compatible session keys from X25519 shared secret + BLAKE2b, then verifies the HMAC challenge response
-6. if the response is accepted, the server emits plaintext `KEY_COMPLETE`
-7. the server transitions the session to `LOGIN`
-8. the server emits encrypted `PHASE(LOGIN)`
-9. subsequent legacy traffic is encrypted with XChaCha20 stream mode using directional fixed nonces:
+### Main game socket (`CPythonNetworkStream`)
+
+Observed compatibility-safe flow:
+
+1. the TCP session starts in the client offline handler
+2. the server emits plaintext `PHASE(HANDSHAKE)`
+3. the server emits `KEY_CHALLENGE`
+4. the client may emit `PONG` at any time during `HANDSHAKE`; it is accepted but does not advance the phase
+5. the client emits `KEY_RESPONSE`
+6. the server derives libsodium-compatible session keys from X25519 shared secret + BLAKE2b, then verifies the HMAC challenge response
+7. if the response is accepted, the server emits plaintext `KEY_COMPLETE`
+8. the server transitions the session to `LOGIN`
+9. the server emits encrypted `PHASE(LOGIN)`
+10. subsequent legacy traffic is encrypted with XChaCha20 stream mode using directional fixed nonces:
    - server -> client nonce prefix `0x01`
    - client -> server nonce prefix `0x02`
+
+### Auth socket (`AccountConnector`)
+
+Observed compatibility-safe flow:
+
+1. the TCP session is already in the auth connector handshake state after connect
+2. the server emits `KEY_CHALLENGE`
+3. the client emits `KEY_RESPONSE`
+4. the server emits plaintext `KEY_COMPLETE`
+5. the server transitions the auth connector to `AUTH`
+6. the server emits encrypted `PHASE(AUTH)`
+7. the client emits `LOGIN3`
+
+### State-checker socket (`ServerStateChecker`)
+
+This socket does not participate in the normal secure login/game handshake path.
+It should be treated as a separate control probe that sends `STATE_CHECKER` immediately after connect and waits for `RESPOND_CHANNELSTATUS`.
 
 ## Slice scope
 
