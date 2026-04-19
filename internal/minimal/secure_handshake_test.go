@@ -16,19 +16,26 @@ type secureHandshakeTestFlow interface {
 
 func secureHandshakeResponseFromStartFrames(t *testing.T, startOut [][]byte) []byte {
 	t.Helper()
-	if len(startOut) != 1 {
-		t.Fatalf("expected 1 start frame, got %d", len(startOut))
+
+	for _, raw := range startOut {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != control.HeaderKeyChallenge {
+			continue
+		}
+		challenge, err := control.DecodeKeyChallenge(frame)
+		if err != nil {
+			t.Fatalf("decode key challenge: %v", err)
+		}
+		client := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
+		response, err := client.HandleKeyChallenge(challenge)
+		if err != nil {
+			t.Fatalf("handle key challenge: %v", err)
+		}
+		return control.EncodeKeyResponse(response)
 	}
-	challenge, err := control.DecodeKeyChallenge(decodeSingleFrame(t, startOut[0]))
-	if err != nil {
-		t.Fatalf("decode key challenge: %v", err)
-	}
-	client := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
-	response, err := client.HandleKeyChallenge(challenge)
-	if err != nil {
-		t.Fatalf("handle key challenge: %v", err)
-	}
-	return control.EncodeKeyResponse(response)
+
+	t.Fatalf("expected a key challenge start frame, got %d start frames", len(startOut))
+	return nil
 }
 
 func mustCompleteSecureHandshake(t *testing.T, flow secureHandshakeTestFlow) [][]byte {

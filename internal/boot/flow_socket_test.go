@@ -11,15 +11,30 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
+func expectBootHandshakeStart(t *testing.T, client *bootTestClient, challenge control.KeyChallengePacket) {
+	t.Helper()
+
+	phaseHandshake := client.readFrame(t)
+	wantPhaseHandshake, err := control.EncodePhase(session.PhaseHandshake)
+	if err != nil {
+		t.Fatalf("unexpected handshake phase encode error: %v", err)
+	}
+	if !bytes.Equal(phaseHandshake.Raw, wantPhaseHandshake) {
+		t.Fatalf("unexpected handshake phase bytes: got %x want %x", phaseHandshake.Raw, wantPhaseHandshake)
+	}
+
+	challengeFrame := client.readFrame(t)
+	wantChallenge := control.EncodeKeyChallenge(challenge)
+	if !bytes.Equal(challengeFrame.Raw, wantChallenge) {
+		t.Fatalf("unexpected key challenge bytes: got %x want %x", challengeFrame.Raw, wantChallenge)
+	}
+}
+
 func TestBootFlowCompletesHandshakeAndLoginOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testConfig())
 	client := newBootTestClient(t, server.address())
 
-	challenge := client.readFrame(t)
-	wantChallenge := control.EncodeKeyChallenge(testConfig().Handshake.KeyChallenge)
-	if !bytes.Equal(challenge.Raw, wantChallenge) {
-		t.Fatalf("unexpected key challenge bytes: got %x want %x", challenge.Raw, wantChallenge)
-	}
+	expectBootHandshakeStart(t, client, testConfig().Handshake.KeyChallenge)
 
 	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
 		ClientPublicKey:   sequentialBytes32(0x40),
@@ -85,11 +100,7 @@ func TestBootFlowRespondsToStateCheckerProbeOverTCP(t *testing.T) {
 	server := startBootTestServer(t, cfg)
 	client := newBootTestClient(t, server.address())
 
-	challenge := client.readFrame(t)
-	wantChallenge := control.EncodeKeyChallenge(cfg.Handshake.KeyChallenge)
-	if !bytes.Equal(challenge.Raw, wantChallenge) {
-		t.Fatalf("unexpected key challenge bytes: got %x want %x", challenge.Raw, wantChallenge)
-	}
+	expectBootHandshakeStart(t, client, cfg.Handshake.KeyChallenge)
 
 	client.writeFrame(t, control.EncodeStateChecker())
 
@@ -117,11 +128,7 @@ func TestBootFlowEntersGameOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testConfig())
 	client := newBootTestClient(t, server.address())
 
-	challenge := client.readFrame(t)
-	wantChallenge := control.EncodeKeyChallenge(testConfig().Handshake.KeyChallenge)
-	if !bytes.Equal(challenge.Raw, wantChallenge) {
-		t.Fatalf("unexpected key challenge bytes: got %x want %x", challenge.Raw, wantChallenge)
-	}
+	expectBootHandshakeStart(t, client, testConfig().Handshake.KeyChallenge)
 
 	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
 		ClientPublicKey:   sequentialBytes32(0x40),
@@ -219,11 +226,7 @@ func TestBootFlowCreatesCharacterAndEntersGameOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testConfig())
 	client := newBootTestClient(t, server.address())
 
-	challenge := client.readFrame(t)
-	wantChallenge := control.EncodeKeyChallenge(testConfig().Handshake.KeyChallenge)
-	if !bytes.Equal(challenge.Raw, wantChallenge) {
-		t.Fatalf("unexpected key challenge bytes: got %x want %x", challenge.Raw, wantChallenge)
-	}
+	expectBootHandshakeStart(t, client, testConfig().Handshake.KeyChallenge)
 	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
 		ClientPublicKey:   sequentialBytes32(0x40),
 		ChallengeResponse: sequentialBytes32(0x60),
@@ -320,7 +323,7 @@ func TestBootFlowMovesInGameOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testConfig())
 	client := newBootTestClient(t, server.address())
 
-	_ = client.readFrame(t)
+	expectBootHandshakeStart(t, client, testConfig().Handshake.KeyChallenge)
 	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
 		ClientPublicKey:   sequentialBytes32(0x40),
 		ChallengeResponse: sequentialBytes32(0x60),
@@ -364,7 +367,7 @@ func TestBootFlowDeletesCharacterInSelectOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testConfig())
 	client := newBootTestClient(t, server.address())
 
-	_ = client.readFrame(t)
+	expectBootHandshakeStart(t, client, testConfig().Handshake.KeyChallenge)
 	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
 		ClientPublicKey:   sequentialBytes32(0x40),
 		ChallengeResponse: sequentialBytes32(0x60),
@@ -406,7 +409,7 @@ func TestBootFlowAcceptsClientVersionDuringLoadingOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testConfig())
 	client := newBootTestClient(t, server.address())
 
-	_ = client.readFrame(t)
+	expectBootHandshakeStart(t, client, testConfig().Handshake.KeyChallenge)
 	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
 		ClientPublicKey:   sequentialBytes32(0x40),
 		ChallengeResponse: sequentialBytes32(0x60),
@@ -457,7 +460,7 @@ func TestBootFlowSynchronizesInGameOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testConfig())
 	client := newBootTestClient(t, server.address())
 
-	_ = client.readFrame(t)
+	expectBootHandshakeStart(t, client, testConfig().Handshake.KeyChallenge)
 	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
 		ClientPublicKey:   sequentialBytes32(0x40),
 		ChallengeResponse: sequentialBytes32(0x60),
@@ -501,7 +504,7 @@ func TestBootFlowReturnsVisibleWorldBootstrapOverTCP(t *testing.T) {
 	server := startBootTestServer(t, testVisibleWorldConfig())
 	client := newBootTestClient(t, server.address())
 
-	_ = client.readFrame(t)
+	expectBootHandshakeStart(t, client, testVisibleWorldConfig().Handshake.KeyChallenge)
 	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
 		ClientPublicKey:   sequentialBytes32(0x40),
 		ChallengeResponse: sequentialBytes32(0x60),

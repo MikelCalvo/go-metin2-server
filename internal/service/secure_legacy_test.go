@@ -22,6 +22,28 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
+func readBootHandshakeStartChallenge(t *testing.T, client *secureLegacyTestClient) control.KeyChallengePacket {
+	t.Helper()
+
+	phaseHandshakeRaw := client.readExact(t, 5)
+	phaseHandshakeFrame := decodeSingleLegacyFrame(t, phaseHandshakeRaw)
+	phaseHandshake, err := control.DecodePhase(phaseHandshakeFrame)
+	if err != nil {
+		t.Fatalf("decode handshake phase: %v", err)
+	}
+	if phaseHandshake.Phase != session.PhaseHandshake {
+		t.Fatalf("expected phase %q, got %q", session.PhaseHandshake, phaseHandshake.Phase)
+	}
+
+	challengeRaw := client.readExact(t, 72)
+	challengeFrame := decodeSingleLegacyFrame(t, challengeRaw)
+	challenge, err := control.DecodeKeyChallenge(challengeFrame)
+	if err != nil {
+		t.Fatalf("decode key challenge: %v", err)
+	}
+	return challenge
+}
+
 func TestServeLegacyRejectsPlaintextPostHandshakeFramePipelinedAfterKeyResponse(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -70,12 +92,7 @@ func TestServeLegacyRejectsPlaintextPostHandshakeFramePipelinedAfterKeyResponse(
 	client := newSecureLegacyTestClient(t, conn)
 	secureClient := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
 
-	challengeRaw := client.readExact(t, 72)
-	challengeFrame := decodeSingleLegacyFrame(t, challengeRaw)
-	challenge, err := control.DecodeKeyChallenge(challengeFrame)
-	if err != nil {
-		t.Fatalf("decode key challenge: %v", err)
-	}
+	challenge := readBootHandshakeStartChallenge(t, client)
 	response, err := secureClient.HandleKeyChallenge(challenge)
 	if err != nil {
 		t.Fatalf("handle key challenge: %v", err)
@@ -166,12 +183,7 @@ func TestServeLegacyRejectsBufferedPlaintextPostHandshakeFrameAfterKeyResponse(t
 	client := newSecureLegacyTestClient(t, conn)
 	secureClient := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
 
-	challengeRaw := client.readExact(t, 72)
-	challengeFrame := decodeSingleLegacyFrame(t, challengeRaw)
-	challenge, err := control.DecodeKeyChallenge(challengeFrame)
-	if err != nil {
-		t.Fatalf("decode key challenge: %v", err)
-	}
+	challenge := readBootHandshakeStartChallenge(t, client)
 	response, err := secureClient.HandleKeyChallenge(challenge)
 	if err != nil {
 		t.Fatalf("handle key challenge: %v", err)
@@ -262,12 +274,7 @@ func TestServeLegacySupportsSecureBootHandshakeAndEncryptedLogin(t *testing.T) {
 	client := newSecureLegacyTestClient(t, conn)
 	secureClient := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
 
-	challengeRaw := client.readExact(t, 72)
-	challengeFrame := decodeSingleLegacyFrame(t, challengeRaw)
-	challenge, err := control.DecodeKeyChallenge(challengeFrame)
-	if err != nil {
-		t.Fatalf("decode key challenge: %v", err)
-	}
+	challenge := readBootHandshakeStartChallenge(t, client)
 
 	response, err := secureClient.HandleKeyChallenge(challenge)
 	if err != nil {

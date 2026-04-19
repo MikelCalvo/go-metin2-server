@@ -17,7 +17,7 @@ import (
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 )
 
-func TestStartBeginsWithTheHandshakeChallenge(t *testing.T) {
+func TestStartAdvertisesHandshakePhaseBeforeTheHandshakeChallenge(t *testing.T) {
 	flow := NewFlow(testConfig())
 
 	out, err := flow.Start()
@@ -25,13 +25,20 @@ func TestStartBeginsWithTheHandshakeChallenge(t *testing.T) {
 		t.Fatalf("unexpected start error: %v", err)
 	}
 
-	want := control.EncodeKeyChallenge(testConfig().Handshake.KeyChallenge)
-	if len(out) != 1 {
-		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	wantPhaseHandshake, err := control.EncodePhase(session.PhaseHandshake)
+	if err != nil {
+		t.Fatalf("unexpected phase encode error: %v", err)
+	}
+	wantChallenge := control.EncodeKeyChallenge(testConfig().Handshake.KeyChallenge)
+	want := [][]byte{wantPhaseHandshake, wantChallenge}
+	if len(out) != len(want) {
+		t.Fatalf("expected %d outgoing frames, got %d", len(want), len(out))
 	}
 
-	if !bytes.Equal(out[0], want) {
-		t.Fatalf("unexpected key challenge bytes: got %x want %x", out[0], want)
+	for i := range want {
+		if !bytes.Equal(out[i], want[i]) {
+			t.Fatalf("unexpected start frame %d: got %x want %x", i, out[i], want[i])
+		}
 	}
 
 	if flow.CurrentPhase() != session.PhaseHandshake {

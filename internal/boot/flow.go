@@ -65,7 +65,15 @@ func (f *Flow) Start() ([][]byte, error) {
 		return nil, f.configErr
 	}
 
-	return f.handshake.Start()
+	phaseHandshake, err := control.EncodePhase(session.PhaseHandshake)
+	if err != nil {
+		return nil, err
+	}
+	handshakeOut, err := f.handshake.Start()
+	if err != nil {
+		return nil, err
+	}
+	return append([][]byte{phaseHandshake}, handshakeOut...), nil
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {

@@ -258,8 +258,19 @@ func TestNewGameSessionFactoryRespondsToStateCheckerDuringHandshake(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected start error: %v", err)
 	}
-	if len(startOut) != 1 {
-		t.Fatalf("expected 1 handshake start frame, got %d", len(startOut))
+	if len(startOut) != 2 {
+		t.Fatalf("expected 2 handshake start frames, got %d", len(startOut))
+	}
+
+	phaseHandshake, err := control.EncodePhase(session.PhaseHandshake)
+	if err != nil {
+		t.Fatalf("unexpected handshake phase encode error: %v", err)
+	}
+	if got := decodeSingleFrame(t, startOut[0]); got.Header != control.HeaderPhase || !bytes.Equal(startOut[0], phaseHandshake) {
+		t.Fatalf("unexpected handshake phase frame: got %x want %x", startOut[0], phaseHandshake)
+	}
+	if got := decodeSingleFrame(t, startOut[1]); got.Header != control.HeaderKeyChallenge {
+		t.Fatalf("expected key challenge header 0x%04x, got 0x%04x", control.HeaderKeyChallenge, got.Header)
 	}
 
 	out, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeStateChecker()))
