@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -107,6 +108,11 @@ func serveLegacyConn(ctx context.Context, conn net.Conn, logger *slog.Logger, fl
 	}
 
 	for _, raw := range out {
+		if logger != nil {
+			if header, length, ok := legacyFrameSummary(raw); ok {
+				logger.Info("legacy session sent frame", "remote_addr", remoteAddr, "phase", lastPhase, "header", fmt.Sprintf("0x%04x", header), "length", length)
+			}
+		}
 		if hasSecureFlow {
 			raw, err = secureFlow.EncryptLegacyOutgoing(raw)
 			if err != nil {
@@ -147,8 +153,16 @@ func serveLegacyConn(ctx context.Context, conn net.Conn, logger *slog.Logger, fl
 			if decodeErr != nil {
 				return fmt.Errorf("decode legacy frame: %w", decodeErr)
 			}
+			if logger != nil && hasPhase && lastPhase == session.PhaseHandshake {
+				if len(frames) == 0 {
+					logger.Info("legacy session received handshake bytes without full frame", "remote_addr", remoteAddr, "bytes", len(incomingBytes), "buffered_bytes", decoder.BufferedLen())
+				}
+			}
 
 			for idx, incoming := range frames {
+				if logger != nil && hasPhase && lastPhase == session.PhaseHandshake {
+					logger.Info("legacy session received frame", "remote_addr", remoteAddr, "phase", lastPhase, "header", fmt.Sprintf("0x%04x", incoming.Header), "length", incoming.Length)
+				}
 				phaseBefore, hadPhaseBefore := currentSessionPhase(flow)
 				out, handleErr := flow.HandleClientFrame(incoming)
 				if handleErr != nil {
@@ -237,6 +251,13 @@ func currentSessionPhase(flow SessionFlow) (session.Phase, bool) {
 
 func crossedSecureLegacyBoundary(hadBefore bool, before session.Phase, hadAfter bool, after session.Phase) bool {
 	return hadBefore && hadAfter && before == session.PhaseHandshake && after != session.PhaseHandshake
+}
+
+func legacyFrameSummary(raw []byte) (uint16, uint16, bool) {
+	if len(raw) < frame.EnvelopeSize {
+		return 0, 0, false
+	}
+	return binary.LittleEndian.Uint16(raw[0:2]), binary.LittleEndian.Uint16(raw[2:4]), true
 }
 
 func writeLegacyFrame(conn net.Conn, raw []byte) error {
