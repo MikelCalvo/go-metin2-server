@@ -34,10 +34,7 @@ func TestNewAuthSessionFactoryAcceptsStubCredentials(t *testing.T) {
 		t.Fatalf("expected key challenge header 0x%04x, got 0x%04x", control.HeaderKeyChallenge, challenge.Header)
 	}
 
-	handshakeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
+	handshakeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, secureHandshakeResponseFromStartFrames(t, startOut)))
 	if err != nil {
 		t.Fatalf("unexpected handshake error: %v", err)
 	}
@@ -83,6 +80,33 @@ func TestNewAuthSessionFactoryAcceptsStubCredentials(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryExposesSecureLegacyTransportHooks(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	hooks, ok := flow.(interface {
+		EncryptLegacyOutgoing([]byte) ([]byte, error)
+		DecryptLegacyIncoming([]byte) ([]byte, error)
+	})
+	if !ok {
+		t.Fatal("expected game session flow to expose secure legacy transport hooks")
+	}
+	if _, err := hooks.EncryptLegacyOutgoing([]byte{0x01, 0x02, 0x03}); err != nil {
+		t.Fatalf("unexpected encrypt hook error: %v", err)
+	}
+	if _, err := hooks.DecryptLegacyIncoming([]byte{0x01, 0x02, 0x03}); err != nil {
+		t.Fatalf("unexpected decrypt hook error: %v", err)
+	}
+}
+
 func TestNewGameSessionFactoryAdvertisesConfiguredPublicAddrAndPort(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
@@ -95,17 +119,7 @@ func TestNewGameSessionFactoryAdvertisesConfiguredPublicAddrAndPort(t *testing.T
 	}
 
 	flow := factory()
-	if _, err := flow.Start(); err != nil {
-		t.Fatalf("unexpected start error: %v", err)
-	}
-
-	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, flow)
 
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
@@ -155,16 +169,7 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	}
 
 	flow := factory()
-	if _, err := flow.Start(); err != nil {
-		t.Fatalf("unexpected start error: %v", err)
-	}
-	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, flow)
 
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
@@ -301,16 +306,7 @@ func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	}
 
 	flow := factory()
-	if _, err := flow.Start(); err != nil {
-		t.Fatalf("unexpected start error: %v", err)
-	}
-	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, flow)
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
 		t.Fatalf("unexpected login2 encode error: %v", err)
@@ -375,16 +371,7 @@ func TestNewGameSessionFactoryDeletesCharacterAndPersistsTheEmptySlot(t *testing
 	}
 
 	flow := factory()
-	if _, err := flow.Start(); err != nil {
-		t.Fatalf("unexpected start error: %v", err)
-	}
-	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, flow)
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
 		t.Fatalf("unexpected login2 encode error: %v", err)
@@ -436,16 +423,7 @@ func TestNewGameSessionFactoryReturnsVisibleWorldBootstrapForCreatedCharacter(t 
 	}
 
 	flow := factory()
-	if _, err := flow.Start(); err != nil {
-		t.Fatalf("unexpected start error: %v", err)
-	}
-	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, flow)
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
 		t.Fatalf("unexpected login2 encode error: %v", err)
@@ -513,16 +491,7 @@ func TestNewGameSessionFactoryMovesTheSelectedCharacterInGame(t *testing.T) {
 	}
 
 	flow := factory()
-	if _, err := flow.Start(); err != nil {
-		t.Fatalf("unexpected start error: %v", err)
-	}
-	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, flow)
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
 		t.Fatalf("unexpected login2 encode error: %v", err)
@@ -565,16 +534,7 @@ func TestNewGameSessionFactorySynchronizesTheSelectedCharacterInGame(t *testing.
 	}
 
 	flow := factory()
-	if _, err := flow.Start(); err != nil {
-		t.Fatalf("unexpected start error: %v", err)
-	}
-	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, flow)
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
 		t.Fatalf("unexpected login2 encode error: %v", err)
@@ -620,16 +580,7 @@ func TestNewGameSessionFactoryMovesTheCreatedCharacterInGame(t *testing.T) {
 	}
 
 	flow := factory()
-	if _, err := flow.Start(); err != nil {
-		t.Fatalf("unexpected start error: %v", err)
-	}
-	_, err = flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, flow)
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
 	if err != nil {
 		t.Fatalf("unexpected login2 encode error: %v", err)

@@ -70,3 +70,17 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 func (f *Flow) CurrentPhase() session.Phase {
 	return f.machine.Current()
 }
+
+func (f *Flow) EncryptLegacyOutgoing(raw []byte) ([]byte, error) {
+	if f == nil || f.handshake == nil {
+		return append([]byte(nil), raw...), nil
+	}
+	return f.handshake.EncryptLegacyOutgoing(raw)
+}
+
+func (f *Flow) DecryptLegacyIncoming(raw []byte) ([]byte, error) {
+	if f == nil || f.handshake == nil {
+		return append([]byte(nil), raw...), nil
+	}
+	return f.handshake.DecryptLegacyIncoming(raw)
+}

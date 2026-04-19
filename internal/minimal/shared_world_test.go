@@ -8,7 +8,6 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
-	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
@@ -1715,12 +1714,7 @@ func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, logi
 	t.Helper()
 
 	flow := factory()
-	if _, err := flow.Start(); err != nil {
-		t.Fatalf("unexpected start error: %v", err)
-	}
-	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{}))); err != nil {
-		t.Fatalf("unexpected handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, flow)
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: login, LoginKey: loginKey})
 	if err != nil {
 		t.Fatalf("encode login2: %v", err)

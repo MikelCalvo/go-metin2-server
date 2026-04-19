@@ -47,9 +47,9 @@ Frame length:
 - `72` bytes total (`4 + 32 + 32 + 4`)
 
 Notes:
-- `server_public_key` is the server key material exposed to the client for the handshake.
-- `challenge` is the server-generated challenge blob the client must answer.
-- `server_time` is compatibility data sent during the handshake and should be preserved exactly.
+- `server_public_key` is the server X25519 public key for this session.
+- `challenge` is a fresh random 32-byte server challenge.
+- `server_time` is compatibility data sent during the handshake and preserved on the wire.
 
 ### `KEY_RESPONSE`
 
@@ -67,8 +67,8 @@ Frame length:
 - `68` bytes total (`4 + 32 + 32`)
 
 Notes:
-- this packet carries the client contribution to the key exchange plus the challenge answer material
-- the server session layer will validate it in a later slice
+- this packet carries the client X25519 public key plus the challenge answer material
+- `challenge_response` is HMAC-SHA512/256 over the server challenge using the client->server session key derived from the X25519+BLAKE2b key exchange
 
 ### `KEY_COMPLETE`
 
@@ -86,29 +86,31 @@ Frame length:
 - `76` bytes total (`4 + 48 + 24`)
 
 Notes:
-- `encrypted_token` is preserved here as opaque compatibility bytes
-- cryptographic validation and token semantics will be handled in a later slice
+- `encrypted_token` is an XChaCha20-Poly1305 ciphertext of a 32-byte session token using the server->client session key
+- `nonce` is the 24-byte XChaCha20-Poly1305 nonce used for that one-time token encryption
 
 ## Working handshake flow
 
 The current server-owned handshake flow is:
 
 1. the TCP session starts in `HANDSHAKE`
-2. the server emits `KEY_CHALLENGE`
+2. the server generates a fresh X25519 keypair and challenge, then emits `KEY_CHALLENGE`
 3. the client may emit `PONG` at any time during `HANDSHAKE`; it is accepted but does not advance the phase
 4. the client emits `KEY_RESPONSE`
-5. if the response is accepted, the server emits `KEY_COMPLETE`
-6. the server transitions the session to `LOGIN`
-7. the server emits `PHASE(LOGIN)`
+5. the server derives libsodium-compatible session keys from X25519 shared secret + BLAKE2b, then verifies the HMAC challenge response
+6. if the response is accepted, the server emits plaintext `KEY_COMPLETE`
+7. the server transitions the session to `LOGIN`
+8. the server emits encrypted `PHASE(LOGIN)`
+9. subsequent legacy traffic is encrypted with XChaCha20 stream mode using directional fixed nonces:
+   - server -> client nonce prefix `0x01`
+   - client -> server nonce prefix `0x02`
 
 ## Slice scope
 
-This slice only freezes the control-plane flow and phase transition behavior.
+This slice freezes the control-plane flow, packet layouts, and the current cryptographic contract for the secure legacy session bootstrap.
 
 It does not yet freeze:
-- real cryptographic verification of `KEY_RESPONSE`
-- socket scheduling, retries, or timeouts
-- auth-server-specific forks such as a separate `PHASE_AUTH`
-- end-to-end proof against the real client
-
-The current implementation is allowed to treat a syntactically valid `KEY_RESPONSE` as acceptable until the crypto slice lands.
+- long-term session-token semantics beyond "client must decrypt it successfully"
+- auth-server-specific policy layered on top of the shared secure transport
+- retry/backoff policy for failed handshakes
+- end-to-end proof against every client build in the wild

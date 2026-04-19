@@ -27,6 +27,13 @@ func NewDecoder(maxFrameSize uint16) *Decoder {
 	return &Decoder{maxFrameSize: maxFrameSize}
 }
 
+func (d *Decoder) BufferedLen() int {
+	if d == nil {
+		return 0
+	}
+	return len(d.buffer)
+}
+
 func Encode(header uint16, payload []byte) []byte {
 	frame := make([]byte, EnvelopeSize+len(payload))
 

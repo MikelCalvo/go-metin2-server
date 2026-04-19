@@ -64,6 +64,26 @@ func (f *queuedSessionFlow) FlushServerFrames() ([][]byte, error) {
 	return f.pending.flush(), nil
 }
 
+func (f *queuedSessionFlow) EncryptLegacyOutgoing(raw []byte) ([]byte, error) {
+	secureFlow, ok := f.inner.(interface {
+		EncryptLegacyOutgoing([]byte) ([]byte, error)
+	})
+	if !ok {
+		return append([]byte(nil), raw...), nil
+	}
+	return secureFlow.EncryptLegacyOutgoing(raw)
+}
+
+func (f *queuedSessionFlow) DecryptLegacyIncoming(raw []byte) ([]byte, error) {
+	secureFlow, ok := f.inner.(interface {
+		DecryptLegacyIncoming([]byte) ([]byte, error)
+	})
+	if !ok {
+		return append([]byte(nil), raw...), nil
+	}
+	return secureFlow.DecryptLegacyIncoming(raw)
+}
+
 func (f *queuedSessionFlow) Close() error {
 	f.closeOnce.Do(func() {
 		if f.onClose != nil {

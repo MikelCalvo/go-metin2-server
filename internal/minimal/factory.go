@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	authflow "github.com/MikelCalvo/go-metin2-server/internal/auth"
@@ -28,6 +29,7 @@ import (
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
+	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 )
@@ -187,8 +189,10 @@ func newAuthSessionFactoryWithAccountStore(store loginticket.Store, accounts acc
 	return func() service.SessionFlow {
 		return authboot.NewFlow(authboot.Config{
 			Handshake: handshake.Config{
-				KeyChallenge: defaultKeyChallenge(),
-				KeyComplete:  defaultKeyComplete(),
+				SecureSession: securecipher.NewServerSession(securecipher.ServerConfig{
+					Random:     rand.Reader,
+					ServerTime: currentServerTimeMillis,
+				}),
 			},
 			Auth: authflow.Config{
 				Authenticate: func(packet authproto.Login3Packet) authflow.Result {
@@ -290,8 +294,10 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 
 		inner := boot.NewFlow(boot.Config{
 			Handshake: handshake.Config{
-				KeyChallenge: defaultKeyChallenge(),
-				KeyComplete:  defaultKeyComplete(),
+				SecureSession: securecipher.NewServerSession(securecipher.ServerConfig{
+					Random:     rand.Reader,
+					ServerTime: currentServerTimeMillis,
+				}),
 			},
 			Login: loginflow.Config{
 				Authenticate: func(packet loginproto.Login2Packet) loginflow.Result {
@@ -1224,6 +1230,10 @@ func stubCharacters() []loginticket.Character {
 	second.Points[8] = 20
 
 	return []loginticket.Character{first, second}
+}
+
+func currentServerTimeMillis() uint32 {
+	return uint32(time.Now().UnixMilli())
 }
 
 func defaultTicketStoreDir() string {

@@ -7,7 +7,6 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
-	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
@@ -22,16 +21,7 @@ func TestAuthAndGameSessionFactoriesShareIssuedLoginTicket(t *testing.T) {
 	}
 
 	authFlow := authFactory()
-	if _, err := authFlow.Start(); err != nil {
-		t.Fatalf("unexpected auth start error: %v", err)
-	}
-	_, err = authFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected auth handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, authFlow)
 
 	login3Raw, err := authproto.EncodeLogin3(authproto.Login3Packet{Login: StubLogin, Password: StubPassword})
 	if err != nil {
@@ -54,16 +44,7 @@ func TestAuthAndGameSessionFactoriesShareIssuedLoginTicket(t *testing.T) {
 	}
 
 	gameFlow := gameFactory()
-	if _, err := gameFlow.Start(); err != nil {
-		t.Fatalf("unexpected game start error: %v", err)
-	}
-	_, err = gameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected game handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, gameFlow)
 
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: authSuccess.LoginKey})
 	if err != nil {
@@ -114,16 +95,7 @@ func TestGameSessionFactoryRejectsAConsumedLoginTicket(t *testing.T) {
 	}
 
 	authFlow := authFactory()
-	if _, err := authFlow.Start(); err != nil {
-		t.Fatalf("unexpected auth start error: %v", err)
-	}
-	_, err = authFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected auth handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, authFlow)
 	login3Raw, err := authproto.EncodeLogin3(authproto.Login3Packet{Login: StubLogin, Password: StubPassword})
 	if err != nil {
 		t.Fatalf("encode login3: %v", err)
@@ -138,16 +110,7 @@ func TestGameSessionFactoryRejectsAConsumedLoginTicket(t *testing.T) {
 	}
 
 	firstGameFlow := gameFactory()
-	if _, err := firstGameFlow.Start(); err != nil {
-		t.Fatalf("unexpected game start error: %v", err)
-	}
-	_, err = firstGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected game handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, firstGameFlow)
 	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: authSuccess.LoginKey})
 	if err != nil {
 		t.Fatalf("encode login2: %v", err)
@@ -157,16 +120,7 @@ func TestGameSessionFactoryRejectsAConsumedLoginTicket(t *testing.T) {
 	}
 
 	secondGameFlow := gameFactory()
-	if _, err := secondGameFlow.Start(); err != nil {
-		t.Fatalf("unexpected second game start error: %v", err)
-	}
-	_, err = secondGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected second game handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, secondGameFlow)
 	loginOut, err := secondGameFlow.HandleClientFrame(decodeSingleFrame(t, login2Raw))
 	if err != nil {
 		t.Fatalf("unexpected second game login error: %v", err)
@@ -199,16 +153,7 @@ func TestCreatedCharacterPersistsAcrossFreshAuthAndGameSessions(t *testing.T) {
 	}
 
 	firstAuthFlow := authFactory()
-	if _, err := firstAuthFlow.Start(); err != nil {
-		t.Fatalf("unexpected first auth start error: %v", err)
-	}
-	_, err = firstAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected first auth handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, firstAuthFlow)
 	login3Raw, err := authproto.EncodeLogin3(authproto.Login3Packet{Login: StubLogin, Password: StubPassword})
 	if err != nil {
 		t.Fatalf("encode login3: %v", err)
@@ -223,16 +168,7 @@ func TestCreatedCharacterPersistsAcrossFreshAuthAndGameSessions(t *testing.T) {
 	}
 
 	firstGameFlow := gameFactory()
-	if _, err := firstGameFlow.Start(); err != nil {
-		t.Fatalf("unexpected first game start error: %v", err)
-	}
-	_, err = firstGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected first game handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, firstGameFlow)
 	firstLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: firstAuthSuccess.LoginKey})
 	if err != nil {
 		t.Fatalf("encode first login2: %v", err)
@@ -257,16 +193,7 @@ func TestCreatedCharacterPersistsAcrossFreshAuthAndGameSessions(t *testing.T) {
 	}
 
 	secondAuthFlow := authFactory()
-	if _, err := secondAuthFlow.Start(); err != nil {
-		t.Fatalf("unexpected second auth start error: %v", err)
-	}
-	_, err = secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected second auth handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, secondAuthFlow)
 	secondAuthOut, err := secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, login3Raw))
 	if err != nil {
 		t.Fatalf("unexpected second auth error: %v", err)
@@ -277,16 +204,7 @@ func TestCreatedCharacterPersistsAcrossFreshAuthAndGameSessions(t *testing.T) {
 	}
 
 	secondGameFlow := gameFactory()
-	if _, err := secondGameFlow.Start(); err != nil {
-		t.Fatalf("unexpected second game start error: %v", err)
-	}
-	_, err = secondGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected second game handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, secondGameFlow)
 	secondLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: secondAuthSuccess.LoginKey})
 	if err != nil {
 		t.Fatalf("encode second login2: %v", err)
@@ -332,16 +250,7 @@ func TestMovedCharacterPositionPersistsAcrossFreshAuthAndGameSessions(t *testing
 	}
 
 	firstAuthFlow := authFactory()
-	if _, err := firstAuthFlow.Start(); err != nil {
-		t.Fatalf("unexpected first auth start error: %v", err)
-	}
-	_, err = firstAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected first auth handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, firstAuthFlow)
 	login3Raw, err := authproto.EncodeLogin3(authproto.Login3Packet{Login: StubLogin, Password: StubPassword})
 	if err != nil {
 		t.Fatalf("encode login3: %v", err)
@@ -356,16 +265,7 @@ func TestMovedCharacterPositionPersistsAcrossFreshAuthAndGameSessions(t *testing
 	}
 
 	firstGameFlow := gameFactory()
-	if _, err := firstGameFlow.Start(); err != nil {
-		t.Fatalf("unexpected first game start error: %v", err)
-	}
-	_, err = firstGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected first game handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, firstGameFlow)
 	firstLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: firstAuthSuccess.LoginKey})
 	if err != nil {
 		t.Fatalf("encode first login2: %v", err)
@@ -389,16 +289,7 @@ func TestMovedCharacterPositionPersistsAcrossFreshAuthAndGameSessions(t *testing
 	}
 
 	secondAuthFlow := authFactory()
-	if _, err := secondAuthFlow.Start(); err != nil {
-		t.Fatalf("unexpected second auth start error: %v", err)
-	}
-	_, err = secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected second auth handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, secondAuthFlow)
 	secondAuthOut, err := secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, login3Raw))
 	if err != nil {
 		t.Fatalf("unexpected second auth error: %v", err)
@@ -409,16 +300,7 @@ func TestMovedCharacterPositionPersistsAcrossFreshAuthAndGameSessions(t *testing
 	}
 
 	secondGameFlow := gameFactory()
-	if _, err := secondGameFlow.Start(); err != nil {
-		t.Fatalf("unexpected second game start error: %v", err)
-	}
-	_, err = secondGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected second game handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, secondGameFlow)
 	secondLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: secondAuthSuccess.LoginKey})
 	if err != nil {
 		t.Fatalf("encode second login2: %v", err)
@@ -467,16 +349,7 @@ func TestEmptyAccountRequiresEmpireSelectionBeforeCharacterCreate(t *testing.T) 
 	}
 
 	firstAuthFlow := authFactory()
-	if _, err := firstAuthFlow.Start(); err != nil {
-		t.Fatalf("unexpected first auth start error: %v", err)
-	}
-	_, err = firstAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected first auth handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, firstAuthFlow)
 	login3Raw, err := authproto.EncodeLogin3(authproto.Login3Packet{Login: StubLogin, Password: StubPassword})
 	if err != nil {
 		t.Fatalf("encode login3: %v", err)
@@ -491,16 +364,7 @@ func TestEmptyAccountRequiresEmpireSelectionBeforeCharacterCreate(t *testing.T) 
 	}
 
 	firstGameFlow := gameFactory()
-	if _, err := firstGameFlow.Start(); err != nil {
-		t.Fatalf("unexpected first game start error: %v", err)
-	}
-	_, err = firstGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected first game handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, firstGameFlow)
 	firstLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: firstAuthSuccess.LoginKey})
 	if err != nil {
 		t.Fatalf("encode first login2: %v", err)
@@ -565,16 +429,7 @@ func TestEmptyAccountRequiresEmpireSelectionBeforeCharacterCreate(t *testing.T) 
 	}
 
 	secondAuthFlow := authFactory()
-	if _, err := secondAuthFlow.Start(); err != nil {
-		t.Fatalf("unexpected second auth start error: %v", err)
-	}
-	_, err = secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected second auth handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, secondAuthFlow)
 	secondAuthOut, err := secondAuthFlow.HandleClientFrame(decodeSingleFrame(t, login3Raw))
 	if err != nil {
 		t.Fatalf("unexpected second auth error: %v", err)
@@ -585,16 +440,7 @@ func TestEmptyAccountRequiresEmpireSelectionBeforeCharacterCreate(t *testing.T) 
 	}
 
 	secondGameFlow := gameFactory()
-	if _, err := secondGameFlow.Start(); err != nil {
-		t.Fatalf("unexpected second game start error: %v", err)
-	}
-	_, err = secondGameFlow.HandleClientFrame(decodeSingleFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
-		ClientPublicKey:   sequentialBytes32(0x40),
-		ChallengeResponse: sequentialBytes32(0x60),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected second game handshake error: %v", err)
-	}
+	_ = mustCompleteSecureHandshake(t, secondGameFlow)
 	secondLogin2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: secondAuthSuccess.LoginKey})
 	if err != nil {
 		t.Fatalf("encode second login2: %v", err)

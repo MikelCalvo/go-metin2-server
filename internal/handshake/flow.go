@@ -2,9 +2,11 @@ package handshake
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
@@ -24,6 +26,7 @@ type Config struct {
 	KeyComplete       control.KeyCompletePacket
 	VerifyKeyResponse VerifyKeyResponseFunc
 	NextPhase         session.Phase
+	SecureSession     *securecipher.ServerSession
 }
 
 type Flow struct {
@@ -32,6 +35,7 @@ type Flow struct {
 	keyComplete       control.KeyCompletePacket
 	verifyKeyResponse VerifyKeyResponseFunc
 	nextPhase         session.Phase
+	secureSession     *securecipher.ServerSession
 	configErr         error
 	started           bool
 }
@@ -58,6 +62,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		keyComplete:       cfg.KeyComplete,
 		verifyKeyResponse: verify,
 		nextPhase:         nextPhase,
+		secureSession:     cfg.SecureSession,
 		configErr:         configErr,
 	}
 }
@@ -76,6 +81,13 @@ func (f *Flow) Start() ([][]byte, error) {
 	}
 
 	f.started = true
+	if f.secureSession != nil {
+		challenge, err := f.secureSession.Start()
+		if err != nil {
+			return nil, err
+		}
+		return [][]byte{control.EncodeKeyChallenge(challenge)}, nil
+	}
 	return [][]byte{control.EncodeKeyChallenge(f.keyChallenge)}, nil
 }
 
@@ -105,6 +117,25 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, err
 		}
 
+		if f.secureSession != nil {
+			complete, err := f.secureSession.HandleKeyResponse(packet)
+			if err != nil {
+				_ = f.machine.Transition(session.PhaseClose)
+				return nil, fmt.Errorf("%w: %v", ErrKeyResponseRejected, err)
+			}
+			if err := f.machine.Transition(f.nextPhase); err != nil {
+				return nil, err
+			}
+			phaseNext, err := control.EncodePhase(f.nextPhase)
+			if err != nil {
+				return nil, err
+			}
+			return [][]byte{
+				control.EncodeKeyComplete(complete),
+				phaseNext,
+			}, nil
+		}
+
 		if !f.verifyKeyResponse(packet) {
 			_ = f.machine.Transition(session.PhaseClose)
 			return nil, ErrKeyResponseRejected
@@ -130,4 +161,18 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 
 func isValidNextPhase(phase session.Phase) bool {
 	return phase == session.PhaseLogin || phase == session.PhaseAuth
+}
+
+func (f *Flow) EncryptLegacyOutgoing(raw []byte) ([]byte, error) {
+	if f == nil || f.secureSession == nil {
+		return append([]byte(nil), raw...), nil
+	}
+	return f.secureSession.EncryptOutgoing(raw)
+}
+
+func (f *Flow) DecryptLegacyIncoming(raw []byte) ([]byte, error) {
+	if f == nil || f.secureSession == nil {
+		return append([]byte(nil), raw...), nil
+	}
+	return f.secureSession.DecryptIncoming(raw)
 }

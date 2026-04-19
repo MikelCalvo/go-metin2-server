@@ -12,6 +12,7 @@ Current scope of the project:
 - Separate `authd` and `gamed` binaries from day zero.
 - A dedicated pprof/ops HTTP server for profiling goroutines, heap, allocs, mutex contention and blocking.
 - Minimal legacy TCP listeners wired into both `authd` and `gamed`.
+- A real secure legacy handshake compatible with the current local client reference: X25519+BLAKE2b session keys, HMAC-SHA512/256 challenge verification, XChaCha20-Poly1305 session token delivery, and XChaCha20-encrypted post-handshake traffic.
 - A stub-compatible binary smoke path that reaches `GAME` with the current public bootstrap flows.
 - A deterministic single-character `MOVE` round-trip wired through the current bootstrap runtime.
 - A deterministic selected-character `SYNC_POSITION` reconciliation path wired through the current bootstrap runtime.

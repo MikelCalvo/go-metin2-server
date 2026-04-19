@@ -32,6 +32,8 @@ For phase-aware flows, the legacy TCP runtime now logs:
   - includes `remote_addr`
   - includes the terminal error
 
+When a session flow exposes the secure legacy transport hooks, the runtime also decrypts incoming post-handshake bytes and encrypts outgoing post-handshake bytes transparently after the plaintext `KEY_COMPLETE` boundary.
+
 These logs are intended to help real-client debugging around:
 - handshake completion
 - auth/login handoff

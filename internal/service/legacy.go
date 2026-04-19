@@ -25,6 +25,11 @@ type ServerFrameSource interface {
 
 type SessionFactory func() SessionFlow
 
+type secureLegacySessionFlow interface {
+	EncryptLegacyOutgoing([]byte) ([]byte, error)
+	DecryptLegacyIncoming([]byte) ([]byte, error)
+}
+
 type phaseAwareSessionFlow interface {
 	CurrentPhase() session.Phase
 }
@@ -82,6 +87,8 @@ func ServeLegacy(ctx context.Context, listener net.Listener, logger *slog.Logger
 	}
 }
 
+var ErrPipelinedPlaintextAfterSecureHandshake = errors.New("pipelined plaintext frame after secure handshake activation")
+
 func serveLegacyConn(ctx context.Context, conn net.Conn, logger *slog.Logger, flow SessionFlow) error {
 	if closer, ok := flow.(io.Closer); ok {
 		defer func() { _ = closer.Close() }()
@@ -94,11 +101,18 @@ func serveLegacyConn(ctx context.Context, conn net.Conn, logger *slog.Logger, fl
 
 	remoteAddr := conn.RemoteAddr().String()
 	lastPhase, hasPhase := currentSessionPhase(flow)
+	secureFlow, hasSecureFlow := flow.(secureLegacySessionFlow)
 	if hasPhase && logger != nil {
 		logger.Info("legacy session started", "remote_addr", remoteAddr, "phase", lastPhase)
 	}
 
 	for _, raw := range out {
+		if hasSecureFlow {
+			raw, err = secureFlow.EncryptLegacyOutgoing(raw)
+			if err != nil {
+				return fmt.Errorf("encrypt session start frame: %w", err)
+			}
+		}
 		if err := writeLegacyFrame(conn, raw); err != nil {
 			return fmt.Errorf("write session start frame: %w", err)
 		}
@@ -122,30 +136,51 @@ func serveLegacyConn(ctx context.Context, conn net.Conn, logger *slog.Logger, fl
 
 		n, err := conn.Read(buffer)
 		if n > 0 {
-			frames, decodeErr := decoder.Feed(buffer[:n])
+			incomingBytes := buffer[:n]
+			if hasSecureFlow {
+				incomingBytes, err = secureFlow.DecryptLegacyIncoming(incomingBytes)
+				if err != nil {
+					return fmt.Errorf("decrypt legacy bytes: %w", err)
+				}
+			}
+			frames, decodeErr := decoder.Feed(incomingBytes)
 			if decodeErr != nil {
 				return fmt.Errorf("decode legacy frame: %w", decodeErr)
 			}
 
-			for _, incoming := range frames {
+			for idx, incoming := range frames {
+				phaseBefore, hadPhaseBefore := currentSessionPhase(flow)
 				out, handleErr := flow.HandleClientFrame(incoming)
 				if handleErr != nil {
 					return handleErr
 				}
 
-				if nextPhase, ok := currentSessionPhase(flow); ok {
-					if !hasPhase || nextPhase != lastPhase {
+				phaseAfter, hadPhaseAfter := currentSessionPhase(flow)
+				if hadPhaseAfter {
+					if !hasPhase || phaseAfter != lastPhase {
 						if logger != nil {
-							logger.Info("legacy session phase changed", "remote_addr", remoteAddr, "from_phase", lastPhase, "to_phase", nextPhase)
+							logger.Info("legacy session phase changed", "remote_addr", remoteAddr, "from_phase", lastPhase, "to_phase", phaseAfter)
 						}
-						lastPhase = nextPhase
+						lastPhase = phaseAfter
 						hasPhase = true
 					}
 				}
 
 				for _, raw := range out {
+					if hasSecureFlow {
+						raw, err = secureFlow.EncryptLegacyOutgoing(raw)
+						if err != nil {
+							return fmt.Errorf("encrypt legacy frame: %w", err)
+						}
+					}
 					if writeErr := writeLegacyFrame(conn, raw); writeErr != nil {
 						return fmt.Errorf("write legacy frame: %w", writeErr)
+					}
+				}
+
+				if hasSecureFlow && crossedSecureLegacyBoundary(hadPhaseBefore, phaseBefore, hadPhaseAfter, phaseAfter) {
+					if idx < len(frames)-1 || decoder.BufferedLen() > 0 {
+						return ErrPipelinedPlaintextAfterSecureHandshake
 					}
 				}
 			}
@@ -177,6 +212,13 @@ func flushServerFrames(conn net.Conn, flow SessionFlow) error {
 	}
 
 	for _, raw := range out {
+		if secureFlow, ok := flow.(secureLegacySessionFlow); ok {
+			var err error
+			raw, err = secureFlow.EncryptLegacyOutgoing(raw)
+			if err != nil {
+				return fmt.Errorf("encrypt server frame: %w", err)
+			}
+		}
 		if err := writeLegacyFrame(conn, raw); err != nil {
 			return fmt.Errorf("write server frame: %w", err)
 		}
@@ -191,6 +233,10 @@ func currentSessionPhase(flow SessionFlow) (session.Phase, bool) {
 		return "", false
 	}
 	return phaseAware.CurrentPhase(), true
+}
+
+func crossedSecureLegacyBoundary(hadBefore bool, before session.Phase, hadAfter bool, after session.Phase) bool {
+	return hadBefore && hadAfter && before == session.PhaseHandshake && after != session.PhaseHandshake
 }
 
 func writeLegacyFrame(conn net.Conn, raw []byte) error {

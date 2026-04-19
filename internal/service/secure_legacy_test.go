@@ -1,0 +1,555 @@
+package service
+
+import (
+	"context"
+	"crypto/rand"
+	"errors"
+	"io"
+	"net"
+	"testing"
+	"time"
+
+	authflow "github.com/MikelCalvo/go-metin2-server/internal/auth"
+	"github.com/MikelCalvo/go-metin2-server/internal/authboot"
+	"github.com/MikelCalvo/go-metin2-server/internal/boot"
+	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
+	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
+	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
+	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
+	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
+	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
+	"github.com/MikelCalvo/go-metin2-server/internal/session"
+)
+
+func TestServeLegacyRejectsPlaintextPostHandshakeFramePipelinedAfterKeyResponse(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeLegacy(ctx, listener, testLogger(), func() SessionFlow {
+			return boot.NewFlow(boot.Config{
+				Handshake: handshake.Config{
+					SecureSession: securecipher.NewServerSession(securecipher.ServerConfig{
+						Random:     rand.Reader,
+						ServerTime: func() uint32 { return 0x01020304 },
+					}),
+				},
+				Login: loginflow.Config{
+					Authenticate: func(packet loginproto.Login2Packet) loginflow.Result {
+						if packet.Login != "mkmk" || packet.LoginKey != 0x01020304 {
+							return loginflow.Result{Accepted: false, FailureStatus: "NOID"}
+						}
+						return loginflow.Result{
+							Accepted: true,
+							Empire:   2,
+							LoginSuccess4: loginproto.LoginSuccess4Packet{
+								Handle:    0x11223344,
+								RandomKey: 0x55667788,
+							},
+						}
+					},
+				},
+			})
+		})
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial tcp: %v", err)
+	}
+	defer conn.Close()
+
+	client := newSecureLegacyTestClient(t, conn)
+	secureClient := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
+
+	challengeRaw := client.readExact(t, 72)
+	challengeFrame := decodeSingleLegacyFrame(t, challengeRaw)
+	challenge, err := control.DecodeKeyChallenge(challengeFrame)
+	if err != nil {
+		t.Fatalf("decode key challenge: %v", err)
+	}
+	response, err := secureClient.HandleKeyChallenge(challenge)
+	if err != nil {
+		t.Fatalf("handle key challenge: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	client.writeRaw(t, append(control.EncodeKeyResponse(response), login2Raw...))
+
+	keyCompleteRaw := client.readExact(t, 76)
+	keyCompleteFrame := decodeSingleLegacyFrame(t, keyCompleteRaw)
+	keyComplete, err := control.DecodeKeyComplete(keyCompleteFrame)
+	if err != nil {
+		t.Fatalf("decode key complete: %v", err)
+	}
+	if err := secureClient.HandleKeyComplete(keyComplete); err != nil {
+		t.Fatalf("handle key complete: %v", err)
+	}
+
+	phaseLoginFrame := client.readEncryptedFrame(t, secureClient)
+	phaseLogin, err := control.DecodePhase(phaseLoginFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted phase login: %v", err)
+	}
+	if phaseLogin.Phase != session.PhaseLogin {
+		t.Fatalf("expected phase %q, got %q", session.PhaseLogin, phaseLogin.Phase)
+	}
+
+	client.expectConnectionClose(t)
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("ServeLegacy returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ServeLegacy to stop")
+	}
+}
+
+func TestServeLegacyRejectsBufferedPlaintextPostHandshakeFrameAfterKeyResponse(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeLegacy(ctx, listener, testLogger(), func() SessionFlow {
+			return boot.NewFlow(boot.Config{
+				Handshake: handshake.Config{
+					SecureSession: securecipher.NewServerSession(securecipher.ServerConfig{
+						Random:     rand.Reader,
+						ServerTime: func() uint32 { return 0x01020304 },
+					}),
+				},
+				Login: loginflow.Config{
+					Authenticate: func(packet loginproto.Login2Packet) loginflow.Result {
+						if packet.Login != "mkmk" || packet.LoginKey != 0x01020304 {
+							return loginflow.Result{Accepted: false, FailureStatus: "NOID"}
+						}
+						return loginflow.Result{
+							Accepted: true,
+							Empire:   2,
+							LoginSuccess4: loginproto.LoginSuccess4Packet{
+								Handle:    0x11223344,
+								RandomKey: 0x55667788,
+							},
+						}
+					},
+				},
+			})
+		})
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial tcp: %v", err)
+	}
+	defer conn.Close()
+
+	client := newSecureLegacyTestClient(t, conn)
+	secureClient := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
+
+	challengeRaw := client.readExact(t, 72)
+	challengeFrame := decodeSingleLegacyFrame(t, challengeRaw)
+	challenge, err := control.DecodeKeyChallenge(challengeFrame)
+	if err != nil {
+		t.Fatalf("decode key challenge: %v", err)
+	}
+	response, err := secureClient.HandleKeyChallenge(challenge)
+	if err != nil {
+		t.Fatalf("handle key challenge: %v", err)
+	}
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	client.writeRaw(t, append(control.EncodeKeyResponse(response), login2Raw[:3]...))
+
+	keyCompleteRaw := client.readExact(t, 76)
+	keyCompleteFrame := decodeSingleLegacyFrame(t, keyCompleteRaw)
+	keyComplete, err := control.DecodeKeyComplete(keyCompleteFrame)
+	if err != nil {
+		t.Fatalf("decode key complete: %v", err)
+	}
+	if err := secureClient.HandleKeyComplete(keyComplete); err != nil {
+		t.Fatalf("handle key complete: %v", err)
+	}
+
+	phaseLoginFrame := client.readEncryptedFrame(t, secureClient)
+	phaseLogin, err := control.DecodePhase(phaseLoginFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted phase login: %v", err)
+	}
+	if phaseLogin.Phase != session.PhaseLogin {
+		t.Fatalf("expected phase %q, got %q", session.PhaseLogin, phaseLogin.Phase)
+	}
+
+	client.expectConnectionClose(t)
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("ServeLegacy returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ServeLegacy to stop")
+	}
+}
+
+func TestServeLegacySupportsSecureBootHandshakeAndEncryptedLogin(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeLegacy(ctx, listener, testLogger(), func() SessionFlow {
+			return boot.NewFlow(boot.Config{
+				Handshake: handshake.Config{
+					SecureSession: securecipher.NewServerSession(securecipher.ServerConfig{
+						Random:     rand.Reader,
+						ServerTime: func() uint32 { return 0x01020304 },
+					}),
+				},
+				Login: loginflow.Config{
+					Authenticate: func(packet loginproto.Login2Packet) loginflow.Result {
+						if packet.Login != "mkmk" || packet.LoginKey != 0x01020304 {
+							return loginflow.Result{Accepted: false, FailureStatus: "NOID"}
+						}
+						return loginflow.Result{
+							Accepted: true,
+							Empire:   2,
+							LoginSuccess4: loginproto.LoginSuccess4Packet{
+								Handle:    0x11223344,
+								RandomKey: 0x55667788,
+							},
+						}
+					},
+				},
+			})
+		})
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial tcp: %v", err)
+	}
+	defer conn.Close()
+
+	client := newSecureLegacyTestClient(t, conn)
+	secureClient := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
+
+	challengeRaw := client.readExact(t, 72)
+	challengeFrame := decodeSingleLegacyFrame(t, challengeRaw)
+	challenge, err := control.DecodeKeyChallenge(challengeFrame)
+	if err != nil {
+		t.Fatalf("decode key challenge: %v", err)
+	}
+
+	response, err := secureClient.HandleKeyChallenge(challenge)
+	if err != nil {
+		t.Fatalf("handle key challenge: %v", err)
+	}
+	client.writeRaw(t, control.EncodeKeyResponse(response))
+
+	keyCompleteRaw := client.readExact(t, 76)
+	keyCompleteFrame := decodeSingleLegacyFrame(t, keyCompleteRaw)
+	keyComplete, err := control.DecodeKeyComplete(keyCompleteFrame)
+	if err != nil {
+		t.Fatalf("decode key complete: %v", err)
+	}
+	if err := secureClient.HandleKeyComplete(keyComplete); err != nil {
+		t.Fatalf("handle key complete: %v", err)
+	}
+
+	phaseLoginFrame := client.readEncryptedFrame(t, secureClient)
+	phaseLogin, err := control.DecodePhase(phaseLoginFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted phase login: %v", err)
+	}
+	if phaseLogin.Phase != session.PhaseLogin {
+		t.Fatalf("expected phase %q, got %q", session.PhaseLogin, phaseLogin.Phase)
+	}
+
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	client.writeEncryptedFrame(t, secureClient, login2Raw)
+
+	empireFrame := client.readEncryptedFrame(t, secureClient)
+	empire, err := loginproto.DecodeEmpire(empireFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted empire: %v", err)
+	}
+	if empire.Empire != 2 {
+		t.Fatalf("expected empire 2, got %d", empire.Empire)
+	}
+
+	phaseSelectFrame := client.readEncryptedFrame(t, secureClient)
+	phaseSelect, err := control.DecodePhase(phaseSelectFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted phase select: %v", err)
+	}
+	if phaseSelect.Phase != session.PhaseSelect {
+		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, phaseSelect.Phase)
+	}
+
+	loginSuccessFrame := client.readEncryptedFrame(t, secureClient)
+	if _, err := loginproto.DecodeLoginSuccess4(loginSuccessFrame); err != nil {
+		t.Fatalf("decode encrypted login success: %v", err)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("ServeLegacy returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ServeLegacy to stop")
+	}
+}
+
+func TestServeLegacySupportsSecureAuthBootHandshakeAndEncryptedLogin3(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeLegacy(ctx, listener, testLogger(), func() SessionFlow {
+			return authboot.NewFlow(authboot.Config{
+				Handshake: handshake.Config{
+					SecureSession: securecipher.NewServerSession(securecipher.ServerConfig{
+						Random:     rand.Reader,
+						ServerTime: func() uint32 { return 0x0A0B0C0D },
+					}),
+				},
+				Auth: authflow.Config{
+					Authenticate: func(packet authproto.Login3Packet) authflow.Result {
+						if packet.Login != "mkmk" || packet.Password != "hunter2" {
+							return authflow.Result{Accepted: false, FailureStatus: "WRONGPWD"}
+						}
+						return authflow.Result{Accepted: true, LoginKey: 0x01020304}
+					},
+				},
+			})
+		})
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial tcp: %v", err)
+	}
+	defer conn.Close()
+
+	client := newSecureLegacyTestClient(t, conn)
+	secureClient := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
+
+	challengeRaw := client.readExact(t, 72)
+	challengeFrame := decodeSingleLegacyFrame(t, challengeRaw)
+	challenge, err := control.DecodeKeyChallenge(challengeFrame)
+	if err != nil {
+		t.Fatalf("decode key challenge: %v", err)
+	}
+
+	response, err := secureClient.HandleKeyChallenge(challenge)
+	if err != nil {
+		t.Fatalf("handle key challenge: %v", err)
+	}
+	client.writeRaw(t, control.EncodeKeyResponse(response))
+
+	keyCompleteRaw := client.readExact(t, 76)
+	keyCompleteFrame := decodeSingleLegacyFrame(t, keyCompleteRaw)
+	keyComplete, err := control.DecodeKeyComplete(keyCompleteFrame)
+	if err != nil {
+		t.Fatalf("decode key complete: %v", err)
+	}
+	if err := secureClient.HandleKeyComplete(keyComplete); err != nil {
+		t.Fatalf("handle key complete: %v", err)
+	}
+
+	phaseAuthFrame := client.readEncryptedFrame(t, secureClient)
+	phaseAuth, err := control.DecodePhase(phaseAuthFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted phase auth: %v", err)
+	}
+	if phaseAuth.Phase != session.PhaseAuth {
+		t.Fatalf("expected phase %q, got %q", session.PhaseAuth, phaseAuth.Phase)
+	}
+
+	login3Raw, err := authproto.EncodeLogin3(authproto.Login3Packet{Login: "mkmk", Password: "hunter2"})
+	if err != nil {
+		t.Fatalf("encode login3: %v", err)
+	}
+	client.writeEncryptedFrame(t, secureClient, login3Raw)
+
+	authSuccessFrame := client.readEncryptedFrame(t, secureClient)
+	if _, err := authproto.DecodeAuthSuccess(authSuccessFrame); err != nil {
+		t.Fatalf("decode encrypted auth success: %v", err)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("ServeLegacy returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ServeLegacy to stop")
+	}
+}
+
+type secureLegacyTestClient struct {
+	conn    net.Conn
+	decoder *frame.Decoder
+	queued  []frame.Frame
+}
+
+func newSecureLegacyTestClient(t *testing.T, conn net.Conn) *secureLegacyTestClient {
+	t.Helper()
+	return &secureLegacyTestClient{conn: conn, decoder: frame.NewDecoder(8192)}
+}
+
+func (c *secureLegacyTestClient) readExact(t *testing.T, n int) []byte {
+	t.Helper()
+	buf := make([]byte, n)
+	if err := c.conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	if _, err := io.ReadFull(c.conn, buf); err != nil {
+		t.Fatalf("read exact %d bytes: %v", n, err)
+	}
+	return buf
+}
+
+func (c *secureLegacyTestClient) writeRaw(t *testing.T, raw []byte) {
+	t.Helper()
+	if err := writeAll(c.conn, raw); err != nil {
+		t.Fatalf("write raw: %v", err)
+	}
+}
+
+func (c *secureLegacyTestClient) writeEncryptedFrame(t *testing.T, client *securecipher.ClientSession, raw []byte) {
+	t.Helper()
+	encrypted, err := client.EncryptOutgoing(raw)
+	if err != nil {
+		t.Fatalf("encrypt outgoing frame: %v", err)
+	}
+	if err := writeAll(c.conn, encrypted); err != nil {
+		t.Fatalf("write encrypted frame: %v", err)
+	}
+}
+
+func (c *secureLegacyTestClient) readEncryptedFrame(t *testing.T, client *securecipher.ClientSession) frame.Frame {
+	t.Helper()
+	if len(c.queued) > 0 {
+		out := c.queued[0]
+		c.queued = c.queued[1:]
+		return out
+	}
+
+	buffer := make([]byte, 8192)
+	for {
+		if err := c.conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatalf("set read deadline: %v", err)
+		}
+		n, err := c.conn.Read(buffer)
+		if err != nil {
+			t.Fatalf("read encrypted frame: %v", err)
+		}
+		decrypted, err := client.DecryptIncoming(buffer[:n])
+		if err != nil {
+			t.Fatalf("decrypt incoming frame: %v", err)
+		}
+		frames, err := c.decoder.Feed(decrypted)
+		if err != nil {
+			t.Fatalf("decode decrypted frame: %v", err)
+		}
+		if len(frames) == 0 {
+			continue
+		}
+		c.queued = append(c.queued, frames...)
+		out := c.queued[0]
+		c.queued = c.queued[1:]
+		return out
+	}
+}
+
+func (c *secureLegacyTestClient) expectConnectionClose(t *testing.T) {
+	t.Helper()
+	buffer := make([]byte, 8192)
+	if err := c.conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+	for {
+		n, err := c.conn.Read(buffer)
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+				return
+			}
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				t.Fatal("expected connection close, but connection remained open")
+			}
+			t.Fatalf("read while waiting for connection close: %v", err)
+		}
+		if n == 0 {
+			continue
+		}
+		t.Fatalf("expected connection close without additional frames, got %d bytes", n)
+	}
+}
+
+func decodeSingleLegacyFrame(t *testing.T, raw []byte) frame.Frame {
+	t.Helper()
+	decoder := frame.NewDecoder(8192)
+	frames, err := decoder.Feed(raw)
+	if err != nil {
+		t.Fatalf("decode single frame: %v", err)
+	}
+	if len(frames) != 1 {
+		t.Fatalf("expected 1 frame, got %d", len(frames))
+	}
+	return frames[0]
+}
+
+func writeAll(conn net.Conn, data []byte) error {
+	for len(data) > 0 {
+		n, err := conn.Write(data)
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	return nil
+}
