@@ -36,9 +36,9 @@ The current project-owned login flow is:
 2. the client sends `LOGIN2`
 3. on failure, the server emits `LOGIN_FAILURE` and the session stays in `LOGIN`
 4. on success, the server emits:
+   - `LOGIN_SUCCESS4`
    - `EMPIRE`
    - `PHASE(SELECT)`
-   - `LOGIN_SUCCESS4`
 5. the session transitions to `SELECT`
 6. if the account has no chosen empire and no characters yet, the client may send `EMPIRE` selection (`0x010A`)
 7. on accepted empire selection, the server emits `EMPIRE` with the chosen value and stays in `SELECT`

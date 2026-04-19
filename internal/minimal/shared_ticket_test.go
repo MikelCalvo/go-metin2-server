@@ -58,7 +58,7 @@ func TestAuthAndGameSessionFactoriesShareIssuedLoginTicket(t *testing.T) {
 		t.Fatalf("expected 3 login frames, got %d", len(loginOut))
 	}
 
-	loginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, loginOut[2]))
+	loginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, loginOut[0]))
 	if err != nil {
 		t.Fatalf("decode login success: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestCreatedCharacterPersistsAcrossFreshAuthAndGameSessions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected second game login error: %v", err)
 	}
-	loginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, secondLoginOut[2]))
+	loginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, secondLoginOut[0]))
 	if err != nil {
 		t.Fatalf("decode login success: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestMovedCharacterPositionPersistsAcrossFreshAuthAndGameSessions(t *testing
 	if err != nil {
 		t.Fatalf("unexpected second game login error: %v", err)
 	}
-	loginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, secondLoginOut[2]))
+	loginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, secondLoginOut[0]))
 	if err != nil {
 		t.Fatalf("decode second login success: %v", err)
 	}
@@ -373,14 +373,14 @@ func TestEmptyAccountRequiresEmpireSelectionBeforeCharacterCreate(t *testing.T) 
 	if err != nil {
 		t.Fatalf("unexpected first game login error: %v", err)
 	}
-	firstEmpire, err := loginproto.DecodeEmpire(decodeSingleFrame(t, firstLoginOut[0]))
+	firstEmpire, err := loginproto.DecodeEmpire(decodeSingleFrame(t, firstLoginOut[1]))
 	if err != nil {
 		t.Fatalf("decode first empire packet: %v", err)
 	}
 	if firstEmpire.Empire != 0 {
 		t.Fatalf("expected empty account empire 0 before selection, got %d", firstEmpire.Empire)
 	}
-	firstLoginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, firstLoginOut[2]))
+	firstLoginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, firstLoginOut[0]))
 	if err != nil {
 		t.Fatalf("decode first login success: %v", err)
 	}
@@ -449,14 +449,14 @@ func TestEmptyAccountRequiresEmpireSelectionBeforeCharacterCreate(t *testing.T) 
 	if err != nil {
 		t.Fatalf("unexpected second game login error: %v", err)
 	}
-	secondEmpire, err := loginproto.DecodeEmpire(decodeSingleFrame(t, secondLoginOut[0]))
+	secondEmpire, err := loginproto.DecodeEmpire(decodeSingleFrame(t, secondLoginOut[1]))
 	if err != nil {
 		t.Fatalf("decode second empire packet: %v", err)
 	}
 	if secondEmpire.Empire != 3 {
 		t.Fatalf("expected persisted empire 3 after selection, got %d", secondEmpire.Empire)
 	}
-	secondLoginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, secondLoginOut[2]))
+	secondLoginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, secondLoginOut[0]))
 	if err != nil {
 		t.Fatalf("decode second login success: %v", err)
 	}

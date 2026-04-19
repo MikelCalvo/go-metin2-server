@@ -62,6 +62,15 @@ func TestBootFlowCompletesHandshakeAndLoginOverTCP(t *testing.T) {
 	}
 	client.writeFrame(t, login2Raw)
 
+	loginSuccess := client.readFrame(t)
+	wantSuccess, err := loginproto.EncodeLoginSuccess4(sampleLoginSuccessPacket())
+	if err != nil {
+		t.Fatalf("unexpected login success encode error: %v", err)
+	}
+	if !bytes.Equal(loginSuccess.Raw, wantSuccess) {
+		t.Fatalf("unexpected login success bytes: got %x want %x", loginSuccess.Raw, wantSuccess)
+	}
+
 	empire := client.readFrame(t)
 	wantEmpire := loginproto.EncodeEmpire(loginproto.EmpirePacket{Empire: 2})
 	if !bytes.Equal(empire.Raw, wantEmpire) {
@@ -75,15 +84,6 @@ func TestBootFlowCompletesHandshakeAndLoginOverTCP(t *testing.T) {
 	}
 	if !bytes.Equal(phaseSelect.Raw, wantPhaseSelect) {
 		t.Fatalf("unexpected select phase bytes: got %x want %x", phaseSelect.Raw, wantPhaseSelect)
-	}
-
-	loginSuccess := client.readFrame(t)
-	wantSuccess, err := loginproto.EncodeLoginSuccess4(sampleLoginSuccessPacket())
-	if err != nil {
-		t.Fatalf("unexpected login success encode error: %v", err)
-	}
-	if !bytes.Equal(loginSuccess.Raw, wantSuccess) {
-		t.Fatalf("unexpected login success bytes: got %x want %x", loginSuccess.Raw, wantSuccess)
 	}
 
 	if got := server.currentPhase(); got != session.PhaseSelect {
@@ -156,6 +156,15 @@ func TestBootFlowEntersGameOverTCP(t *testing.T) {
 	}
 	client.writeFrame(t, login2Raw)
 
+	loginSuccess := client.readFrame(t)
+	wantSuccess, err := loginproto.EncodeLoginSuccess4(sampleLoginSuccessPacket())
+	if err != nil {
+		t.Fatalf("unexpected login success encode error: %v", err)
+	}
+	if !bytes.Equal(loginSuccess.Raw, wantSuccess) {
+		t.Fatalf("unexpected login success bytes: got %x want %x", loginSuccess.Raw, wantSuccess)
+	}
+
 	empire := client.readFrame(t)
 	wantEmpire := loginproto.EncodeEmpire(loginproto.EmpirePacket{Empire: 2})
 	if !bytes.Equal(empire.Raw, wantEmpire) {
@@ -169,15 +178,6 @@ func TestBootFlowEntersGameOverTCP(t *testing.T) {
 	}
 	if !bytes.Equal(phaseSelect.Raw, wantPhaseSelect) {
 		t.Fatalf("unexpected select phase bytes: got %x want %x", phaseSelect.Raw, wantPhaseSelect)
-	}
-
-	loginSuccess := client.readFrame(t)
-	wantSuccess, err := loginproto.EncodeLoginSuccess4(sampleLoginSuccessPacket())
-	if err != nil {
-		t.Fatalf("unexpected login success encode error: %v", err)
-	}
-	if !bytes.Equal(loginSuccess.Raw, wantSuccess) {
-		t.Fatalf("unexpected login success bytes: got %x want %x", loginSuccess.Raw, wantSuccess)
 	}
 
 	client.writeFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))
@@ -249,6 +249,14 @@ func TestBootFlowCreatesCharacterAndEntersGameOverTCP(t *testing.T) {
 		t.Fatalf("unexpected login2 encode error: %v", err)
 	}
 	client.writeFrame(t, login2Raw)
+	loginSuccess := client.readFrame(t)
+	wantSuccess, err := loginproto.EncodeLoginSuccess4(sampleLoginSuccessPacket())
+	if err != nil {
+		t.Fatalf("unexpected login success encode error: %v", err)
+	}
+	if !bytes.Equal(loginSuccess.Raw, wantSuccess) {
+		t.Fatalf("unexpected login success bytes: got %x want %x", loginSuccess.Raw, wantSuccess)
+	}
 	if empire := client.readFrame(t); !bytes.Equal(empire.Raw, loginproto.EncodeEmpire(loginproto.EmpirePacket{Empire: 2})) {
 		t.Fatalf("unexpected empire bytes: got %x", empire.Raw)
 	}
@@ -259,14 +267,6 @@ func TestBootFlowCreatesCharacterAndEntersGameOverTCP(t *testing.T) {
 	}
 	if !bytes.Equal(phaseSelect.Raw, wantPhaseSelect) {
 		t.Fatalf("unexpected select phase bytes: got %x want %x", phaseSelect.Raw, wantPhaseSelect)
-	}
-	loginSuccess := client.readFrame(t)
-	wantSuccess, err := loginproto.EncodeLoginSuccess4(sampleLoginSuccessPacket())
-	if err != nil {
-		t.Fatalf("unexpected login success encode error: %v", err)
-	}
-	if !bytes.Equal(loginSuccess.Raw, wantSuccess) {
-		t.Fatalf("unexpected login success bytes: got %x want %x", loginSuccess.Raw, wantSuccess)
 	}
 
 	createRaw, err := worldproto.EncodeCharacterCreate(worldproto.CharacterCreatePacket{Index: 2, Name: "FreshSura", RaceNum: 2, Shape: 1})
@@ -380,6 +380,7 @@ func TestBootFlowDeletesCharacterInSelectOverTCP(t *testing.T) {
 	}
 	client.writeFrame(t, login2Raw)
 	_ = client.readFrame(t)
+	_ = client.readFrame(t)
 	phaseSelect := client.readFrame(t)
 	wantPhaseSelect, err := control.EncodePhase(session.PhaseSelect)
 	if err != nil {
@@ -388,7 +389,6 @@ func TestBootFlowDeletesCharacterInSelectOverTCP(t *testing.T) {
 	if !bytes.Equal(phaseSelect.Raw, wantPhaseSelect) {
 		t.Fatalf("unexpected select phase bytes: got %x want %x", phaseSelect.Raw, wantPhaseSelect)
 	}
-	_ = client.readFrame(t)
 
 	deleteRaw, err := worldproto.EncodeCharacterDelete(worldproto.CharacterDeletePacket{Index: 1, PrivateCode: "1234567"})
 	if err != nil {

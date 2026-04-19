@@ -108,7 +108,7 @@ func TestHandleClientFrameCompletesHandshakeThenProcessesLogin2(t *testing.T) {
 		t.Fatalf("unexpected login success encode error: %v", err)
 	}
 
-	want := [][]byte{wantEmpire, wantPhase, wantSuccess}
+	want := [][]byte{wantSuccess, wantEmpire, wantPhase}
 	for i := range want {
 		if !bytes.Equal(loginOut[i], want[i]) {
 			t.Fatalf("unexpected login frame %d: got %x want %x", i, loginOut[i], want[i])

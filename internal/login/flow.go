@@ -85,5 +85,5 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		return nil, err
 	}
 
-	return [][]byte{empire, phaseSelect, loginSuccess}, nil
+	return [][]byte{loginSuccess, empire, phaseSelect}, nil
 }

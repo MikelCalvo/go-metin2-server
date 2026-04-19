@@ -133,7 +133,7 @@ func TestNewGameSessionFactoryAdvertisesConfiguredPublicAddrAndPort(t *testing.T
 		t.Fatalf("expected 3 login frames, got %d", len(loginOut))
 	}
 
-	success, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, loginOut[2]))
+	success, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, loginOut[0]))
 	if err != nil {
 		t.Fatalf("unexpected login success decode error: %v", err)
 	}

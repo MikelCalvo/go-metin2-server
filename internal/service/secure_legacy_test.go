@@ -307,6 +307,11 @@ func TestServeLegacySupportsSecureBootHandshakeAndEncryptedLogin(t *testing.T) {
 	}
 	client.writeEncryptedFrame(t, secureClient, login2Raw)
 
+	loginSuccessFrame := client.readEncryptedFrame(t, secureClient)
+	if _, err := loginproto.DecodeLoginSuccess4(loginSuccessFrame); err != nil {
+		t.Fatalf("decode encrypted login success: %v", err)
+	}
+
 	empireFrame := client.readEncryptedFrame(t, secureClient)
 	empire, err := loginproto.DecodeEmpire(empireFrame)
 	if err != nil {
@@ -323,11 +328,6 @@ func TestServeLegacySupportsSecureBootHandshakeAndEncryptedLogin(t *testing.T) {
 	}
 	if phaseSelect.Phase != session.PhaseSelect {
 		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, phaseSelect.Phase)
-	}
-
-	loginSuccessFrame := client.readEncryptedFrame(t, secureClient)
-	if _, err := loginproto.DecodeLoginSuccess4(loginSuccessFrame); err != nil {
-		t.Fatalf("decode encrypted login success: %v", err)
 	}
 
 	cancel()

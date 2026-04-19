@@ -54,7 +54,7 @@ func TestHandleClientFrameAcceptsLogin2AndTransitionsToSelect(t *testing.T) {
 		t.Fatalf("unexpected login success encode error: %v", err)
 	}
 
-	want := [][]byte{wantEmpire, wantPhase, wantSuccess}
+	want := [][]byte{wantSuccess, wantEmpire, wantPhase}
 	for i := range want {
 		if !bytes.Equal(out[i], want[i]) {
 			t.Fatalf("unexpected outgoing frame %d: got %x want %x", i, out[i], want[i])
