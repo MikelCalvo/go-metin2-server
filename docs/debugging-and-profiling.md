@@ -15,6 +15,29 @@ The project ships with a dedicated ops HTTP server that exposes standard Go ppro
 - `/debug/pprof/threadcreate`
 - `/debug/pprof/trace`
 
+## Structured session logs
+
+The daemons also emit structured JSON logs to stdout/stderr in normal service mode.
+
+For phase-aware flows, the legacy TCP runtime now logs:
+
+- `legacy session started`
+  - includes `remote_addr`
+  - includes the current `phase` when the session flow exposes it
+- `legacy session phase changed`
+  - includes `remote_addr`
+  - includes `from_phase`
+  - includes `to_phase`
+- `legacy session closed with error`
+  - includes `remote_addr`
+  - includes the terminal error
+
+These logs are intended to help real-client debugging around:
+- handshake completion
+- auth/login handoff
+- selection-to-loading transition
+- loading-to-game transition
+
 ## Local-only `gamed` operator endpoints
 
 These endpoints are intentionally loopback-only and exist to help inspect or steer the bootstrap runtime safely during development.

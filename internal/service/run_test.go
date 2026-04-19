@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
 const (
@@ -23,6 +25,76 @@ const (
 	testHeaderPong  uint16 = 0x9003
 	testHeaderAsync uint16 = 0x9004
 )
+
+func TestServeLegacyLogsPhaseAwareSessionLifecycle(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var logBuffer bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuffer, nil))
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeLegacy(ctx, listener, logger, func() SessionFlow { return newPhaseAwareTestSessionFlow() })
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial tcp: %v", err)
+	}
+	defer conn.Close()
+
+	start := readFrame(t, conn)
+	if start.Header != testHeaderStart || string(start.Payload) != "hello" {
+		t.Fatalf("unexpected start frame: header=0x%04x payload=%q", start.Header, string(start.Payload))
+	}
+
+	writeFrame(t, conn, frame.Encode(testHeaderPing, []byte("ping")))
+	pong := readFrame(t, conn)
+	if pong.Header != testHeaderPong || string(pong.Payload) != "pong" {
+		t.Fatalf("unexpected pong frame: header=0x%04x payload=%q", pong.Header, string(pong.Payload))
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		logs := logBuffer.String()
+		if strings.Contains(logs, `"msg":"legacy session started"`) &&
+			strings.Contains(logs, `"phase":"HANDSHAKE"`) &&
+			strings.Contains(logs, `"msg":"legacy session phase changed"`) &&
+			strings.Contains(logs, `"from_phase":"HANDSHAKE"`) &&
+			strings.Contains(logs, `"to_phase":"LOGIN"`) {
+			cancel()
+			select {
+			case err := <-errCh:
+				if err != nil {
+					t.Fatalf("serve legacy returned error: %v", err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("timeout waiting for ServeLegacy to stop")
+			}
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("serve legacy returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ServeLegacy to stop")
+	}
+
+	t.Fatalf("expected lifecycle logs, got %s", logBuffer.String())
+}
 
 func TestServeLegacyServesSessionFlowOverTCP(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -307,6 +379,10 @@ type closableTestSessionFlow struct {
 	once   sync.Once
 }
 
+type phaseAwareTestSessionFlow struct {
+	current session.Phase
+}
+
 func newTestSessionFlow() SessionFlow {
 	return &testSessionFlow{}
 }
@@ -317,6 +393,10 @@ func newAsyncTestSessionFlow() SessionFlow {
 
 func newClosableTestSessionFlow() *closableTestSessionFlow {
 	return &closableTestSessionFlow{closed: make(chan struct{})}
+}
+
+func newPhaseAwareTestSessionFlow() SessionFlow {
+	return &phaseAwareTestSessionFlow{current: session.PhaseHandshake}
 }
 
 func (f *testSessionFlow) Start() ([][]byte, error) {
@@ -358,6 +438,25 @@ func (f *closableTestSessionFlow) HandleClientFrame(in frame.Frame) ([][]byte, e
 func (f *closableTestSessionFlow) Close() error {
 	f.once.Do(func() { close(f.closed) })
 	return nil
+}
+
+func (f *phaseAwareTestSessionFlow) Start() ([][]byte, error) {
+	return [][]byte{frame.Encode(testHeaderStart, []byte("hello"))}, nil
+}
+
+func (f *phaseAwareTestSessionFlow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
+	if in.Header != testHeaderPing {
+		return nil, fmt.Errorf("unexpected header: 0x%04x", in.Header)
+	}
+	if string(in.Payload) != "ping" {
+		return nil, fmt.Errorf("unexpected payload: %q", string(in.Payload))
+	}
+	f.current = session.PhaseLogin
+	return [][]byte{frame.Encode(testHeaderPong, []byte("pong"))}, nil
+}
+
+func (f *phaseAwareTestSessionFlow) CurrentPhase() session.Phase {
+	return f.current
 }
 
 func testLogger() *slog.Logger {

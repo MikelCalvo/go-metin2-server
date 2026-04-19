@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
 type SessionFlow interface {
@@ -23,6 +24,10 @@ type ServerFrameSource interface {
 }
 
 type SessionFactory func() SessionFlow
+
+type phaseAwareSessionFlow interface {
+	CurrentPhase() session.Phase
+}
 
 func ListenAndServeLegacy(ctx context.Context, addr string, logger *slog.Logger, newSession SessionFactory) error {
 	listener, err := net.Listen("tcp", addr)
@@ -70,14 +75,14 @@ func ServeLegacy(ctx context.Context, listener net.Listener, logger *slog.Logger
 			defer conn.Close()
 			defer tracker.done(conn)
 
-			if err := serveLegacyConn(ctx, conn, newSession()); err != nil && logger != nil {
+			if err := serveLegacyConn(ctx, conn, logger, newSession()); err != nil && logger != nil {
 				logger.Warn("legacy session closed with error", "remote_addr", conn.RemoteAddr().String(), "err", err)
 			}
 		}(conn)
 	}
 }
 
-func serveLegacyConn(ctx context.Context, conn net.Conn, flow SessionFlow) error {
+func serveLegacyConn(ctx context.Context, conn net.Conn, logger *slog.Logger, flow SessionFlow) error {
 	if closer, ok := flow.(io.Closer); ok {
 		defer func() { _ = closer.Close() }()
 	}
@@ -85,6 +90,12 @@ func serveLegacyConn(ctx context.Context, conn net.Conn, flow SessionFlow) error
 	out, err := flow.Start()
 	if err != nil {
 		return fmt.Errorf("start session flow: %w", err)
+	}
+
+	remoteAddr := conn.RemoteAddr().String()
+	lastPhase, hasPhase := currentSessionPhase(flow)
+	if hasPhase && logger != nil {
+		logger.Info("legacy session started", "remote_addr", remoteAddr, "phase", lastPhase)
 	}
 
 	for _, raw := range out {
@@ -120,6 +131,16 @@ func serveLegacyConn(ctx context.Context, conn net.Conn, flow SessionFlow) error
 				out, handleErr := flow.HandleClientFrame(incoming)
 				if handleErr != nil {
 					return handleErr
+				}
+
+				if nextPhase, ok := currentSessionPhase(flow); ok {
+					if !hasPhase || nextPhase != lastPhase {
+						if logger != nil {
+							logger.Info("legacy session phase changed", "remote_addr", remoteAddr, "from_phase", lastPhase, "to_phase", nextPhase)
+						}
+						lastPhase = nextPhase
+						hasPhase = true
+					}
 				}
 
 				for _, raw := range out {
@@ -162,6 +183,14 @@ func flushServerFrames(conn net.Conn, flow SessionFlow) error {
 	}
 
 	return nil
+}
+
+func currentSessionPhase(flow SessionFlow) (session.Phase, bool) {
+	phaseAware, ok := flow.(phaseAwareSessionFlow)
+	if !ok {
+		return "", false
+	}
+	return phaseAware.CurrentPhase(), true
 }
 
 func writeLegacyFrame(conn net.Conn, raw []byte) error {
