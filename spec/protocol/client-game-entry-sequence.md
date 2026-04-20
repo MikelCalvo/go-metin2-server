@@ -141,6 +141,8 @@ The client can also emit `SYNC_POSITION` for correction/reconciliation paths.
 Practical server rule:
 - keep sync handling as part of the early MVP surface, not a late "polish" feature
 - even a minimal server should parse it and respond deterministically
+- on the secure legacy game-socket path, the first post-spawn `SYNC_POSITION` stays on that same encrypted socket after `PHASE(GAME)`
+- that first encrypted post-spawn `SYNC_POSITION` returns one deterministic selected-character sync reply
 
 ## Coordinate and time notes
 

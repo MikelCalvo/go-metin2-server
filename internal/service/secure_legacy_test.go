@@ -882,6 +882,273 @@ func TestServeLegacyKeepsTheEncryptedGameSocketAliveForSelectedCharacterMoveAfte
 	}
 }
 
+func TestServeLegacyKeepsTheEncryptedGameSocketAliveForSelectedCharacterSyncPositionAfterGameEntry(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	defer listener.Close()
+
+	mainCharacter := worldproto.MainCharacterPacket{
+		VID:        0x01020305,
+		RaceNum:    3,
+		Name:       "MkmkSura",
+		BGMName:    "",
+		BGMVolume:  0,
+		X:          1200,
+		Y:          2100,
+		Z:          0,
+		Empire:     2,
+		SkillGroup: 1,
+	}
+	var playerPoints worldproto.PlayerPointsPacket
+	playerPoints.Points[1] = 900
+	characterAdd := worldproto.CharacterAddPacket{
+		VID:         mainCharacter.VID,
+		Angle:       0,
+		X:           mainCharacter.X,
+		Y:           mainCharacter.Y,
+		Z:           mainCharacter.Z,
+		Type:        6,
+		RaceNum:     mainCharacter.RaceNum,
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   0,
+	}
+	characterInfo := worldproto.CharacterAdditionalInfoPacket{
+		VID:       mainCharacter.VID,
+		Name:      mainCharacter.Name,
+		Empire:    mainCharacter.Empire,
+		GuildID:   0,
+		Level:     12,
+		Alignment: 0,
+		PKMode:    0,
+		MountVnum: 0,
+	}
+	characterInfo.Parts[0] = 102
+	characterInfo.Parts[3] = 202
+	characterUpdate := worldproto.CharacterUpdatePacket{
+		VID:         mainCharacter.VID,
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   0,
+		GuildID:     0,
+		Alignment:   0,
+		PKMode:      0,
+		MountVnum:   0,
+	}
+	characterUpdate.Parts[0] = 102
+	characterUpdate.Parts[3] = 202
+	pointChange := worldproto.PlayerPointChangePacket{VID: mainCharacter.VID, Type: 1, Amount: 900, Value: 900}
+	characterAddRaw := worldproto.EncodeCharacterAdd(characterAdd)
+	characterInfoRaw, err := worldproto.EncodeCharacterAdditionalInfo(characterInfo)
+	if err != nil {
+		t.Fatalf("encode character additional info: %v", err)
+	}
+	characterUpdateRaw := worldproto.EncodeCharacterUpdate(characterUpdate)
+	pointChangeRaw := worldproto.EncodePlayerPointChange(pointChange)
+	syncPacket := movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: mainCharacter.VID, X: 1400, Y: 2500}}}
+	syncSeen := make(chan movep.SyncPositionPacket, 1)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ServeLegacy(ctx, listener, testLogger(), func() SessionFlow {
+			return boot.NewFlow(boot.Config{
+				Handshake: handshake.Config{
+					SecureSession: securecipher.NewServerSession(securecipher.ServerConfig{
+						Random:     rand.Reader,
+						ServerTime: func() uint32 { return 0x01020304 },
+					}),
+				},
+				Login: loginflow.Config{
+					Authenticate: func(packet loginproto.Login2Packet) loginflow.Result {
+						if packet.Login != "mkmk" || packet.LoginKey != 0x01020304 {
+							return loginflow.Result{Accepted: false, FailureStatus: "NOID"}
+						}
+						return loginflow.Result{
+							Accepted: true,
+							Empire:   2,
+							LoginSuccess4: loginproto.LoginSuccess4Packet{
+								Handle:    0x11223344,
+								RandomKey: 0x55667788,
+							},
+						}
+					},
+				},
+				WorldEntry: worldentry.Config{
+					SelectCharacter: func(uint8) worldentry.Result {
+						return worldentry.Result{Accepted: true, MainCharacter: mainCharacter, PlayerPoints: playerPoints}
+					},
+					EnterGame: func() worldentry.EnterGameResult {
+						return worldentry.EnterGameResult{
+							BootstrapFrames: [][]byte{
+								characterAddRaw,
+								characterInfoRaw,
+								characterUpdateRaw,
+								pointChangeRaw,
+							},
+						}
+					},
+				},
+				Game: gameflow.Config{
+					HandleSyncPosition: func(packet movep.SyncPositionPacket) gameflow.SyncPositionResult {
+						select {
+						case syncSeen <- packet:
+						default:
+						}
+						return gameflow.SyncPositionResult{Accepted: true, Synchronization: movep.SyncPositionAckPacket{Elements: []movep.SyncPositionElement{{VID: mainCharacter.VID, X: 1400, Y: 2500}}}}
+					},
+				},
+			})
+		})
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial tcp: %v", err)
+	}
+	defer conn.Close()
+
+	client := newSecureLegacyTestClient(t, conn)
+	secureClient := securecipher.NewClientSession(securecipher.ClientConfig{Random: rand.Reader})
+
+	challenge := readBootHandshakeStartChallenge(t, client)
+	response, err := secureClient.HandleKeyChallenge(challenge)
+	if err != nil {
+		t.Fatalf("handle key challenge: %v", err)
+	}
+	client.writeRaw(t, control.EncodeKeyResponse(response))
+
+	keyCompleteRaw := client.readExact(t, 76)
+	keyCompleteFrame := decodeSingleLegacyFrame(t, keyCompleteRaw)
+	keyComplete, err := control.DecodeKeyComplete(keyCompleteFrame)
+	if err != nil {
+		t.Fatalf("decode key complete: %v", err)
+	}
+	if err := secureClient.HandleKeyComplete(keyComplete); err != nil {
+		t.Fatalf("handle key complete: %v", err)
+	}
+
+	phaseLoginFrame := client.readEncryptedFrame(t, secureClient)
+	phaseLogin, err := control.DecodePhase(phaseLoginFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted phase login: %v", err)
+	}
+	if phaseLogin.Phase != session.PhaseLogin {
+		t.Fatalf("expected phase %q, got %q", session.PhaseLogin, phaseLogin.Phase)
+	}
+
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	client.writeEncryptedFrame(t, secureClient, login2Raw)
+
+	loginSuccessFrame := client.readEncryptedFrame(t, secureClient)
+	if _, err := loginproto.DecodeLoginSuccess4(loginSuccessFrame); err != nil {
+		t.Fatalf("decode encrypted login success: %v", err)
+	}
+
+	empireFrame := client.readEncryptedFrame(t, secureClient)
+	empire, err := loginproto.DecodeEmpire(empireFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted empire: %v", err)
+	}
+	if empire.Empire != 2 {
+		t.Fatalf("expected empire 2, got %d", empire.Empire)
+	}
+
+	phaseSelectFrame := client.readEncryptedFrame(t, secureClient)
+	phaseSelect, err := control.DecodePhase(phaseSelectFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted phase select: %v", err)
+	}
+	if phaseSelect.Phase != session.PhaseSelect {
+		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, phaseSelect.Phase)
+	}
+
+	client.writeEncryptedFrame(t, secureClient, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))
+
+	phaseLoadingFrame := client.readEncryptedFrame(t, secureClient)
+	phaseLoading, err := control.DecodePhase(phaseLoadingFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted phase loading: %v", err)
+	}
+	if phaseLoading.Phase != session.PhaseLoading {
+		t.Fatalf("expected phase %q, got %q", session.PhaseLoading, phaseLoading.Phase)
+	}
+
+	if _, err := worldproto.DecodeMainCharacter(client.readEncryptedFrame(t, secureClient)); err != nil {
+		t.Fatalf("decode encrypted main character: %v", err)
+	}
+	if _, err := worldproto.DecodePlayerPoints(client.readEncryptedFrame(t, secureClient)); err != nil {
+		t.Fatalf("decode encrypted player points: %v", err)
+	}
+
+	client.writeEncryptedFrame(t, secureClient, worldproto.EncodeEnterGame())
+
+	phaseGameFrame := client.readEncryptedFrame(t, secureClient)
+	phaseGame, err := control.DecodePhase(phaseGameFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted phase game: %v", err)
+	}
+	if phaseGame.Phase != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, phaseGame.Phase)
+	}
+
+	if _, err := worldproto.DecodeCharacterAdd(client.readEncryptedFrame(t, secureClient)); err != nil {
+		t.Fatalf("decode encrypted character add: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(client.readEncryptedFrame(t, secureClient)); err != nil {
+		t.Fatalf("decode encrypted character additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(client.readEncryptedFrame(t, secureClient)); err != nil {
+		t.Fatalf("decode encrypted character update: %v", err)
+	}
+	if _, err := worldproto.DecodePlayerPointChange(client.readEncryptedFrame(t, secureClient)); err != nil {
+		t.Fatalf("decode encrypted player point change: %v", err)
+	}
+
+	syncRaw := movep.EncodeSyncPosition(syncPacket)
+	client.writeEncryptedFrame(t, secureClient, syncRaw)
+
+	syncAckFrame := client.readEncryptedFrame(t, secureClient)
+	syncAck, err := movep.DecodeSyncPositionAck(syncAckFrame)
+	if err != nil {
+		t.Fatalf("decode encrypted sync position ack: %v", err)
+	}
+	if len(syncAck.Elements) != 1 {
+		t.Fatalf("expected 1 sync element, got %d", len(syncAck.Elements))
+	}
+	if syncAck.Elements[0].VID != mainCharacter.VID || syncAck.Elements[0].X != 1400 || syncAck.Elements[0].Y != 2500 {
+		t.Fatalf("unexpected encrypted sync position ack: %+v", syncAck.Elements[0])
+	}
+
+	select {
+	case observed := <-syncSeen:
+		if len(observed.Elements) != 1 || observed.Elements[0] != syncPacket.Elements[0] {
+			t.Fatalf("unexpected sync packet seen by handler: %+v", observed)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("expected sync handler to observe the encrypted sync-position packet")
+	}
+
+	client.expectNoBytesWithin(t, 300*time.Millisecond)
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("ServeLegacy returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ServeLegacy to stop")
+	}
+}
+
 func TestServeLegacySupportsSecureAuthBootHandshakeAndEncryptedLogin3(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
