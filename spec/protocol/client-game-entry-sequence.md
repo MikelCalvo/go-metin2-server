@@ -64,6 +64,19 @@ Practical server rule:
 - keep `ENTERGAME` as the client-owned trigger for `LOADING -> GAME`
 - do not merge loading completion and game entry into one implicit server-only step
 
+## Secure transport continuity on the game socket
+
+On the secure legacy game-socket path, `KEY_COMPLETE` does not end the main game-socket choreography.
+It flips that same socket into encrypted post-handshake traffic.
+
+Practical server rule:
+- after the secure handshake completes, the same game socket continues carrying encrypted `LOGIN2`
+- the same encrypted post-handshake path also carries `CHARACTER_SELECT`, `CLIENT_VERSION`, and `ENTERGAME`
+- the server responses for `LOGIN_SUCCESS4`, `EMPIRE`, `PHASE(SELECT)`, `PHASE(LOADING)`, `MAIN_CHARACTER`, `PLAYER_POINTS`, `PHASE(GAME)`, and the self bootstrap burst stay on that encrypted game-socket path
+
+This matters because the first honest "client standing in world" milestone is not only about packet order.
+It is about proving that the selection/loading/game-entry choreography survives intact after secure transport activation.
+
 ## Minimum self bootstrap after `PHASE(GAME)`
 
 For a stable self presence, the client expects more than a single "you are in game" signal.
