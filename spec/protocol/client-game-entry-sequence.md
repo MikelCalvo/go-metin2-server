@@ -131,6 +131,8 @@ The client emits `MOVE` in-game with:
 Practical server rule:
 - the Go server should keep `MOVE` parsing and acknowledgement deterministic
 - treat movement timestamps as meaningful compatibility data rather than decorative payload
+- on the secure legacy game-socket path, the first post-spawn `MOVE` stays on that same encrypted socket after `PHASE(GAME)`
+- that first encrypted post-spawn `MOVE` returns one deterministic self `MOVE` ack for the selected character
 
 ### Sync position
 
