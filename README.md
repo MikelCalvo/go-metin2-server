@@ -32,6 +32,7 @@ Current scope of the project:
 - A first owned self-session bootstrap transfer contract: transfer-triggered `MOVE` / `SYNC_POSITION` suppress immediate self ack packets and currently reuse queued self visibility-delta frames instead of a final warp/loading packet.
 - Persist-before-commit bootstrap transfer orchestration via `internal/warp`, with best-effort rollback to the previous persisted account snapshot if the late runtime commit step fails.
 - A first `internal/player` runtime model that keeps selected-session live world position separate from the persisted bootstrap character snapshot.
+- A first generic `internal/worldruntime` entity registry that registers player entities through a reusable identity boundary instead of direct shared-world character bookkeeping.
 - A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state.
 - A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules.
 - A loopback-only `gamed` runtime map-occupancy endpoint that groups currently connected bootstrap characters by effective `MapIndex`.
@@ -137,7 +138,7 @@ Legend:
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, but there is still no range-, sector-, or distance-based culling yet. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer reply contract exist, but there is still no final end-to-end client/server warp flow yet. |
-| Entity runtime beyond players | [ ] | No NPC, mob, item-ground, or generic entity layer yet. |
+| Entity runtime beyond players | [~] | A first generic entity registry now exists in `internal/worldruntime`, but it still registers player entities only; no NPC, mob, item-ground, or generic behavior runtime yet. |
 
 ### Social, chat, and operator surfaces
 
@@ -200,7 +201,7 @@ Legend:
 - `internal/login` — login-by-key flow and selection-surface transition
 - `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
 - `internal/player` — live player-runtime objects that separate selected-session world state from persisted bootstrap character snapshots
-- `internal/worldruntime` — bootstrap topology and visibility helpers that own reusable shared-world calculations
+- `internal/worldruntime` — bootstrap topology, visibility helpers, and the first generic entity registry that own reusable shared-world calculations
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/ops` — health and pprof endpoints
