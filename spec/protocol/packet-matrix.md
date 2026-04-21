@@ -61,12 +61,12 @@ Status values:
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `MOVE` | client -> server | `0x0301` | game | documented | first in-world action |
-| `MOVE` | server -> client | `0x0302` | game | documented | deterministic self ack for the mover and current queued replication payload for already-visible peers on the same bootstrap `MapIndex` |
-| `SYNC_POSITION` | client -> server | `0x0303` | game | documented | first selected-character position reconciliation path in `GAME` |
-| `SYNC_POSITION` | server -> client | `0x0304` | game | documented | deterministic selected-character sync reply for the sender and current queued replication payload for already-visible peers on the same bootstrap `MapIndex` |
-| `WARP` | client -> server | `0x0305` | game | planned | out of early scope |
-| `WARP` | server -> client | `0x0306` | game | planned | out of early scope |
+| `MOVE` | client -> server | `0x0301` | game | documented | first in-world action; an exact-position bootstrap transfer trigger may consume the packet without the normal same-map reply path |
+| `MOVE` | server -> client | `0x0302` | game | documented | deterministic self ack for the normal same-map mover path and current queued replication payload for already-visible peers on the same bootstrap `MapIndex`; the current transfer-trigger path intentionally suppresses the immediate self `MOVE_ACK` and uses the queued self visibility-delta contract in `map-transfer-bootstrap.md` instead |
+| `SYNC_POSITION` | client -> server | `0x0303` | game | documented | first selected-character position reconciliation path in `GAME`; an exact-position bootstrap transfer trigger may consume the packet without the normal same-map reply path |
+| `SYNC_POSITION` | server -> client | `0x0304` | game | documented | deterministic selected-character sync reply for the normal same-map sender path and current queued replication payload for already-visible peers on the same bootstrap `MapIndex`; the current transfer-trigger path intentionally suppresses the immediate self `SYNC_POSITION_ACK` and uses the queued self visibility-delta contract in `map-transfer-bootstrap.md` instead |
+| `WARP` | client -> server | `0x0305` | game | planned | out of early scope; the bootstrap runtime currently reuses `MOVE` / `SYNC_POSITION` exact-position triggers instead of owning a dedicated warp request |
+| `WARP` | server -> client | `0x0306` | game | planned | out of early scope; the bootstrap runtime does not yet freeze a final self-visible warp/loading packet and currently uses the self-session transfer contract documented in `map-transfer-bootstrap.md` |
 
 ## Chat
 

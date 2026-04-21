@@ -62,8 +62,10 @@ When an exact-position trigger matches:
 
 The current gameplay trigger deliberately does not freeze a final self-visible warp packet yet.
 
-For the bootstrap runtime today, a matched gameplay trigger produces:
+The owned self-session transfer reply contract now lives in:
+- `map-transfer-bootstrap.md`
 
+That document freezes the current bootstrap behavior:
 - no immediate self `MOVE_ACK`
 - no immediate self `SYNC_POSITION_ACK`
 - queued self visibility-delta frames when peers leave or enter the moved character's visible world

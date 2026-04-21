@@ -28,6 +28,7 @@ Current scope of the project:
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation.
 - A loopback-only `gamed` structured transfer endpoint that commits the minimal bootstrap map-transfer contract and returns the applied transfer result.
+- A first owned self-session bootstrap transfer contract: transfer-triggered `MOVE` / `SYNC_POSITION` suppress immediate self ack packets and currently reuse queued self visibility-delta frames instead of a final warp/loading packet.
 - A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state.
 - A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules.
 - A loopback-only `gamed` runtime map-occupancy endpoint that groups currently connected bootstrap characters by effective `MapIndex`.
@@ -132,7 +133,7 @@ Legend:
 | Map boundaries | [~] | An explicit bootstrap topology now owns local channel/map chat scoping, but there is still no final warp flow yet. |
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [ ] | No range-, sector-, or AOI-based visibility yet. |
-| Warp / map transfer | [~] | A server-side visibility-rebuild primitive exists for `MapIndex` relocation, but there is no end-to-end client/server warp flow yet. |
+| Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer reply contract exist, but there is still no final end-to-end client/server warp flow yet. |
 | Entity runtime beyond players | [ ] | No NPC, mob, item-ground, or generic entity layer yet. |
 
 ### Social, chat, and operator surfaces
@@ -152,7 +153,7 @@ Legend:
 | Area | Status | Notes |
 | --- | --- | --- |
 | Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, chat, and bootstrap transfer-trigger slices. |
-| Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; final self-facing warp/loading packet is still not frozen. |
+| Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; the current self-facing contract is documented, but the final warp/loading packet is still not frozen. |
 | Inventory | [ ] | Not started. |
 | Equipment | [ ] | Not started. |
 | Item use / consumables | [ ] | Not started. |
@@ -236,6 +237,7 @@ Legend:
 - `spec/protocol/world-topology-bootstrap.md`
 - `spec/protocol/map-relocation-visibility-rebuild.md`
 - `spec/protocol/bootstrap-map-transfer-contract.md`
+- `spec/protocol/map-transfer-bootstrap.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
