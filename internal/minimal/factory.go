@@ -23,6 +23,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
@@ -272,6 +273,7 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 		var hasTicket bool
 		var selectedIndex uint8
 		var hasSelected bool
+		var selectedPlayer *player.Runtime
 		var stateMu sync.Mutex
 		pending := newPendingServerFrames()
 		var sharedWorldID uint64
@@ -336,6 +338,7 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					sessionTicket = ticket
 					hasTicket = true
 					hasSelected = false
+					selectedPlayer = nil
 					selectedIndex = 0
 					return loginflow.Result{
 						Accepted:      true,
@@ -394,6 +397,7 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					sessionTicket.Characters = updatedCharacters
 					if hasSelected && selectedIndex == deletedIndex {
 						hasSelected = false
+						selectedPlayer = nil
 					}
 					return worldentry.DeleteResult{Accepted: true, Index: deletedIndex}
 				},
@@ -411,10 +415,12 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					}
 					selectedIndex = index
 					hasSelected = true
+					selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: index})
 					return worldentry.Result{
 						Accepted:      true,
-						MainCharacter: ticketMainCharacterPacket(selected),
-						PlayerPoints:  ticketPlayerPointsPacket(selected),
+						Player:        selectedPlayer,
+						MainCharacter: ticketMainCharacterPacket(selectedPlayer.LiveCharacter()),
+						PlayerPoints:  ticketPlayerPointsPacket(selectedPlayer.PersistedSnapshot()),
 					}
 				},
 				EnterGame: func() worldentry.EnterGameResult {
@@ -428,6 +434,10 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if selected.ID == 0 {
 						return worldentry.EnterGameResult{}
 					}
+					if selectedPlayer == nil {
+						selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: selectedIndex})
+					}
+					selected = selectedPlayer.LiveCharacter()
 					infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(ticketCharacterAdditionalInfoPacket(selected))
 					if err != nil {
 						return worldentry.EnterGameResult{}

@@ -3,6 +3,7 @@ package worldentry
 import (
 	"errors"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
@@ -53,6 +54,7 @@ type DeleteResult struct {
 
 type Result struct {
 	Accepted      bool
+	Player        *player.Runtime
 	MainCharacter worldproto.MainCharacterPacket
 	PlayerPoints  worldproto.PlayerPointsPacket
 }
@@ -69,6 +71,7 @@ type Flow struct {
 	deleteCharacter DeleteCharacterFunc
 	selectCharacter SelectCharacterFunc
 	enterGame       EnterGameFunc
+	selectedPlayer  *player.Runtime
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -97,6 +100,13 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		enterGame = func() EnterGameResult { return EnterGameResult{} }
 	}
 	return &Flow{machine: machine, selectEmpire: empireSelector, createCharacter: creator, deleteCharacter: deleter, selectCharacter: selector, enterGame: enterGame}
+}
+
+func (f *Flow) SelectedPlayer() *player.Runtime {
+	if f == nil {
+		return nil
+	}
+	return f.selectedPlayer
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
@@ -146,6 +156,7 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			if !result.Accepted {
 				return nil, ErrCharacterSelectRejected
 			}
+			f.selectedPlayer = result.Player
 			phaseLoading, err := control.EncodePhase(session.PhaseLoading)
 			if err != nil {
 				return nil, err

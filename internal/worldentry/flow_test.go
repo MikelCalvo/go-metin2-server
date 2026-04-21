@@ -5,12 +5,42 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
+
+func TestHandleClientFrameStoresSelectedPlayerRuntimeAfterCharacterSelect(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseSelect)
+	selectedPlayer := player.NewRuntime(loginticket.Character{
+		ID:       0x01030102,
+		VID:      0x02040102,
+		Name:     "PeerTwo",
+		MapIndex: 1,
+		X:        1300,
+		Y:        2300,
+	}, player.SessionLink{Login: "peer-two", CharacterIndex: 1})
+	flow := NewFlow(machine, Config{
+		SelectCharacter: func(index uint8) Result {
+			if index != 1 {
+				t.Fatalf("unexpected character index: %d", index)
+			}
+			return Result{Accepted: true, Player: selectedPlayer, MainCharacter: sampleMainCharacter(), PlayerPoints: samplePlayerPoints()}
+		},
+	})
+
+	_, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1})))
+	if err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if flow.SelectedPlayer() != selectedPlayer {
+		t.Fatalf("expected selected player runtime to be retained, got %+v", flow.SelectedPlayer())
+	}
+}
 
 func TestHandleClientFrameAcceptsCharacterSelectAndTransitionsToLoading(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseSelect)

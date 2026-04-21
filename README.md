@@ -31,6 +31,7 @@ Current scope of the project:
 - A loopback-only `gamed` structured transfer endpoint that commits the minimal bootstrap map-transfer contract and returns the applied transfer result.
 - A first owned self-session bootstrap transfer contract: transfer-triggered `MOVE` / `SYNC_POSITION` suppress immediate self ack packets and currently reuse queued self visibility-delta frames instead of a final warp/loading packet.
 - Persist-before-commit bootstrap transfer orchestration via `internal/warp`, with best-effort rollback to the previous persisted account snapshot if the late runtime commit step fails.
+- A first `internal/player` runtime model that keeps selected-session live world position separate from the persisted bootstrap character snapshot.
 - A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state.
 - A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules.
 - A loopback-only `gamed` runtime map-occupancy endpoint that groups currently connected bootstrap characters by effective `MapIndex`.
@@ -154,7 +155,7 @@ Legend:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, chat, and bootstrap transfer-trigger slices. |
+| Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, chat, and bootstrap transfer-trigger slices; a first live `internal/player` runtime model now exists separately from persisted snapshots. |
 | Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; persist-before-commit ordering and the current self-facing contract are documented, but the final warp/loading packet is still not frozen. |
 | Inventory | [ ] | Not started. |
 | Equipment | [ ] | Not started. |
@@ -198,6 +199,7 @@ Legend:
 - `internal/handshake` — server-side control-plane handshake flow
 - `internal/login` — login-by-key flow and selection-surface transition
 - `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
+- `internal/player` — live player-runtime objects that separate selected-session world state from persisted bootstrap character snapshots
 - `internal/worldruntime` — bootstrap topology and visibility helpers that own reusable shared-world calculations
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
