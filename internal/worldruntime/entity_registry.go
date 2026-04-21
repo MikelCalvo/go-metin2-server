@@ -9,11 +9,11 @@ import (
 type EntityRegistry struct {
 	mu      sync.Mutex
 	nextID  uint64
-	players map[uint64]PlayerEntity
+	players *PlayerDirectory
 }
 
 func NewEntityRegistry() *EntityRegistry {
-	return &EntityRegistry{players: make(map[uint64]PlayerEntity)}
+	return &EntityRegistry{players: NewPlayerDirectory()}
 }
 
 func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerEntity {
@@ -24,59 +24,46 @@ func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerE
 	defer r.mu.Unlock()
 	r.nextID++
 	registered := newPlayerEntity(r.nextID, character)
-	r.players[registered.Entity.ID] = registered
+	if !r.players.Register(registered) {
+		return PlayerEntity{}
+	}
 	return registered
 }
 
 func (r *EntityRegistry) Player(id uint64) (PlayerEntity, bool) {
-	if r == nil || id == 0 {
+	if r == nil || id == 0 || r.players == nil {
 		return PlayerEntity{}, false
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	playerEntity, ok := r.players[id]
-	return playerEntity, ok
+	return r.players.ByEntityID(id)
 }
 
 func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character) bool {
-	if r == nil || id == 0 {
+	if r == nil || id == 0 || r.players == nil {
 		return false
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.players[id]; !ok {
-		return false
-	}
-	r.players[id] = newPlayerEntity(id, character)
-	return true
+	return r.players.Update(newPlayerEntity(id, character))
 }
 
 func (r *EntityRegistry) Remove(id uint64) (PlayerEntity, bool) {
-	if r == nil || id == 0 {
+	if r == nil || id == 0 || r.players == nil {
 		return PlayerEntity{}, false
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	playerEntity, ok := r.players[id]
-	if !ok {
-		return PlayerEntity{}, false
-	}
-	delete(r.players, id)
-	return playerEntity, true
+	return r.players.Remove(id)
 }
 
 func (r *EntityRegistry) PlayerCharacters() []loginticket.Character {
-	if r == nil {
+	if r == nil || r.players == nil {
 		return nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	characters := make([]loginticket.Character, 0, len(r.players))
-	for _, playerEntity := range r.players {
-		characters = append(characters, playerEntity.Character)
-	}
-	sortCharacters(characters)
-	return characters
+	return r.players.PlayerCharacters()
 }
 
 func newPlayerEntity(id uint64, character loginticket.Character) PlayerEntity {

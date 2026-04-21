@@ -138,7 +138,7 @@ Legend:
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, but there is still no range-, sector-, or distance-based culling yet. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer reply contract exist, but there is still no final end-to-end client/server warp flow yet. |
-| Entity runtime beyond players | [~] | A first generic entity registry now exists in `internal/worldruntime`, and `spec/protocol/entity-runtime-bootstrap.md` now freezes the next M2 ownership seams (player directory, map index, session directory, AOI policy); the implementation is still player-only and no NPC, mob, item-ground, or generic behavior runtime exists yet. |
+| Entity runtime beyond players | [~] | A first generic entity registry and dedicated player directory now exist in `internal/worldruntime`, and `spec/protocol/entity-runtime-bootstrap.md` freezes the next M2 ownership seams (map index, session directory, AOI policy); the implementation is still player-only and no NPC, mob, item-ground, or generic behavior runtime exists yet. |
 
 ### Social, chat, and operator surfaces
 
@@ -201,7 +201,7 @@ Legend:
 - `internal/login` — login-by-key flow and selection-surface transition
 - `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
 - `internal/player` — live player-runtime objects that separate selected-session world state from persisted bootstrap character snapshots
-- `internal/worldruntime` — bootstrap topology, visibility helpers, and the first generic entity/runtime seams (entity registry today; player-directory, map-index, and session-directory boundaries documented next)
+- `internal/worldruntime` — bootstrap topology, visibility helpers, and the first generic entity/runtime seams (entity registry + player directory today; map-index and session-directory boundaries documented next)
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/ops` — health and pprof endpoints
