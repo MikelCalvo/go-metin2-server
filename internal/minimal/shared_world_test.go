@@ -1907,6 +1907,158 @@ func TestGameRuntimePreviewRelocationRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryJoinUsesSessionDirectoryFrameSink(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	originalPending := newPendingServerFrames()
+
+	peerOneID, visiblePeers := registry.Join(peerOne, originalPending, nil)
+	if peerOneID == 0 {
+		t.Fatal("expected first join to register a shared-world entity")
+	}
+	if len(visiblePeers) != 0 {
+		t.Fatalf("expected first join to have no visible peers, got %+v", visiblePeers)
+	}
+
+	replacementPending := newPendingServerFrames()
+	if !registry.sessionDirectory.Replace(peerOneID, newSharedWorldSessionEntry(replacementPending, nil)) {
+		t.Fatal("expected session directory replace to succeed for existing peer")
+	}
+
+	peerTwoID, visiblePeers := registry.Join(peerTwo, newPendingServerFrames(), nil)
+	if peerTwoID == 0 {
+		t.Fatal("expected second join to register a shared-world entity")
+	}
+	if len(visiblePeers) != 1 || visiblePeers[0].VID != peerOne.VID {
+		t.Fatalf("expected second join to see peer one, got %+v", visiblePeers)
+	}
+	if frames := originalPending.flush(); len(frames) != 0 {
+		t.Fatalf("expected replaced frame sink to receive join replication instead of original sink, got %d frames", len(frames))
+	}
+
+	queued := replacementPending.flush()
+	if len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames via replacement sink, got %d", len(queued))
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer add: %v", err)
+	}
+	if added.VID != peerTwo.VID {
+		t.Fatalf("expected queued peer add for VID %#08x, got %#08x", peerTwo.VID, added.VID)
+	}
+}
+
+func TestSharedWorldRegistryLeaveUsesSessionDirectoryFrameSink(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	originalPending := newPendingServerFrames()
+
+	peerOneID, _ := registry.Join(peerOne, originalPending, nil)
+	peerTwoID, _ := registry.Join(peerTwo, newPendingServerFrames(), nil)
+	_ = originalPending.flush()
+
+	replacementPending := newPendingServerFrames()
+	if !registry.sessionDirectory.Replace(peerOneID, newSharedWorldSessionEntry(replacementPending, nil)) {
+		t.Fatal("expected session directory replace to succeed for existing peer")
+	}
+
+	registry.Leave(peerTwoID)
+	if frames := originalPending.flush(); len(frames) != 0 {
+		t.Fatalf("expected replaced frame sink to receive leave replication instead of original sink, got %d frames", len(frames))
+	}
+
+	queued := replacementPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected 1 queued peer-exit frame via replacement sink, got %d", len(queued))
+	}
+	removed, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer delete: %v", err)
+	}
+	if removed.VID != peerTwo.VID {
+		t.Fatalf("expected queued peer delete for VID %#08x, got %#08x", peerTwo.VID, removed.VID)
+	}
+}
+
+func TestSharedWorldRegistryTransferUsesSessionDirectoryFrameSink(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	originalPending := newPendingServerFrames()
+
+	peerOneID, _ := registry.Join(peerOne, originalPending, nil)
+	peerTwoID, _ := registry.Join(peerTwo, newPendingServerFrames(), nil)
+	_ = originalPending.flush()
+
+	replacementPending := newPendingServerFrames()
+	if !registry.sessionDirectory.Replace(peerOneID, newSharedWorldSessionEntry(replacementPending, nil)) {
+		t.Fatal("expected session directory replace to succeed for existing peer")
+	}
+
+	movedPeer := peerTwo
+	movedPeer.MapIndex = 42
+	movedPeer.X = 1700
+	movedPeer.Y = 2800
+	preview, ok := registry.Transfer(peerTwoID, movedPeer)
+	if !ok || !preview.Applied {
+		t.Fatalf("expected transfer to succeed, got preview=%+v ok=%v", preview, ok)
+	}
+	if frames := originalPending.flush(); len(frames) != 0 {
+		t.Fatalf("expected replaced frame sink to receive transfer replication instead of original sink, got %d frames", len(frames))
+	}
+
+	queued := replacementPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected 1 queued transfer frame via replacement sink, got %d", len(queued))
+	}
+	removed, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode queued transfer delete: %v", err)
+	}
+	if removed.VID != peerTwo.VID {
+		t.Fatalf("expected queued transfer delete for VID %#08x, got %#08x", peerTwo.VID, removed.VID)
+	}
+}
+
+func TestSharedWorldRegistryTransferCharacterUsesSessionDirectoryRelocator(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	originalCalls := 0
+	replacementCalls := 0
+
+	peerID, _ := registry.Join(peer, newPendingServerFrames(), func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
+		originalCalls++
+		return RelocationPreview{Applied: true, Target: ConnectedCharacterSnapshot{Name: peer.Name, MapIndex: mapIndex, X: x, Y: y}}, true
+	})
+	if peerID == 0 {
+		t.Fatal("expected join to register a shared-world entity")
+	}
+
+	if !registry.sessionDirectory.Replace(peerID, newSharedWorldSessionEntry(nil, func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
+		replacementCalls++
+		return RelocationPreview{Applied: true, Target: ConnectedCharacterSnapshot{Name: peer.Name, MapIndex: mapIndex, X: x, Y: y}}, true
+	})) {
+		t.Fatal("expected session directory replace to succeed for relocator")
+	}
+
+	preview, ok := registry.TransferCharacter(peer.Name, 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected transfer character to succeed via replacement relocator")
+	}
+	if originalCalls != 0 {
+		t.Fatalf("expected original relocator not to be used after replacement, got %d calls", originalCalls)
+	}
+	if replacementCalls != 1 {
+		t.Fatalf("expected replacement relocator to be used exactly once, got %d calls", replacementCalls)
+	}
+	if preview.Target.MapIndex != 42 || preview.Target.X != 1700 || preview.Target.Y != 2800 {
+		t.Fatalf("expected replacement relocator preview to be returned, got %+v", preview)
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 

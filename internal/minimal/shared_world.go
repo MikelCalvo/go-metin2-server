@@ -31,12 +31,6 @@ type sharedWorldRegistry struct {
 	topology         worldruntime.BootstrapTopology
 	entities         *worldruntime.EntityRegistry
 	sessionDirectory *worldruntime.SessionDirectory
-	sessions         map[uint64]sharedWorldSession
-}
-
-type sharedWorldSession struct {
-	pending  *pendingServerFrames
-	relocate sharedWorldSessionRelocator
 }
 
 func newQueuedSessionFlow(inner service.SessionFlow, pending *pendingServerFrames, onClose func()) *queuedSessionFlow {
@@ -137,7 +131,6 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		topology:         topology,
 		entities:         worldruntime.NewEntityRegistryWithTopology(topology),
 		sessionDirectory: worldruntime.NewSessionDirectory(),
-		sessions:         make(map[uint64]sharedWorldSession),
 	}
 }
 
@@ -165,6 +158,61 @@ func registerSharedWorldSessionEntry(directory *worldruntime.SessionDirectory, e
 	return directory.Register(entityID, entry)
 }
 
+func (r *sharedWorldRegistry) sessionEntryLocked(entityID uint64) (worldruntime.SessionEntry, bool) {
+	if r == nil || r.sessionDirectory == nil || entityID == 0 {
+		return worldruntime.SessionEntry{}, false
+	}
+	return r.sessionDirectory.Lookup(entityID)
+}
+
+func (r *sharedWorldRegistry) playerEntityForCharacterLocked(character loginticket.Character) (worldruntime.PlayerEntity, bool) {
+	if r == nil || r.entities == nil || character.VID == 0 {
+		return worldruntime.PlayerEntity{}, false
+	}
+	return r.entities.PlayerByVID(character.VID)
+}
+
+func (r *sharedWorldRegistry) sessionEntryForCharacterLocked(character loginticket.Character) (worldruntime.SessionEntry, bool) {
+	playerEntity, ok := r.playerEntityForCharacterLocked(character)
+	if !ok {
+		return worldruntime.SessionEntry{}, false
+	}
+	return r.sessionEntryLocked(playerEntity.Entity.ID)
+}
+
+func (r *sharedWorldRegistry) enqueueToEntityLocked(entityID uint64, frames [][]byte) bool {
+	entry, ok := r.sessionEntryLocked(entityID)
+	if !ok || entry.FrameSink == nil {
+		return false
+	}
+	entry.FrameSink.Enqueue(frames)
+	return true
+}
+
+func (r *sharedWorldRegistry) enqueueToCharacterLocked(character loginticket.Character, frames [][]byte) bool {
+	entry, ok := r.sessionEntryForCharacterLocked(character)
+	if !ok || entry.FrameSink == nil {
+		return false
+	}
+	entry.FrameSink.Enqueue(frames)
+	return true
+}
+
+func invokeSessionRelocator(entry worldruntime.SessionEntry, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
+	if entry.Relocator == nil {
+		return RelocationPreview{}, false
+	}
+	result, ok := entry.Relocator(mapIndex, x, y)
+	if !ok {
+		return RelocationPreview{}, false
+	}
+	preview, ok := result.(RelocationPreview)
+	if !ok {
+		return RelocationPreview{}, false
+	}
+	return preview, true
+}
+
 func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pendingServerFrames, relocate sharedWorldSessionRelocator) (uint64, []loginticket.Character) {
 	if r == nil {
 		return 0, nil
@@ -175,19 +223,6 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 
 	currentCharacters := r.snapshotCharactersLocked()
 	visibilityDiff := worldruntime.EnterVisibilityDiff(r.topology, character, currentCharacters)
-	addedVisibleVIDs := characterVIDSet(visibilityDiff.AddedVisiblePeers)
-	peerFrames := encodePeerVisibilityFrames(character)
-	for peerID, session := range r.sessions {
-		peerCharacter, ok := r.playerCharacter(peerID)
-		if !ok {
-			continue
-		}
-		if _, ok := addedVisibleVIDs[peerCharacter.VID]; !ok {
-			continue
-		}
-		session.pending.enqueue(peerFrames)
-	}
-
 	registered := r.entities.RegisterPlayer(character)
 	if registered.Entity.ID == 0 {
 		return 0, nil
@@ -197,7 +232,11 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 		_, _ = r.entities.Remove(id)
 		return 0, nil
 	}
-	r.sessions[id] = sharedWorldSession{pending: pending, relocate: relocate}
+
+	peerFrames := encodePeerVisibilityFrames(character)
+	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
+		r.enqueueToCharacterLocked(peerCharacter, peerFrames)
+	}
 	return id, visibilityDiff.TargetVisiblePeers
 }
 
@@ -209,33 +248,20 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.sessions[id]; !ok {
-		return
-	}
 	currentCharacter, ok := r.playerCharacter(id)
 	if !ok {
-		delete(r.sessions, id)
 		return
 	}
 	currentCharacters := r.snapshotCharactersLocked()
 	visibilityDiff := worldruntime.LeaveVisibilityDiff(r.topology, currentCharacter, currentCharacters)
-	delete(r.sessions, id)
 	if r.sessionDirectory != nil {
 		_, _ = r.sessionDirectory.Remove(id)
 	}
 	_, _ = r.entities.Remove(id)
 
 	removeRaw := encodeCharacterDeleteFrame(currentCharacter)
-	removedVisibleVIDs := characterVIDSet(visibilityDiff.RemovedVisiblePeers)
-	for peerID, peer := range r.sessions {
-		peerCharacter, ok := r.playerCharacter(peerID)
-		if !ok {
-			continue
-		}
-		if _, ok := removedVisibleVIDs[peerCharacter.VID]; !ok {
-			continue
-		}
-		peer.pending.enqueue([][]byte{removeRaw})
+	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+		r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 	}
 }
 
@@ -247,9 +273,6 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.sessions[id]; !ok {
-		return
-	}
 	_ = r.entities.UpdatePlayer(id, character)
 }
 
@@ -274,18 +297,14 @@ func (r *sharedWorldRegistry) TransferCharacter(name string, mapIndex uint32, x 
 		r.mu.Unlock()
 		return RelocationPreview{}, false
 	}
-	session, ok := r.sessions[playerEntity.Entity.ID]
+	entry, ok := r.sessionEntryLocked(playerEntity.Entity.ID)
 	if !ok {
 		r.mu.Unlock()
 		return RelocationPreview{}, false
 	}
-	relocate := session.relocate
 	r.mu.Unlock()
 
-	if relocate == nil {
-		return RelocationPreview{}, false
-	}
-	return relocate(mapIndex, x, y)
+	return invokeSessionRelocator(entry, mapIndex, x, y)
 }
 
 func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Character) (RelocationPreview, bool) {
@@ -296,10 +315,6 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	session, ok := r.sessions[id]
-	if !ok {
-		return RelocationPreview{}, false
-	}
 	previous, ok := r.playerCharacter(id)
 	if !ok {
 		return RelocationPreview{}, false
@@ -328,33 +343,27 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 		MapOccupancyChanges: buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
 	}
 
+	originEntry, _ := r.sessionEntryLocked(id)
 	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
-		session.pending.enqueue([][]byte{encodeCharacterDeleteFrame(peerCharacter)})
+		if originEntry.FrameSink != nil {
+			originEntry.FrameSink.Enqueue([][]byte{encodeCharacterDeleteFrame(peerCharacter)})
+		}
 	}
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
-		session.pending.enqueue(encodePeerVisibilityFrames(peerCharacter))
+		if originEntry.FrameSink != nil {
+			originEntry.FrameSink.Enqueue(encodePeerVisibilityFrames(peerCharacter))
+		}
 	}
 
 	_ = r.entities.UpdatePlayer(id, character)
 
-	removedVisibleVIDs := characterVIDSet(visibilityDiff.RemovedVisiblePeers)
-	addedVisibleVIDs := characterVIDSet(visibilityDiff.AddedVisiblePeers)
 	movedDelete := encodeCharacterDeleteFrame(previous)
 	movedFrames := encodePeerVisibilityFrames(character)
-	for peerID, peer := range r.sessions {
-		if peerID == id {
-			continue
-		}
-		peerCharacter, ok := r.playerCharacter(peerID)
-		if !ok {
-			continue
-		}
-		if _, ok := removedVisibleVIDs[peerCharacter.VID]; ok {
-			peer.pending.enqueue([][]byte{movedDelete})
-		}
-		if _, ok := addedVisibleVIDs[peerCharacter.VID]; ok {
-			peer.pending.enqueue(movedFrames)
-		}
+	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+		r.enqueueToCharacterLocked(peerCharacter, [][]byte{movedDelete})
+	}
+	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
+		r.enqueueToCharacterLocked(peerCharacter, movedFrames)
 	}
 
 	return result, true
@@ -446,11 +455,12 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for id, session := range r.sessions {
-		if id == originID {
+	for _, peerCharacter := range r.snapshotCharactersLocked() {
+		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
+		if !ok || playerEntity.Entity.ID == originID {
 			continue
 		}
-		session.pending.enqueue(frames)
+		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
 	}
 }
 
@@ -462,12 +472,12 @@ func (r *sharedWorldRegistry) EnqueueToVisibleSessions(originID uint64, origin l
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for id, session := range r.sessions {
-		peerCharacter, ok := r.playerCharacter(id)
-		if !ok || id == originID || !r.topology.SharesVisibleWorld(origin, peerCharacter) {
+	for _, peerCharacter := range r.snapshotCharactersLocked() {
+		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
+		if !ok || playerEntity.Entity.ID == originID || !r.topology.SharesVisibleWorld(origin, peerCharacter) {
 			continue
 		}
-		session.pending.enqueue(frames)
+		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
 	}
 }
 
@@ -479,12 +489,12 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpire(originID uint64, or
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for id, session := range r.sessions {
-		peerCharacter, ok := r.playerCharacter(id)
-		if !ok || id == originID || !r.topology.SharesShoutScope(origin, peerCharacter) {
+	for _, peerCharacter := range r.snapshotCharactersLocked() {
+		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
+		if !ok || playerEntity.Entity.ID == originID || !r.topology.SharesShoutScope(origin, peerCharacter) {
 			continue
 		}
-		session.pending.enqueue(frames)
+		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
 	}
 }
 
@@ -496,12 +506,12 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpireOnMap(originID uint6
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for id, session := range r.sessions {
-		peerCharacter, ok := r.playerCharacter(id)
-		if !ok || id == originID || !r.topology.SharesTalkingChatScope(origin, peerCharacter) {
+	for _, peerCharacter := range r.snapshotCharactersLocked() {
+		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
+		if !ok || playerEntity.Entity.ID == originID || !r.topology.SharesTalkingChatScope(origin, peerCharacter) {
 			continue
 		}
-		session.pending.enqueue(frames)
+		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
 	}
 }
 
@@ -513,12 +523,12 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInGuild(originID uint64, ori
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for id, session := range r.sessions {
-		peerCharacter, ok := r.playerCharacter(id)
-		if !ok || id == originID || !r.topology.SharesGuildChatScope(origin, peerCharacter) {
+	for _, peerCharacter := range r.snapshotCharactersLocked() {
+		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
+		if !ok || playerEntity.Entity.ID == originID || !r.topology.SharesGuildChatScope(origin, peerCharacter) {
 			continue
 		}
-		session.pending.enqueue(frames)
+		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
 	}
 }
 
@@ -534,12 +544,7 @@ func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byt
 	if !ok {
 		return false
 	}
-	session, ok := r.sessions[playerEntity.Entity.ID]
-	if !ok {
-		return false
-	}
-	session.pending.enqueue(frames)
-	return true
+	return r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
 }
 
 func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
@@ -558,9 +563,14 @@ func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
 	defer r.mu.Unlock()
 
 	delivered := 0
-	for _, session := range r.sessions {
-		session.pending.enqueue([][]byte{noticeRaw})
-		delivered++
+	for _, peerCharacter := range r.snapshotCharactersLocked() {
+		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
+		if !ok {
+			continue
+		}
+		if r.enqueueToEntityLocked(playerEntity.Entity.ID, [][]byte{noticeRaw}) {
+			delivered++
+		}
 	}
 	return delivered
 }
@@ -742,14 +752,6 @@ func buildMapOccupancyChanges(before []MapOccupancySnapshot, after []MapOccupanc
 	}
 	sortMapOccupancyChanges(changes)
 	return changes
-}
-
-func characterVIDSet(characters []loginticket.Character) map[uint32]struct{} {
-	vids := make(map[uint32]struct{}, len(characters))
-	for _, character := range characters {
-		vids[character.VID] = struct{}{}
-	}
-	return vids
 }
 
 func sortConnectedCharacterSnapshots(snapshots []ConnectedCharacterSnapshot) {

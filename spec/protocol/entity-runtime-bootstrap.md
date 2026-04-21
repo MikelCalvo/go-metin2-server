@@ -69,6 +69,18 @@ The current owned responsibilities are:
 
 This keeps map occupancy as an owned runtime primitive even though some callers still need to be rewired to consume it directly.
 
+### Session directory
+
+The runtime now owns a dedicated transport-hook directory in:
+- `internal/worldruntime/session_directory.go`
+
+The current owned responsibilities are:
+- register / replace / remove queued frame sinks and relocate callbacks by entity ID
+- let `internal/minimal/shared_world.go` route join/leave/transfer fanout and exact-session relocate lookups through a `worldruntime`-owned directory boundary
+- keep transport cleanup explicit on leave/close/reconnect without a bootstrap-local hook map
+
+This means the shared-world runtime no longer needs a separate session-hook table just to find queued frame sinks or relocate callbacks.
+
 ### Visibility and AOI policy
 
 Visible-world decisions are now owned by:
@@ -84,18 +96,7 @@ This means AOI exists as an architecture seam even though the default behavior i
 
 ## Remaining extraction boundaries now explicitly owned by the roadmap
 
-The repository still treats these as the next project-owned runtime boundaries after the player directory and map-index extractions:
-
-### Session directory
-
-The runtime still mixes transport hooks with world/entity ownership inside `internal/minimal/shared_world.go`.
-
-The next owned boundary is a dedicated session directory for:
-- queued frame sinks
-- relocate callbacks / transport-local session hooks
-- exact cleanup on leave/close/reconnect
-
-This keeps session transport concerns separate from entity/player/map ownership.
+The repository still treats these as the next project-owned runtime boundaries after the player directory, map-index, and session-directory extractions:
 
 ## Current composition model
 
@@ -104,7 +105,7 @@ The current bootstrap composition is intentionally transitional:
 - `internal/minimal/factory.go` still owns session-flow wiring
 - `internal/minimal/shared_world.go` still orchestrates the current shared-world bootstrap runtime
 - `internal/player` now owns selected live player state
-- `internal/worldruntime` now owns topology, visibility, entity identity, and effective-map membership seams
+- `internal/worldruntime` now owns topology, visibility, entity identity, effective-map membership, and transport-hook directory seams
 
 This is an explicit intermediate state.
 The project is not claiming that `internal/minimal/shared_world.go` is already the final world runtime.
@@ -142,7 +143,7 @@ This slice does not yet add or freeze:
 The next world-runtime checkpoint should look like this:
 - player lookup is not a whole-world scan
 - map occupancy is an owned runtime primitive
-- session transport hooks are no longer mixed with entity state
+- session transport hooks are routed through an owned directory instead of a bootstrap-local hook map
 - transfer can reuse an owned self-session rebootstrap burst
 - AOI policy can evolve without rewriting every caller
 
