@@ -16,12 +16,15 @@ The current runtime boundary is:
 
 ## Current visibility rule
 
-Two bootstrap players are currently mutually visible when:
+The first AOI boundary is now a project-owned `VisibilityPolicy` owned by `internal/worldruntime`.
+
+The default implementation is `WholeMapVisibilityPolicy`.
+Under that current bootstrap policy, two players are mutually visible when:
 - they belong to the same local bootstrap channel
 - they share the same effective `MapIndex`
 
 The topology object still defines those boundaries.
-The visibility helper now owns the reusable computation on top of that topology.
+The visibility helper now owns the reusable computation on top of that topology and policy seam.
 
 ## Owned helper behavior
 

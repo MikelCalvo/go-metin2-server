@@ -21,6 +21,21 @@ func TestVisiblePeersSupportsEnterAndReconnectOnSameEffectiveMap(t *testing.T) {
 	}
 }
 
+func TestVisiblePeersUsesConfiguredVisibilityPolicyBoundary(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithVisibilityPolicy(sameEmpireVisibilityPolicy{})
+	subject := visibilityCharacter("Subject", 0x02040102, 1, 1500, 2600)
+	subject.Empire = 2
+	otherMapSameEmpire := visibilityCharacter("OtherMapSameEmpire", 0x02040103, 42, 1700, 2800)
+	otherMapSameEmpire.Empire = 2
+	sameMapOtherEmpire := visibilityCharacter("SameMapOtherEmpire", 0x02040104, 1, 1900, 3000)
+	sameMapOtherEmpire.Empire = 3
+
+	peers := VisiblePeers(topology, subject, []loginticket.Character{subject, sameMapOtherEmpire, otherMapSameEmpire}, subject.VID)
+	if len(peers) != 1 || peers[0].Name != "OtherMapSameEmpire" {
+		t.Fatalf("expected configured policy to allow cross-map same-empire peer only, got %+v", peers)
+	}
+}
+
 func TestEnterVisibilityDiffReportsSelfFacingAddedPeers(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	subject := visibilityCharacter("Subject", 0x02040102, 1, 1500, 2600)
@@ -105,4 +120,10 @@ func visibilityCharacter(name string, vid uint32, mapIndex uint32, x int32, y in
 		X:        x,
 		Y:        y,
 	}
+}
+
+type sameEmpireVisibilityPolicy struct{}
+
+func (sameEmpireVisibilityPolicy) CanSee(_ BootstrapTopology, subject loginticket.Character, peer loginticket.Character) bool {
+	return subject.Empire != 0 && subject.Empire == peer.Empire
 }

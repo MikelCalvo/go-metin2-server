@@ -8,14 +8,15 @@ const (
 )
 
 type BootstrapTopology struct {
-	localChannelID uint8
+	localChannelID   uint8
+	visibilityPolicy VisibilityPolicy
 }
 
 func NewBootstrapTopology(localChannelID uint8) BootstrapTopology {
 	if localChannelID == 0 {
 		localChannelID = defaultLocalChannelID
 	}
-	return BootstrapTopology{localChannelID: localChannelID}
+	return BootstrapTopology{localChannelID: localChannelID, visibilityPolicy: WholeMapVisibilityPolicy{}}
 }
 
 func (t BootstrapTopology) LocalChannelID() uint8 {
@@ -36,8 +37,23 @@ func (t BootstrapTopology) EffectiveMapIndex(character loginticket.Character) ui
 	return character.MapIndex
 }
 
+func (t BootstrapTopology) VisibilityPolicy() VisibilityPolicy {
+	if t.visibilityPolicy == nil {
+		return WholeMapVisibilityPolicy{}
+	}
+	return t.visibilityPolicy
+}
+
+func (t BootstrapTopology) WithVisibilityPolicy(policy VisibilityPolicy) BootstrapTopology {
+	if policy == nil {
+		policy = WholeMapVisibilityPolicy{}
+	}
+	t.visibilityPolicy = policy
+	return t
+}
+
 func (t BootstrapTopology) SharesVisibleWorld(left loginticket.Character, right loginticket.Character) bool {
-	return t.EffectiveChannelID(left) == t.EffectiveChannelID(right) && t.EffectiveMapIndex(left) == t.EffectiveMapIndex(right)
+	return t.VisibilityPolicy().CanSee(t, left, right)
 }
 
 func (t BootstrapTopology) SharesTalkingChatScope(left loginticket.Character, right loginticket.Character) bool {

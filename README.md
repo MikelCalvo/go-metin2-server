@@ -24,7 +24,7 @@ Current scope of the project:
 - Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime and share the same bootstrap `MapIndex`.
 - Minimal MOVE fanout so visible peers on the same bootstrap `MapIndex` receive queued movement replication from other connected players.
 - Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players.
-- A dedicated `internal/worldruntime` visibility helper for same-topology visible-peer computation, deterministic add/remove peer-set diffs, and explicit self-facing visibility transitions for enter/leave/relocate callers.
+- A dedicated `internal/worldruntime` visibility helper and first whole-map visibility-policy boundary for same-topology visible-peer computation, deterministic add/remove peer-set diffs, and explicit self-facing visibility transitions for enter/leave/relocate callers.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation.
@@ -130,11 +130,11 @@ Legend:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Shared player visibility | [~] | Peer enter/leave visibility exists for players on the same bootstrap `MapIndex`, now computed through a dedicated `internal/worldruntime` helper that also exposes explicit visibility diffs for runtime callers. |
+| Shared player visibility | [~] | Peer enter/leave visibility exists for players on the same bootstrap `MapIndex`, now computed through a dedicated `internal/worldruntime` helper that exposes explicit visibility diffs and the first whole-map policy boundary for runtime callers. |
 | Movement replication | [~] | `MOVE` and `SYNC_POSITION` fan out to already-visible peers on the same bootstrap `MapIndex`. |
 | Map boundaries | [~] | An explicit bootstrap topology now owns local channel/map chat scoping, but there is still no final warp flow yet. |
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
-| Interest management / culling | [ ] | No range-, sector-, or AOI-based visibility yet. |
+| Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, but there is still no range-, sector-, or distance-based culling yet. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer reply contract exist, but there is still no final end-to-end client/server warp flow yet. |
 | Entity runtime beyond players | [ ] | No NPC, mob, item-ground, or generic entity layer yet. |
 

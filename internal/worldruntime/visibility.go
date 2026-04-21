@@ -6,6 +6,16 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
 
+type VisibilityPolicy interface {
+	CanSee(topology BootstrapTopology, subject loginticket.Character, peer loginticket.Character) bool
+}
+
+type WholeMapVisibilityPolicy struct{}
+
+func (WholeMapVisibilityPolicy) CanSee(topology BootstrapTopology, subject loginticket.Character, peer loginticket.Character) bool {
+	return topology.EffectiveChannelID(subject) == topology.EffectiveChannelID(peer) && topology.EffectiveMapIndex(subject) == topology.EffectiveMapIndex(peer)
+}
+
 type VisibilityDiff struct {
 	CurrentVisiblePeers []loginticket.Character
 	TargetVisiblePeers  []loginticket.Character
