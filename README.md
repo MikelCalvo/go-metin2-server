@@ -29,6 +29,7 @@ Current scope of the project:
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation.
 - A loopback-only `gamed` structured transfer endpoint that commits the minimal bootstrap map-transfer contract and returns the applied transfer result.
 - A first owned self-session bootstrap transfer contract: transfer-triggered `MOVE` / `SYNC_POSITION` suppress immediate self ack packets and currently reuse queued self visibility-delta frames instead of a final warp/loading packet.
+- Persist-before-commit bootstrap transfer orchestration via `internal/warp`, with best-effort rollback to the previous persisted account snapshot if the late runtime commit step fails.
 - A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state.
 - A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules.
 - A loopback-only `gamed` runtime map-occupancy endpoint that groups currently connected bootstrap characters by effective `MapIndex`.
@@ -153,7 +154,7 @@ Legend:
 | Area | Status | Notes |
 | --- | --- | --- |
 | Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, chat, and bootstrap transfer-trigger slices. |
-| Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; the current self-facing contract is documented, but the final warp/loading packet is still not frozen. |
+| Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; persist-before-commit ordering and the current self-facing contract are documented, but the final warp/loading packet is still not frozen. |
 | Inventory | [ ] | Not started. |
 | Equipment | [ ] | Not started. |
 | Item use / consumables | [ ] | Not started. |

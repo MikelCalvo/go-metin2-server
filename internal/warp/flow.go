@@ -14,15 +14,19 @@ type Result struct {
 }
 
 type Config struct {
-	Commit func(updated loginticket.Character) (Result, bool)
+	Persist  func(updated loginticket.Character) bool
+	Rollback func(previous loginticket.Character) bool
+	Commit   func(updated loginticket.Character) (Result, bool)
 }
 
 type Flow struct {
-	commit func(updated loginticket.Character) (Result, bool)
+	persist  func(updated loginticket.Character) bool
+	rollback func(previous loginticket.Character) bool
+	commit   func(updated loginticket.Character) (Result, bool)
 }
 
 func NewFlow(cfg Config) Flow {
-	return Flow{commit: cfg.Commit}
+	return Flow{persist: cfg.Persist, rollback: cfg.Rollback, commit: cfg.Commit}
 }
 
 func (f Flow) Apply(selected loginticket.Character, target Target) (Result, bool) {
@@ -35,5 +39,16 @@ func (f Flow) Apply(selected loginticket.Character, target Target) (Result, bool
 	updated.X = target.X
 	updated.Y = target.Y
 
-	return f.commit(updated)
+	if f.persist != nil && !f.persist(updated) {
+		return Result{}, false
+	}
+
+	result, ok := f.commit(updated)
+	if ok {
+		return result, true
+	}
+	if f.rollback != nil {
+		_ = f.rollback(selected)
+	}
+	return Result{}, false
 }

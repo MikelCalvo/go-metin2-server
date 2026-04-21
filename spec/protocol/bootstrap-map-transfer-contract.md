@@ -12,6 +12,7 @@ This contract covers only an already-connected bootstrap player that moves from 
 It is built on top of the already-owned visible-world rebuild primitive documented in `map-relocation-visibility-rebuild.md`.
 The first gameplay-side trigger that is allowed to invoke this contract is documented separately in `exact-position-bootstrap-transfer-trigger.md`.
 The current self-session wire-visible result for the moved player is documented separately in `map-transfer-bootstrap.md`.
+The current runtime now routes the persist-before-commit orchestration for gameplay-triggered transfer through the dedicated `internal/warp` package boundary.
 
 ## Contract shape
 
@@ -113,6 +114,18 @@ When the commit operation succeeds, the bootstrap runtime guarantees:
 4. visible peers are inserted from the destination map scope
 5. future peer-scoped movement/chat fanout follows the destination `MapIndex`
 6. the structured result reflects the exact committed transfer, not a separate best-effort estimate
+
+## Failure and rollback behavior
+
+If the destination snapshot cannot be persisted, the transfer is rejected before the runtime commit step.
+
+Practical runtime rule:
+- destination snapshot persistence happens before the shared-world transfer commit step
+- if that persistence step fails, the runtime does not apply visibility rebuild or map-occupancy mutation
+
+If the shared-world commit step fails after destination persistence succeeded, the runtime currently performs a best-effort rollback to the previously persisted account snapshot before reporting failure.
+
+This rollback attempt is part of the current bootstrap safety model, but it is not yet frozen as a stronger transactional guarantee across broader storage/runtime systems.
 
 ## Error contract
 

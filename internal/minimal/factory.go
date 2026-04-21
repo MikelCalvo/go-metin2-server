@@ -281,19 +281,28 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 				return RelocationPreview{}, false
 			}
 			selected := sessionTicket.Characters[selectedIndex]
+			buildUpdatedSelection := func(updated loginticket.Character) ([]loginticket.Character, loginticket.Character, bool) {
+				return selectedCharacterLocationUpdate(sessionTicket.Characters, selectedIndex, updated.MapIndex, updated.X, updated.Y)
+			}
 			var transferResult RelocationPreview
 			transferFlow := warp.NewFlow(warp.Config{
-				Commit: func(updated loginticket.Character) (warp.Result, bool) {
-					updatedCharacters, updatedSelected, ok := selectedCharacterLocationUpdate(sessionTicket.Characters, selectedIndex, updated.MapIndex, updated.X, updated.Y)
+				Persist: func(updated loginticket.Character) bool {
+					updatedCharacters, _, ok := buildUpdatedSelection(updated)
 					if !ok {
-						return warp.Result{}, false
+						return false
 					}
-					if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+					return saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters)
+				},
+				Rollback: func(previous loginticket.Character) bool {
+					return saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
+				},
+				Commit: func(updated loginticket.Character) (warp.Result, bool) {
+					updatedCharacters, updatedSelected, ok := buildUpdatedSelection(updated)
+					if !ok {
 						return warp.Result{}, false
 					}
 					transferPreview, ok := sharedWorld.Transfer(sharedWorldID, updatedSelected)
 					if !ok {
-						_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
 						return warp.Result{}, false
 					}
 					transferResult = transferPreview
