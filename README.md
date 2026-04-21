@@ -145,7 +145,7 @@ Legend:
 | Area | Status | Notes |
 | --- | --- | --- |
 | Local talking chat | [~] | Same-map + same-empire fanout exists; still bootstrap scope. |
-| Whisper | [x] | Exact-name whisper routing works across connected bootstrap sessions. |
+| Whisper | [x] | Exact-name whisper routing works across connected bootstrap sessions through the `internal/worldruntime` player directory. |
 | Party chat | [~] | Bootstrap-only fanout; no real party membership system yet. |
 | Guild chat | [~] | Scoped by non-zero `GuildID`, but no guild lifecycle/roster system exists yet. |
 | Shout | [~] | Same-empire bootstrap fanout exists; no real world/channel topology behind it yet. |

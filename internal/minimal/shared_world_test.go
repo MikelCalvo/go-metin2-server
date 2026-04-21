@@ -726,6 +726,66 @@ func TestNewGameSessionFactoryRoutesWhisperToNamedPeer(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryRoutesWhisperToRelocatedNamedPeerAndKeepsConnectedSnapshotsUpdated(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if !runtime.RelocateCharacter("PeerOne", 42, 1700, 2800) {
+		t.Fatal("expected relocate to succeed")
+	}
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+
+	whisperOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientWhisper(chatproto.ClientWhisperPacket{Target: "PeerOne", Message: "hola movido"})))
+	if err != nil {
+		t.Fatalf("unexpected whisper error: %v", err)
+	}
+	if len(whisperOut) != 0 {
+		t.Fatalf("expected no direct sender whisper frames on success, got %d", len(whisperOut))
+	}
+
+	recipientWhisper := flushServerFrames(t, flowOne)
+	if len(recipientWhisper) != 1 {
+		t.Fatalf("expected 1 queued whisper frame for relocated target, got %d", len(recipientWhisper))
+	}
+	delivery, err := chatproto.DecodeServerWhisper(decodeSingleFrame(t, recipientWhisper[0]))
+	if err != nil {
+		t.Fatalf("decode recipient whisper: %v", err)
+	}
+	if delivery.Type != chatproto.WhisperTypeChat || delivery.FromName != "PeerTwo" || delivery.Message != "hola movido" {
+		t.Fatalf("unexpected recipient whisper: %+v", delivery)
+	}
+
+	snapshots := runtime.ConnectedCharacters()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 connected character snapshots, got %d", len(snapshots))
+	}
+	var relocated *ConnectedCharacterSnapshot
+	for i := range snapshots {
+		if snapshots[i].Name == "PeerOne" {
+			relocated = &snapshots[i]
+			break
+		}
+	}
+	if relocated == nil {
+		t.Fatalf("expected connected character snapshots to include PeerOne, got %+v", snapshots)
+	}
+	if relocated.MapIndex != 42 || relocated.X != 1700 || relocated.Y != 2800 {
+		t.Fatalf("expected relocated connected character snapshot for PeerOne, got %+v", *relocated)
+	}
+}
+
 func TestNewGameSessionFactoryQueuesPartyChatForConnectedPeers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

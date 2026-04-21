@@ -232,15 +232,17 @@ func (r *sharedWorldRegistry) TransferCharacter(name string, mapIndex uint32, x 
 	}
 
 	r.mu.Lock()
-	var relocate sharedWorldSessionRelocator
-	for sessionID, session := range r.sessions {
-		character, ok := r.playerCharacter(sessionID)
-		if !ok || character.Name != name {
-			continue
-		}
-		relocate = session.relocate
-		break
+	playerEntity, ok := r.playerEntityByName(name)
+	if !ok {
+		r.mu.Unlock()
+		return RelocationPreview{}, false
 	}
+	session, ok := r.sessions[playerEntity.Entity.ID]
+	if !ok {
+		r.mu.Unlock()
+		return RelocationPreview{}, false
+	}
+	relocate := session.relocate
 	r.mu.Unlock()
 
 	if relocate == nil {
@@ -363,27 +365,24 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 		return RelocationPreview{}, false
 	}
 
-	characters := r.snapshotCharacters()
-	targetIndex := -1
-	for i, character := range characters {
-		if character.Name != name {
-			continue
-		}
-		targetIndex = i
-		break
-	}
-	if targetIndex < 0 {
+	current, ok := r.playerCharacterByName(name)
+	if !ok {
 		return RelocationPreview{}, false
 	}
-
-	current := characters[targetIndex]
+	characters := r.snapshotCharacters()
 	target := current
 	target.MapIndex = mapIndex
 	target.X = x
 	target.Y = y
 
 	afterCharacters := append([]loginticket.Character(nil), characters...)
-	afterCharacters[targetIndex] = target
+	for i := range afterCharacters {
+		if afterCharacters[i].VID != current.VID {
+			continue
+		}
+		afterCharacters[i] = target
+		break
+	}
 	visibilityDiff := worldruntime.RelocateVisibilityDiff(r.topology, current, characters, target, afterCharacters)
 
 	return RelocationPreview{
@@ -490,15 +489,16 @@ func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byt
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for sessionID, session := range r.sessions {
-		character, ok := r.playerCharacter(sessionID)
-		if !ok || character.Name != name {
-			continue
-		}
-		session.pending.enqueue(frames)
-		return true
+	playerEntity, ok := r.playerEntityByName(name)
+	if !ok {
+		return false
 	}
-	return false
+	session, ok := r.sessions[playerEntity.Entity.ID]
+	if !ok {
+		return false
+	}
+	session.pending.enqueue(frames)
+	return true
 }
 
 func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
@@ -546,6 +546,21 @@ func (r *sharedWorldRegistry) playerCharacter(id uint64) (loginticket.Character,
 		return loginticket.Character{}, false
 	}
 	playerEntity, ok := r.entities.Player(id)
+	if !ok {
+		return loginticket.Character{}, false
+	}
+	return playerEntity.Character, true
+}
+
+func (r *sharedWorldRegistry) playerEntityByName(name string) (worldruntime.PlayerEntity, bool) {
+	if r == nil || r.entities == nil || name == "" {
+		return worldruntime.PlayerEntity{}, false
+	}
+	return r.entities.PlayerByName(name)
+}
+
+func (r *sharedWorldRegistry) playerCharacterByName(name string) (loginticket.Character, bool) {
+	playerEntity, ok := r.playerEntityByName(name)
 	if !ok {
 		return loginticket.Character{}, false
 	}

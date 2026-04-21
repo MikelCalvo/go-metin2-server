@@ -39,6 +39,21 @@ func TestEntityRegistryRegistersLooksUpUpdatesAndRemovesPlayerEntities(t *testin
 	}
 }
 
+func TestEntityRegistryLooksUpPlayersByVIDAndExactName(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
+	bravo := registry.RegisterPlayer(entityRegistryCharacter("Bravo", 0x02040102, 42, 1300, 2300))
+
+	byVID, ok := registry.PlayerByVID(bravo.Entity.VID)
+	if !ok || byVID.Entity.ID != bravo.Entity.ID || byVID.Entity.Name != "Bravo" {
+		t.Fatalf("expected VID lookup to return Bravo, got entity=%+v ok=%v", byVID, ok)
+	}
+	byName, ok := registry.PlayerByName(alpha.Entity.Name)
+	if !ok || byName.Entity.ID != alpha.Entity.ID || byName.Entity.VID != alpha.Entity.VID {
+		t.Fatalf("expected exact-name lookup to return Alpha, got entity=%+v ok=%v", byName, ok)
+	}
+}
+
 func TestEntityRegistryReturnsDeterministicSortedPlayerCharacters(t *testing.T) {
 	registry := NewEntityRegistry()
 	registry.RegisterPlayer(entityRegistryCharacter("Zulu", 0x02040103, 42, 1900, 3000))

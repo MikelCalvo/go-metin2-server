@@ -39,6 +39,24 @@ func (r *EntityRegistry) Player(id uint64) (PlayerEntity, bool) {
 	return r.players.ByEntityID(id)
 }
 
+func (r *EntityRegistry) PlayerByVID(vid uint32) (PlayerEntity, bool) {
+	if r == nil || vid == 0 || r.players == nil {
+		return PlayerEntity{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.players.ByVID(vid)
+}
+
+func (r *EntityRegistry) PlayerByName(name string) (PlayerEntity, bool) {
+	if r == nil || name == "" || r.players == nil {
+		return PlayerEntity{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.players.ByName(name)
+}
+
 func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character) bool {
 	if r == nil || id == 0 || r.players == nil {
 		return false
