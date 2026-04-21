@@ -27,10 +27,11 @@ type pendingServerFrames struct {
 }
 
 type sharedWorldRegistry struct {
-	mu       sync.Mutex
-	topology worldruntime.BootstrapTopology
-	entities *worldruntime.EntityRegistry
-	sessions map[uint64]sharedWorldSession
+	mu               sync.Mutex
+	topology         worldruntime.BootstrapTopology
+	entities         *worldruntime.EntityRegistry
+	sessionDirectory *worldruntime.SessionDirectory
+	sessions         map[uint64]sharedWorldSession
 }
 
 type sharedWorldSession struct {
@@ -112,6 +113,10 @@ func (q *pendingServerFrames) enqueue(frames [][]byte) {
 	}
 }
 
+func (q *pendingServerFrames) Enqueue(frames [][]byte) {
+	q.enqueue(frames)
+}
+
 func (q *pendingServerFrames) flush() [][]byte {
 	if q == nil {
 		return nil
@@ -129,10 +134,35 @@ func newSharedWorldRegistry() *sharedWorldRegistry {
 
 func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology) *sharedWorldRegistry {
 	return &sharedWorldRegistry{
-		topology: topology,
-		entities: worldruntime.NewEntityRegistryWithTopology(topology),
-		sessions: make(map[uint64]sharedWorldSession),
+		topology:         topology,
+		entities:         worldruntime.NewEntityRegistryWithTopology(topology),
+		sessionDirectory: worldruntime.NewSessionDirectory(),
+		sessions:         make(map[uint64]sharedWorldSession),
 	}
+}
+
+func newSharedWorldSessionEntry(pending *pendingServerFrames, relocate sharedWorldSessionRelocator) worldruntime.SessionEntry {
+	var entry worldruntime.SessionEntry
+	if pending != nil {
+		entry.FrameSink = pending
+	}
+	if relocate != nil {
+		entry.Relocator = func(mapIndex uint32, x int32, y int32) (any, bool) {
+			return relocate(mapIndex, x, y)
+		}
+	}
+	return entry
+}
+
+func registerSharedWorldSessionEntry(directory *worldruntime.SessionDirectory, entityID uint64, pending *pendingServerFrames, relocate sharedWorldSessionRelocator) bool {
+	if directory == nil {
+		return true
+	}
+	entry := newSharedWorldSessionEntry(pending, relocate)
+	if entry.FrameSink == nil && entry.Relocator == nil {
+		return true
+	}
+	return directory.Register(entityID, entry)
 }
 
 func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pendingServerFrames, relocate sharedWorldSessionRelocator) (uint64, []loginticket.Character) {
@@ -163,6 +193,10 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 		return 0, nil
 	}
 	id := registered.Entity.ID
+	if !registerSharedWorldSessionEntry(r.sessionDirectory, id, pending, relocate) {
+		_, _ = r.entities.Remove(id)
+		return 0, nil
+	}
 	r.sessions[id] = sharedWorldSession{pending: pending, relocate: relocate}
 	return id, visibilityDiff.TargetVisiblePeers
 }
@@ -186,6 +220,9 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	currentCharacters := r.snapshotCharactersLocked()
 	visibilityDiff := worldruntime.LeaveVisibilityDiff(r.topology, currentCharacter, currentCharacters)
 	delete(r.sessions, id)
+	if r.sessionDirectory != nil {
+		_, _ = r.sessionDirectory.Remove(id)
+	}
 	_, _ = r.entities.Remove(id)
 
 	removeRaw := encodeCharacterDeleteFrame(currentCharacter)
