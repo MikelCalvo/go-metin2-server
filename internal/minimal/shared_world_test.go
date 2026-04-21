@@ -1760,6 +1760,43 @@ func TestGameRuntimeMapOccupancyReflectsRelocatedCharacter(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeMapOccupancyReflectsDisconnectedCharacter(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	flowThree, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+
+	closeSessionFlow(t, flowTwo)
+
+	snapshots := runtime.MapOccupancy()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 map occupancy snapshots after disconnect, got %d", len(snapshots))
+	}
+	if snapshots[0].MapIndex != bootstrapMapIndex || snapshots[0].CharacterCount != 1 || len(snapshots[0].Characters) != 1 || snapshots[0].Characters[0].Name != "PeerOne" {
+		t.Fatalf("unexpected bootstrap map occupancy snapshot after disconnect: %+v", snapshots[0])
+	}
+	if snapshots[1].MapIndex != 42 || snapshots[1].CharacterCount != 1 || len(snapshots[1].Characters) != 1 || snapshots[1].Characters[0].Name != "PeerThree" {
+		t.Fatalf("unexpected destination map occupancy snapshot after disconnect: %+v", snapshots[1])
+	}
+}
+
 func TestGameRuntimePreviewRelocationReturnsVisibilityAndMapChanges(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

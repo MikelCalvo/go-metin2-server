@@ -278,6 +278,8 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 		break
 	}
 	visibilityDiff := worldruntime.RelocateVisibilityDiff(r.topology, previous, currentCharacters, character, afterCharacters)
+	beforeOccupancy := r.mapOccupancySnapshotsLocked()
+	afterOccupancy := relocateMapOccupancySnapshots(beforeOccupancy, r.topology, previous, character)
 	result := RelocationPreview{
 		Applied:             true,
 		Character:           connectedCharacterSnapshot(r.topology, previous),
@@ -286,7 +288,7 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 		TargetVisiblePeers:  connectedCharacterSnapshots(r.topology, visibilityDiff.TargetVisiblePeers),
 		RemovedVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.RemovedVisiblePeers),
 		AddedVisiblePeers:   connectedCharacterSnapshots(r.topology, visibilityDiff.AddedVisiblePeers),
-		MapOccupancyChanges: buildMapOccupancyChanges(buildMapOccupancySnapshots(r.topology, currentCharacters), buildMapOccupancySnapshots(r.topology, afterCharacters)),
+		MapOccupancyChanges: buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
 	}
 
 	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
@@ -357,7 +359,7 @@ func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
 	if r == nil {
 		return nil
 	}
-	return buildMapOccupancySnapshots(r.topology, r.snapshotCharacters())
+	return r.mapOccupancySnapshots()
 }
 
 func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
@@ -384,6 +386,8 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 		break
 	}
 	visibilityDiff := worldruntime.RelocateVisibilityDiff(r.topology, current, characters, target, afterCharacters)
+	beforeOccupancy := r.mapOccupancySnapshots()
+	afterOccupancy := relocateMapOccupancySnapshots(beforeOccupancy, r.topology, current, target)
 
 	return RelocationPreview{
 		Applied:             false,
@@ -393,7 +397,7 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 		TargetVisiblePeers:  connectedCharacterSnapshots(r.topology, visibilityDiff.TargetVisiblePeers),
 		RemovedVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.RemovedVisiblePeers),
 		AddedVisiblePeers:   connectedCharacterSnapshots(r.topology, visibilityDiff.AddedVisiblePeers),
-		MapOccupancyChanges: buildMapOccupancyChanges(buildMapOccupancySnapshots(r.topology, characters), buildMapOccupancySnapshots(r.topology, afterCharacters)),
+		MapOccupancyChanges: buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
 	}, true
 }
 
@@ -588,12 +592,76 @@ func connectedCharacterSnapshots(topology worldruntime.BootstrapTopology, charac
 	return snapshots
 }
 
-func buildMapOccupancySnapshots(topology worldruntime.BootstrapTopology, characters []loginticket.Character) []MapOccupancySnapshot {
-	byMap := make(map[uint32][]ConnectedCharacterSnapshot)
-	for _, character := range characters {
-		mapIndex := topology.EffectiveMapIndex(character)
-		byMap[mapIndex] = append(byMap[mapIndex], connectedCharacterSnapshot(topology, character))
+func (r *sharedWorldRegistry) mapOccupancySnapshots() []MapOccupancySnapshot {
+	if r == nil {
+		return nil
 	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.mapOccupancySnapshotsLocked()
+}
+
+func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapshot {
+	if r == nil || r.entities == nil {
+		return nil
+	}
+	return buildMapOccupancySnapshots(r.topology, r.entities.MapOccupancy())
+}
+
+func buildMapOccupancySnapshots(topology worldruntime.BootstrapTopology, occupancies []worldruntime.MapOccupancy) []MapOccupancySnapshot {
+	snapshots := make([]MapOccupancySnapshot, 0, len(occupancies))
+	for _, occupancy := range occupancies {
+		snapshots = append(snapshots, MapOccupancySnapshot{
+			MapIndex:       occupancy.MapIndex,
+			CharacterCount: len(occupancy.Characters),
+			Characters:     connectedCharacterSnapshots(topology, occupancy.Characters),
+		})
+	}
+	sortMapOccupancySnapshots(snapshots)
+	return snapshots
+}
+
+func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology worldruntime.BootstrapTopology, current loginticket.Character, target loginticket.Character) []MapOccupancySnapshot {
+	byMap := make(map[uint32][]ConnectedCharacterSnapshot, len(before)+1)
+	for _, snapshot := range before {
+		characters := append([]ConnectedCharacterSnapshot(nil), snapshot.Characters...)
+		byMap[snapshot.MapIndex] = characters
+	}
+
+	currentSnapshot := connectedCharacterSnapshot(topology, current)
+	targetSnapshot := connectedCharacterSnapshot(topology, target)
+
+	if characters, ok := byMap[currentSnapshot.MapIndex]; ok {
+		filtered := make([]ConnectedCharacterSnapshot, 0, len(characters))
+		for _, character := range characters {
+			if character.VID == currentSnapshot.VID {
+				continue
+			}
+			filtered = append(filtered, character)
+		}
+		if len(filtered) == 0 {
+			delete(byMap, currentSnapshot.MapIndex)
+		} else {
+			byMap[currentSnapshot.MapIndex] = filtered
+		}
+	}
+
+	targetCharacters := append([]ConnectedCharacterSnapshot(nil), byMap[targetSnapshot.MapIndex]...)
+	replaced := false
+	for i := range targetCharacters {
+		if targetCharacters[i].VID != targetSnapshot.VID {
+			continue
+		}
+		targetCharacters[i] = targetSnapshot
+		replaced = true
+		break
+	}
+	if !replaced {
+		targetCharacters = append(targetCharacters, targetSnapshot)
+	}
+	sortConnectedCharacterSnapshots(targetCharacters)
+	byMap[targetSnapshot.MapIndex] = targetCharacters
 
 	snapshots := make([]MapOccupancySnapshot, 0, len(byMap))
 	for mapIndex, characters := range byMap {

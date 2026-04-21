@@ -40,6 +40,9 @@ This covers the same-map visibility behavior used by:
 - reconnect visibility snapshots
 - relocation preview and transfer rebuild calculations
 
+The visible-peer helper still owns who is visible to whom.
+Map-occupancy snapshots used by relocate preview, transfer preview, and runtime map-inspection now come from the dedicated `internal/worldruntime` map index instead of being rebuilt from whole-world character scans.
+
 ### `DiffVisiblePeers(...)`
 
 The helper compares two visible-peer sets and returns:
