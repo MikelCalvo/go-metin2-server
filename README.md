@@ -24,7 +24,7 @@ Current scope of the project:
 - Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime and share the same bootstrap `MapIndex`.
 - Minimal MOVE fanout so visible peers on the same bootstrap `MapIndex` receive queued movement replication from other connected players.
 - Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players.
-- A dedicated `internal/worldruntime` visibility helper for same-topology visible-peer computation and deterministic add/remove peer-set diffs.
+- A dedicated `internal/worldruntime` visibility helper for same-topology visible-peer computation, deterministic add/remove peer-set diffs, and explicit self-facing visibility transitions for enter/leave/relocate callers.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation.
@@ -130,7 +130,7 @@ Legend:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Shared player visibility | [~] | Peer enter/leave visibility exists for players on the same bootstrap `MapIndex`, now computed through a dedicated `internal/worldruntime` helper. |
+| Shared player visibility | [~] | Peer enter/leave visibility exists for players on the same bootstrap `MapIndex`, now computed through a dedicated `internal/worldruntime` helper that also exposes explicit visibility diffs for runtime callers. |
 | Movement replication | [~] | `MOVE` and `SYNC_POSITION` fan out to already-visible peers on the same bootstrap `MapIndex`. |
 | Map boundaries | [~] | An explicit bootstrap topology now owns local channel/map chat scoping, but there is still no final warp flow yet. |
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |

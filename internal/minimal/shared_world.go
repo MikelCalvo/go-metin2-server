@@ -143,20 +143,24 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	existing := make([]loginticket.Character, 0, len(r.sessions))
+	currentCharacters := make([]loginticket.Character, 0, len(r.sessions))
+	for _, session := range r.sessions {
+		currentCharacters = append(currentCharacters, session.character)
+	}
+	visibilityDiff := worldruntime.EnterVisibilityDiff(r.topology, character, currentCharacters)
+	addedVisibleVIDs := characterVIDSet(visibilityDiff.AddedVisiblePeers)
 	peerFrames := encodePeerVisibilityFrames(character)
 	for _, session := range r.sessions {
-		if !r.topology.SharesVisibleWorld(character, session.character) {
+		if _, ok := addedVisibleVIDs[session.character.VID]; !ok {
 			continue
 		}
-		existing = append(existing, session.character)
 		session.pending.enqueue(peerFrames)
 	}
 
 	r.nextID++
 	id := r.nextID
 	r.sessions[id] = sharedWorldSession{character: character, pending: pending, relocate: relocate}
-	return id, existing
+	return id, visibilityDiff.TargetVisiblePeers
 }
 
 func (r *sharedWorldRegistry) Leave(id uint64) {
@@ -171,11 +175,17 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	if !ok {
 		return
 	}
+	currentCharacters := make([]loginticket.Character, 0, len(r.sessions))
+	for _, candidate := range r.sessions {
+		currentCharacters = append(currentCharacters, candidate.character)
+	}
+	visibilityDiff := worldruntime.LeaveVisibilityDiff(r.topology, session.character, currentCharacters)
 	delete(r.sessions, id)
 
 	removeRaw := encodeCharacterDeleteFrame(session.character)
+	removedVisibleVIDs := characterVIDSet(visibilityDiff.RemovedVisiblePeers)
 	for _, peer := range r.sessions {
-		if !r.topology.SharesVisibleWorld(session.character, peer.character) {
+		if _, ok := removedVisibleVIDs[peer.character.VID]; !ok {
 			continue
 		}
 		peer.pending.enqueue([][]byte{removeRaw})
@@ -248,28 +258,6 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 	for _, candidate := range r.sessions {
 		currentCharacters = append(currentCharacters, candidate.character)
 	}
-	currentVisibleCharacters := make([]loginticket.Character, 0)
-	targetVisibleCharacters := make([]loginticket.Character, 0)
-	oldPeers := make(map[uint64]sharedWorldSession)
-	newPeers := make(map[uint64]sharedWorldSession)
-	for peerID, peer := range r.sessions {
-		if peerID == id {
-			continue
-		}
-		if r.topology.SharesVisibleWorld(previous, peer.character) {
-			oldPeers[peerID] = peer
-			currentVisibleCharacters = append(currentVisibleCharacters, peer.character)
-		}
-		if r.topology.SharesVisibleWorld(character, peer.character) {
-			newPeers[peerID] = peer
-			targetVisibleCharacters = append(targetVisibleCharacters, peer.character)
-		}
-	}
-	currentVisiblePeers := connectedCharacterSnapshots(r.topology, currentVisibleCharacters)
-	targetVisiblePeers := connectedCharacterSnapshots(r.topology, targetVisibleCharacters)
-	removedVisibleCharacters, addedVisibleCharacters := worldruntime.DiffVisiblePeers(currentVisibleCharacters, targetVisibleCharacters)
-	removedVisiblePeers := connectedCharacterSnapshots(r.topology, removedVisibleCharacters)
-	addedVisiblePeers := connectedCharacterSnapshots(r.topology, addedVisibleCharacters)
 
 	afterCharacters := append([]loginticket.Character(nil), currentCharacters...)
 	for i := range afterCharacters {
@@ -279,46 +267,42 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 		afterCharacters[i] = character
 		break
 	}
+	visibilityDiff := worldruntime.RelocateVisibilityDiff(r.topology, previous, currentCharacters, character, afterCharacters)
 	result := RelocationPreview{
 		Applied:             true,
 		Character:           connectedCharacterSnapshot(r.topology, previous),
 		Target:              connectedCharacterSnapshot(r.topology, character),
-		CurrentVisiblePeers: currentVisiblePeers,
-		TargetVisiblePeers:  targetVisiblePeers,
-		RemovedVisiblePeers: removedVisiblePeers,
-		AddedVisiblePeers:   addedVisiblePeers,
+		CurrentVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.CurrentVisiblePeers),
+		TargetVisiblePeers:  connectedCharacterSnapshots(r.topology, visibilityDiff.TargetVisiblePeers),
+		RemovedVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.RemovedVisiblePeers),
+		AddedVisiblePeers:   connectedCharacterSnapshots(r.topology, visibilityDiff.AddedVisiblePeers),
 		MapOccupancyChanges: buildMapOccupancyChanges(buildMapOccupancySnapshots(r.topology, currentCharacters), buildMapOccupancySnapshots(r.topology, afterCharacters)),
 	}
 
-	for peerID, peer := range oldPeers {
-		if _, stillVisible := newPeers[peerID]; stillVisible {
-			continue
-		}
-		session.pending.enqueue([][]byte{encodeCharacterDeleteFrame(peer.character)})
+	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+		session.pending.enqueue([][]byte{encodeCharacterDeleteFrame(peerCharacter)})
 	}
-	for peerID, peer := range newPeers {
-		if _, alreadyVisible := oldPeers[peerID]; alreadyVisible {
-			continue
-		}
-		session.pending.enqueue(encodePeerVisibilityFrames(peer.character))
+	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
+		session.pending.enqueue(encodePeerVisibilityFrames(peerCharacter))
 	}
 
 	session.character = character
 	r.sessions[id] = session
 
+	removedVisibleVIDs := characterVIDSet(visibilityDiff.RemovedVisiblePeers)
+	addedVisibleVIDs := characterVIDSet(visibilityDiff.AddedVisiblePeers)
 	movedDelete := encodeCharacterDeleteFrame(previous)
 	movedFrames := encodePeerVisibilityFrames(character)
-	for peerID, peer := range oldPeers {
-		if _, stillVisible := newPeers[peerID]; stillVisible {
+	for peerID, peer := range r.sessions {
+		if peerID == id {
 			continue
 		}
-		peer.pending.enqueue([][]byte{movedDelete})
-	}
-	for peerID, peer := range newPeers {
-		if _, alreadyVisible := oldPeers[peerID]; alreadyVisible {
-			continue
+		if _, ok := removedVisibleVIDs[peer.character.VID]; ok {
+			peer.pending.enqueue([][]byte{movedDelete})
 		}
-		peer.pending.enqueue(movedFrames)
+		if _, ok := addedVisibleVIDs[peer.character.VID]; ok {
+			peer.pending.enqueue(movedFrames)
+		}
 	}
 
 	return result, true
@@ -387,24 +371,18 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 	target.X = x
 	target.Y = y
 
-	currentVisibleCharacters := worldruntime.VisiblePeers(r.topology, current, characters, current.VID)
 	afterCharacters := append([]loginticket.Character(nil), characters...)
 	afterCharacters[targetIndex] = target
-	targetVisibleCharacters := worldruntime.VisiblePeers(r.topology, target, afterCharacters, target.VID)
-	removedVisibleCharacters, addedVisibleCharacters := worldruntime.DiffVisiblePeers(currentVisibleCharacters, targetVisibleCharacters)
-	currentVisiblePeers := connectedCharacterSnapshots(r.topology, currentVisibleCharacters)
-	targetVisiblePeers := connectedCharacterSnapshots(r.topology, targetVisibleCharacters)
-	removedVisiblePeers := connectedCharacterSnapshots(r.topology, removedVisibleCharacters)
-	addedVisiblePeers := connectedCharacterSnapshots(r.topology, addedVisibleCharacters)
+	visibilityDiff := worldruntime.RelocateVisibilityDiff(r.topology, current, characters, target, afterCharacters)
 
 	return RelocationPreview{
 		Applied:             false,
 		Character:           connectedCharacterSnapshot(r.topology, current),
 		Target:              connectedCharacterSnapshot(r.topology, target),
-		CurrentVisiblePeers: currentVisiblePeers,
-		TargetVisiblePeers:  targetVisiblePeers,
-		RemovedVisiblePeers: removedVisiblePeers,
-		AddedVisiblePeers:   addedVisiblePeers,
+		CurrentVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.CurrentVisiblePeers),
+		TargetVisiblePeers:  connectedCharacterSnapshots(r.topology, visibilityDiff.TargetVisiblePeers),
+		RemovedVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.RemovedVisiblePeers),
+		AddedVisiblePeers:   connectedCharacterSnapshots(r.topology, visibilityDiff.AddedVisiblePeers),
 		MapOccupancyChanges: buildMapOccupancyChanges(buildMapOccupancySnapshots(r.topology, characters), buildMapOccupancySnapshots(r.topology, afterCharacters)),
 	}, true
 }
@@ -614,6 +592,14 @@ func buildMapOccupancyChanges(before []MapOccupancySnapshot, after []MapOccupanc
 	}
 	sortMapOccupancyChanges(changes)
 	return changes
+}
+
+func characterVIDSet(characters []loginticket.Character) map[uint32]struct{} {
+	vids := make(map[uint32]struct{}, len(characters))
+	for _, character := range characters {
+		vids[character.VID] = struct{}{}
+	}
+	return vids
 }
 
 func sortConnectedCharacterSnapshots(snapshots []ConnectedCharacterSnapshot) {

@@ -45,7 +45,18 @@ The helper compares two visible-peer sets and returns:
 
 The result is deterministic and currently keyed by peer `VID`.
 
+### `VisibilityDiff`
+
+The helper now also owns an explicit transition result for callers that need the full self-facing visibility change, not just the peer-set delta.
+
+`VisibilityDiff` carries:
+- `CurrentVisiblePeers`
+- `TargetVisiblePeers`
+- `RemovedVisiblePeers`
+- `AddedVisiblePeers`
+
 This is enough for the bootstrap runtime to describe:
+- enter/bootstrap visibility
 - leave behavior
 - relocate behavior
 - reconnect/preview visibility changes
@@ -64,7 +75,6 @@ This slice keeps behavior stable while making visibility a first-class runtime c
 
 This slice does not yet add:
 - sector or range-based culling
-- explicit visibility diff result types for callers
 - packet emission ownership inside `internal/worldruntime`
 - non-player entities
 - inter-channel visibility
