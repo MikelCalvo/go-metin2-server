@@ -24,6 +24,7 @@ Current scope of the project:
 - Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime and share the same bootstrap `MapIndex`.
 - Minimal MOVE fanout so visible peers on the same bootstrap `MapIndex` receive queued movement replication from other connected players.
 - Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players.
+- A dedicated `internal/worldruntime` visibility helper for same-topology visible-peer computation and deterministic add/remove peer-set diffs.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation.
@@ -129,7 +130,7 @@ Legend:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Shared player visibility | [~] | Peer enter/leave visibility exists for players on the same bootstrap `MapIndex`. |
+| Shared player visibility | [~] | Peer enter/leave visibility exists for players on the same bootstrap `MapIndex`, now computed through a dedicated `internal/worldruntime` helper. |
 | Movement replication | [~] | `MOVE` and `SYNC_POSITION` fan out to already-visible peers on the same bootstrap `MapIndex`. |
 | Map boundaries | [~] | An explicit bootstrap topology now owns local channel/map chat scoping, but there is still no final warp flow yet. |
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
@@ -197,6 +198,7 @@ Legend:
 - `internal/handshake` — server-side control-plane handshake flow
 - `internal/login` — login-by-key flow and selection-surface transition
 - `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
+- `internal/worldruntime` — bootstrap topology and visibility helpers that own reusable shared-world calculations
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/ops` — health and pprof endpoints
@@ -237,6 +239,7 @@ Legend:
 - `spec/protocol/chat-scope-first-hardening.md`
 - `spec/protocol/map-index-world-scope-hardening.md`
 - `spec/protocol/world-topology-bootstrap.md`
+- `spec/protocol/visibility-rebuild.md`
 - `spec/protocol/map-relocation-visibility-rebuild.md`
 - `spec/protocol/bootstrap-map-transfer-contract.md`
 - `spec/protocol/map-transfer-bootstrap.md`

@@ -30,6 +30,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `chat-scope-first-hardening.md` — first non-global scoping pass for talking/guild/shout using currently available runtime data
 - `map-index-world-scope-hardening.md` — first map-index-backed visible-world scoping pass for visibility, movement, sync, and local talking chat
 - `world-topology-bootstrap.md` — first explicit local-channel and map-scope topology model for the bootstrap runtime
+- `visibility-rebuild.md` — first dedicated visibility helper owned by `internal/worldruntime`
 - `map-relocation-visibility-rebuild.md` — first server-side visible-world rebuild primitive for relocating a connected player between bootstrap maps
 - `bootstrap-map-transfer-contract.md` — first minimal structured preview/commit contract for bootstrap map transfer on top of the relocation primitive
 - `map-transfer-bootstrap.md` — first owned self-session reply contract for bootstrap map transfer on the game socket

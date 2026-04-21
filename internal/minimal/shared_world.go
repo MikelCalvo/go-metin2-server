@@ -248,8 +248,8 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 	for _, candidate := range r.sessions {
 		currentCharacters = append(currentCharacters, candidate.character)
 	}
-	currentVisiblePeers := make([]ConnectedCharacterSnapshot, 0)
-	targetVisiblePeers := make([]ConnectedCharacterSnapshot, 0)
+	currentVisibleCharacters := make([]loginticket.Character, 0)
+	targetVisibleCharacters := make([]loginticket.Character, 0)
 	oldPeers := make(map[uint64]sharedWorldSession)
 	newPeers := make(map[uint64]sharedWorldSession)
 	for peerID, peer := range r.sessions {
@@ -258,16 +258,18 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 		}
 		if r.topology.SharesVisibleWorld(previous, peer.character) {
 			oldPeers[peerID] = peer
-			currentVisiblePeers = append(currentVisiblePeers, connectedCharacterSnapshot(r.topology, peer.character))
+			currentVisibleCharacters = append(currentVisibleCharacters, peer.character)
 		}
 		if r.topology.SharesVisibleWorld(character, peer.character) {
 			newPeers[peerID] = peer
-			targetVisiblePeers = append(targetVisiblePeers, connectedCharacterSnapshot(r.topology, peer.character))
+			targetVisibleCharacters = append(targetVisibleCharacters, peer.character)
 		}
 	}
-	sortConnectedCharacterSnapshots(currentVisiblePeers)
-	sortConnectedCharacterSnapshots(targetVisiblePeers)
-	removedVisiblePeers, addedVisiblePeers := diffVisiblePeerSnapshots(currentVisiblePeers, targetVisiblePeers)
+	currentVisiblePeers := connectedCharacterSnapshots(r.topology, currentVisibleCharacters)
+	targetVisiblePeers := connectedCharacterSnapshots(r.topology, targetVisibleCharacters)
+	removedVisibleCharacters, addedVisibleCharacters := worldruntime.DiffVisiblePeers(currentVisibleCharacters, targetVisibleCharacters)
+	removedVisiblePeers := connectedCharacterSnapshots(r.topology, removedVisibleCharacters)
+	addedVisiblePeers := connectedCharacterSnapshots(r.topology, addedVisibleCharacters)
 
 	afterCharacters := append([]loginticket.Character(nil), currentCharacters...)
 	for i := range afterCharacters {
@@ -344,7 +346,7 @@ func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapsho
 	characters := r.snapshotCharacters()
 	snapshots := make([]CharacterVisibilitySnapshot, 0, len(characters))
 	for _, character := range characters {
-		visiblePeers := buildVisiblePeerSnapshots(r.topology, character, characters, character.VID)
+		visiblePeers := connectedCharacterSnapshots(r.topology, worldruntime.VisiblePeers(r.topology, character, characters, character.VID))
 		snapshots = append(snapshots, CharacterVisibilitySnapshot{
 			ConnectedCharacterSnapshot: connectedCharacterSnapshot(r.topology, character),
 			VisiblePeers:               visiblePeers,
@@ -385,11 +387,15 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 	target.X = x
 	target.Y = y
 
-	currentVisiblePeers := buildVisiblePeerSnapshots(r.topology, current, characters, current.VID)
+	currentVisibleCharacters := worldruntime.VisiblePeers(r.topology, current, characters, current.VID)
 	afterCharacters := append([]loginticket.Character(nil), characters...)
 	afterCharacters[targetIndex] = target
-	targetVisiblePeers := buildVisiblePeerSnapshots(r.topology, target, afterCharacters, target.VID)
-	removedVisiblePeers, addedVisiblePeers := diffVisiblePeerSnapshots(currentVisiblePeers, targetVisiblePeers)
+	targetVisibleCharacters := worldruntime.VisiblePeers(r.topology, target, afterCharacters, target.VID)
+	removedVisibleCharacters, addedVisibleCharacters := worldruntime.DiffVisiblePeers(currentVisibleCharacters, targetVisibleCharacters)
+	currentVisiblePeers := connectedCharacterSnapshots(r.topology, currentVisibleCharacters)
+	targetVisiblePeers := connectedCharacterSnapshots(r.topology, targetVisibleCharacters)
+	removedVisiblePeers := connectedCharacterSnapshots(r.topology, removedVisibleCharacters)
+	addedVisiblePeers := connectedCharacterSnapshots(r.topology, addedVisibleCharacters)
 
 	return RelocationPreview{
 		Applied:             false,
@@ -550,16 +556,13 @@ func connectedCharacterSnapshot(topology worldruntime.BootstrapTopology, charact
 	}
 }
 
-func buildVisiblePeerSnapshots(topology worldruntime.BootstrapTopology, character loginticket.Character, characters []loginticket.Character, excludeVID uint32) []ConnectedCharacterSnapshot {
-	visiblePeers := make([]ConnectedCharacterSnapshot, 0, len(characters))
-	for _, peer := range characters {
-		if peer.VID == excludeVID || !topology.SharesVisibleWorld(character, peer) {
-			continue
-		}
-		visiblePeers = append(visiblePeers, connectedCharacterSnapshot(topology, peer))
+func connectedCharacterSnapshots(topology worldruntime.BootstrapTopology, characters []loginticket.Character) []ConnectedCharacterSnapshot {
+	snapshots := make([]ConnectedCharacterSnapshot, 0, len(characters))
+	for _, character := range characters {
+		snapshots = append(snapshots, connectedCharacterSnapshot(topology, character))
 	}
-	sortConnectedCharacterSnapshots(visiblePeers)
-	return visiblePeers
+	sortConnectedCharacterSnapshots(snapshots)
+	return snapshots
 }
 
 func buildMapOccupancySnapshots(topology worldruntime.BootstrapTopology, characters []loginticket.Character) []MapOccupancySnapshot {
@@ -580,35 +583,6 @@ func buildMapOccupancySnapshots(topology worldruntime.BootstrapTopology, charact
 	}
 	sortMapOccupancySnapshots(snapshots)
 	return snapshots
-}
-
-func diffVisiblePeerSnapshots(current []ConnectedCharacterSnapshot, target []ConnectedCharacterSnapshot) ([]ConnectedCharacterSnapshot, []ConnectedCharacterSnapshot) {
-	currentByVID := make(map[uint32]ConnectedCharacterSnapshot, len(current))
-	for _, snapshot := range current {
-		currentByVID[snapshot.VID] = snapshot
-	}
-	targetByVID := make(map[uint32]ConnectedCharacterSnapshot, len(target))
-	for _, snapshot := range target {
-		targetByVID[snapshot.VID] = snapshot
-	}
-
-	removed := make([]ConnectedCharacterSnapshot, 0)
-	for vid, snapshot := range currentByVID {
-		if _, ok := targetByVID[vid]; ok {
-			continue
-		}
-		removed = append(removed, snapshot)
-	}
-	added := make([]ConnectedCharacterSnapshot, 0)
-	for vid, snapshot := range targetByVID {
-		if _, ok := currentByVID[vid]; ok {
-			continue
-		}
-		added = append(added, snapshot)
-	}
-	sortConnectedCharacterSnapshots(removed)
-	sortConnectedCharacterSnapshots(added)
-	return removed, added
 }
 
 func buildMapOccupancyChanges(before []MapOccupancySnapshot, after []MapOccupancySnapshot) []MapOccupancyChange {
