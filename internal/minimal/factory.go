@@ -31,6 +31,7 @@ import (
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
+	"github.com/MikelCalvo/go-metin2-server/internal/warp"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 )
 
@@ -276,19 +277,33 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
 		applySelectedCharacterTransfer := func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
-			updatedCharacters, updatedSelected, ok := selectedCharacterLocationUpdate(sessionTicket.Characters, selectedIndex, mapIndex, x, y)
-			if !ok || !joinedSharedWorld || sharedWorldID == 0 {
+			if !joinedSharedWorld || sharedWorldID == 0 || int(selectedIndex) >= len(sessionTicket.Characters) {
 				return RelocationPreview{}, false
 			}
-			if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+			selected := sessionTicket.Characters[selectedIndex]
+			var transferResult RelocationPreview
+			transferFlow := warp.NewFlow(warp.Config{
+				Commit: func(updated loginticket.Character) (warp.Result, bool) {
+					updatedCharacters, updatedSelected, ok := selectedCharacterLocationUpdate(sessionTicket.Characters, selectedIndex, updated.MapIndex, updated.X, updated.Y)
+					if !ok {
+						return warp.Result{}, false
+					}
+					if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+						return warp.Result{}, false
+					}
+					transferPreview, ok := sharedWorld.Transfer(sharedWorldID, updatedSelected)
+					if !ok {
+						_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
+						return warp.Result{}, false
+					}
+					transferResult = transferPreview
+					sessionTicket.Characters = updatedCharacters
+					return warp.Result{Applied: true, Updated: updatedSelected}, true
+				},
+			})
+			if _, ok := transferFlow.Apply(selected, warp.Target{MapIndex: mapIndex, X: x, Y: y}); !ok {
 				return RelocationPreview{}, false
 			}
-			transferResult, ok := sharedWorld.Transfer(sharedWorldID, updatedSelected)
-			if !ok {
-				_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
-				return RelocationPreview{}, false
-			}
-			sessionTicket.Characters = updatedCharacters
 			return transferResult, true
 		}
 

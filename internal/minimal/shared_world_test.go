@@ -483,6 +483,106 @@ func TestNewGameSessionFactoryDoesNotMutateWorldWhenTransferTriggerSaveFails(t *
 	}
 }
 
+func TestNewGameSessionFactoryRoutesPostTransferChatAndMoveToDestinationMapPeers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	flowThree, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+
+	transferOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(transferOut) != 0 {
+		t.Fatalf("expected no self move reply while gameplay transfer uses bootstrap trigger contract, got %d frames", len(transferOut))
+	}
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+	_ = flushServerFrames(t, flowThree)
+
+	chatOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "hola despues del transfer"})))
+	if err != nil {
+		t.Fatalf("unexpected local chat error: %v", err)
+	}
+	if len(chatOut) != 1 {
+		t.Fatalf("expected 1 sender local chat frame after transfer, got %d", len(chatOut))
+	}
+	selfChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, chatOut[0]))
+	if err != nil {
+		t.Fatalf("decode sender local chat after transfer: %v", err)
+	}
+	if selfChat.Type != chatproto.ChatTypeTalking || selfChat.VID != peerTwo.VID || selfChat.Message != "PeerTwo : hola despues del transfer" {
+		t.Fatalf("unexpected sender local chat after transfer: %+v", selfChat)
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no old-map local chat frames after transfer, got %d", len(queued))
+	}
+	peerChat := flushServerFrames(t, flowThree)
+	if len(peerChat) != 1 {
+		t.Fatalf("expected 1 destination-map local chat frame after transfer, got %d", len(peerChat))
+	}
+	peerDelivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, peerChat[0]))
+	if err != nil {
+		t.Fatalf("decode destination-map local chat after transfer: %v", err)
+	}
+	if peerDelivery.Type != chatproto.ChatTypeTalking || peerDelivery.VID != peerTwo.VID || peerDelivery.Message != "PeerTwo : hola despues del transfer" {
+		t.Fatalf("unexpected destination-map local chat after transfer: %+v", peerDelivery)
+	}
+
+	moveOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 20, X: 1750, Y: 2850, Time: 0x31323334})))
+	if err != nil {
+		t.Fatalf("unexpected post-transfer move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack after transfer, got %d", len(moveOut))
+	}
+	selfMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode self move ack after transfer: %v", err)
+	}
+	if selfMove.VID != peerTwo.VID || selfMove.X != 1750 || selfMove.Y != 2850 || selfMove.Time != 0x31323334 {
+		t.Fatalf("unexpected self move ack after transfer: %+v", selfMove)
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no old-map move replication after transfer, got %d", len(queued))
+	}
+	peerMove := flushServerFrames(t, flowThree)
+	if len(peerMove) != 1 {
+		t.Fatalf("expected 1 destination-map move replication after transfer, got %d", len(peerMove))
+	}
+	peerAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, peerMove[0]))
+	if err != nil {
+		t.Fatalf("decode destination-map move replication after transfer: %v", err)
+	}
+	if peerAck.VID != peerTwo.VID || peerAck.X != 1750 || peerAck.Y != 2850 || peerAck.Time != 0x31323334 {
+		t.Fatalf("unexpected destination-map move replication after transfer: %+v", peerAck)
+	}
+}
+
 func TestNewGameSessionFactoryQueuesPeerChatForVisiblePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
