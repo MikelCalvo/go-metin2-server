@@ -39,6 +39,34 @@ func TestRuntimeSeparatesLivePositionFromPersistedSnapshot(t *testing.T) {
 	}
 }
 
+func TestRuntimeCanRefreshPersistedAndLiveSnapshotTogether(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:       0x01030102,
+		VID:      0x02040102,
+		Name:     "PeerTwo",
+		MapIndex: 1,
+		X:        1300,
+		Y:        2300,
+		Empire:   2,
+		GuildID:  15,
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	runtime.SetLivePosition(42, 1700, 2800)
+
+	updated := persisted
+	updated.MapIndex = 43
+	updated.X = 1900
+	updated.Y = 3100
+	runtime.ApplyPersistedSnapshot(updated)
+
+	if gotPersisted := runtime.PersistedSnapshot(); gotPersisted.MapIndex != 43 || gotPersisted.X != 1900 || gotPersisted.Y != 3100 {
+		t.Fatalf("expected refreshed persisted snapshot, got %+v", gotPersisted)
+	}
+	if gotLive := runtime.LiveCharacter(); gotLive.MapIndex != 43 || gotLive.X != 1900 || gotLive.Y != 3100 {
+		t.Fatalf("expected live character to realign with refreshed persisted snapshot, got %+v", gotLive)
+	}
+}
+
 func TestNilRuntimeReturnsZeroLiveCharacter(t *testing.T) {
 	var runtime *Runtime
 	if got := runtime.LiveCharacter(); got != (loginticket.Character{}) {

@@ -278,13 +278,29 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 		pending := newPendingServerFrames()
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
-		applySelectedCharacterTransfer := func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
-			if !joinedSharedWorld || sharedWorldID == 0 || int(selectedIndex) >= len(sessionTicket.Characters) {
-				return RelocationPreview{}, false
+		currentSelectedPlayer := func() (*player.Runtime, bool) {
+			if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+				return nil, false
+			}
+			if selectedPlayer != nil {
+				return selectedPlayer, true
 			}
 			selected := sessionTicket.Characters[selectedIndex]
+			if selected.ID == 0 {
+				return nil, false
+			}
+			selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: selectedIndex})
+			return selectedPlayer, true
+		}
+		applySelectedCharacterTransfer := func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
+			selectedPlayer, ok := currentSelectedPlayer()
+			if !ok || !joinedSharedWorld || sharedWorldID == 0 {
+				return RelocationPreview{}, false
+			}
+			selected := selectedPlayer.PersistedSnapshot()
+			selectedLink := selectedPlayer.SessionLink()
 			buildUpdatedSelection := func(updated loginticket.Character) ([]loginticket.Character, loginticket.Character, bool) {
-				return selectedCharacterLocationUpdate(sessionTicket.Characters, selectedIndex, updated.MapIndex, updated.X, updated.Y)
+				return selectedCharacterLocationUpdate(sessionTicket.Characters, selectedLink.CharacterIndex, updated.MapIndex, updated.X, updated.Y)
 			}
 			var transferResult RelocationPreview
 			transferFlow := warp.NewFlow(warp.Config{
@@ -309,7 +325,8 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					}
 					transferResult = transferPreview
 					sessionTicket.Characters = updatedCharacters
-					return warp.Result{Applied: true, Updated: updatedSelected}, true
+					selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
+					return warp.Result{Applied: true, Updated: selectedPlayer.LiveCharacter()}, true
 				},
 			})
 			if _, ok := transferFlow.Apply(selected, warp.Target{MapIndex: mapIndex, X: x, Y: y}); !ok {
@@ -427,17 +444,14 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
 						return worldentry.EnterGameResult{}
 					}
-					selected := sessionTicket.Characters[selectedIndex]
+					selected := selectedPlayer.LiveCharacter()
 					if selected.ID == 0 {
 						return worldentry.EnterGameResult{}
 					}
-					if selectedPlayer == nil {
-						selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: selectedIndex})
-					}
-					selected = selectedPlayer.LiveCharacter()
 					infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(ticketCharacterAdditionalInfoPacket(selected))
 					if err != nil {
 						return worldentry.EnterGameResult{}
@@ -469,10 +483,11 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
 						return gameflow.Result{Accepted: false}
 					}
-					selected := sessionTicket.Characters[selectedIndex]
+					selected := selectedPlayer.LiveCharacter()
 					if selected.ID == 0 {
 						return gameflow.Result{Accepted: false}
 					}
@@ -483,11 +498,13 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						return gameflow.Result{Accepted: true, Frames: [][]byte{}}
 					}
 
-					updatedCharacters, selected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedIndex, packet.X, packet.Y)
+					updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, packet.X, packet.Y)
 					if !ok {
 						return gameflow.Result{Accepted: false}
 					}
 					sessionTicket.Characters = updatedCharacters
+					selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
+					selected = selectedPlayer.LiveCharacter()
 					if joinedSharedWorld {
 						sharedWorld.UpdateCharacter(sharedWorldID, selected)
 					}
@@ -501,10 +518,11 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
 						return gameflow.SyncPositionResult{Accepted: false}
 					}
-					selected := sessionTicket.Characters[selectedIndex]
+					selected := selectedPlayer.LiveCharacter()
 					if selected.ID == 0 {
 						return gameflow.SyncPositionResult{Accepted: false}
 					}
@@ -518,17 +536,19 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 							}
 							return gameflow.SyncPositionResult{Accepted: true, Frames: [][]byte{}}
 						}
-						updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedIndex, element.X, element.Y)
+						updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, element.X, element.Y)
 						if !ok {
 							return gameflow.SyncPositionResult{Accepted: false}
 						}
 						sessionTicket.Characters = updatedCharacters
+						selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
+						selected = selectedPlayer.LiveCharacter()
 						if joinedSharedWorld {
-							sharedWorld.UpdateCharacter(sharedWorldID, updatedSelected)
+							sharedWorld.UpdateCharacter(sharedWorldID, selected)
 						}
-						ack := ticketSyncPositionAckPacket(updatedSelected)
+						ack := ticketSyncPositionAckPacket(selected)
 						if joinedSharedWorld {
-							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, updatedSelected, [][]byte{movep.EncodeSyncPositionAck(ack)})
+							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{movep.EncodeSyncPositionAck(ack)})
 						}
 						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ack}
 					}
@@ -538,10 +558,11 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
 						return gameflow.ChatResult{Accepted: false}
 					}
-					selected := sessionTicket.Characters[selectedIndex]
+					selected := selectedPlayer.LiveCharacter()
 					if selected.ID == 0 || packet.Message == "" {
 						return gameflow.ChatResult{Accepted: false}
 					}
@@ -583,10 +604,11 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
 						return gameflow.WhisperResult{Accepted: false}
 					}
-					selected := sessionTicket.Characters[selectedIndex]
+					selected := selectedPlayer.LiveCharacter()
 					if selected.ID == 0 || packet.Target == "" || packet.Message == "" {
 						return gameflow.WhisperResult{Accepted: false}
 					}

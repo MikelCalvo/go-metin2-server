@@ -52,6 +52,16 @@ func (r *Runtime) SetLivePosition(mapIndex uint32, x int32, y int32) {
 	r.liveY = y
 }
 
+func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
+	if r == nil {
+		return
+	}
+	r.persisted = persisted
+	r.liveMapIndex = persisted.MapIndex
+	r.liveX = persisted.X
+	r.liveY = persisted.Y
+}
+
 func (r *Runtime) SessionLink() SessionLink {
 	if r == nil {
 		return SessionLink{}
