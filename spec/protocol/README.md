@@ -29,6 +29,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `server-notice-broadcast.md` — first programmatic server-originated `CHAT_TYPE_NOTICE` broadcast contract
 - `chat-scope-first-hardening.md` — first non-global scoping pass for talking/guild/shout using currently available runtime data
 - `map-index-world-scope-hardening.md` — first map-index-backed visible-world scoping pass for visibility, movement, sync, and local talking chat
+- `world-topology-bootstrap.md` — first explicit local-channel and map-scope topology model for the bootstrap runtime
 - `map-relocation-visibility-rebuild.md` — first server-side visible-world rebuild primitive for relocating a connected player between bootstrap maps
 - `bootstrap-map-transfer-contract.md` — first minimal structured preview/commit contract for bootstrap map transfer on top of the relocation primitive
 - `exact-position-bootstrap-transfer-trigger.md` — first gameplay-side exact-position trigger that can invoke the bootstrap transfer commit path from `MOVE` / `SYNC_POSITION`

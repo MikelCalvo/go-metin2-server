@@ -10,6 +10,7 @@ import (
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 type queuedSessionFlow struct {
@@ -28,6 +29,7 @@ type pendingServerFrames struct {
 type sharedWorldRegistry struct {
 	mu       sync.Mutex
 	nextID   uint64
+	topology worldruntime.BootstrapTopology
 	sessions map[uint64]sharedWorldSession
 }
 
@@ -123,7 +125,14 @@ func (q *pendingServerFrames) flush() [][]byte {
 }
 
 func newSharedWorldRegistry() *sharedWorldRegistry {
-	return &sharedWorldRegistry{sessions: make(map[uint64]sharedWorldSession)}
+	return newSharedWorldRegistryWithTopology(worldruntime.NewBootstrapTopology(0))
+}
+
+func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology) *sharedWorldRegistry {
+	return &sharedWorldRegistry{
+		topology: topology,
+		sessions: make(map[uint64]sharedWorldSession),
+	}
 }
 
 func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pendingServerFrames, relocate sharedWorldSessionRelocator) (uint64, []loginticket.Character) {
@@ -137,7 +146,7 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 	existing := make([]loginticket.Character, 0, len(r.sessions))
 	peerFrames := encodePeerVisibilityFrames(character)
 	for _, session := range r.sessions {
-		if !charactersShareVisibleWorld(character, session.character) {
+		if !r.topology.SharesVisibleWorld(character, session.character) {
 			continue
 		}
 		existing = append(existing, session.character)
@@ -166,7 +175,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 
 	removeRaw := encodeCharacterDeleteFrame(session.character)
 	for _, peer := range r.sessions {
-		if !charactersShareVisibleWorld(session.character, peer.character) {
+		if !r.topology.SharesVisibleWorld(session.character, peer.character) {
 			continue
 		}
 		peer.pending.enqueue([][]byte{removeRaw})
@@ -247,13 +256,13 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 		if peerID == id {
 			continue
 		}
-		if charactersShareVisibleWorld(previous, peer.character) {
+		if r.topology.SharesVisibleWorld(previous, peer.character) {
 			oldPeers[peerID] = peer
-			currentVisiblePeers = append(currentVisiblePeers, connectedCharacterSnapshot(peer.character))
+			currentVisiblePeers = append(currentVisiblePeers, connectedCharacterSnapshot(r.topology, peer.character))
 		}
-		if charactersShareVisibleWorld(character, peer.character) {
+		if r.topology.SharesVisibleWorld(character, peer.character) {
 			newPeers[peerID] = peer
-			targetVisiblePeers = append(targetVisiblePeers, connectedCharacterSnapshot(peer.character))
+			targetVisiblePeers = append(targetVisiblePeers, connectedCharacterSnapshot(r.topology, peer.character))
 		}
 	}
 	sortConnectedCharacterSnapshots(currentVisiblePeers)
@@ -270,13 +279,13 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 	}
 	result := RelocationPreview{
 		Applied:             true,
-		Character:           connectedCharacterSnapshot(previous),
-		Target:              connectedCharacterSnapshot(character),
+		Character:           connectedCharacterSnapshot(r.topology, previous),
+		Target:              connectedCharacterSnapshot(r.topology, character),
 		CurrentVisiblePeers: currentVisiblePeers,
 		TargetVisiblePeers:  targetVisiblePeers,
 		RemovedVisiblePeers: removedVisiblePeers,
 		AddedVisiblePeers:   addedVisiblePeers,
-		MapOccupancyChanges: buildMapOccupancyChanges(buildMapOccupancySnapshots(currentCharacters), buildMapOccupancySnapshots(afterCharacters)),
+		MapOccupancyChanges: buildMapOccupancyChanges(buildMapOccupancySnapshots(r.topology, currentCharacters), buildMapOccupancySnapshots(r.topology, afterCharacters)),
 	}
 
 	for peerID, peer := range oldPeers {
@@ -321,7 +330,7 @@ func (r *sharedWorldRegistry) ConnectedCharacters() []ConnectedCharacterSnapshot
 	characters := r.snapshotCharacters()
 	snapshots := make([]ConnectedCharacterSnapshot, 0, len(characters))
 	for _, character := range characters {
-		snapshots = append(snapshots, connectedCharacterSnapshot(character))
+		snapshots = append(snapshots, connectedCharacterSnapshot(r.topology, character))
 	}
 	sortConnectedCharacterSnapshots(snapshots)
 	return snapshots
@@ -335,9 +344,9 @@ func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapsho
 	characters := r.snapshotCharacters()
 	snapshots := make([]CharacterVisibilitySnapshot, 0, len(characters))
 	for _, character := range characters {
-		visiblePeers := buildVisiblePeerSnapshots(character, characters, character.VID)
+		visiblePeers := buildVisiblePeerSnapshots(r.topology, character, characters, character.VID)
 		snapshots = append(snapshots, CharacterVisibilitySnapshot{
-			ConnectedCharacterSnapshot: connectedCharacterSnapshot(character),
+			ConnectedCharacterSnapshot: connectedCharacterSnapshot(r.topology, character),
 			VisiblePeers:               visiblePeers,
 		})
 	}
@@ -349,7 +358,7 @@ func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
 	if r == nil {
 		return nil
 	}
-	return buildMapOccupancySnapshots(r.snapshotCharacters())
+	return buildMapOccupancySnapshots(r.topology, r.snapshotCharacters())
 }
 
 func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
@@ -376,21 +385,21 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 	target.X = x
 	target.Y = y
 
-	currentVisiblePeers := buildVisiblePeerSnapshots(current, characters, current.VID)
+	currentVisiblePeers := buildVisiblePeerSnapshots(r.topology, current, characters, current.VID)
 	afterCharacters := append([]loginticket.Character(nil), characters...)
 	afterCharacters[targetIndex] = target
-	targetVisiblePeers := buildVisiblePeerSnapshots(target, afterCharacters, target.VID)
+	targetVisiblePeers := buildVisiblePeerSnapshots(r.topology, target, afterCharacters, target.VID)
 	removedVisiblePeers, addedVisiblePeers := diffVisiblePeerSnapshots(currentVisiblePeers, targetVisiblePeers)
 
 	return RelocationPreview{
 		Applied:             false,
-		Character:           connectedCharacterSnapshot(current),
-		Target:              connectedCharacterSnapshot(target),
+		Character:           connectedCharacterSnapshot(r.topology, current),
+		Target:              connectedCharacterSnapshot(r.topology, target),
 		CurrentVisiblePeers: currentVisiblePeers,
 		TargetVisiblePeers:  targetVisiblePeers,
 		RemovedVisiblePeers: removedVisiblePeers,
 		AddedVisiblePeers:   addedVisiblePeers,
-		MapOccupancyChanges: buildMapOccupancyChanges(buildMapOccupancySnapshots(characters), buildMapOccupancySnapshots(afterCharacters)),
+		MapOccupancyChanges: buildMapOccupancyChanges(buildMapOccupancySnapshots(r.topology, characters), buildMapOccupancySnapshots(r.topology, afterCharacters)),
 	}, true
 }
 
@@ -419,15 +428,15 @@ func (r *sharedWorldRegistry) EnqueueToVisibleSessions(originID uint64, origin l
 	defer r.mu.Unlock()
 
 	for id, session := range r.sessions {
-		if id == originID || !charactersShareVisibleWorld(origin, session.character) {
+		if id == originID || !r.topology.SharesVisibleWorld(origin, session.character) {
 			continue
 		}
 		session.pending.enqueue(frames)
 	}
 }
 
-func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpire(originID uint64, empire uint8, frames [][]byte) {
-	if r == nil || originID == 0 || empire == 0 || len(frames) == 0 {
+func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpire(originID uint64, origin loginticket.Character, frames [][]byte) {
+	if r == nil || originID == 0 || origin.Empire == 0 || len(frames) == 0 {
 		return
 	}
 
@@ -435,7 +444,7 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpire(originID uint64, em
 	defer r.mu.Unlock()
 
 	for id, session := range r.sessions {
-		if id == originID || session.character.Empire != empire {
+		if id == originID || !r.topology.SharesShoutScope(origin, session.character) {
 			continue
 		}
 		session.pending.enqueue(frames)
@@ -451,15 +460,15 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpireOnMap(originID uint6
 	defer r.mu.Unlock()
 
 	for id, session := range r.sessions {
-		if id == originID || session.character.Empire != origin.Empire || !charactersShareVisibleWorld(origin, session.character) {
+		if id == originID || !r.topology.SharesTalkingChatScope(origin, session.character) {
 			continue
 		}
 		session.pending.enqueue(frames)
 	}
 }
 
-func (r *sharedWorldRegistry) EnqueueToOtherSessionsInGuild(originID uint64, guildID uint32, frames [][]byte) {
-	if r == nil || originID == 0 || guildID == 0 || len(frames) == 0 {
+func (r *sharedWorldRegistry) EnqueueToOtherSessionsInGuild(originID uint64, origin loginticket.Character, frames [][]byte) {
+	if r == nil || originID == 0 || origin.GuildID == 0 || len(frames) == 0 {
 		return
 	}
 
@@ -467,7 +476,7 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInGuild(originID uint64, gui
 	defer r.mu.Unlock()
 
 	for id, session := range r.sessions {
-		if id == originID || session.character.GuildID != guildID {
+		if id == originID || !r.topology.SharesGuildChatScope(origin, session.character) {
 			continue
 		}
 		session.pending.enqueue(frames)
@@ -515,17 +524,6 @@ func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
 	return delivered
 }
 
-func charactersShareVisibleWorld(left loginticket.Character, right loginticket.Character) bool {
-	return characterMapIndex(left) == characterMapIndex(right)
-}
-
-func characterMapIndex(character loginticket.Character) uint32 {
-	if character.MapIndex == 0 {
-		return bootstrapMapIndex
-	}
-	return character.MapIndex
-}
-
 func (r *sharedWorldRegistry) snapshotCharacters() []loginticket.Character {
 	if r == nil {
 		return nil
@@ -540,11 +538,11 @@ func (r *sharedWorldRegistry) snapshotCharacters() []loginticket.Character {
 	return characters
 }
 
-func connectedCharacterSnapshot(character loginticket.Character) ConnectedCharacterSnapshot {
+func connectedCharacterSnapshot(topology worldruntime.BootstrapTopology, character loginticket.Character) ConnectedCharacterSnapshot {
 	return ConnectedCharacterSnapshot{
 		Name:     character.Name,
 		VID:      character.VID,
-		MapIndex: characterMapIndex(character),
+		MapIndex: topology.EffectiveMapIndex(character),
 		X:        character.X,
 		Y:        character.Y,
 		Empire:   character.Empire,
@@ -552,23 +550,23 @@ func connectedCharacterSnapshot(character loginticket.Character) ConnectedCharac
 	}
 }
 
-func buildVisiblePeerSnapshots(character loginticket.Character, characters []loginticket.Character, excludeVID uint32) []ConnectedCharacterSnapshot {
+func buildVisiblePeerSnapshots(topology worldruntime.BootstrapTopology, character loginticket.Character, characters []loginticket.Character, excludeVID uint32) []ConnectedCharacterSnapshot {
 	visiblePeers := make([]ConnectedCharacterSnapshot, 0, len(characters))
 	for _, peer := range characters {
-		if peer.VID == excludeVID || !charactersShareVisibleWorld(character, peer) {
+		if peer.VID == excludeVID || !topology.SharesVisibleWorld(character, peer) {
 			continue
 		}
-		visiblePeers = append(visiblePeers, connectedCharacterSnapshot(peer))
+		visiblePeers = append(visiblePeers, connectedCharacterSnapshot(topology, peer))
 	}
 	sortConnectedCharacterSnapshots(visiblePeers)
 	return visiblePeers
 }
 
-func buildMapOccupancySnapshots(characters []loginticket.Character) []MapOccupancySnapshot {
+func buildMapOccupancySnapshots(topology worldruntime.BootstrapTopology, characters []loginticket.Character) []MapOccupancySnapshot {
 	byMap := make(map[uint32][]ConnectedCharacterSnapshot)
 	for _, character := range characters {
-		mapIndex := characterMapIndex(character)
-		byMap[mapIndex] = append(byMap[mapIndex], connectedCharacterSnapshot(character))
+		mapIndex := topology.EffectiveMapIndex(character)
+		byMap[mapIndex] = append(byMap[mapIndex], connectedCharacterSnapshot(topology, character))
 	}
 
 	snapshots := make([]MapOccupancySnapshot, 0, len(byMap))

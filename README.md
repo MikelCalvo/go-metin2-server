@@ -18,6 +18,7 @@ Current scope of the project:
 - A deterministic selected-character `SYNC_POSITION` reconciliation path wired through the current bootstrap runtime.
 - A tolerant `CLIENT_VERSION` metadata path accepted during `LOADING` before `ENTERGAME`.
 - A tolerant `PONG` control path accepted in `GAME` for server-driven ping probes.
+- An explicit bootstrap world-topology model that centralizes local channel, map, and chat scope decisions for the current single-process runtime.
 - Character deletion on the selection surface with deterministic success/failure responses.
 - A first exact loading-to-game bootstrap burst after `ENTERGAME`: `PHASE(GAME)`, selected-character `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`, `PLAYER_POINT_CHANGE`, then any trailing peer visibility frames.
 - Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime and share the same bootstrap `MapIndex`.
@@ -128,7 +129,7 @@ Legend:
 | --- | --- | --- |
 | Shared player visibility | [~] | Peer enter/leave visibility exists for players on the same bootstrap `MapIndex`. |
 | Movement replication | [~] | `MOVE` and `SYNC_POSITION` fan out to already-visible peers on the same bootstrap `MapIndex`. |
-| Map boundaries | [~] | `MapIndex` is persisted and used for visibility/chat scoping, but there is no warp flow yet. |
+| Map boundaries | [~] | An explicit bootstrap topology now owns local channel/map chat scoping, but there is still no final warp flow yet. |
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [ ] | No range-, sector-, or AOI-based visibility yet. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive exists for `MapIndex` relocation, but there is no end-to-end client/server warp flow yet. |
@@ -232,6 +233,7 @@ Legend:
 - `spec/protocol/server-notice-broadcast.md`
 - `spec/protocol/chat-scope-first-hardening.md`
 - `spec/protocol/map-index-world-scope-hardening.md`
+- `spec/protocol/world-topology-bootstrap.md`
 - `spec/protocol/map-relocation-visibility-rebuild.md`
 - `spec/protocol/bootstrap-map-transfer-contract.md`
 - `spec/protocol/visible-world-bootstrap.md`

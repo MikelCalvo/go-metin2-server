@@ -530,13 +530,13 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						}
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
 						if joinedSharedWorld {
-							sharedWorld.EnqueueToOtherSessionsInGuild(sharedWorldID, selected.GuildID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+							sharedWorld.EnqueueToOtherSessionsInGuild(sharedWorldID, selected, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
 						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 					case chatproto.ChatTypeShout:
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
 						if joinedSharedWorld {
-							sharedWorld.EnqueueToOtherSessionsInEmpire(sharedWorldID, selected.Empire, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
+							sharedWorld.EnqueueToOtherSessionsInEmpire(sharedWorldID, selected, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
 						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 					case chatproto.ChatTypeInfo:
