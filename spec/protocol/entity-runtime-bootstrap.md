@@ -1,0 +1,157 @@
+# Entity Runtime Bootstrap
+
+This document freezes the first explicit entity/world-runtime ownership model that follows the initial shared-world pre-alpha slices.
+
+It sits on top of:
+- `world-topology-bootstrap.md`
+- `visibility-rebuild.md`
+- `map-transfer-bootstrap.md`
+
+Those documents already freeze bootstrap topology, visibility policy boundaries, and the current transfer contract.
+What this document adds is the next owned architecture boundary underneath those flows.
+
+## Scope
+
+This slice documents the runtime concepts that the repository now owns or is intentionally extracting next for M2:
+- live player runtime
+- generic player-first entity identity
+- player directory lookup ownership
+- map-occupancy index ownership
+- session-directory ownership for transport hooks
+- visibility/AOI policy ownership
+
+It does **not** claim that all of those pieces are fully implemented yet.
+The point of this slice is to stop treating those boundaries as implicit future refactors.
+
+## Current owned runtime concepts
+
+### Live player runtime
+
+The selected in-world player is no longer treated as the same conceptual object as the persisted bootstrap character snapshot.
+
+The current live runtime boundary is:
+- `internal/player/runtime.go`
+
+The current owned responsibilities are:
+- hold the persisted bootstrap `loginticket.Character` snapshot
+- hold live selected-session world position separately from that persisted snapshot
+- keep the selected-session link (`Login`, `CharacterIndex`) explicit
+- expose a live character view for gameplay/session flows
+- allow explicit re-alignment with a newly persisted snapshot after save/update flows
+
+This means runtime mutation and persistence mutation are no longer the same thing by accident.
+
+### Generic entity identity
+
+The first reusable world actor identity boundary is now owned by:
+- `internal/worldruntime/entity.go`
+- `internal/worldruntime/entity_registry.go`
+
+The current bootstrap implementation is intentionally narrow:
+- player entities only
+- in-memory registration only
+- one process-local runtime only
+
+The owned abstraction boundary is:
+- runtime callers should refer to reusable entity identity instead of raw session-local bookkeeping where possible
+- future non-player actors must fit this identity model instead of forcing another rewrite of visibility ownership later
+
+### Visibility and AOI policy
+
+Visible-world decisions are now owned by:
+- `internal/worldruntime/topology.go`
+- `internal/worldruntime/visibility.go`
+
+The current owned policy boundary is:
+- topology defines effective local channel and effective map identity
+- visibility policy defines whether two live actors can see each other
+- `WholeMapVisibilityPolicy` is the current default bootstrap implementation
+
+This means AOI exists as an architecture seam even though the default behavior is still whole-map visibility.
+
+## Next extraction boundaries now explicitly owned by the roadmap
+
+The repository now treats these as project-owned runtime boundaries, not vague future cleanup:
+
+### Player directory
+
+The runtime needs a dedicated lookup boundary for player entities by:
+- entity id
+- `VID`
+- exact character name
+
+That directory should become the owned source of truth for:
+- whisper-by-name routing
+- runtime snapshot lookup by stable player identity
+- future player-targeted systems that should not scan every connected session
+
+### Map-occupancy index
+
+The runtime needs a dedicated effective-map membership boundary for:
+- connected player occupancy snapshots
+- relocate preview occupancy deltas
+- transfer/leave/join bookkeeping that should not rebuild map state from whole-world scans every time
+
+The map index should be topology-aware and use effective `MapIndex` semantics instead of raw persisted values only.
+
+### Session directory
+
+The runtime still mixes transport hooks with world/entity ownership inside `internal/minimal/shared_world.go`.
+
+The next owned boundary is a dedicated session directory for:
+- queued frame sinks
+- relocate callbacks / transport-local session hooks
+- exact cleanup on leave/close/reconnect
+
+This keeps session transport concerns separate from entity/player/map ownership.
+
+## Current composition model
+
+The current bootstrap composition is intentionally transitional:
+
+- `internal/minimal/factory.go` still owns session-flow wiring
+- `internal/minimal/shared_world.go` still orchestrates the current shared-world bootstrap runtime
+- `internal/player` now owns selected live player state
+- `internal/worldruntime` now owns topology, visibility, and entity identity seams
+
+This is an explicit intermediate state.
+The project is not claiming that `internal/minimal/shared_world.go` is already the final world runtime.
+
+## Why this slice exists
+
+Tasks 1-10 already changed the architecture materially:
+- topology is no longer scattered helper logic
+- visibility diffs are explicit
+- transfer is routed through `internal/warp`
+- live player state is separate from persisted snapshots
+- a first entity registry exists
+
+Without this document, the next M2 work would still be guided mostly by commit history and chat context.
+
+This slice makes the next owned runtime frontier explicit:
+
+1. own directories and indexes inside `internal/worldruntime`
+2. close the remaining self-session transfer rebootstrap gap
+3. add a real AOI policy beyond the whole-map default
+4. only then open inventory/equipment state on top of the live player runtime
+
+## Explicit non-goals
+
+This slice does not yet add or freeze:
+- NPC, mob, spawn, or item-ground entity runtime
+- combat state, damage, death, or respawn
+- inventory, equipment, or item-use packet/state contracts
+- DB-backed persistence or migrations
+- real shard/channel routing or remote world ownership handoff
+- final public admin/auth surfaces beyond the current local-only bootstrap tooling
+
+## Success definition for the next M2 window
+
+The next world-runtime checkpoint should look like this:
+- player lookup is not a whole-world scan
+- map occupancy is an owned runtime primitive
+- session transport hooks are no longer mixed with entity state
+- transfer can reuse an owned self-session rebootstrap burst
+- AOI policy can evolve without rewriting every caller
+
+At that point, M2 stops being a vague goal and becomes a reusable runtime foundation for M3 character-state work.

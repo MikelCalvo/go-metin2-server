@@ -138,7 +138,7 @@ Legend:
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, but there is still no range-, sector-, or distance-based culling yet. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer reply contract exist, but there is still no final end-to-end client/server warp flow yet. |
-| Entity runtime beyond players | [~] | A first generic entity registry now exists in `internal/worldruntime`, but it still registers player entities only; no NPC, mob, item-ground, or generic behavior runtime yet. |
+| Entity runtime beyond players | [~] | A first generic entity registry now exists in `internal/worldruntime`, and `spec/protocol/entity-runtime-bootstrap.md` now freezes the next M2 ownership seams (player directory, map index, session directory, AOI policy); the implementation is still player-only and no NPC, mob, item-ground, or generic behavior runtime exists yet. |
 
 ### Social, chat, and operator surfaces
 
@@ -185,7 +185,7 @@ Legend:
 | --- | --- | --- |
 | M0 — Protocol-owned boot path | [x] | Handshake, auth/login, selection, create/delete/select, enter-game, and first movement loop are stable. |
 | M1 — Shared-world pre-alpha | [~] | Players can see each other, move, chat, and receive notices with real map/channel boundaries. |
-| M2 — Entity/world runtime foundation | [ ] | Real world/map/channel ownership, warp flow, and a reusable entity runtime replace the current bootstrap shortcuts. |
+| M2 — Entity/world runtime foundation | [~] | Live player runtime and the first generic entity registry exist, and the owned M2 runtime seams are now documented; real map/session indexes, final transfer rebootstrap, richer AOI, and non-player entities still need to replace the remaining bootstrap shortcuts. |
 | M3 — Character systems | [ ] | Inventory, equipment, item use, and character-state persistence exist in usable form. |
 | M4 — Combat vertical slice | [ ] | Targeting, attacks, damage, death, and respawn work for at least one minimal content path. |
 | M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime are available. |
@@ -201,7 +201,7 @@ Legend:
 - `internal/login` — login-by-key flow and selection-surface transition
 - `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
 - `internal/player` — live player-runtime objects that separate selected-session world state from persisted bootstrap character snapshots
-- `internal/worldruntime` — bootstrap topology, visibility helpers, and the first generic entity registry that own reusable shared-world calculations
+- `internal/worldruntime` — bootstrap topology, visibility helpers, and the first generic entity/runtime seams (entity registry today; player-directory, map-index, and session-directory boundaries documented next)
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/ops` — health and pprof endpoints
@@ -219,6 +219,7 @@ Legend:
 - `docs/debugging-and-profiling.md`
 - `docs/roadmaps/2026-04-18-global-project-assessment.md`
 - `docs/plans/2026-04-18-open-mt2-style-next-steps-roadmap.md`
+- `docs/plans/2026-04-21-world-runtime-and-character-state-next-twenty-five-slices.md`
 - `spec/protocol/README.md`
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
@@ -243,6 +244,7 @@ Legend:
 - `spec/protocol/map-index-world-scope-hardening.md`
 - `spec/protocol/world-topology-bootstrap.md`
 - `spec/protocol/visibility-rebuild.md`
+- `spec/protocol/entity-runtime-bootstrap.md`
 - `spec/protocol/map-relocation-visibility-rebuild.md`
 - `spec/protocol/bootstrap-map-transfer-contract.md`
 - `spec/protocol/map-transfer-bootstrap.md`
