@@ -7,13 +7,19 @@ import (
 )
 
 type EntityRegistry struct {
-	mu      sync.Mutex
-	nextID  uint64
-	players *PlayerDirectory
+	mu       sync.Mutex
+	nextID   uint64
+	topology BootstrapTopology
+	players  *PlayerDirectory
+	maps     *MapIndex
 }
 
 func NewEntityRegistry() *EntityRegistry {
-	return &EntityRegistry{players: NewPlayerDirectory()}
+	return NewEntityRegistryWithTopology(NewBootstrapTopology(0))
+}
+
+func NewEntityRegistryWithTopology(topology BootstrapTopology) *EntityRegistry {
+	return &EntityRegistry{topology: topology, players: NewPlayerDirectory(), maps: NewMapIndex(topology)}
 }
 
 func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerEntity {
@@ -25,6 +31,10 @@ func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerE
 	r.nextID++
 	registered := newPlayerEntity(r.nextID, character)
 	if !r.players.Register(registered) {
+		return PlayerEntity{}
+	}
+	if !r.maps.Register(registered) {
+		_, _ = r.players.Remove(registered.Entity.ID)
 		return PlayerEntity{}
 	}
 	return registered
@@ -58,21 +68,41 @@ func (r *EntityRegistry) PlayerByName(name string) (PlayerEntity, bool) {
 }
 
 func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character) bool {
-	if r == nil || id == 0 || r.players == nil {
+	if r == nil || id == 0 || r.players == nil || r.maps == nil {
 		return false
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.players.Update(newPlayerEntity(id, character))
+	previous, ok := r.players.ByEntityID(id)
+	if !ok {
+		return false
+	}
+	updated := newPlayerEntity(id, character)
+	if !r.players.Update(updated) {
+		return false
+	}
+	if !r.maps.Update(updated) {
+		_ = r.players.Update(previous)
+		return false
+	}
+	return true
 }
 
 func (r *EntityRegistry) Remove(id uint64) (PlayerEntity, bool) {
-	if r == nil || id == 0 || r.players == nil {
+	if r == nil || id == 0 || r.players == nil || r.maps == nil {
 		return PlayerEntity{}, false
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.players.Remove(id)
+	removed, ok := r.players.Remove(id)
+	if !ok {
+		return PlayerEntity{}, false
+	}
+	if _, ok := r.maps.Remove(id); !ok {
+		_ = r.players.Register(removed)
+		return PlayerEntity{}, false
+	}
+	return removed, true
 }
 
 func (r *EntityRegistry) PlayerCharacters() []loginticket.Character {
@@ -82,6 +112,24 @@ func (r *EntityRegistry) PlayerCharacters() []loginticket.Character {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.players.PlayerCharacters()
+}
+
+func (r *EntityRegistry) MapCharacters(mapIndex uint32) []loginticket.Character {
+	if r == nil || r.maps == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.maps.PlayerCharacters(mapIndex)
+}
+
+func (r *EntityRegistry) MapOccupancy() []MapOccupancy {
+	if r == nil || r.maps == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.maps.Snapshot()
 }
 
 func newPlayerEntity(id uint64, character loginticket.Character) PlayerEntity {

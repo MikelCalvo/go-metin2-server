@@ -56,6 +56,19 @@ The owned abstraction boundary is:
 - runtime callers should refer to reusable entity identity instead of raw session-local bookkeeping where possible
 - future non-player actors must fit this identity model instead of forcing another rewrite of visibility ownership later
 
+### Map-occupancy index
+
+The runtime now owns a dedicated effective-map membership boundary in:
+- `internal/worldruntime/map_index.go`
+
+The current owned responsibilities are:
+- track player entity membership by effective `MapIndex`
+- normalize bootstrap `MapIndex = 0` through topology-aware effective-map semantics
+- expose deterministic per-map character snapshots for runtime callers
+- keep register, move, and remove bookkeeping explicit instead of rebuilding occupancy from whole-world scans by default
+
+This keeps map occupancy as an owned runtime primitive even though some callers still need to be rewired to consume it directly.
+
 ### Visibility and AOI policy
 
 Visible-world decisions are now owned by:
@@ -69,30 +82,9 @@ The current owned policy boundary is:
 
 This means AOI exists as an architecture seam even though the default behavior is still whole-map visibility.
 
-## Next extraction boundaries now explicitly owned by the roadmap
+## Remaining extraction boundaries now explicitly owned by the roadmap
 
-The repository now treats these as project-owned runtime boundaries, not vague future cleanup:
-
-### Player directory
-
-The runtime needs a dedicated lookup boundary for player entities by:
-- entity id
-- `VID`
-- exact character name
-
-That directory should become the owned source of truth for:
-- whisper-by-name routing
-- runtime snapshot lookup by stable player identity
-- future player-targeted systems that should not scan every connected session
-
-### Map-occupancy index
-
-The runtime needs a dedicated effective-map membership boundary for:
-- connected player occupancy snapshots
-- relocate preview occupancy deltas
-- transfer/leave/join bookkeeping that should not rebuild map state from whole-world scans every time
-
-The map index should be topology-aware and use effective `MapIndex` semantics instead of raw persisted values only.
+The repository still treats these as the next project-owned runtime boundaries after the player directory and map-index extractions:
 
 ### Session directory
 
@@ -112,7 +104,7 @@ The current bootstrap composition is intentionally transitional:
 - `internal/minimal/factory.go` still owns session-flow wiring
 - `internal/minimal/shared_world.go` still orchestrates the current shared-world bootstrap runtime
 - `internal/player` now owns selected live player state
-- `internal/worldruntime` now owns topology, visibility, and entity identity seams
+- `internal/worldruntime` now owns topology, visibility, entity identity, and effective-map membership seams
 
 This is an explicit intermediate state.
 The project is not claiming that `internal/minimal/shared_world.go` is already the final world runtime.

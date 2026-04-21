@@ -130,7 +130,7 @@ func newSharedWorldRegistry() *sharedWorldRegistry {
 func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology) *sharedWorldRegistry {
 	return &sharedWorldRegistry{
 		topology: topology,
-		entities: worldruntime.NewEntityRegistry(),
+		entities: worldruntime.NewEntityRegistryWithTopology(topology),
 		sessions: make(map[uint64]sharedWorldSession),
 	}
 }

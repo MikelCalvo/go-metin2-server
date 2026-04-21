@@ -69,6 +69,47 @@ func TestEntityRegistryReturnsDeterministicSortedPlayerCharacters(t *testing.T) 
 	}
 }
 
+func TestEntityRegistryTracksPlayersByEffectiveMapIndex(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 0, 1100, 2100))
+	bravo := registry.RegisterPlayer(entityRegistryCharacter("Bravo", 0x02040102, 42, 1300, 2300))
+
+	bootstrapCharacters := registry.MapCharacters(0)
+	if len(bootstrapCharacters) != 1 || bootstrapCharacters[0].Name != "Alpha" {
+		t.Fatalf("expected Alpha in effective bootstrap map bucket, got %+v", bootstrapCharacters)
+	}
+	map42Characters := registry.MapCharacters(42)
+	if len(map42Characters) != 1 || map42Characters[0].Name != "Bravo" {
+		t.Fatalf("expected Bravo in map 42 bucket, got %+v", map42Characters)
+	}
+
+	moved := alpha.Character
+	moved.MapIndex = 42
+	moved.X = 1700
+	moved.Y = 2800
+	if !registry.UpdatePlayer(alpha.Entity.ID, moved) {
+		t.Fatal("expected Alpha move to update the map index")
+	}
+	map42Characters = registry.MapCharacters(42)
+	if len(map42Characters) != 2 || map42Characters[0].Name != "Alpha" || map42Characters[1].Name != "Bravo" {
+		t.Fatalf("expected Alpha and Bravo in sorted map 42 bucket after relocation, got %+v", map42Characters)
+	}
+
+	removed, ok := registry.Remove(bravo.Entity.ID)
+	if !ok || removed.Entity.ID != bravo.Entity.ID {
+		t.Fatalf("expected remove to return Bravo, got entity=%+v ok=%v", removed, ok)
+	}
+	map42Characters = registry.MapCharacters(42)
+	if len(map42Characters) != 1 || map42Characters[0].Name != "Alpha" {
+		t.Fatalf("expected only Alpha in map 42 bucket after removal, got %+v", map42Characters)
+	}
+
+	occupancy := registry.MapOccupancy()
+	if len(occupancy) != 1 || occupancy[0].MapIndex != 42 || len(occupancy[0].Characters) != 1 || occupancy[0].Characters[0].Name != "Alpha" {
+		t.Fatalf("expected deterministic map-occupancy snapshot after removal, got %+v", occupancy)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,
