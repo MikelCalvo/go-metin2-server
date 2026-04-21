@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestFileStoreIssueThenConsumeRoundTrip(t *testing.T) {
+func TestFileStoreIssueThenLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	store := NewFileStore(dir)
 
@@ -52,13 +52,39 @@ func TestFileStoreIssueThenConsumeRoundTrip(t *testing.T) {
 		t.Fatalf("issue ticket: %v", err)
 	}
 
-	got, err := store.Consume("mkmk", 0x01020304)
+	got, err := store.Load("mkmk", 0x01020304)
 	if err != nil {
-		t.Fatalf("consume ticket: %v", err)
+		t.Fatalf("load ticket: %v", err)
 	}
 
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected ticket:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	loadedAgain, err := store.Load("mkmk", 0x01020304)
+	if err != nil {
+		t.Fatalf("load ticket again: %v", err)
+	}
+	if !reflect.DeepEqual(loadedAgain, want) {
+		t.Fatalf("unexpected ticket after second load:\n got: %#v\nwant: %#v", loadedAgain, want)
+	}
+}
+
+func TestFileStoreIssueThenConsumeRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+
+	issued := Ticket{Login: "mkmk", LoginKey: 0x01020304}
+	if err := store.Issue(issued); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+
+	got, err := store.Consume("mkmk", 0x01020304)
+	if err != nil {
+		t.Fatalf("consume ticket: %v", err)
+	}
+	if !reflect.DeepEqual(got, issued) {
+		t.Fatalf("unexpected consumed ticket:\n got: %#v\nwant: %#v", got, issued)
 	}
 }
 

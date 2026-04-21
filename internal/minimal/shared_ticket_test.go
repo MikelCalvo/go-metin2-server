@@ -86,7 +86,7 @@ func TestAuthAndGameSessionFactoriesShareIssuedLoginTicket(t *testing.T) {
 	}
 }
 
-func TestGameSessionFactoryRejectsAConsumedLoginTicket(t *testing.T) {
+func TestGameSessionFactoryAllowsLoginTicketReuseAcrossFreshGameSessions(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	authFactory := newAuthSessionFactory(store, func() (uint32, error) { return 0x0badf00d, nil })
 	gameFactory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
@@ -115,25 +115,44 @@ func TestGameSessionFactoryRejectsAConsumedLoginTicket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode login2: %v", err)
 	}
-	if _, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+	firstLoginOut, err := firstGameFlow.HandleClientFrame(decodeSingleFrame(t, login2Raw))
+	if err != nil {
 		t.Fatalf("unexpected first game login error: %v", err)
+	}
+	if len(firstLoginOut) != 3 {
+		t.Fatalf("expected 3 first-login frames, got %d", len(firstLoginOut))
 	}
 
 	secondGameFlow := gameFactory()
 	_ = mustCompleteSecureHandshake(t, secondGameFlow)
-	loginOut, err := secondGameFlow.HandleClientFrame(decodeSingleFrame(t, login2Raw))
+	secondLoginOut, err := secondGameFlow.HandleClientFrame(decodeSingleFrame(t, login2Raw))
 	if err != nil {
 		t.Fatalf("unexpected second game login error: %v", err)
 	}
-	if len(loginOut) != 1 {
-		t.Fatalf("expected 1 login failure frame, got %d", len(loginOut))
+	if len(secondLoginOut) != 3 {
+		t.Fatalf("expected 3 second-login frames, got %d", len(secondLoginOut))
 	}
-	failure, err := loginproto.DecodeLoginFailure(decodeSingleFrame(t, loginOut[0]))
+	loginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, secondLoginOut[0]))
 	if err != nil {
-		t.Fatalf("decode login failure: %v", err)
+		t.Fatalf("decode second login success: %v", err)
 	}
-	if failure.Status != "NOID" {
-		t.Fatalf("expected NOID after consuming the ticket, got %q", failure.Status)
+	if loginSuccess.Players[1].Name != "MkmkSura" {
+		t.Fatalf("expected second game session to keep slot 1 available, got %q", loginSuccess.Players[1].Name)
+	}
+
+	selectOut, err := secondGameFlow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1})))
+	if err != nil {
+		t.Fatalf("unexpected second-session character select error: %v", err)
+	}
+	if len(selectOut) != 3 {
+		t.Fatalf("expected 3 second-session select frames, got %d", len(selectOut))
+	}
+	mainCharacter, err := worldproto.DecodeMainCharacter(decodeSingleFrame(t, selectOut[1]))
+	if err != nil {
+		t.Fatalf("decode second-session main character: %v", err)
+	}
+	if mainCharacter.Name != "MkmkSura" {
+		t.Fatalf("expected reused ticket to reach selected character MkmkSura, got %q", mainCharacter.Name)
 	}
 }
 

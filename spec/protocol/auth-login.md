@@ -36,6 +36,7 @@ The current project-owned auth flow is:
 5. on bad credentials, the server emits `LOGIN_FAILURE`
 6. on success, the server emits `AUTH_SUCCESS`
 7. the client can then reconnect to `gamed` and send `LOGIN2`
+8. that same `login_key` must remain reusable across the real client's pre-game reconnects (for example the second game socket opened by direct-enter on the selected character)
 
 This slice intentionally keeps the auth key contract simple:
 - the auth result can be backed by deterministic in-process data for now

@@ -53,6 +53,7 @@ type Ticket struct {
 
 type Store interface {
 	Issue(Ticket) error
+	Load(login string, loginKey uint32) (Ticket, error)
 	Consume(login string, loginKey uint32) (Ticket, error)
 }
 
@@ -107,7 +108,15 @@ func (s *FileStore) Issue(ticket Ticket) error {
 	return nil
 }
 
+func (s *FileStore) Load(login string, loginKey uint32) (Ticket, error) {
+	return s.read(login, loginKey, false)
+}
+
 func (s *FileStore) Consume(login string, loginKey uint32) (Ticket, error) {
+	return s.read(login, loginKey, true)
+}
+
+func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, error) {
 	if s.dir == "" {
 		return Ticket{}, ErrStoreDirRequired
 	}
@@ -127,6 +136,9 @@ func (s *FileStore) Consume(login string, loginKey uint32) (Ticket, error) {
 	}
 	if ticket.Login != login || ticket.LoginKey != loginKey {
 		return Ticket{}, ErrTicketLoginMismatch
+	}
+	if !consume {
+		return ticket, nil
 	}
 	if err := os.Remove(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {

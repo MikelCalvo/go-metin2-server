@@ -7,6 +7,7 @@ The goal of this slice is narrow:
 - return a deterministic success or failure path
 - reach the selection surface in `SELECT`
 - allow empty accounts to choose an empire before character creation
+- preserve the auth-issued `login_key` across pre-game reconnects such as direct-enter on the selected character
 
 It does not yet freeze full multi-step account setup beyond that bootstrap path.
 
@@ -40,8 +41,9 @@ The current project-owned login flow is:
    - `EMPIRE`
    - `PHASE(SELECT)`
 5. the session transitions to `SELECT`
-6. if the account has no chosen empire and no characters yet, the client may send `EMPIRE` selection (`0x010A`)
-7. on accepted empire selection, the server emits `EMPIRE` with the chosen value and stays in `SELECT`
+6. the same auth-issued `login_key` remains valid across pre-game reconnects needed by the real client (for example the second game socket opened by direct-enter on a selected character)
+7. if the account has no chosen empire and no characters yet, the client may send `EMPIRE` selection (`0x010A`)
+8. on accepted empire selection, the server emits `EMPIRE` with the chosen value and stays in `SELECT`
 
 This is intentionally narrower than the full legacy stack:
 - no DB round-trip is required in this slice

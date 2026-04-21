@@ -347,9 +347,17 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					ticket, err := store.Consume(packet.Login, packet.LoginKey)
+					ticket, err := store.Load(packet.Login, packet.LoginKey)
 					if err != nil {
 						return loginflow.Result{Accepted: false, FailureStatus: "NOID"}
+					}
+					if accounts != nil {
+						account, ok := loadOrCreateAccount(accounts, packet.Login)
+						if !ok {
+							return loginflow.Result{Accepted: false, FailureStatus: "FAILED"}
+						}
+						ticket.Empire = account.Empire
+						ticket.Characters = cloneCharacters(account.Characters)
 					}
 
 					sessionTicket = ticket
