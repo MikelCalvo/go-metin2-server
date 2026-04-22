@@ -605,6 +605,120 @@ func TestLocalMapsEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalStaticActorsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubStaticActorSnapshotter{actors: []map[string]any{{"entity_id": uint64(2), "name": "Blacksmith", "map_index": uint32(42), "x": int32(1900), "y": int32(3000), "race_num": uint32(20301)}, {"entity_id": uint64(1), "name": "VillageGuard", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20300)}}}
+	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), snapshotter.StaticActors, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected static actor snapshotter to be called once, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"name":"Blacksmith"`) || !strings.Contains(string(body), `"race_num":20300`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubStaticActorSnapshotter{}
+	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), snapshotter.StaticActors, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected static actor snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalStaticActorsEndpointRegistersActorForLoopbackPost(t *testing.T) {
+	registrar := &stubStaticActorRegistrar{registered: true, actor: map[string]any{"entity_id": uint64(1), "name": "VillageGuard", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20300)}}
+	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), nil, registrar.RegisterStaticActor)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors", strings.NewReader(`{"name":"VillageGuard","map_index":42,"x":1700,"y":2800,"race_num":20300}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if registrar.calls != 1 || registrar.lastName != "VillageGuard" || registrar.lastMapIndex != 42 || registrar.lastX != 1700 || registrar.lastY != 2800 || registrar.lastRaceNum != 20300 {
+		t.Fatalf("unexpected static actor registrar call state: %+v", registrar)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":1`) || !strings.Contains(string(body), `"name":"VillageGuard"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorsEndpointRejectsInvalidSeedBody(t *testing.T) {
+	registrar := &stubStaticActorRegistrar{registered: true}
+	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), nil, registrar.RegisterStaticActor)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors", strings.NewReader(`{"name":"VillageGuard","map_index":0,"x":1700,"y":2800,"race_num":20300}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if registrar.calls != 0 {
+		t.Fatalf("expected static actor registrar not to be called, got %d calls", registrar.calls)
+	}
+}
+
+func TestLocalStaticActorsEndpointRejectsUnsupportedMethod(t *testing.T) {
+	snapshotter := &stubStaticActorSnapshotter{}
+	registrar := &stubStaticActorRegistrar{registered: true}
+	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), snapshotter.StaticActors, registrar.RegisterStaticActor)
+
+	req := httptest.NewRequest(http.MethodDelete, "/local/static-actors", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected static actor snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+	if registrar.calls != 0 {
+		t.Fatalf("expected static actor registrar not to be called, got %d calls", registrar.calls)
+	}
+}
+
 type stubNoticeBroadcaster struct {
 	delivered   int
 	calls       int
@@ -663,6 +777,37 @@ type stubMapOccupancySnapshotter struct {
 func (s *stubMapOccupancySnapshotter) MapOccupancy() any {
 	s.calls++
 	return s.snapshots
+}
+
+type stubStaticActorSnapshotter struct {
+	actors []map[string]any
+	calls  int
+}
+
+func (s *stubStaticActorSnapshotter) StaticActors() any {
+	s.calls++
+	return s.actors
+}
+
+type stubStaticActorRegistrar struct {
+	actor        map[string]any
+	registered   bool
+	calls        int
+	lastName     string
+	lastMapIndex uint32
+	lastX        int32
+	lastY        int32
+	lastRaceNum  uint32
+}
+
+func (r *stubStaticActorRegistrar) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (any, bool) {
+	r.calls++
+	r.lastName = name
+	r.lastMapIndex = mapIndex
+	r.lastX = x
+	r.lastY = y
+	r.lastRaceNum = raceNum
+	return r.actor, r.registered
 }
 
 type stubRelocationPreviewer struct {

@@ -56,6 +56,17 @@ func main() {
 		func() any { return gameRuntime.CharacterVisibility() },
 		func() any { return gameRuntime.MapOccupancy() },
 	)
+	opsHandler = ops.RegisterLocalStaticActorEndpoints(
+		opsHandler,
+		func() any { return gameRuntime.StaticActors() },
+		func(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (any, bool) {
+			actor, ok := gameRuntime.RegisterStaticActor(name, mapIndex, x, y, raceNum)
+			if !ok {
+				return nil, false
+			}
+			return actor, true
+		},
+	)
 	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {
 		logger.Error("service stopped with error", "err", err)
 		fmt.Fprintln(os.Stderr, err)

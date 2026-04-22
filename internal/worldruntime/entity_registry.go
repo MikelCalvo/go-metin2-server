@@ -165,6 +165,15 @@ func (r *EntityRegistry) MapOccupancy() []MapOccupancy {
 	return r.maps.Snapshot()
 }
 
+func (r *EntityRegistry) AllStaticActors() []StaticEntity {
+	if r == nil || r.staticActors == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.staticActors.StaticActors()
+}
+
 func (r *EntityRegistry) StaticActors(mapIndex uint32) []StaticEntity {
 	if r == nil || r.maps == nil {
 		return nil

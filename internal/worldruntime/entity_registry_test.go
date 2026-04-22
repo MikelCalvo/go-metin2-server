@@ -176,6 +176,29 @@ func TestEntityRegistryRegistersAndLooksUpStaticActors(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryReturnsDeterministicSortedStaticActors(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	blacksmith, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Blacksmith"}, Position: NewPosition(42, 1900, 3000), RaceNum: 20301})
+	if !ok {
+		t.Fatal("expected blacksmith registration to succeed")
+	}
+
+	actors := registry.AllStaticActors()
+	if len(actors) != 2 {
+		t.Fatalf("expected 2 static actors in registry snapshot, got %d", len(actors))
+	}
+	if actors[0].Entity.ID != blacksmith.Entity.ID || actors[0].Entity.Name != "Blacksmith" {
+		t.Fatalf("expected Blacksmith first in sorted static actor snapshot, got %+v", actors[0])
+	}
+	if actors[1].Entity.ID != guard.Entity.ID || actors[1].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected VillageGuard second in sorted static actor snapshot, got %+v", actors[1])
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,

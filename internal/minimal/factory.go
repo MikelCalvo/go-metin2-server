@@ -84,6 +84,15 @@ type MapOccupancySnapshot struct {
 	Characters     []ConnectedCharacterSnapshot `json:"characters"`
 }
 
+type StaticActorSnapshot struct {
+	EntityID uint64 `json:"entity_id"`
+	Name     string `json:"name"`
+	MapIndex uint32 `json:"map_index"`
+	X        int32  `json:"x"`
+	Y        int32  `json:"y"`
+	RaceNum  uint32 `json:"race_num"`
+}
+
 type MapOccupancyChange struct {
 	MapIndex    uint32 `json:"map_index"`
 	BeforeCount int    `json:"before_count"`
@@ -166,6 +175,24 @@ func (r *gameRuntime) MapOccupancy() []MapOccupancySnapshot {
 		return nil
 	}
 	return r.sharedWorld.MapOccupancy()
+}
+
+func (r *gameRuntime) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return StaticActorSnapshot{}, false
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || mapIndex == 0 || raceNum == 0 {
+		return StaticActorSnapshot{}, false
+	}
+	return r.sharedWorld.RegisterStaticActor(name, mapIndex, x, y, raceNum)
+}
+
+func (r *gameRuntime) StaticActors() []StaticActorSnapshot {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	return r.sharedWorld.StaticActors()
 }
 
 func NewAuthSessionFactory() service.SessionFactory {

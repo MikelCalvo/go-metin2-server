@@ -422,6 +422,39 @@ func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
 	return r.mapOccupancySnapshots()
 }
 
+func (r *sharedWorldRegistry) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
+	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 {
+		return StaticActorSnapshot{}, false
+	}
+	position := worldruntime.NewPosition(mapIndex, x, y)
+	if !position.Valid() {
+		return StaticActorSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	actor, ok := r.entities.RegisterStaticActor(worldruntime.StaticEntity{
+		Entity:   worldruntime.Entity{Name: name},
+		Position: position,
+		RaceNum:  raceNum,
+	})
+	if !ok {
+		return StaticActorSnapshot{}, false
+	}
+	return staticActorSnapshot(r.topology, actor), true
+}
+
+func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
+	if r == nil || r.entities == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return staticActorSnapshots(r.topology, r.entities.AllStaticActors())
+}
+
 func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
 	if r == nil || name == "" || mapIndex == 0 {
 		return RelocationPreview{}, false
@@ -628,12 +661,32 @@ func connectedCharacterSnapshot(topology worldruntime.BootstrapTopology, charact
 	}
 }
 
+func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldruntime.StaticEntity) StaticActorSnapshot {
+	return StaticActorSnapshot{
+		EntityID: actor.Entity.ID,
+		Name:     actor.Entity.Name,
+		MapIndex: topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
+		X:        actor.Position.X,
+		Y:        actor.Position.Y,
+		RaceNum:  actor.RaceNum,
+	}
+}
+
 func connectedCharacterSnapshots(topology worldruntime.BootstrapTopology, characters []loginticket.Character) []ConnectedCharacterSnapshot {
 	snapshots := make([]ConnectedCharacterSnapshot, 0, len(characters))
 	for _, character := range characters {
 		snapshots = append(snapshots, connectedCharacterSnapshot(topology, character))
 	}
 	sortConnectedCharacterSnapshots(snapshots)
+	return snapshots
+}
+
+func staticActorSnapshots(topology worldruntime.BootstrapTopology, actors []worldruntime.StaticEntity) []StaticActorSnapshot {
+	snapshots := make([]StaticActorSnapshot, 0, len(actors))
+	for _, actor := range actors {
+		snapshots = append(snapshots, staticActorSnapshot(topology, actor))
+	}
+	sortStaticActorSnapshots(snapshots)
 	return snapshots
 }
 
@@ -784,6 +837,15 @@ func sortCharacterVisibilitySnapshots(snapshots []CharacterVisibilitySnapshot) {
 func sortMapOccupancySnapshots(snapshots []MapOccupancySnapshot) {
 	sort.Slice(snapshots, func(i int, j int) bool {
 		return snapshots[i].MapIndex < snapshots[j].MapIndex
+	})
+}
+
+func sortStaticActorSnapshots(snapshots []StaticActorSnapshot) {
+	sort.Slice(snapshots, func(i int, j int) bool {
+		if snapshots[i].Name == snapshots[j].Name {
+			return snapshots[i].EntityID < snapshots[j].EntityID
+		}
+		return snapshots[i].Name < snapshots[j].Name
 	})
 }
 

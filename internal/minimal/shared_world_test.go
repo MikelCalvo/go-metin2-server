@@ -2209,6 +2209,56 @@ func TestSharedWorldRegistryLeaveIsIdempotentAfterCleanup(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeRegistersAndListsStaticActors(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	guard, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if guard.EntityID == 0 || guard.Name != "VillageGuard" || guard.MapIndex != 42 || guard.X != 1700 || guard.Y != 2800 || guard.RaceNum != 20300 {
+		t.Fatalf("unexpected guard snapshot: %+v", guard)
+	}
+	blacksmith, ok := runtime.RegisterStaticActor("Blacksmith", 42, 1900, 3000, 20301)
+	if !ok {
+		t.Fatal("expected blacksmith registration to succeed")
+	}
+	if blacksmith.EntityID == 0 || blacksmith.EntityID == guard.EntityID {
+		t.Fatalf("expected distinct non-zero static actor IDs, guard=%+v blacksmith=%+v", guard, blacksmith)
+	}
+
+	actors := runtime.StaticActors()
+	if len(actors) != 2 {
+		t.Fatalf("expected 2 static actors in runtime snapshot, got %d", len(actors))
+	}
+	if actors[0].EntityID != blacksmith.EntityID || actors[0].Name != "Blacksmith" || actors[0].RaceNum != 20301 {
+		t.Fatalf("expected Blacksmith first in sorted runtime snapshot, got %+v", actors[0])
+	}
+	if actors[1].EntityID != guard.EntityID || actors[1].Name != "VillageGuard" || actors[1].RaceNum != 20300 {
+		t.Fatalf("expected VillageGuard second in sorted runtime snapshot, got %+v", actors[1])
+	}
+}
+
+func TestGameRuntimeRegisterStaticActorRejectsInvalidSeed(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	if _, ok := runtime.RegisterStaticActor("", 42, 1700, 2800, 20300); ok {
+		t.Fatal("expected blank-name static actor registration to fail")
+	}
+	if _, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 0); ok {
+		t.Fatal("expected zero-race static actor registration to fail")
+	}
+	if actors := runtime.StaticActors(); len(actors) != 0 {
+		t.Fatalf("expected invalid static actor registration to keep runtime snapshot empty, got %+v", actors)
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 

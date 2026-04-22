@@ -17,6 +17,14 @@ type localRelocationRequest struct {
 	Y        int32  `json:"y"`
 }
 
+type localStaticActorRequest struct {
+	Name     string `json:"name"`
+	MapIndex uint32 `json:"map_index"`
+	X        int32  `json:"x"`
+	Y        int32  `json:"y"`
+	RaceNum  uint32 `json:"race_num"`
+}
+
 func NewPprofMux(serviceName string) *http.ServeMux {
 	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, nil, nil, nil, nil, nil, nil, nil)
 }
@@ -31,6 +39,56 @@ func NewPprofMuxWithLocalRelocation(serviceName string, broadcastNotice func(str
 
 func NewPprofMuxWithLocalRuntimeSnapshot(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, connectedCharacters func() any) *http.ServeMux {
 	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, relocateCharacter, nil, nil, connectedCharacters, nil, nil)
+}
+
+func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() any, registerStaticActor func(string, uint32, int32, int32, uint32) (any, bool)) *http.ServeMux {
+	if mux == nil || (staticActors == nil && registerStaticActor == nil) {
+		return mux
+	}
+
+	mux.HandleFunc("/local/static-actors", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			if staticActors == nil {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if err := json.NewEncoder(w).Encode(staticActors()); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		case http.MethodPost:
+			if registerStaticActor == nil {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			request, ok := decodeLocalStaticActorRequest(r)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			actor, ok := registerStaticActor(request.Name, request.MapIndex, request.X, request.Y, request.RaceNum)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if err := json.NewEncoder(w).Encode(actor); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	return mux
 }
 
 func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, previewRelocation func(string, uint32, int32, int32) (any, bool), transferCharacter func(string, uint32, int32, int32) (any, bool), connectedCharacters func() any, characterVisibility func() any, mapOccupancy func() any) *http.ServeMux {
@@ -224,6 +282,24 @@ func decodeLocalRelocationRequest(r *http.Request) (localRelocationRequest, bool
 	request.Name = strings.TrimSpace(request.Name)
 	if request.Name == "" || request.MapIndex == 0 {
 		return localRelocationRequest{}, false
+	}
+	return request, true
+}
+
+func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bool) {
+	var request localStaticActorRequest
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		return localStaticActorRequest{}, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return localStaticActorRequest{}, false
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	if request.Name == "" || request.MapIndex == 0 || request.RaceNum == 0 {
+		return localStaticActorRequest{}, false
 	}
 	return request, true
 }
