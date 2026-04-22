@@ -157,6 +157,25 @@ func TestEntityRegistryRemoveClearsPlayerLookupWhenMapIndexEntryAlreadyMissing(t
 	}
 }
 
+func TestEntityRegistryRegistersAndLooksUpStaticActors(t *testing.T) {
+	registry := NewEntityRegistry()
+	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	if registered.Entity.ID == 0 || registered.Entity.Kind != EntityKindStaticActor || registered.Entity.Name != "VillageGuard" {
+		t.Fatalf("unexpected registered static actor: %+v", registered)
+	}
+	lookup, ok := registry.StaticActor(registered.Entity.ID)
+	if !ok || lookup.Entity.ID != registered.Entity.ID || lookup.Position != registered.Position || lookup.RaceNum != 20300 {
+		t.Fatalf("expected static actor lookup to round-trip, got actor=%+v ok=%v", lookup, ok)
+	}
+	actors := registry.StaticActors(42)
+	if len(actors) != 1 || actors[0].Entity.ID != registered.Entity.ID {
+		t.Fatalf("expected static actor map snapshot for map 42, got %+v", actors)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,

@@ -90,3 +90,25 @@ func TestMapIndexSnapshotReturnsStableSortedCharactersPerMap(t *testing.T) {
 		t.Fatalf("expected Zulu-only snapshot for map 42, got %+v", snapshots[1].Characters)
 	}
 }
+
+func TestMapIndexTracksStaticActorsByEffectiveMap(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 1, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	blacksmith := StaticEntity{Entity: Entity{ID: 2, Kind: EntityKindStaticActor, Name: "Blacksmith"}, Position: NewPosition(42, 1900, 3000), RaceNum: 20301}
+
+	if !index.RegisterStatic(guard) || !index.RegisterStatic(blacksmith) {
+		t.Fatal("expected static actor map-index registration to succeed")
+	}
+	actors := index.StaticActors(42)
+	if len(actors) != 2 || actors[0].Entity.Name != "Blacksmith" || actors[1].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected stable sorted static actors in map bucket, got %+v", actors)
+	}
+	removed, ok := index.RemoveStatic(guard.Entity.ID)
+	if !ok || removed.Entity.ID != guard.Entity.ID {
+		t.Fatalf("expected static actor removal to return VillageGuard, got actor=%+v ok=%v", removed, ok)
+	}
+	actors = index.StaticActors(42)
+	if len(actors) != 1 || actors[0].Entity.Name != "Blacksmith" {
+		t.Fatalf("expected only Blacksmith after guard removal, got %+v", actors)
+	}
+}
