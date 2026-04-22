@@ -1,6 +1,9 @@
 package player
 
-import "github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+import (
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
+)
 
 type SessionLink struct {
 	Login          string
@@ -8,20 +11,16 @@ type SessionLink struct {
 }
 
 type Runtime struct {
-	persisted    loginticket.Character
-	liveMapIndex uint32
-	liveX        int32
-	liveY        int32
-	sessionLink  SessionLink
+	persisted   loginticket.Character
+	live        worldruntime.Position
+	sessionLink SessionLink
 }
 
 func NewRuntime(persisted loginticket.Character, sessionLink SessionLink) *Runtime {
 	return &Runtime{
-		persisted:    persisted,
-		liveMapIndex: persisted.MapIndex,
-		liveX:        persisted.X,
-		liveY:        persisted.Y,
-		sessionLink:  sessionLink,
+		persisted:   persisted,
+		live:        worldruntime.PositionFromCharacter(persisted),
+		sessionLink: sessionLink,
 	}
 }
 
@@ -37,19 +36,24 @@ func (r *Runtime) LiveCharacter() loginticket.Character {
 		return loginticket.Character{}
 	}
 	live := r.PersistedSnapshot()
-	live.MapIndex = r.liveMapIndex
-	live.X = r.liveX
-	live.Y = r.liveY
+	live.MapIndex = r.live.MapIndex
+	live.X = r.live.X
+	live.Y = r.live.Y
 	return live
+}
+
+func (r *Runtime) LivePosition() worldruntime.Position {
+	if r == nil {
+		return worldruntime.Position{}
+	}
+	return r.live
 }
 
 func (r *Runtime) SetLivePosition(mapIndex uint32, x int32, y int32) {
 	if r == nil {
 		return
 	}
-	r.liveMapIndex = mapIndex
-	r.liveX = x
-	r.liveY = y
+	r.live = worldruntime.NewPosition(mapIndex, x, y)
 }
 
 func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
@@ -57,9 +61,7 @@ func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
 		return
 	}
 	r.persisted = persisted
-	r.liveMapIndex = persisted.MapIndex
-	r.liveX = persisted.X
-	r.liveY = persisted.Y
+	r.live = worldruntime.PositionFromCharacter(persisted)
 }
 
 func (r *Runtime) SessionLink() SessionLink {

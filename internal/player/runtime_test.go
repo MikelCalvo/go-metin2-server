@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func TestRuntimeSeparatesLivePositionFromPersistedSnapshot(t *testing.T) {
@@ -27,6 +28,9 @@ func TestRuntimeSeparatesLivePositionFromPersistedSnapshot(t *testing.T) {
 	gotLive := runtime.LiveCharacter()
 	if gotLive.MapIndex != 42 || gotLive.X != 1700 || gotLive.Y != 2800 {
 		t.Fatalf("expected live character location to change independently, got %+v", gotLive)
+	}
+	if gotPosition := runtime.LivePosition(); gotPosition != worldruntime.NewPosition(42, 1700, 2800) {
+		t.Fatalf("expected live position value object for relocated character, got %+v", gotPosition)
 	}
 	if gotLive.ID != persisted.ID || gotLive.VID != persisted.VID || gotLive.Name != persisted.Name || gotLive.Empire != persisted.Empire || gotLive.GuildID != persisted.GuildID {
 		t.Fatalf("expected live character identity to remain anchored to persisted snapshot, got %+v", gotLive)

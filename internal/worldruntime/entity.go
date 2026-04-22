@@ -17,3 +17,7 @@ type PlayerEntity struct {
 	Entity    Entity
 	Character loginticket.Character
 }
+
+func (p PlayerEntity) Position() Position {
+	return PositionFromCharacter(p.Character)
+}

@@ -41,7 +41,7 @@ func (m *MapIndex) Register(player PlayerEntity) bool {
 		return false
 	}
 
-	mapIndex := m.topology.EffectiveMapIndex(player.Character)
+	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: player.Position().MapIndex})
 	m.byEntityID[player.Entity.ID] = player
 	m.effectiveMapByEntityID[player.Entity.ID] = mapIndex
 	bucket := m.byMapIndex[mapIndex]
@@ -67,7 +67,7 @@ func (m *MapIndex) Update(player PlayerEntity) bool {
 	}
 
 	previousMapIndex := m.effectiveMapByEntityID[player.Entity.ID]
-	nextMapIndex := m.topology.EffectiveMapIndex(player.Character)
+	nextMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: player.Position().MapIndex})
 	if bucket := m.byMapIndex[previousMapIndex]; bucket != nil {
 		delete(bucket, previous.Entity.ID)
 		if len(bucket) == 0 {
