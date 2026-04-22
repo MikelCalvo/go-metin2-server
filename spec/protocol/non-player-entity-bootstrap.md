@@ -19,7 +19,7 @@ This contract applies only to:
 - runtime-owned non-player identity and map presence
 - static or operator-seeded actors that exist as world-runtime data
 - deterministic lookup and map membership inside `internal/worldruntime`
-- operator/runtime map-occupancy snapshots that can now surface static actors on their effective maps
+- operator/runtime map-occupancy and static-actor snapshots that can now surface those actors through `internal/worldruntime/scopes.go`
 - the first loopback-only operator seed/snapshot/remove surface used to create, inspect, and delete those runtime actors on `gamed`
 
 This slice does **not** yet claim that non-player actors are visible to clients, replicated on the wire, or driven by gameplay systems.

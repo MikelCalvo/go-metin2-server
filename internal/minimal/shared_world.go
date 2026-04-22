@@ -392,14 +392,7 @@ func (r *sharedWorldRegistry) ConnectedCharacters() []ConnectedCharacterSnapshot
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	targets := r.scopesLocked().ConnectedTargets()
-	snapshots := make([]ConnectedCharacterSnapshot, 0, len(targets))
-	for _, target := range targets {
-		snapshots = append(snapshots, connectedCharacterSnapshot(r.topology, target.Character))
-	}
-	sortConnectedCharacterSnapshots(snapshots)
-	return snapshots
+	return r.scopesLocked().ConnectedCharacterSnapshots()
 }
 
 func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapshot {
@@ -409,7 +402,7 @@ func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapsho
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return characterVisibilitySnapshots(r.topology, r.scopesLocked().VisibilitySnapshots())
+	return r.scopesLocked().CharacterVisibilitySnapshots()
 }
 
 func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
@@ -449,7 +442,7 @@ func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return staticActorSnapshots(r.topology, r.entities.AllStaticActors())
+	return r.scopesLocked().StaticActorSnapshots()
 }
 
 func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, bool) {
@@ -695,26 +688,6 @@ func staticActorSnapshots(topology worldruntime.BootstrapTopology, actors []worl
 	return snapshots
 }
 
-func characterVisibilitySnapshots(topology worldruntime.BootstrapTopology, visibility []worldruntime.VisibilitySnapshot) []CharacterVisibilitySnapshot {
-	snapshots := make([]CharacterVisibilitySnapshot, 0, len(visibility))
-	for _, entry := range visibility {
-		snapshots = append(snapshots, CharacterVisibilitySnapshot{
-			ConnectedCharacterSnapshot: connectedCharacterSnapshot(topology, entry.Subject.Character),
-			VisiblePeers:               connectedCharacterSnapshots(topology, playerEntitiesToCharacters(entry.VisiblePeers)),
-		})
-	}
-	sortCharacterVisibilitySnapshots(snapshots)
-	return snapshots
-}
-
-func playerEntitiesToCharacters(players []worldruntime.PlayerEntity) []loginticket.Character {
-	characters := make([]loginticket.Character, 0, len(players))
-	for _, player := range players {
-		characters = append(characters, player.Character)
-	}
-	return characters
-}
-
 func (r *sharedWorldRegistry) mapOccupancySnapshots() []MapOccupancySnapshot {
 	if r == nil {
 		return nil
@@ -729,23 +702,7 @@ func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapsh
 	if r == nil || r.entities == nil {
 		return nil
 	}
-	return buildMapOccupancySnapshots(r.topology, r.entities.MapOccupancy())
-}
-
-func buildMapOccupancySnapshots(topology worldruntime.BootstrapTopology, occupancies []worldruntime.MapOccupancy) []MapOccupancySnapshot {
-	snapshots := make([]MapOccupancySnapshot, 0, len(occupancies))
-	for _, occupancy := range occupancies {
-		staticActors := staticActorSnapshots(topology, occupancy.StaticActors)
-		snapshots = append(snapshots, MapOccupancySnapshot{
-			MapIndex:         occupancy.MapIndex,
-			CharacterCount:   len(occupancy.Characters),
-			Characters:       connectedCharacterSnapshots(topology, occupancy.Characters),
-			StaticActorCount: len(occupancy.StaticActors),
-			StaticActors:     staticActors,
-		})
-	}
-	sortMapOccupancySnapshots(snapshots)
-	return snapshots
+	return r.scopesLocked().MapOccupancySnapshots()
 }
 
 func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology worldruntime.BootstrapTopology, current loginticket.Character, target loginticket.Character) []MapOccupancySnapshot {
@@ -856,15 +813,6 @@ func buildTransferOriginFrames(removed []loginticket.Character, added []logintic
 }
 
 func sortConnectedCharacterSnapshots(snapshots []ConnectedCharacterSnapshot) {
-	sort.Slice(snapshots, func(i int, j int) bool {
-		if snapshots[i].Name == snapshots[j].Name {
-			return snapshots[i].VID < snapshots[j].VID
-		}
-		return snapshots[i].Name < snapshots[j].Name
-	})
-}
-
-func sortCharacterVisibilitySnapshots(snapshots []CharacterVisibilitySnapshot) {
 	sort.Slice(snapshots, func(i int, j int) bool {
 		if snapshots[i].Name == snapshots[j].Name {
 			return snapshots[i].VID < snapshots[j].VID

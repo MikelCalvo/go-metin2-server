@@ -67,7 +67,7 @@ The current owned responsibilities are:
 - expose deterministic per-map character snapshots for runtime callers
 - keep register, move, and remove bookkeeping explicit instead of rebuilding occupancy from whole-world scans by default
 
-This keeps map occupancy as an owned runtime primitive even though some callers still need to be rewired to consume it directly.
+This keeps map occupancy as an owned runtime primitive, and the current connected-player / visibility / map-occupancy / static-actor introspection snapshots can now be composed through `internal/worldruntime/scopes.go` instead of bootstrap-local shared-world conversion code.
 
 ### Session directory
 

@@ -34,6 +34,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/warp"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 const (
@@ -63,37 +64,13 @@ type bootstrapTransferTrigger struct {
 	TargetY        int32
 }
 
-type ConnectedCharacterSnapshot struct {
-	Name     string `json:"name"`
-	VID      uint32 `json:"vid"`
-	MapIndex uint32 `json:"map_index"`
-	X        int32  `json:"x"`
-	Y        int32  `json:"y"`
-	Empire   uint8  `json:"empire"`
-	GuildID  uint32 `json:"guild_id"`
-}
+type ConnectedCharacterSnapshot = worldruntime.ConnectedCharacterSnapshot
 
-type CharacterVisibilitySnapshot struct {
-	ConnectedCharacterSnapshot
-	VisiblePeers []ConnectedCharacterSnapshot `json:"visible_peers"`
-}
+type CharacterVisibilitySnapshot = worldruntime.CharacterVisibilitySnapshot
 
-type MapOccupancySnapshot struct {
-	MapIndex         uint32                       `json:"map_index"`
-	CharacterCount   int                          `json:"character_count"`
-	Characters       []ConnectedCharacterSnapshot `json:"characters"`
-	StaticActorCount int                          `json:"static_actor_count"`
-	StaticActors     []StaticActorSnapshot        `json:"static_actors"`
-}
+type MapOccupancySnapshot = worldruntime.MapOccupancySnapshot
 
-type StaticActorSnapshot struct {
-	EntityID uint64 `json:"entity_id"`
-	Name     string `json:"name"`
-	MapIndex uint32 `json:"map_index"`
-	X        int32  `json:"x"`
-	Y        int32  `json:"y"`
-	RaceNum  uint32 `json:"race_num"`
-}
+type StaticActorSnapshot = worldruntime.StaticActorSnapshot
 
 type MapOccupancyChange struct {
 	MapIndex    uint32 `json:"map_index"`

@@ -166,3 +166,74 @@ func TestScopesVisibilitySnapshotsFollowConfiguredPolicyAndOrder(t *testing.T) {
 		t.Fatalf("expected Zulu to see Alpha and Bravo, got %+v", snapshots[2].VisiblePeers)
 	}
 }
+
+func TestScopesMapOccupancySnapshotsIncludeStaticOnlyMapsAndDeterministicOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	registry.RegisterPlayer(entityRegistryCharacter("Zulu", 0x02040101, 42, 1700, 2800))
+	alpha := entityRegistryCharacter("Alpha", 0x02040102, 1, 1100, 2100)
+	alpha.Empire = 2
+	registry.RegisterPlayer(alpha)
+	bravo := entityRegistryCharacter("Bravo", 0x02040103, 1, 1300, 2300)
+	bravo.Empire = 3
+	registry.RegisterPlayer(bravo)
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300}); !ok {
+		t.Fatal("expected destination static actor registration to succeed")
+	}
+	merchant, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Merchant"}, Position: NewPosition(99, 900, 1200), RaceNum: 9001})
+	if !ok {
+		t.Fatal("expected static-only map actor registration to succeed")
+	}
+	blacksmith, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Blacksmith"}, Position: NewPosition(1, 1500, 2500), RaceNum: 20016})
+	if !ok {
+		t.Fatal("expected bootstrap static actor registration to succeed")
+	}
+
+	snapshots := NewScopes(topology, registry).MapOccupancySnapshots()
+	if len(snapshots) != 3 {
+		t.Fatalf("expected 3 map occupancy snapshots, got %+v", snapshots)
+	}
+	if snapshots[0].MapIndex != 1 || snapshots[1].MapIndex != 42 || snapshots[2].MapIndex != 99 {
+		t.Fatalf("expected deterministic map ordering [1 42 99], got %+v", snapshots)
+	}
+	if snapshots[0].CharacterCount != 2 || len(snapshots[0].Characters) != 2 || snapshots[0].Characters[0].Name != "Alpha" || snapshots[0].Characters[1].Name != "Bravo" {
+		t.Fatalf("expected bootstrap map player snapshots [Alpha Bravo], got %+v", snapshots[0])
+	}
+	if snapshots[0].StaticActorCount != 1 || len(snapshots[0].StaticActors) != 1 || snapshots[0].StaticActors[0].EntityID != blacksmith.Entity.ID || snapshots[0].StaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("expected bootstrap map static actor Blacksmith, got %+v", snapshots[0])
+	}
+	if snapshots[1].CharacterCount != 1 || len(snapshots[1].Characters) != 1 || snapshots[1].Characters[0].Name != "Zulu" {
+		t.Fatalf("expected destination map player snapshot Zulu, got %+v", snapshots[1])
+	}
+	if snapshots[2].CharacterCount != 0 || len(snapshots[2].Characters) != 0 || snapshots[2].StaticActorCount != 1 || len(snapshots[2].StaticActors) != 1 || snapshots[2].StaticActors[0].EntityID != merchant.Entity.ID || snapshots[2].StaticActors[0].Name != "Merchant" {
+		t.Fatalf("expected static-only map snapshot for Merchant, got %+v", snapshots[2])
+	}
+}
+
+func TestScopesStaticActorSnapshotsReturnDeterministicOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	zulu, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "ZuluStatue"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected ZuluStatue registration to succeed")
+	}
+	alpha, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "AlphaForge"}, Position: NewPosition(1, 1100, 2100), RaceNum: 20016})
+	if !ok {
+		t.Fatal("expected AlphaForge registration to succeed")
+	}
+	alphaTwin, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "AlphaForge"}, Position: NewPosition(99, 900, 1200), RaceNum: 20017})
+	if !ok {
+		t.Fatal("expected second AlphaForge registration to succeed")
+	}
+
+	snapshots := NewScopes(topology, registry).StaticActorSnapshots()
+	if len(snapshots) != 3 {
+		t.Fatalf("expected 3 static actor snapshots, got %+v", snapshots)
+	}
+	if snapshots[0].EntityID != alpha.Entity.ID || snapshots[1].EntityID != alphaTwin.Entity.ID || snapshots[2].EntityID != zulu.Entity.ID {
+		t.Fatalf("expected deterministic static actor ordering [AlphaForge AlphaForge ZuluStatue], got %+v", snapshots)
+	}
+	if snapshots[0].MapIndex != 1 || snapshots[1].MapIndex != 99 || snapshots[2].MapIndex != 42 {
+		t.Fatalf("expected static actor snapshots to preserve effective map indices, got %+v", snapshots)
+	}
+}
