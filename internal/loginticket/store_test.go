@@ -83,6 +83,10 @@ func TestFileStoreIssueThenConsumeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("consume ticket: %v", err)
 	}
+	if got.IssuedAt.IsZero() {
+		t.Fatal("expected consumed ticket to include an issued_at timestamp")
+	}
+	issued.IssuedAt = got.IssuedAt
 	if !reflect.DeepEqual(got, issued) {
 		t.Fatalf("unexpected consumed ticket:\n got: %#v\nwant: %#v", got, issued)
 	}

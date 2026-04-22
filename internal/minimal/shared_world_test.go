@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
@@ -482,8 +483,13 @@ func TestNewGameSessionFactoryDoesNotMutateWorldWhenTransferTriggerSaveFails(t *
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
 	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+	accounts := newPreloadedFailingAccountStore(
+		accountstore.Account{Login: "peer-one", Empire: peerOne.Empire, Characters: []loginticket.Character{peerOne}},
+		accountstore.Account{Login: "peer-two", Empire: peerTwo.Empire, Characters: []loginticket.Character{peerTwo}},
+		accountstore.Account{Login: "peer-three", Empire: peerThree.Empire, Characters: []loginticket.Character{peerThree}},
+	)
 
-	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, &failingAccountStore{}, []bootstrapTransferTrigger{{
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, []bootstrapTransferTrigger{{
 		SourceMapIndex: bootstrapMapIndex,
 		SourceX:        1500,
 		SourceY:        2600,
@@ -1532,8 +1538,13 @@ func TestGameRuntimeTransferCharacterDoesNotMutateWorldOnSaveFailure(t *testing.
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
 	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+	accounts := newPreloadedFailingAccountStore(
+		accountstore.Account{Login: "peer-one", Empire: peerOne.Empire, Characters: []loginticket.Character{peerOne}},
+		accountstore.Account{Login: "peer-two", Empire: peerTwo.Empire, Characters: []loginticket.Character{peerTwo}},
+		accountstore.Account{Login: "peer-three", Empire: peerThree.Empire, Characters: []loginticket.Character{peerThree}},
+	)
 
-	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, &failingAccountStore{})
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -1583,8 +1594,13 @@ func TestGameRuntimeRelocateCharacterDoesNotMutateWorldOnSaveFailure(t *testing.
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
 	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
 	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+	accounts := newPreloadedFailingAccountStore(
+		accountstore.Account{Login: "peer-one", Empire: peerOne.Empire, Characters: []loginticket.Character{peerOne}},
+		accountstore.Account{Login: "peer-two", Empire: peerTwo.Empire, Characters: []loginticket.Character{peerTwo}},
+		accountstore.Account{Login: "peer-three", Empire: peerThree.Empire, Characters: []loginticket.Character{peerThree}},
+	)
 
-	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, &failingAccountStore{})
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}

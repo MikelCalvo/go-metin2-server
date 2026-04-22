@@ -732,6 +732,33 @@ func (f *failingAccountStore) Save(accountstore.Account) error {
 	return errors.New("save failed")
 }
 
+type preloadedFailingAccountStore struct {
+	accounts map[string]accountstore.Account
+}
+
+func newPreloadedFailingAccountStore(accounts ...accountstore.Account) *preloadedFailingAccountStore {
+	cloned := make(map[string]accountstore.Account, len(accounts))
+	for _, account := range accounts {
+		copyAccount := account
+		copyAccount.Characters = cloneCharacters(account.Characters)
+		cloned[account.Login] = copyAccount
+	}
+	return &preloadedFailingAccountStore{accounts: cloned}
+}
+
+func (f *preloadedFailingAccountStore) Load(login string) (accountstore.Account, error) {
+	account, ok := f.accounts[login]
+	if !ok {
+		return accountstore.Account{}, accountstore.ErrAccountNotFound
+	}
+	account.Characters = cloneCharacters(account.Characters)
+	return account, nil
+}
+
+func (f *preloadedFailingAccountStore) Save(accountstore.Account) error {
+	return errors.New("save failed")
+}
+
 func sampleMovePacket() movep.MovePacket {
 	return movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 12345, Y: 23456, Time: 0x01020304}
 }
