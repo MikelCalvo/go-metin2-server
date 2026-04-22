@@ -361,6 +361,8 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 		RemovedVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.RemovedVisiblePeers),
 		AddedVisiblePeers:   connectedCharacterSnapshots(r.topology, visibilityDiff.AddedVisiblePeers),
 		MapOccupancyChanges: buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
+		BeforeMapOccupancy:  beforeOccupancy,
+		AfterMapOccupancy:   afterOccupancy,
 	}
 
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
@@ -505,6 +507,8 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 		RemovedVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.RemovedVisiblePeers),
 		AddedVisiblePeers:   connectedCharacterSnapshots(r.topology, visibilityDiff.AddedVisiblePeers),
 		MapOccupancyChanges: buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
+		BeforeMapOccupancy:  beforeOccupancy,
+		AfterMapOccupancy:   afterOccupancy,
 	}, true
 }
 
@@ -738,31 +742,39 @@ func buildMapOccupancySnapshots(topology worldruntime.BootstrapTopology, occupan
 }
 
 func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology worldruntime.BootstrapTopology, current loginticket.Character, target loginticket.Character) []MapOccupancySnapshot {
-	byMap := make(map[uint32][]ConnectedCharacterSnapshot, len(before)+1)
+	byMap := make(map[uint32]MapOccupancySnapshot, len(before)+1)
 	for _, snapshot := range before {
-		characters := append([]ConnectedCharacterSnapshot(nil), snapshot.Characters...)
-		byMap[snapshot.MapIndex] = characters
+		byMap[snapshot.MapIndex] = MapOccupancySnapshot{
+			MapIndex:         snapshot.MapIndex,
+			CharacterCount:   snapshot.CharacterCount,
+			Characters:       append([]ConnectedCharacterSnapshot(nil), snapshot.Characters...),
+			StaticActorCount: snapshot.StaticActorCount,
+			StaticActors:     append([]StaticActorSnapshot(nil), snapshot.StaticActors...),
+		}
 	}
 
 	currentSnapshot := connectedCharacterSnapshot(topology, current)
 	targetSnapshot := connectedCharacterSnapshot(topology, target)
 
-	if characters, ok := byMap[currentSnapshot.MapIndex]; ok {
-		filtered := make([]ConnectedCharacterSnapshot, 0, len(characters))
-		for _, character := range characters {
+	if snapshot, ok := byMap[currentSnapshot.MapIndex]; ok {
+		filtered := make([]ConnectedCharacterSnapshot, 0, len(snapshot.Characters))
+		for _, character := range snapshot.Characters {
 			if character.VID == currentSnapshot.VID {
 				continue
 			}
 			filtered = append(filtered, character)
 		}
-		if len(filtered) == 0 {
+		snapshot.Characters = filtered
+		snapshot.CharacterCount = len(filtered)
+		if snapshot.CharacterCount == 0 && snapshot.StaticActorCount == 0 {
 			delete(byMap, currentSnapshot.MapIndex)
 		} else {
-			byMap[currentSnapshot.MapIndex] = filtered
+			byMap[currentSnapshot.MapIndex] = snapshot
 		}
 	}
 
-	targetCharacters := append([]ConnectedCharacterSnapshot(nil), byMap[targetSnapshot.MapIndex]...)
+	targetOccupancy := byMap[targetSnapshot.MapIndex]
+	targetCharacters := append([]ConnectedCharacterSnapshot(nil), targetOccupancy.Characters...)
 	replaced := false
 	for i := range targetCharacters {
 		if targetCharacters[i].VID != targetSnapshot.VID {
@@ -776,16 +788,19 @@ func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology world
 		targetCharacters = append(targetCharacters, targetSnapshot)
 	}
 	sortConnectedCharacterSnapshots(targetCharacters)
-	byMap[targetSnapshot.MapIndex] = targetCharacters
+	targetOccupancy.MapIndex = targetSnapshot.MapIndex
+	targetOccupancy.Characters = targetCharacters
+	targetOccupancy.CharacterCount = len(targetCharacters)
+	byMap[targetSnapshot.MapIndex] = targetOccupancy
 
 	snapshots := make([]MapOccupancySnapshot, 0, len(byMap))
-	for mapIndex, characters := range byMap {
-		sortConnectedCharacterSnapshots(characters)
-		snapshots = append(snapshots, MapOccupancySnapshot{
-			MapIndex:       mapIndex,
-			CharacterCount: len(characters),
-			Characters:     characters,
-		})
+	for mapIndex, snapshot := range byMap {
+		sortConnectedCharacterSnapshots(snapshot.Characters)
+		sortStaticActorSnapshots(snapshot.StaticActors)
+		snapshot.MapIndex = mapIndex
+		snapshot.CharacterCount = len(snapshot.Characters)
+		snapshot.StaticActorCount = len(snapshot.StaticActors)
+		snapshots = append(snapshots, snapshot)
 	}
 	sortMapOccupancySnapshots(snapshots)
 	return snapshots

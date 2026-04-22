@@ -65,6 +65,8 @@ Both preview and commit return the same JSON shape:
 - `removed_visible_peers`
 - `added_visible_peers`
 - `map_occupancy_changes`
+- `before_map_occupancy`
+- `after_map_occupancy`
 
 ### `applied`
 
@@ -103,6 +105,25 @@ A sorted list of only the maps whose occupancy would change, with:
 - `map_index`
 - `before_count`
 - `after_count`
+
+The counts in this delta remain character counts for the moving player slice.
+Static actors are instead surfaced through the full snapshots below.
+
+### `before_map_occupancy`
+
+A full sorted map-occupancy snapshot of the bootstrap runtime before the hypothetical or committed relocation is applied.
+Each map entry currently includes:
+
+- `map_index`
+- `character_count`
+- `characters`
+- `static_actor_count`
+- `static_actors`
+
+### `after_map_occupancy`
+
+A full sorted map-occupancy snapshot of the bootstrap runtime after the hypothetical or committed relocation.
+For the current bootstrap non-player contract, static actors remain unchanged across player relocation and should therefore appear in both the before/after snapshots for their effective maps.
 
 ## Commit guarantees
 

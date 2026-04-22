@@ -29,8 +29,8 @@ Current scope of the project:
 - A first non-player runtime scaffolding in `internal/worldruntime`: static actors can now be registered with owned entity identity and map presence, and `gamed` now exposes the first local-only operator seed/snapshot/remove path for those runtime actors without claiming client-visible spawn/update behavior yet.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
-- A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation.
-- A loopback-only `gamed` structured transfer endpoint that commits the minimal bootstrap map-transfer contract and returns the applied transfer result.
+- A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation, now including full before/after map-occupancy snapshots alongside the delta counts.
+- A loopback-only `gamed` structured transfer endpoint that commits the minimal bootstrap map-transfer contract and returns the applied transfer result, including full before/after map-occupancy snapshots alongside the delta counts.
 - A first owned self-session transfer rebootstrap burst: transfer-triggered `MOVE` / `SYNC_POSITION` suppress immediate self ack packets, rebuild the moved player on the same game socket with the relocated self bootstrap burst, and then append trailing peer visibility deltas.
 - Persist-before-commit bootstrap transfer orchestration via `internal/warp`, with best-effort rollback to the previous persisted account snapshot if the late runtime commit step fails.
 - A first `internal/player` runtime model that keeps selected-session live world position separate from the persisted bootstrap character snapshot.
@@ -156,7 +156,7 @@ Legend:
 | Guild chat | [~] | Scoped by non-zero `GuildID`, but no guild lifecycle/roster system exists yet. |
 | Shout | [~] | Same-empire bootstrap fanout exists; no real world/channel topology behind it yet. |
 | System info / notice | [~] | `INFO` self-delivery, server-originated `NOTICE`, and local-only notice trigger exist. |
-| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/players`, `GET /local/visibility`, `GET /local/maps`, plus `GET`/`POST /local/static-actors` and `DELETE /local/static-actors/{entity_id}` for bootstrap non-player runtime seeding/introspection/removal, exist on `gamed`; `/local/maps` now reports static actors alongside connected players in each effective-map snapshot; broader admin/auth tooling does not. |
+| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/players`, `GET /local/visibility`, `GET /local/maps`, plus `GET`/`POST /local/static-actors` and `DELETE /local/static-actors/{entity_id}` for bootstrap non-player runtime seeding/introspection/removal, exist on `gamed`; `/local/maps` now reports static actors alongside connected players in each effective-map snapshot, and the structured relocate-preview/transfer responses now include full before/after map-occupancy snapshots beside the delta counts; broader admin/auth tooling does not. |
 
 ### Character systems and gameplay
 

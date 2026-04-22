@@ -1476,6 +1476,14 @@ func TestGameRuntimeTransferCharacterReturnsStructuredResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	blacksmith, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1050, 2050, 20301)
+	if !ok {
+		t.Fatal("expected bootstrap static actor registration to succeed")
+	}
+	guard, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected destination static actor registration to succeed")
+	}
 	factory := runtime.SessionFactory()
 
 	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
@@ -1512,6 +1520,24 @@ func TestGameRuntimeTransferCharacterReturnsStructuredResult(t *testing.T) {
 	}
 	if len(result.MapOccupancyChanges) != 2 || result.MapOccupancyChanges[0].MapIndex != bootstrapMapIndex || result.MapOccupancyChanges[0].BeforeCount != 2 || result.MapOccupancyChanges[0].AfterCount != 1 || result.MapOccupancyChanges[1].MapIndex != 42 || result.MapOccupancyChanges[1].BeforeCount != 1 || result.MapOccupancyChanges[1].AfterCount != 2 {
 		t.Fatalf("unexpected map occupancy changes: %+v", result.MapOccupancyChanges)
+	}
+	if len(result.BeforeMapOccupancy) != 2 {
+		t.Fatalf("expected 2 before-map occupancy snapshots, got %d", len(result.BeforeMapOccupancy))
+	}
+	if result.BeforeMapOccupancy[0].MapIndex != bootstrapMapIndex || result.BeforeMapOccupancy[0].CharacterCount != 2 || len(result.BeforeMapOccupancy[0].Characters) != 2 || result.BeforeMapOccupancy[0].StaticActorCount != 1 || len(result.BeforeMapOccupancy[0].StaticActors) != 1 || result.BeforeMapOccupancy[0].StaticActors[0].EntityID != blacksmith.EntityID || result.BeforeMapOccupancy[0].StaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected source before-map occupancy snapshot: %+v", result.BeforeMapOccupancy[0])
+	}
+	if result.BeforeMapOccupancy[1].MapIndex != 42 || result.BeforeMapOccupancy[1].CharacterCount != 1 || len(result.BeforeMapOccupancy[1].Characters) != 1 || result.BeforeMapOccupancy[1].StaticActorCount != 1 || len(result.BeforeMapOccupancy[1].StaticActors) != 1 || result.BeforeMapOccupancy[1].StaticActors[0].EntityID != guard.EntityID || result.BeforeMapOccupancy[1].StaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected destination before-map occupancy snapshot: %+v", result.BeforeMapOccupancy[1])
+	}
+	if len(result.AfterMapOccupancy) != 2 {
+		t.Fatalf("expected 2 after-map occupancy snapshots, got %d", len(result.AfterMapOccupancy))
+	}
+	if result.AfterMapOccupancy[0].MapIndex != bootstrapMapIndex || result.AfterMapOccupancy[0].CharacterCount != 1 || len(result.AfterMapOccupancy[0].Characters) != 1 || result.AfterMapOccupancy[0].StaticActorCount != 1 || len(result.AfterMapOccupancy[0].StaticActors) != 1 || result.AfterMapOccupancy[0].StaticActors[0].EntityID != blacksmith.EntityID || result.AfterMapOccupancy[0].StaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected source after-map occupancy snapshot: %+v", result.AfterMapOccupancy[0])
+	}
+	if result.AfterMapOccupancy[1].MapIndex != 42 || result.AfterMapOccupancy[1].CharacterCount != 2 || len(result.AfterMapOccupancy[1].Characters) != 2 || result.AfterMapOccupancy[1].StaticActorCount != 1 || len(result.AfterMapOccupancy[1].StaticActors) != 1 || result.AfterMapOccupancy[1].StaticActors[0].EntityID != guard.EntityID || result.AfterMapOccupancy[1].StaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected destination after-map occupancy snapshot: %+v", result.AfterMapOccupancy[1])
 	}
 
 	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 3 || snapshots[2].Name != "PeerTwo" || snapshots[2].MapIndex != 42 || snapshots[2].X != 1700 || snapshots[2].Y != 2800 {
@@ -1901,6 +1927,14 @@ func TestGameRuntimePreviewRelocationReturnsVisibilityAndMapChanges(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	blacksmith, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1050, 2050, 20301)
+	if !ok {
+		t.Fatal("expected bootstrap static actor registration to succeed")
+	}
+	guard, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected destination static actor registration to succeed")
+	}
 	factory := runtime.SessionFactory()
 
 	_, _ = enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
@@ -1937,6 +1971,24 @@ func TestGameRuntimePreviewRelocationReturnsVisibilityAndMapChanges(t *testing.T
 	}
 	if preview.MapOccupancyChanges[1].MapIndex != 42 || preview.MapOccupancyChanges[1].BeforeCount != 1 || preview.MapOccupancyChanges[1].AfterCount != 2 {
 		t.Fatalf("unexpected destination map occupancy change: %+v", preview.MapOccupancyChanges[1])
+	}
+	if len(preview.BeforeMapOccupancy) != 2 {
+		t.Fatalf("expected 2 before-map occupancy snapshots, got %d", len(preview.BeforeMapOccupancy))
+	}
+	if preview.BeforeMapOccupancy[0].MapIndex != bootstrapMapIndex || preview.BeforeMapOccupancy[0].CharacterCount != 2 || len(preview.BeforeMapOccupancy[0].Characters) != 2 || preview.BeforeMapOccupancy[0].StaticActorCount != 1 || len(preview.BeforeMapOccupancy[0].StaticActors) != 1 || preview.BeforeMapOccupancy[0].StaticActors[0].EntityID != blacksmith.EntityID || preview.BeforeMapOccupancy[0].StaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected source before-map occupancy snapshot: %+v", preview.BeforeMapOccupancy[0])
+	}
+	if preview.BeforeMapOccupancy[1].MapIndex != 42 || preview.BeforeMapOccupancy[1].CharacterCount != 1 || len(preview.BeforeMapOccupancy[1].Characters) != 1 || preview.BeforeMapOccupancy[1].StaticActorCount != 1 || len(preview.BeforeMapOccupancy[1].StaticActors) != 1 || preview.BeforeMapOccupancy[1].StaticActors[0].EntityID != guard.EntityID || preview.BeforeMapOccupancy[1].StaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected destination before-map occupancy snapshot: %+v", preview.BeforeMapOccupancy[1])
+	}
+	if len(preview.AfterMapOccupancy) != 2 {
+		t.Fatalf("expected 2 after-map occupancy snapshots, got %d", len(preview.AfterMapOccupancy))
+	}
+	if preview.AfterMapOccupancy[0].MapIndex != bootstrapMapIndex || preview.AfterMapOccupancy[0].CharacterCount != 1 || len(preview.AfterMapOccupancy[0].Characters) != 1 || preview.AfterMapOccupancy[0].StaticActorCount != 1 || len(preview.AfterMapOccupancy[0].StaticActors) != 1 || preview.AfterMapOccupancy[0].StaticActors[0].EntityID != blacksmith.EntityID || preview.AfterMapOccupancy[0].StaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected source after-map occupancy snapshot: %+v", preview.AfterMapOccupancy[0])
+	}
+	if preview.AfterMapOccupancy[1].MapIndex != 42 || preview.AfterMapOccupancy[1].CharacterCount != 2 || len(preview.AfterMapOccupancy[1].Characters) != 2 || preview.AfterMapOccupancy[1].StaticActorCount != 1 || len(preview.AfterMapOccupancy[1].StaticActors) != 1 || preview.AfterMapOccupancy[1].StaticActors[0].EntityID != guard.EntityID || preview.AfterMapOccupancy[1].StaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected destination after-map occupancy snapshot: %+v", preview.AfterMapOccupancy[1])
 	}
 }
 

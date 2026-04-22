@@ -110,6 +110,8 @@ type RelocationPreview struct {
 	RemovedVisiblePeers []ConnectedCharacterSnapshot `json:"removed_visible_peers"`
 	AddedVisiblePeers   []ConnectedCharacterSnapshot `json:"added_visible_peers"`
 	MapOccupancyChanges []MapOccupancyChange         `json:"map_occupancy_changes"`
+	BeforeMapOccupancy  []MapOccupancySnapshot       `json:"before_map_occupancy"`
+	AfterMapOccupancy   []MapOccupancySnapshot       `json:"after_map_occupancy"`
 }
 
 type gameRuntime struct {
