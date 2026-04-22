@@ -72,24 +72,9 @@ type MapOccupancySnapshot = worldruntime.MapOccupancySnapshot
 
 type StaticActorSnapshot = worldruntime.StaticActorSnapshot
 
-type MapOccupancyChange struct {
-	MapIndex    uint32 `json:"map_index"`
-	BeforeCount int    `json:"before_count"`
-	AfterCount  int    `json:"after_count"`
-}
+type MapOccupancyChange = worldruntime.MapOccupancyChange
 
-type RelocationPreview struct {
-	Applied             bool                         `json:"applied"`
-	Character           ConnectedCharacterSnapshot   `json:"character"`
-	Target              ConnectedCharacterSnapshot   `json:"target"`
-	CurrentVisiblePeers []ConnectedCharacterSnapshot `json:"current_visible_peers"`
-	TargetVisiblePeers  []ConnectedCharacterSnapshot `json:"target_visible_peers"`
-	RemovedVisiblePeers []ConnectedCharacterSnapshot `json:"removed_visible_peers"`
-	AddedVisiblePeers   []ConnectedCharacterSnapshot `json:"added_visible_peers"`
-	MapOccupancyChanges []MapOccupancyChange         `json:"map_occupancy_changes"`
-	BeforeMapOccupancy  []MapOccupancySnapshot       `json:"before_map_occupancy"`
-	AfterMapOccupancy   []MapOccupancySnapshot       `json:"after_map_occupancy"`
-}
+type RelocationPreview = worldruntime.RelocationPreview
 
 type gameRuntime struct {
 	sessionFactory service.SessionFactory

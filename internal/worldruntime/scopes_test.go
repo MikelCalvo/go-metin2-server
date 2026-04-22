@@ -237,3 +237,85 @@ func TestScopesStaticActorSnapshotsReturnDeterministicOrder(t *testing.T) {
 		t.Fatalf("expected static actor snapshots to preserve effective map indices, got %+v", snapshots)
 	}
 }
+
+func TestScopesBuildRelocationPreviewPreservesStaticOnlyMapsAndCharacterCountDeltas(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	peerOne := entityRegistryCharacter("PeerOne", 0x02040101, 1, 1100, 2100)
+	peerOne.Empire = 2
+	registry.RegisterPlayer(peerOne)
+	current := entityRegistryCharacter("PeerTwo", 0x02040102, 1, 1300, 2300)
+	current.Empire = 2
+	registry.RegisterPlayer(current)
+	peerThree := entityRegistryCharacter("PeerThree", 0x02040103, 42, 1700, 2800)
+	peerThree.Empire = 2
+	registry.RegisterPlayer(peerThree)
+	blacksmith, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Blacksmith"}, Position: NewPosition(1, 1500, 2500), RaceNum: 20016})
+	if !ok {
+		t.Fatal("expected bootstrap static actor registration to succeed")
+	}
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected destination static actor registration to succeed")
+	}
+	merchant, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Merchant"}, Position: NewPosition(99, 900, 1200), RaceNum: 9001})
+	if !ok {
+		t.Fatal("expected static-only actor registration to succeed")
+	}
+
+	target := current
+	target.MapIndex = 42
+	target.X = 1750
+	target.Y = 2850
+
+	preview := NewScopes(topology, registry).BuildRelocationPreview(current, target, false)
+	if preview.Applied {
+		t.Fatal("expected relocate preview helper to preserve applied=false")
+	}
+	if len(preview.MapOccupancyChanges) != 2 {
+		t.Fatalf("expected 2 occupancy deltas, got %+v", preview.MapOccupancyChanges)
+	}
+	if preview.MapOccupancyChanges[0] != (MapOccupancyChange{MapIndex: 1, BeforeCount: 2, AfterCount: 1}) {
+		t.Fatalf("unexpected source occupancy delta: %+v", preview.MapOccupancyChanges[0])
+	}
+	if preview.MapOccupancyChanges[1] != (MapOccupancyChange{MapIndex: 42, BeforeCount: 1, AfterCount: 2}) {
+		t.Fatalf("unexpected destination occupancy delta: %+v", preview.MapOccupancyChanges[1])
+	}
+	if len(preview.BeforeMapOccupancy) != 3 || len(preview.AfterMapOccupancy) != 3 {
+		t.Fatalf("expected static-only maps to be preserved in before/after occupancy, before=%+v after=%+v", preview.BeforeMapOccupancy, preview.AfterMapOccupancy)
+	}
+	if preview.BeforeMapOccupancy[0].MapIndex != 1 || preview.BeforeMapOccupancy[0].StaticActorCount != 1 || preview.BeforeMapOccupancy[0].StaticActors[0].EntityID != blacksmith.Entity.ID {
+		t.Fatalf("unexpected bootstrap before occupancy snapshot: %+v", preview.BeforeMapOccupancy[0])
+	}
+	if preview.BeforeMapOccupancy[1].MapIndex != 42 || preview.BeforeMapOccupancy[1].StaticActorCount != 1 || preview.BeforeMapOccupancy[1].StaticActors[0].EntityID != guard.Entity.ID {
+		t.Fatalf("unexpected destination before occupancy snapshot: %+v", preview.BeforeMapOccupancy[1])
+	}
+	if preview.BeforeMapOccupancy[2].MapIndex != 99 || preview.BeforeMapOccupancy[2].CharacterCount != 0 || preview.BeforeMapOccupancy[2].StaticActorCount != 1 || preview.BeforeMapOccupancy[2].StaticActors[0].EntityID != merchant.Entity.ID {
+		t.Fatalf("unexpected static-only before occupancy snapshot: %+v", preview.BeforeMapOccupancy[2])
+	}
+	if preview.AfterMapOccupancy[0].MapIndex != 1 || preview.AfterMapOccupancy[0].CharacterCount != 1 || len(preview.AfterMapOccupancy[0].Characters) != 1 || preview.AfterMapOccupancy[0].Characters[0].Name != "PeerOne" {
+		t.Fatalf("unexpected bootstrap after occupancy snapshot: %+v", preview.AfterMapOccupancy[0])
+	}
+	if preview.AfterMapOccupancy[1].MapIndex != 42 || preview.AfterMapOccupancy[1].CharacterCount != 2 || len(preview.AfterMapOccupancy[1].Characters) != 2 || preview.AfterMapOccupancy[1].Characters[0].Name != "PeerThree" || preview.AfterMapOccupancy[1].Characters[1].Name != "PeerTwo" {
+		t.Fatalf("unexpected destination after occupancy snapshot: %+v", preview.AfterMapOccupancy[1])
+	}
+	if preview.AfterMapOccupancy[2].MapIndex != 99 || preview.AfterMapOccupancy[2].CharacterCount != 0 || preview.AfterMapOccupancy[2].StaticActorCount != 1 || preview.AfterMapOccupancy[2].StaticActors[0].EntityID != merchant.Entity.ID {
+		t.Fatalf("unexpected static-only after occupancy snapshot: %+v", preview.AfterMapOccupancy[2])
+	}
+}
+
+func TestScopesBuildRelocationPreviewUsesAppliedFlag(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	current := entityRegistryCharacter("PeerTwo", 0x02040102, 1, 1300, 2300)
+	registry.RegisterPlayer(current)
+	target := current
+	target.MapIndex = 42
+	target.X = 1750
+	target.Y = 2850
+
+	preview := NewScopes(topology, registry).BuildRelocationPreview(current, target, true)
+	if !preview.Applied {
+		t.Fatal("expected relocate preview helper to preserve applied=true")
+	}
+}

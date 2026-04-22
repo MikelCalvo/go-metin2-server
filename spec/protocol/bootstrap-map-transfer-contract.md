@@ -112,6 +112,7 @@ Static actors are instead surfaced through the full snapshots below.
 ### `before_map_occupancy`
 
 A full sorted map-occupancy snapshot of the bootstrap runtime before the hypothetical or committed relocation is applied.
+The current bootstrap runtime now composes these before/after occupancy snapshots through `internal/worldruntime/scopes.go` on top of the owned map index, rather than rebuilding them as bootstrap-local preview helpers.
 Each map entry currently includes:
 
 - `map_index`

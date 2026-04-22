@@ -350,20 +350,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 		break
 	}
 	visibilityDiff := worldruntime.RelocateVisibilityDiff(r.topology, previous, currentCharacters, character, afterCharacters)
-	beforeOccupancy := r.mapOccupancySnapshotsLocked()
-	afterOccupancy := relocateMapOccupancySnapshots(beforeOccupancy, r.topology, previous, character)
-	result := RelocationPreview{
-		Applied:             true,
-		Character:           connectedCharacterSnapshot(r.topology, previous),
-		Target:              connectedCharacterSnapshot(r.topology, character),
-		CurrentVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.CurrentVisiblePeers),
-		TargetVisiblePeers:  connectedCharacterSnapshots(r.topology, visibilityDiff.TargetVisiblePeers),
-		RemovedVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.RemovedVisiblePeers),
-		AddedVisiblePeers:   connectedCharacterSnapshots(r.topology, visibilityDiff.AddedVisiblePeers),
-		MapOccupancyChanges: buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
-		BeforeMapOccupancy:  beforeOccupancy,
-		AfterMapOccupancy:   afterOccupancy,
-	}
+	result := r.scopesLocked().BuildRelocationPreview(previous, character, true)
 
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
 	originEntry, _ := r.sessionEntryLocked(id)
@@ -468,36 +455,12 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 	if !ok {
 		return RelocationPreview{}, false
 	}
-	characters := r.snapshotCharacters()
 	target := current
 	target.MapIndex = mapIndex
 	target.X = x
 	target.Y = y
 
-	afterCharacters := append([]loginticket.Character(nil), characters...)
-	for i := range afterCharacters {
-		if afterCharacters[i].VID != current.VID {
-			continue
-		}
-		afterCharacters[i] = target
-		break
-	}
-	visibilityDiff := worldruntime.RelocateVisibilityDiff(r.topology, current, characters, target, afterCharacters)
-	beforeOccupancy := r.mapOccupancySnapshots()
-	afterOccupancy := relocateMapOccupancySnapshots(beforeOccupancy, r.topology, current, target)
-
-	return RelocationPreview{
-		Applied:             false,
-		Character:           connectedCharacterSnapshot(r.topology, current),
-		Target:              connectedCharacterSnapshot(r.topology, target),
-		CurrentVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.CurrentVisiblePeers),
-		TargetVisiblePeers:  connectedCharacterSnapshots(r.topology, visibilityDiff.TargetVisiblePeers),
-		RemovedVisiblePeers: connectedCharacterSnapshots(r.topology, visibilityDiff.RemovedVisiblePeers),
-		AddedVisiblePeers:   connectedCharacterSnapshots(r.topology, visibilityDiff.AddedVisiblePeers),
-		MapOccupancyChanges: buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
-		BeforeMapOccupancy:  beforeOccupancy,
-		AfterMapOccupancy:   afterOccupancy,
-	}, true
+	return r.scopesLocked().BuildRelocationPreview(current, target, false), true
 }
 
 func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][]byte) {
@@ -705,102 +668,6 @@ func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapsh
 	return r.scopesLocked().MapOccupancySnapshots()
 }
 
-func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology worldruntime.BootstrapTopology, current loginticket.Character, target loginticket.Character) []MapOccupancySnapshot {
-	byMap := make(map[uint32]MapOccupancySnapshot, len(before)+1)
-	for _, snapshot := range before {
-		byMap[snapshot.MapIndex] = MapOccupancySnapshot{
-			MapIndex:         snapshot.MapIndex,
-			CharacterCount:   snapshot.CharacterCount,
-			Characters:       append([]ConnectedCharacterSnapshot(nil), snapshot.Characters...),
-			StaticActorCount: snapshot.StaticActorCount,
-			StaticActors:     append([]StaticActorSnapshot(nil), snapshot.StaticActors...),
-		}
-	}
-
-	currentSnapshot := connectedCharacterSnapshot(topology, current)
-	targetSnapshot := connectedCharacterSnapshot(topology, target)
-
-	if snapshot, ok := byMap[currentSnapshot.MapIndex]; ok {
-		filtered := make([]ConnectedCharacterSnapshot, 0, len(snapshot.Characters))
-		for _, character := range snapshot.Characters {
-			if character.VID == currentSnapshot.VID {
-				continue
-			}
-			filtered = append(filtered, character)
-		}
-		snapshot.Characters = filtered
-		snapshot.CharacterCount = len(filtered)
-		if snapshot.CharacterCount == 0 && snapshot.StaticActorCount == 0 {
-			delete(byMap, currentSnapshot.MapIndex)
-		} else {
-			byMap[currentSnapshot.MapIndex] = snapshot
-		}
-	}
-
-	targetOccupancy := byMap[targetSnapshot.MapIndex]
-	targetCharacters := append([]ConnectedCharacterSnapshot(nil), targetOccupancy.Characters...)
-	replaced := false
-	for i := range targetCharacters {
-		if targetCharacters[i].VID != targetSnapshot.VID {
-			continue
-		}
-		targetCharacters[i] = targetSnapshot
-		replaced = true
-		break
-	}
-	if !replaced {
-		targetCharacters = append(targetCharacters, targetSnapshot)
-	}
-	sortConnectedCharacterSnapshots(targetCharacters)
-	targetOccupancy.MapIndex = targetSnapshot.MapIndex
-	targetOccupancy.Characters = targetCharacters
-	targetOccupancy.CharacterCount = len(targetCharacters)
-	byMap[targetSnapshot.MapIndex] = targetOccupancy
-
-	snapshots := make([]MapOccupancySnapshot, 0, len(byMap))
-	for mapIndex, snapshot := range byMap {
-		sortConnectedCharacterSnapshots(snapshot.Characters)
-		sortStaticActorSnapshots(snapshot.StaticActors)
-		snapshot.MapIndex = mapIndex
-		snapshot.CharacterCount = len(snapshot.Characters)
-		snapshot.StaticActorCount = len(snapshot.StaticActors)
-		snapshots = append(snapshots, snapshot)
-	}
-	sortMapOccupancySnapshots(snapshots)
-	return snapshots
-}
-
-func buildMapOccupancyChanges(before []MapOccupancySnapshot, after []MapOccupancySnapshot) []MapOccupancyChange {
-	beforeCounts := make(map[uint32]int, len(before))
-	for _, snapshot := range before {
-		beforeCounts[snapshot.MapIndex] = snapshot.CharacterCount
-	}
-	afterCounts := make(map[uint32]int, len(after))
-	for _, snapshot := range after {
-		afterCounts[snapshot.MapIndex] = snapshot.CharacterCount
-	}
-
-	indices := make(map[uint32]struct{}, len(beforeCounts)+len(afterCounts))
-	for mapIndex := range beforeCounts {
-		indices[mapIndex] = struct{}{}
-	}
-	for mapIndex := range afterCounts {
-		indices[mapIndex] = struct{}{}
-	}
-
-	changes := make([]MapOccupancyChange, 0, len(indices))
-	for mapIndex := range indices {
-		beforeCount := beforeCounts[mapIndex]
-		afterCount := afterCounts[mapIndex]
-		if beforeCount == afterCount {
-			continue
-		}
-		changes = append(changes, MapOccupancyChange{MapIndex: mapIndex, BeforeCount: beforeCount, AfterCount: afterCount})
-	}
-	sortMapOccupancyChanges(changes)
-	return changes
-}
-
 func buildTransferOriginFrames(removed []loginticket.Character, added []loginticket.Character) [][]byte {
 	frames := make([][]byte, 0, len(removed)+len(added)*3)
 	for _, peerCharacter := range removed {
@@ -833,12 +700,6 @@ func sortStaticActorSnapshots(snapshots []StaticActorSnapshot) {
 			return snapshots[i].EntityID < snapshots[j].EntityID
 		}
 		return snapshots[i].Name < snapshots[j].Name
-	})
-}
-
-func sortMapOccupancyChanges(changes []MapOccupancyChange) {
-	sort.Slice(changes, func(i int, j int) bool {
-		return changes[i].MapIndex < changes[j].MapIndex
 	})
 }
 

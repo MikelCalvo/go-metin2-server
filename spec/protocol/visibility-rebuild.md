@@ -46,7 +46,7 @@ This covers the same-map visibility behavior used by:
 - the loopback-only runtime visibility endpoint, which now consumes `internal/worldruntime` scope-owned visibility snapshots instead of recomputing peer sets in `internal/minimal`
 
 The visible-peer helper still owns who is visible to whom.
-Map-occupancy snapshots used by relocate preview, transfer preview, and runtime map-inspection now come from the dedicated `internal/worldruntime` map index instead of being rebuilt from whole-world character scans.
+Map-occupancy snapshots used by relocate preview, transfer preview, and runtime map-inspection now come from the dedicated `internal/worldruntime` map index via `internal/worldruntime/scopes.go` instead of being rebuilt from whole-world character scans or bootstrap-local preview helpers.
 
 ### `DiffVisiblePeers(...)`
 
