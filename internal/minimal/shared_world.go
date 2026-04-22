@@ -455,6 +455,20 @@ func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
 	return staticActorSnapshots(r.topology, r.entities.AllStaticActors())
 }
 
+func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 {
+		return StaticActorSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actor, ok := r.entities.RemoveStaticActor(entityID)
+	if !ok {
+		return StaticActorSnapshot{}, false
+	}
+	return staticActorSnapshot(r.topology, actor), true
+}
+
 func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
 	if r == nil || name == "" || mapIndex == 0 {
 		return RelocationPreview{}, false

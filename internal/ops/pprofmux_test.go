@@ -719,6 +719,52 @@ func TestLocalStaticActorsEndpointRejectsUnsupportedMethod(t *testing.T) {
 	}
 }
 
+func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.T) {
+	remover := &stubStaticActorRemover{removed: true, actor: map[string]any{"entity_id": uint64(7), "name": "VillageGuard", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20300)}}
+	mux := RegisterLocalStaticActorDeleteEndpoint(NewPprofMux("gamed"), remover.RemoveStaticActor)
+
+	req := httptest.NewRequest(http.MethodDelete, "/local/static-actors/7", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if remover.calls != 1 || remover.lastEntityID != 7 {
+		t.Fatalf("unexpected static actor remover call state: %+v", remover)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":7`) || !strings.Contains(string(body), `"name":"VillageGuard"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorDeleteEndpointRejectsInvalidEntityID(t *testing.T) {
+	remover := &stubStaticActorRemover{removed: true}
+	mux := RegisterLocalStaticActorDeleteEndpoint(NewPprofMux("gamed"), remover.RemoveStaticActor)
+
+	req := httptest.NewRequest(http.MethodDelete, "/local/static-actors/not-a-number", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if remover.calls != 0 {
+		t.Fatalf("expected static actor remover not to be called, got %d calls", remover.calls)
+	}
+}
+
 type stubNoticeBroadcaster struct {
 	delivered   int
 	calls       int
@@ -808,6 +854,19 @@ func (r *stubStaticActorRegistrar) RegisterStaticActor(name string, mapIndex uin
 	r.lastY = y
 	r.lastRaceNum = raceNum
 	return r.actor, r.registered
+}
+
+type stubStaticActorRemover struct {
+	actor        map[string]any
+	removed      bool
+	calls        int
+	lastEntityID uint64
+}
+
+func (r *stubStaticActorRemover) RemoveStaticActor(entityID uint64) (any, bool) {
+	r.calls++
+	r.lastEntityID = entityID
+	return r.actor, r.removed
 }
 
 type stubRelocationPreviewer struct {

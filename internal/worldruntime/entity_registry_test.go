@@ -199,6 +199,27 @@ func TestEntityRegistryReturnsDeterministicSortedStaticActors(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryRemoveStaticActorClearsLookupAndMapPresence(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	removed, ok := registry.RemoveStaticActor(guard.Entity.ID)
+	if !ok || removed.Entity.ID != guard.Entity.ID {
+		t.Fatalf("expected static actor removal to return guard, got actor=%+v ok=%v", removed, ok)
+	}
+	if _, ok := registry.StaticActor(guard.Entity.ID); ok {
+		t.Fatal("expected static actor lookup to be cleared after removal")
+	}
+	if actors := registry.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected map static actor snapshot to be empty after removal, got %+v", actors)
+	}
+	if actors := registry.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected global static actor snapshot to be empty after removal, got %+v", actors)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,

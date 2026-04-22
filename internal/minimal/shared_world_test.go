@@ -2259,6 +2259,34 @@ func TestGameRuntimeRegisterStaticActorRejectsInvalidSeed(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeRemoveStaticActorUpdatesSnapshot(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	guard, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	blacksmith, ok := runtime.RegisterStaticActor("Blacksmith", 42, 1900, 3000, 20301)
+	if !ok {
+		t.Fatal("expected blacksmith registration to succeed")
+	}
+
+	removed, ok := runtime.RemoveStaticActor(guard.EntityID)
+	if !ok || removed.EntityID != guard.EntityID {
+		t.Fatalf("expected static actor removal to return guard snapshot, got actor=%+v ok=%v", removed, ok)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 static actor after removal, got %d", len(actors))
+	}
+	if actors[0].EntityID != blacksmith.EntityID || actors[0].Name != "Blacksmith" {
+		t.Fatalf("expected Blacksmith to remain after guard removal, got %+v", actors[0])
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 

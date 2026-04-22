@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	stdpprof "net/http/pprof"
+	"strconv"
 	"strings"
 )
 
@@ -86,6 +87,38 @@ func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() a
 			}
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	return mux
+}
+
+func RegisterLocalStaticActorDeleteEndpoint(mux *http.ServeMux, removeStaticActor func(uint64) (any, bool)) *http.ServeMux {
+	if mux == nil || removeStaticActor == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/static-actors/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, ok := decodeLocalStaticActorEntityID(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		actor, ok := removeStaticActor(entityID)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(actor); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
 		}
 	})
 	return mux
@@ -302,6 +335,19 @@ func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bo
 		return localStaticActorRequest{}, false
 	}
 	return request, true
+}
+
+func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {
+	entityIDRaw := strings.TrimPrefix(r.URL.Path, "/local/static-actors/")
+	entityIDRaw = strings.TrimSpace(entityIDRaw)
+	if entityIDRaw == "" || strings.Contains(entityIDRaw, "/") {
+		return 0, false
+	}
+	entityID, err := strconv.ParseUint(entityIDRaw, 10, 64)
+	if err != nil || entityID == 0 {
+		return 0, false
+	}
+	return entityID, true
 }
 
 func isLoopbackRemoteAddr(remoteAddr string) bool {

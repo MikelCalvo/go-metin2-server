@@ -19,7 +19,7 @@ This contract applies only to:
 - runtime-owned non-player identity and map presence
 - static or operator-seeded actors that exist as world-runtime data
 - deterministic lookup and map membership inside `internal/worldruntime`
-- the first loopback-only operator seed/snapshot surface used to create and inspect those runtime actors on `gamed`
+- the first loopback-only operator seed/snapshot/remove surface used to create, inspect, and delete those runtime actors on `gamed`
 
 This slice does **not** yet claim that non-player actors are visible to clients, replicated on the wire, or driven by gameplay systems.
 
@@ -84,7 +84,7 @@ The next runtime checkpoint after this document should be able to say:
 - `internal/worldruntime` can register a non-player actor with its own entity kind
 - the actor can be looked up deterministically
 - the actor participates in owned map presence/index bookkeeping
-- `gamed` can seed and inspect those bootstrap static actors through a loopback-only operator path
+- `gamed` can seed, inspect, and remove those bootstrap static actors through loopback-only operator paths
 - player-only runtime behavior remains unchanged while this scaffolding lands
 
 At that point, the repository will own the first real non-player runtime seam without pretending that NPCs or mobs are implemented.

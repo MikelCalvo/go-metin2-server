@@ -195,6 +195,13 @@ func (r *gameRuntime) StaticActors() []StaticActorSnapshot {
 	return r.sharedWorld.StaticActors()
 }
 
+func (r *gameRuntime) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return StaticActorSnapshot{}, false
+	}
+	return r.sharedWorld.RemoveStaticActor(entityID)
+}
+
 func NewAuthSessionFactory() service.SessionFactory {
 	return newAuthSessionFactoryWithAccountStore(
 		loginticket.NewFileStore(defaultTicketStoreDir()),

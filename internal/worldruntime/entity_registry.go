@@ -59,6 +59,20 @@ func (r *EntityRegistry) RegisterStaticActor(actor StaticEntity) (StaticEntity, 
 	return registered, true
 }
 
+func (r *EntityRegistry) RemoveStaticActor(id uint64) (StaticEntity, bool) {
+	if r == nil || id == 0 || r.staticActors == nil || r.maps == nil {
+		return StaticEntity{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	removed, ok := r.staticActors.Remove(id)
+	if !ok {
+		return StaticEntity{}, false
+	}
+	_, _ = r.maps.RemoveStatic(id)
+	return removed, true
+}
+
 func (r *EntityRegistry) Player(id uint64) (PlayerEntity, bool) {
 	if r == nil || id == 0 || r.players == nil {
 		return PlayerEntity{}, false

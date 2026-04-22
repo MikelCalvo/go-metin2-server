@@ -67,6 +67,16 @@ func main() {
 			return actor, true
 		},
 	)
+	opsHandler = ops.RegisterLocalStaticActorDeleteEndpoint(
+		opsHandler,
+		func(entityID uint64) (any, bool) {
+			actor, ok := gameRuntime.RemoveStaticActor(entityID)
+			if !ok {
+				return nil, false
+			}
+			return actor, true
+		},
+	)
 	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {
 		logger.Error("service stopped with error", "err", err)
 		fmt.Fprintln(os.Stderr, err)
