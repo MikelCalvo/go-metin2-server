@@ -143,7 +143,7 @@ Legend:
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, an opt-in bootstrap radius/sector helper now exists beside it, and topology now carries explicit helpers for selecting whole-map vs radius visibility policy, but there is still no production range-, sector-, or distance-based culling policy wired through the runtime by default. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer rebootstrap burst exist, but there is still no final end-to-end client/server warp/loading flow yet. |
-| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, the first reconnect/teardown contract is now frozen in docs, but the implementation is still player-only and broader reconnect hardening, richer AOI, and non-player entities are still ahead. |
+| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, reconnect/teardown and the first non-player runtime contract are now frozen in docs, but the implementation is still player-only and broader reconnect hardening, richer AOI, and non-player entity scaffolding are still ahead. |
 
 ### Social, chat, and operator surfaces
 
@@ -254,6 +254,7 @@ Legend:
 - `spec/protocol/bootstrap-map-transfer-contract.md`
 - `spec/protocol/transfer-rebootstrap-burst.md`
 - `spec/protocol/runtime-reconnect-cleanup.md`
+- `spec/protocol/non-player-entity-bootstrap.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
