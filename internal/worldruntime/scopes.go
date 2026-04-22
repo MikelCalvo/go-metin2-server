@@ -23,6 +23,12 @@ func (s Scopes) ShoutTargets(originID uint64, origin loginticket.Character) []Pl
 	return s.filterTargets(originID, origin, s.Topology.SharesShoutScope)
 }
 
+func (s Scopes) PartyTargets(originID uint64) []PlayerEntity {
+	return s.filterTargets(originID, loginticket.Character{}, func(loginticket.Character, loginticket.Character) bool {
+		return true
+	})
+}
+
 func (s Scopes) GuildTargets(originID uint64, origin loginticket.Character) []PlayerEntity {
 	return s.filterTargets(originID, origin, s.Topology.SharesGuildChatScope)
 }

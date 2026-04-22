@@ -66,6 +66,23 @@ func TestScopesShoutTargetsRequireSameEmpireButIgnoreMap(t *testing.T) {
 	}
 }
 
+func TestScopesPartyTargetsReturnAllOtherConnectedPlayers(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+
+	subject := registry.RegisterPlayer(entityRegistryCharacter("Subject", 0x02040101, 1, 1700, 2800))
+	nearPeer := registry.RegisterPlayer(entityRegistryCharacter("NearPeer", 0x02040102, 1, 1900, 2900))
+	farPeer := registry.RegisterPlayer(entityRegistryCharacter("FarPeer", 0x02040103, 42, 2800, 3900))
+
+	targets := NewScopes(topology, registry).PartyTargets(subject.Entity.ID)
+	if len(targets) != 2 {
+		t.Fatalf("expected 2 party targets for connected peers, got %+v", targets)
+	}
+	if targets[0].Entity.ID != farPeer.Entity.ID || targets[1].Entity.ID != nearPeer.Entity.ID {
+		t.Fatalf("expected deterministic party targets [FarPeer NearPeer], got %+v", targets)
+	}
+}
+
 func TestScopesGuildTargetsRequireSharedNonZeroGuildID(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)

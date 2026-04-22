@@ -42,6 +42,7 @@ This slice freezes:
 - sender echo plus queued fanout to the other connected bootstrap sessions
 - reuse of the same `GC_CHAT` payload shape already used for local chat
 - `Name : message` formatting in the payload text
+- runtime-owned target selection through `internal/worldruntime.Scopes.PartyTargets(...)`, while keeping the current bootstrap-global policy unchanged
 
 It does not yet freeze:
 - real party membership

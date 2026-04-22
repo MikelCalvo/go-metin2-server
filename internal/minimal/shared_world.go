@@ -520,12 +520,8 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, peerCharacter := range r.snapshotCharactersLocked() {
-		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
-		if !ok || playerEntity.Entity.ID == originID {
-			continue
-		}
-		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
+	for _, target := range r.scopesLocked().PartyTargets(originID) {
+		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }
 

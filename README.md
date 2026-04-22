@@ -43,7 +43,7 @@ Current scope of the project:
 - A loopback-only `gamed` runtime map-occupancy endpoint that now consumes the owned `internal/worldruntime` map index instead of rebuilding occupancy from whole-world character scans, including bootstrap static actors alongside connected players.
 - Minimal local talking chat fanout so same-empire visible peers on the same bootstrap `MapIndex` receive queued `GC_CHAT` deliveries from other connected players.
 - Minimal whisper routing by exact character name across currently connected bootstrap sessions.
-- Topology-aware social scope queries in `internal/worldruntime` now own local talking, shout, guild, and exact-name whisper target selection instead of scattering those routing conditions across bootstrap shared-world fanout code.
+- Topology-aware social scope queries in `internal/worldruntime` now own local talking, bootstrap-global party, shout, guild, and exact-name whisper target selection instead of scattering those routing conditions across bootstrap shared-world fanout code.
 - Minimal bootstrap `CHAT_TYPE_PARTY` fanout across the currently connected `GAME` sessions.
 - Minimal bootstrap `CHAT_TYPE_GUILD` fanout across connected `GAME` sessions that share the same non-zero `GuildID`.
 - Minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions in the same empire.
