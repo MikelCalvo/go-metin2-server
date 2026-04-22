@@ -1,6 +1,15 @@
 package worldruntime
 
-import "github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+import (
+	"sort"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+)
+
+type VisibilitySnapshot struct {
+	Subject      PlayerEntity
+	VisiblePeers []PlayerEntity
+}
 
 type Scopes struct {
 	Topology BootstrapTopology
@@ -46,6 +55,22 @@ func (s Scopes) ConnectedTargets() []PlayerEntity {
 	})
 }
 
+func (s Scopes) VisibilitySnapshots() []VisibilitySnapshot {
+	if s.Entities == nil {
+		return nil
+	}
+	targets := s.ConnectedTargets()
+	snapshots := make([]VisibilitySnapshot, 0, len(targets))
+	for _, subject := range targets {
+		snapshots = append(snapshots, VisibilitySnapshot{
+			Subject:      subject,
+			VisiblePeers: s.VisibleTargets(subject.Entity.ID, subject.Character),
+		})
+	}
+	sortVisibilitySnapshots(snapshots)
+	return snapshots
+}
+
 func (s Scopes) filterTargets(originID uint64, origin loginticket.Character, predicate func(loginticket.Character, loginticket.Character) bool) []PlayerEntity {
 	if s.Entities == nil {
 		return nil
@@ -60,4 +85,13 @@ func (s Scopes) filterTargets(originID uint64, origin loginticket.Character, pre
 		targets = append(targets, peerEntity)
 	}
 	return targets
+}
+
+func sortVisibilitySnapshots(snapshots []VisibilitySnapshot) {
+	sort.Slice(snapshots, func(i int, j int) bool {
+		if snapshots[i].Subject.Entity.Name == snapshots[j].Subject.Entity.Name {
+			return snapshots[i].Subject.Entity.VID < snapshots[j].Subject.Entity.VID
+		}
+		return snapshots[i].Subject.Entity.Name < snapshots[j].Subject.Entity.Name
+	})
 }

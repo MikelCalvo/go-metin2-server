@@ -390,10 +390,13 @@ func (r *sharedWorldRegistry) ConnectedCharacters() []ConnectedCharacterSnapshot
 		return nil
 	}
 
-	characters := r.snapshotCharacters()
-	snapshots := make([]ConnectedCharacterSnapshot, 0, len(characters))
-	for _, character := range characters {
-		snapshots = append(snapshots, connectedCharacterSnapshot(r.topology, character))
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	targets := r.scopesLocked().ConnectedTargets()
+	snapshots := make([]ConnectedCharacterSnapshot, 0, len(targets))
+	for _, target := range targets {
+		snapshots = append(snapshots, connectedCharacterSnapshot(r.topology, target.Character))
 	}
 	sortConnectedCharacterSnapshots(snapshots)
 	return snapshots
@@ -404,17 +407,9 @@ func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapsho
 		return nil
 	}
 
-	characters := r.snapshotCharacters()
-	snapshots := make([]CharacterVisibilitySnapshot, 0, len(characters))
-	for _, character := range characters {
-		visiblePeers := connectedCharacterSnapshots(r.topology, worldruntime.VisiblePeers(r.topology, character, characters, character.VID))
-		snapshots = append(snapshots, CharacterVisibilitySnapshot{
-			ConnectedCharacterSnapshot: connectedCharacterSnapshot(r.topology, character),
-			VisiblePeers:               visiblePeers,
-		})
-	}
-	sortCharacterVisibilitySnapshots(snapshots)
-	return snapshots
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return characterVisibilitySnapshots(r.topology, r.scopesLocked().VisibilitySnapshots())
 }
 
 func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
@@ -698,6 +693,26 @@ func staticActorSnapshots(topology worldruntime.BootstrapTopology, actors []worl
 	}
 	sortStaticActorSnapshots(snapshots)
 	return snapshots
+}
+
+func characterVisibilitySnapshots(topology worldruntime.BootstrapTopology, visibility []worldruntime.VisibilitySnapshot) []CharacterVisibilitySnapshot {
+	snapshots := make([]CharacterVisibilitySnapshot, 0, len(visibility))
+	for _, entry := range visibility {
+		snapshots = append(snapshots, CharacterVisibilitySnapshot{
+			ConnectedCharacterSnapshot: connectedCharacterSnapshot(topology, entry.Subject.Character),
+			VisiblePeers:               connectedCharacterSnapshots(topology, playerEntitiesToCharacters(entry.VisiblePeers)),
+		})
+	}
+	sortCharacterVisibilitySnapshots(snapshots)
+	return snapshots
+}
+
+func playerEntitiesToCharacters(players []worldruntime.PlayerEntity) []loginticket.Character {
+	characters := make([]loginticket.Character, 0, len(players))
+	for _, player := range players {
+		characters = append(characters, player.Character)
+	}
+	return characters
 }
 
 func (r *sharedWorldRegistry) mapOccupancySnapshots() []MapOccupancySnapshot {

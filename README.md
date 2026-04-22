@@ -38,8 +38,8 @@ Current scope of the project:
 - A topology-aware `internal/worldruntime` map index that tracks effective-map player membership as an owned runtime primitive instead of recomputing occupancy from ad hoc session scans.
 - A transport-only `internal/worldruntime` session directory boundary for queued frame sinks and relocate callbacks, now used as the shared-world transport-hook lookup path for join/leave/transfer and fanout delivery instead of bootstrap-local hook maps.
 - A first documented bootstrap reconnect/teardown runtime contract: close/disconnect tears down session-directory hooks, entity ownership, and map occupancy idempotently, while reconnect rebuilds fresh live runtime state from persisted snapshots instead of stale in-memory ownership.
-- A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state.
-- A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules.
+- A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state, now routed through `internal/worldruntime` scope queries instead of open-coded shared-world scans.
+- A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules, now also built from `internal/worldruntime` visibility scope snapshots.
 - A loopback-only `gamed` runtime map-occupancy endpoint that now consumes the owned `internal/worldruntime` map index instead of rebuilding occupancy from whole-world character scans, including bootstrap static actors alongside connected players.
 - Minimal local talking chat fanout so same-empire visible peers on the same bootstrap `MapIndex` receive queued `GC_CHAT` deliveries from other connected players.
 - Minimal whisper routing by exact character name across currently connected bootstrap sessions.

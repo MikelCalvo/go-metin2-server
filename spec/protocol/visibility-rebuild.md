@@ -43,6 +43,7 @@ This covers the same-map visibility behavior used by:
 - enter/bootstrap visibility
 - reconnect visibility snapshots
 - relocation preview and transfer rebuild calculations
+- the loopback-only runtime visibility endpoint, which now consumes `internal/worldruntime` scope-owned visibility snapshots instead of recomputing peer sets in `internal/minimal`
 
 The visible-peer helper still owns who is visible to whom.
 Map-occupancy snapshots used by relocate preview, transfer preview, and runtime map-inspection now come from the dedicated `internal/worldruntime` map index instead of being rebuilt from whole-world character scans.

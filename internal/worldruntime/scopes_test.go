@@ -138,3 +138,31 @@ func TestScopesConnectedTargetsReturnAllPlayersInDeterministicOrder(t *testing.T
 		t.Fatalf("expected Zulu as final connected target, got %+v", targets[2])
 	}
 }
+
+func TestScopesVisibilitySnapshotsFollowConfiguredPolicyAndOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	zulu := entityRegistryCharacter("Zulu", 0x02040101, 42, 1700, 2800)
+	zulu.Empire = 2
+	registry.RegisterPlayer(zulu)
+	alpha := entityRegistryCharacter("Alpha", 0x02040102, 42, 1900, 2900)
+	alpha.Empire = 2
+	alphaEntity := registry.RegisterPlayer(alpha)
+	bravo := entityRegistryCharacter("Bravo", 0x02040103, 42, 1750, 2820)
+	bravo.Empire = 2
+	bravoEntity := registry.RegisterPlayer(bravo)
+
+	snapshots := NewScopes(topology, registry).VisibilitySnapshots()
+	if len(snapshots) != 3 {
+		t.Fatalf("expected 3 visibility snapshots, got %+v", snapshots)
+	}
+	if snapshots[0].Subject.Entity.ID != alphaEntity.Entity.ID || snapshots[1].Subject.Entity.ID != bravoEntity.Entity.ID || snapshots[2].Subject.Entity.Name != "Zulu" {
+		t.Fatalf("expected deterministic subject ordering Alpha, Bravo, Zulu, got %+v", snapshots)
+	}
+	if len(snapshots[0].VisiblePeers) != 2 || snapshots[0].VisiblePeers[0].Entity.Name != "Bravo" || snapshots[0].VisiblePeers[1].Entity.Name != "Zulu" {
+		t.Fatalf("expected Alpha to see Bravo and Zulu, got %+v", snapshots[0].VisiblePeers)
+	}
+	if len(snapshots[2].VisiblePeers) != 2 || snapshots[2].VisiblePeers[0].Entity.Name != "Alpha" || snapshots[2].VisiblePeers[1].Entity.Name != "Bravo" {
+		t.Fatalf("expected Zulu to see Alpha and Bravo, got %+v", snapshots[2].VisiblePeers)
+	}
+}
