@@ -155,7 +155,7 @@ Legend:
 | Party chat | [~] | Bootstrap-only fanout; no real party membership system yet. |
 | Guild chat | [~] | Scoped by non-zero `GuildID`, but no guild lifecycle/roster system exists yet. |
 | Shout | [~] | Same-empire bootstrap fanout exists; no real world/channel topology behind it yet. |
-| System info / notice | [~] | `INFO` self-delivery, server-originated `NOTICE`, and local-only notice trigger exist. |
+| System info / notice | [~] | `INFO` self-delivery, server-originated `NOTICE`, and local-only notice trigger exist; bootstrap-global notice target selection now routes through `internal/worldruntime` instead of ad hoc shared-world scans. |
 | Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/players`, `GET /local/visibility`, `GET /local/maps`, plus `GET`/`POST /local/static-actors` and `DELETE /local/static-actors/{entity_id}` for bootstrap non-player runtime seeding/introspection/removal, exist on `gamed`; `/local/maps` now reports static actors alongside connected players in each effective-map snapshot, and the structured relocate-preview/transfer responses now include full before/after map-occupancy snapshots beside the delta counts; broader admin/auth tooling does not. |
 
 ### Character systems and gameplay

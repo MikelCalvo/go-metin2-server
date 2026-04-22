@@ -1188,6 +1188,37 @@ func TestGameRuntimeBroadcastNoticeQueuesSystemMessageToConnectedSessions(t *tes
 	}
 }
 
+func TestGameRuntimeBroadcastNoticeQueuesSystemMessageAcrossMaps(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerTwo.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+
+	delivered := runtime.BroadcastNotice("cross-map notice")
+	if delivered != 2 {
+		t.Fatalf("expected cross-map notice to be queued for 2 connected sessions, got %d", delivered)
+	}
+
+	noticeOne := flushServerFrames(t, flowOne)
+	noticeTwo := flushServerFrames(t, flowTwo)
+	if len(noticeOne) != 1 || len(noticeTwo) != 1 {
+		t.Fatalf("expected one queued notice per session across maps, got first=%d second=%d", len(noticeOne), len(noticeTwo))
+	}
+}
+
 func TestGameRuntimeBroadcastNoticeRejectsEmptyMessage(t *testing.T) {
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
 	if err != nil {

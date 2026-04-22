@@ -64,6 +64,7 @@ This slice freezes:
 - system-message payload shape with `vid = 0`
 - raw notice text with no `Name : ` prefix
 - client-originated `CHAT_TYPE_NOTICE` remaining rejected
+- runtime-owned connected-target selection through `internal/worldruntime.Scopes.ConnectedTargets()`, while keeping the current bootstrap-global notice policy unchanged
 
 It does not yet freeze:
 - GM/operator notice tooling beyond the local-only ops endpoint

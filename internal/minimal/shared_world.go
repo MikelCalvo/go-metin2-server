@@ -608,12 +608,8 @@ func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
 	defer r.mu.Unlock()
 
 	delivered := 0
-	for _, peerCharacter := range r.snapshotCharactersLocked() {
-		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
-		if !ok {
-			continue
-		}
-		if r.enqueueToEntityLocked(playerEntity.Entity.ID, [][]byte{noticeRaw}) {
+	for _, target := range r.scopesLocked().ConnectedTargets() {
+		if r.enqueueToEntityLocked(target.Entity.ID, [][]byte{noticeRaw}) {
 			delivered++
 		}
 	}

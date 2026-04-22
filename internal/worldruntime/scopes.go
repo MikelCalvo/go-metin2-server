@@ -40,15 +40,21 @@ func (s Scopes) PlayerByExactName(name string) (PlayerEntity, bool) {
 	return s.Entities.PlayerByName(name)
 }
 
+func (s Scopes) ConnectedTargets() []PlayerEntity {
+	return s.filterTargets(0, loginticket.Character{}, func(loginticket.Character, loginticket.Character) bool {
+		return true
+	})
+}
+
 func (s Scopes) filterTargets(originID uint64, origin loginticket.Character, predicate func(loginticket.Character, loginticket.Character) bool) []PlayerEntity {
-	if s.Entities == nil || originID == 0 {
+	if s.Entities == nil {
 		return nil
 	}
 	characters := s.Entities.PlayerCharacters()
 	targets := make([]PlayerEntity, 0, len(characters))
 	for _, peerCharacter := range characters {
 		peerEntity, ok := s.Entities.PlayerByVID(peerCharacter.VID)
-		if !ok || peerEntity.Entity.ID == originID || !predicate(origin, peerCharacter) {
+		if !ok || (originID != 0 && peerEntity.Entity.ID == originID) || !predicate(origin, peerCharacter) {
 			continue
 		}
 		targets = append(targets, peerEntity)

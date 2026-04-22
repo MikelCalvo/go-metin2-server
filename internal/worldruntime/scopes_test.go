@@ -119,3 +119,22 @@ func TestScopesPlayerByExactNameUsesEntityRegistry(t *testing.T) {
 		t.Fatal("expected missing exact-name scope lookup to fail")
 	}
 }
+
+func TestScopesConnectedTargetsReturnAllPlayersInDeterministicOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	registry.RegisterPlayer(entityRegistryCharacter("Zulu", 0x02040101, 42, 1700, 2800))
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040102, 1, 1100, 2100))
+	bravo := registry.RegisterPlayer(entityRegistryCharacter("Bravo", 0x02040103, 1, 1300, 2300))
+
+	targets := NewScopes(topology, registry).ConnectedTargets()
+	if len(targets) != 3 {
+		t.Fatalf("expected 3 connected targets, got %+v", targets)
+	}
+	if targets[0].Entity.ID != alpha.Entity.ID || targets[1].Entity.ID != bravo.Entity.ID {
+		t.Fatalf("expected deterministic connected targets starting with Alpha, Bravo, got %+v", targets)
+	}
+	if targets[2].Entity.Name != "Zulu" {
+		t.Fatalf("expected Zulu as final connected target, got %+v", targets[2])
+	}
+}
