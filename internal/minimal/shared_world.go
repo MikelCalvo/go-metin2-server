@@ -308,8 +308,17 @@ func (r *sharedWorldRegistry) TransferCharacter(name string, mapIndex uint32, x 
 }
 
 func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Character) (RelocationPreview, bool) {
+	preview, _, ok := r.transfer(id, character, true)
+	return preview, ok
+}
+
+func (r *sharedWorldRegistry) TransferWithOriginFrames(id uint64, character loginticket.Character) (RelocationPreview, [][]byte, bool) {
+	return r.transfer(id, character, false)
+}
+
+func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Character, enqueueOrigin bool) (RelocationPreview, [][]byte, bool) {
 	if r == nil || id == 0 {
-		return RelocationPreview{}, false
+		return RelocationPreview{}, nil, false
 	}
 
 	r.mu.Lock()
@@ -317,7 +326,7 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 
 	previous, ok := r.playerCharacter(id)
 	if !ok {
-		return RelocationPreview{}, false
+		return RelocationPreview{}, nil, false
 	}
 	currentCharacters := r.snapshotCharactersLocked()
 
@@ -343,16 +352,10 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 		MapOccupancyChanges: buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
 	}
 
+	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
 	originEntry, _ := r.sessionEntryLocked(id)
-	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
-		if originEntry.FrameSink != nil {
-			originEntry.FrameSink.Enqueue([][]byte{encodeCharacterDeleteFrame(peerCharacter)})
-		}
-	}
-	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
-		if originEntry.FrameSink != nil {
-			originEntry.FrameSink.Enqueue(encodePeerVisibilityFrames(peerCharacter))
-		}
+	if enqueueOrigin && originEntry.FrameSink != nil && len(originFrames) > 0 {
+		originEntry.FrameSink.Enqueue(originFrames)
 	}
 
 	_ = r.entities.UpdatePlayer(id, character)
@@ -366,7 +369,7 @@ func (r *sharedWorldRegistry) Transfer(id uint64, character loginticket.Characte
 		r.enqueueToCharacterLocked(peerCharacter, movedFrames)
 	}
 
-	return result, true
+	return result, originFrames, true
 }
 
 func (r *sharedWorldRegistry) ConnectedCharacters() []ConnectedCharacterSnapshot {
@@ -752,6 +755,17 @@ func buildMapOccupancyChanges(before []MapOccupancySnapshot, after []MapOccupanc
 	}
 	sortMapOccupancyChanges(changes)
 	return changes
+}
+
+func buildTransferOriginFrames(removed []loginticket.Character, added []loginticket.Character) [][]byte {
+	frames := make([][]byte, 0, len(removed)+len(added)*3)
+	for _, peerCharacter := range removed {
+		frames = append(frames, encodeCharacterDeleteFrame(peerCharacter))
+	}
+	for _, peerCharacter := range added {
+		frames = append(frames, encodePeerVisibilityFrames(peerCharacter)...)
+	}
+	return frames
 }
 
 func sortConnectedCharacterSnapshots(snapshots []ConnectedCharacterSnapshot) {

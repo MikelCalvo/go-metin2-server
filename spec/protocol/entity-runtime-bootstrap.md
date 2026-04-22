@@ -5,7 +5,7 @@ This document freezes the first explicit entity/world-runtime ownership model th
 It sits on top of:
 - `world-topology-bootstrap.md`
 - `visibility-rebuild.md`
-- `map-transfer-bootstrap.md`
+- `transfer-rebootstrap-burst.md`
 
 Those documents already freeze bootstrap topology, visibility policy boundaries, and the current transfer contract.
 What this document adds is the next owned architecture boundary underneath those flows.

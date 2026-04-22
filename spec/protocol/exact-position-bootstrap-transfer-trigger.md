@@ -63,12 +63,13 @@ When an exact-position trigger matches:
 The current gameplay trigger deliberately does not freeze a final self-visible warp packet yet.
 
 The owned self-session transfer reply contract now lives in:
-- `map-transfer-bootstrap.md`
+- `transfer-rebootstrap-burst.md`
 
 That document freezes the current bootstrap behavior:
 - no immediate self `MOVE_ACK`
 - no immediate self `SYNC_POSITION_ACK`
-- queued self visibility-delta frames when peers leave or enter the moved character's visible world
+- immediate self rebootstrap burst on the same game socket using the relocated selected-character snapshot
+- trailing peer visibility deltas after that self burst
 
 This is intentional.
 The final self-facing loading / warp reply remains a future protocol slice.

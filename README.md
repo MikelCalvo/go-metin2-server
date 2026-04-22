@@ -29,7 +29,7 @@ Current scope of the project:
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation.
 - A loopback-only `gamed` structured transfer endpoint that commits the minimal bootstrap map-transfer contract and returns the applied transfer result.
-- A first owned self-session bootstrap transfer contract: transfer-triggered `MOVE` / `SYNC_POSITION` suppress immediate self ack packets and currently reuse queued self visibility-delta frames instead of a final warp/loading packet.
+- A first owned self-session transfer rebootstrap burst: transfer-triggered `MOVE` / `SYNC_POSITION` suppress immediate self ack packets, rebuild the moved player on the same game socket with the relocated self bootstrap burst, and then append trailing peer visibility deltas.
 - Persist-before-commit bootstrap transfer orchestration via `internal/warp`, with best-effort rollback to the previous persisted account snapshot if the late runtime commit step fails.
 - A first `internal/player` runtime model that keeps selected-session live world position separate from the persisted bootstrap character snapshot.
 - A first generic `internal/worldruntime` entity registry that registers player entities through a reusable identity boundary instead of direct shared-world character bookkeeping.
@@ -139,7 +139,7 @@ Legend:
 | Map boundaries | [~] | An explicit bootstrap topology now owns local channel/map chat scoping, but there is still no final warp flow yet. |
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, but there is still no range-, sector-, or distance-based culling yet. |
-| Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer reply contract exist, but there is still no final end-to-end client/server warp flow yet. |
+| Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer rebootstrap burst exist, but there is still no final end-to-end client/server warp/loading flow yet. |
 | Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, but the implementation is still player-only and richer AOI / non-player entities are still ahead. |
 
 ### Social, chat, and operator surfaces
@@ -159,7 +159,7 @@ Legend:
 | Area | Status | Notes |
 | --- | --- | --- |
 | Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, chat, and bootstrap transfer-trigger slices; a first live `internal/player` runtime model now exists separately from persisted snapshots. |
-| Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; persist-before-commit ordering and the current self-facing contract are documented, but the final warp/loading packet is still not frozen. |
+| Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; persist-before-commit ordering and the current self-session rebootstrap burst are documented, but the final warp/loading packet is still not frozen. |
 | Inventory | [ ] | Not started. |
 | Equipment | [ ] | Not started. |
 | Item use / consumables | [ ] | Not started. |
@@ -187,7 +187,7 @@ Legend:
 | --- | --- | --- |
 | M0 — Protocol-owned boot path | [x] | Handshake, auth/login, selection, create/delete/select, enter-game, and first movement loop are stable. |
 | M1 — Shared-world pre-alpha | [~] | Players can see each other, move, chat, and receive notices with real map/channel boundaries. |
-| M2 — Entity/world runtime foundation | [~] | Live player runtime, the first generic entity registry, the first owned map index, and the first transport-only session directory now exist; shared-world transport routing now goes through that session directory, while final transfer rebootstrap, richer AOI, and non-player entities still need to replace the remaining bootstrap shortcuts. |
+| M2 — Entity/world runtime foundation | [~] | Live player runtime, the first generic entity registry, the first owned map index, and the first transport-only session directory now exist; shared-world transport routing and the first transfer rebootstrap burst now go through owned runtime boundaries, while richer AOI, reconnect hardening, and non-player entities still need to replace the remaining bootstrap shortcuts. |
 | M3 — Character systems | [ ] | Inventory, equipment, item use, and character-state persistence exist in usable form. |
 | M4 — Combat vertical slice | [ ] | Targeting, attacks, damage, death, and respawn work for at least one minimal content path. |
 | M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime are available. |
@@ -249,7 +249,7 @@ Legend:
 - `spec/protocol/entity-runtime-bootstrap.md`
 - `spec/protocol/map-relocation-visibility-rebuild.md`
 - `spec/protocol/bootstrap-map-transfer-contract.md`
-- `spec/protocol/map-transfer-bootstrap.md`
+- `spec/protocol/transfer-rebootstrap-burst.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`

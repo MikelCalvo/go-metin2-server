@@ -292,10 +292,10 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 			selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: selectedIndex})
 			return selectedPlayer, true
 		}
-		applySelectedCharacterTransfer := func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
+		applySelectedCharacterTransfer := func(mapIndex uint32, x int32, y int32, rebootstrap bool) (RelocationPreview, [][]byte, bool) {
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok || !joinedSharedWorld || sharedWorldID == 0 {
-				return RelocationPreview{}, false
+				return RelocationPreview{}, nil, false
 			}
 			selected := selectedPlayer.PersistedSnapshot()
 			selectedLink := selectedPlayer.SessionLink()
@@ -303,6 +303,7 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 				return selectedCharacterLocationUpdate(sessionTicket.Characters, selectedLink.CharacterIndex, updated.MapIndex, updated.X, updated.Y)
 			}
 			var transferResult RelocationPreview
+			var transferFrames [][]byte
 			transferFlow := warp.NewFlow(warp.Config{
 				Persist: func(updated loginticket.Character) bool {
 					updatedCharacters, _, ok := buildUpdatedSelection(updated)
@@ -319,20 +320,33 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if !ok {
 						return warp.Result{}, false
 					}
-					transferPreview, ok := sharedWorld.Transfer(sharedWorldID, updatedSelected)
-					if !ok {
-						return warp.Result{}, false
+					if rebootstrap {
+						bootstrapFrames, err := worldentry.BuildBootstrapFrames(updatedSelected)
+						if err != nil {
+							return warp.Result{}, false
+						}
+						transferPreview, originFrames, ok := sharedWorld.TransferWithOriginFrames(sharedWorldID, updatedSelected)
+						if !ok {
+							return warp.Result{}, false
+						}
+						transferResult = transferPreview
+						transferFrames = append(append([][]byte(nil), bootstrapFrames...), originFrames...)
+					} else {
+						transferPreview, ok := sharedWorld.Transfer(sharedWorldID, updatedSelected)
+						if !ok {
+							return warp.Result{}, false
+						}
+						transferResult = transferPreview
 					}
-					transferResult = transferPreview
 					sessionTicket.Characters = updatedCharacters
 					selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
 					return warp.Result{Applied: true, Updated: selectedPlayer.LiveCharacter()}, true
 				},
 			})
 			if _, ok := transferFlow.Apply(selected, warp.Target{MapIndex: mapIndex, X: x, Y: y}); !ok {
-				return RelocationPreview{}, false
+				return RelocationPreview{}, nil, false
 			}
-			return transferResult, true
+			return transferResult, transferFrames, true
 		}
 
 		inner := boot.NewFlow(boot.Config{
@@ -460,15 +474,9 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if selected.ID == 0 {
 						return worldentry.EnterGameResult{}
 					}
-					infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(ticketCharacterAdditionalInfoPacket(selected))
+					bootstrapFrames, err := worldentry.BuildBootstrapFrames(selected)
 					if err != nil {
 						return worldentry.EnterGameResult{}
-					}
-					bootstrapFrames := [][]byte{
-						worldproto.EncodeCharacterAdd(ticketCharacterAddPacket(selected)),
-						infoRaw,
-						worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(selected)),
-						worldproto.EncodePlayerPointChange(ticketPlayerPointChangePacket(selected)),
 					}
 					var trailingFrames [][]byte
 					if !joinedSharedWorld {
@@ -476,7 +484,8 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						sharedWorldID, existingPeers = sharedWorld.Join(selected, pending, func(mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {
 							stateMu.Lock()
 							defer stateMu.Unlock()
-							return applySelectedCharacterTransfer(mapIndex, x, y)
+							preview, _, ok := applySelectedCharacterTransfer(mapIndex, x, y, false)
+							return preview, ok
 						})
 						joinedSharedWorld = sharedWorldID != 0
 						for _, peer := range existingPeers {
@@ -500,10 +509,11 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						return gameflow.Result{Accepted: false}
 					}
 					if trigger, ok := findBootstrapTransferTrigger(transferTriggers, selected, packet.X, packet.Y); ok {
-						if _, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY); !ok {
+						if _, transferFrames, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY, true); !ok {
 							return gameflow.Result{Accepted: false}
+						} else {
+							return gameflow.Result{Accepted: true, Frames: transferFrames}
 						}
-						return gameflow.Result{Accepted: true, Frames: [][]byte{}}
 					}
 
 					updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, packet.X, packet.Y)
@@ -539,10 +549,11 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 							continue
 						}
 						if trigger, ok := findBootstrapTransferTrigger(transferTriggers, selected, element.X, element.Y); ok {
-							if _, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY); !ok {
+							if _, transferFrames, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY, true); !ok {
 								return gameflow.SyncPositionResult{Accepted: false}
+							} else {
+								return gameflow.SyncPositionResult{Accepted: true, Frames: transferFrames}
 							}
-							return gameflow.SyncPositionResult{Accepted: true, Frames: [][]byte{}}
 						}
 						updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, element.X, element.Y)
 						if !ok {

@@ -327,27 +327,55 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMove(t *testi
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(moveOut) != 0 {
-		t.Fatalf("expected no self move reply while gameplay transfer uses bootstrap trigger contract, got %d frames", len(moveOut))
+	if len(moveOut) != 8 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames, got %d", len(moveOut))
 	}
-
-	moverFrames := flushServerFrames(t, flowTwo)
-	if len(moverFrames) != 4 {
-		t.Fatalf("expected 4 mover frames after triggered transfer, got %d", len(moverFrames))
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode self transfer add: %v", err)
 	}
-	removedPeer, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, moverFrames[0]))
+	if selfAdd.VID != peerTwo.VID || selfAdd.X != 1700 || selfAdd.Y != 2800 {
+		t.Fatalf("unexpected self transfer add: %+v", selfAdd)
+	}
+	selfInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[1]))
+	if err != nil {
+		t.Fatalf("decode self transfer additional info: %v", err)
+	}
+	if selfInfo.VID != peerTwo.VID || selfInfo.Name != peerTwo.Name {
+		t.Fatalf("unexpected self transfer additional info: %+v", selfInfo)
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, moveOut[2]))
+	if err != nil {
+		t.Fatalf("decode self transfer update: %v", err)
+	}
+	if selfUpdate.VID != peerTwo.VID {
+		t.Fatalf("unexpected self transfer update: %+v", selfUpdate)
+	}
+	selfPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, moveOut[3]))
+	if err != nil {
+		t.Fatalf("decode self transfer point change: %v", err)
+	}
+	if selfPointChange.VID != peerTwo.VID {
+		t.Fatalf("unexpected self transfer point change: %+v", selfPointChange)
+	}
+	removedPeer, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, moveOut[4]))
 	if err != nil {
 		t.Fatalf("decode mover delete notice: %v", err)
 	}
 	if removedPeer.VID != peerOne.VID {
 		t.Fatalf("expected mover delete notice for old-map peer %#08x, got %#08x", peerOne.VID, removedPeer.VID)
 	}
-	addedPeer, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moverFrames[1]))
+	addedPeer, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[5]))
 	if err != nil {
 		t.Fatalf("decode mover peer add: %v", err)
 	}
 	if addedPeer.VID != peerThree.VID || addedPeer.X != peerThree.X || addedPeer.Y != peerThree.Y {
 		t.Fatalf("unexpected mover peer add: %+v", addedPeer)
+	}
+
+	moverFrames := flushServerFrames(t, flowTwo)
+	if len(moverFrames) != 0 {
+		t.Fatalf("expected no queued mover frames after immediate transfer rebootstrap, got %d", len(moverFrames))
 	}
 
 	oldMapFrames := flushServerFrames(t, flowOne)
@@ -413,15 +441,29 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnSyncPosition(
 	if err != nil {
 		t.Fatalf("unexpected sync_position error: %v", err)
 	}
-	if len(syncOut) != 0 {
-		t.Fatalf("expected no self sync_position reply while gameplay transfer uses bootstrap trigger contract, got %d frames", len(syncOut))
+	if len(syncOut) != 8 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames from sync_position trigger, got %d", len(syncOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, syncOut[0]))
+	if err != nil {
+		t.Fatalf("decode self transfer add from sync_position: %v", err)
+	}
+	if selfAdd.VID != peerTwo.VID || selfAdd.X != 1700 || selfAdd.Y != 2800 {
+		t.Fatalf("unexpected self transfer add from sync_position: %+v", selfAdd)
+	}
+	selfPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, syncOut[3]))
+	if err != nil {
+		t.Fatalf("decode self transfer point change from sync_position: %v", err)
+	}
+	if selfPointChange.VID != peerTwo.VID {
+		t.Fatalf("unexpected self transfer point change from sync_position: %+v", selfPointChange)
 	}
 
 	if queued := flushServerFrames(t, flowOne); len(queued) != 1 {
 		t.Fatalf("expected 1 old-map frame after triggered sync_position transfer, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, flowTwo); len(queued) != 4 {
-		t.Fatalf("expected 4 mover frames after triggered sync_position transfer, got %d", len(queued))
+	if queued := flushServerFrames(t, flowTwo); len(queued) != 0 {
+		t.Fatalf("expected no queued mover frames after sync_position transfer rebootstrap, got %d", len(queued))
 	}
 	if queued := flushServerFrames(t, flowThree); len(queued) != 3 {
 		t.Fatalf("expected 3 destination-map frames after triggered sync_position transfer, got %d", len(queued))
@@ -517,8 +559,8 @@ func TestNewGameSessionFactoryRoutesPostTransferChatAndMoveToDestinationMapPeers
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(transferOut) != 0 {
-		t.Fatalf("expected no self move reply while gameplay transfer uses bootstrap trigger contract, got %d frames", len(transferOut))
+	if len(transferOut) != 8 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames before post-transfer gameplay, got %d", len(transferOut))
 	}
 	_ = flushServerFrames(t, flowOne)
 	_ = flushServerFrames(t, flowTwo)
