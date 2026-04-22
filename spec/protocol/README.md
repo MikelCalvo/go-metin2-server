@@ -35,6 +35,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `map-relocation-visibility-rebuild.md` — first server-side visible-world rebuild primitive for relocating a connected player between bootstrap maps
 - `bootstrap-map-transfer-contract.md` — first minimal structured preview/commit contract for bootstrap map transfer on top of the relocation primitive
 - `transfer-rebootstrap-burst.md` — first owned self-session rebootstrap burst for bootstrap map transfer on the game socket
+- `runtime-reconnect-cleanup.md` — first owned close/disconnect/reconnect cleanup contract for bootstrap shared-world runtime ownership
 - `exact-position-bootstrap-transfer-trigger.md` — first gameplay-side exact-position trigger that can invoke the bootstrap transfer commit path from `MOVE` / `SYNC_POSITION`
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`

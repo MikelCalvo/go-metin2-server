@@ -35,6 +35,7 @@ Current scope of the project:
 - A first generic `internal/worldruntime` entity registry that registers player entities through a reusable identity boundary instead of direct shared-world character bookkeeping.
 - A topology-aware `internal/worldruntime` map index that tracks effective-map player membership as an owned runtime primitive instead of recomputing occupancy from ad hoc session scans.
 - A transport-only `internal/worldruntime` session directory boundary for queued frame sinks and relocate callbacks, now used as the shared-world transport-hook lookup path for join/leave/transfer and fanout delivery instead of bootstrap-local hook maps.
+- A first documented bootstrap reconnect/teardown runtime contract: close/disconnect tears down session-directory hooks, entity ownership, and map occupancy idempotently, while reconnect rebuilds fresh live runtime state from persisted snapshots instead of stale in-memory ownership.
 - A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state.
 - A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules.
 - A loopback-only `gamed` runtime map-occupancy endpoint that now consumes the owned `internal/worldruntime` map index instead of rebuilding occupancy from whole-world character scans.
@@ -140,7 +141,7 @@ Legend:
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, but there is still no range-, sector-, or distance-based culling yet. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer rebootstrap burst exist, but there is still no final end-to-end client/server warp/loading flow yet. |
-| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, but the implementation is still player-only and richer AOI / non-player entities are still ahead. |
+| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, the first reconnect/teardown contract is now frozen in docs, but the implementation is still player-only and broader reconnect hardening, richer AOI, and non-player entities are still ahead. |
 
 ### Social, chat, and operator surfaces
 
@@ -187,7 +188,7 @@ Legend:
 | --- | --- | --- |
 | M0 — Protocol-owned boot path | [x] | Handshake, auth/login, selection, create/delete/select, enter-game, and first movement loop are stable. |
 | M1 — Shared-world pre-alpha | [~] | Players can see each other, move, chat, and receive notices with real map/channel boundaries. |
-| M2 — Entity/world runtime foundation | [~] | Live player runtime, the first generic entity registry, the first owned map index, and the first transport-only session directory now exist; shared-world transport routing and the first transfer rebootstrap burst now go through owned runtime boundaries, while richer AOI, reconnect hardening, and non-player entities still need to replace the remaining bootstrap shortcuts. |
+| M2 — Entity/world runtime foundation | [~] | Live player runtime, the first generic entity registry, the first owned map index, and the first transport-only session directory now exist; shared-world transport routing and the first transfer rebootstrap burst now go through owned runtime boundaries, the reconnect/teardown contract is now frozen in docs, while broader reconnect hardening, richer AOI, and non-player entities still need to replace the remaining bootstrap shortcuts. |
 | M3 — Character systems | [ ] | Inventory, equipment, item use, and character-state persistence exist in usable form. |
 | M4 — Combat vertical slice | [ ] | Targeting, attacks, damage, death, and respawn work for at least one minimal content path. |
 | M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime are available. |
@@ -250,6 +251,7 @@ Legend:
 - `spec/protocol/map-relocation-visibility-rebuild.md`
 - `spec/protocol/bootstrap-map-transfer-contract.md`
 - `spec/protocol/transfer-rebootstrap-burst.md`
+- `spec/protocol/runtime-reconnect-cleanup.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
