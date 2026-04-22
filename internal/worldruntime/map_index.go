@@ -18,6 +18,8 @@ type MapIndex struct {
 	byEntityID             map[uint64]PlayerEntity
 	effectiveMapByEntityID map[uint64]uint32
 	byMapIndex             map[uint32]map[uint64]PlayerEntity
+	staticByEntityID       map[uint64]StaticEntity
+	staticByMapIndex       map[uint32]map[uint64]StaticEntity
 }
 
 func NewMapIndex(topology BootstrapTopology) *MapIndex {
@@ -26,6 +28,8 @@ func NewMapIndex(topology BootstrapTopology) *MapIndex {
 		byEntityID:             make(map[uint64]PlayerEntity),
 		effectiveMapByEntityID: make(map[uint64]uint32),
 		byMapIndex:             make(map[uint32]map[uint64]PlayerEntity),
+		staticByEntityID:       make(map[uint64]StaticEntity),
+		staticByMapIndex:       make(map[uint32]map[uint64]StaticEntity),
 	}
 }
 
@@ -152,4 +156,64 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 		return snapshots[i].MapIndex < snapshots[j].MapIndex
 	})
 	return snapshots
+}
+
+func (m *MapIndex) RegisterStatic(actor StaticEntity) bool {
+	if m == nil || !validStaticEntity(actor) {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.staticByEntityID[actor.Entity.ID]; ok {
+		return false
+	}
+	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
+	m.staticByEntityID[actor.Entity.ID] = actor
+	bucket := m.staticByMapIndex[mapIndex]
+	if bucket == nil {
+		bucket = make(map[uint64]StaticEntity)
+		m.staticByMapIndex[mapIndex] = bucket
+	}
+	bucket[actor.Entity.ID] = actor
+	return true
+}
+
+func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
+	if m == nil || entityID == 0 {
+		return StaticEntity{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	actor, ok := m.staticByEntityID[entityID]
+	if !ok {
+		return StaticEntity{}, false
+	}
+	delete(m.staticByEntityID, entityID)
+	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
+	if bucket := m.staticByMapIndex[mapIndex]; bucket != nil {
+		delete(bucket, entityID)
+		if len(bucket) == 0 {
+			delete(m.staticByMapIndex, mapIndex)
+		}
+	}
+	return actor, true
+}
+
+func (m *MapIndex) StaticActors(mapIndex uint32) []StaticEntity {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	effectiveMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: mapIndex})
+	bucket := m.staticByMapIndex[effectiveMapIndex]
+	if len(bucket) == 0 {
+		return nil
+	}
+	actors := make([]StaticEntity, 0, len(bucket))
+	for _, actor := range bucket {
+		actors = append(actors, actor)
+	}
+	sortStaticEntities(actors)
+	return actors
 }

@@ -7,11 +7,12 @@ import (
 )
 
 type EntityRegistry struct {
-	mu       sync.Mutex
-	nextID   uint64
-	topology BootstrapTopology
-	players  *PlayerDirectory
-	maps     *MapIndex
+	mu           sync.Mutex
+	nextID       uint64
+	topology     BootstrapTopology
+	players      *PlayerDirectory
+	staticActors *NonPlayerDirectory
+	maps         *MapIndex
 }
 
 func NewEntityRegistry() *EntityRegistry {
@@ -19,7 +20,7 @@ func NewEntityRegistry() *EntityRegistry {
 }
 
 func NewEntityRegistryWithTopology(topology BootstrapTopology) *EntityRegistry {
-	return &EntityRegistry{topology: topology, players: NewPlayerDirectory(), maps: NewMapIndex(topology)}
+	return &EntityRegistry{topology: topology, players: NewPlayerDirectory(), staticActors: NewNonPlayerDirectory(), maps: NewMapIndex(topology)}
 }
 
 func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerEntity {
@@ -38,6 +39,24 @@ func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerE
 		return PlayerEntity{}
 	}
 	return registered
+}
+
+func (r *EntityRegistry) RegisterStaticActor(actor StaticEntity) (StaticEntity, bool) {
+	if r == nil || r.staticActors == nil || r.maps == nil {
+		return StaticEntity{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nextID++
+	registered := newStaticEntity(r.nextID, actor)
+	if !r.staticActors.Register(registered) {
+		return StaticEntity{}, false
+	}
+	if !r.maps.RegisterStatic(registered) {
+		_, _ = r.staticActors.Remove(registered.Entity.ID)
+		return StaticEntity{}, false
+	}
+	return registered, true
 }
 
 func (r *EntityRegistry) Player(id uint64) (PlayerEntity, bool) {
@@ -65,6 +84,15 @@ func (r *EntityRegistry) PlayerByName(name string) (PlayerEntity, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.players.ByName(name)
+}
+
+func (r *EntityRegistry) StaticActor(id uint64) (StaticEntity, bool) {
+	if r == nil || id == 0 || r.staticActors == nil {
+		return StaticEntity{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.staticActors.ByEntityID(id)
 }
 
 func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character) bool {
@@ -137,6 +165,15 @@ func (r *EntityRegistry) MapOccupancy() []MapOccupancy {
 	return r.maps.Snapshot()
 }
 
+func (r *EntityRegistry) StaticActors(mapIndex uint32) []StaticEntity {
+	if r == nil || r.maps == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.maps.StaticActors(mapIndex)
+}
+
 func newPlayerEntity(id uint64, character loginticket.Character) PlayerEntity {
 	return PlayerEntity{
 		Entity: Entity{
@@ -146,5 +183,17 @@ func newPlayerEntity(id uint64, character loginticket.Character) PlayerEntity {
 			Name: character.Name,
 		},
 		Character: character,
+	}
+}
+
+func newStaticEntity(id uint64, actor StaticEntity) StaticEntity {
+	return StaticEntity{
+		Entity: Entity{
+			ID:   id,
+			Kind: EntityKindStaticActor,
+			Name: actor.Entity.Name,
+		},
+		Position: actor.Position,
+		RaceNum:  actor.RaceNum,
 	}
 }

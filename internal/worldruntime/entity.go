@@ -4,7 +4,10 @@ import "github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 
 type EntityKind string
 
-const EntityKindPlayer EntityKind = "player"
+const (
+	EntityKindPlayer      EntityKind = "player"
+	EntityKindStaticActor EntityKind = "static_actor"
+)
 
 type Entity struct {
 	ID   uint64
@@ -20,4 +23,10 @@ type PlayerEntity struct {
 
 func (p PlayerEntity) Position() Position {
 	return PositionFromCharacter(p.Character)
+}
+
+type StaticEntity struct {
+	Entity   Entity
+	Position Position
+	RaceNum  uint32
 }

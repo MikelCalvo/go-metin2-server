@@ -26,6 +26,7 @@ Current scope of the project:
 - Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players.
 - A dedicated `internal/worldruntime` visibility helper and first whole-map visibility-policy boundary for same-topology visible-peer computation, deterministic add/remove peer-set diffs, and explicit self-facing visibility transitions for enter/leave/relocate callers.
 - A first opt-in bootstrap AOI helper in `internal/worldruntime`: deterministic sector keys and a radius-based visibility policy now exist beside the default whole-map policy, without changing current default wire behavior yet.
+- A first non-player runtime scaffolding in `internal/worldruntime`: static actors can now be registered with owned entity identity and map presence, without claiming client-visible spawn/update behavior yet.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation.
@@ -143,7 +144,7 @@ Legend:
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, an opt-in bootstrap radius/sector helper now exists beside it, and topology now carries explicit helpers for selecting whole-map vs radius visibility policy, but there is still no production range-, sector-, or distance-based culling policy wired through the runtime by default. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer rebootstrap burst exist, but there is still no final end-to-end client/server warp/loading flow yet. |
-| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, reconnect/teardown and the first non-player runtime contract are now frozen in docs, but the implementation is still player-only and broader reconnect hardening, richer AOI, and non-player entity scaffolding are still ahead. |
+| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, reconnect/teardown and the first non-player runtime contract are now frozen in docs, the first static non-player actor scaffolding now owns entity identity plus map presence, but broader reconnect hardening, richer AOI, and real non-player gameplay behavior are still ahead. |
 
 ### Social, chat, and operator surfaces
 
