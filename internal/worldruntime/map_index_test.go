@@ -112,3 +112,31 @@ func TestMapIndexTracksStaticActorsByEffectiveMap(t *testing.T) {
 		t.Fatalf("expected only Blacksmith after guard removal, got %+v", actors)
 	}
 }
+
+func TestMapIndexSnapshotIncludesStaticActorsAndStaticOnlyMaps(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	if !index.Register(newPlayerEntity(1, entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))) {
+		t.Fatal("expected Alpha registration to succeed")
+	}
+	guard := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	snapshots := index.Snapshot()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 map snapshots including static-only map, got %d", len(snapshots))
+	}
+	if snapshots[0].MapIndex != 1 || len(snapshots[0].Characters) != 1 || snapshots[0].Characters[0].Name != "Alpha" {
+		t.Fatalf("unexpected player map snapshot: %+v", snapshots[0])
+	}
+	if len(snapshots[0].StaticActors) != 0 {
+		t.Fatalf("expected no static actors on player map snapshot, got %+v", snapshots[0].StaticActors)
+	}
+	if snapshots[1].MapIndex != 42 || len(snapshots[1].Characters) != 0 {
+		t.Fatalf("expected static-only map snapshot on 42, got %+v", snapshots[1])
+	}
+	if len(snapshots[1].StaticActors) != 1 || snapshots[1].StaticActors[0].Entity.ID != guard.Entity.ID || snapshots[1].StaticActors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected static actor in map 42 snapshot, got %+v", snapshots[1].StaticActors)
+	}
+}

@@ -724,10 +724,13 @@ func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapsh
 func buildMapOccupancySnapshots(topology worldruntime.BootstrapTopology, occupancies []worldruntime.MapOccupancy) []MapOccupancySnapshot {
 	snapshots := make([]MapOccupancySnapshot, 0, len(occupancies))
 	for _, occupancy := range occupancies {
+		staticActors := staticActorSnapshots(topology, occupancy.StaticActors)
 		snapshots = append(snapshots, MapOccupancySnapshot{
-			MapIndex:       occupancy.MapIndex,
-			CharacterCount: len(occupancy.Characters),
-			Characters:     connectedCharacterSnapshots(topology, occupancy.Characters),
+			MapIndex:         occupancy.MapIndex,
+			CharacterCount:   len(occupancy.Characters),
+			Characters:       connectedCharacterSnapshots(topology, occupancy.Characters),
+			StaticActorCount: len(occupancy.StaticActors),
+			StaticActors:     staticActors,
 		})
 	}
 	sortMapOccupancySnapshots(snapshots)

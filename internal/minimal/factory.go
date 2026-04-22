@@ -79,9 +79,11 @@ type CharacterVisibilitySnapshot struct {
 }
 
 type MapOccupancySnapshot struct {
-	MapIndex       uint32                       `json:"map_index"`
-	CharacterCount int                          `json:"character_count"`
-	Characters     []ConnectedCharacterSnapshot `json:"characters"`
+	MapIndex         uint32                       `json:"map_index"`
+	CharacterCount   int                          `json:"character_count"`
+	Characters       []ConnectedCharacterSnapshot `json:"characters"`
+	StaticActorCount int                          `json:"static_actor_count"`
+	StaticActors     []StaticActorSnapshot        `json:"static_actors"`
 }
 
 type StaticActorSnapshot struct {

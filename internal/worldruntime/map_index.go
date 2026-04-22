@@ -8,8 +8,9 @@ import (
 )
 
 type MapOccupancy struct {
-	MapIndex   uint32
-	Characters []loginticket.Character
+	MapIndex     uint32
+	Characters   []loginticket.Character
+	StaticActors []StaticEntity
 }
 
 type MapIndex struct {
@@ -143,14 +144,32 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	snapshots := make([]MapOccupancy, 0, len(m.byMapIndex))
-	for mapIndex, bucket := range m.byMapIndex {
-		characters := make([]loginticket.Character, 0, len(bucket))
-		for _, player := range bucket {
+	mapIndices := make(map[uint32]struct{}, len(m.byMapIndex)+len(m.staticByMapIndex))
+	for mapIndex := range m.byMapIndex {
+		mapIndices[mapIndex] = struct{}{}
+	}
+	for mapIndex := range m.staticByMapIndex {
+		mapIndices[mapIndex] = struct{}{}
+	}
+	if len(mapIndices) == 0 {
+		return nil
+	}
+
+	snapshots := make([]MapOccupancy, 0, len(mapIndices))
+	for mapIndex := range mapIndices {
+		characters := make([]loginticket.Character, 0, len(m.byMapIndex[mapIndex]))
+		for _, player := range m.byMapIndex[mapIndex] {
 			characters = append(characters, player.Character)
 		}
 		sortCharacters(characters)
-		snapshots = append(snapshots, MapOccupancy{MapIndex: mapIndex, Characters: characters})
+
+		actors := make([]StaticEntity, 0, len(m.staticByMapIndex[mapIndex]))
+		for _, actor := range m.staticByMapIndex[mapIndex] {
+			actors = append(actors, actor)
+		}
+		sortStaticEntities(actors)
+
+		snapshots = append(snapshots, MapOccupancy{MapIndex: mapIndex, Characters: characters, StaticActors: actors})
 	}
 	sort.Slice(snapshots, func(i int, j int) bool {
 		return snapshots[i].MapIndex < snapshots[j].MapIndex

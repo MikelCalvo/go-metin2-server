@@ -1855,6 +1855,38 @@ func TestGameRuntimeMapOccupancyReflectsDisconnectedCharacter(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeMapOccupancyIncludesStaticActorsOnStaticOnlyMaps(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	guard, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	blacksmith, ok := runtime.RegisterStaticActor("Blacksmith", 1, 1100, 2100, 20301)
+	if !ok {
+		t.Fatal("expected blacksmith registration to succeed")
+	}
+
+	snapshots := runtime.MapOccupancy()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 map occupancy snapshots for static-only maps, got %d", len(snapshots))
+	}
+	if snapshots[0].MapIndex != 1 || snapshots[0].CharacterCount != 0 || len(snapshots[0].Characters) != 0 {
+		t.Fatalf("unexpected bootstrap static-only map snapshot: %+v", snapshots[0])
+	}
+	if snapshots[0].StaticActorCount != 1 || len(snapshots[0].StaticActors) != 1 || snapshots[0].StaticActors[0].EntityID != blacksmith.EntityID || snapshots[0].StaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("expected Blacksmith in bootstrap static actor snapshot, got %+v", snapshots[0])
+	}
+	if snapshots[1].MapIndex != 42 || snapshots[1].CharacterCount != 0 || len(snapshots[1].Characters) != 0 {
+		t.Fatalf("unexpected destination static-only map snapshot: %+v", snapshots[1])
+	}
+	if snapshots[1].StaticActorCount != 1 || len(snapshots[1].StaticActors) != 1 || snapshots[1].StaticActors[0].EntityID != guard.EntityID || snapshots[1].StaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("expected VillageGuard in destination static actor snapshot, got %+v", snapshots[1])
+	}
+}
+
 func TestGameRuntimePreviewRelocationReturnsVisibilityAndMapChanges(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

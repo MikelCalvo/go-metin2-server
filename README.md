@@ -40,7 +40,7 @@ Current scope of the project:
 - A first documented bootstrap reconnect/teardown runtime contract: close/disconnect tears down session-directory hooks, entity ownership, and map occupancy idempotently, while reconnect rebuilds fresh live runtime state from persisted snapshots instead of stale in-memory ownership.
 - A loopback-only `gamed` runtime snapshot endpoint that lists currently connected bootstrap characters and their effective map/position state.
 - A loopback-only `gamed` runtime visibility endpoint that shows which currently connected bootstrap characters can see each other under the shared-world bootstrap rules.
-- A loopback-only `gamed` runtime map-occupancy endpoint that now consumes the owned `internal/worldruntime` map index instead of rebuilding occupancy from whole-world character scans.
+- A loopback-only `gamed` runtime map-occupancy endpoint that now consumes the owned `internal/worldruntime` map index instead of rebuilding occupancy from whole-world character scans, including bootstrap static actors alongside connected players.
 - Minimal local talking chat fanout so same-empire visible peers on the same bootstrap `MapIndex` receive queued `GC_CHAT` deliveries from other connected players.
 - Minimal whisper routing by exact character name across currently connected bootstrap sessions.
 - Topology-aware social scope queries in `internal/worldruntime` now own local talking, shout, guild, and exact-name whisper target selection instead of scattering those routing conditions across bootstrap shared-world fanout code.
@@ -144,7 +144,7 @@ Legend:
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, an opt-in bootstrap radius/sector helper now exists beside it, and topology now carries explicit helpers for selecting whole-map vs radius visibility policy, but there is still no production range-, sector-, or distance-based culling policy wired through the runtime by default. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer rebootstrap burst exist, but there is still no final end-to-end client/server warp/loading flow yet. |
-| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, reconnect/teardown and the first non-player runtime contract are now frozen in docs, the first static non-player actor scaffolding now owns entity identity plus map presence, and `gamed` now exposes a loopback-only operator seed/snapshot/remove path for those static actors, but broader reconnect hardening, richer AOI, and real non-player gameplay behavior are still ahead. |
+| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, reconnect/teardown and the first non-player runtime contract are now frozen in docs, the first static non-player actor scaffolding now owns entity identity plus map presence, `gamed` now exposes loopback-only operator seed/snapshot/remove paths for those static actors, and runtime map-occupancy snapshots now surface static actors on their effective maps, but broader reconnect hardening, richer AOI, and real non-player gameplay behavior are still ahead. |
 
 ### Social, chat, and operator surfaces
 
@@ -156,7 +156,7 @@ Legend:
 | Guild chat | [~] | Scoped by non-zero `GuildID`, but no guild lifecycle/roster system exists yet. |
 | Shout | [~] | Same-empire bootstrap fanout exists; no real world/channel topology behind it yet. |
 | System info / notice | [~] | `INFO` self-delivery, server-originated `NOTICE`, and local-only notice trigger exist. |
-| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/players`, `GET /local/visibility`, `GET /local/maps`, plus `GET`/`POST /local/static-actors` and `DELETE /local/static-actors/{entity_id}` for bootstrap non-player runtime seeding/introspection/removal, exist on `gamed`; broader admin/auth tooling does not. |
+| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/players`, `GET /local/visibility`, `GET /local/maps`, plus `GET`/`POST /local/static-actors` and `DELETE /local/static-actors/{entity_id}` for bootstrap non-player runtime seeding/introspection/removal, exist on `gamed`; `/local/maps` now reports static actors alongside connected players in each effective-map snapshot; broader admin/auth tooling does not. |
 
 ### Character systems and gameplay
 
@@ -191,7 +191,7 @@ Legend:
 | --- | --- | --- |
 | M0 — Protocol-owned boot path | [x] | Handshake, auth/login, selection, create/delete/select, enter-game, and first movement loop are stable. |
 | M1 — Shared-world pre-alpha | [~] | Players can see each other, move, chat, and receive notices with real map/channel boundaries. |
-| M2 — Entity/world runtime foundation | [~] | Live player runtime, the first generic entity registry, the first owned map index, and the first transport-only session directory now exist; shared-world transport routing and the first transfer rebootstrap burst now go through owned runtime boundaries, the reconnect/teardown contract is now frozen in docs, and `gamed` now exposes a first loopback-only static-actor seed/snapshot/remove path, while broader reconnect hardening, richer AOI, and non-player entities still need to replace the remaining bootstrap shortcuts. |
+| M2 — Entity/world runtime foundation | [~] | Live player runtime, the first generic entity registry, the first owned map index, and the first transport-only session directory now exist; shared-world transport routing and the first transfer rebootstrap burst now go through owned runtime boundaries, the reconnect/teardown contract is now frozen in docs, `gamed` now exposes a first loopback-only static-actor seed/snapshot/remove path, and owned map-occupancy snapshots now include static actors on their effective maps, while broader reconnect hardening, richer AOI, and non-player entities still need to replace the remaining bootstrap shortcuts. |
 | M3 — Character systems | [ ] | Inventory, equipment, item use, and character-state persistence exist in usable form. |
 | M4 — Combat vertical slice | [ ] | Targeting, attacks, damage, death, and respawn work for at least one minimal content path. |
 | M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime are available. |
