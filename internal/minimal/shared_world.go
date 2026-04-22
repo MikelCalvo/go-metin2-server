@@ -158,6 +158,13 @@ func registerSharedWorldSessionEntry(directory *worldruntime.SessionDirectory, e
 	return directory.Register(entityID, entry)
 }
 
+func (r *sharedWorldRegistry) scopesLocked() worldruntime.Scopes {
+	if r == nil {
+		return worldruntime.Scopes{}
+	}
+	return worldruntime.NewScopes(r.topology, r.entities)
+}
+
 func (r *sharedWorldRegistry) sessionEntryLocked(entityID uint64) (worldruntime.SessionEntry, bool) {
 	if r == nil || r.sessionDirectory == nil || entityID == 0 {
 		return worldruntime.SessionEntry{}, false
@@ -479,12 +486,8 @@ func (r *sharedWorldRegistry) EnqueueToVisibleSessions(originID uint64, origin l
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, peerCharacter := range r.snapshotCharactersLocked() {
-		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
-		if !ok || playerEntity.Entity.ID == originID || !r.topology.SharesVisibleWorld(origin, peerCharacter) {
-			continue
-		}
-		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
+	for _, target := range r.scopesLocked().VisibleTargets(originID, origin) {
+		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }
 
@@ -496,12 +499,8 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpire(originID uint64, or
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, peerCharacter := range r.snapshotCharactersLocked() {
-		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
-		if !ok || playerEntity.Entity.ID == originID || !r.topology.SharesShoutScope(origin, peerCharacter) {
-			continue
-		}
-		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
+	for _, target := range r.scopesLocked().ShoutTargets(originID, origin) {
+		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }
 
@@ -513,12 +512,8 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpireOnMap(originID uint6
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, peerCharacter := range r.snapshotCharactersLocked() {
-		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
-		if !ok || playerEntity.Entity.ID == originID || !r.topology.SharesTalkingChatScope(origin, peerCharacter) {
-			continue
-		}
-		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
+	for _, target := range r.scopesLocked().LocalTalkTargets(originID, origin) {
+		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }
 
@@ -530,12 +525,8 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInGuild(originID uint64, ori
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, peerCharacter := range r.snapshotCharactersLocked() {
-		playerEntity, ok := r.playerEntityForCharacterLocked(peerCharacter)
-		if !ok || playerEntity.Entity.ID == originID || !r.topology.SharesGuildChatScope(origin, peerCharacter) {
-			continue
-		}
-		r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
+	for _, target := range r.scopesLocked().GuildTargets(originID, origin) {
+		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }
 
@@ -547,7 +538,7 @@ func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byt
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	playerEntity, ok := r.playerEntityByName(name)
+	playerEntity, ok := r.scopesLocked().PlayerByExactName(name)
 	if !ok {
 		return false
 	}

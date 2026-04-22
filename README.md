@@ -42,6 +42,7 @@ Current scope of the project:
 - A loopback-only `gamed` runtime map-occupancy endpoint that now consumes the owned `internal/worldruntime` map index instead of rebuilding occupancy from whole-world character scans.
 - Minimal local talking chat fanout so same-empire visible peers on the same bootstrap `MapIndex` receive queued `GC_CHAT` deliveries from other connected players.
 - Minimal whisper routing by exact character name across currently connected bootstrap sessions.
+- Topology-aware social scope queries in `internal/worldruntime` now own local talking, shout, guild, and exact-name whisper target selection instead of scattering those routing conditions across bootstrap shared-world fanout code.
 - Minimal bootstrap `CHAT_TYPE_PARTY` fanout across the currently connected `GAME` sessions.
 - Minimal bootstrap `CHAT_TYPE_GUILD` fanout across connected `GAME` sessions that share the same non-zero `GuildID`.
 - Minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions in the same empire.
@@ -205,7 +206,7 @@ Legend:
 - `internal/login` — login-by-key flow and selection-surface transition
 - `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
 - `internal/player` — live player-runtime objects that separate selected-session world state from persisted bootstrap character snapshots
-- `internal/worldruntime` — bootstrap topology, visibility helpers, and the first generic entity/runtime seams (entity registry + player directory + map index + transport-only session directory, now used by the bootstrap shared-world transport fanout/routing path)
+- `internal/worldruntime` — bootstrap topology, visibility helpers, and the first generic entity/runtime seams (entity registry + player directory + map index + transport-only session directory, now used by the bootstrap shared-world transport fanout/routing path and topology-aware social scope queries)
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/ops` — health and pprof endpoints

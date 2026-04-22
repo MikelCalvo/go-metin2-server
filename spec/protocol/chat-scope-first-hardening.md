@@ -35,6 +35,20 @@ Because of that, this slice intentionally used the scope boundaries that already
 - unchanged in this slice
 - still uses the bootstrap implicit-party policy across connected `GAME` sessions
 
+## Current runtime ownership note
+
+The first hardening slice described above originally lived as ad hoc routing conditions inside `internal/minimal/shared_world.go`.
+The current bootstrap runtime now owns reusable scoped target queries in:
+- `internal/worldruntime/scopes.go`
+
+That helper is now the owned query boundary for:
+- local talking targets
+- shout targets
+- guild targets
+- exact-name whisper lookup
+
+The wire behavior is intentionally unchanged by that ownership move.
+
 ## Why this slice exists
 
 Legacy behavior is not a raw global broadcast for every actor chat type.
