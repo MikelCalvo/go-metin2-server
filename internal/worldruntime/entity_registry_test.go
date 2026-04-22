@@ -110,6 +110,53 @@ func TestEntityRegistryTracksPlayersByEffectiveMapIndex(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryRemoveClearsMapOccupancyWhenPlayerDirectoryEntryAlreadyMissing(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	removed, ok := registry.Remove(alpha.Entity.ID)
+	if !ok || removed.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected entity removal to still succeed after player-directory loss, got entity=%+v ok=%v", removed, ok)
+	}
+	if mapCharacters := registry.MapCharacters(42); len(mapCharacters) != 0 {
+		t.Fatalf("expected map occupancy to be cleared after tolerant remove, got %+v", mapCharacters)
+	}
+	if occupancy := registry.MapOccupancy(); len(occupancy) != 0 {
+		t.Fatalf("expected no map-occupancy snapshots after tolerant remove, got %+v", occupancy)
+	}
+}
+
+func TestEntityRegistryRemoveClearsPlayerLookupWhenMapIndexEntryAlreadyMissing(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.maps.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct map-index removal to simulate partial teardown")
+	}
+
+	removed, ok := registry.Remove(alpha.Entity.ID)
+	if !ok || removed.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected entity removal to still succeed after map-index loss, got entity=%+v ok=%v", removed, ok)
+	}
+	if _, ok := registry.Player(alpha.Entity.ID); ok {
+		t.Fatal("expected player lookup to be cleared after tolerant remove")
+	}
+	if _, ok := registry.PlayerByVID(alpha.Entity.VID); ok {
+		t.Fatal("expected player VID lookup to be cleared after tolerant remove")
+	}
+	if occupancy := registry.MapOccupancy(); len(occupancy) != 0 {
+		t.Fatalf("expected no map-occupancy snapshots after tolerant remove, got %+v", occupancy)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,
