@@ -94,14 +94,19 @@ func (r *EntityRegistry) Remove(id uint64) (PlayerEntity, bool) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	removed, ok := r.players.Remove(id)
+
+	removed, ok := r.players.ByEntityID(id)
+	if ok {
+		_, _ = r.players.Remove(id)
+		_, _ = r.maps.Remove(id)
+		return removed, true
+	}
+
+	removed, ok = r.maps.Remove(id)
 	if !ok {
 		return PlayerEntity{}, false
 	}
-	if _, ok := r.maps.Remove(id); !ok {
-		_ = r.players.Register(removed)
-		return PlayerEntity{}, false
-	}
+	_, _ = r.players.Remove(id)
 	return removed, true
 }
 
