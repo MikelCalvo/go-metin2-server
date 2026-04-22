@@ -19,7 +19,11 @@ The current runtime boundary is:
 The first AOI boundary is now a project-owned `VisibilityPolicy` owned by `internal/worldruntime`.
 
 The default implementation is `WholeMapVisibilityPolicy`.
-Under that current bootstrap policy, two players are mutually visible when:
+Bootstrap topology now also exposes explicit policy-selection helpers so callers can choose:
+- whole-map visibility via `WithWholeMapVisibilityPolicy()`
+- opt-in radius/sector bootstrap AOI via `WithRadiusVisibilityPolicy(radius, sectorSize)`
+
+Under the current default bootstrap policy, two players are mutually visible when:
 - they belong to the same local bootstrap channel
 - they share the same effective `MapIndex`
 

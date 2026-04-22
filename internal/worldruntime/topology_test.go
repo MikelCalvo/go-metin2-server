@@ -103,3 +103,21 @@ func TestBootstrapTopologyGuildChatScopeRequiresNonZeroSharedGuildID(t *testing.
 		t.Fatalf("did not expect zero-guild peer to share guild chat scope")
 	}
 }
+
+func TestBootstrapTopologyCanSelectRadiusVisibilityPolicy(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	policy, ok := topology.VisibilityPolicy().(RadiusVisibilityPolicy)
+	if !ok {
+		t.Fatalf("expected radius visibility policy, got %T", topology.VisibilityPolicy())
+	}
+	if policy.Radius != 400 || policy.SectorSize != 200 {
+		t.Fatalf("unexpected radius visibility policy config: %+v", policy)
+	}
+}
+
+func TestBootstrapTopologyCanSwitchBackToWholeMapVisibilityPolicy(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200).WithWholeMapVisibilityPolicy()
+	if _, ok := topology.VisibilityPolicy().(WholeMapVisibilityPolicy); !ok {
+		t.Fatalf("expected whole-map visibility policy after explicit reset, got %T", topology.VisibilityPolicy())
+	}
+}
