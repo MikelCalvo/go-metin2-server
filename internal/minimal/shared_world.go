@@ -250,6 +250,10 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 
 	currentCharacter, ok := r.playerCharacter(id)
 	if !ok {
+		if r.sessionDirectory != nil {
+			_, _ = r.sessionDirectory.Remove(id)
+		}
+		_, _ = r.entities.Remove(id)
 		return
 	}
 	currentCharacters := r.snapshotCharactersLocked()

@@ -78,6 +78,7 @@ The current owned responsibilities are:
 - register / replace / remove queued frame sinks and relocate callbacks by entity ID
 - let `internal/minimal/shared_world.go` route join/leave/transfer fanout and exact-session relocate lookups through a `worldruntime`-owned directory boundary
 - keep transport cleanup explicit on leave/close/reconnect without a bootstrap-local hook map
+- tolerate partial teardown by letting leave/close cleanup remove stale transport hooks even when another runtime index already lost the entity first
 
 This means the shared-world runtime no longer needs a separate session-hook table just to find queued frame sinks or relocate callbacks.
 

@@ -2101,6 +2101,98 @@ func TestSharedWorldRegistryTransferCharacterUsesSessionDirectoryRelocator(t *te
 	}
 }
 
+func TestGameRuntimeReconnectSameCharacterAfterDisconnectKeepsSingleRuntimeEntry(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	_ = flushServerFrames(t, flowOne)
+	_ = flushServerFrames(t, flowTwo)
+
+	closeSessionFlow(t, flowTwo)
+	peerExit := flushServerFrames(t, flowOne)
+	if len(peerExit) != 1 {
+		t.Fatalf("expected 1 queued peer-exit frame after disconnect, got %d", len(peerExit))
+	}
+
+	flowTwoReconnected, reenterFrames := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(reenterFrames) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for reconnected peer with existing visible peer, got %d", len(reenterFrames))
+	}
+	peerReentry := flushServerFrames(t, flowOne)
+	if len(peerReentry) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames after reconnect, got %d", len(peerReentry))
+	}
+	queuedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, peerReentry[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer re-entry add: %v", err)
+	}
+	if queuedAdd.VID != peerTwo.VID {
+		t.Fatalf("expected queued peer re-entry add for VID %#08x, got %#08x", peerTwo.VID, queuedAdd.VID)
+	}
+
+	snapshots := runtime.ConnectedCharacters()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected exactly 2 connected character snapshots after reconnect, got %d", len(snapshots))
+	}
+	if snapshots[0].Name != "PeerOne" || snapshots[1].Name != "PeerTwo" {
+		t.Fatalf("unexpected connected snapshots after reconnect: %+v", snapshots)
+	}
+	closeSessionFlow(t, flowTwoReconnected)
+}
+
+func TestSharedWorldRegistryLeaveRemovesSessionDirectoryEntryWhenEntityAlreadyMissing(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerID, _ := registry.Join(peer, newPendingServerFrames(), nil)
+	if peerID == 0 {
+		t.Fatal("expected join to register a shared-world entity")
+	}
+	if _, ok := registry.sessionDirectory.Lookup(peerID); !ok {
+		t.Fatal("expected session directory entry to exist before cleanup")
+	}
+	if _, ok := registry.entities.Remove(peerID); !ok {
+		t.Fatal("expected entity removal to succeed before stale cleanup test")
+	}
+
+	registry.Leave(peerID)
+	if _, ok := registry.sessionDirectory.Lookup(peerID); ok {
+		t.Fatal("expected leave to remove stale session-directory entry even when entity registry entry is already missing")
+	}
+}
+
+func TestSharedWorldRegistryLeaveIsIdempotentAfterCleanup(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerID, _ := registry.Join(peer, newPendingServerFrames(), nil)
+	if peerID == 0 {
+		t.Fatal("expected join to register a shared-world entity")
+	}
+
+	registry.Leave(peerID)
+	registry.Leave(peerID)
+
+	if _, ok := registry.sessionDirectory.Lookup(peerID); ok {
+		t.Fatal("expected session directory entry to stay removed after repeated leave")
+	}
+	if _, ok := registry.entities.Player(peerID); ok {
+		t.Fatal("expected entity registry entry to stay removed after repeated leave")
+	}
+	if snapshots := registry.MapOccupancy(); len(snapshots) != 0 {
+		t.Fatalf("expected repeated leave to keep map occupancy empty, got %+v", snapshots)
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 
