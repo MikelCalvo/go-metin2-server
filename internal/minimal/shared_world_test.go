@@ -2477,6 +2477,114 @@ func TestGameRuntimeRejectsConcurrentEnterGameForSameCharacter(t *testing.T) {
 	closeSessionFlow(t, flowTwo)
 }
 
+func TestGameRuntimeAllowsRetryEnterGameAfterRejectedDuplicateWhenLiveOwnerCloses(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher, got %d", len(watcherEnter))
+	}
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with watcher already visible, got %d", len(ownerEnter))
+	}
+	ownerEntry := flushServerFrames(t, flowWatcher)
+	if len(ownerEntry) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after owner join, got %d", len(ownerEntry))
+	}
+
+	flowRetry := factory()
+	_ = mustCompleteSecureHandshake(t, flowRetry)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "peer-one", LoginKey: 0x11111111})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	if _, err := flowRetry.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flowRetry.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flowRetry.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err == nil {
+		t.Fatal("expected first retry-session enter game to be rejected while original owner is still live")
+	} else if err != worldentry.ErrEnterGameRejected {
+		t.Fatalf("expected ErrEnterGameRejected, got %v", err)
+	}
+	phaseAware, ok := flowRetry.(interface{ CurrentPhase() session.Phase })
+	if !ok {
+		t.Fatal("expected retry session to expose current phase")
+	}
+	if phaseAware.CurrentPhase() != session.PhaseLoading {
+		t.Fatalf("expected retry session to remain in loading after rejection, got %q", phaseAware.CurrentPhase())
+	}
+
+	closeSessionFlow(t, flowOwner)
+	watcherExit := flushServerFrames(t, flowWatcher)
+	if len(watcherExit) != 1 {
+		t.Fatalf("expected 1 queued peer-exit frame for watcher after owner close, got %d", len(watcherExit))
+	}
+	removedOwner, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, watcherExit[0]))
+	if err != nil {
+		t.Fatalf("decode queued owner delete: %v", err)
+	}
+	if removedOwner.VID != peerOne.VID {
+		t.Fatalf("expected queued owner delete for VID %#08x, got %#08x", peerOne.VID, removedOwner.VID)
+	}
+
+	retryEnter, err := flowRetry.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame retry error after owner close: %v", err)
+	}
+	if len(retryEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames on retry after owner close, got %d", len(retryEnter))
+	}
+	if phaseAware.CurrentPhase() != session.PhaseGame {
+		t.Fatalf("expected retry session to reach game after owner close, got %q", phaseAware.CurrentPhase())
+	}
+	watcherReentry := flushServerFrames(t, flowWatcher)
+	if len(watcherReentry) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after retry join, got %d", len(watcherReentry))
+	}
+	queuedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, watcherReentry[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer re-entry add: %v", err)
+	}
+	if queuedAdd.VID != peerOne.VID {
+		t.Fatalf("expected queued peer re-entry add for VID %#08x, got %#08x", peerOne.VID, queuedAdd.VID)
+	}
+
+	snapshots := runtime.ConnectedCharacters()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected exactly 2 connected snapshots after retry join, got %+v", snapshots)
+	}
+	foundWatcher := false
+	foundPeerOne := false
+	for _, snapshot := range snapshots {
+		switch snapshot.Name {
+		case "Watcher":
+			foundWatcher = true
+		case "PeerOne":
+			foundPeerOne = true
+		}
+	}
+	if !foundWatcher || !foundPeerOne {
+		t.Fatalf("expected connected snapshots for watcher and retried owner, got %+v", snapshots)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowRetry)
+}
+
 func TestGameRuntimeEnterGameReclaimsStaleOwnershipWhenSessionDirectoryEntryIsMissing(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

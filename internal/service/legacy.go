@@ -13,6 +13,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
+	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 )
 
 type SessionFlow interface {
@@ -166,6 +167,24 @@ func serveLegacyConn(ctx context.Context, conn net.Conn, logger *slog.Logger, fl
 				phaseBefore, hadPhaseBefore := currentSessionPhase(flow)
 				out, handleErr := flow.HandleClientFrame(incoming)
 				if handleErr != nil {
+					if isRetryableSessionFlowError(handleErr) {
+						phaseAfter, hadPhaseAfter := currentSessionPhase(flow)
+						if hadPhaseAfter {
+							if !hasPhase || phaseAfter != lastPhase {
+								if logger != nil {
+									logger.Info("legacy session phase changed", "remote_addr", remoteAddr, "from_phase", lastPhase, "to_phase", phaseAfter)
+								}
+								lastPhase = phaseAfter
+								hasPhase = true
+							}
+						}
+						if hasSecureFlow && crossedSecureLegacyBoundary(hadPhaseBefore, phaseBefore, hadPhaseAfter, phaseAfter) {
+							if idx < len(frames)-1 || decoder.BufferedLen() > 0 {
+								return ErrPipelinedPlaintextAfterSecureHandshake
+							}
+						}
+						continue
+					}
 					return handleErr
 				}
 
@@ -247,6 +266,10 @@ func currentSessionPhase(flow SessionFlow) (session.Phase, bool) {
 		return "", false
 	}
 	return phaseAware.CurrentPhase(), true
+}
+
+func isRetryableSessionFlowError(err error) bool {
+	return errors.Is(err, worldentry.ErrEnterGameRejected)
 }
 
 func crossedSecureLegacyBoundary(hadBefore bool, before session.Phase, hadAfter bool, after session.Phase) bool {

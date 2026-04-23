@@ -320,6 +320,56 @@ func TestHandleClientFrameKeepsLoadingWhenEnterGameIsRejected(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAllowsRetryAfterEnterGameRejection(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseLoading)
+	addRaw := worldproto.EncodeCharacterAdd(sampleCharacterAdd())
+	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(sampleCharacterAdditionalInfo())
+	if err != nil {
+		t.Fatalf("encode additional info: %v", err)
+	}
+	attempts := 0
+	flow := NewFlow(machine, Config{
+		EnterGame: func() EnterGameResult {
+			attempts++
+			if attempts == 1 {
+				return EnterGameResult{Rejected: true}
+			}
+			return EnterGameResult{BootstrapFrames: [][]byte{addRaw, infoRaw}}
+		},
+	})
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); !errors.Is(err, ErrEnterGameRejected) {
+		t.Fatalf("expected first attempt to return ErrEnterGameRejected, got %v", err)
+	}
+	if machine.Current() != session.PhaseLoading {
+		t.Fatalf("expected phase %q after rejected enter game, got %q", session.PhaseLoading, machine.Current())
+	}
+
+	secondOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame retry error: %v", err)
+	}
+	wantPhase, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected phase encode error: %v", err)
+	}
+	want := [][]byte{wantPhase, addRaw, infoRaw}
+	if len(secondOut) != len(want) {
+		t.Fatalf("expected %d outgoing frames on retry, got %d", len(want), len(secondOut))
+	}
+	for i := range want {
+		if !bytes.Equal(secondOut[i], want[i]) {
+			t.Fatalf("unexpected outgoing frame %d on retry: got %x want %x", i, secondOut[i], want[i])
+		}
+	}
+	if attempts != 2 {
+		t.Fatalf("expected 2 entergame attempts, got %d", attempts)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q after successful retry, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsClientVersionInLoadingAndKeepsThePhase(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseLoading)
 	flow := NewFlow(machine, Config{})
