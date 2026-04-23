@@ -303,6 +303,23 @@ func TestHandleClientFrameReturnsBootstrapBurstThenTrailingFramesAfterEnterGame(
 	}
 }
 
+func TestHandleClientFrameKeepsLoadingWhenEnterGameIsRejected(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseLoading)
+	flow := NewFlow(machine, Config{
+		EnterGame: func() EnterGameResult {
+			return EnterGameResult{Rejected: true}
+		},
+	})
+
+	_, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if !errors.Is(err, ErrEnterGameRejected) {
+		t.Fatalf("expected ErrEnterGameRejected, got %v", err)
+	}
+	if machine.Current() != session.PhaseLoading {
+		t.Fatalf("expected phase %q after rejected enter game, got %q", session.PhaseLoading, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsClientVersionInLoadingAndKeepsThePhase(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseLoading)
 	flow := NewFlow(machine, Config{})

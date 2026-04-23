@@ -468,15 +468,15 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 
 					selectedPlayer, ok := currentSelectedPlayer()
 					if !ok {
-						return worldentry.EnterGameResult{}
+						return worldentry.EnterGameResult{Rejected: true}
 					}
 					selected := selectedPlayer.LiveCharacter()
 					if selected.ID == 0 {
-						return worldentry.EnterGameResult{}
+						return worldentry.EnterGameResult{Rejected: true}
 					}
 					bootstrapFrames, err := worldentry.BuildBootstrapFrames(selected)
 					if err != nil {
-						return worldentry.EnterGameResult{}
+						return worldentry.EnterGameResult{Rejected: true}
 					}
 					var trailingFrames [][]byte
 					if !joinedSharedWorld {
@@ -488,6 +488,9 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 							return preview, ok
 						})
 						joinedSharedWorld = sharedWorldID != 0
+						if !joinedSharedWorld {
+							return worldentry.EnterGameResult{Rejected: true}
+						}
 						for _, peer := range existingPeers {
 							trailingFrames = append(trailingFrames, encodePeerVisibilityFrames(peer)...)
 						}

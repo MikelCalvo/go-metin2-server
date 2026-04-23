@@ -14,6 +14,8 @@ import (
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
+	"github.com/MikelCalvo/go-metin2-server/internal/session"
+	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 )
 
 func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *testing.T) {
@@ -2318,6 +2320,60 @@ func TestGameRuntimeReconnectSameCharacterAfterDisconnectKeepsSingleRuntimeEntry
 		t.Fatalf("unexpected connected snapshots after reconnect: %+v", snapshots)
 	}
 	closeSessionFlow(t, flowTwoReconnected)
+}
+
+func TestGameRuntimeRejectsConcurrentEnterGameForSameCharacter(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, firstEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(firstEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for first player, got %d", len(firstEnter))
+	}
+
+	flowTwo := factory()
+	_ = mustCompleteSecureHandshake(t, flowTwo)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "peer-one", LoginKey: 0x11111111})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	if _, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err == nil {
+		t.Fatal("expected concurrent enter game for the same character to be rejected")
+	} else if err != worldentry.ErrEnterGameRejected {
+		t.Fatalf("expected ErrEnterGameRejected, got %v", err)
+	}
+
+	phaseAware, ok := flowTwo.(interface{ CurrentPhase() session.Phase })
+	if !ok {
+		t.Fatal("expected queued flow to expose current phase")
+	}
+	if phaseAware.CurrentPhase() != session.PhaseLoading {
+		t.Fatalf("expected rejected second session to remain in loading, got %q", phaseAware.CurrentPhase())
+	}
+
+	snapshots := runtime.ConnectedCharacters()
+	if len(snapshots) != 1 || snapshots[0].Name != "PeerOne" {
+		t.Fatalf("expected only the original live runtime entry after rejected duplicate enter game, got %+v", snapshots)
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected original session to receive no extra queued frames after rejected duplicate enter game, got %d", len(queued))
+	}
+
+	closeSessionFlow(t, flowOne)
+	closeSessionFlow(t, flowTwo)
 }
 
 func TestSharedWorldRegistryLeaveRemovesSessionDirectoryEntryWhenEntityAlreadyMissing(t *testing.T) {

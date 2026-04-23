@@ -78,6 +78,7 @@ The project now owns these reconnect rules:
 3. the runtime must end up with one live connected entry for that character, not duplicates from the previous session
 4. if visible peers are still online, reconnect replays the normal self bootstrap plus trailing peer visibility frames for the new session
 5. visible peers receive one re-entry visibility burst for the reconnected player, not a duplicate retained actor from the old session
+6. if a second fresh session reaches `ENTERGAME` for the same selected character while the original live owner is still registered, the bootstrap runtime now rejects that `ENTERGAME` instead of allowing a ghost `GAME` session with no shared-world ownership
 
 This is the current bootstrap ownership contract for correctness.
 It does **not** yet claim resumable gameplay state, preserved socket identity, or any special reconnect shortcut.

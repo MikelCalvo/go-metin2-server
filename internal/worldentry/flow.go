@@ -16,6 +16,7 @@ var (
 	ErrUnexpectedClientPacket  = errors.New("unexpected client packet during world entry")
 	ErrCharacterSelectRejected = errors.New("character select rejected")
 	ErrEmpireSelectRejected    = errors.New("empire select rejected")
+	ErrEnterGameRejected       = errors.New("enter game rejected")
 )
 
 type EmpireSelectFunc func(empire uint8) EmpireResult
@@ -60,6 +61,7 @@ type Result struct {
 }
 
 type EnterGameResult struct {
+	Rejected        bool
 	BootstrapFrames [][]byte
 	TrailingFrames  [][]byte
 }
@@ -188,10 +190,13 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			if err != nil {
 				return nil, err
 			}
+			result := f.enterGame()
+			if result.Rejected {
+				return nil, ErrEnterGameRejected
+			}
 			if err := f.machine.Transition(session.PhaseGame); err != nil {
 				return nil, err
 			}
-			result := f.enterGame()
 			out := make([][]byte, 0, 1+len(result.BootstrapFrames)+len(result.TrailingFrames))
 			out = append(out, phaseGame)
 			out = append(out, result.BootstrapFrames...)
