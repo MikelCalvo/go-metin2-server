@@ -34,6 +34,7 @@ When a connected bootstrap session closes today, the project-owned runtime contr
 
 The cleanup path is intentionally tolerant of partial teardown ordering.
 If another runtime index already lost the entity first, the remaining cleanup still has to remove stale transport hooks instead of leaving them behind.
+When the shared-world runtime still has a last-known snapshot for that entity, close/leave also has to emit the final peer-facing `CHARACTER_DEL` instead of silently dropping visible teardown.
 
 ## Session-directory ownership during teardown
 

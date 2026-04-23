@@ -27,10 +27,11 @@ type pendingServerFrames struct {
 }
 
 type sharedWorldRegistry struct {
-	mu               sync.Mutex
-	topology         worldruntime.BootstrapTopology
-	entities         *worldruntime.EntityRegistry
-	sessionDirectory *worldruntime.SessionDirectory
+	mu                  sync.Mutex
+	topology            worldruntime.BootstrapTopology
+	entities            *worldruntime.EntityRegistry
+	sessionDirectory    *worldruntime.SessionDirectory
+	lastKnownCharacters map[uint64]loginticket.Character
 }
 
 func newQueuedSessionFlow(inner service.SessionFlow, pending *pendingServerFrames, onClose func()) *queuedSessionFlow {
@@ -128,9 +129,10 @@ func newSharedWorldRegistry() *sharedWorldRegistry {
 
 func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology) *sharedWorldRegistry {
 	return &sharedWorldRegistry{
-		topology:         topology,
-		entities:         worldruntime.NewEntityRegistryWithTopology(topology),
-		sessionDirectory: worldruntime.NewSessionDirectory(),
+		topology:            topology,
+		entities:            worldruntime.NewEntityRegistryWithTopology(topology),
+		sessionDirectory:    worldruntime.NewSessionDirectory(),
+		lastKnownCharacters: make(map[uint64]loginticket.Character),
 	}
 }
 
@@ -260,17 +262,17 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 	for _, entityID := range entityIDs {
 		currentCharacter, ok := r.playerCharacter(entityID)
 		if !ok {
-			if r.sessionDirectory != nil {
-				_, _ = r.sessionDirectory.Remove(entityID)
-			}
-			_, _ = r.entities.Remove(entityID)
-			continue
+			currentCharacter, ok = r.lastKnownCharacters[entityID]
 		}
-		visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
 		if r.sessionDirectory != nil {
 			_, _ = r.sessionDirectory.Remove(entityID)
 		}
 		_, _ = r.entities.Remove(entityID)
+		delete(r.lastKnownCharacters, entityID)
+		if !ok {
+			continue
+		}
+		visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
 		removeRaw := encodeCharacterDeleteFrame(currentCharacter)
 		for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
 			r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
@@ -298,7 +300,9 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 		return 0, nil
 	}
 	id := registered.Entity.ID
+	r.lastKnownCharacters[id] = character
 	if !registerSharedWorldSessionEntry(r.sessionDirectory, id, pending, relocate) {
+		delete(r.lastKnownCharacters, id)
 		_, _ = r.entities.Remove(id)
 		return 0, nil
 	}
@@ -320,18 +324,18 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 
 	currentCharacter, ok := r.playerCharacter(id)
 	if !ok {
-		if r.sessionDirectory != nil {
-			_, _ = r.sessionDirectory.Remove(id)
-		}
-		_, _ = r.entities.Remove(id)
-		return
+		currentCharacter, ok = r.lastKnownCharacters[id]
 	}
-	visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
 	if r.sessionDirectory != nil {
 		_, _ = r.sessionDirectory.Remove(id)
 	}
 	_, _ = r.entities.Remove(id)
+	delete(r.lastKnownCharacters, id)
+	if !ok {
+		return
+	}
 
+	visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
 	removeRaw := encodeCharacterDeleteFrame(currentCharacter)
 	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
 		r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
@@ -347,6 +351,7 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 	defer r.mu.Unlock()
 
 	_ = r.entities.UpdatePlayer(id, character)
+	r.lastKnownCharacters[id] = character
 }
 
 func (r *sharedWorldRegistry) Relocate(id uint64, character loginticket.Character) bool {
@@ -411,6 +416,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	}
 
 	_ = r.entities.UpdatePlayer(id, character)
+	r.lastKnownCharacters[id] = character
 
 	movedDelete := encodeCharacterDeleteFrame(previous)
 	movedFrames := encodePeerVisibilityFrames(character)

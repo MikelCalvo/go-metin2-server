@@ -2756,6 +2756,96 @@ func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestination
 	closeSessionFlow(t, flowRetry)
 }
 
+func TestGameRuntimeCloseAfterTransferEmitsPeerDeleteWhenEntityRegistryEntryAlreadyMissing(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	watcherOld := peerVisibilityCharacter("WatcherOld", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	watcherNew := peerVisibilityCharacter("WatcherNew", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	watcherNew.MapIndex = 42
+	issuePeerTicket(t, store, "watcher-old", 0x10101010, watcherOld)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "watcher-new", 0x33333333, watcherNew)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcherOld, oldEnter := enterGameWithLoginTicket(t, factory, "watcher-old", 0x10101010)
+	if len(oldEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for old-map watcher, got %d", len(oldEnter))
+	}
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with old-map watcher visible, got %d", len(ownerEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcherOld); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for old-map watcher after owner join, got %d", len(queued))
+	}
+	flowWatcherNew, newEnter := enterGameWithLoginTicket(t, factory, "watcher-new", 0x33333333)
+	if len(newEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for destination-map watcher before owner transfer, got %d", len(newEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcherNew); len(queued) != 0 {
+		t.Fatalf("expected no queued frames for destination-map watcher before owner transfer, got %d", len(queued))
+	}
+
+	transferOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected owner transfer move error: %v", err)
+	}
+	if len(transferOut) != 8 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames for owner, got %d", len(transferOut))
+	}
+	oldTransferExit := flushServerFrames(t, flowWatcherOld)
+	if len(oldTransferExit) != 1 {
+		t.Fatalf("expected 1 old-map delete frame after owner transfer, got %d", len(oldTransferExit))
+	}
+	newTransferEntry := flushServerFrames(t, flowWatcherNew)
+	if len(newTransferEntry) != 3 {
+		t.Fatalf("expected 3 destination-map entry frames after owner transfer, got %d", len(newTransferEntry))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName("PeerOne")
+	if !ok {
+		t.Fatal("expected live player entity for PeerOne before simulating partial teardown")
+	}
+	if _, ok := runtime.sharedWorld.entities.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected entity removal to succeed before close hardening test")
+	}
+
+	closeSessionFlow(t, flowOwner)
+
+	newCloseExit := flushServerFrames(t, flowWatcherNew)
+	if len(newCloseExit) != 1 {
+		t.Fatalf("expected 1 destination-map delete frame after close with entity already missing, got %d", len(newCloseExit))
+	}
+	removedOwner, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, newCloseExit[0]))
+	if err != nil {
+		t.Fatalf("decode destination-map delete after partial teardown close: %v", err)
+	}
+	if removedOwner.VID != peerOne.VID {
+		t.Fatalf("expected destination-map delete for VID %#08x, got %#08x", peerOne.VID, removedOwner.VID)
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Lookup(ownerEntity.Entity.ID); ok {
+		t.Fatal("expected close to remove stale session-directory entry after partial teardown")
+	}
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 2 {
+		t.Fatalf("expected only watchers to remain connected after partial teardown close, got %+v", snapshots)
+	}
+
+	closeSessionFlow(t, flowWatcherOld)
+	closeSessionFlow(t, flowWatcherNew)
+}
+
 func TestGameRuntimeEnterGameReclaimsStaleOwnershipWhenSessionDirectoryEntryIsMissing(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
