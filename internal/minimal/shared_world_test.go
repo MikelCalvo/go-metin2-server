@@ -2685,6 +2685,89 @@ func TestGameRuntimeAllowsRetryEnterGameAfterRejectedDuplicateWhenLiveOwnerClose
 	closeSessionFlow(t, flowRetry)
 }
 
+func TestGameRuntimeEnterGameReclaimPreventsStaleSessionMoveFanout(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher, got %d", len(watcherEnter))
+	}
+	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerOldEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for original owner with watcher already visible, got %d", len(ownerOldEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after original owner join, got %d", len(queued))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName("PeerOne")
+	if !ok {
+		t.Fatal("expected live player entity for PeerOne before simulating stale ownership")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale session-directory entry removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerNewEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for replacement owner after reclaim, got %d", len(ownerNewEnter))
+	}
+	_ = flushServerFrames(t, flowWatcher)
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to start with no queued frames, got %d", len(queued))
+	}
+
+	beforeSnapshots := runtime.ConnectedCharacters()
+	if len(beforeSnapshots) != 2 {
+		t.Fatalf("expected watcher and replacement owner connected before stale move, got %+v", beforeSnapshots)
+	}
+
+	moveOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1400, Y: 2400, Time: 0x31323334})))
+	if err != nil {
+		t.Fatalf("unexpected stale owner move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected stale owner to receive exactly 1 self move ack frame, got %d", len(moveOut))
+	}
+	selfAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode stale owner self move ack: %v", err)
+	}
+	if selfAck.VID != peerOne.VID || selfAck.X != 1400 || selfAck.Y != 2400 || selfAck.Time != 0x31323334 {
+		t.Fatalf("unexpected stale owner self move ack: %+v", selfAck)
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected watcher to receive no move replication from stale owner after reclaim, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale owner move, got %d", len(queued))
+	}
+
+	afterSnapshots := runtime.ConnectedCharacters()
+	if len(afterSnapshots) != 2 {
+		t.Fatalf("expected watcher and replacement owner to remain the only connected snapshots after stale move, got %+v", afterSnapshots)
+	}
+	for _, snapshot := range afterSnapshots {
+		if snapshot.Name == "PeerOne" && (snapshot.X != 1100 || snapshot.Y != 2100) {
+			t.Fatalf("expected replacement owner snapshot to stay unchanged after stale move, got %+v", snapshot)
+		}
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
 func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestinationSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

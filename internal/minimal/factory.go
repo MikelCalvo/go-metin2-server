@@ -325,6 +325,9 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 			selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: selectedIndex})
 			return selectedPlayer, true
 		}
+		ownsLiveSharedWorldSession := func() bool {
+			return joinedSharedWorld && sharedWorldID != 0 && sharedWorld.HasLiveSession(sharedWorldID)
+		}
 		applySelectedCharacterTransfer := func(mapIndex uint32, x int32, y int32, rebootstrap bool) (RelocationPreview, [][]byte, bool) {
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok || !joinedSharedWorld || sharedWorldID == 0 {
@@ -544,11 +547,14 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if selected.ID == 0 {
 						return gameflow.Result{Accepted: false}
 					}
-					if trigger, ok := findBootstrapTransferTrigger(transferTriggers, selected, packet.X, packet.Y); ok {
-						if _, transferFrames, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY, true); !ok {
-							return gameflow.Result{Accepted: false}
-						} else {
-							return gameflow.Result{Accepted: true, Frames: transferFrames}
+					liveSharedWorld := ownsLiveSharedWorldSession()
+					if liveSharedWorld {
+						if trigger, ok := findBootstrapTransferTrigger(transferTriggers, selected, packet.X, packet.Y); ok {
+							if _, transferFrames, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY, true); !ok {
+								return gameflow.Result{Accepted: false}
+							} else {
+								return gameflow.Result{Accepted: true, Frames: transferFrames}
+							}
 						}
 					}
 
@@ -559,11 +565,11 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					sessionTicket.Characters = updatedCharacters
 					selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
 					selected = selectedPlayer.LiveCharacter()
-					if joinedSharedWorld {
+					if liveSharedWorld {
 						sharedWorld.UpdateCharacter(sharedWorldID, selected)
 					}
 					ack := ticketMoveAckPacket(selected, packet)
-					if joinedSharedWorld {
+					if liveSharedWorld {
 						sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{movep.EncodeMoveAck(ack)})
 					}
 					return gameflow.Result{Accepted: true, Replication: ack}
@@ -580,15 +586,18 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if selected.ID == 0 {
 						return gameflow.SyncPositionResult{Accepted: false}
 					}
+					liveSharedWorld := ownsLiveSharedWorldSession()
 					for _, element := range packet.Elements {
 						if element.VID != selected.VID {
 							continue
 						}
-						if trigger, ok := findBootstrapTransferTrigger(transferTriggers, selected, element.X, element.Y); ok {
-							if _, transferFrames, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY, true); !ok {
-								return gameflow.SyncPositionResult{Accepted: false}
-							} else {
-								return gameflow.SyncPositionResult{Accepted: true, Frames: transferFrames}
+						if liveSharedWorld {
+							if trigger, ok := findBootstrapTransferTrigger(transferTriggers, selected, element.X, element.Y); ok {
+								if _, transferFrames, ok := applySelectedCharacterTransfer(trigger.TargetMapIndex, trigger.TargetX, trigger.TargetY, true); !ok {
+									return gameflow.SyncPositionResult{Accepted: false}
+								} else {
+									return gameflow.SyncPositionResult{Accepted: true, Frames: transferFrames}
+								}
 							}
 						}
 						updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, element.X, element.Y)
@@ -598,11 +607,11 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						sessionTicket.Characters = updatedCharacters
 						selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
 						selected = selectedPlayer.LiveCharacter()
-						if joinedSharedWorld {
+						if liveSharedWorld {
 							sharedWorld.UpdateCharacter(sharedWorldID, selected)
 						}
 						ack := ticketSyncPositionAckPacket(selected)
-						if joinedSharedWorld {
+						if liveSharedWorld {
 							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{movep.EncodeSyncPositionAck(ack)})
 						}
 						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ack}
@@ -621,16 +630,17 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if selected.ID == 0 || packet.Message == "" {
 						return gameflow.ChatResult{Accepted: false}
 					}
+					liveSharedWorld := ownsLiveSharedWorldSession()
 					switch packet.Type {
 					case chatproto.ChatTypeTalking:
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
-						if joinedSharedWorld {
+						if liveSharedWorld {
 							sharedWorld.EnqueueToOtherSessionsInEmpireOnMap(sharedWorldID, selected, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
 						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 					case chatproto.ChatTypeParty:
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
-						if joinedSharedWorld {
+						if liveSharedWorld {
 							sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
 						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
@@ -639,13 +649,13 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 							return gameflow.ChatResult{Accepted: false}
 						}
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
-						if joinedSharedWorld {
+						if liveSharedWorld {
 							sharedWorld.EnqueueToOtherSessionsInGuild(sharedWorldID, selected, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
 						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
 					case chatproto.ChatTypeShout:
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
-						if joinedSharedWorld {
+						if liveSharedWorld {
 							sharedWorld.EnqueueToOtherSessionsInEmpire(sharedWorldID, selected, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
 						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
@@ -671,7 +681,7 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						return gameflow.WhisperResult{Accepted: true}
 					}
 					delivery := ticketWhisperDeliveryPacket(selected, packet)
-					if joinedSharedWorld && sharedWorld.EnqueueToCharacterName(packet.Target, [][]byte{chatproto.EncodeServerWhisper(delivery)}) {
+					if ownsLiveSharedWorldSession() && sharedWorld.EnqueueToCharacterName(packet.Target, [][]byte{chatproto.EncodeServerWhisper(delivery)}) {
 						return gameflow.WhisperResult{Accepted: true}
 					}
 					notFound := ticketWhisperNotExistPacket(packet.Target)

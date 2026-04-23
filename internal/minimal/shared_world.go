@@ -174,6 +174,21 @@ func (r *sharedWorldRegistry) sessionEntryLocked(entityID uint64) (worldruntime.
 	return r.sessionDirectory.Lookup(entityID)
 }
 
+func (r *sharedWorldRegistry) HasLiveSession(entityID uint64) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(entityID); !ok {
+		return false
+	}
+	_, ok := r.playerCharacter(entityID)
+	return ok
+}
+
 func (r *sharedWorldRegistry) playerEntityForCharacterLocked(character loginticket.Character) (worldruntime.PlayerEntity, bool) {
 	if r == nil || r.entities == nil || character.VID == 0 {
 		return worldruntime.PlayerEntity{}, false
