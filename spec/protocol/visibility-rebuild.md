@@ -12,6 +12,7 @@ It does not yet own packet emission, sector membership, or generic entity runtim
 
 The current runtime boundary is:
 - `internal/worldruntime/visibility.go`
+- `internal/worldruntime/scopes.go`
 - backed by `internal/worldruntime/topology.go`
 
 ## Current visibility rule
@@ -71,6 +72,9 @@ This is enough for the bootstrap runtime to describe:
 - leave behavior
 - relocate behavior
 - reconnect/preview visibility changes
+
+`internal/worldruntime/scopes.go` now owns the runtime-facing enter/leave/relocate visibility-diff composition for bootstrap callers.
+`internal/minimal` still owns packet emission and transport fanout, but it no longer rebuilds those visibility transitions ad hoc before join/leave/transfer side effects.
 
 ## Why this slice exists
 

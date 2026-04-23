@@ -106,6 +106,22 @@ func (s Scopes) ConnectedTargets() []PlayerEntity {
 	})
 }
 
+func (s Scopes) EnterVisibilityDiff(subject loginticket.Character) VisibilityDiff {
+	return BuildVisibilityDiff(nil, s.visiblePeers(subject))
+}
+
+func (s Scopes) LeaveVisibilityDiff(subject loginticket.Character) VisibilityDiff {
+	return BuildVisibilityDiff(s.visiblePeers(subject), nil)
+}
+
+func (s Scopes) RelocateVisibilityDiff(current, target loginticket.Character) VisibilityDiff {
+	currentCharacters, targetCharacters := s.relocatedCharacters(current, target)
+	return BuildVisibilityDiff(
+		VisiblePeers(s.Topology, current, currentCharacters, current.VID),
+		VisiblePeers(s.Topology, target, targetCharacters, target.VID),
+	)
+}
+
 func (s Scopes) ConnectedCharacterSnapshots() []ConnectedCharacterSnapshot {
 	targets := s.ConnectedTargets()
 	snapshots := make([]ConnectedCharacterSnapshot, 0, len(targets))
@@ -163,16 +179,7 @@ func (s Scopes) BuildRelocationPreview(current, target loginticket.Character, ap
 	if s.Entities == nil {
 		return RelocationPreview{Applied: applied, Character: connectedCharacterSnapshot(s.Topology, current), Target: connectedCharacterSnapshot(s.Topology, target)}
 	}
-	currentCharacters := s.Entities.PlayerCharacters()
-	afterCharacters := append([]loginticket.Character(nil), currentCharacters...)
-	for i := range afterCharacters {
-		if afterCharacters[i].VID != current.VID {
-			continue
-		}
-		afterCharacters[i] = target
-		break
-	}
-	visibilityDiff := RelocateVisibilityDiff(s.Topology, current, currentCharacters, target, afterCharacters)
+	visibilityDiff := s.RelocateVisibilityDiff(current, target)
 	beforeOccupancy := s.MapOccupancySnapshots()
 	afterOccupancy := relocateMapOccupancySnapshots(beforeOccupancy, s.Topology, current, target)
 	return RelocationPreview{
@@ -187,6 +194,29 @@ func (s Scopes) BuildRelocationPreview(current, target loginticket.Character, ap
 		BeforeMapOccupancy:  beforeOccupancy,
 		AfterMapOccupancy:   afterOccupancy,
 	}
+}
+
+func (s Scopes) visiblePeers(subject loginticket.Character) []loginticket.Character {
+	if s.Entities == nil {
+		return nil
+	}
+	return VisiblePeers(s.Topology, subject, s.Entities.PlayerCharacters(), subject.VID)
+}
+
+func (s Scopes) relocatedCharacters(current, target loginticket.Character) ([]loginticket.Character, []loginticket.Character) {
+	if s.Entities == nil {
+		return nil, nil
+	}
+	currentCharacters := s.Entities.PlayerCharacters()
+	targetCharacters := append([]loginticket.Character(nil), currentCharacters...)
+	for i := range targetCharacters {
+		if targetCharacters[i].VID != current.VID {
+			continue
+		}
+		targetCharacters[i] = target
+		break
+	}
+	return currentCharacters, targetCharacters
 }
 
 func (s Scopes) filterTargets(originID uint64, origin loginticket.Character, predicate func(loginticket.Character, loginticket.Character) bool) []PlayerEntity {

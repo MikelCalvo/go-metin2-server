@@ -228,8 +228,7 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	currentCharacters := r.snapshotCharactersLocked()
-	visibilityDiff := worldruntime.EnterVisibilityDiff(r.topology, character, currentCharacters)
+	visibilityDiff := r.scopesLocked().EnterVisibilityDiff(character)
 	registered := r.entities.RegisterPlayer(character)
 	if registered.Entity.ID == 0 {
 		return 0, nil
@@ -263,8 +262,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 		_, _ = r.entities.Remove(id)
 		return
 	}
-	currentCharacters := r.snapshotCharactersLocked()
-	visibilityDiff := worldruntime.LeaveVisibilityDiff(r.topology, currentCharacter, currentCharacters)
+	visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
 	if r.sessionDirectory != nil {
 		_, _ = r.sessionDirectory.Remove(id)
 	}
@@ -339,17 +337,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	if !ok {
 		return RelocationPreview{}, nil, false
 	}
-	currentCharacters := r.snapshotCharactersLocked()
-
-	afterCharacters := append([]loginticket.Character(nil), currentCharacters...)
-	for i := range afterCharacters {
-		if afterCharacters[i].VID != previous.VID {
-			continue
-		}
-		afterCharacters[i] = character
-		break
-	}
-	visibilityDiff := worldruntime.RelocateVisibilityDiff(r.topology, previous, currentCharacters, character, afterCharacters)
+	visibilityDiff := r.scopesLocked().RelocateVisibilityDiff(previous, character)
 	result := r.scopesLocked().BuildRelocationPreview(previous, character, true)
 
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)

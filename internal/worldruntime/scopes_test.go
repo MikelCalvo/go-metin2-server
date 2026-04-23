@@ -167,6 +167,81 @@ func TestScopesVisibilitySnapshotsFollowConfiguredPolicyAndOrder(t *testing.T) {
 	}
 }
 
+func TestScopesEnterVisibilityDiffUsesConfiguredPolicyAndRegistrySnapshot(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	nearPeer := entityRegistryCharacter("NearPeer", 0x02040101, 42, 1900, 2900)
+	registry.RegisterPlayer(nearPeer)
+	registry.RegisterPlayer(entityRegistryCharacter("FarPeer", 0x02040102, 42, 2600, 3800))
+
+	subject := entityRegistryCharacter("Subject", 0x02040103, 42, 1700, 2800)
+	diff := NewScopes(topology, registry).EnterVisibilityDiff(subject)
+	if len(diff.CurrentVisiblePeers) != 0 {
+		t.Fatalf("expected no current visible peers before enter, got %+v", diff.CurrentVisiblePeers)
+	}
+	if len(diff.TargetVisiblePeers) != 1 || diff.TargetVisiblePeers[0].Name != "NearPeer" {
+		t.Fatalf("expected target visible peers [NearPeer], got %+v", diff.TargetVisiblePeers)
+	}
+	if len(diff.AddedVisiblePeers) != 1 || diff.AddedVisiblePeers[0].Name != "NearPeer" {
+		t.Fatalf("expected added visible peers [NearPeer], got %+v", diff.AddedVisiblePeers)
+	}
+	if len(diff.RemovedVisiblePeers) != 0 {
+		t.Fatalf("expected no removed visible peers on enter, got %+v", diff.RemovedVisiblePeers)
+	}
+}
+
+func TestScopesLeaveVisibilityDiffUsesConfiguredPolicyAndRegistrySnapshot(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	subjectCharacter := entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800)
+	subject := registry.RegisterPlayer(subjectCharacter)
+	nearPeer := entityRegistryCharacter("NearPeer", 0x02040102, 42, 1900, 2900)
+	registry.RegisterPlayer(nearPeer)
+	registry.RegisterPlayer(entityRegistryCharacter("FarPeer", 0x02040103, 42, 2600, 3800))
+
+	diff := NewScopes(topology, registry).LeaveVisibilityDiff(subject.Character)
+	if len(diff.CurrentVisiblePeers) != 1 || diff.CurrentVisiblePeers[0].Name != "NearPeer" {
+		t.Fatalf("expected current visible peers [NearPeer], got %+v", diff.CurrentVisiblePeers)
+	}
+	if len(diff.TargetVisiblePeers) != 0 {
+		t.Fatalf("expected no target visible peers after leave, got %+v", diff.TargetVisiblePeers)
+	}
+	if len(diff.RemovedVisiblePeers) != 1 || diff.RemovedVisiblePeers[0].Name != "NearPeer" {
+		t.Fatalf("expected removed visible peers [NearPeer], got %+v", diff.RemovedVisiblePeers)
+	}
+	if len(diff.AddedVisiblePeers) != 0 {
+		t.Fatalf("expected no added visible peers on leave, got %+v", diff.AddedVisiblePeers)
+	}
+}
+
+func TestScopesRelocateVisibilityDiffUsesConfiguredPolicyAndRegistrySnapshot(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	subjectCharacter := entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800)
+	registry.RegisterPlayer(subjectCharacter)
+	registry.RegisterPlayer(entityRegistryCharacter("OriginPeer", 0x02040102, 42, 1900, 2900))
+	registry.RegisterPlayer(entityRegistryCharacter("FarPeer", 0x02040103, 42, 2600, 3800))
+	registry.RegisterPlayer(entityRegistryCharacter("DestinationPeer", 0x02040104, 42, 5200, 5100))
+
+	target := subjectCharacter
+	target.X = 5000
+	target.Y = 5000
+
+	diff := NewScopes(topology, registry).RelocateVisibilityDiff(subjectCharacter, target)
+	if len(diff.CurrentVisiblePeers) != 1 || diff.CurrentVisiblePeers[0].Name != "OriginPeer" {
+		t.Fatalf("expected current visible peers [OriginPeer], got %+v", diff.CurrentVisiblePeers)
+	}
+	if len(diff.TargetVisiblePeers) != 1 || diff.TargetVisiblePeers[0].Name != "DestinationPeer" {
+		t.Fatalf("expected target visible peers [DestinationPeer], got %+v", diff.TargetVisiblePeers)
+	}
+	if len(diff.RemovedVisiblePeers) != 1 || diff.RemovedVisiblePeers[0].Name != "OriginPeer" {
+		t.Fatalf("expected removed visible peers [OriginPeer], got %+v", diff.RemovedVisiblePeers)
+	}
+	if len(diff.AddedVisiblePeers) != 1 || diff.AddedVisiblePeers[0].Name != "DestinationPeer" {
+		t.Fatalf("expected added visible peers [DestinationPeer], got %+v", diff.AddedVisiblePeers)
+	}
+}
+
 func TestScopesMapOccupancySnapshotsIncludeStaticOnlyMapsAndDeterministicOrder(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)
