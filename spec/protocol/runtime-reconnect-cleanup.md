@@ -46,6 +46,7 @@ The runtime currently owns these guarantees:
 - stale session-directory entries are removed on normal leave/close
 - stale session-directory entries are still removed when the entity registry entry is already gone first
 - repeated leave/close does not recreate or retain transport hooks
+- if a transport hook is already missing but a stale player entity still remains, a fresh `ENTERGAME` for that same selected character reclaims the stale runtime ownership instead of leaving the new session permanently rejected
 
 This keeps shared-world delivery and transfer lookup from targeting dead sessions.
 

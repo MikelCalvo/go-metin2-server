@@ -2196,6 +2196,48 @@ func TestSharedWorldRegistryLeaveUsesSessionDirectoryFrameSink(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryJoinReclaimsStaleEntityWhenSessionDirectoryEntryIsMissing(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	stalePending := newPendingServerFrames()
+
+	staleID, visiblePeers := registry.Join(peer, stalePending, nil)
+	if staleID == 0 {
+		t.Fatal("expected first join to register a shared-world entity")
+	}
+	if len(visiblePeers) != 0 {
+		t.Fatalf("expected first join to have no visible peers, got %+v", visiblePeers)
+	}
+	if _, ok := registry.sessionDirectory.Remove(staleID); !ok {
+		t.Fatal("expected stale session-directory entry removal to succeed")
+	}
+
+	replacementPending := newPendingServerFrames()
+	replacementID, visiblePeers := registry.Join(peer, replacementPending, nil)
+	if replacementID == 0 {
+		t.Fatal("expected second join to reclaim stale ownership and register a shared-world entity")
+	}
+	if replacementID == staleID {
+		t.Fatalf("expected reclaimed join to allocate a fresh entity ID, got stale=%d replacement=%d", staleID, replacementID)
+	}
+	if len(visiblePeers) != 0 {
+		t.Fatalf("expected reclaimed join to have no visible peers, got %+v", visiblePeers)
+	}
+	if _, ok := registry.entities.Player(staleID); ok {
+		t.Fatal("expected stale entity to be removed before reclaimed join succeeds")
+	}
+	if _, ok := registry.sessionDirectory.Lookup(staleID); ok {
+		t.Fatal("expected stale session-directory entry to stay removed after reclaimed join")
+	}
+	if _, ok := registry.sessionDirectory.Lookup(replacementID); !ok {
+		t.Fatal("expected replacement session-directory entry after reclaimed join")
+	}
+	snapshots := registry.ConnectedCharacters()
+	if len(snapshots) != 1 || snapshots[0].Name != peer.Name {
+		t.Fatalf("expected exactly one connected snapshot after reclaimed join, got %+v", snapshots)
+	}
+}
+
 func TestSharedWorldRegistryTransferUsesSessionDirectoryFrameSink(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -2370,6 +2412,52 @@ func TestGameRuntimeRejectsConcurrentEnterGameForSameCharacter(t *testing.T) {
 	}
 	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
 		t.Fatalf("expected original session to receive no extra queued frames after rejected duplicate enter game, got %d", len(queued))
+	}
+
+	closeSessionFlow(t, flowOne)
+	closeSessionFlow(t, flowTwo)
+}
+
+func TestGameRuntimeEnterGameReclaimsStaleOwnershipWhenSessionDirectoryEntryIsMissing(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, firstEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(firstEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for first player, got %d", len(firstEnter))
+	}
+	staleEntity, ok := runtime.sharedWorld.entities.PlayerByName("PeerOne")
+	if !ok {
+		t.Fatal("expected live player entity for PeerOne before simulating stale ownership")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(staleEntity.Entity.ID); !ok {
+		t.Fatal("expected stale session-directory entry removal to succeed")
+	}
+
+	flowTwo, secondEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(secondEnter) != 5 {
+		t.Fatalf("expected reclaimed enter game to return 5 bootstrap frames, got %d", len(secondEnter))
+	}
+	replacementEntity, ok := runtime.sharedWorld.entities.PlayerByName("PeerOne")
+	if !ok {
+		t.Fatal("expected replacement live player entity after reclaimed enter game")
+	}
+	if replacementEntity.Entity.ID == staleEntity.Entity.ID {
+		t.Fatalf("expected reclaimed enter game to replace stale entity ID %d, got same ID", staleEntity.Entity.ID)
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Lookup(replacementEntity.Entity.ID); !ok {
+		t.Fatal("expected replacement session-directory entry after reclaimed enter game")
+	}
+	snapshots := runtime.ConnectedCharacters()
+	if len(snapshots) != 1 || snapshots[0].Name != "PeerOne" {
+		t.Fatalf("expected exactly one connected snapshot after reclaimed enter game, got %+v", snapshots)
 	}
 
 	closeSessionFlow(t, flowOne)

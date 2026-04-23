@@ -220,6 +220,51 @@ func invokeSessionRelocator(entry worldruntime.SessionEntry, mapIndex uint32, x 
 	return preview, true
 }
 
+func (r *sharedWorldRegistry) reclaimableStaleDuplicateIDsLocked(character loginticket.Character) ([]uint64, bool) {
+	if r == nil || r.entities == nil {
+		return nil, false
+	}
+
+	candidateIDs := make(map[uint64]struct{}, 2)
+	if character.VID != 0 {
+		if playerEntity, ok := r.entities.PlayerByVID(character.VID); ok {
+			candidateIDs[playerEntity.Entity.ID] = struct{}{}
+		}
+	}
+	if character.Name != "" {
+		if playerEntity, ok := r.entities.PlayerByName(character.Name); ok {
+			candidateIDs[playerEntity.Entity.ID] = struct{}{}
+		}
+	}
+	if len(candidateIDs) == 0 {
+		return nil, false
+	}
+
+	staleIDs := make([]uint64, 0, len(candidateIDs))
+	for entityID := range candidateIDs {
+		if _, ok := r.sessionEntryLocked(entityID); ok {
+			return nil, true
+		}
+		staleIDs = append(staleIDs, entityID)
+	}
+	sort.Slice(staleIDs, func(i int, j int) bool {
+		return staleIDs[i] < staleIDs[j]
+	})
+	return staleIDs, false
+}
+
+func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
+	if r == nil || len(entityIDs) == 0 {
+		return
+	}
+	for _, entityID := range entityIDs {
+		if r.sessionDirectory != nil {
+			_, _ = r.sessionDirectory.Remove(entityID)
+		}
+		_, _ = r.entities.Remove(entityID)
+	}
+}
+
 func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pendingServerFrames, relocate sharedWorldSessionRelocator) (uint64, []loginticket.Character) {
 	if r == nil {
 		return 0, nil
@@ -227,6 +272,12 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	staleIDs, liveConflict := r.reclaimableStaleDuplicateIDsLocked(character)
+	if liveConflict {
+		return 0, nil
+	}
+	r.removeStaleOwnershipLocked(staleIDs)
 
 	visibilityDiff := r.scopesLocked().EnterVisibilityDiff(character)
 	registered := r.entities.RegisterPlayer(character)
