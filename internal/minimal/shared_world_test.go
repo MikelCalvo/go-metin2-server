@@ -2585,6 +2585,177 @@ func TestGameRuntimeAllowsRetryEnterGameAfterRejectedDuplicateWhenLiveOwnerClose
 	closeSessionFlow(t, flowRetry)
 }
 
+func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestinationSnapshot(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcherOld := peerVisibilityCharacter("WatcherOld", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	watcherNew := peerVisibilityCharacter("WatcherNew", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	watcherNew.MapIndex = 42
+	issuePeerTicket(t, store, "watcher-old", 0x10101010, watcherOld)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "watcher-new", 0x33333333, watcherNew)
+	for _, account := range []accountstore.Account{
+		{Login: "watcher-old", Empire: watcherOld.Empire, Characters: []loginticket.Character{watcherOld}},
+		{Login: "peer-one", Empire: peerOne.Empire, Characters: []loginticket.Character{peerOne}},
+		{Login: "watcher-new", Empire: watcherNew.Empire, Characters: []loginticket.Character{watcherNew}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcherOld, oldEnter := enterGameWithLoginTicket(t, factory, "watcher-old", 0x10101010)
+	if len(oldEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for old-map watcher, got %d", len(oldEnter))
+	}
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with old-map watcher visible, got %d", len(ownerEnter))
+	}
+	oldOwnerEntry := flushServerFrames(t, flowWatcherOld)
+	if len(oldOwnerEntry) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for old-map watcher after owner join, got %d", len(oldOwnerEntry))
+	}
+	flowWatcherNew, newEnter := enterGameWithLoginTicket(t, factory, "watcher-new", 0x33333333)
+	if len(newEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for destination-map watcher before owner transfer, got %d", len(newEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcherNew); len(queued) != 0 {
+		t.Fatalf("expected no queued frames for destination-map watcher before owner transfer, got %d", len(queued))
+	}
+
+	flowRetry := factory()
+	_ = mustCompleteSecureHandshake(t, flowRetry)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "peer-one", LoginKey: 0x11111111})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	if _, err := flowRetry.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected retry login error: %v", err)
+	}
+	if _, err := flowRetry.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0}))); err != nil {
+		t.Fatalf("unexpected retry character select error: %v", err)
+	}
+	if _, err := flowRetry.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err == nil {
+		t.Fatal("expected waiting retry session to be rejected while original owner is still live")
+	} else if err != worldentry.ErrEnterGameRejected {
+		t.Fatalf("expected ErrEnterGameRejected, got %v", err)
+	}
+	phaseAware, ok := flowRetry.(interface{ CurrentPhase() session.Phase })
+	if !ok {
+		t.Fatal("expected retry session to expose current phase")
+	}
+	if phaseAware.CurrentPhase() != session.PhaseLoading {
+		t.Fatalf("expected retry session to remain in loading after duplicate rejection, got %q", phaseAware.CurrentPhase())
+	}
+
+	transferOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected owner transfer move error: %v", err)
+	}
+	if len(transferOut) != 8 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames for owner, got %d", len(transferOut))
+	}
+	oldTransferExit := flushServerFrames(t, flowWatcherOld)
+	if len(oldTransferExit) != 1 {
+		t.Fatalf("expected 1 old-map delete frame after owner transfer, got %d", len(oldTransferExit))
+	}
+	newTransferEntry := flushServerFrames(t, flowWatcherNew)
+	if len(newTransferEntry) != 3 {
+		t.Fatalf("expected 3 destination-map entry frames after owner transfer, got %d", len(newTransferEntry))
+	}
+
+	closeSessionFlow(t, flowOwner)
+	if queued := flushServerFrames(t, flowWatcherOld); len(queued) != 0 {
+		t.Fatalf("expected no old-map frames after transferred owner closes, got %d", len(queued))
+	}
+	newCloseExit := flushServerFrames(t, flowWatcherNew)
+	if len(newCloseExit) != 1 {
+		t.Fatalf("expected 1 destination-map delete frame after transferred owner closes, got %d", len(newCloseExit))
+	}
+
+	retryEnter, err := flowRetry.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame retry error after transfer-then-close: %v", err)
+	}
+	if len(retryEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames on retry after transfer-then-close, got %d", len(retryEnter))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, retryEnter[1]))
+	if err != nil {
+		t.Fatalf("decode retry self add after transfer-then-close: %v", err)
+	}
+	if selfAdd.VID != peerOne.VID || selfAdd.X != 1700 || selfAdd.Y != 2800 {
+		t.Fatalf("expected retry self add to use persisted destination snapshot, got %+v", selfAdd)
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, retryEnter[5]))
+	if err != nil {
+		t.Fatalf("decode retry trailing peer add after transfer-then-close: %v", err)
+	}
+	if peerAdd.VID != watcherNew.VID {
+		t.Fatalf("expected retry trailing peer add for destination watcher VID %#08x, got %#08x", watcherNew.VID, peerAdd.VID)
+	}
+	if phaseAware.CurrentPhase() != session.PhaseGame {
+		t.Fatalf("expected retry session to reach game after transfer-then-close, got %q", phaseAware.CurrentPhase())
+	}
+	if queued := flushServerFrames(t, flowWatcherOld); len(queued) != 0 {
+		t.Fatalf("expected no old-map re-entry frames after retry from persisted destination, got %d", len(queued))
+	}
+	newRetryEntry := flushServerFrames(t, flowWatcherNew)
+	if len(newRetryEntry) != 3 {
+		t.Fatalf("expected 3 destination-map re-entry frames after retry, got %d", len(newRetryEntry))
+	}
+	queuedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, newRetryEntry[0]))
+	if err != nil {
+		t.Fatalf("decode destination-map re-entry add after retry: %v", err)
+	}
+	if queuedAdd.VID != peerOne.VID || queuedAdd.X != 1700 || queuedAdd.Y != 2800 {
+		t.Fatalf("expected destination-map re-entry add at persisted location, got %+v", queuedAdd)
+	}
+
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account after transfer-then-close: %v", err)
+	}
+	if len(persisted.Characters) != 1 || persisted.Characters[0].MapIndex != 42 || persisted.Characters[0].X != 1700 || persisted.Characters[0].Y != 2800 {
+		t.Fatalf("expected persisted account snapshot at destination after transfer-then-close, got %+v", persisted)
+	}
+	snapshots := runtime.ConnectedCharacters()
+	if len(snapshots) != 3 {
+		t.Fatalf("expected exactly 3 connected snapshots after retry from persisted destination, got %+v", snapshots)
+	}
+	foundOwnerAtDestination := false
+	for _, snapshot := range snapshots {
+		if snapshot.Name == "PeerOne" {
+			if snapshot.MapIndex != 42 || snapshot.X != 1700 || snapshot.Y != 2800 {
+				t.Fatalf("expected retried owner snapshot at destination, got %+v", snapshot)
+			}
+			foundOwnerAtDestination = true
+		}
+	}
+	if !foundOwnerAtDestination {
+		t.Fatalf("expected connected snapshots to include retried owner at destination, got %+v", snapshots)
+	}
+
+	closeSessionFlow(t, flowWatcherOld)
+	closeSessionFlow(t, flowWatcherNew)
+	closeSessionFlow(t, flowRetry)
+}
+
 func TestGameRuntimeEnterGameReclaimsStaleOwnershipWhenSessionDirectoryEntryIsMissing(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

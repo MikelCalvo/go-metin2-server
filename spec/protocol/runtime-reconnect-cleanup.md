@@ -95,6 +95,7 @@ For that sequence, the owned contract is:
 2. a later close tears down only the live runtime/session ownership for that moved session
 3. reconnect must rebuild from the persisted destination snapshot, not from stale pre-transfer live state
 4. stale relocate callbacks or frame sinks from the old moved session must not survive the close
+5. if another duplicate-live session had already selected that character and was left waiting in `LOADING`, a later retry on that same socket must refresh from the persisted destination snapshot before entering `GAME`, rather than reusing the stale pre-transfer selection snapshot cached before the transfer committed
 
 This keeps transfer ownership and reconnect ownership compatible without introducing a separate session-resume system.
 

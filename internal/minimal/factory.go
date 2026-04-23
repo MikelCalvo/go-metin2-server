@@ -278,8 +278,41 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 		pending := newPendingServerFrames()
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
+		refreshSelectedPlayerFromAccountSnapshot := func() bool {
+			if accounts == nil {
+				return true
+			}
+			if !hasTicket || !hasSelected {
+				return false
+			}
+			account, ok := loadOrCreateAccount(accounts, sessionTicket.Login)
+			if !ok {
+				selectedPlayer = nil
+				return false
+			}
+			sessionTicket.Empire = account.Empire
+			sessionTicket.Characters = cloneCharacters(account.Characters)
+			if int(selectedIndex) >= len(sessionTicket.Characters) {
+				selectedPlayer = nil
+				return false
+			}
+			selected := sessionTicket.Characters[selectedIndex]
+			if selected.ID == 0 {
+				selectedPlayer = nil
+				return false
+			}
+			if selectedPlayer == nil {
+				selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: selectedIndex})
+			} else {
+				selectedPlayer.ApplyPersistedSnapshot(selected)
+			}
+			return true
+		}
 		currentSelectedPlayer := func() (*player.Runtime, bool) {
 			if !hasTicket || !hasSelected || int(selectedIndex) >= len(sessionTicket.Characters) {
+				return nil, false
+			}
+			if !joinedSharedWorld && !refreshSelectedPlayerFromAccountSnapshot() {
 				return nil, false
 			}
 			if selectedPlayer != nil {
