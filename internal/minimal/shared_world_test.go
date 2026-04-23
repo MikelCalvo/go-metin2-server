@@ -2238,6 +2238,65 @@ func TestSharedWorldRegistryJoinReclaimsStaleEntityWhenSessionDirectoryEntryIsMi
 	}
 }
 
+func TestSharedWorldRegistryJoinReclaimsStaleVisiblePeerWithDeleteThenReentry(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerOnePending := newPendingServerFrames()
+
+	peerOneID, visiblePeers := registry.Join(peerOne, peerOnePending, nil)
+	if peerOneID == 0 {
+		t.Fatal("expected first join to register a shared-world entity")
+	}
+	if len(visiblePeers) != 0 {
+		t.Fatalf("expected first join to have no visible peers, got %+v", visiblePeers)
+	}
+	staleID, visiblePeers := registry.Join(peerTwo, newPendingServerFrames(), nil)
+	if staleID == 0 {
+		t.Fatal("expected second join to register a stale shared-world entity")
+	}
+	if len(visiblePeers) != 1 || visiblePeers[0].VID != peerOne.VID {
+		t.Fatalf("expected stale join to see peer one, got %+v", visiblePeers)
+	}
+	if frames := peerOnePending.flush(); len(frames) != 3 {
+		t.Fatalf("expected initial stale peer entry frames, got %d", len(frames))
+	}
+	if _, ok := registry.sessionDirectory.Remove(staleID); !ok {
+		t.Fatal("expected stale session-directory entry removal to succeed")
+	}
+
+	replacementPending := newPendingServerFrames()
+	replacementID, visiblePeers := registry.Join(peerTwo, replacementPending, nil)
+	if replacementID == 0 {
+		t.Fatal("expected reclaimed join to register a replacement entity")
+	}
+	if len(visiblePeers) != 1 || visiblePeers[0].VID != peerOne.VID {
+		t.Fatalf("expected reclaimed join to still see peer one, got %+v", visiblePeers)
+	}
+	queued := peerOnePending.flush()
+	if len(queued) != 4 {
+		t.Fatalf("expected stale delete plus fresh reentry frames for visible peer, got %d", len(queued))
+	}
+	removed, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode reclaimed stale delete: %v", err)
+	}
+	if removed.VID != peerTwo.VID {
+		t.Fatalf("expected stale delete for VID %#08x, got %#08x", peerTwo.VID, removed.VID)
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode reclaimed peer add: %v", err)
+	}
+	if added.VID != peerTwo.VID {
+		t.Fatalf("expected fresh reentry add for VID %#08x, got %#08x", peerTwo.VID, added.VID)
+	}
+	if _, ok := registry.sessionDirectory.Lookup(replacementID); !ok {
+		t.Fatal("expected replacement session-directory entry after reclaimed reentry")
+	}
+	_ = replacementPending
+}
+
 func TestSharedWorldRegistryTransferUsesSessionDirectoryFrameSink(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

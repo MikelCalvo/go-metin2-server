@@ -258,10 +258,23 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 		return
 	}
 	for _, entityID := range entityIDs {
+		currentCharacter, ok := r.playerCharacter(entityID)
+		if !ok {
+			if r.sessionDirectory != nil {
+				_, _ = r.sessionDirectory.Remove(entityID)
+			}
+			_, _ = r.entities.Remove(entityID)
+			continue
+		}
+		visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
 		if r.sessionDirectory != nil {
 			_, _ = r.sessionDirectory.Remove(entityID)
 		}
 		_, _ = r.entities.Remove(entityID)
+		removeRaw := encodeCharacterDeleteFrame(currentCharacter)
+		for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+			r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
+		}
 	}
 }
 
