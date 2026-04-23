@@ -2238,6 +2238,41 @@ func TestSharedWorldRegistryJoinReclaimsStaleEntityWhenSessionDirectoryEntryIsMi
 	}
 }
 
+func TestSharedWorldRegistryJoinRejectsDuplicateWhenOnlySessionDirectoryEntrySurvives(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	originalPending := newPendingServerFrames()
+
+	staleID, visiblePeers := registry.Join(peer, originalPending, nil)
+	if staleID == 0 {
+		t.Fatal("expected first join to register a shared-world entity")
+	}
+	if len(visiblePeers) != 0 {
+		t.Fatalf("expected first join to have no visible peers, got %+v", visiblePeers)
+	}
+	if _, ok := registry.sessionDirectory.Lookup(staleID); !ok {
+		t.Fatal("expected session-directory entry to exist before partial teardown simulation")
+	}
+	if _, ok := registry.entities.Remove(staleID); !ok {
+		t.Fatal("expected entity removal to succeed before duplicate join attempt")
+	}
+
+	replacementPending := newPendingServerFrames()
+	replacementID, visiblePeers := registry.Join(peer, replacementPending, nil)
+	if replacementID != 0 {
+		t.Fatalf("expected duplicate join to be rejected while stale session-directory entry still exists, got replacementID=%d visiblePeers=%+v", replacementID, visiblePeers)
+	}
+	if _, ok := registry.sessionDirectory.Lookup(staleID); !ok {
+		t.Fatal("expected stale session-directory entry to remain the blocking live-conflict signal")
+	}
+	if snapshots := registry.ConnectedCharacters(); len(snapshots) != 0 {
+		t.Fatalf("expected no connected snapshots after entity-only teardown with blocked duplicate join, got %+v", snapshots)
+	}
+	if frames := replacementPending.flush(); len(frames) != 0 {
+		t.Fatalf("expected no replacement frames when duplicate join is rejected, got %d", len(frames))
+	}
+}
+
 func TestSharedWorldRegistryJoinReclaimsStaleVisiblePeerWithDeleteThenReentry(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -2421,6 +2456,71 @@ func TestGameRuntimeReconnectSameCharacterAfterDisconnectKeepsSingleRuntimeEntry
 		t.Fatalf("unexpected connected snapshots after reconnect: %+v", snapshots)
 	}
 	closeSessionFlow(t, flowTwoReconnected)
+}
+
+func TestGameRuntimeRejectsDuplicateEnterGameWhenOnlySessionDirectoryEntrySurvives(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, firstEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(firstEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for first player, got %d", len(firstEnter))
+	}
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName("PeerOne")
+	if !ok {
+		t.Fatal("expected live player entity for PeerOne before simulating entity-only teardown")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Lookup(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected session-directory entry for live owner before simulating entity-only teardown")
+	}
+	if _, ok := runtime.sharedWorld.entities.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected entity removal to succeed before duplicate enter-game attempt")
+	}
+
+	flowTwo := factory()
+	_ = mustCompleteSecureHandshake(t, flowTwo)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "peer-one", LoginKey: 0x11111111})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	if _, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err == nil {
+		t.Fatal("expected duplicate enter game to be rejected while stale session-directory entry still exists")
+	} else if err != worldentry.ErrEnterGameRejected {
+		t.Fatalf("expected ErrEnterGameRejected, got %v", err)
+	}
+
+	phaseAware, ok := flowTwo.(interface{ CurrentPhase() session.Phase })
+	if !ok {
+		t.Fatal("expected queued flow to expose current phase")
+	}
+	if phaseAware.CurrentPhase() != session.PhaseLoading {
+		t.Fatalf("expected rejected second session to remain in loading, got %q", phaseAware.CurrentPhase())
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Lookup(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale session-directory entry to keep blocking duplicate enter-game")
+	}
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 0 {
+		t.Fatalf("expected no connected snapshots while only stale session-directory hook remains, got %+v", snapshots)
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected original session to receive no extra queued frames after rejected duplicate enter game, got %d", len(queued))
+	}
+
+	closeSessionFlow(t, flowOne)
+	closeSessionFlow(t, flowTwo)
 }
 
 func TestGameRuntimeRejectsConcurrentEnterGameForSameCharacter(t *testing.T) {

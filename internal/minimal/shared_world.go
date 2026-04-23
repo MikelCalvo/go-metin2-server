@@ -238,6 +238,15 @@ func (r *sharedWorldRegistry) reclaimableStaleDuplicateIDsLocked(character login
 			candidateIDs[playerEntity.Entity.ID] = struct{}{}
 		}
 	}
+	for entityID, known := range r.lastKnownCharacters {
+		if character.VID != 0 && known.VID == character.VID {
+			candidateIDs[entityID] = struct{}{}
+			continue
+		}
+		if character.Name != "" && known.Name == character.Name {
+			candidateIDs[entityID] = struct{}{}
+		}
+	}
 	if len(candidateIDs) == 0 {
 		return nil, false
 	}
