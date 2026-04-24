@@ -384,6 +384,26 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 			}
 			return transferResult, transferFrames, true
 		}
+		applySelectedCharacterPosition := func(selectedPlayer *player.Runtime, x int32, y int32, persist bool) (loginticket.Character, bool) {
+			if selectedPlayer == nil {
+				return loginticket.Character{}, false
+			}
+			if !persist {
+				selected := selectedPlayer.LiveCharacter()
+				if selected.ID == 0 {
+					return loginticket.Character{}, false
+				}
+				selectedPlayer.SetLivePosition(selected.MapIndex, x, y)
+				return selectedPlayer.LiveCharacter(), true
+			}
+			updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, x, y)
+			if !ok {
+				return loginticket.Character{}, false
+			}
+			sessionTicket.Characters = updatedCharacters
+			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
+			return selectedPlayer.LiveCharacter(), true
+		}
 
 		inner := boot.NewFlow(boot.Config{
 			Handshake: handshake.Config{
@@ -558,13 +578,10 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						}
 					}
 
-					updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, packet.X, packet.Y)
+					selected, ok = applySelectedCharacterPosition(selectedPlayer, packet.X, packet.Y, liveSharedWorld)
 					if !ok {
 						return gameflow.Result{Accepted: false}
 					}
-					sessionTicket.Characters = updatedCharacters
-					selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
-					selected = selectedPlayer.LiveCharacter()
 					if liveSharedWorld {
 						sharedWorld.UpdateCharacter(sharedWorldID, selected)
 					}
@@ -600,13 +617,10 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 								}
 							}
 						}
-						updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, element.X, element.Y)
+						selected, ok = applySelectedCharacterPosition(selectedPlayer, element.X, element.Y, liveSharedWorld)
 						if !ok {
 							return gameflow.SyncPositionResult{Accepted: false}
 						}
-						sessionTicket.Characters = updatedCharacters
-						selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
-						selected = selectedPlayer.LiveCharacter()
 						if liveSharedWorld {
 							sharedWorld.UpdateCharacter(sharedWorldID, selected)
 						}

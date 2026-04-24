@@ -2768,6 +2768,145 @@ func TestGameRuntimeEnterGameReclaimPreventsStaleSessionMoveFanout(t *testing.T)
 	closeSessionFlow(t, flowOwnerNew)
 }
 
+func setupReclaimedOwnerRuntimeWithAccounts(t *testing.T) (accountstore.Store, service.SessionFactory, service.SessionFlow, service.SessionFlow, service.SessionFlow, loginticket.Character, loginticket.Character) {
+	t.Helper()
+
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	for _, account := range []accountstore.Account{
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "peer-one", Empire: peerOne.Empire, Characters: []loginticket.Character{peerOne}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher, got %d", len(watcherEnter))
+	}
+	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerOldEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for original owner with watcher already visible, got %d", len(ownerOldEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after original owner join, got %d", len(queued))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName("PeerOne")
+	if !ok {
+		t.Fatal("expected live player entity for PeerOne before simulating stale ownership")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale session-directory entry removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerNewEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for replacement owner after reclaim, got %d", len(ownerNewEnter))
+	}
+	_ = flushServerFrames(t, flowWatcher)
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to start with no queued frames, got %d", len(queued))
+	}
+
+	return accounts, factory, flowWatcher, flowOwnerOld, flowOwnerNew, watcher, peerOne
+}
+
+func TestGameRuntimeEnterGameReclaimPreventsStaleSessionMoveFromPersistingSnapshot(t *testing.T) {
+	accounts, _, flowWatcher, flowOwnerOld, flowOwnerNew, _, peerOne := setupReclaimedOwnerRuntimeWithAccounts(t)
+
+	moveOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1400, Y: 2400, Time: 0x31323334})))
+	if err != nil {
+		t.Fatalf("unexpected stale owner move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected stale owner to receive exactly 1 self move ack frame, got %d", len(moveOut))
+	}
+	selfAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode stale owner self move ack: %v", err)
+	}
+	if selfAck.VID != peerOne.VID || selfAck.X != 1400 || selfAck.Y != 2400 || selfAck.Time != 0x31323334 {
+		t.Fatalf("unexpected stale owner self move ack: %+v", selfAck)
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected watcher to receive no move replication from stale owner after reclaim, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale owner move, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account after stale move: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted character after stale move, got %+v", persisted)
+	}
+	if persisted.Characters[0].MapIndex != peerOne.MapIndex || persisted.Characters[0].X != peerOne.X || persisted.Characters[0].Y != peerOne.Y {
+		t.Fatalf("expected stale move to leave persisted snapshot unchanged, got %+v", persisted.Characters[0])
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
+func TestGameRuntimeEnterGameReclaimPreventsStaleSessionSyncPositionFromPersistingSnapshot(t *testing.T) {
+	accounts, _, flowWatcher, flowOwnerOld, flowOwnerNew, _, peerOne := setupReclaimedOwnerRuntimeWithAccounts(t)
+
+	syncOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: peerOne.VID, X: 1600, Y: 2600}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected stale owner sync_position error: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected stale owner to receive exactly 1 self sync_position ack frame, got %d", len(syncOut))
+	}
+	selfAck, err := movep.DecodeSyncPositionAck(decodeSingleFrame(t, syncOut[0]))
+	if err != nil {
+		t.Fatalf("decode stale owner self sync_position ack: %v", err)
+	}
+	if len(selfAck.Elements) != 1 {
+		t.Fatalf("expected 1 self sync_position ack element, got %d", len(selfAck.Elements))
+	}
+	if selfAck.Elements[0].VID != peerOne.VID || selfAck.Elements[0].X != 1600 || selfAck.Elements[0].Y != 2600 {
+		t.Fatalf("unexpected stale owner self sync_position ack: %+v", selfAck)
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected watcher to receive no sync replication from stale owner after reclaim, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale owner sync_position, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account after stale sync_position: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted character after stale sync_position, got %+v", persisted)
+	}
+	if persisted.Characters[0].MapIndex != peerOne.MapIndex || persisted.Characters[0].X != peerOne.X || persisted.Characters[0].Y != peerOne.Y {
+		t.Fatalf("expected stale sync_position to leave persisted snapshot unchanged, got %+v", persisted.Characters[0])
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
 func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestinationSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
