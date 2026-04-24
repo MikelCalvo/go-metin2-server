@@ -633,6 +633,7 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if selected.ID == 0 {
 						return gameflow.SyncPositionResult{Accepted: false}
 					}
+					previous := selected
 					liveSharedWorld := ownsLiveSharedWorldSession()
 					for _, element := range packet.Elements {
 						if element.VID != selected.VID {
@@ -651,12 +652,9 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						if !ok {
 							return gameflow.SyncPositionResult{Accepted: false}
 						}
-						if liveSharedWorld {
-							sharedWorld.UpdateCharacter(sharedWorldID, selected)
-						}
 						ack := ticketSyncPositionAckPacket(selected)
 						if liveSharedWorld {
-							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{movep.EncodeSyncPositionAck(ack)})
+							sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previous, selected, [][]byte{movep.EncodeSyncPositionAck(ack)})
 						}
 						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ack}
 					}

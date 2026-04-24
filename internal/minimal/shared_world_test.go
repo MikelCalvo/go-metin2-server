@@ -419,6 +419,133 @@ func TestNewGameSessionFactoryQueuesPeerSyncPositionForVisiblePlayers(t *testing
 	}
 }
 
+func TestNewGameSessionFactoryRadiusAOISyncPositionIntoRangeBootstrapsPeerVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1700, 2900, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, firstEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(firstEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for first player, got %d", len(firstEnter))
+	}
+	flowTwo, secondEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(secondEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for second player outside radius AOI, got %d", len(secondEnter))
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames outside radius AOI, got %d", len(queued))
+	}
+
+	syncOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: peerTwo.VID, X: 1300, Y: 2300}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected 1 self sync_position ack frame, got %d", len(syncOut))
+	}
+
+	peerEntry := flushServerFrames(t, flowOne)
+	if len(peerEntry) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames after sync_position crosses into radius AOI, got %d", len(peerEntry))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, peerEntry[0]))
+	if err != nil {
+		t.Fatalf("decode peer add after sync_position into AOI: %v", err)
+	}
+	if peerAdd.VID != peerTwo.VID || peerAdd.X != 1300 || peerAdd.Y != 2300 {
+		t.Fatalf("unexpected peer add after sync_position into AOI: %+v", peerAdd)
+	}
+
+	originEntry := flushServerFrames(t, flowTwo)
+	if len(originEntry) != 3 {
+		t.Fatalf("expected 3 queued origin peer-entry frames after sync_position crosses into radius AOI, got %d", len(originEntry))
+	}
+	originAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originEntry[0]))
+	if err != nil {
+		t.Fatalf("decode origin add after sync_position into AOI: %v", err)
+	}
+	if originAdd.VID != peerOne.VID || originAdd.X != peerOne.X || originAdd.Y != peerOne.Y {
+		t.Fatalf("unexpected origin add after sync_position into AOI: %+v", originAdd)
+	}
+}
+
+func TestNewGameSessionFactoryRadiusAOISyncPositionOutOfRangeRemovesPeerVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	flowTwo, secondEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(secondEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for second player inside radius AOI, got %d", len(secondEnter))
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 3 {
+		t.Fatalf("expected initial queued peer-entry frames inside radius AOI, got %d", len(queued))
+	}
+
+	syncOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: peerTwo.VID, X: 1900, Y: 3100}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected 1 self sync_position ack frame, got %d", len(syncOut))
+	}
+
+	peerExit := flushServerFrames(t, flowOne)
+	if len(peerExit) != 1 {
+		t.Fatalf("expected 1 queued peer delete after sync_position leaves radius AOI, got %d", len(peerExit))
+	}
+	peerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, peerExit[0]))
+	if err != nil {
+		t.Fatalf("decode peer delete after sync_position out of AOI: %v", err)
+	}
+	if peerDelete.VID != peerTwo.VID {
+		t.Fatalf("unexpected peer delete after sync_position out of AOI: %+v", peerDelete)
+	}
+
+	originExit := flushServerFrames(t, flowTwo)
+	if len(originExit) != 1 {
+		t.Fatalf("expected 1 queued origin delete after sync_position leaves radius AOI, got %d", len(originExit))
+	}
+	originDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, originExit[0]))
+	if err != nil {
+		t.Fatalf("decode origin delete after sync_position out of AOI: %v", err)
+	}
+	if originDelete.VID != peerOne.VID {
+		t.Fatalf("unexpected origin delete after sync_position out of AOI: %+v", originDelete)
+	}
+}
+
 func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMove(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

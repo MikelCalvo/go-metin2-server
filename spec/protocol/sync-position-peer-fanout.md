@@ -1,11 +1,12 @@
 # Sync Position Peer Fanout
 
-This document freezes the first minimal `SYNC_POSITION` fanout behavior for players that are already mutually visible in the bootstrap runtime.
+This document freezes the first minimal `SYNC_POSITION` fanout behavior for players that are already mutually visible in the bootstrap runtime, plus the first AOI-aware visibility rebuild that can now happen on `SYNC_POSITION` when the runtime is configured with the opt-in radius policy.
 
 The goal of this slice is narrow:
 - keep the mover's current deterministic self `SYNC_POSITION` reply intact
 - queue one `SYNC_POSITION` replication frame to already-visible peers
-- avoid broadening the slice into range filtering, sectors, or richer world reconciliation
+- when configured AOI causes the visible-peer set to change on `SYNC_POSITION`, rebuild that visibility with add/delete frames instead of pretending the peer set stayed constant
+- avoid broadening the slice into sectors or richer world reconciliation
 
 ## Covered packet
 
@@ -21,15 +22,24 @@ The current bootstrap runtime behavior is:
 4. player A receives one queued server-initiated `SYNC_POSITION` replication for player B
 5. the queued replication reuses the same payload shape as the mover reply and carries player B's updated `vid`/position tuple
 
+When the runtime is configured with opt-in radius AOI, there is now one more owned branch:
+
+1. player A and player B are on the same effective map but are **not** currently visible because they are outside the configured radius
+2. player B sends `SYNC_POSITION` and crosses into A's visible range
+3. player B still receives the normal deterministic self `SYNC_POSITION` reply
+4. player A receives the normal peer-entry burst for player B (`CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`) rather than a lone `SYNC_POSITION` replication for an actor it had not seen yet
+5. player B receives the symmetric peer-entry burst for player A via queued server frames
+6. if player B later syncs back out of range, both sides receive the corresponding `CHARACTER_DEL` teardown instead of silent disappearance
+
 ## Current scope
 
 This slice freezes:
 - queued peer `SYNC_POSITION` replication after same-map visibility is already established
-- reuse of the existing `SYNC_POSITION` server packet shape for peer fanout
+- reuse of the existing `SYNC_POSITION` server packet shape for peer fanout to peers that stay visible across the update
 - mover and peer seeing the same updated coordinates for that reconciliation event
+- AOI-aware add/delete visibility rebuild on `SYNC_POSITION` when the configured runtime visibility policy changes the peer set during the update
 
 It does not yet freeze:
-- movement range filtering
-- sector/interest management
+- sector/interest management beyond the current before/after peer set diff
 - multi-actor sync batches beyond the currently accepted single-selected-character path
 - late-join replay beyond the existing shared snapshot behavior
