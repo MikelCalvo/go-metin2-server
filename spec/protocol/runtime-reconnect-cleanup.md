@@ -86,6 +86,7 @@ The project now owns these reconnect rules:
 7. that rejected duplicate `ENTERGAME` does not force an immediate socket teardown: the session remains in `LOADING`, and if the original live owner later disappears, the same socket can retry `ENTERGAME` and transition into `GAME` with the normal bootstrap burst
 8. once a session loses live shared-world ownership because another session reclaimed that character, subsequent gameplay fanout from the stale socket must not keep replicating movement/chat to live peers
 9. later `MOVE` / `SYNC_POSITION` packets on that stale socket may still receive self-local acknowledgements, but they must not overwrite the persisted character snapshot or the replacement live owner's runtime position after reclaim
+10. later stale `WHISPER` traffic from that socket must stay self-local and non-delivering too; it must not reach live peers, and it must not fabricate a target-missing reply just because the socket no longer owns live shared-world state
 
 This is the current bootstrap ownership contract for correctness.
 It does **not** yet claim resumable gameplay state, preserved socket identity, or any special reconnect shortcut.

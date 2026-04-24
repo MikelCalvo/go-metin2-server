@@ -2907,6 +2907,28 @@ func TestGameRuntimeEnterGameReclaimPreventsStaleSessionSyncPositionFromPersisti
 	closeSessionFlow(t, flowOwnerNew)
 }
 
+func TestGameRuntimeEnterGameReclaimKeepsStaleSessionWhisperSelfLocal(t *testing.T) {
+	_, _, flowWatcher, flowOwnerOld, flowOwnerNew, watcher, _ := setupReclaimedOwnerRuntimeWithAccounts(t)
+
+	whisperOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientWhisper(chatproto.ClientWhisperPacket{Target: watcher.Name, Message: "hola fantasma"})))
+	if err != nil {
+		t.Fatalf("unexpected stale owner whisper error: %v", err)
+	}
+	if len(whisperOut) != 0 {
+		t.Fatalf("expected stale owner whisper to stay self-local with no direct response, got %d frames", len(whisperOut))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected watcher to receive no whisper from stale owner after reclaim, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale owner whisper, got %d", len(queued))
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
 func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestinationSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

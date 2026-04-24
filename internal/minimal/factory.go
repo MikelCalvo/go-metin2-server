@@ -694,8 +694,11 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if packet.Target == selected.Name {
 						return gameflow.WhisperResult{Accepted: true}
 					}
+					if !ownsLiveSharedWorldSession() {
+						return gameflow.WhisperResult{Accepted: true}
+					}
 					delivery := ticketWhisperDeliveryPacket(selected, packet)
-					if ownsLiveSharedWorldSession() && sharedWorld.EnqueueToCharacterName(packet.Target, [][]byte{chatproto.EncodeServerWhisper(delivery)}) {
+					if sharedWorld.EnqueueToCharacterName(packet.Target, [][]byte{chatproto.EncodeServerWhisper(delivery)}) {
 						return gameflow.WhisperResult{Accepted: true}
 					}
 					notFound := ticketWhisperNotExistPacket(packet.Target)
