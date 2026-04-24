@@ -186,6 +186,17 @@ func (r *gameRuntime) RegisterStaticActor(name string, mapIndex uint32, x int32,
 	return r.sharedWorld.RegisterStaticActor(name, mapIndex, x, y, raceNum)
 }
 
+func (r *gameRuntime) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || entityID == 0 {
+		return StaticActorSnapshot{}, false
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || mapIndex == 0 || raceNum == 0 {
+		return StaticActorSnapshot{}, false
+	}
+	return r.sharedWorld.UpdateStaticActor(entityID, name, mapIndex, x, y, raceNum)
+}
+
 func (r *gameRuntime) StaticActors() []StaticActorSnapshot {
 	if r == nil || r.sharedWorld == nil {
 		return nil

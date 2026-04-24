@@ -71,6 +71,16 @@ func main() {
 			return actor, true
 		},
 	)
+	opsHandler = ops.RegisterLocalStaticActorUpdateEndpoint(
+		opsHandler,
+		func(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (any, bool) {
+			actor, ok := gameRuntime.UpdateStaticActor(entityID, name, mapIndex, x, y, raceNum)
+			if !ok {
+				return nil, false
+			}
+			return actor, true
+		},
+	)
 	opsHandler = ops.RegisterLocalStaticActorDeleteEndpoint(
 		opsHandler,
 		func(entityID uint64) (any, bool) {

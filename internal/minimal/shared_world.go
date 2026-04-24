@@ -548,6 +548,29 @@ func (r *sharedWorldRegistry) RegisterStaticActor(name string, mapIndex uint32, 
 	return staticActorSnapshot(r.topology, actor), true
 }
 
+func (r *sharedWorldRegistry) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 || name == "" || mapIndex == 0 || raceNum == 0 {
+		return StaticActorSnapshot{}, false
+	}
+	position := worldruntime.NewPosition(mapIndex, x, y)
+	if !position.Valid() {
+		return StaticActorSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	actor, ok := r.entities.UpdateStaticActor(worldruntime.StaticEntity{
+		Entity:   worldruntime.Entity{ID: entityID, Name: name},
+		Position: position,
+		RaceNum:  raceNum,
+	})
+	if !ok {
+		return StaticActorSnapshot{}, false
+	}
+	return staticActorSnapshot(r.topology, actor), true
+}
+
 func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
 	if r == nil || r.entities == nil {
 		return nil

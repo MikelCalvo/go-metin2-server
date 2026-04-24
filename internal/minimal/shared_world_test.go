@@ -3606,6 +3606,50 @@ func TestGameRuntimeRemoveStaticActorUpdatesSnapshot(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeUpdateStaticActorUpdatesSnapshot(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	guard, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	blacksmith, ok := runtime.RegisterStaticActor("Blacksmith", 42, 1900, 3000, 20301)
+	if !ok {
+		t.Fatal("expected blacksmith registration to succeed")
+	}
+
+	updated, ok := runtime.UpdateStaticActor(guard.EntityID, "Merchant", 99, 900, 1200, 9001)
+	if !ok {
+		t.Fatal("expected static actor update to succeed")
+	}
+	if updated.EntityID != guard.EntityID || updated.Name != "Merchant" || updated.MapIndex != 99 || updated.X != 900 || updated.Y != 1200 || updated.RaceNum != 9001 {
+		t.Fatalf("unexpected updated actor snapshot: %+v", updated)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 2 {
+		t.Fatalf("expected 2 static actors after update, got %d", len(actors))
+	}
+	if actors[0].EntityID != blacksmith.EntityID || actors[0].Name != "Blacksmith" {
+		t.Fatalf("expected Blacksmith to remain first in sorted snapshot, got %+v", actors[0])
+	}
+	if actors[1].EntityID != guard.EntityID || actors[1].Name != "Merchant" || actors[1].MapIndex != 99 || actors[1].RaceNum != 9001 {
+		t.Fatalf("expected Merchant update in runtime snapshot, got %+v", actors[1])
+	}
+	maps := runtime.MapOccupancy()
+	if len(maps) != 2 {
+		t.Fatalf("expected 2 map occupancy snapshots after static actor move, got %+v", maps)
+	}
+	if maps[0].MapIndex != 42 || len(maps[0].StaticActors) != 1 || maps[0].StaticActors[0].EntityID != blacksmith.EntityID {
+		t.Fatalf("expected only Blacksmith on old map after update, got %+v", maps[0])
+	}
+	if maps[1].MapIndex != 99 || len(maps[1].StaticActors) != 1 || maps[1].StaticActors[0].EntityID != guard.EntityID || maps[1].StaticActors[0].Name != "Merchant" {
+		t.Fatalf("expected Merchant on new map after update, got %+v", maps[1])
+	}
+}
+
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {
 	t.Helper()
 

@@ -746,6 +746,26 @@ func TestNewGameRuntimeUsesConfiguredRadiusVisibilityPolicy(t *testing.T) {
 	}
 }
 
+func TestNewGameRuntimeUpdateStaticActorRejectsInvalidSeed(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	guard, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if _, ok := runtime.UpdateStaticActor(guard.EntityID, "", 42, 1700, 2800, 20300); ok {
+		t.Fatal("expected blank-name static actor update to fail")
+	}
+	if _, ok := runtime.UpdateStaticActor(guard.EntityID, "VillageGuard", 0, 1700, 2800, 20300); ok {
+		t.Fatal("expected zero-map static actor update to fail")
+	}
+	if _, ok := runtime.UpdateStaticActor(guard.EntityID, "VillageGuard", 42, 1700, 2800, 0); ok {
+		t.Fatal("expected zero-race static actor update to fail")
+	}
+}
+
 func TestNewGameSessionFactoryRejectsUnknownVisibilityMode(t *testing.T) {
 	_, err := NewGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "cones"})
 	if !errors.Is(err, ErrInvalidVisibilityMode) {

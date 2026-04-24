@@ -119,11 +119,7 @@ func RegisterLocalStaticActorDeleteEndpoint(mux *http.ServeMux, removeStaticActo
 		return mux
 	}
 
-	mux.HandleFunc("/local/static-actors/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
+	mux.HandleFunc("DELETE /local/static-actors/", func(w http.ResponseWriter, r *http.Request) {
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -143,6 +139,41 @@ func RegisterLocalStaticActorDeleteEndpoint(mux *http.ServeMux, removeStaticActo
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	})
+	return mux
+}
+
+func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActor func(uint64, string, uint32, int32, int32, uint32) (any, bool)) *http.ServeMux {
+	if mux == nil || updateStaticActor == nil {
+		return mux
+	}
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, ok := decodeLocalStaticActorEntityID(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		request, ok := decodeLocalStaticActorRequest(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		actor, ok := updateStaticActor(entityID, request.Name, request.MapIndex, request.X, request.Y, request.RaceNum)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(actor); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}
+	mux.HandleFunc("PATCH /local/static-actors/", handler)
+	mux.HandleFunc("PUT /local/static-actors/", handler)
 	return mux
 }
 

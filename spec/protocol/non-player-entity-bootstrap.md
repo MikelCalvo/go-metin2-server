@@ -19,8 +19,9 @@ This contract applies only to:
 - runtime-owned non-player identity and map presence
 - static or operator-seeded actors that exist as world-runtime data
 - deterministic lookup and map membership inside `internal/worldruntime`
+- runtime-owned in-place edits of those static actors across non-player directories and map indexes while preserving entity identity
 - operator/runtime map-occupancy and static-actor snapshots that can now surface those actors through `internal/worldruntime/scopes.go`
-- the first loopback-only operator seed/snapshot/remove surface used to create, inspect, and delete those runtime actors on `gamed`
+- the first loopback-only operator seed/snapshot/update/remove surface used to create, inspect, edit, and delete those runtime actors on `gamed`
 
 This slice does **not** yet claim that non-player actors are visible to clients, replicated on the wire, or driven by gameplay systems.
 
@@ -87,7 +88,7 @@ The next runtime checkpoint after this document should be able to say:
 - the actor participates in owned map presence/index bookkeeping
 - runtime-owned directories and map indexes can now also update that static actor in place without delete-and-recreate when its name/class/position changes
 - runtime/operator map-occupancy snapshots can now surface those static actors on their effective maps
-- `gamed` can seed, inspect, and remove those bootstrap static actors through loopback-only operator paths
+- `gamed` can seed, inspect, update, and remove those bootstrap static actors through loopback-only operator paths
 - player-only runtime behavior remains unchanged while this scaffolding lands
 
 At that point, the repository will own the first real non-player runtime seam without pretending that NPCs or mobs are implemented.

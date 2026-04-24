@@ -787,6 +787,124 @@ func TestLocalStaticActorsEndpointRejectsUnsupportedMethod(t *testing.T) {
 	}
 }
 
+func TestLocalStaticActorUpdateEndpointUpdatesActorForLoopbackPatch(t *testing.T) {
+	updater := &stubStaticActorUpdater{updated: true, actor: map[string]any{"entity_id": uint64(7), "name": "Merchant", "map_index": uint32(99), "x": int32(900), "y": int32(1200), "race_num": uint32(9001)}}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodPatch, "/local/static-actors/7", strings.NewReader(`{"name":"Merchant","map_index":99,"x":900,"y":1200,"race_num":9001}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if updater.calls != 1 || updater.lastEntityID != 7 || updater.lastName != "Merchant" || updater.lastMapIndex != 99 || updater.lastX != 900 || updater.lastY != 1200 || updater.lastRaceNum != 9001 {
+		t.Fatalf("unexpected static actor updater call state: %+v", updater)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":7`) || !strings.Contains(string(body), `"name":"Merchant"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorUpdateEndpointRejectsInvalidBody(t *testing.T) {
+	updater := &stubStaticActorUpdater{updated: true}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodPatch, "/local/static-actors/7", strings.NewReader(`{"name":"Merchant","map_index":0,"x":900,"y":1200,"race_num":9001}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if updater.calls != 0 {
+		t.Fatalf("expected static actor updater not to be called, got %d calls", updater.calls)
+	}
+}
+
+func TestLocalStaticActorUpdateEndpointRejectsInvalidEntityID(t *testing.T) {
+	updater := &stubStaticActorUpdater{updated: true}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodPatch, "/local/static-actors/not-a-number", strings.NewReader(`{"name":"Merchant","map_index":99,"x":900,"y":1200,"race_num":9001}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if updater.calls != 0 {
+		t.Fatalf("expected static actor updater not to be called, got %d calls", updater.calls)
+	}
+}
+
+func TestLocalStaticActorUpdateEndpointReturnsNotFoundForUnknownActor(t *testing.T) {
+	updater := &stubStaticActorUpdater{}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodPatch, "/local/static-actors/7", strings.NewReader(`{"name":"Merchant","map_index":99,"x":900,"y":1200,"race_num":9001}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if updater.calls != 1 || updater.lastEntityID != 7 {
+		t.Fatalf("expected static actor updater to be called once for not-found path, got %+v", updater)
+	}
+}
+
+func TestLocalStaticActorUpdateEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	updater := &stubStaticActorUpdater{updated: true}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodPatch, "/local/static-actors/7", strings.NewReader(`{"name":"Merchant","map_index":99,"x":900,"y":1200,"race_num":9001}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if updater.calls != 0 {
+		t.Fatalf("expected static actor updater not to be called, got %d calls", updater.calls)
+	}
+}
+
+func TestLocalStaticActorUpdateEndpointRejectsUnsupportedMethod(t *testing.T) {
+	updater := &stubStaticActorUpdater{updated: true}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodDelete, "/local/static-actors/7", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if updater.calls != 0 {
+		t.Fatalf("expected static actor updater not to be called, got %d calls", updater.calls)
+	}
+}
+
 func TestLocalStaticActorDeleteEndpointRemovesActorForLoopbackDelete(t *testing.T) {
 	remover := &stubStaticActorRemover{removed: true, actor: map[string]any{"entity_id": uint64(7), "name": "VillageGuard", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20300)}}
 	mux := RegisterLocalStaticActorDeleteEndpoint(NewPprofMux("gamed"), remover.RemoveStaticActor)
@@ -932,6 +1050,29 @@ func (r *stubStaticActorRegistrar) RegisterStaticActor(name string, mapIndex uin
 	r.lastY = y
 	r.lastRaceNum = raceNum
 	return r.actor, r.registered
+}
+
+type stubStaticActorUpdater struct {
+	actor        map[string]any
+	updated      bool
+	calls        int
+	lastEntityID uint64
+	lastName     string
+	lastMapIndex uint32
+	lastX        int32
+	lastY        int32
+	lastRaceNum  uint32
+}
+
+func (r *stubStaticActorUpdater) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (any, bool) {
+	r.calls++
+	r.lastEntityID = entityID
+	r.lastName = name
+	r.lastMapIndex = mapIndex
+	r.lastX = x
+	r.lastY = y
+	r.lastRaceNum = raceNum
+	return r.actor, r.updated
 }
 
 type stubStaticActorRemover struct {
