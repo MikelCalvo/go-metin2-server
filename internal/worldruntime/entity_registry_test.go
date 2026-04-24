@@ -220,6 +220,28 @@ func TestEntityRegistryRemoveStaticActorClearsLookupAndMapPresence(t *testing.T)
 	}
 }
 
+func TestEntityRegistryRemoveStaticActorClearsMapPresenceWhenDirectoryEntryAlreadyMissing(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if _, ok := registry.staticActors.Remove(guard.Entity.ID); !ok {
+		t.Fatal("expected direct non-player-directory removal to simulate partial teardown")
+	}
+
+	removed, ok := registry.RemoveStaticActor(guard.Entity.ID)
+	if !ok || removed.Entity.ID != guard.Entity.ID {
+		t.Fatalf("expected tolerant static actor removal after directory loss, got actor=%+v ok=%v", removed, ok)
+	}
+	if actors := registry.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected map static actor snapshot to be cleared after tolerant removal, got %+v", actors)
+	}
+	if occupancy := registry.MapOccupancy(); len(occupancy) != 0 {
+		t.Fatalf("expected no map occupancy after tolerant static actor removal, got %+v", occupancy)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,

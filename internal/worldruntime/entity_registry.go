@@ -65,11 +65,19 @@ func (r *EntityRegistry) RemoveStaticActor(id uint64) (StaticEntity, bool) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	removed, ok := r.staticActors.Remove(id)
+
+	removed, ok := r.staticActors.ByEntityID(id)
+	if ok {
+		_, _ = r.staticActors.Remove(id)
+		_, _ = r.maps.RemoveStatic(id)
+		return removed, true
+	}
+
+	removed, ok = r.maps.RemoveStatic(id)
 	if !ok {
 		return StaticEntity{}, false
 	}
-	_, _ = r.maps.RemoveStatic(id)
+	_, _ = r.staticActors.Remove(id)
 	return removed, true
 }
 
