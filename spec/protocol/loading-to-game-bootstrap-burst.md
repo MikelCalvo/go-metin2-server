@@ -46,16 +46,16 @@ They are emitted before any trailing peer frames.
 
 ## Trailing peer frames
 
-If the entering player already has visible peers in the current bootstrap runtime, those peer bootstrap frames are appended only after the selected-character burst.
+If the entering player already has visible peers or visible bootstrap static actors in the current bootstrap runtime, those trailing visibility frames are appended only after the selected-character burst.
 
-The current trailing peer visibility burst reuses the existing visibility packets and may currently include:
-- `CHARACTER_ADD`
-- `CHAR_ADDITIONAL_INFO`
-- `CHARACTER_UPDATE`
+The current trailing visibility burst reuses the existing visibility packets and may currently include:
+- visible peer player bursts (`CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`)
+- visible bootstrap static-actor bursts (`CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`)
 
 This ordering is intentional:
 - the client sees its own selected-character bootstrap first
-- peer visibility is layered on top afterwards
+- visible peer players are layered on top afterwards
+- visible bootstrap static actors are appended after visible peer players in the same enter-game result
 
 ## Internal contract
 
@@ -76,7 +76,8 @@ This slice freezes:
 - acceptance of `ENTERGAME` from `LOADING`
 - the `LOADING -> GAME` phase transition
 - the exact selected-character bootstrap order after `PHASE(GAME)`
-- the rule that peer visibility frames, when present, are appended after the selected-character burst
+- the rule that trailing visibility frames, when present, are appended after the selected-character burst
+- the current ordering that visible peer-player bursts are appended before visible bootstrap static-actor bursts
 
 It does not yet freeze:
 - item or quickslot bootstrap

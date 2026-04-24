@@ -65,6 +65,88 @@ func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *tes
 	}
 }
 
+func TestNewGameSessionFactoryAppendsVisibleStaticActorFramesAfterPeerBootstrap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	blacksmith, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1200, 2200, 20301)
+	if !ok {
+		t.Fatal("expected bootstrap static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, firstEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(firstEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for first player with visible static actor, got %d", len(firstEnter))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, firstEnter[5]))
+	if err != nil {
+		t.Fatalf("decode first bootstrap static actor add: %v", err)
+	}
+	if staticAdd.VID != uint32(blacksmith.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20301 {
+		t.Fatalf("unexpected first bootstrap static actor add: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, firstEnter[6]))
+	if err != nil {
+		t.Fatalf("decode first bootstrap static actor additional info: %v", err)
+	}
+	if staticInfo.VID != uint32(blacksmith.EntityID) || staticInfo.Name != "Blacksmith" {
+		t.Fatalf("unexpected first bootstrap static actor additional info: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, firstEnter[7]))
+	if err != nil {
+		t.Fatalf("decode first bootstrap static actor update: %v", err)
+	}
+	if staticUpdate.VID != uint32(blacksmith.EntityID) {
+		t.Fatalf("unexpected first bootstrap static actor update: %+v", staticUpdate)
+	}
+
+	_, secondEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(secondEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for second player with peer and static actor snapshots, got %d", len(secondEnter))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, secondEnter[5]))
+	if err != nil {
+		t.Fatalf("decode peer add before static actor burst: %v", err)
+	}
+	if peerAdd.VID != peerOne.VID {
+		t.Fatalf("expected peer bootstrap burst before static actor frames, got %+v", peerAdd)
+	}
+	staticAdd, err = worldproto.DecodeCharacterAdd(decodeSingleFrame(t, secondEnter[8]))
+	if err != nil {
+		t.Fatalf("decode second bootstrap static actor add: %v", err)
+	}
+	if staticAdd.VID != uint32(blacksmith.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20301 {
+		t.Fatalf("unexpected second bootstrap static actor add: %+v", staticAdd)
+	}
+	staticInfo, err = worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, secondEnter[9]))
+	if err != nil {
+		t.Fatalf("decode second bootstrap static actor additional info: %v", err)
+	}
+	if staticInfo.VID != uint32(blacksmith.EntityID) || staticInfo.Name != "Blacksmith" {
+		t.Fatalf("unexpected second bootstrap static actor additional info: %+v", staticInfo)
+	}
+	staticUpdate, err = worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, secondEnter[10]))
+	if err != nil {
+		t.Fatalf("decode second bootstrap static actor update: %v", err)
+	}
+	if staticUpdate.VID != uint32(blacksmith.EntityID) {
+		t.Fatalf("unexpected second bootstrap static actor update: %+v", staticUpdate)
+	}
+
+	peerEntry := flushServerFrames(t, flowOne)
+	if len(peerEntry) != 3 {
+		t.Fatalf("expected queued peer-entry frames only for the new player, got %d", len(peerEntry))
+	}
+}
+
 func TestNewGameSessionFactoryQueuesPeerEntryAndExitForExistingPlayer(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -133,6 +215,60 @@ func TestNewGameSessionFactoryDoesNotBootstrapPeerVisibilityAcrossMaps(t *testin
 	peerEntry := flushServerFrames(t, flowOne)
 	if len(peerEntry) != 0 {
 		t.Fatalf("expected no queued peer-entry frames across maps, got %d", len(peerEntry))
+	}
+}
+
+func TestNewGameSessionFactoryRadiusAOIOnlyBootstrapsNearbyStaticActors(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	nearActor, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1200, 2200, 20301)
+	if !ok {
+		t.Fatal("expected near static actor registration to succeed")
+	}
+	if _, ok := runtime.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 2000, 3200, 20300); !ok {
+		t.Fatal("expected far static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, enterOut := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with only one nearby static actor, got %d", len(enterOut))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, enterOut[5]))
+	if err != nil {
+		t.Fatalf("decode nearby static actor add: %v", err)
+	}
+	if staticAdd.VID != uint32(nearActor.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20301 {
+		t.Fatalf("unexpected nearby static actor add: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, enterOut[6]))
+	if err != nil {
+		t.Fatalf("decode nearby static actor additional info: %v", err)
+	}
+	if staticInfo.VID != uint32(nearActor.EntityID) || staticInfo.Name != "Blacksmith" {
+		t.Fatalf("unexpected nearby static actor additional info: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, enterOut[7]))
+	if err != nil {
+		t.Fatalf("decode nearby static actor update: %v", err)
+	}
+	if staticUpdate.VID != uint32(nearActor.EntityID) {
+		t.Fatalf("unexpected nearby static actor update: %+v", staticUpdate)
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no queued frames for a single entering player with nearby static actors, got %d", len(queued))
 	}
 }
 

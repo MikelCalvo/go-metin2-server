@@ -623,6 +623,7 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 							trailingFrames = append(trailingFrames, encodePeerVisibilityFrames(peer)...)
 						}
 					}
+					trailingFrames = append(trailingFrames, sharedWorld.VisibleStaticActorFrames(selected)...)
 					return worldentry.EnterGameResult{BootstrapFrames: bootstrapFrames, TrailingFrames: trailingFrames}
 				},
 			},

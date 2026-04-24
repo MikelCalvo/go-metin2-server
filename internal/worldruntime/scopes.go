@@ -168,6 +168,22 @@ func (s Scopes) StaticActorSnapshots() []StaticActorSnapshot {
 	return staticActorSnapshots(s.Topology, s.Entities.AllStaticActors())
 }
 
+func (s Scopes) VisibleStaticActors(subject loginticket.Character) []StaticEntity {
+	if s.Entities == nil {
+		return nil
+	}
+	actors := s.Entities.AllStaticActors()
+	visible := make([]StaticEntity, 0, len(actors))
+	for _, actor := range actors {
+		if !s.Topology.SharesVisibleWorld(subject, staticActorVisibilityCharacter(actor)) {
+			continue
+		}
+		visible = append(visible, actor)
+	}
+	sortStaticEntities(visible)
+	return visible
+}
+
 func (s Scopes) MapOccupancySnapshots() []MapOccupancySnapshot {
 	if s.Entities == nil {
 		return nil
@@ -274,6 +290,10 @@ func staticActorSnapshots(topology BootstrapTopology, actors []StaticEntity) []S
 	}
 	sortStaticActorSnapshots(snapshots)
 	return snapshots
+}
+
+func staticActorVisibilityCharacter(actor StaticEntity) loginticket.Character {
+	return loginticket.Character{MapIndex: actor.Position.MapIndex, X: actor.Position.X, Y: actor.Position.Y}
 }
 
 func buildMapOccupancySnapshots(topology BootstrapTopology, occupancies []MapOccupancy) []MapOccupancySnapshot {

@@ -581,6 +581,21 @@ func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
 	return r.scopesLocked().StaticActorSnapshots()
 }
 
+func (r *sharedWorldRegistry) VisibleStaticActorFrames(subject loginticket.Character) [][]byte {
+	if r == nil || r.entities == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actors := r.scopesLocked().VisibleStaticActors(subject)
+	frames := make([][]byte, 0, len(actors)*3)
+	for _, actor := range actors {
+		frames = append(frames, encodeStaticActorVisibilityFrames(actor)...)
+	}
+	return frames
+}
+
 func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, bool) {
 	if r == nil || r.entities == nil || entityID == 0 {
 		return StaticActorSnapshot{}, false
@@ -854,6 +869,74 @@ func sortStaticActorSnapshots(snapshots []StaticActorSnapshot) {
 
 func encodeCharacterDeleteFrame(character loginticket.Character) []byte {
 	return worldproto.EncodeCharacterDeleteNotice(worldproto.CharacterDeleteNoticePacket{VID: character.VID})
+}
+
+func encodeStaticActorVisibilityFrames(actor worldruntime.StaticEntity) [][]byte {
+	vid, ok := staticActorVisibilityVID(actor)
+	if !ok {
+		return nil
+	}
+	infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(staticActorCharacterAdditionalInfoPacket(actor, vid))
+	if err != nil {
+		return nil
+	}
+	return [][]byte{
+		worldproto.EncodeCharacterAdd(staticActorCharacterAddPacket(actor, vid)),
+		infoRaw,
+		worldproto.EncodeCharacterUpdate(staticActorCharacterUpdatePacket(actor, vid)),
+	}
+}
+
+func staticActorVisibilityVID(actor worldruntime.StaticEntity) (uint32, bool) {
+	if actor.Entity.ID == 0 || actor.Entity.ID > uint64(^uint32(0)) || actor.RaceNum > uint32(^uint16(0)) {
+		return 0, false
+	}
+	return uint32(actor.Entity.ID), true
+}
+
+func staticActorCharacterAddPacket(actor worldruntime.StaticEntity, vid uint32) worldproto.CharacterAddPacket {
+	return worldproto.CharacterAddPacket{
+		VID:         vid,
+		Angle:       0,
+		X:           actor.Position.X,
+		Y:           actor.Position.Y,
+		Z:           0,
+		Type:        1,
+		RaceNum:     uint16(actor.RaceNum),
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   0,
+		AffectFlags: [worldproto.AffectFlagCount]uint32{},
+	}
+}
+
+func staticActorCharacterAdditionalInfoPacket(actor worldruntime.StaticEntity, vid uint32) worldproto.CharacterAdditionalInfoPacket {
+	return worldproto.CharacterAdditionalInfoPacket{
+		VID:       vid,
+		Name:      actor.Entity.Name,
+		Parts:     [worldproto.CharacterEquipmentPartCount]uint16{},
+		Empire:    0,
+		GuildID:   0,
+		Level:     0,
+		Alignment: 0,
+		PKMode:    0,
+		MountVnum: 0,
+	}
+}
+
+func staticActorCharacterUpdatePacket(actor worldruntime.StaticEntity, vid uint32) worldproto.CharacterUpdatePacket {
+	return worldproto.CharacterUpdatePacket{
+		VID:         vid,
+		Parts:       [worldproto.CharacterEquipmentPartCount]uint16{},
+		MovingSpeed: 150,
+		AttackSpeed: 100,
+		StateFlag:   0,
+		AffectFlags: [worldproto.AffectFlagCount]uint32{},
+		GuildID:     0,
+		Alignment:   0,
+		PKMode:      0,
+		MountVnum:   0,
+	}
 }
 
 func encodePeerVisibilityFrames(character loginticket.Character) [][]byte {

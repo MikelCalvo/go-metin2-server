@@ -8,7 +8,8 @@ The goal of this slice is narrow:
 - keep the bootstrap deterministic for the selected character before wider peer visibility is layered on top
 
 Peer visibility beyond the selected character now lives in `shared-world-peer-visibility.md`.
-It is documented separately so the original self-bootstrap burst stays easy to reason about.
+Bootstrap static-actor enter-game visibility is currently frozen through `non-player-entity-bootstrap.md` and the enter-game burst ordering in `loading-to-game-bootstrap-burst.md`.
+They are documented separately so the original self-bootstrap burst stays easy to reason about.
 
 ## Covered packets
 
@@ -104,6 +105,6 @@ This is good enough for the first visible-world slice, but not yet the final com
 This slice does not yet freeze:
 - `CHARACTER_ADD2`
 - `CHARACTER_UPDATE2`
-- visible-world packets for other entities
+- the broader long-term visible-world contract for other entity families beyond the currently documented bootstrap static-actor enter-game burst
 - item ground packets
 - targeting/combat packets

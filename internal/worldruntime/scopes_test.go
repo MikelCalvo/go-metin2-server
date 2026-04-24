@@ -167,6 +167,38 @@ func TestScopesVisibilitySnapshotsFollowConfiguredPolicyAndOrder(t *testing.T) {
 	}
 }
 
+func TestScopesVisibleStaticActorsFollowConfiguredVisibilityPolicyAndOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	subjectCharacter := entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800)
+	subject := registry.RegisterPlayer(subjectCharacter)
+	blacksmith, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Blacksmith"}, Position: NewPosition(42, 1750, 2850), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected Blacksmith registration to succeed")
+	}
+	merchant, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Merchant"}, Position: NewPosition(42, 1900, 2900), RaceNum: 20301})
+	if !ok {
+		t.Fatal("expected Merchant registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 2600, 3800), RaceNum: 20302}); !ok {
+		t.Fatal("expected far static actor registration to succeed")
+	}
+
+	actors := NewScopes(topology, registry).VisibleStaticActors(subject.Character)
+	if len(actors) != 2 {
+		t.Fatalf("expected 2 visible static actors, got %+v", actors)
+	}
+	if actors[0].Entity.ID != blacksmith.Entity.ID || actors[1].Entity.ID != merchant.Entity.ID {
+		t.Fatalf("expected deterministic visible static actor ordering [Blacksmith Merchant], got %+v", actors)
+	}
+	if actors[0].Position.MapIndex != 42 || actors[1].Position.MapIndex != 42 {
+		t.Fatalf("expected visible static actors to preserve effective map presence, got %+v", actors)
+	}
+	if subject.Entity.ID == 0 {
+		t.Fatal("expected subject entity to have a stable runtime identity")
+	}
+}
+
 func TestScopesEnterVisibilityDiffUsesConfiguredPolicyAndRegistrySnapshot(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)
