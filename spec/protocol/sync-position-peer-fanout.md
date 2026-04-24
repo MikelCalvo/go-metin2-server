@@ -6,6 +6,7 @@ The goal of this slice is narrow:
 - keep the mover's current deterministic self `SYNC_POSITION` reply intact
 - queue one `SYNC_POSITION` replication frame to already-visible peers
 - when configured AOI causes the visible-peer set to change on `SYNC_POSITION`, rebuild that visibility with add/delete frames instead of pretending the peer set stayed constant
+- when configured AOI causes already-seeded static actors to enter or leave the mover's visible world on `SYNC_POSITION`, queue the corresponding self-facing bootstrap/delete frames too
 - avoid broadening the slice into sectors or richer world reconciliation
 
 ## Covered packet
@@ -31,6 +32,14 @@ When the runtime is configured with opt-in radius AOI, there is now one more own
 5. player B receives the symmetric peer-entry burst for player A via queued server frames
 6. if player B later syncs back out of range, both sides receive the corresponding `CHARACTER_DEL` teardown instead of silent disappearance
 
+There is now one more content-facing AOI branch for already-seeded static actors:
+
+1. player A is in `GAME` and the runtime already owns one or more static actors on that map
+2. player A sends `SYNC_POSITION` and crosses the configured AOI boundary relative to one of those static actors
+3. player A still receives the normal deterministic self `SYNC_POSITION` reply
+4. if the update makes a static actor newly visible, player A receives the normal actor bootstrap burst (`CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`) via queued server frames
+5. if the update makes a previously visible static actor leave range, player A receives the corresponding `CHARACTER_DEL` teardown via queued server frames
+
 ## Current scope
 
 This slice freezes:
@@ -38,6 +47,7 @@ This slice freezes:
 - reuse of the existing `SYNC_POSITION` server packet shape for peer fanout to peers that stay visible across the update
 - mover and peer seeing the same updated coordinates for that reconciliation event
 - AOI-aware add/delete visibility rebuild on `SYNC_POSITION` when the configured runtime visibility policy changes the peer set during the update
+- AOI-aware self-facing add/delete rebuild for already-seeded static actors when `SYNC_POSITION` changes whether they share visible world with the mover
 
 It does not yet freeze:
 - sector/interest management beyond the current before/after peer set diff

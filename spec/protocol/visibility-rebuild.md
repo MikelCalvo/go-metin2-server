@@ -7,7 +7,7 @@ It moves visibility computation out of `internal/minimal` helper logic and into 
 
 ## Scope
 
-The current helper owns only visibility computation for bootstrap players.
+The current helper owns visibility computation for bootstrap players and the first bootstrap static-actor visibility queries/diffs.
 It does not yet own packet emission, sector membership, or generic entity runtime.
 
 The current runtime boundary is:
@@ -54,6 +54,21 @@ This covers the same-map visibility behavior used by:
 The visible-peer helper still owns who is visible to whom.
 Map-occupancy snapshots used by relocate preview, transfer preview, and runtime map-inspection now come from the dedicated `internal/worldruntime` map index via `internal/worldruntime/scopes.go` instead of being rebuilt from whole-world character scans or bootstrap-local preview helpers.
 
+### `VisibleStaticActors(...)`
+
+`internal/worldruntime/scopes.go` now also owns the first static-actor visibility query for the bootstrap runtime.
+
+The helper returns the currently visible static actors for one subject character by:
+- reading the runtime-owned static actors from `EntityRegistry`
+- projecting each actor into the current topology/AOI policy through its map/position
+- keeping only actors that share visible world with the subject
+- returning the result in deterministic name/`entity ID` order
+
+This is the query now reused by:
+- the enter-game bootstrap burst for already-visible static actors
+- self-facing AOI rebuild on `MOVE`
+- self-facing AOI rebuild on `SYNC_POSITION`
+
 ### `DiffVisiblePeers(...)`
 
 The helper compares two visible-peer sets and returns:
@@ -81,6 +96,8 @@ This is enough for the bootstrap runtime to describe:
 `internal/worldruntime/scopes.go` now owns the runtime-facing enter/leave/relocate visibility-diff composition for bootstrap callers.
 `internal/minimal` still owns packet emission and transport fanout, but it no longer rebuilds those visibility transitions ad hoc before join/leave/transfer side effects.
 
+`internal/worldruntime/scopes.go` also now owns the first static-actor relocate visibility diff for bootstrap callers via `RelocateStaticActorVisibilityDiff(...)`, again leaving packet emission in `internal/minimal`.
+
 ## Why this slice exists
 
 Before this slice, visibility math still lived as local helper logic in `internal/minimal/shared_world.go`.
@@ -96,5 +113,5 @@ This slice keeps behavior stable while making visibility a first-class runtime c
 This slice does not yet add:
 - sector or range-based culling
 - packet emission ownership inside `internal/worldruntime`
-- non-player entities
+- behavior-bearing non-player entities beyond the first static-actor visibility query/diff
 - inter-channel visibility

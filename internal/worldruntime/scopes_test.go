@@ -199,6 +199,46 @@ func TestScopesVisibleStaticActorsFollowConfiguredVisibilityPolicyAndOrder(t *te
 	}
 }
 
+func TestScopesRelocateStaticActorVisibilityDiffUsesConfiguredPolicyAndOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	current := entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800)
+	registry.RegisterPlayer(current)
+	originActor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Blacksmith"}, Position: NewPosition(42, 1750, 2850), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected origin static actor registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 2600, 3800), RaceNum: 20301}); !ok {
+		t.Fatal("expected far static actor registration to succeed")
+	}
+	targetActorA, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Alchemist"}, Position: NewPosition(42, 5000, 5000), RaceNum: 20302})
+	if !ok {
+		t.Fatal("expected first destination static actor registration to succeed")
+	}
+	targetActorB, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Merchant"}, Position: NewPosition(42, 5200, 5100), RaceNum: 20303})
+	if !ok {
+		t.Fatal("expected second destination static actor registration to succeed")
+	}
+
+	target := current
+	target.X = 5000
+	target.Y = 5000
+
+	diff := NewScopes(topology, registry).RelocateStaticActorVisibilityDiff(current, target)
+	if len(diff.CurrentVisibleActors) != 1 || diff.CurrentVisibleActors[0].Entity.ID != originActor.Entity.ID {
+		t.Fatalf("expected current visible static actors [Blacksmith], got %+v", diff.CurrentVisibleActors)
+	}
+	if len(diff.TargetVisibleActors) != 2 || diff.TargetVisibleActors[0].Entity.ID != targetActorA.Entity.ID || diff.TargetVisibleActors[1].Entity.ID != targetActorB.Entity.ID {
+		t.Fatalf("expected deterministic target visible static actors [Alchemist Merchant], got %+v", diff.TargetVisibleActors)
+	}
+	if len(diff.RemovedVisibleActors) != 1 || diff.RemovedVisibleActors[0].Entity.ID != originActor.Entity.ID {
+		t.Fatalf("expected removed visible static actors [Blacksmith], got %+v", diff.RemovedVisibleActors)
+	}
+	if len(diff.AddedVisibleActors) != 2 || diff.AddedVisibleActors[0].Entity.ID != targetActorA.Entity.ID || diff.AddedVisibleActors[1].Entity.ID != targetActorB.Entity.ID {
+		t.Fatalf("expected added visible static actors [Alchemist Merchant], got %+v", diff.AddedVisibleActors)
+	}
+}
+
 func TestScopesEnterVisibilityDiffUsesConfiguredPolicyAndRegistrySnapshot(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)

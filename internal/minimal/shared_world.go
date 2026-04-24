@@ -386,7 +386,9 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	visibilityDiff := r.scopesLocked().RelocateVisibilityDiff(previous, current)
+	scopes := r.scopesLocked()
+	visibilityDiff := scopes.RelocateVisibilityDiff(previous, current)
+	staticActorVisibilityDiff := scopes.RelocateStaticActorVisibilityDiff(previous, current)
 	_ = r.entities.UpdatePlayer(id, current)
 	r.lastKnownCharacters[id] = current
 
@@ -412,6 +414,7 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 	}
 
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
+	originFrames = append(originFrames, buildStaticActorVisibilityTransitionFrames(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
 	if len(originFrames) == 0 {
 		return
 	}
@@ -885,6 +888,29 @@ func encodeStaticActorVisibilityFrames(actor worldruntime.StaticEntity) [][]byte
 		infoRaw,
 		worldproto.EncodeCharacterUpdate(staticActorCharacterUpdatePacket(actor, vid)),
 	}
+}
+
+func buildStaticActorVisibilityTransitionFrames(removed []worldruntime.StaticEntity, added []worldruntime.StaticEntity) [][]byte {
+	frames := make([][]byte, 0, len(removed)+len(added)*3)
+	for _, actor := range removed {
+		deleteRaw, ok := encodeStaticActorDeleteFrame(actor)
+		if !ok {
+			continue
+		}
+		frames = append(frames, deleteRaw)
+	}
+	for _, actor := range added {
+		frames = append(frames, encodeStaticActorVisibilityFrames(actor)...)
+	}
+	return frames
+}
+
+func encodeStaticActorDeleteFrame(actor worldruntime.StaticEntity) ([]byte, bool) {
+	vid, ok := staticActorVisibilityVID(actor)
+	if !ok {
+		return nil, false
+	}
+	return worldproto.EncodeCharacterDeleteNotice(worldproto.CharacterDeleteNoticePacket{VID: vid}), true
 }
 
 func staticActorVisibilityVID(actor worldruntime.StaticEntity) (uint32, bool) {

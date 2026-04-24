@@ -272,6 +272,117 @@ func TestNewGameSessionFactoryRadiusAOIOnlyBootstrapsNearbyStaticActors(t *testi
 	}
 }
 
+func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeBootstrapsStaticActorVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1700, 2900, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1300, 2300, 20301)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, enterOut := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for player outside static-actor AOI, got %d", len(enterOut))
+	}
+
+	moveOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1300, Y: 2300, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
+	}
+
+	originEntry := flushServerFrames(t, flowOne)
+	if len(originEntry) != 3 {
+		t.Fatalf("expected 3 queued static-actor entry frames after move into radius AOI, got %d", len(originEntry))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originEntry[0]))
+	if err != nil {
+		t.Fatalf("decode static actor add after move into AOI: %v", err)
+	}
+	if staticAdd.VID != uint32(actor.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1300 || staticAdd.Y != 2300 || staticAdd.RaceNum != 20301 {
+		t.Fatalf("unexpected static actor add after move into AOI: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, originEntry[1]))
+	if err != nil {
+		t.Fatalf("decode static actor additional info after move into AOI: %v", err)
+	}
+	if staticInfo.VID != uint32(actor.EntityID) || staticInfo.Name != "Blacksmith" {
+		t.Fatalf("unexpected static actor additional info after move into AOI: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, originEntry[2]))
+	if err != nil {
+		t.Fatalf("decode static actor update after move into AOI: %v", err)
+	}
+	if staticUpdate.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected static actor update after move into AOI: %+v", staticUpdate)
+	}
+}
+
+func TestNewGameSessionFactoryRadiusAOIMoveOutOfRangeRemovesStaticActorVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1200, 2200, 20301)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, enterOut := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for player inside static-actor AOI, got %d", len(enterOut))
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after enter bootstrap with static actor, got %d", len(queued))
+	}
+
+	moveOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1900, Y: 3100, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
+	}
+
+	originExit := flushServerFrames(t, flowOne)
+	if len(originExit) != 1 {
+		t.Fatalf("expected 1 queued static-actor delete after leaving radius AOI, got %d", len(originExit))
+	}
+	staticDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, originExit[0]))
+	if err != nil {
+		t.Fatalf("decode static actor delete after move out of AOI: %v", err)
+	}
+	if staticDelete.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected static actor delete after move out of AOI: %+v", staticDelete)
+	}
+}
+
 func TestNewGameSessionFactoryQueuesPeerMoveForVisiblePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -620,6 +731,69 @@ func TestNewGameSessionFactoryRadiusAOISyncPositionIntoRangeBootstrapsPeerVisibi
 	}
 }
 
+func TestNewGameSessionFactoryRadiusAOISyncPositionIntoRangeBootstrapsStaticActorVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1700, 2900, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1300, 2300, 20301)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, enterOut := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for player outside static-actor AOI, got %d", len(enterOut))
+	}
+
+	syncOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: peerOne.VID, X: 1300, Y: 2300}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected 1 self sync_position ack frame, got %d", len(syncOut))
+	}
+
+	originEntry := flushServerFrames(t, flowOne)
+	if len(originEntry) != 3 {
+		t.Fatalf("expected 3 queued static-actor entry frames after sync_position into radius AOI, got %d", len(originEntry))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originEntry[0]))
+	if err != nil {
+		t.Fatalf("decode static actor add after sync_position into AOI: %v", err)
+	}
+	if staticAdd.VID != uint32(actor.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1300 || staticAdd.Y != 2300 || staticAdd.RaceNum != 20301 {
+		t.Fatalf("unexpected static actor add after sync_position into AOI: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, originEntry[1]))
+	if err != nil {
+		t.Fatalf("decode static actor additional info after sync_position into AOI: %v", err)
+	}
+	if staticInfo.VID != uint32(actor.EntityID) || staticInfo.Name != "Blacksmith" {
+		t.Fatalf("unexpected static actor additional info after sync_position into AOI: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, originEntry[2]))
+	if err != nil {
+		t.Fatalf("decode static actor update after sync_position into AOI: %v", err)
+	}
+	if staticUpdate.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected static actor update after sync_position into AOI: %+v", staticUpdate)
+	}
+}
+
 func TestNewGameSessionFactoryRadiusAOISyncPositionOutOfRangeRemovesPeerVisibility(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -679,6 +853,58 @@ func TestNewGameSessionFactoryRadiusAOISyncPositionOutOfRangeRemovesPeerVisibili
 	}
 	if originDelete.VID != peerOne.VID {
 		t.Fatalf("unexpected origin delete after sync_position out of AOI: %+v", originDelete)
+	}
+}
+
+func TestNewGameSessionFactoryRadiusAOISyncPositionOutOfRangeRemovesStaticActorVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1200, 2200, 20301)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowOne, enterOut := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for player inside static-actor AOI, got %d", len(enterOut))
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after enter bootstrap with static actor, got %d", len(queued))
+	}
+
+	syncOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: peerOne.VID, X: 1900, Y: 3100}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected 1 self sync_position ack frame, got %d", len(syncOut))
+	}
+
+	originExit := flushServerFrames(t, flowOne)
+	if len(originExit) != 1 {
+		t.Fatalf("expected 1 queued static-actor delete after sync_position leaves radius AOI, got %d", len(originExit))
+	}
+	staticDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, originExit[0]))
+	if err != nil {
+		t.Fatalf("decode static actor delete after sync_position out of AOI: %v", err)
+	}
+	if staticDelete.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected static actor delete after sync_position out of AOI: %+v", staticDelete)
 	}
 }
 

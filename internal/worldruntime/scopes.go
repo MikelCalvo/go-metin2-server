@@ -11,6 +11,13 @@ type VisibilitySnapshot struct {
 	VisiblePeers []PlayerEntity
 }
 
+type StaticActorVisibilityDiff struct {
+	CurrentVisibleActors []StaticEntity
+	TargetVisibleActors  []StaticEntity
+	RemovedVisibleActors []StaticEntity
+	AddedVisibleActors   []StaticEntity
+}
+
 type ConnectedCharacterSnapshot struct {
 	Name     string `json:"name"`
 	VID      uint32 `json:"vid"`
@@ -184,6 +191,10 @@ func (s Scopes) VisibleStaticActors(subject loginticket.Character) []StaticEntit
 	return visible
 }
 
+func (s Scopes) RelocateStaticActorVisibilityDiff(current, target loginticket.Character) StaticActorVisibilityDiff {
+	return buildStaticActorVisibilityDiff(s.VisibleStaticActors(current), s.VisibleStaticActors(target))
+}
+
 func (s Scopes) MapOccupancySnapshots() []MapOccupancySnapshot {
 	if s.Entities == nil {
 		return nil
@@ -294,6 +305,56 @@ func staticActorSnapshots(topology BootstrapTopology, actors []StaticEntity) []S
 
 func staticActorVisibilityCharacter(actor StaticEntity) loginticket.Character {
 	return loginticket.Character{MapIndex: actor.Position.MapIndex, X: actor.Position.X, Y: actor.Position.Y}
+}
+
+func buildStaticActorVisibilityDiff(currentVisibleActors []StaticEntity, targetVisibleActors []StaticEntity) StaticActorVisibilityDiff {
+	currentVisibleActors = cloneStaticActors(currentVisibleActors)
+	targetVisibleActors = cloneStaticActors(targetVisibleActors)
+	removedVisibleActors, addedVisibleActors := diffVisibleStaticActors(currentVisibleActors, targetVisibleActors)
+	return StaticActorVisibilityDiff{
+		CurrentVisibleActors: currentVisibleActors,
+		TargetVisibleActors:  targetVisibleActors,
+		RemovedVisibleActors: removedVisibleActors,
+		AddedVisibleActors:   addedVisibleActors,
+	}
+}
+
+func diffVisibleStaticActors(current []StaticEntity, target []StaticEntity) ([]StaticEntity, []StaticEntity) {
+	currentByID := make(map[uint64]StaticEntity, len(current))
+	for _, actor := range current {
+		currentByID[actor.Entity.ID] = actor
+	}
+	targetByID := make(map[uint64]StaticEntity, len(target))
+	for _, actor := range target {
+		targetByID[actor.Entity.ID] = actor
+	}
+
+	removed := make([]StaticEntity, 0)
+	for entityID, actor := range currentByID {
+		if _, ok := targetByID[entityID]; ok {
+			continue
+		}
+		removed = append(removed, actor)
+	}
+	added := make([]StaticEntity, 0)
+	for entityID, actor := range targetByID {
+		if _, ok := currentByID[entityID]; ok {
+			continue
+		}
+		added = append(added, actor)
+	}
+	sortStaticEntities(removed)
+	sortStaticEntities(added)
+	return removed, added
+}
+
+func cloneStaticActors(actors []StaticEntity) []StaticEntity {
+	if len(actors) == 0 {
+		return nil
+	}
+	cloned := append([]StaticEntity(nil), actors...)
+	sortStaticEntities(cloned)
+	return cloned
 }
 
 func buildMapOccupancySnapshots(topology BootstrapTopology, occupancies []MapOccupancy) []MapOccupancySnapshot {

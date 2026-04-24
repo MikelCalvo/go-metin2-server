@@ -24,10 +24,11 @@ This contract applies only to:
 - the first loopback-only operator seed/snapshot/update/remove surface used to create, inspect, edit, and delete those runtime actors on `gamed`
 - the first client-visible enter-game bootstrap burst for static actors that already share the entering player's visible world under the current bootstrap topology/AOI policy
 
-This slice now claims only one narrow client-visible behavior for non-player actors:
+This slice now claims only two narrow client-visible behaviors for non-player actors:
 - when a player enters `GAME`, already-visible bootstrap static actors can be appended to that enter-game result with deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` frames
+- when that same player later crosses the configured AOI boundary through `MOVE` or `SYNC_POSITION`, the runtime can queue the corresponding self-facing static-actor add/delete rebuild frames
 
-It still does **not** yet claim general spawn/update/delete replication, AOI-boundary rebuild for static actors after movement, or gameplay systems behind those actors.
+It still does **not** yet claim general spawn/update/delete replication to other sessions, dynamic actor behavior, or gameplay systems behind those actors.
 
 ## Current owned non-player contract
 
@@ -80,7 +81,7 @@ This slice does not yet freeze:
 - mob AI, aggro, pathing, or combat
 - spawn groups or respawn rules
 - shops, drops, loot, or item generation
-- client-visible spawn/update/delete packet choreography beyond the first enter-game bootstrap burst for already-visible static actors
+- client-visible spawn/update/delete packet choreography beyond the first enter-game bootstrap burst and the first self-facing AOI add/delete rebuild for already-seeded static actors
 - damage, targeting, or death state
 - inter-channel ownership or persistence schema for non-player actors
 
@@ -94,6 +95,7 @@ The next runtime checkpoint after this document should be able to say:
 - runtime/operator map-occupancy snapshots can now surface those static actors on their effective maps
 - `gamed` can seed, inspect, update, and remove those bootstrap static actors through loopback-only operator paths
 - entering players can now receive a first deterministic bootstrap burst for static actors that already share their visible world, reusing `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`
+- moving/syncing players can now receive the first deterministic self-facing add/delete rebuild for static actors when configured AOI changes whether those actors are visible
 - player-only runtime behavior remains unchanged while this scaffolding lands
 
 At that point, the repository will own the first real non-player runtime seam without pretending that NPCs or mobs are implemented.
