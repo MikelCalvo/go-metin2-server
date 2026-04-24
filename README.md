@@ -25,7 +25,7 @@ Current scope of the project:
 - Minimal MOVE fanout so visible peers on the same bootstrap `MapIndex` receive queued movement replication from other connected players.
 - Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players.
 - A dedicated `internal/worldruntime` visibility helper and first whole-map visibility-policy boundary for same-topology visible-peer computation, deterministic add/remove peer-set diffs, and explicit self-facing visibility transitions for enter/leave/relocate callers.
-- A first opt-in bootstrap AOI helper in `internal/worldruntime`: deterministic floor-stable sector keys and a radius-based visibility policy now exist beside the default whole-map policy, without changing current default wire behavior yet.
+- A first opt-in bootstrap AOI helper in `internal/worldruntime`: deterministic floor-stable sector keys and a radius-based visibility policy now exist beside the default whole-map policy, and `gamed` can now select whole-map vs radius AOI through service config/env wiring without changing the default wire behavior when AOI is left unset.
 - A first non-player runtime scaffolding in `internal/worldruntime`: static actors can now be registered with owned entity identity and map presence, and `gamed` now exposes the first local-only operator seed/snapshot/remove path for those runtime actors without claiming client-visible spawn/update behavior yet.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
@@ -142,7 +142,7 @@ Legend:
 | Movement replication | [~] | `MOVE` and `SYNC_POSITION` fan out to already-visible peers on the same bootstrap `MapIndex`. |
 | Map boundaries | [~] | An explicit bootstrap topology now owns local channel/map chat scoping, but there is still no final warp flow yet. |
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
-| Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, an opt-in bootstrap radius/sector helper now exists beside it, and topology now carries explicit helpers for selecting whole-map vs radius visibility policy, but there is still no production range-, sector-, or distance-based culling policy wired through the runtime by default. |
+| Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, an opt-in bootstrap radius/sector helper now exists beside it, topology now carries explicit helpers for selecting whole-map vs radius visibility policy, and `gamed` can now wire that choice from service config/env into the live bootstrap runtime, but there is still no production range-, sector-, or distance-based culling policy wired through the runtime by default. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer rebootstrap burst exist, but there is still no final end-to-end client/server warp/loading flow yet. |
 | Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, reconnect/teardown and the first non-player runtime contract are now frozen in docs, duplicate-live `ENTERGAME` rejection can now be retried on the same encrypted game socket once the live owner disappears, the first static non-player actor scaffolding now owns entity identity plus map presence, `gamed` now exposes loopback-only operator seed/snapshot/remove paths for those static actors, and runtime map-occupancy snapshots now surface static actors on their effective maps, but broader reconnect hardening, richer AOI, and real non-player gameplay behavior are still ahead. |
 
@@ -226,6 +226,7 @@ Legend:
 - `docs/roadmaps/2026-04-18-global-project-assessment.md`
 - `docs/plans/2026-04-18-open-mt2-style-next-steps-roadmap.md`
 - `docs/plans/2026-04-21-world-runtime-and-character-state-next-twenty-five-slices.md`
+- `docs/plans/2026-04-24-runtime-aoi-and-static-actor-next-ten-slices.md`
 - `spec/protocol/README.md`
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`

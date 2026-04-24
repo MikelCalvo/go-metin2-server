@@ -24,6 +24,11 @@ Bootstrap topology now also exposes explicit policy-selection helpers so callers
 - whole-map visibility via `WithWholeMapVisibilityPolicy()`
 - opt-in radius/sector bootstrap AOI via `WithRadiusVisibilityPolicy(radius, sectorSize)`
 
+At the bootstrap runtime edge, `gamed` can now choose that policy through `config.Service` / `LoadService(...)` wiring:
+- `VisibilityMode = whole_map` keeps the legacy default
+- `VisibilityMode = radius` requires positive `VisibilityRadius` and `VisibilitySectorSize`
+- env overrides follow the existing service/global pattern, e.g. `METIN2_GAMED_VISIBILITY_MODE`, `METIN2_GAMED_VISIBILITY_RADIUS`, `METIN2_GAMED_VISIBILITY_SECTOR_SIZE`
+
 Under the current default bootstrap policy, two players are mutually visible when:
 - they belong to the same local bootstrap channel
 - they share the same effective `MapIndex`

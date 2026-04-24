@@ -47,8 +47,11 @@ const bootstrapPlayerPointValueIndex = 1
 const bootstrapMapIndex uint32 = 1
 
 var (
-	ErrInvalidLegacyAddr = errors.New("invalid legacy addr")
-	ErrInvalidPublicAddr = errors.New("invalid public addr")
+	ErrInvalidLegacyAddr           = errors.New("invalid legacy addr")
+	ErrInvalidPublicAddr           = errors.New("invalid public addr")
+	ErrInvalidVisibilityMode       = errors.New("invalid visibility mode")
+	ErrInvalidVisibilityRadius     = errors.New("invalid visibility radius")
+	ErrInvalidVisibilitySectorSize = errors.New("invalid visibility sector size")
 )
 
 type loginKeyGenerator func() (uint32, error)
@@ -250,6 +253,30 @@ func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store,
 	return newGameRuntimeWithAccountStoreAndTransferTriggers(cfg, store, accounts, nil)
 }
 
+func bootstrapTopologyFromConfig(cfg config.Service) (worldruntime.BootstrapTopology, error) {
+	topology := worldruntime.NewBootstrapTopology(0)
+	mode := strings.TrimSpace(strings.ToLower(cfg.VisibilityMode))
+	mode = strings.ReplaceAll(mode, "-", "_")
+	if mode == "" {
+		mode = "whole_map"
+	}
+
+	switch mode {
+	case "whole_map":
+		return topology.WithWholeMapVisibilityPolicy(), nil
+	case "radius":
+		if cfg.VisibilityRadius <= 0 {
+			return worldruntime.BootstrapTopology{}, ErrInvalidVisibilityRadius
+		}
+		if cfg.VisibilitySectorSize <= 0 {
+			return worldruntime.BootstrapTopology{}, ErrInvalidVisibilitySectorSize
+		}
+		return topology.WithRadiusVisibilityPolicy(cfg.VisibilityRadius, cfg.VisibilitySectorSize), nil
+	default:
+		return worldruntime.BootstrapTopology{}, ErrInvalidVisibilityMode
+	}
+}
+
 func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store loginticket.Store, accounts accountstore.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
 	advertisedPort, err := parsePort(cfg.LegacyAddr)
 	if err != nil {
@@ -261,10 +288,15 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 		return nil, err
 	}
 
+	topology, err := bootstrapTopologyFromConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	if store == nil {
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
 	}
-	sharedWorld := newSharedWorldRegistry()
+	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{sharedWorld: sharedWorld}
 	transferTriggers = cloneBootstrapTransferTriggers(transferTriggers)
 

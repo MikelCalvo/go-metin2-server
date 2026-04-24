@@ -16,6 +16,7 @@ import (
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func TestNewAuthSessionFactoryAcceptsStubCredentials(t *testing.T) {
@@ -719,6 +720,57 @@ func TestNewGameSessionFactoryRejectsInvalidPublicAddr(t *testing.T) {
 	_, err := NewGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "not-an-ip"})
 	if !errors.Is(err, ErrInvalidPublicAddr) {
 		t.Fatalf("expected ErrInvalidPublicAddr, got %v", err)
+	}
+}
+
+func TestNewGameRuntimeUsesConfiguredRadiusVisibilityPolicy(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     450,
+		VisibilitySectorSize: 225,
+	}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("expected configured runtime creation to succeed, got %v", err)
+	}
+	policy, ok := runtime.sharedWorld.topology.VisibilityPolicy().(worldruntime.RadiusVisibilityPolicy)
+	if !ok {
+		t.Fatalf("expected radius visibility policy, got %T", runtime.sharedWorld.topology.VisibilityPolicy())
+	}
+	if policy.Radius != 450 || policy.SectorSize != 225 {
+		t.Fatalf("unexpected radius visibility policy config: %+v", policy)
+	}
+}
+
+func TestNewGameSessionFactoryRejectsUnknownVisibilityMode(t *testing.T) {
+	_, err := NewGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "cones"})
+	if !errors.Is(err, ErrInvalidVisibilityMode) {
+		t.Fatalf("expected ErrInvalidVisibilityMode, got %v", err)
+	}
+}
+
+func TestNewGameSessionFactoryRejectsInvalidRadiusVisibilityConfig(t *testing.T) {
+	_, err := NewGameSessionFactory(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     0,
+		VisibilitySectorSize: 225,
+	})
+	if !errors.Is(err, ErrInvalidVisibilityRadius) {
+		t.Fatalf("expected ErrInvalidVisibilityRadius, got %v", err)
+	}
+
+	_, err = NewGameSessionFactory(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     450,
+		VisibilitySectorSize: 0,
+	})
+	if !errors.Is(err, ErrInvalidVisibilitySectorSize) {
+		t.Fatalf("expected ErrInvalidVisibilitySectorSize, got %v", err)
 	}
 }
 
