@@ -2359,6 +2359,18 @@ func TestGameRuntimeTransferCharacterReturnsStructuredResult(t *testing.T) {
 	if len(result.AddedVisiblePeers) != 1 || result.AddedVisiblePeers[0].Name != "PeerThree" {
 		t.Fatalf("unexpected added visible peers: %+v", result.AddedVisiblePeers)
 	}
+	if len(result.CurrentVisibleStaticActors) != 1 || result.CurrentVisibleStaticActors[0].EntityID != blacksmith.EntityID || result.CurrentVisibleStaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected current visible static actors: %+v", result.CurrentVisibleStaticActors)
+	}
+	if len(result.TargetVisibleStaticActors) != 1 || result.TargetVisibleStaticActors[0].EntityID != guard.EntityID || result.TargetVisibleStaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected target visible static actors: %+v", result.TargetVisibleStaticActors)
+	}
+	if len(result.RemovedVisibleStaticActors) != 1 || result.RemovedVisibleStaticActors[0].EntityID != blacksmith.EntityID || result.RemovedVisibleStaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected removed visible static actors: %+v", result.RemovedVisibleStaticActors)
+	}
+	if len(result.AddedVisibleStaticActors) != 1 || result.AddedVisibleStaticActors[0].EntityID != guard.EntityID || result.AddedVisibleStaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected added visible static actors: %+v", result.AddedVisibleStaticActors)
+	}
 	if len(result.MapOccupancyChanges) != 2 || result.MapOccupancyChanges[0].MapIndex != bootstrapMapIndex || result.MapOccupancyChanges[0].BeforeCount != 2 || result.MapOccupancyChanges[0].AfterCount != 1 || result.MapOccupancyChanges[1].MapIndex != 42 || result.MapOccupancyChanges[1].BeforeCount != 1 || result.MapOccupancyChanges[1].AfterCount != 2 {
 		t.Fatalf("unexpected map occupancy changes: %+v", result.MapOccupancyChanges)
 	}
@@ -2803,6 +2815,18 @@ func TestGameRuntimePreviewRelocationReturnsVisibilityAndMapChanges(t *testing.T
 	}
 	if len(preview.AddedVisiblePeers) != 1 || preview.AddedVisiblePeers[0].Name != "PeerThree" {
 		t.Fatalf("unexpected added visible peers: %+v", preview.AddedVisiblePeers)
+	}
+	if len(preview.CurrentVisibleStaticActors) != 1 || preview.CurrentVisibleStaticActors[0].EntityID != blacksmith.EntityID || preview.CurrentVisibleStaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected current visible static actors: %+v", preview.CurrentVisibleStaticActors)
+	}
+	if len(preview.TargetVisibleStaticActors) != 1 || preview.TargetVisibleStaticActors[0].EntityID != guard.EntityID || preview.TargetVisibleStaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected target visible static actors: %+v", preview.TargetVisibleStaticActors)
+	}
+	if len(preview.RemovedVisibleStaticActors) != 1 || preview.RemovedVisibleStaticActors[0].EntityID != blacksmith.EntityID || preview.RemovedVisibleStaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected removed visible static actors: %+v", preview.RemovedVisibleStaticActors)
+	}
+	if len(preview.AddedVisibleStaticActors) != 1 || preview.AddedVisibleStaticActors[0].EntityID != guard.EntityID || preview.AddedVisibleStaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected added visible static actors: %+v", preview.AddedVisibleStaticActors)
 	}
 	if len(preview.MapOccupancyChanges) != 2 {
 		t.Fatalf("expected 2 map occupancy changes, got %d", len(preview.MapOccupancyChanges))

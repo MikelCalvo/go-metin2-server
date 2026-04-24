@@ -57,16 +57,20 @@ type MapOccupancyChange struct {
 }
 
 type RelocationPreview struct {
-	Applied             bool                         `json:"applied"`
-	Character           ConnectedCharacterSnapshot   `json:"character"`
-	Target              ConnectedCharacterSnapshot   `json:"target"`
-	CurrentVisiblePeers []ConnectedCharacterSnapshot `json:"current_visible_peers"`
-	TargetVisiblePeers  []ConnectedCharacterSnapshot `json:"target_visible_peers"`
-	RemovedVisiblePeers []ConnectedCharacterSnapshot `json:"removed_visible_peers"`
-	AddedVisiblePeers   []ConnectedCharacterSnapshot `json:"added_visible_peers"`
-	MapOccupancyChanges []MapOccupancyChange         `json:"map_occupancy_changes"`
-	BeforeMapOccupancy  []MapOccupancySnapshot       `json:"before_map_occupancy"`
-	AfterMapOccupancy   []MapOccupancySnapshot       `json:"after_map_occupancy"`
+	Applied                    bool                         `json:"applied"`
+	Character                  ConnectedCharacterSnapshot   `json:"character"`
+	Target                     ConnectedCharacterSnapshot   `json:"target"`
+	CurrentVisiblePeers        []ConnectedCharacterSnapshot `json:"current_visible_peers"`
+	TargetVisiblePeers         []ConnectedCharacterSnapshot `json:"target_visible_peers"`
+	RemovedVisiblePeers        []ConnectedCharacterSnapshot `json:"removed_visible_peers"`
+	AddedVisiblePeers          []ConnectedCharacterSnapshot `json:"added_visible_peers"`
+	CurrentVisibleStaticActors []StaticActorSnapshot        `json:"current_visible_static_actors"`
+	TargetVisibleStaticActors  []StaticActorSnapshot        `json:"target_visible_static_actors"`
+	RemovedVisibleStaticActors []StaticActorSnapshot        `json:"removed_visible_static_actors"`
+	AddedVisibleStaticActors   []StaticActorSnapshot        `json:"added_visible_static_actors"`
+	MapOccupancyChanges        []MapOccupancyChange         `json:"map_occupancy_changes"`
+	BeforeMapOccupancy         []MapOccupancySnapshot       `json:"before_map_occupancy"`
+	AfterMapOccupancy          []MapOccupancySnapshot       `json:"after_map_occupancy"`
 }
 
 type Scopes struct {
@@ -207,19 +211,24 @@ func (s Scopes) BuildRelocationPreview(current, target loginticket.Character, ap
 		return RelocationPreview{Applied: applied, Character: connectedCharacterSnapshot(s.Topology, current), Target: connectedCharacterSnapshot(s.Topology, target)}
 	}
 	visibilityDiff := s.RelocateVisibilityDiff(current, target)
+	staticActorVisibilityDiff := s.RelocateStaticActorVisibilityDiff(current, target)
 	beforeOccupancy := s.MapOccupancySnapshots()
 	afterOccupancy := relocateMapOccupancySnapshots(beforeOccupancy, s.Topology, current, target)
 	return RelocationPreview{
-		Applied:             applied,
-		Character:           connectedCharacterSnapshot(s.Topology, current),
-		Target:              connectedCharacterSnapshot(s.Topology, target),
-		CurrentVisiblePeers: connectedCharacterSnapshots(s.Topology, visibilityDiff.CurrentVisiblePeers),
-		TargetVisiblePeers:  connectedCharacterSnapshots(s.Topology, visibilityDiff.TargetVisiblePeers),
-		RemovedVisiblePeers: connectedCharacterSnapshots(s.Topology, visibilityDiff.RemovedVisiblePeers),
-		AddedVisiblePeers:   connectedCharacterSnapshots(s.Topology, visibilityDiff.AddedVisiblePeers),
-		MapOccupancyChanges: buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
-		BeforeMapOccupancy:  beforeOccupancy,
-		AfterMapOccupancy:   afterOccupancy,
+		Applied:                    applied,
+		Character:                  connectedCharacterSnapshot(s.Topology, current),
+		Target:                     connectedCharacterSnapshot(s.Topology, target),
+		CurrentVisiblePeers:        connectedCharacterSnapshots(s.Topology, visibilityDiff.CurrentVisiblePeers),
+		TargetVisiblePeers:         connectedCharacterSnapshots(s.Topology, visibilityDiff.TargetVisiblePeers),
+		RemovedVisiblePeers:        connectedCharacterSnapshots(s.Topology, visibilityDiff.RemovedVisiblePeers),
+		AddedVisiblePeers:          connectedCharacterSnapshots(s.Topology, visibilityDiff.AddedVisiblePeers),
+		CurrentVisibleStaticActors: staticActorSnapshots(s.Topology, staticActorVisibilityDiff.CurrentVisibleActors),
+		TargetVisibleStaticActors:  staticActorSnapshots(s.Topology, staticActorVisibilityDiff.TargetVisibleActors),
+		RemovedVisibleStaticActors: staticActorSnapshots(s.Topology, staticActorVisibilityDiff.RemovedVisibleActors),
+		AddedVisibleStaticActors:   staticActorSnapshots(s.Topology, staticActorVisibilityDiff.AddedVisibleActors),
+		MapOccupancyChanges:        buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
+		BeforeMapOccupancy:         beforeOccupancy,
+		AfterMapOccupancy:          afterOccupancy,
 	}
 }
 

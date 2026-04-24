@@ -419,6 +419,18 @@ func TestScopesBuildRelocationPreviewPreservesStaticOnlyMapsAndCharacterCountDel
 	if preview.Applied {
 		t.Fatal("expected relocate preview helper to preserve applied=false")
 	}
+	if len(preview.CurrentVisibleStaticActors) != 1 || preview.CurrentVisibleStaticActors[0].EntityID != blacksmith.Entity.ID || preview.CurrentVisibleStaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected current visible static actors: %+v", preview.CurrentVisibleStaticActors)
+	}
+	if len(preview.TargetVisibleStaticActors) != 1 || preview.TargetVisibleStaticActors[0].EntityID != guard.Entity.ID || preview.TargetVisibleStaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected target visible static actors: %+v", preview.TargetVisibleStaticActors)
+	}
+	if len(preview.RemovedVisibleStaticActors) != 1 || preview.RemovedVisibleStaticActors[0].EntityID != blacksmith.Entity.ID || preview.RemovedVisibleStaticActors[0].Name != "Blacksmith" {
+		t.Fatalf("unexpected removed visible static actors: %+v", preview.RemovedVisibleStaticActors)
+	}
+	if len(preview.AddedVisibleStaticActors) != 1 || preview.AddedVisibleStaticActors[0].EntityID != guard.Entity.ID || preview.AddedVisibleStaticActors[0].Name != "VillageGuard" {
+		t.Fatalf("unexpected added visible static actors: %+v", preview.AddedVisibleStaticActors)
+	}
 	if len(preview.MapOccupancyChanges) != 2 {
 		t.Fatalf("expected 2 occupancy deltas, got %+v", preview.MapOccupancyChanges)
 	}

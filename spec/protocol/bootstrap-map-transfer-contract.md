@@ -64,6 +64,10 @@ Both preview and commit return the same JSON shape:
 - `target_visible_peers`
 - `removed_visible_peers`
 - `added_visible_peers`
+- `current_visible_static_actors`
+- `target_visible_static_actors`
+- `removed_visible_static_actors`
+- `added_visible_static_actors`
 - `map_occupancy_changes`
 - `before_map_occupancy`
 - `after_map_occupancy`
@@ -97,6 +101,22 @@ Peers that would stop being visible after the transfer.
 ### `added_visible_peers`
 
 Peers that would become visible after the transfer.
+
+### `current_visible_static_actors`
+
+Static actors visible to the character before transfer under the current bootstrap topology/AOI rule set.
+
+### `target_visible_static_actors`
+
+Static actors visible to the character after the hypothetical or committed transfer.
+
+### `removed_visible_static_actors`
+
+Static actors that would stop being visible after the transfer.
+
+### `added_visible_static_actors`
+
+Static actors that would become visible after the transfer.
 
 ### `map_occupancy_changes`
 

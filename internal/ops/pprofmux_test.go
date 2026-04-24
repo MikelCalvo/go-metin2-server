@@ -202,14 +202,16 @@ func TestLocalRelocateEndpointReturnsNotFoundForUnknownTarget(t *testing.T) {
 
 func TestLocalTransferEndpointReturnsStructuredJSONForLoopbackPost(t *testing.T) {
 	transferer := &stubCharacterTransferer{found: true, result: map[string]any{
-		"applied":               true,
-		"character":             map[string]any{"name": "PeerTwo", "map_index": uint32(1), "x": int32(1300), "y": int32(2300)},
-		"target":                map[string]any{"name": "PeerTwo", "map_index": uint32(42), "x": int32(1700), "y": int32(2800)},
-		"removed_visible_peers": []map[string]any{{"name": "PeerOne"}},
-		"added_visible_peers":   []map[string]any{{"name": "PeerThree"}},
-		"map_occupancy_changes": []map[string]any{{"map_index": uint32(1), "before_count": 2, "after_count": 1}, {"map_index": uint32(42), "before_count": 1, "after_count": 2}},
-		"before_map_occupancy":  []map[string]any{{"map_index": uint32(1), "character_count": 2, "characters": []map[string]any{{"name": "PeerOne"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 1, "characters": []map[string]any{{"name": "PeerThree"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
-		"after_map_occupancy":   []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "PeerOne"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "PeerThree"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
+		"applied":                       true,
+		"character":                     map[string]any{"name": "PeerTwo", "map_index": uint32(1), "x": int32(1300), "y": int32(2300)},
+		"target":                        map[string]any{"name": "PeerTwo", "map_index": uint32(42), "x": int32(1700), "y": int32(2800)},
+		"removed_visible_peers":         []map[string]any{{"name": "PeerOne"}},
+		"added_visible_peers":           []map[string]any{{"name": "PeerThree"}},
+		"removed_visible_static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}},
+		"added_visible_static_actors":   []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}},
+		"map_occupancy_changes":         []map[string]any{{"map_index": uint32(1), "before_count": 2, "after_count": 1}, {"map_index": uint32(42), "before_count": 1, "after_count": 2}},
+		"before_map_occupancy":          []map[string]any{{"map_index": uint32(1), "character_count": 2, "characters": []map[string]any{{"name": "PeerOne"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 1, "characters": []map[string]any{{"name": "PeerThree"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
+		"after_map_occupancy":           []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "PeerOne"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "PeerThree"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
 	}}
 	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, transferer.TransferCharacter, nil, nil, nil)
 
@@ -232,7 +234,7 @@ func TestLocalTransferEndpointReturnsStructuredJSONForLoopbackPost(t *testing.T)
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"applied":true`) || !strings.Contains(string(body), `"map_occupancy_changes"`) || !strings.Contains(string(body), `"before_map_occupancy"`) || !strings.Contains(string(body), `"after_map_occupancy"`) || !strings.Contains(string(body), `"static_actor_count":1`) || !strings.Contains(string(body), `"name":"PeerThree"`) {
+	if !strings.Contains(string(body), `"applied":true`) || !strings.Contains(string(body), `"map_occupancy_changes"`) || !strings.Contains(string(body), `"before_map_occupancy"`) || !strings.Contains(string(body), `"after_map_occupancy"`) || !strings.Contains(string(body), `"removed_visible_static_actors"`) || !strings.Contains(string(body), `"added_visible_static_actors"`) || !strings.Contains(string(body), `"static_actor_count":1`) || !strings.Contains(string(body), `"name":"PeerThree"`) || !strings.Contains(string(body), `"name":"VillageGuard"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
@@ -311,13 +313,15 @@ func TestLocalTransferEndpointRejectsWrongMethod(t *testing.T) {
 
 func TestLocalRelocatePreviewEndpointReturnsJSONSnapshotForLoopbackPost(t *testing.T) {
 	previewer := &stubRelocationPreviewer{found: true, preview: map[string]any{
-		"character":             map[string]any{"name": "PeerTwo", "map_index": uint32(1), "x": int32(1300), "y": int32(2300)},
-		"target":                map[string]any{"name": "PeerTwo", "map_index": uint32(42), "x": int32(1700), "y": int32(2800)},
-		"removed_visible_peers": []map[string]any{{"name": "PeerOne"}},
-		"added_visible_peers":   []map[string]any{{"name": "PeerThree"}},
-		"map_occupancy_changes": []map[string]any{{"map_index": uint32(1), "before_count": 2, "after_count": 1}, {"map_index": uint32(42), "before_count": 1, "after_count": 2}},
-		"before_map_occupancy":  []map[string]any{{"map_index": uint32(1), "character_count": 2, "characters": []map[string]any{{"name": "PeerOne"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 1, "characters": []map[string]any{{"name": "PeerThree"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
-		"after_map_occupancy":   []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "PeerOne"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "PeerThree"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
+		"character":                     map[string]any{"name": "PeerTwo", "map_index": uint32(1), "x": int32(1300), "y": int32(2300)},
+		"target":                        map[string]any{"name": "PeerTwo", "map_index": uint32(42), "x": int32(1700), "y": int32(2800)},
+		"removed_visible_peers":         []map[string]any{{"name": "PeerOne"}},
+		"added_visible_peers":           []map[string]any{{"name": "PeerThree"}},
+		"removed_visible_static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}},
+		"added_visible_static_actors":   []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}},
+		"map_occupancy_changes":         []map[string]any{{"map_index": uint32(1), "before_count": 2, "after_count": 1}, {"map_index": uint32(42), "before_count": 1, "after_count": 2}},
+		"before_map_occupancy":          []map[string]any{{"map_index": uint32(1), "character_count": 2, "characters": []map[string]any{{"name": "PeerOne"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 1, "characters": []map[string]any{{"name": "PeerThree"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
+		"after_map_occupancy":           []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "PeerOne"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "PeerThree"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
 	}}
 	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, previewer.PreviewRelocation, nil, nil, nil, nil)
 
@@ -340,7 +344,7 @@ func TestLocalRelocatePreviewEndpointReturnsJSONSnapshotForLoopbackPost(t *testi
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"removed_visible_peers"`) || !strings.Contains(string(body), `"map_occupancy_changes"`) || !strings.Contains(string(body), `"before_map_occupancy"`) || !strings.Contains(string(body), `"after_map_occupancy"`) || !strings.Contains(string(body), `"static_actor_count":1`) || !strings.Contains(string(body), `"name":"PeerThree"`) {
+	if !strings.Contains(string(body), `"removed_visible_peers"`) || !strings.Contains(string(body), `"map_occupancy_changes"`) || !strings.Contains(string(body), `"before_map_occupancy"`) || !strings.Contains(string(body), `"after_map_occupancy"`) || !strings.Contains(string(body), `"removed_visible_static_actors"`) || !strings.Contains(string(body), `"added_visible_static_actors"`) || !strings.Contains(string(body), `"static_actor_count":1`) || !strings.Contains(string(body), `"name":"PeerThree"`) || !strings.Contains(string(body), `"name":"VillageGuard"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }

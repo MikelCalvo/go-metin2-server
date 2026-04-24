@@ -94,6 +94,7 @@ The next runtime checkpoint after this document should be able to say:
 - the actor participates in owned map presence/index bookkeeping
 - runtime-owned directories and map indexes can now also update that static actor in place without delete-and-recreate when its name/class/position changes
 - runtime/operator map-occupancy snapshots can now surface those static actors on their effective maps
+- relocate-preview and transfer results can now also expose explicit added/removed visible static actors beside the before/after occupancy snapshots
 - `gamed` can seed, inspect, update, and remove those bootstrap static actors through loopback-only operator paths
 - entering players can now receive a first deterministic bootstrap burst for static actors that already share their visible world, reusing `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`
 - moving/syncing players can now receive the first deterministic self-facing add/delete rebuild for static actors when configured AOI changes whether those actors are visible
