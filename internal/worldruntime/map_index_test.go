@@ -113,6 +113,26 @@ func TestMapIndexTracksStaticActorsByEffectiveMap(t *testing.T) {
 	}
 }
 
+func TestMapIndexRemoveStaticClearsMapBucketWhenEntityIndexAlreadyMissing(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor map-index registration to succeed")
+	}
+	delete(index.staticByEntityID, guard.Entity.ID)
+
+	removed, ok := index.RemoveStatic(guard.Entity.ID)
+	if !ok || removed.Entity.ID != guard.Entity.ID {
+		t.Fatalf("expected tolerant static actor removal after entity-index loss, got actor=%+v ok=%v", removed, ok)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected map static actor bucket to be cleared after tolerant removal, got %+v", actors)
+	}
+	if snapshots := index.Snapshot(); len(snapshots) != 0 {
+		t.Fatalf("expected no map snapshots after tolerant static actor removal, got %+v", snapshots)
+	}
+}
+
 func TestMapIndexSnapshotIncludesStaticActorsAndStaticOnlyMaps(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	if !index.Register(newPlayerEntity(1, entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))) {

@@ -204,18 +204,30 @@ func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	actor, ok := m.staticByEntityID[entityID]
-	if !ok {
-		return StaticEntity{}, false
+	if ok {
+		delete(m.staticByEntityID, entityID)
+		mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
+		if bucket := m.staticByMapIndex[mapIndex]; bucket != nil {
+			delete(bucket, entityID)
+			if len(bucket) == 0 {
+				delete(m.staticByMapIndex, mapIndex)
+			}
+		}
+		return actor, true
 	}
-	delete(m.staticByEntityID, entityID)
-	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
-	if bucket := m.staticByMapIndex[mapIndex]; bucket != nil {
+	for mapIndex, bucket := range m.staticByMapIndex {
+		actor, ok := bucket[entityID]
+		if !ok {
+			continue
+		}
 		delete(bucket, entityID)
 		if len(bucket) == 0 {
 			delete(m.staticByMapIndex, mapIndex)
 		}
+		delete(m.staticByEntityID, entityID)
+		return actor, true
 	}
-	return actor, true
+	return StaticEntity{}, false
 }
 
 func (m *MapIndex) StaticActors(mapIndex uint32) []StaticEntity {
