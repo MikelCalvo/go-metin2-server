@@ -160,3 +160,27 @@ func TestMapIndexSnapshotIncludesStaticActorsAndStaticOnlyMaps(t *testing.T) {
 		t.Fatalf("expected static actor in map 42 snapshot, got %+v", snapshots[1].StaticActors)
 	}
 }
+
+func TestMapIndexUpdateStaticMovesActorsBetweenMapBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := guard
+	updated.Entity.Name = "Blacksmith"
+	updated.Position = NewPosition(99, 900, 1200)
+	updated.RaceNum = 20016
+	if !index.UpdateStatic(updated) {
+		t.Fatal("expected static actor update to succeed")
+	}
+
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected old map static bucket to be empty after update, got %+v", actors)
+	}
+	actors := index.StaticActors(99)
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != "Blacksmith" || actors[0].Position != NewPosition(99, 900, 1200) || actors[0].RaceNum != 20016 {
+		t.Fatalf("expected updated actor in new map bucket, got %+v", actors)
+	}
+}

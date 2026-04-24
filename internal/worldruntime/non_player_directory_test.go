@@ -25,3 +25,31 @@ func TestNonPlayerDirectoryRegistersLooksUpAndRemovesStaticActors(t *testing.T) 
 		t.Fatal("expected static actor lookup to be cleared after removal")
 	}
 }
+
+func TestNonPlayerDirectoryUpdateReplacesStaticActorByEntityID(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:   Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := actor
+	updated.Entity.Name = "Blacksmith"
+	updated.Position = NewPosition(99, 900, 1200)
+	updated.RaceNum = 20016
+	if !directory.Update(updated) {
+		t.Fatal("expected static actor update to succeed")
+	}
+
+	lookup, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected static actor lookup to succeed after update")
+	}
+	if lookup.Entity.Name != "Blacksmith" || lookup.Position != NewPosition(99, 900, 1200) || lookup.RaceNum != 20016 {
+		t.Fatalf("unexpected static actor after update: %+v", lookup)
+	}
+}

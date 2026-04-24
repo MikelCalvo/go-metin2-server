@@ -117,6 +117,27 @@ func (r *EntityRegistry) StaticActor(id uint64) (StaticEntity, bool) {
 	return r.staticActors.ByEntityID(id)
 }
 
+func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bool) {
+	if r == nil || actor.Entity.ID == 0 || r.staticActors == nil || r.maps == nil {
+		return StaticEntity{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	previous, ok := r.staticActors.ByEntityID(actor.Entity.ID)
+	if !ok {
+		return StaticEntity{}, false
+	}
+	updated := newStaticEntity(actor.Entity.ID, actor)
+	if !r.staticActors.Update(updated) {
+		return StaticEntity{}, false
+	}
+	if !r.maps.UpdateStatic(updated) {
+		_ = r.staticActors.Update(previous)
+		return StaticEntity{}, false
+	}
+	return updated, true
+}
+
 func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character) bool {
 	if r == nil || id == 0 || r.players == nil || r.maps == nil {
 		return false

@@ -242,6 +242,37 @@ func TestEntityRegistryRemoveStaticActorClearsMapPresenceWhenDirectoryEntryAlrea
 	}
 }
 
+func TestEntityRegistryUpdateStaticActorUpdatesLookupAndMapPresence(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+
+	updated := guard
+	updated.Entity.Name = "Blacksmith"
+	updated.Position = NewPosition(99, 900, 1200)
+	updated.RaceNum = 20016
+	result, ok := registry.UpdateStaticActor(updated)
+	if !ok {
+		t.Fatal("expected static actor update to succeed")
+	}
+	if result.Entity.ID != guard.Entity.ID || result.Entity.Name != "Blacksmith" || result.Position != NewPosition(99, 900, 1200) || result.RaceNum != 20016 {
+		t.Fatalf("unexpected updated static actor result: %+v", result)
+	}
+	lookup, ok := registry.StaticActor(guard.Entity.ID)
+	if !ok || lookup.Entity.Name != "Blacksmith" || lookup.Position != NewPosition(99, 900, 1200) || lookup.RaceNum != 20016 {
+		t.Fatalf("expected static actor lookup to reflect update, got actor=%+v ok=%v", lookup, ok)
+	}
+	if actors := registry.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected old map static actor snapshot to be empty after update, got %+v", actors)
+	}
+	actors := registry.StaticActors(99)
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != "Blacksmith" {
+		t.Fatalf("expected updated static actor in map 99 snapshot, got %+v", actors)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,

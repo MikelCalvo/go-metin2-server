@@ -29,6 +29,17 @@ func (d *NonPlayerDirectory) ByEntityID(entityID uint64) (StaticEntity, bool) {
 	return actor, ok
 }
 
+func (d *NonPlayerDirectory) Update(actor StaticEntity) bool {
+	if d == nil || !validStaticEntity(actor) {
+		return false
+	}
+	if _, ok := d.byEntityID[actor.Entity.ID]; !ok {
+		return false
+	}
+	d.byEntityID[actor.Entity.ID] = actor
+	return true
+}
+
 func (d *NonPlayerDirectory) Remove(entityID uint64) (StaticEntity, bool) {
 	if d == nil || entityID == 0 {
 		return StaticEntity{}, false

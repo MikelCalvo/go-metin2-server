@@ -197,6 +197,34 @@ func (m *MapIndex) RegisterStatic(actor StaticEntity) bool {
 	return true
 }
 
+func (m *MapIndex) UpdateStatic(actor StaticEntity) bool {
+	if m == nil || !validStaticEntity(actor) {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	previous, ok := m.staticByEntityID[actor.Entity.ID]
+	if !ok {
+		return false
+	}
+	previousMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: previous.Position.MapIndex})
+	nextMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
+	if bucket := m.staticByMapIndex[previousMapIndex]; bucket != nil {
+		delete(bucket, actor.Entity.ID)
+		if len(bucket) == 0 {
+			delete(m.staticByMapIndex, previousMapIndex)
+		}
+	}
+	m.staticByEntityID[actor.Entity.ID] = actor
+	bucket := m.staticByMapIndex[nextMapIndex]
+	if bucket == nil {
+		bucket = make(map[uint64]StaticEntity)
+		m.staticByMapIndex[nextMapIndex] = bucket
+	}
+	bucket[actor.Entity.ID] = actor
+	return true
+}
+
 func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
 	if m == nil || entityID == 0 {
 		return StaticEntity{}, false

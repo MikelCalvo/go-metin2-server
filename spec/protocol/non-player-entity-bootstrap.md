@@ -85,6 +85,7 @@ The next runtime checkpoint after this document should be able to say:
 - `internal/worldruntime` can register a non-player actor with its own entity kind
 - the actor can be looked up deterministically
 - the actor participates in owned map presence/index bookkeeping
+- runtime-owned directories and map indexes can now also update that static actor in place without delete-and-recreate when its name/class/position changes
 - runtime/operator map-occupancy snapshots can now surface those static actors on their effective maps
 - `gamed` can seed, inspect, and remove those bootstrap static actors through loopback-only operator paths
 - player-only runtime behavior remains unchanged while this scaffolding lands
