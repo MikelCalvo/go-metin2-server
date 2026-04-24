@@ -599,6 +599,7 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if selected.ID == 0 {
 						return gameflow.Result{Accepted: false}
 					}
+					previous := selected
 					liveSharedWorld := ownsLiveSharedWorldSession()
 					if liveSharedWorld {
 						if trigger, ok := findBootstrapTransferTrigger(transferTriggers, selected, packet.X, packet.Y); ok {
@@ -614,12 +615,9 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					if !ok {
 						return gameflow.Result{Accepted: false}
 					}
-					if liveSharedWorld {
-						sharedWorld.UpdateCharacter(sharedWorldID, selected)
-					}
 					ack := ticketMoveAckPacket(selected, packet)
 					if liveSharedWorld {
-						sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{movep.EncodeMoveAck(ack)})
+						sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previous, selected, [][]byte{movep.EncodeMoveAck(ack)})
 					}
 					return gameflow.Result{Accepted: true, Replication: ack}
 				},

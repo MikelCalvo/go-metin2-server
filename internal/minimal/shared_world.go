@@ -378,6 +378,50 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 	r.lastKnownCharacters[id] = character
 }
 
+func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64, previous loginticket.Character, current loginticket.Character, stableFrames [][]byte) {
+	if r == nil || id == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	visibilityDiff := r.scopesLocked().RelocateVisibilityDiff(previous, current)
+	_ = r.entities.UpdatePlayer(id, current)
+	r.lastKnownCharacters[id] = current
+
+	removedRaw := encodeCharacterDeleteFrame(previous)
+	addedRaw := encodePeerVisibilityFrames(current)
+	stablePeerVIDs := make(map[uint32]struct{}, len(visibilityDiff.AddedVisiblePeers))
+	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
+		stablePeerVIDs[peerCharacter.VID] = struct{}{}
+	}
+	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+		r.enqueueToCharacterLocked(peerCharacter, [][]byte{removedRaw})
+	}
+	for _, peerCharacter := range visibilityDiff.TargetVisiblePeers {
+		if _, added := stablePeerVIDs[peerCharacter.VID]; added {
+			continue
+		}
+		if len(stableFrames) > 0 {
+			r.enqueueToCharacterLocked(peerCharacter, stableFrames)
+		}
+	}
+	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
+		r.enqueueToCharacterLocked(peerCharacter, addedRaw)
+	}
+
+	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
+	if len(originFrames) == 0 {
+		return
+	}
+	originEntry, ok := r.sessionEntryLocked(id)
+	if !ok || originEntry.FrameSink == nil {
+		return
+	}
+	originEntry.FrameSink.Enqueue(originFrames)
+}
+
 func (r *sharedWorldRegistry) Relocate(id uint64, character loginticket.Character) bool {
 	_, ok := r.Transfer(id, character)
 	return ok
