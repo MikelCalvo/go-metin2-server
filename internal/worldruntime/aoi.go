@@ -22,9 +22,18 @@ func SectorKeyForPosition(position Position, sectorSize int32) SectorKey {
 	}
 	return SectorKey{
 		MapIndex: position.MapIndex,
-		SX:       position.X / sectorSize,
-		SY:       position.Y / sectorSize,
+		SX:       floorDiv(position.X, sectorSize),
+		SY:       floorDiv(position.Y, sectorSize),
 	}
+}
+
+func floorDiv(value int32, divisor int32) int32 {
+	quotient := value / divisor
+	remainder := value % divisor
+	if remainder != 0 && value < 0 {
+		quotient--
+	}
+	return quotient
 }
 
 func (p RadiusVisibilityPolicy) CanSee(topology BootstrapTopology, subject loginticket.Character, peer loginticket.Character) bool {

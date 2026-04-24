@@ -25,7 +25,7 @@ Current scope of the project:
 - Minimal MOVE fanout so visible peers on the same bootstrap `MapIndex` receive queued movement replication from other connected players.
 - Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players.
 - A dedicated `internal/worldruntime` visibility helper and first whole-map visibility-policy boundary for same-topology visible-peer computation, deterministic add/remove peer-set diffs, and explicit self-facing visibility transitions for enter/leave/relocate callers.
-- A first opt-in bootstrap AOI helper in `internal/worldruntime`: deterministic sector keys and a radius-based visibility policy now exist beside the default whole-map policy, without changing current default wire behavior yet.
+- A first opt-in bootstrap AOI helper in `internal/worldruntime`: deterministic floor-stable sector keys and a radius-based visibility policy now exist beside the default whole-map policy, without changing current default wire behavior yet.
 - A first non-player runtime scaffolding in `internal/worldruntime`: static actors can now be registered with owned entity identity and map presence, and `gamed` now exposes the first local-only operator seed/snapshot/remove path for those runtime actors without claiming client-visible spawn/update behavior yet.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.

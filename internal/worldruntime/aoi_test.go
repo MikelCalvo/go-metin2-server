@@ -34,3 +34,10 @@ func TestSectorKeyForPositionIsStable(t *testing.T) {
 		t.Fatalf("unexpected sector key for position: %+v", got)
 	}
 }
+
+func TestSectorKeyForPositionFloorsNegativeCoordinates(t *testing.T) {
+	position := NewPosition(42, -1, -201)
+	if got := SectorKeyForPosition(position, 200); got != (SectorKey{MapIndex: 42, SX: -1, SY: -2}) {
+		t.Fatalf("expected floored negative sector key, got %+v", got)
+	}
+}
