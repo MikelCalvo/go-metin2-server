@@ -56,6 +56,10 @@ func main() {
 		func() any { return gameRuntime.CharacterVisibility() },
 		func() any { return gameRuntime.MapOccupancy() },
 	)
+	opsHandler = ops.RegisterLocalRuntimeConfigEndpoint(
+		opsHandler,
+		func() any { return gameRuntime.RuntimeConfigSnapshot() },
+	)
 	opsHandler = ops.RegisterLocalStaticActorEndpoints(
 		opsHandler,
 		func() any { return gameRuntime.StaticActors() },

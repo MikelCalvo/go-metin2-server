@@ -75,6 +75,13 @@ type MapOccupancySnapshot = worldruntime.MapOccupancySnapshot
 
 type StaticActorSnapshot = worldruntime.StaticActorSnapshot
 
+type RuntimeConfigSnapshot struct {
+	LocalChannelID       uint8  `json:"local_channel_id"`
+	VisibilityMode       string `json:"visibility_mode"`
+	VisibilityRadius     int32  `json:"visibility_radius"`
+	VisibilitySectorSize int32  `json:"visibility_sector_size"`
+}
+
 type MapOccupancyChange = worldruntime.MapOccupancyChange
 
 type RelocationPreview = worldruntime.RelocationPreview
@@ -144,6 +151,28 @@ func (r *gameRuntime) MapOccupancy() []MapOccupancySnapshot {
 		return nil
 	}
 	return r.sharedWorld.MapOccupancy()
+}
+
+func (r *gameRuntime) RuntimeConfigSnapshot() RuntimeConfigSnapshot {
+	if r == nil || r.sharedWorld == nil {
+		return RuntimeConfigSnapshot{}
+	}
+	topology := r.sharedWorld.topology
+	snapshot := RuntimeConfigSnapshot{
+		LocalChannelID: topology.LocalChannelID(),
+		VisibilityMode: "whole_map",
+	}
+	switch policy := topology.VisibilityPolicy().(type) {
+	case worldruntime.RadiusVisibilityPolicy:
+		snapshot.VisibilityMode = "radius"
+		snapshot.VisibilityRadius = policy.Radius
+		snapshot.VisibilitySectorSize = policy.SectorSize
+	case worldruntime.WholeMapVisibilityPolicy:
+		// keep defaults
+	default:
+		snapshot.VisibilityMode = "custom"
+	}
+	return snapshot
 }
 
 func (r *gameRuntime) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {

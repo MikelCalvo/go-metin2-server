@@ -741,6 +741,9 @@ func TestNewGameRuntimeUsesConfiguredRadiusVisibilityPolicy(t *testing.T) {
 	if policy.Radius != 450 || policy.SectorSize != 225 {
 		t.Fatalf("unexpected radius visibility policy config: %+v", policy)
 	}
+	if snapshot := runtime.RuntimeConfigSnapshot(); snapshot.VisibilityMode != "radius" || snapshot.VisibilityRadius != 450 || snapshot.VisibilitySectorSize != 225 || snapshot.LocalChannelID != 1 {
+		t.Fatalf("unexpected runtime config snapshot: %+v", snapshot)
+	}
 }
 
 func TestNewGameSessionFactoryRejectsUnknownVisibilityMode(t *testing.T) {

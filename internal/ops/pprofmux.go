@@ -42,6 +42,28 @@ func NewPprofMuxWithLocalRuntimeSnapshot(serviceName string, broadcastNotice fun
 	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, relocateCharacter, nil, nil, connectedCharacters, nil, nil)
 }
 
+func RegisterLocalRuntimeConfigEndpoint(mux *http.ServeMux, runtimeConfig func() any) *http.ServeMux {
+	if mux == nil || runtimeConfig == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/runtime-config", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(runtimeConfig()); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	return mux
+}
+
 func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() any, registerStaticActor func(string, uint32, int32, int32, uint32) (any, bool)) *http.ServeMux {
 	if mux == nil || (staticActors == nil && registerStaticActor == nil) {
 		return mux

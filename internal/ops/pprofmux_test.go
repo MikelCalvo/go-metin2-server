@@ -545,6 +545,70 @@ func TestLocalVisibilityEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalRuntimeConfigEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubRuntimeConfigSnapshotter{snapshot: map[string]any{"local_channel_id": 1, "visibility_mode": "radius", "visibility_radius": int32(400), "visibility_sector_size": int32(200)}}
+	mux := RegisterLocalRuntimeConfigEndpoint(NewPprofMux("gamed"), snapshotter.RuntimeConfig)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/runtime-config", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected runtime config snapshotter to be called once, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"visibility_mode":"radius"`) || !strings.Contains(string(body), `"visibility_radius":400`) || !strings.Contains(string(body), `"visibility_sector_size":200`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalRuntimeConfigEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubRuntimeConfigSnapshotter{}
+	mux := RegisterLocalRuntimeConfigEndpoint(NewPprofMux("gamed"), snapshotter.RuntimeConfig)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/runtime-config", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected runtime config snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalRuntimeConfigEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubRuntimeConfigSnapshotter{}
+	mux := RegisterLocalRuntimeConfigEndpoint(NewPprofMux("gamed"), snapshotter.RuntimeConfig)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/runtime-config", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected runtime config snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
 func TestLocalMapsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubMapOccupancySnapshotter{snapshots: []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "Zulu"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "Alpha"}, {"name": "PeerTwo"}}}}}
 	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, nil, snapshotter.MapOccupancy)
@@ -827,6 +891,16 @@ type stubMapOccupancySnapshotter struct {
 func (s *stubMapOccupancySnapshotter) MapOccupancy() any {
 	s.calls++
 	return s.snapshots
+}
+
+type stubRuntimeConfigSnapshotter struct {
+	snapshot map[string]any
+	calls    int
+}
+
+func (s *stubRuntimeConfigSnapshotter) RuntimeConfig() any {
+	s.calls++
+	return s.snapshot
 }
 
 type stubStaticActorSnapshotter struct {
