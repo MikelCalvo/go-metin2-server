@@ -1088,6 +1088,164 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnSyncPosition(
 	}
 }
 
+func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStaticActorVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	sourceActor, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1200, 2200, 20301)
+	if !ok {
+		t.Fatal("expected source static actor registration to succeed")
+	}
+	targetActor, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected target static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowTwo, enterOut := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 enter-game frames with one visible source static actor, got %d", len(enterOut))
+	}
+	_ = flushServerFrames(t, flowTwo)
+
+	moveOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move error: %v", err)
+	}
+	if len(moveOut) != 8 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames with static actor visibility deltas, got %d", len(moveOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode self transfer add with static actors: %v", err)
+	}
+	if selfAdd.VID != peerTwo.VID || selfAdd.X != 1700 || selfAdd.Y != 2800 {
+		t.Fatalf("unexpected self transfer add with static actors: %+v", selfAdd)
+	}
+	removedActor, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, moveOut[4]))
+	if err != nil {
+		t.Fatalf("decode source static actor delete during transfer: %v", err)
+	}
+	if removedActor.VID != uint32(sourceActor.EntityID) {
+		t.Fatalf("expected source static actor delete for entity %d, got %+v", sourceActor.EntityID, removedActor)
+	}
+	addedActor, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[5]))
+	if err != nil {
+		t.Fatalf("decode target static actor add during transfer: %v", err)
+	}
+	if addedActor.VID != uint32(targetActor.EntityID) || addedActor.Type != 1 || addedActor.X != 1700 || addedActor.Y != 2800 || addedActor.RaceNum != 20300 {
+		t.Fatalf("unexpected target static actor add during transfer: %+v", addedActor)
+	}
+	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[6]))
+	if err != nil {
+		t.Fatalf("decode target static actor additional info during transfer: %v", err)
+	}
+	if actorInfo.VID != uint32(targetActor.EntityID) || actorInfo.Name != "VillageGuard" {
+		t.Fatalf("unexpected target static actor additional info during transfer: %+v", actorInfo)
+	}
+	actorUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, moveOut[7]))
+	if err != nil {
+		t.Fatalf("decode target static actor update during transfer: %v", err)
+	}
+	if actorUpdate.VID != uint32(targetActor.EntityID) {
+		t.Fatalf("unexpected target static actor update during transfer: %+v", actorUpdate)
+	}
+	if queued := flushServerFrames(t, flowTwo); len(queued) != 0 {
+		t.Fatalf("expected no queued mover frames after immediate transfer rebootstrap with static actors, got %d", len(queued))
+	}
+}
+
+func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnSyncPositionWithStaticActorVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	sourceActor, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1200, 2200, 20301)
+	if !ok {
+		t.Fatal("expected source static actor registration to succeed")
+	}
+	targetActor, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected target static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowTwo, enterOut := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 enter-game frames with one visible source static actor, got %d", len(enterOut))
+	}
+	_ = flushServerFrames(t, flowTwo)
+
+	syncOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: peerTwo.VID, X: 1500, Y: 2600}}})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error: %v", err)
+	}
+	if len(syncOut) != 8 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames with static actor visibility deltas from sync_position, got %d", len(syncOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, syncOut[0]))
+	if err != nil {
+		t.Fatalf("decode self transfer add with static actors from sync_position: %v", err)
+	}
+	if selfAdd.VID != peerTwo.VID || selfAdd.X != 1700 || selfAdd.Y != 2800 {
+		t.Fatalf("unexpected self transfer add with static actors from sync_position: %+v", selfAdd)
+	}
+	removedActor, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, syncOut[4]))
+	if err != nil {
+		t.Fatalf("decode source static actor delete during sync_position transfer: %v", err)
+	}
+	if removedActor.VID != uint32(sourceActor.EntityID) {
+		t.Fatalf("expected source static actor delete for entity %d, got %+v", sourceActor.EntityID, removedActor)
+	}
+	addedActor, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, syncOut[5]))
+	if err != nil {
+		t.Fatalf("decode target static actor add during sync_position transfer: %v", err)
+	}
+	if addedActor.VID != uint32(targetActor.EntityID) || addedActor.Type != 1 || addedActor.X != 1700 || addedActor.Y != 2800 || addedActor.RaceNum != 20300 {
+		t.Fatalf("unexpected target static actor add during sync_position transfer: %+v", addedActor)
+	}
+	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, syncOut[6]))
+	if err != nil {
+		t.Fatalf("decode target static actor additional info during sync_position transfer: %v", err)
+	}
+	if actorInfo.VID != uint32(targetActor.EntityID) || actorInfo.Name != "VillageGuard" {
+		t.Fatalf("unexpected target static actor additional info during sync_position transfer: %+v", actorInfo)
+	}
+	actorUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, syncOut[7]))
+	if err != nil {
+		t.Fatalf("decode target static actor update during sync_position transfer: %v", err)
+	}
+	if actorUpdate.VID != uint32(targetActor.EntityID) {
+		t.Fatalf("unexpected target static actor update during sync_position transfer: %+v", actorUpdate)
+	}
+	if queued := flushServerFrames(t, flowTwo); len(queued) != 0 {
+		t.Fatalf("expected no queued mover frames after immediate sync_position transfer rebootstrap with static actors, got %d", len(queued))
+	}
+}
+
 func TestNewGameSessionFactoryDoesNotMutateWorldWhenTransferTriggerSaveFails(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

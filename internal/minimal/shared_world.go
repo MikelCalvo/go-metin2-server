@@ -477,10 +477,13 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	if !ok {
 		return RelocationPreview{}, nil, false
 	}
-	visibilityDiff := r.scopesLocked().RelocateVisibilityDiff(previous, character)
-	result := r.scopesLocked().BuildRelocationPreview(previous, character, true)
+	scopes := r.scopesLocked()
+	visibilityDiff := scopes.RelocateVisibilityDiff(previous, character)
+	staticActorVisibilityDiff := scopes.RelocateStaticActorVisibilityDiff(previous, character)
+	result := scopes.BuildRelocationPreview(previous, character, true)
 
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
+	originFrames = append(originFrames, buildStaticActorVisibilityTransitionFrames(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
 	originEntry, _ := r.sessionEntryLocked(id)
 	if enqueueOrigin && originEntry.FrameSink != nil && len(originFrames) > 0 {
 		originEntry.FrameSink.Enqueue(originFrames)

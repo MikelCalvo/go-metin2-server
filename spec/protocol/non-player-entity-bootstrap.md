@@ -24,9 +24,10 @@ This contract applies only to:
 - the first loopback-only operator seed/snapshot/update/remove surface used to create, inspect, edit, and delete those runtime actors on `gamed`
 - the first client-visible enter-game bootstrap burst for static actors that already share the entering player's visible world under the current bootstrap topology/AOI policy
 
-This slice now claims only two narrow client-visible behaviors for non-player actors:
+This slice now claims only three narrow client-visible behaviors for non-player actors:
 - when a player enters `GAME`, already-visible bootstrap static actors can be appended to that enter-game result with deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` frames
 - when that same player later crosses the configured AOI boundary through `MOVE` or `SYNC_POSITION`, the runtime can queue the corresponding self-facing static-actor add/delete rebuild frames
+- when gameplay-triggered transfer rebootstrap moves that player into another visible-world scope, the runtime can append the corresponding self-facing static-actor delete/add rebuild frames after the relocated self burst
 
 It still does **not** yet claim general spawn/update/delete replication to other sessions, dynamic actor behavior, or gameplay systems behind those actors.
 

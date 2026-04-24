@@ -31,7 +31,7 @@ When a bootstrap transfer is committed from gameplay today:
    - no immediate self `SYNC_POSITION_ACK`
 2. the moved session instead receives an immediate **transfer rebootstrap burst** on that same game socket
 3. the burst reuses the owned selected-character bootstrap packet family with the relocated snapshot
-4. trailing peer visibility deltas are appended after that self burst
+4. trailing visibility deltas are appended after that self burst
 
 ## Self rebootstrap frames
 
@@ -44,17 +44,23 @@ The moved player first receives the relocated selected-character burst in this e
 
 These four frames reuse the same owned self-bootstrap family documented by `loading-to-game-bootstrap-burst.md`, but they are rebuilt from the **post-transfer** character snapshot.
 
-## Trailing peer frames
+## Trailing visibility frames
 
 After the relocated self burst, the moved player currently receives the transfer visibility deltas in this order:
 
-1. one `CHARACTER_DEL` for each peer that stops being visible from the source map scope
-2. then the normal destination-map visibility burst for each peer that becomes visible:
+1. one `CHARACTER_DEL` for each peer player that stops being visible from the source map scope
+2. then the normal destination-map visibility burst for each peer player that becomes visible:
    - `CHARACTER_ADD`
    - `CHAR_ADDITIONAL_INFO`
    - `CHARACTER_UPDATE`
+3. then the static-actor visibility deltas for the moved player itself:
+   - one `CHARACTER_DEL` for each source-scope static actor that stops being visible
+   - then the normal destination visibility burst for each static actor that becomes visible:
+     - `CHARACTER_ADD`
+     - `CHAR_ADDITIONAL_INFO`
+     - `CHARACTER_UPDATE`
 
-This keeps the moved player's own actor bootstrap deterministic while still reusing the existing peer-visibility packet family.
+This keeps the moved player's own actor bootstrap deterministic while still reusing the existing player/static visibility packet families.
 
 ## Example: move from map 1 to map 42
 
