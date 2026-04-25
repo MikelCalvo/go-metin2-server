@@ -38,7 +38,8 @@ type ConnectedCharacterSnapshot struct {
 
 type CharacterVisibilitySnapshot struct {
 	ConnectedCharacterSnapshot
-	VisiblePeers []ConnectedCharacterSnapshot `json:"visible_peers"`
+	VisiblePeers        []ConnectedCharacterSnapshot `json:"visible_peers"`
+	VisibleStaticActors []StaticActorSnapshot        `json:"visible_static_actors"`
 }
 
 type StaticActorSnapshot struct {
@@ -174,6 +175,7 @@ func (s Scopes) CharacterVisibilitySnapshots() []CharacterVisibilitySnapshot {
 		snapshots = append(snapshots, CharacterVisibilitySnapshot{
 			ConnectedCharacterSnapshot: connectedCharacterSnapshot(s.Topology, entry.Subject.Character),
 			VisiblePeers:               connectedCharacterSnapshots(s.Topology, playerEntitiesToCharacters(entry.VisiblePeers)),
+			VisibleStaticActors:        staticActorSnapshots(s.Topology, s.VisibleStaticActors(entry.Subject.Character)),
 		})
 	}
 	sortCharacterVisibilitySnapshots(snapshots)

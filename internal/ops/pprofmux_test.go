@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func TestHealthzEndpointIncludesServiceName(t *testing.T) {
@@ -723,6 +725,35 @@ func TestLocalStaticActorsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	}
 }
 
+func TestLocalVisibilityEndpointIncludesVisibleStaticActorsForLoopbackGet(t *testing.T) {
+	visibility := &stubCharacterVisibilitySnapshotter{snapshots: []worldruntime.CharacterVisibilitySnapshot{{
+		ConnectedCharacterSnapshot: worldruntime.ConnectedCharacterSnapshot{Name: "PeerOne", VID: 0x02040101, MapIndex: 42, X: 1700, Y: 2800, Empire: 2, GuildID: 10},
+		VisiblePeers:               []worldruntime.ConnectedCharacterSnapshot{{Name: "PeerTwo", VID: 0x02040102, MapIndex: 42, X: 1900, Y: 2900, Empire: 2, GuildID: 10}},
+		VisibleStaticActors:        []worldruntime.StaticActorSnapshot{{EntityID: 7, Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20300}},
+	}}}
+	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, visibility.CharacterVisibility, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/visibility", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if visibility.calls != 1 {
+		t.Fatalf("expected visibility snapshotter to be called once, got %d calls", visibility.calls)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"visible_static_actors"`) || !strings.Contains(string(body), `"name":"Blacksmith"`) || !strings.Contains(string(body), `"entity_id":7`) {
+		t.Fatalf("unexpected visibility JSON response body %q", string(body))
+	}
+}
+
 func TestLocalStaticActorsEndpointRegistersActorForLoopbackPost(t *testing.T) {
 	registrar := &stubStaticActorRegistrar{registered: true, actor: map[string]any{"entity_id": uint64(1), "name": "VillageGuard", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20300)}}
 	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), nil, registrar.RegisterStaticActor)
@@ -996,7 +1027,7 @@ func (s *stubConnectedCharactersSnapshotter) ConnectedCharacters() any {
 }
 
 type stubCharacterVisibilitySnapshotter struct {
-	snapshots []map[string]any
+	snapshots any
 	calls     int
 }
 
