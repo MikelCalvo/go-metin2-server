@@ -110,6 +110,12 @@ Payload layout:
 Frame length:
 - `108` bytes total (`4 + 1 + 103`)
 
+Notes:
+- the current bootstrap server now places freshly created characters at the legacy empire-specific create positions instead of fake slot-relative coordinates:
+  - empire 1 (Shinsoo) -> `map_index 1`, `x 459800`, `y 953900`
+  - empire 2 (Chunjo) -> `map_index 21`, `x 52070`, `y 166600`
+  - empire 3 (Jinno) -> `map_index 41`, `x 957300`, `y 255200`
+
 ### `PLAYER_CREATE_FAILURE`
 
 Direction:

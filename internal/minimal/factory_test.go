@@ -353,6 +353,34 @@ func TestNewGameSessionFactoryRespondsToStateCheckerDuringHandshake(t *testing.T
 	}
 }
 
+func TestCreateCharacterInTicketUsesLegacyEmpireCreatePosition(t *testing.T) {
+	tests := []struct {
+		name     string
+		empire   uint8
+		packet   worldproto.CharacterCreatePacket
+		mapIndex uint32
+		x        int32
+		y        int32
+	}{
+		{name: "shinsoo", empire: 1, packet: worldproto.CharacterCreatePacket{Index: 0, Name: "FreshShinsoo", RaceNum: 0, Shape: 1}, mapIndex: 1, x: 459800, y: 953900},
+		{name: "chunjo", empire: 2, packet: worldproto.CharacterCreatePacket{Index: 0, Name: "FreshChunjo", RaceNum: 0, Shape: 1}, mapIndex: 21, x: 52070, y: 166600},
+		{name: "jinno", empire: 3, packet: worldproto.CharacterCreatePacket{Index: 0, Name: "FreshJinno", RaceNum: 0, Shape: 1}, mapIndex: 41, x: 957300, y: 255200},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ticket := &loginticket.Ticket{Empire: tt.empire}
+			created, failureType, ok := createCharacterInTicket(ticket, tt.packet, tt.empire)
+			if !ok || failureType != 0 {
+				t.Fatalf("expected createCharacterInTicket to succeed, ok=%v failureType=%d", ok, failureType)
+			}
+			if created.MapIndex != tt.mapIndex || created.X != tt.x || created.Y != tt.y {
+				t.Fatalf("expected legacy create position map=%d x=%d y=%d, got map=%d x=%d y=%d", tt.mapIndex, tt.x, tt.y, created.MapIndex, created.X, created.Y)
+			}
+		})
+	}
+}
+
 func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -393,6 +421,9 @@ func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	if created.Index != 2 || created.Player.Name != "FreshSura" || created.Player.Job != 2 || created.Player.Level != 1 {
 		t.Fatalf("unexpected created player packet: %+v", created)
 	}
+	if created.Player.X != 52070 || created.Player.Y != 166600 {
+		t.Fatalf("expected created player legacy Chunjo create position x=52070 y=166600, got x=%d y=%d", created.Player.X, created.Player.Y)
+	}
 
 	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 2})))
 	if err != nil {
@@ -405,6 +436,9 @@ func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	if mainCharacter.Name != "FreshSura" || mainCharacter.RaceNum != 2 {
 		t.Fatalf("unexpected created main character: %+v", mainCharacter)
 	}
+	if mainCharacter.X != 52070 || mainCharacter.Y != 166600 {
+		t.Fatalf("expected selected created character legacy Chunjo create position x=52070 y=166600, got x=%d y=%d", mainCharacter.X, mainCharacter.Y)
+	}
 
 	account, err := accounts.Load(StubLogin)
 	if err != nil {
@@ -413,8 +447,8 @@ func TestNewGameSessionFactoryCreatesACharacterInAnEmptySlot(t *testing.T) {
 	if account.Characters[2].Name != "FreshSura" {
 		t.Fatalf("expected created character in persisted slot 2, got %+v", account.Characters[2])
 	}
-	if account.Characters[2].MapIndex != 1 {
-		t.Fatalf("expected created character bootstrap map index 1, got %d", account.Characters[2].MapIndex)
+	if account.Characters[2].MapIndex != 21 || account.Characters[2].X != 52070 || account.Characters[2].Y != 166600 {
+		t.Fatalf("expected created character legacy Chunjo position map=21 x=52070 y=166600, got map=%d x=%d y=%d", account.Characters[2].MapIndex, account.Characters[2].X, account.Characters[2].Y)
 	}
 }
 
@@ -513,7 +547,7 @@ func TestNewGameSessionFactoryReturnsVisibleWorldBootstrapForCreatedCharacter(t 
 	if err != nil {
 		t.Fatalf("decode character add: %v", err)
 	}
-	if added.VID != 0x01020306 || added.RaceNum != 2 || added.Type != 6 || added.X != 1200 || added.Y != 2200 {
+	if added.VID != 0x01020306 || added.RaceNum != 2 || added.Type != 6 || added.X != 52070 || added.Y != 166600 {
 		t.Fatalf("unexpected created character add packet: %+v", added)
 	}
 	info, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, enterGameOut[2]))

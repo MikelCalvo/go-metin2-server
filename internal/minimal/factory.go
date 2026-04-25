@@ -1311,7 +1311,7 @@ type initialCharacterStats struct {
 
 func buildCreatedCharacter(id uint32, vid uint32, packet worldproto.CharacterCreatePacket, empire uint8) loginticket.Character {
 	stats := initialStatsForRace(packet.RaceNum)
-	x, y := spawnPositionForSlot(packet.Index)
+	mapIndex, x, y := legacyCreatePositionForEmpire(empire)
 	points := initialPointsForRace(packet.RaceNum)
 	return loginticket.Character{
 		ID:          id,
@@ -1332,10 +1332,23 @@ func buildCreatedCharacter(id uint32, vid uint32, packet worldproto.CharacterCre
 		X:           x,
 		Y:           y,
 		Z:           0,
-		MapIndex:    bootstrapMapIndex,
+		MapIndex:    mapIndex,
 		Empire:      empire,
 		SkillGroup:  0,
 		Points:      points,
+	}
+}
+
+func legacyCreatePositionForEmpire(empire uint8) (uint32, int32, int32) {
+	switch empire {
+	case 1:
+		return bootstrapMapIndex, 459800, 953900
+	case 2:
+		return 21, 52070, 166600
+	case 3:
+		return 41, 957300, 255200
+	default:
+		return bootstrapMapIndex, 459800, 953900
 	}
 }
 
@@ -1361,10 +1374,6 @@ func initialPointsForRace(race uint16) [worldproto.PointCount]int32 {
 	points[1] = stats.MaxHP
 	points[2] = stats.MaxSP
 	return points
-}
-
-func spawnPositionForSlot(index uint8) (int32, int32) {
-	return 1000 + int32(index)*100, 2000 + int32(index)*100
 }
 
 func nextCharacterID(characters []loginticket.Character) uint32 {
