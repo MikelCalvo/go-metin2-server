@@ -56,10 +56,28 @@ At this stage the repository owns a narrow but real first response vertical:
   - `target_not_visible`
   - `target_has_no_interaction`
 - `gamed` now also resolves authored interaction definitions by `interaction_kind + interaction_ref`
+- loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` now author that deterministic definition catalog without hand-editing the backing JSON file
+- update requests preserve stable `kind + ref` identity by requiring the full body identity to match the path exactly
+- delete requests now fail closed while a bootstrap static actor still references the targeted definition
 - when that definition resolves to `interaction_kind = "info"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored definition text
 - when that definition resolves to `interaction_kind = "talk"`, the interacting player now receives one self-only chat-backed delivery using a deterministic speaker-prefixed multi-line payload
 - malformed payloads are rejected at the codec/flow boundary
 - other unsupported interaction kinds may still resolve to no outgoing frames yet
+
+## Loopback authoring surface
+
+The first owned operator surface for interaction content is loopback-only:
+- `GET /local/interactions`
+- `POST /local/interactions`
+- `PATCH /local/interactions/{kind}/{ref}`
+- `PUT /local/interactions/{kind}/{ref}`
+- `DELETE /local/interactions/{kind}/{ref}`
+
+The current contract is intentionally narrow:
+- request/response bodies use `kind`, `ref`, `text`
+- `PATCH` / `PUT` are full-identity upserts, not partial nested edits
+- the body `kind` + `ref` must match the path exactly on update
+- delete fails closed while a bootstrap static actor still references that definition
 
 ## Target identity rule
 

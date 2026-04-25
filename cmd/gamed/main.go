@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/minimal"
 	"github.com/MikelCalvo/go-metin2-server/internal/ops"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
@@ -89,6 +92,58 @@ func main() {
 				return nil, false
 			}
 			return actor, true
+		},
+	)
+	opsHandler = ops.RegisterLocalInteractionDefinitionEndpoints(
+		opsHandler,
+		func() any { return gameRuntime.InteractionDefinitions() },
+		func(kind string, ref string, text string) (any, int) {
+			definition, err := gameRuntime.CreateInteractionDefinition(kind, ref, text)
+			if err == nil {
+				return definition, http.StatusOK
+			}
+			switch {
+			case errors.Is(err, minimal.ErrInteractionDefinitionExists):
+				return nil, http.StatusConflict
+			case errors.Is(err, interactionstore.ErrInvalidSnapshot):
+				return nil, http.StatusBadRequest
+			default:
+				return nil, http.StatusInternalServerError
+			}
+		},
+	)
+	opsHandler = ops.RegisterLocalInteractionDefinitionUpdateEndpoint(
+		opsHandler,
+		func(kind string, ref string, text string) (any, int) {
+			definition, err := gameRuntime.UpsertInteractionDefinition(kind, ref, text)
+			if err == nil {
+				return definition, http.StatusOK
+			}
+			switch {
+			case errors.Is(err, interactionstore.ErrInvalidSnapshot):
+				return nil, http.StatusBadRequest
+			default:
+				return nil, http.StatusInternalServerError
+			}
+		},
+	)
+	opsHandler = ops.RegisterLocalInteractionDefinitionDeleteEndpoint(
+		opsHandler,
+		func(kind string, ref string) (any, int) {
+			definition, err := gameRuntime.RemoveInteractionDefinition(kind, ref)
+			if err == nil {
+				return definition, http.StatusOK
+			}
+			switch {
+			case errors.Is(err, minimal.ErrInteractionDefinitionNotFound):
+				return nil, http.StatusNotFound
+			case errors.Is(err, minimal.ErrInteractionDefinitionReferenced):
+				return nil, http.StatusConflict
+			case errors.Is(err, interactionstore.ErrInvalidSnapshot):
+				return nil, http.StatusBadRequest
+			default:
+				return nil, http.StatusInternalServerError
+			}
 		},
 	)
 	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {

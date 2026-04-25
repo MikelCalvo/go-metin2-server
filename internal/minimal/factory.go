@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,11 +56,15 @@ const legacyFakeStubMkmkWarX int32 = 1000
 const legacyFakeStubMkmkWarY int32 = 2000
 
 var (
-	ErrInvalidLegacyAddr           = errors.New("invalid legacy addr")
-	ErrInvalidPublicAddr           = errors.New("invalid public addr")
-	ErrInvalidVisibilityMode       = errors.New("invalid visibility mode")
-	ErrInvalidVisibilityRadius     = errors.New("invalid visibility radius")
-	ErrInvalidVisibilitySectorSize = errors.New("invalid visibility sector size")
+	ErrInvalidLegacyAddr                 = errors.New("invalid legacy addr")
+	ErrInvalidPublicAddr                 = errors.New("invalid public addr")
+	ErrInvalidVisibilityMode             = errors.New("invalid visibility mode")
+	ErrInvalidVisibilityRadius           = errors.New("invalid visibility radius")
+	ErrInvalidVisibilitySectorSize       = errors.New("invalid visibility sector size")
+	ErrInteractionDefinitionsUnavailable = errors.New("interaction definitions unavailable")
+	ErrInteractionDefinitionExists       = errors.New("interaction definition already exists")
+	ErrInteractionDefinitionNotFound     = errors.New("interaction definition not found")
+	ErrInteractionDefinitionReferenced   = errors.New("interaction definition referenced by static actor")
 )
 
 type loginKeyGenerator func() (uint32, error)
@@ -111,12 +116,13 @@ type MapOccupancyChange = worldruntime.MapOccupancyChange
 type RelocationPreview = worldruntime.RelocationPreview
 
 type gameRuntime struct {
-	sessionFactory         service.SessionFactory
-	sharedWorld            *sharedWorldRegistry
-	staticStore            staticstore.Store
-	interactionStore       interactionstore.Store
-	interactionDefinitions map[string]interactionstore.Definition
-	staticActorMu          sync.Mutex
+	sessionFactory          service.SessionFactory
+	sharedWorld             *sharedWorldRegistry
+	staticStore             staticstore.Store
+	interactionStore        interactionstore.Store
+	interactionDefinitionMu sync.RWMutex
+	interactionDefinitions  map[string]interactionstore.Definition
+	staticActorMu           sync.Mutex
 }
 
 func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
@@ -1662,12 +1668,17 @@ func (r *gameRuntime) loadInteractionDefinitions() error {
 	snapshot, err := r.interactionStore.Load()
 	if err != nil {
 		if errors.Is(err, interactionstore.ErrSnapshotNotFound) {
+			r.interactionDefinitionMu.Lock()
 			r.interactionDefinitions = nil
+			r.interactionDefinitionMu.Unlock()
 			return nil
 		}
 		return err
 	}
-	r.interactionDefinitions = buildInteractionDefinitionIndex(snapshot)
+	definitions := buildInteractionDefinitionIndex(snapshot)
+	r.interactionDefinitionMu.Lock()
+	r.interactionDefinitions = definitions
+	r.interactionDefinitionMu.Unlock()
 	return nil
 }
 
@@ -1712,11 +1723,138 @@ func (r *gameRuntime) ResolveInteractionDefinition(kind string, ref string) (Int
 	if r == nil || r.interactionStore == nil {
 		return InteractionDefinition{}, false
 	}
+	r.interactionDefinitionMu.RLock()
+	defer r.interactionDefinitionMu.RUnlock()
 	definition, ok := r.interactionDefinitions[interactionDefinitionKey(kind, ref)]
 	if !ok {
 		return InteractionDefinition{}, false
 	}
 	return definition, true
+}
+
+func (r *gameRuntime) InteractionDefinitions() []InteractionDefinition {
+	if r == nil || r.interactionStore == nil {
+		return nil
+	}
+	r.interactionDefinitionMu.RLock()
+	defer r.interactionDefinitionMu.RUnlock()
+	return sortedInteractionDefinitions(r.interactionDefinitions)
+}
+
+func (r *gameRuntime) CreateInteractionDefinition(kind string, ref string, text string) (InteractionDefinition, error) {
+	if r == nil || r.interactionStore == nil {
+		return InteractionDefinition{}, ErrInteractionDefinitionsUnavailable
+	}
+	definition := interactionstore.Definition{Kind: strings.TrimSpace(kind), Ref: strings.TrimSpace(ref), Text: text}
+	key := interactionDefinitionKey(definition.Kind, definition.Ref)
+
+	r.interactionDefinitionMu.Lock()
+	defer r.interactionDefinitionMu.Unlock()
+	if _, ok := r.interactionDefinitions[key]; ok {
+		return InteractionDefinition{}, ErrInteractionDefinitionExists
+	}
+	snapshot := buildInteractionDefinitionSnapshot(r.interactionDefinitions)
+	snapshot.Definitions = append(snapshot.Definitions, definition)
+	if err := r.interactionStore.Save(snapshot); err != nil {
+		return InteractionDefinition{}, err
+	}
+	if r.interactionDefinitions == nil {
+		r.interactionDefinitions = make(map[string]interactionstore.Definition)
+	}
+	r.interactionDefinitions[key] = definition
+	return definition, nil
+}
+
+func (r *gameRuntime) UpsertInteractionDefinition(kind string, ref string, text string) (InteractionDefinition, error) {
+	if r == nil || r.interactionStore == nil {
+		return InteractionDefinition{}, ErrInteractionDefinitionsUnavailable
+	}
+	definition := interactionstore.Definition{Kind: strings.TrimSpace(kind), Ref: strings.TrimSpace(ref), Text: text}
+	key := interactionDefinitionKey(definition.Kind, definition.Ref)
+
+	r.interactionDefinitionMu.Lock()
+	defer r.interactionDefinitionMu.Unlock()
+	next := make(map[string]interactionstore.Definition, len(r.interactionDefinitions)+1)
+	for existingKey, existingDefinition := range r.interactionDefinitions {
+		next[existingKey] = existingDefinition
+	}
+	next[key] = definition
+	if err := r.interactionStore.Save(buildInteractionDefinitionSnapshot(next)); err != nil {
+		return InteractionDefinition{}, err
+	}
+	r.interactionDefinitions = next
+	return definition, nil
+}
+
+func (r *gameRuntime) RemoveInteractionDefinition(kind string, ref string) (InteractionDefinition, error) {
+	if r == nil || r.interactionStore == nil {
+		return InteractionDefinition{}, ErrInteractionDefinitionsUnavailable
+	}
+	kind = strings.TrimSpace(kind)
+	ref = strings.TrimSpace(ref)
+	if kind == "" || ref == "" {
+		return InteractionDefinition{}, interactionstore.ErrInvalidSnapshot
+	}
+
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+	r.interactionDefinitionMu.Lock()
+	defer r.interactionDefinitionMu.Unlock()
+
+	key := interactionDefinitionKey(kind, ref)
+	definition, ok := r.interactionDefinitions[key]
+	if !ok {
+		return InteractionDefinition{}, ErrInteractionDefinitionNotFound
+	}
+	if interactionDefinitionReferencedByStaticActor(r.sharedWorld.StaticActors(), kind, ref) {
+		return InteractionDefinition{}, ErrInteractionDefinitionReferenced
+	}
+	next := make(map[string]interactionstore.Definition, len(r.interactionDefinitions)-1)
+	for existingKey, existingDefinition := range r.interactionDefinitions {
+		if existingKey == key {
+			continue
+		}
+		next[existingKey] = existingDefinition
+	}
+	if err := r.interactionStore.Save(buildInteractionDefinitionSnapshot(next)); err != nil {
+		return InteractionDefinition{}, err
+	}
+	if len(next) == 0 {
+		r.interactionDefinitions = nil
+	} else {
+		r.interactionDefinitions = next
+	}
+	return definition, nil
+}
+
+func buildInteractionDefinitionSnapshot(definitions map[string]interactionstore.Definition) interactionstore.Snapshot {
+	return interactionstore.Snapshot{Definitions: sortedInteractionDefinitions(definitions)}
+}
+
+func sortedInteractionDefinitions(definitions map[string]interactionstore.Definition) []InteractionDefinition {
+	if len(definitions) == 0 {
+		return nil
+	}
+	ordered := make([]InteractionDefinition, 0, len(definitions))
+	for _, definition := range definitions {
+		ordered = append(ordered, definition)
+	}
+	sort.Slice(ordered, func(i int, j int) bool {
+		if ordered[i].Kind == ordered[j].Kind {
+			return ordered[i].Ref < ordered[j].Ref
+		}
+		return ordered[i].Kind < ordered[j].Kind
+	})
+	return ordered
+}
+
+func interactionDefinitionReferencedByStaticActor(actors []StaticActorSnapshot, kind string, ref string) bool {
+	for _, actor := range actors {
+		if actor.InteractionKind == kind && actor.InteractionRef == ref {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID uint32) staticActorInteractionResolution {

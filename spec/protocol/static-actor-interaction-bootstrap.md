@@ -53,6 +53,8 @@ At this stage, the repository owns metadata plus the first narrow self-only beha
 - file-backed static-actor snapshots can persist and restore that metadata across boot
 - a deterministic file-backed interaction-definition store can now persist minimal `info` / `talk` definitions by stable `kind + ref`
 - `gamed` now loads that interaction-definition catalog at boot when present
+- loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` now author that catalog without hand-editing the backing JSON file
+- delete now fails closed while a bootstrap static actor still references the targeted definition
 - persisted static actors with interaction refs now fail closed at boot if those refs do not resolve in the loaded interaction-definition catalog
 - runtime static-actor create/update with interaction metadata now also fail closed when the referenced definition does not exist in the loaded interaction-definition catalog
 - visible static actors whose metadata resolves to `interaction_kind = "info"` now answer with a self-only informational chat-backed delivery
@@ -91,5 +93,6 @@ After this slice, the repository should be able to say:
 - invalid partial metadata is rejected consistently
 - a deterministic file-backed interaction-definition store now exists for minimal `info` / `talk` content keyed by `kind + ref`
 - `gamed` now loads that catalog before boot-restoring persisted static actors and before accepting new interaction metadata on static-actor create/update paths
+- loopback-only CRUD endpoints now author that catalog while preserving stable `kind + ref` identity on update and rejecting deletes for referenced definitions
 - static actors that point at missing interaction definitions are now rejected fail closed at boot and on runtime create/update
 - visible actors can now answer the interacting player with a tiny self-only `info` or `talk` interaction without redesigning the actor model first

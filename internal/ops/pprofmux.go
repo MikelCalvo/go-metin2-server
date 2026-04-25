@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	stdpprof "net/http/pprof"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -26,6 +27,12 @@ type localStaticActorRequest struct {
 	RaceNum         uint32 `json:"race_num"`
 	InteractionKind string `json:"interaction_kind"`
 	InteractionRef  string `json:"interaction_ref"`
+}
+
+type localInteractionDefinitionRequest struct {
+	Kind string `json:"kind"`
+	Ref  string `json:"ref"`
+	Text string `json:"text"`
 }
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -176,6 +183,98 @@ func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActo
 	}
 	mux.HandleFunc("PATCH /local/static-actors/", handler)
 	mux.HandleFunc("PUT /local/static-actors/", handler)
+	return mux
+}
+
+func RegisterLocalInteractionDefinitionEndpoints(mux *http.ServeMux, interactionDefinitions func() any, createInteractionDefinition func(string, string, string) (any, int)) *http.ServeMux {
+	if mux == nil || (interactionDefinitions == nil && createInteractionDefinition == nil) {
+		return mux
+	}
+
+	mux.HandleFunc("/local/interactions", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			if interactionDefinitions == nil {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if err := json.NewEncoder(w).Encode(interactionDefinitions()); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		case http.MethodPost:
+			if createInteractionDefinition == nil {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			request, ok := decodeLocalInteractionDefinitionRequest(r)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			definition, status := createInteractionDefinition(request.Kind, request.Ref, request.Text)
+			writeLocalJSONMutationResponse(w, definition, status)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	return mux
+}
+
+func RegisterLocalInteractionDefinitionUpdateEndpoint(mux *http.ServeMux, upsertInteractionDefinition func(string, string, string) (any, int)) *http.ServeMux {
+	if mux == nil || upsertInteractionDefinition == nil {
+		return mux
+	}
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ref, ok := decodeLocalInteractionDefinitionIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		request, ok := decodeLocalInteractionDefinitionRequest(r)
+		if !ok || request.Kind != kind || request.Ref != ref {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		definition, status := upsertInteractionDefinition(request.Kind, request.Ref, request.Text)
+		writeLocalJSONMutationResponse(w, definition, status)
+	}
+	mux.HandleFunc("PATCH /local/interactions/", handler)
+	mux.HandleFunc("PUT /local/interactions/", handler)
+	return mux
+}
+
+func RegisterLocalInteractionDefinitionDeleteEndpoint(mux *http.ServeMux, removeInteractionDefinition func(string, string) (any, int)) *http.ServeMux {
+	if mux == nil || removeInteractionDefinition == nil {
+		return mux
+	}
+
+	mux.HandleFunc("DELETE /local/interactions/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		kind, ref, ok := decodeLocalInteractionDefinitionIdentity(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		definition, status := removeInteractionDefinition(kind, ref)
+		writeLocalJSONMutationResponse(w, definition, status)
+	})
 	return mux
 }
 
@@ -397,6 +496,48 @@ func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bo
 	return request, true
 }
 
+func decodeLocalInteractionDefinitionRequest(r *http.Request) (localInteractionDefinitionRequest, bool) {
+	var request localInteractionDefinitionRequest
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		return localInteractionDefinitionRequest{}, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return localInteractionDefinitionRequest{}, false
+	}
+	request.Kind = strings.TrimSpace(request.Kind)
+	request.Ref = strings.TrimSpace(request.Ref)
+	if request.Kind == "" || request.Ref == "" || strings.TrimSpace(request.Text) == "" {
+		return localInteractionDefinitionRequest{}, false
+	}
+	return request, true
+}
+
+func decodeLocalInteractionDefinitionIdentity(r *http.Request) (string, string, bool) {
+	raw := strings.TrimPrefix(r.URL.Path, "/local/interactions/")
+	raw = strings.TrimSpace(raw)
+	parts := strings.Split(raw, "/")
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	kind, err := url.PathUnescape(parts[0])
+	if err != nil {
+		return "", "", false
+	}
+	ref, err := url.PathUnescape(parts[1])
+	if err != nil {
+		return "", "", false
+	}
+	kind = strings.TrimSpace(kind)
+	ref = strings.TrimSpace(ref)
+	if kind == "" || ref == "" || strings.Contains(kind, "/") || strings.Contains(ref, "/") {
+		return "", "", false
+	}
+	return kind, ref, true
+}
+
 func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {
 	entityIDRaw := strings.TrimPrefix(r.URL.Path, "/local/static-actors/")
 	entityIDRaw = strings.TrimSpace(entityIDRaw)
@@ -408,6 +549,20 @@ func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {
 		return 0, false
 	}
 	return entityID, true
+}
+
+func writeLocalJSONMutationResponse(w http.ResponseWriter, value any, status int) {
+	if status == 0 {
+		status = http.StatusOK
+	}
+	if status < 200 || status >= 300 {
+		w.WriteHeader(status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+	}
 }
 
 func isLoopbackRemoteAddr(remoteAddr string) bool {

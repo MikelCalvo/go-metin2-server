@@ -30,7 +30,7 @@ Current scope of the project:
 - A first owned client-originated bootstrap static-actor interaction ingress: `GAME` sessions can now send `INTERACT (0x0501)` targeting a visible static actor by `vid`, with deterministic codec coverage and dedicated `internal/game` dispatch hooks.
 - `internal/worldruntime` can now also resolve bootstrap static actors by that client-visible `vid` under the active topology/AOI rules, so later interaction slices can fail closed on invisible or unknown targets without inventing a second target-lookup contract.
 - `internal/minimal/shared_world` now owns the first validated static-actor interaction-attempt seam, distinguishing unknown subject, invisible target, and visible-but-non-interactable actors before later `info` / `talk` content resolution lands.
-- A deterministic file-backed interaction-definition store now exists in `internal/interactionstore` for minimal `info` / `talk` content keyed by stable `kind + ref`, `gamed` now loads that catalog at boot when present, static actors that point at missing definitions now fail closed at boot plus on runtime create/update paths, and visible static actors whose metadata resolves to `interaction_kind = "info"` or `interaction_kind = "talk"` now answer the interacting player with a self-only chat-backed authored delivery.
+- A deterministic file-backed interaction-definition store now exists in `internal/interactionstore` for minimal `info` / `talk` content keyed by stable `kind + ref`, `gamed` now loads that catalog at boot when present, loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` now author that catalog without hand-editing JSON, static actors that point at missing definitions now fail closed at boot plus on runtime create/update paths, and visible static actors whose metadata resolves to `interaction_kind = "info"` or `interaction_kind = "talk"` now answer the interacting player with a self-only chat-backed authored delivery.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation, now including full before/after map-occupancy snapshots and explicit static-actor visibility diffs alongside the delta counts, and composing that structured preview through `internal/worldruntime/scopes.go`.
@@ -162,7 +162,7 @@ Legend:
 | Guild chat | [~] | Scoped by non-zero `GuildID`, but no guild lifecycle/roster system exists yet. |
 | Shout | [~] | Same-empire bootstrap fanout exists; no real world/channel topology behind it yet. |
 | System info / notice | [~] | `INFO` self-delivery, server-originated `NOTICE`, and local-only notice trigger exist; bootstrap-global notice target selection now routes through `internal/worldruntime` instead of ad hoc shared-world scans. |
-| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/runtime-config`, `GET /local/players`, `GET /local/visibility`, `GET /local/maps`, plus `GET`/`POST /local/static-actors`, `PATCH`/`PUT /local/static-actors/{entity_id}`, and `DELETE /local/static-actors/{entity_id}` for bootstrap non-player runtime seeding/introspection/edit/removal, exist on `gamed`; `/local/runtime-config` now reports the active local channel and visibility-policy selection, `/local/visibility` now also reports `visible_static_actors` per connected player under the active topology/AOI policy, `/local/static-actors` create/update payloads can now also carry optional paired `interaction_kind` / `interaction_ref` metadata, `/local/maps` now reports static actors alongside connected players in each effective-map snapshot, newly seeded static actors now immediately enqueue their visibility burst to already-visible online players, operator-driven static-actor deletes now immediately enqueue `CHARACTER_DEL` to those same already-visible sessions, PATCH/PUT updates now refresh retained viewers with delete-plus-rebootstrap and also emit delete/add visibility deltas when the actor crosses map/AOI boundaries, and the structured relocate-preview/transfer responses now include full before/after map-occupancy snapshots plus explicit static-actor visibility diffs beside the delta counts; broader admin/auth tooling does not. |
+| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/runtime-config`, `GET /local/players`, `GET /local/visibility`, `GET /local/maps`, `GET`/`POST /local/interactions`, `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}`, plus `GET`/`POST /local/static-actors`, `PATCH`/`PUT /local/static-actors/{entity_id}`, and `DELETE /local/static-actors/{entity_id}` for bootstrap runtime introspection and authoring, exist on `gamed`; `/local/runtime-config` now reports the active local channel and visibility-policy selection, `/local/visibility` now also reports `visible_static_actors` per connected player under the active topology/AOI policy, `/local/static-actors` create/update payloads can now also carry optional paired `interaction_kind` / `interaction_ref` metadata, `/local/interactions` now authors the deterministic `info` / `talk` catalog with stable `kind + ref` identity while rejecting deletes for definitions still referenced by bootstrap static actors, `/local/maps` now reports static actors alongside connected players in each effective-map snapshot, newly seeded static actors now immediately enqueue their visibility burst to already-visible online players, operator-driven static-actor deletes now immediately enqueue `CHARACTER_DEL` to those same already-visible sessions, PATCH/PUT updates now refresh retained viewers with delete-plus-rebootstrap and also emit delete/add visibility deltas when the actor crosses map/AOI boundaries, and the structured relocate-preview/transfer responses now include full before/after map-occupancy snapshots plus explicit static-actor visibility diffs beside the delta counts; broader admin/auth tooling does not. |
 
 ### Character systems and gameplay
 
@@ -187,7 +187,7 @@ Legend:
 | Login tickets | [x] | Working file-backed ticket flow between `authd` and `gamed`. |
 | Bootstrap account snapshots | [~] | File-backed account/character persistence exists, but it is not compatibility-grade yet. |
 | Bootstrap static-actor snapshots | [x] | A deterministic file-backed snapshot store now exists under `internal/staticstore`, and `gamed` now loads it at boot and rewrites it after successful static-actor create/update/delete mutations. |
-| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for minimal `info` / `talk` content keyed by `kind + ref`, `gamed` now loads that catalog at boot and uses it to fail closed on missing static-actor interaction refs, and `info` plus `talk` interactions now produce self-only authored chat deliveries, but loopback authoring is still ahead. |
+| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for minimal `info` / `talk` content keyed by `kind + ref`, `gamed` now loads that catalog at boot, loopback-only CRUD endpoints now author it without raw JSON edits, deletes now fail closed while bootstrap static actors still reference a definition, and `info` plus `talk` interactions now produce self-only authored chat deliveries. |
 | Database schema / migrations | [ ] | No real DB-backed persistence layer or live migrations yet. |
 | Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection/map-occupancy/dry-run/transfer/static-actor seed-remove endpoints exist; metrics/logging/admin depth still needs work. |
 | CI / public validation | [x] | GitHub Actions baseline checks formatting, tests, vet, daemon builds, and runtime/debug image builds. |
@@ -219,7 +219,7 @@ Legend:
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/staticstore` — deterministic file-backed bootstrap static-actor snapshots, ready for later boot/runtime wiring
-- `internal/interactionstore` — deterministic file-backed minimal `info` / `talk` interaction definitions keyed by `kind + ref`, now loaded by `gamed` at boot for static-actor interaction-ref validation
+- `internal/interactionstore` — deterministic file-backed minimal `info` / `talk` interaction definitions keyed by `kind + ref`, now loaded by `gamed` at boot for static-actor interaction-ref validation and authored through loopback ops endpoints
 - `internal/ops` — health and pprof endpoints
 - `internal/service` — shared service bootstrap / shutdown helpers and legacy session runtime hooks
 - `docs/` — engineering and clean-room documentation
@@ -321,6 +321,11 @@ Both binaries expose an ops server with:
   - create/update bodies use JSON fields `name`, `map_index`, `x`, `y`, `race_num`
   - create/update may also carry optional paired `interaction_kind` and `interaction_ref`
   - if one interaction field is present, the other must also be present
+- `GET` / `POST /local/interactions` and `PATCH` / `PUT` / `DELETE /local/interactions/{kind}/{ref}`
+  - loopback clients only
+  - bodies use JSON fields `kind`, `ref`, `text`
+  - PATCH/PUT are full-identity upserts, so body `kind` + `ref` must match the path exactly
+  - DELETE returns conflict while a bootstrap static actor still references that definition
 - `GET /local/maps`
   - loopback clients only
   - returns a JSON snapshot of effective `MapIndex` occupancy in the current bootstrap runtime
@@ -357,6 +362,13 @@ curl -X POST http://127.0.0.1:6060/local/transfer \
 curl http://127.0.0.1:6060/local/players
 curl http://127.0.0.1:6060/local/visibility
 curl http://127.0.0.1:6060/local/maps
+curl http://127.0.0.1:6060/local/interactions
+curl -X POST http://127.0.0.1:6060/local/interactions \
+  -H 'Content-Type: application/json' \
+  --data '{"kind":"info","ref":"lore:alchemist","text":"The alchemist studies forgotten herbs."}'
+curl -X PUT http://127.0.0.1:6060/local/interactions/talk/npc:village_guard \
+  -H 'Content-Type: application/json' \
+  --data '{"kind":"talk","ref":"npc:village_guard","text":"Keep your blade sharp."}'
 ```
 
 Do not expose pprof directly to the public internet.
