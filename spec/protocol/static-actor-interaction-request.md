@@ -50,6 +50,11 @@ At this stage the repository owns only the request ingress seam:
 - the decoded request is dispatched to a dedicated interaction handler
 - `internal/worldruntime` can now resolve a bootstrap static actor by that client-visible `VID`
 - that runtime lookup is now also visibility-gated, so only actors that currently share visible world with the subject are eligible targets
+- `internal/minimal/shared_world` now owns the first validated interaction-attempt seam, returning a structured result for the current subject/target pair before any authored `info` / `talk` content resolution exists
+- that structured runtime result now distinguishes at least:
+  - `subject_not_found`
+  - `target_not_visible`
+  - `target_has_no_interaction`
 - malformed payloads are rejected at the codec/flow boundary
 - unsupported/unhandled interactions may still resolve to no outgoing frames
 
@@ -68,6 +73,10 @@ The current owned failure boundary is narrow:
 - wrong phase -> existing `GAME` flow rejection rules apply
 - unexpected header at the codec -> rejected
 - malformed payload size -> rejected
+- once the request is decoded, the bootstrap runtime can now fail closed as:
+  - `subject_not_found`
+  - `target_not_visible`
+  - `target_has_no_interaction`
 - accepted request with no implemented behavior -> may legally produce no outgoing frames yet
 
 Future slices should freeze richer failure/reporting semantics only when the runtime actually resolves visible targets and authored `info` / `talk` content.
@@ -79,4 +88,5 @@ After this slice, the repository should be able to say:
 - the request is decoded deterministically from `target_vid`
 - the game flow can dispatch that request to a dedicated interaction handler
 - `internal/worldruntime` can resolve a visible bootstrap static actor by that `VID` under the active topology/AOI rules
+- `internal/minimal/shared_world` can now turn that subject/target pair into a structured validated interaction attempt before later content resolution exists
 - the protocol surface is ready for the next slice to implement self-only `info` / `talk` behavior without redesigning the ingress or target-lookup contract

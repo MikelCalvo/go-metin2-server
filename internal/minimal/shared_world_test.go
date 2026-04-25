@@ -21,6 +21,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *testing.T) {
@@ -4875,6 +4876,103 @@ func TestGameRuntimeUpdateStaticActorUpdatesSnapshot(t *testing.T) {
 	}
 	if maps[1].MapIndex != 99 || len(maps[1].StaticActors) != 1 || maps[1].StaticActors[0].EntityID != guard.EntityID || maps[1].StaticActors[0].Name != "Merchant" {
 		t.Fatalf("expected Merchant on new map after update, got %+v", maps[1])
+	}
+}
+
+func TestSharedWorldRegistryAttemptStaticActorInteractionResolvesVisibleActorWithMetadata(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithInteraction(0, "VillageGuard", bootstrapMapIndex, 1200, 2200, 20300, "talk", "npc:village_guard")
+	if !ok {
+		t.Fatal("expected visible interactable static actor registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorInteraction(subjectID, uint32(actor.EntityID))
+	if !attempt.Accepted {
+		t.Fatalf("expected visible interactable static actor attempt to be accepted, got %+v", attempt)
+	}
+	if attempt.Failure != "" {
+		t.Fatalf("expected accepted interaction attempt to have no failure reason, got %+v", attempt)
+	}
+	if attempt.TargetVID != uint32(actor.EntityID) {
+		t.Fatalf("expected interaction attempt target VID %#08x, got %#08x", uint32(actor.EntityID), attempt.TargetVID)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "VillageGuard" || attempt.Actor.InteractionKind != "talk" || attempt.Actor.InteractionRef != "npc:village_guard" {
+		t.Fatalf("unexpected resolved static actor interaction attempt: %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsInvisibleTarget(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithInteraction(0, "VillageGuard", bootstrapMapIndex, 2800, 3800, 20300, "talk", "npc:village_guard")
+	if !ok {
+		t.Fatal("expected far interactable static actor registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorInteraction(subjectID, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected invisible static actor interaction attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorInteractionFailureTargetNotVisible {
+		t.Fatalf("expected invisible static actor failure %q, got %+v", StaticActorInteractionFailureTargetNotVisible, attempt)
+	}
+	if attempt.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected invisible static actor interaction attempt to keep actor snapshot empty, got %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsActorWithoutMetadata(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300)
+	if !ok {
+		t.Fatal("expected visible static actor registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorInteraction(subjectID, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected non-interactable static actor interaction attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorInteractionFailureTargetHasNoInteraction {
+		t.Fatalf("expected missing-metadata static actor failure %q, got %+v", StaticActorInteractionFailureTargetHasNoInteraction, attempt)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "VillageGuard" || attempt.Actor.InteractionKind != "" || attempt.Actor.InteractionRef != "" {
+		t.Fatalf("expected missing-metadata static actor interaction attempt to return the resolved actor snapshot, got %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsUnknownSubject(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	actor, ok := registry.RegisterStaticActorWithInteraction(0, "VillageGuard", bootstrapMapIndex, 1200, 2200, 20300, "talk", "npc:village_guard")
+	if !ok {
+		t.Fatal("expected interactable static actor registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorInteraction(999, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected unknown-subject interaction attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorInteractionFailureSubjectNotFound {
+		t.Fatalf("expected unknown-subject failure %q, got %+v", StaticActorInteractionFailureSubjectNotFound, attempt)
+	}
+	if attempt.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected unknown-subject interaction attempt to keep actor snapshot empty, got %+v", attempt)
 	}
 }
 

@@ -34,6 +34,19 @@ type sharedWorldRegistry struct {
 	lastKnownCharacters map[uint64]loginticket.Character
 }
 
+const (
+	StaticActorInteractionFailureSubjectNotFound        = "subject_not_found"
+	StaticActorInteractionFailureTargetNotVisible       = "target_not_visible"
+	StaticActorInteractionFailureTargetHasNoInteraction = "target_has_no_interaction"
+)
+
+type StaticActorInteractionAttempt struct {
+	Accepted  bool
+	Failure   string
+	TargetVID uint32
+	Actor     StaticActorSnapshot
+}
+
 func newQueuedSessionFlow(inner service.SessionFlow, pending *pendingServerFrames, onClose func()) *queuedSessionFlow {
 	return &queuedSessionFlow{inner: inner, pending: pending, onClose: onClose}
 }
@@ -667,6 +680,35 @@ func (r *sharedWorldRegistry) VisibleStaticActorFrames(subject loginticket.Chara
 		frames = append(frames, encodeStaticActorVisibilityFrames(actor)...)
 	}
 	return frames
+}
+
+func (r *sharedWorldRegistry) AttemptStaticActorInteraction(subjectID uint64, targetVID uint32) StaticActorInteractionAttempt {
+	attempt := StaticActorInteractionAttempt{TargetVID: targetVID}
+	if r == nil || r.entities == nil {
+		attempt.Failure = StaticActorInteractionFailureSubjectNotFound
+		return attempt
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	subject, ok := r.playerCharacter(subjectID)
+	if !ok {
+		attempt.Failure = StaticActorInteractionFailureSubjectNotFound
+		return attempt
+	}
+	actor, ok := r.scopesLocked().VisibleStaticActorByVID(subject, targetVID)
+	if !ok {
+		attempt.Failure = StaticActorInteractionFailureTargetNotVisible
+		return attempt
+	}
+	attempt.Actor = staticActorSnapshot(r.topology, actor)
+	if actor.InteractionKind == "" || actor.InteractionRef == "" {
+		attempt.Failure = StaticActorInteractionFailureTargetHasNoInteraction
+		return attempt
+	}
+	attempt.Accepted = true
+	return attempt
 }
 
 func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, bool) {
