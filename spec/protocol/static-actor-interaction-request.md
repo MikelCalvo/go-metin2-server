@@ -57,8 +57,9 @@ At this stage the repository owns a narrow but real first response vertical:
   - `target_has_no_interaction`
 - `gamed` now also resolves authored interaction definitions by `interaction_kind + interaction_ref`
 - when that definition resolves to `interaction_kind = "info"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored definition text
+- when that definition resolves to `interaction_kind = "talk"`, the interacting player now receives one self-only chat-backed delivery using a deterministic speaker-prefixed multi-line payload
 - malformed payloads are rejected at the codec/flow boundary
-- `talk` and other unsupported interaction kinds may still resolve to no outgoing frames yet
+- other unsupported interaction kinds may still resolve to no outgoing frames yet
 
 ## Target identity rule
 
@@ -81,8 +82,9 @@ The current owned failure boundary is now explicit and still fail-closed:
   - `unsupported_interaction_kind`
 - failed interaction resolution currently produces no outgoing frames
 - accepted `info` interaction currently produces exactly one self-only `GC_CHAT` delivery with `CHAT_TYPE_INFO`
+- accepted `talk` interaction currently produces exactly one self-only chat-backed delivery whose payload is speaker-prefixed and multi-line
 
-Future slices should freeze richer reporting only when `talk` and later interaction families exist.
+Future slices should freeze richer reporting only when dialog UI or later interaction families exist.
 
 ## Success definition
 
@@ -92,5 +94,5 @@ After this slice, the repository should be able to say:
 - the game flow can dispatch that request to a dedicated interaction handler
 - `internal/worldruntime` can resolve a visible bootstrap static actor by that `VID` under the active topology/AOI rules
 - `internal/minimal/shared_world` can now turn that subject/target pair into a structured validated interaction attempt before later content resolution exists
-- `gamed` can now resolve authored `info` definitions behind visible static actors and answer the interacting player with one self-only `CHAT_TYPE_INFO` delivery carrying the authored text
-- the protocol surface is ready for the next slice to implement the first owned `talk` response without redesigning the ingress or target-lookup contract
+- `gamed` can now resolve authored `info` and `talk` definitions behind visible static actors and answer the interacting player with one self-only chat-backed delivery carrying the authored text
+- the protocol surface is ready for the next slice to add loopback authoring and richer QA/runtime introspection without redesigning the ingress or target-lookup contract

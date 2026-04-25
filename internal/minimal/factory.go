@@ -1737,11 +1737,16 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 		return resolution
 	}
 	resolution.Definition = definition
-	if definition.Kind != interactionstore.KindInfo {
+	var delivery chatproto.ChatDeliveryPacket
+	switch definition.Kind {
+	case interactionstore.KindInfo:
+		delivery = chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: definition.Text}
+	case interactionstore.KindTalk:
+		delivery = chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: fmt.Sprintf("%s:\n%s", attempt.Actor.Name, definition.Text)}
+	default:
 		resolution.Failure = staticActorInteractionFailureUnsupportedKind
 		return resolution
 	}
-	delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: definition.Text}
 	resolution.Accepted = true
 	resolution.Delivery = &delivery
 	return resolution

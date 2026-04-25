@@ -46,7 +46,7 @@ This rule applies consistently in:
 
 ## Current owned behavior
 
-At this stage, the repository owns only metadata transport and storage:
+At this stage, the repository owns metadata plus the first narrow self-only behavior:
 - static actors can preserve `interaction_kind` / `interaction_ref` in runtime state
 - `/local/static-actors` create/update responses can surface that metadata
 - runtime snapshot/introspection surfaces can report that metadata
@@ -55,24 +55,22 @@ At this stage, the repository owns only metadata transport and storage:
 - `gamed` now loads that interaction-definition catalog at boot when present
 - persisted static actors with interaction refs now fail closed at boot if those refs do not resolve in the loaded interaction-definition catalog
 - runtime static-actor create/update with interaction metadata now also fail closed when the referenced definition does not exist in the loaded interaction-definition catalog
+- visible static actors whose metadata resolves to `interaction_kind = "info"` now answer with a self-only informational chat-backed delivery
+- visible static actors whose metadata resolves to `interaction_kind = "talk"` now answer with a self-only speaker-prefixed multi-line chat-backed delivery
 
-No gameplay-side click/talk/shop/quest behavior is claimed yet.
+## Owned interaction family
 
-## First interaction family frozen for the next vertical
-
-The next vertical should stay narrow.
-
-The first interaction family to implement next is frozen as a **self-only info/talk interaction**:
+The first owned interaction family stays intentionally narrow as a **self-only info/talk interaction**:
 - the actor must already be visible to the player
 - the runtime resolves `interaction_kind` + `interaction_ref`
-- the first response is self-facing only
+- the response is self-facing only
 - no shared state, shop inventory, quest progression, barter, or combat side effects are required
 
-Recommended initial meanings:
+Current owned meanings:
 - `interaction_kind = "info"`
-  - return a simple self-facing informational response
+  - return a simple self-facing informational response carrying the authored text
 - `interaction_kind = "talk"`
-  - return a simple self-facing talk/dialog-style response
+  - return a simple self-facing talk/dialog-style response carrying a deterministic speaker-prefixed multi-line payload
 
 ## Explicit non-goals
 
@@ -94,4 +92,4 @@ After this slice, the repository should be able to say:
 - a deterministic file-backed interaction-definition store now exists for minimal `info` / `talk` content keyed by `kind + ref`
 - `gamed` now loads that catalog before boot-restoring persisted static actors and before accepting new interaction metadata on static-actor create/update paths
 - static actors that point at missing interaction definitions are now rejected fail closed at boot and on runtime create/update
-- the next slice can implement a tiny self-only info/talk interaction without redesigning the actor model first
+- visible actors can now answer the interacting player with a tiny self-only `info` or `talk` interaction without redesigning the actor model first
