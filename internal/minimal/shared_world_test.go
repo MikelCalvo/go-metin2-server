@@ -10,6 +10,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
@@ -4328,6 +4329,45 @@ func TestNewGameRuntimeRejectsMalformedPersistedStaticActorSnapshot(t *testing.T
 	}
 }
 
+func TestNewGameRuntimeLoadsPersistedInteractionDefinitions(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	definition, ok := runtime.ResolveInteractionDefinition(interactionstore.KindInfo, "lore:alchemist")
+	if !ok || definition.Kind != interactionstore.KindInfo || definition.Ref != "lore:alchemist" || definition.Text != "The alchemist studies forgotten herbs." {
+		t.Fatalf("expected persisted interaction definition to resolve at runtime, got definition=%+v ok=%v", definition, ok)
+	}
+}
+
+func TestNewGameRuntimeRejectsMalformedPersistedInteractionSnapshot(t *testing.T) {
+	interactionPath := filepath.Join(t.TempDir(), "interaction-definitions.json")
+	if err := os.WriteFile(interactionPath, []byte("{not-json"), 0o644); err != nil {
+		t.Fatalf("write malformed interaction snapshot: %v", err)
+	}
+
+	_, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionstore.NewFileStore(interactionPath))
+	if !errors.Is(err, interactionstore.ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot on malformed persisted interaction snapshot, got %v", err)
+	}
+}
+
+func TestNewGameRuntimeRejectsPersistedStaticActorWithMissingInteractionDefinition(t *testing.T) {
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	staticActorStore := staticstore.NewFileStore(staticPath)
+	if err := staticActorStore.Save(staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: 42, Name: "VillageGuard", MapIndex: bootstrapMapIndex, X: 1200, Y: 2200, RaceNum: 20300, InteractionKind: "talk", InteractionRef: "npc:village_guard"}}}); err != nil {
+		t.Fatalf("save persisted static actor snapshot: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, nil)
+
+	_, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if !errors.Is(err, staticstore.ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for persisted static actor with missing interaction definition, got %v", err)
+	}
+}
+
 func TestGameRuntimeRegisterStaticActorPersistsSnapshotOnSuccess(t *testing.T) {
 	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
 	staticActorStore := staticstore.NewFileStore(staticPath)
@@ -4365,7 +4405,8 @@ func TestGameRuntimeRegisterStaticActorDoesNotMutateRuntimeWhenSnapshotPersistFa
 }
 
 func TestGameRuntimeRegisterStaticActorWithInteractionUpdatesSnapshot(t *testing.T) {
-	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -4386,7 +4427,8 @@ func TestGameRuntimeRegisterStaticActorWithInteractionUpdatesSnapshot(t *testing
 func TestGameRuntimeRegisterStaticActorWithInteractionPersistsSnapshotOnSuccess(t *testing.T) {
 	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
 	staticActorStore := staticstore.NewFileStore(staticPath)
-	runtime, err := newGameRuntimeWithAccountStoreAndStaticStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."}})
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -4402,6 +4444,41 @@ func TestGameRuntimeRegisterStaticActorWithInteractionPersistsSnapshotOnSuccess(
 	want := staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: actor.EntityID, Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: "talk", InteractionRef: "npc:village_guard"}}}
 	if !reflect.DeepEqual(persisted, want) {
 		t.Fatalf("unexpected persisted static actor snapshot after interaction register:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
+func TestGameRuntimeRegisterStaticActorWithInteractionRejectsUnknownInteractionDefinition(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	if actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", 42, 1700, 2800, 20300, "talk", "npc:village_guard"); ok || actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected static actor interaction registration to fail for missing definition, got actor=%+v ok=%v", actor, ok)
+	}
+	if actors := runtime.StaticActors(); len(actors) != 0 {
+		t.Fatalf("expected runtime static actors to remain empty after failed interaction registration, got %+v", actors)
+	}
+}
+
+func TestGameRuntimeUpdateStaticActorWithInteractionRejectsUnknownInteractionDefinition(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected base static actor registration to succeed")
+	}
+
+	if updated, ok := runtime.UpdateStaticActorWithInteraction(actor.EntityID, "VillageGuard", 42, 1700, 2800, 20300, "talk", "npc:village_guard"); ok || updated != (StaticActorSnapshot{}) {
+		t.Fatalf("expected static actor interaction update to fail for missing definition, got actor=%+v ok=%v", updated, ok)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].InteractionKind != "" || actors[0].InteractionRef != "" {
+		t.Fatalf("expected runtime static actor snapshot to remain without interaction metadata after failed update, got %+v", actors)
 	}
 }
 
@@ -5066,6 +5143,16 @@ func issuePeerTicket(t *testing.T, store loginticket.Store, login string, loginK
 	if err := store.Issue(loginticket.Ticket{Login: login, LoginKey: loginKey, Empire: character.Empire, Characters: []loginticket.Character{character}}); err != nil {
 		t.Fatalf("issue peer ticket: %v", err)
 	}
+}
+
+func newInteractionDefinitionStore(t *testing.T, definitions []interactionstore.Definition) interactionstore.Store {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "interaction-definitions.json")
+	store := interactionstore.NewFileStore(path)
+	if err := store.Save(interactionstore.Snapshot{Definitions: definitions}); err != nil {
+		t.Fatalf("save interaction definitions: %v", err)
+	}
+	return store
 }
 
 func peerVisibilityCharacter(name string, id uint32, vid uint32, x int32, y int32, race uint16, mainPart uint16, hairPart uint16) loginticket.Character {

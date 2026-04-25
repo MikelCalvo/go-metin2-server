@@ -21,6 +21,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/player"
@@ -81,6 +82,8 @@ type MapOccupancySnapshot = worldruntime.MapOccupancySnapshot
 
 type StaticActorSnapshot = worldruntime.StaticActorSnapshot
 
+type InteractionDefinition = interactionstore.Definition
+
 type RuntimeConfigSnapshot struct {
 	LocalChannelID       uint8  `json:"local_channel_id"`
 	VisibilityMode       string `json:"visibility_mode"`
@@ -93,10 +96,12 @@ type MapOccupancyChange = worldruntime.MapOccupancyChange
 type RelocationPreview = worldruntime.RelocationPreview
 
 type gameRuntime struct {
-	sessionFactory service.SessionFactory
-	sharedWorld    *sharedWorldRegistry
-	staticStore    staticstore.Store
-	staticActorMu  sync.Mutex
+	sessionFactory         service.SessionFactory
+	sharedWorld            *sharedWorldRegistry
+	staticStore            staticstore.Store
+	interactionStore       interactionstore.Store
+	interactionDefinitions map[string]interactionstore.Definition
+	staticActorMu          sync.Mutex
 }
 
 func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
@@ -105,6 +110,7 @@ func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
 		loginticket.NewFileStore(defaultTicketStoreDir()),
 		accountstore.NewFileStore(defaultAccountStoreDir()),
 		staticstore.NewFileStore(defaultStaticActorStorePath()),
+		interactionstore.NewFileStore(defaultInteractionStorePath()),
 		nil,
 	)
 }
@@ -196,7 +202,7 @@ func (r *gameRuntime) RegisterStaticActorWithInteraction(name string, mapIndex u
 	name = strings.TrimSpace(name)
 	interactionKind = strings.TrimSpace(interactionKind)
 	interactionRef = strings.TrimSpace(interactionRef)
-	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) {
+	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) {
 		return StaticActorSnapshot{}, false
 	}
 
@@ -231,7 +237,7 @@ func (r *gameRuntime) UpdateStaticActorWithInteraction(entityID uint64, name str
 	name = strings.TrimSpace(name)
 	interactionKind = strings.TrimSpace(interactionKind)
 	interactionRef = strings.TrimSpace(interactionRef)
-	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) {
+	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) {
 		return StaticActorSnapshot{}, false
 	}
 
@@ -367,11 +373,19 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 }
 
 func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store) (*gameRuntime, error) {
-	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, nil, nil)
+	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, nil, nil, nil)
 }
 
 func newGameRuntimeWithAccountStoreAndStaticStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store) (*gameRuntime, error) {
-	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, staticActors, nil)
+	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, staticActors, nil, nil)
+}
+
+func newGameRuntimeWithAccountStoreAndInteractionStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, interactions interactionstore.Store) (*gameRuntime, error) {
+	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, nil, interactions, nil)
+}
+
+func newGameRuntimeWithAccountStoreAndContentStores(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store) (*gameRuntime, error) {
+	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, staticActors, interactions, nil)
 }
 
 func bootstrapTopologyFromConfig(cfg config.Service) (worldruntime.BootstrapTopology, error) {
@@ -399,10 +413,10 @@ func bootstrapTopologyFromConfig(cfg config.Service) (worldruntime.BootstrapTopo
 }
 
 func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store loginticket.Store, accounts accountstore.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
-	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, nil, transferTriggers)
+	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, nil, nil, transferTriggers)
 }
 
-func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
+func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
 	advertisedPort, err := parsePort(cfg.LegacyAddr)
 	if err != nil {
 		return nil, err
@@ -422,7 +436,10 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
 	}
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
-	runtime := &gameRuntime{sharedWorld: sharedWorld, staticStore: staticActors}
+	runtime := &gameRuntime{sharedWorld: sharedWorld, staticStore: staticActors, interactionStore: interactions}
+	if err := runtime.loadInteractionDefinitions(); err != nil {
+		return nil, err
+	}
 	if err := runtime.loadPersistedStaticActors(); err != nil {
 		return nil, err
 	}
@@ -1610,6 +1627,22 @@ func stubCharacters() []loginticket.Character {
 	return []loginticket.Character{first, second}
 }
 
+func (r *gameRuntime) loadInteractionDefinitions() error {
+	if r == nil || r.interactionStore == nil {
+		return nil
+	}
+	snapshot, err := r.interactionStore.Load()
+	if err != nil {
+		if errors.Is(err, interactionstore.ErrSnapshotNotFound) {
+			r.interactionDefinitions = nil
+			return nil
+		}
+		return err
+	}
+	r.interactionDefinitions = buildInteractionDefinitionIndex(snapshot)
+	return nil
+}
+
 func (r *gameRuntime) loadPersistedStaticActors() error {
 	if r == nil || r.staticStore == nil || r.sharedWorld == nil {
 		return nil
@@ -1622,11 +1655,54 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 		return err
 	}
 	for _, actor := range snapshot.StaticActors {
+		if !r.interactionDefinitionExists(actor.InteractionKind, actor.InteractionRef) {
+			return fmt.Errorf("%w: validate static actor interaction refs", staticstore.ErrInvalidSnapshot)
+		}
 		if _, ok := r.sharedWorld.RegisterStaticActorWithInteraction(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef); !ok {
 			return fmt.Errorf("%w: apply static actor snapshot", staticstore.ErrInvalidSnapshot)
 		}
 	}
 	return nil
+}
+
+func buildInteractionDefinitionIndex(snapshot interactionstore.Snapshot) map[string]interactionstore.Definition {
+	if len(snapshot.Definitions) == 0 {
+		return nil
+	}
+	definitions := make(map[string]interactionstore.Definition, len(snapshot.Definitions))
+	for _, definition := range snapshot.Definitions {
+		definitions[interactionDefinitionKey(definition.Kind, definition.Ref)] = definition
+	}
+	return definitions
+}
+
+func interactionDefinitionKey(kind string, ref string) string {
+	return strings.TrimSpace(kind) + "\x00" + strings.TrimSpace(ref)
+}
+
+func (r *gameRuntime) ResolveInteractionDefinition(kind string, ref string) (InteractionDefinition, bool) {
+	if r == nil || r.interactionStore == nil {
+		return InteractionDefinition{}, false
+	}
+	definition, ok := r.interactionDefinitions[interactionDefinitionKey(kind, ref)]
+	if !ok {
+		return InteractionDefinition{}, false
+	}
+	return definition, true
+}
+
+func (r *gameRuntime) interactionDefinitionExists(kind string, ref string) bool {
+	if kind == "" && ref == "" {
+		return true
+	}
+	if !worldruntime.ValidStaticActorInteractionMetadata(kind, ref) {
+		return false
+	}
+	if r == nil || r.interactionStore == nil {
+		return true
+	}
+	_, ok := r.ResolveInteractionDefinition(kind, ref)
+	return ok
 }
 
 func (r *gameRuntime) persistStaticActorSnapshot(snapshot []StaticActorSnapshot) bool {
@@ -1690,6 +1766,10 @@ func defaultAccountStoreDir() string {
 
 func defaultStaticActorStorePath() string {
 	return filepath.Join(os.TempDir(), "go-metin2-server-static-actors.json")
+}
+
+func defaultInteractionStorePath() string {
+	return filepath.Join(os.TempDir(), "go-metin2-server-interaction-definitions.json")
 }
 
 func sequentialBytes32(start byte) [32]byte {

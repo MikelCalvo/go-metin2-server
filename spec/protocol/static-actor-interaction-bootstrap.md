@@ -51,7 +51,10 @@ At this stage, the repository owns only metadata transport and storage:
 - `/local/static-actors` create/update responses can surface that metadata
 - runtime snapshot/introspection surfaces can report that metadata
 - file-backed static-actor snapshots can persist and restore that metadata across boot
-- a deterministic file-backed interaction-definition store can now persist minimal `info` / `talk` definitions by stable `kind + ref`, ready for later boot/runtime wiring
+- a deterministic file-backed interaction-definition store can now persist minimal `info` / `talk` definitions by stable `kind + ref`
+- `gamed` now loads that interaction-definition catalog at boot when present
+- persisted static actors with interaction refs now fail closed at boot if those refs do not resolve in the loaded interaction-definition catalog
+- runtime static-actor create/update with interaction metadata now also fail closed when the referenced definition does not exist in the loaded interaction-definition catalog
 
 No gameplay-side click/talk/shop/quest behavior is claimed yet.
 
@@ -89,4 +92,6 @@ After this slice, the repository should be able to say:
 - that metadata survives create/update/list/persist/boot paths
 - invalid partial metadata is rejected consistently
 - a deterministic file-backed interaction-definition store now exists for minimal `info` / `talk` content keyed by `kind + ref`
+- `gamed` now loads that catalog before boot-restoring persisted static actors and before accepting new interaction metadata on static-actor create/update paths
+- static actors that point at missing interaction definitions are now rejected fail closed at boot and on runtime create/update
 - the next slice can implement a tiny self-only info/talk interaction without redesigning the actor model first
