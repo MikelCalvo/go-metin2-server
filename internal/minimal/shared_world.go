@@ -537,6 +537,16 @@ func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapsho
 	return r.scopesLocked().CharacterVisibilitySnapshots()
 }
 
+func (r *sharedWorldRegistry) InteractionVisibility() []worldruntime.CharacterInteractionVisibilitySnapshot {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.scopesLocked().CharacterInteractionVisibilitySnapshots()
+}
+
 func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
 	if r == nil {
 		return nil

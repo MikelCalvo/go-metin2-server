@@ -90,6 +90,17 @@ type StaticActorSnapshot = worldruntime.StaticActorSnapshot
 
 type InteractionDefinition = interactionstore.Definition
 
+type InteractableStaticActorVisibilitySnapshot struct {
+	StaticActorSnapshot
+	Preview           string `json:"preview,omitempty"`
+	ResolutionFailure string `json:"resolution_failure,omitempty"`
+}
+
+type CharacterInteractionVisibilitySnapshot struct {
+	ConnectedCharacterSnapshot
+	VisibleInteractableStaticActors []InteractableStaticActorVisibilitySnapshot `json:"visible_interactable_static_actors"`
+}
+
 const (
 	staticActorInteractionFailureDefinitionNotFound = "interaction_definition_not_found"
 	staticActorInteractionFailureUnsupportedKind    = "unsupported_interaction_kind"
@@ -181,6 +192,36 @@ func (r *gameRuntime) CharacterVisibility() []CharacterVisibilitySnapshot {
 		return nil
 	}
 	return r.sharedWorld.CharacterVisibility()
+}
+
+func (r *gameRuntime) InteractionVisibility() []CharacterInteractionVisibilitySnapshot {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	base := r.sharedWorld.InteractionVisibility()
+	out := make([]CharacterInteractionVisibilitySnapshot, 0, len(base))
+	for _, entry := range base {
+		resolved := make([]InteractableStaticActorVisibilitySnapshot, 0, len(entry.VisibleInteractableStaticActors))
+		for _, actor := range entry.VisibleInteractableStaticActors {
+			resolvedActor := InteractableStaticActorVisibilitySnapshot{StaticActorSnapshot: actor}
+			definition, ok := r.ResolveInteractionDefinition(actor.InteractionKind, actor.InteractionRef)
+			if !ok {
+				resolvedActor.ResolutionFailure = staticActorInteractionFailureDefinitionNotFound
+				resolved = append(resolved, resolvedActor)
+				continue
+			}
+			preview, ok := interactionDefinitionPreview(actor.Name, definition)
+			if !ok {
+				resolvedActor.ResolutionFailure = staticActorInteractionFailureUnsupportedKind
+				resolved = append(resolved, resolvedActor)
+				continue
+			}
+			resolvedActor.Preview = compactInteractionPreview(preview)
+			resolved = append(resolved, resolvedActor)
+		}
+		out = append(out, CharacterInteractionVisibilitySnapshot{ConnectedCharacterSnapshot: entry.ConnectedCharacterSnapshot, VisibleInteractableStaticActors: resolved})
+	}
+	return out
 }
 
 func (r *gameRuntime) MapOccupancy() []MapOccupancySnapshot {
@@ -1875,19 +1916,35 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 		return resolution
 	}
 	resolution.Definition = definition
-	var delivery chatproto.ChatDeliveryPacket
-	switch definition.Kind {
-	case interactionstore.KindInfo:
-		delivery = chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: definition.Text}
-	case interactionstore.KindTalk:
-		delivery = chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: fmt.Sprintf("%s:\n%s", attempt.Actor.Name, definition.Text)}
-	default:
+	preview, ok := interactionDefinitionPreview(attempt.Actor.Name, definition)
+	if !ok {
 		resolution.Failure = staticActorInteractionFailureUnsupportedKind
 		return resolution
 	}
+	delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: preview}
 	resolution.Accepted = true
 	resolution.Delivery = &delivery
 	return resolution
+}
+
+func interactionDefinitionPreview(actorName string, definition InteractionDefinition) (string, bool) {
+	switch definition.Kind {
+	case interactionstore.KindInfo:
+		return definition.Text, true
+	case interactionstore.KindTalk:
+		return fmt.Sprintf("%s:\n%s", actorName, definition.Text), true
+	default:
+		return "", false
+	}
+}
+
+func compactInteractionPreview(preview string) string {
+	preview = strings.TrimSpace(preview)
+	const maxPreviewLength = 160
+	if len(preview) <= maxPreviewLength {
+		return preview
+	}
+	return preview[:maxPreviewLength-3] + "..."
 }
 
 func (r *gameRuntime) interactionDefinitionExists(kind string, ref string) bool {

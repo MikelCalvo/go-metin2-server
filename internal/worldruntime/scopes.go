@@ -42,6 +42,11 @@ type CharacterVisibilitySnapshot struct {
 	VisibleStaticActors []StaticActorSnapshot        `json:"visible_static_actors"`
 }
 
+type CharacterInteractionVisibilitySnapshot struct {
+	ConnectedCharacterSnapshot
+	VisibleInteractableStaticActors []StaticActorSnapshot `json:"visible_interactable_static_actors"`
+}
+
 type StaticActorSnapshot struct {
 	EntityID        uint64 `json:"entity_id"`
 	Name            string `json:"name"`
@@ -184,6 +189,22 @@ func (s Scopes) CharacterVisibilitySnapshots() []CharacterVisibilitySnapshot {
 	return snapshots
 }
 
+func (s Scopes) CharacterInteractionVisibilitySnapshots() []CharacterInteractionVisibilitySnapshot {
+	if s.Entities == nil {
+		return nil
+	}
+	targets := s.ConnectedTargets()
+	snapshots := make([]CharacterInteractionVisibilitySnapshot, 0, len(targets))
+	for _, subject := range targets {
+		snapshots = append(snapshots, CharacterInteractionVisibilitySnapshot{
+			ConnectedCharacterSnapshot:      connectedCharacterSnapshot(s.Topology, subject.Character),
+			VisibleInteractableStaticActors: staticActorSnapshots(s.Topology, s.VisibleInteractableStaticActors(subject.Character)),
+		})
+	}
+	sortCharacterInteractionVisibilitySnapshots(snapshots)
+	return snapshots
+}
+
 func (s Scopes) StaticActorSnapshots() []StaticActorSnapshot {
 	if s.Entities == nil {
 		return nil
@@ -205,6 +226,19 @@ func (s Scopes) VisibleStaticActors(subject loginticket.Character) []StaticEntit
 	}
 	sortStaticEntities(visible)
 	return visible
+}
+
+func (s Scopes) VisibleInteractableStaticActors(subject loginticket.Character) []StaticEntity {
+	visible := s.VisibleStaticActors(subject)
+	interactable := make([]StaticEntity, 0, len(visible))
+	for _, actor := range visible {
+		if actor.InteractionKind == "" || actor.InteractionRef == "" {
+			continue
+		}
+		interactable = append(interactable, actor)
+	}
+	sortStaticEntities(interactable)
+	return interactable
 }
 
 func (s Scopes) VisibleStaticActorByVID(subject loginticket.Character, vid uint32) (StaticEntity, bool) {
@@ -596,6 +630,15 @@ func sortConnectedCharacterSnapshots(snapshots []ConnectedCharacterSnapshot) {
 }
 
 func sortCharacterVisibilitySnapshots(snapshots []CharacterVisibilitySnapshot) {
+	sort.Slice(snapshots, func(i int, j int) bool {
+		if snapshots[i].Name == snapshots[j].Name {
+			return snapshots[i].VID < snapshots[j].VID
+		}
+		return snapshots[i].Name < snapshots[j].Name
+	})
+}
+
+func sortCharacterInteractionVisibilitySnapshots(snapshots []CharacterInteractionVisibilitySnapshot) {
 	sort.Slice(snapshots, func(i int, j int) bool {
 		if snapshots[i].Name == snapshots[j].Name {
 			return snapshots[i].VID < snapshots[j].VID

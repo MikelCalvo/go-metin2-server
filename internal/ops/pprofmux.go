@@ -278,6 +278,28 @@ func RegisterLocalInteractionDefinitionDeleteEndpoint(mux *http.ServeMux, remove
 	return mux
 }
 
+func RegisterLocalInteractionVisibilityEndpoint(mux *http.ServeMux, interactionVisibility func() any) *http.ServeMux {
+	if mux == nil || interactionVisibility == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/interaction-visibility", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(interactionVisibility()); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	return mux
+}
+
 func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, previewRelocation func(string, uint32, int32, int32) (any, bool), transferCharacter func(string, uint32, int32, int32) (any, bool), connectedCharacters func() any, characterVisibility func() any, mapOccupancy func() any) *http.ServeMux {
 	mux := http.NewServeMux()
 

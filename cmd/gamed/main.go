@@ -63,6 +63,10 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.RuntimeConfigSnapshot() },
 	)
+	opsHandler = ops.RegisterLocalInteractionVisibilityEndpoint(
+		opsHandler,
+		func() any { return gameRuntime.InteractionVisibility() },
+	)
 	opsHandler = ops.RegisterLocalStaticActorEndpoints(
 		opsHandler,
 		func() any { return gameRuntime.StaticActors() },

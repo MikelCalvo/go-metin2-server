@@ -257,6 +257,40 @@ func TestScopesCharacterVisibilitySnapshotsIncludeVisibleStaticActors(t *testing
 	}
 }
 
+func TestScopesCharacterInteractionVisibilitySnapshotsIncludeOnlyVisibleInteractableStaticActors(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	subject := registry.RegisterPlayer(entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800))
+	alchemist, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Alchemist"}, Position: NewPosition(42, 1720, 2810), RaceNum: 20302, InteractionKind: "info", InteractionRef: "lore:alchemist"})
+	if !ok {
+		t.Fatal("expected Alchemist registration to succeed")
+	}
+	merchant, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Merchant"}, Position: NewPosition(42, 1900, 2900), RaceNum: 20301, InteractionKind: "talk", InteractionRef: "npc:merchant"})
+	if !ok {
+		t.Fatal("expected Merchant registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Blacksmith"}, Position: NewPosition(42, 1750, 2850), RaceNum: 20300}); !ok {
+		t.Fatal("expected non-interactable Blacksmith registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 2600, 3800), RaceNum: 20303, InteractionKind: "talk", InteractionRef: "npc:village_guard"}); !ok {
+		t.Fatal("expected far interactable static actor registration to succeed")
+	}
+
+	snapshots := NewScopes(topology, registry).CharacterInteractionVisibilitySnapshots()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 interaction visibility snapshot, got %+v", snapshots)
+	}
+	if snapshots[0].VID != subject.Character.VID {
+		t.Fatalf("expected subject interaction snapshot for VID %#08x, got %+v", subject.Character.VID, snapshots[0])
+	}
+	if len(snapshots[0].VisibleInteractableStaticActors) != 2 {
+		t.Fatalf("expected 2 visible interactable static actors, got %+v", snapshots[0].VisibleInteractableStaticActors)
+	}
+	if snapshots[0].VisibleInteractableStaticActors[0].EntityID != alchemist.Entity.ID || snapshots[0].VisibleInteractableStaticActors[1].EntityID != merchant.Entity.ID {
+		t.Fatalf("expected deterministic visible interactable static actor snapshots [Alchemist Merchant], got %+v", snapshots[0].VisibleInteractableStaticActors)
+	}
+}
+
 func TestScopesRelocateStaticActorVisibilityDiffUsesConfiguredPolicyAndOrder(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)
