@@ -207,6 +207,17 @@ func (s Scopes) VisibleStaticActors(subject loginticket.Character) []StaticEntit
 	return visible
 }
 
+func (s Scopes) VisibleStaticActorByVID(subject loginticket.Character, vid uint32) (StaticEntity, bool) {
+	if s.Entities == nil || vid == 0 {
+		return StaticEntity{}, false
+	}
+	actor, ok := s.Entities.StaticActorByVID(vid)
+	if !ok || !s.Topology.SharesVisibleWorld(subject, staticActorVisibilityCharacter(actor)) {
+		return StaticEntity{}, false
+	}
+	return actor, true
+}
+
 func (s Scopes) VisibleTargetsForStaticActor(actor StaticEntity) []PlayerEntity {
 	return s.filterTargets(0, staticActorVisibilityCharacter(actor), s.Topology.SharesVisibleWorld)
 }

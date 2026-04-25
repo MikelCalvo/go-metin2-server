@@ -199,6 +199,33 @@ func TestScopesVisibleStaticActorsFollowConfiguredVisibilityPolicyAndOrder(t *te
 	}
 }
 
+func TestScopesVisibleStaticActorByVIDRequiresCurrentVisibility(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	subject := entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800)
+	registry.RegisterPlayer(subject)
+	nearActor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Blacksmith"}, Position: NewPosition(42, 1750, 2850), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected near static actor registration to succeed")
+	}
+	farActor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 2600, 3800), RaceNum: 20301})
+	if !ok {
+		t.Fatal("expected far static actor registration to succeed")
+	}
+
+	scopes := NewScopes(topology, registry)
+	lookup, ok := scopes.VisibleStaticActorByVID(subject, uint32(nearActor.Entity.ID))
+	if !ok || lookup.Entity.ID != nearActor.Entity.ID || lookup.Entity.Name != nearActor.Entity.Name {
+		t.Fatalf("expected visible static actor VID lookup to return Blacksmith, got actor=%+v ok=%v", lookup, ok)
+	}
+	if _, ok := scopes.VisibleStaticActorByVID(subject, uint32(farActor.Entity.ID)); ok {
+		t.Fatal("expected invisible static actor VID lookup to fail")
+	}
+	if _, ok := scopes.VisibleStaticActorByVID(subject, 0); ok {
+		t.Fatal("expected zero static actor VID lookup to fail")
+	}
+}
+
 func TestScopesCharacterVisibilitySnapshotsIncludeVisibleStaticActors(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)

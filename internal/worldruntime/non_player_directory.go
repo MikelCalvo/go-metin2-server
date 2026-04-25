@@ -3,11 +3,12 @@ package worldruntime
 import "sort"
 
 type NonPlayerDirectory struct {
-	byEntityID map[uint64]StaticEntity
+	byEntityID    map[uint64]StaticEntity
+	entityIDByVID map[uint32]uint64
 }
 
 func NewNonPlayerDirectory() *NonPlayerDirectory {
-	return &NonPlayerDirectory{byEntityID: make(map[uint64]StaticEntity)}
+	return &NonPlayerDirectory{byEntityID: make(map[uint64]StaticEntity), entityIDByVID: make(map[uint32]uint64)}
 }
 
 func (d *NonPlayerDirectory) Register(actor StaticEntity) bool {
@@ -17,7 +18,13 @@ func (d *NonPlayerDirectory) Register(actor StaticEntity) bool {
 	if _, ok := d.byEntityID[actor.Entity.ID]; ok {
 		return false
 	}
+	if vid, ok := StaticActorVisibilityVID(actor); ok && conflictingEntityID(d.entityIDByVID, vid, actor.Entity.ID) {
+		return false
+	}
 	d.byEntityID[actor.Entity.ID] = actor
+	if vid, ok := StaticActorVisibilityVID(actor); ok {
+		d.entityIDByVID[vid] = actor.Entity.ID
+	}
 	return true
 }
 
@@ -29,14 +36,36 @@ func (d *NonPlayerDirectory) ByEntityID(entityID uint64) (StaticEntity, bool) {
 	return actor, ok
 }
 
+func (d *NonPlayerDirectory) ByVID(vid uint32) (StaticEntity, bool) {
+	if d == nil || vid == 0 {
+		return StaticEntity{}, false
+	}
+	entityID, ok := d.entityIDByVID[vid]
+	if !ok {
+		return StaticEntity{}, false
+	}
+	actor, ok := d.byEntityID[entityID]
+	return actor, ok
+}
+
 func (d *NonPlayerDirectory) Update(actor StaticEntity) bool {
 	if d == nil || !validStaticEntity(actor) {
 		return false
 	}
-	if _, ok := d.byEntityID[actor.Entity.ID]; !ok {
+	previous, ok := d.byEntityID[actor.Entity.ID]
+	if !ok {
 		return false
 	}
+	if vid, ok := StaticActorVisibilityVID(actor); ok && conflictingEntityID(d.entityIDByVID, vid, actor.Entity.ID) {
+		return false
+	}
+	if previousVID, ok := StaticActorVisibilityVID(previous); ok {
+		delete(d.entityIDByVID, previousVID)
+	}
 	d.byEntityID[actor.Entity.ID] = actor
+	if vid, ok := StaticActorVisibilityVID(actor); ok {
+		d.entityIDByVID[vid] = actor.Entity.ID
+	}
 	return true
 }
 
@@ -49,6 +78,9 @@ func (d *NonPlayerDirectory) Remove(entityID uint64) (StaticEntity, bool) {
 		return StaticEntity{}, false
 	}
 	delete(d.byEntityID, entityID)
+	if vid, ok := StaticActorVisibilityVID(actor); ok {
+		delete(d.entityIDByVID, vid)
+	}
 	return actor, true
 }
 

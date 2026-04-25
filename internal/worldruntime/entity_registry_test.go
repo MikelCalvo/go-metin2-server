@@ -206,6 +206,22 @@ func TestEntityRegistryStaticActorsPreserveInteractionMetadata(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryLooksUpStaticActorsByVisibilityVID(t *testing.T) {
+	registry := NewEntityRegistry()
+	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	lookup, ok := registry.StaticActorByVID(uint32(registered.Entity.ID))
+	if !ok || lookup.Entity.ID != registered.Entity.ID || lookup.Entity.Name != registered.Entity.Name {
+		t.Fatalf("expected static actor VID lookup to return VillageGuard, got actor=%+v ok=%v", lookup, ok)
+	}
+	if _, ok := registry.StaticActorByVID(999); ok {
+		t.Fatal("expected missing static actor VID lookup to fail")
+	}
+}
+
 func TestEntityRegistryReturnsDeterministicSortedStaticActors(t *testing.T) {
 	registry := NewEntityRegistry()
 	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})

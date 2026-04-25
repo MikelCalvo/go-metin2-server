@@ -134,6 +134,15 @@ func (r *EntityRegistry) StaticActor(id uint64) (StaticEntity, bool) {
 	return r.staticActors.ByEntityID(id)
 }
 
+func (r *EntityRegistry) StaticActorByVID(vid uint32) (StaticEntity, bool) {
+	if r == nil || vid == 0 || r.staticActors == nil {
+		return StaticEntity{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.staticActors.ByVID(vid)
+}
+
 func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bool) {
 	if r == nil || actor.Entity.ID == 0 || r.staticActors == nil || r.maps == nil {
 		return StaticEntity{}, false

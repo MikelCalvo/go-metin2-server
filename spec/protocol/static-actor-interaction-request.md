@@ -48,6 +48,8 @@ Owned Go codec boundary:
 At this stage the repository owns only the request ingress seam:
 - `internal/game` accepts `INTERACT` while the session is already in `GAME`
 - the decoded request is dispatched to a dedicated interaction handler
+- `internal/worldruntime` can now resolve a bootstrap static actor by that client-visible `VID`
+- that runtime lookup is now also visibility-gated, so only actors that currently share visible world with the subject are eligible targets
 - malformed payloads are rejected at the codec/flow boundary
 - unsupported/unhandled interactions may still resolve to no outgoing frames
 
@@ -76,4 +78,5 @@ After this slice, the repository should be able to say:
 - there is a first owned `GAME`-phase interaction request packet for bootstrap static actors
 - the request is decoded deterministically from `target_vid`
 - the game flow can dispatch that request to a dedicated interaction handler
-- the protocol surface is ready for the next slice to resolve visible static actors by `VID` without redesigning the ingress contract
+- `internal/worldruntime` can resolve a visible bootstrap static actor by that `VID` under the active topology/AOI rules
+- the protocol surface is ready for the next slice to implement self-only `info` / `talk` behavior without redesigning the ingress or target-lookup contract

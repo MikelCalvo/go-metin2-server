@@ -1007,10 +1007,7 @@ func encodeStaticActorDeleteFrame(actor worldruntime.StaticEntity) ([]byte, bool
 }
 
 func staticActorVisibilityVID(actor worldruntime.StaticEntity) (uint32, bool) {
-	if actor.Entity.ID == 0 || actor.Entity.ID > uint64(^uint32(0)) || actor.RaceNum > uint32(^uint16(0)) {
-		return 0, false
-	}
-	return uint32(actor.Entity.ID), true
+	return worldruntime.StaticActorVisibilityVID(actor)
 }
 
 func staticActorCharacterAddPacket(actor worldruntime.StaticEntity, vid uint32) worldproto.CharacterAddPacket {
