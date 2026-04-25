@@ -19,6 +19,7 @@ This contract applies only to:
 - runtime-owned non-player identity and map presence
 - static or operator-seeded actors that exist as world-runtime data
 - deterministic lookup and map membership inside `internal/worldruntime`
+- a deterministic file-backed static-actor snapshot schema that can represent the full bootstrap actor set on disk before boot/runtime wiring lands
 - runtime-owned in-place edits of those static actors across non-player directories and map indexes while preserving entity identity
 - operator/runtime map-occupancy and static-actor snapshots that can now surface those actors through `internal/worldruntime/scopes.go`
 - the first loopback-only operator seed/snapshot/update/remove surface used to create, inspect, edit, and delete those runtime actors on `gamed`
@@ -92,7 +93,7 @@ This slice does not yet freeze:
 - shops, drops, loot, or item generation
 - client-visible spawn/update/delete packet choreography beyond the first enter-game bootstrap burst, the first live operator-seed add burst, the first live operator-delete teardown for already-visible sessions, the first same-visible-set operator update refresh, the first operator-triggered map/AOI visibility rebuild for static-actor edits, and the first self-facing AOI add/delete rebuild for already-seeded static actors
 - damage, targeting, or death state
-- inter-channel ownership or persistence schema for non-player actors
+- inter-channel ownership or automatic boot/runtime wiring of persisted non-player actors
 
 ## Success definition for the next slice
 
@@ -101,6 +102,7 @@ The next runtime checkpoint after this document should be able to say:
 - the actor can be looked up deterministically
 - the actor participates in owned map presence/index bookkeeping
 - runtime-owned directories and map indexes can now also update that static actor in place without delete-and-recreate when its name/class/position changes
+- a deterministic file-backed static-actor snapshot store can now save/load the full bootstrap actor set by stable entity identity, even before boot/runtime wiring is enabled
 - runtime/operator map-occupancy snapshots can now surface those static actors on their effective maps
 - relocate-preview and transfer results can now also expose explicit added/removed visible static actors beside the before/after occupancy snapshots
 - `gamed` can seed, inspect, update, and remove those bootstrap static actors through loopback-only operator paths
