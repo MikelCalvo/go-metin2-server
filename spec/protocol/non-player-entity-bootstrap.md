@@ -25,15 +25,17 @@ This contract applies only to:
 - the first client-visible enter-game bootstrap burst for static actors that already share the entering player's visible world under the current bootstrap topology/AOI policy
 - the first live operator-seed visibility burst for newly created static actors that already share some connected player's visible world under those same bootstrap topology/AOI rules
 - the first live operator-delete visibility teardown for removing static actors that are currently visible to connected players under those same bootstrap topology/AOI rules
+- the first live operator-update refresh for in-place edits that keep the actor in the same visible world set for already-connected players under those same bootstrap topology/AOI rules
 
-This slice now claims only five narrow client-visible behaviors for non-player actors:
+This slice now claims only six narrow client-visible behaviors for non-player actors:
 - when a player enters `GAME`, already-visible bootstrap static actors can be appended to that enter-game result with deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` frames
 - when an operator seeds a new static actor while players are already online, sessions that already share visible world with that actor can immediately receive the same deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst
 - when an operator removes a static actor while players are already online, sessions that currently share visible world with that actor can immediately receive a deterministic `CHARACTER_DEL`
+- when an operator updates a static actor while players are already online and the actor remains in the same visible world set for those sessions, those already-visible sessions can immediately receive a deterministic `CHARACTER_DEL` followed by the actor's refreshed `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst
 - when that same player later crosses the configured AOI boundary through `MOVE` or `SYNC_POSITION`, the runtime can queue the corresponding self-facing static-actor add/delete rebuild frames
 - when gameplay-triggered transfer rebootstrap moves that player into another visible-world scope, the runtime can append the corresponding self-facing static-actor delete/add rebuild frames after the relocated self burst
 
-It still does **not** yet claim general update replication to other sessions, dynamic actor behavior, or gameplay systems behind those actors.
+It still does **not** yet claim general cross-visible-set update replication to other sessions, dynamic actor behavior, or gameplay systems behind those actors.
 
 ## Current owned non-player contract
 
@@ -86,7 +88,7 @@ This slice does not yet freeze:
 - mob AI, aggro, pathing, or combat
 - spawn groups or respawn rules
 - shops, drops, loot, or item generation
-- client-visible spawn/update/delete packet choreography beyond the first enter-game bootstrap burst, the first live operator-seed add burst, the first live operator-delete teardown for already-visible sessions, and the first self-facing AOI add/delete rebuild for already-seeded static actors
+- client-visible spawn/update/delete packet choreography beyond the first enter-game bootstrap burst, the first live operator-seed add burst, the first live operator-delete teardown for already-visible sessions, the first same-visible-set operator update refresh, and the first self-facing AOI add/delete rebuild for already-seeded static actors
 - damage, targeting, or death state
 - inter-channel ownership or persistence schema for non-player actors
 
@@ -103,6 +105,7 @@ The next runtime checkpoint after this document should be able to say:
 - entering players can now receive a first deterministic bootstrap burst for static actors that already share their visible world, reusing `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`
 - newly seeded static actors can now also enqueue that same deterministic visibility burst to already-visible online players without requiring those players to relog or move first
 - operator-driven static-actor deletes can now also enqueue a deterministic `CHARACTER_DEL` to already-visible online players without requiring those players to relog or move first
+- operator-driven same-visible-set static-actor updates can now also enqueue a deterministic `CHARACTER_DEL` plus refreshed actor bootstrap burst to already-visible online players without requiring those players to relog or move first
 - moving/syncing players can now receive the first deterministic self-facing add/delete rebuild for static actors when configured AOI changes whether those actors are visible
 - player-only runtime behavior remains unchanged while this scaffolding lands
 
