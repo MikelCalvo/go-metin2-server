@@ -46,6 +46,10 @@ const (
 const bootstrapPlayerPointType uint8 = 1
 const bootstrapPlayerPointValueIndex = 1
 const bootstrapMapIndex uint32 = 1
+const bootstrapShinsooYonganStartX int32 = 469300
+const bootstrapShinsooYonganStartY int32 = 964200
+const legacyFakeStubMkmkWarX int32 = 1000
+const legacyFakeStubMkmkWarY int32 = 2000
 
 var (
 	ErrInvalidLegacyAddr           = errors.New("invalid legacy addr")
@@ -887,6 +891,12 @@ func loadOrCreateAccount(store accountstore.Store, login string) (accountstore.A
 	}
 	account, err := store.Load(login)
 	if err == nil {
+		if normalized, changed := normalizeBootstrapStubAccount(account); changed {
+			if err := store.Save(normalized); err != nil {
+				return accountstore.Account{}, false
+			}
+			account = normalized
+		}
 		account.Characters = cloneCharacters(account.Characters)
 		return account, true
 	}
@@ -899,6 +909,31 @@ func loadOrCreateAccount(store accountstore.Store, login string) (accountstore.A
 		return accountstore.Account{}, false
 	}
 	account.Characters = cloneCharacters(account.Characters)
+	return account, true
+}
+
+func normalizeBootstrapStubAccount(account accountstore.Account) (accountstore.Account, bool) {
+	if !strings.EqualFold(account.Login, StubLogin) {
+		return account, false
+	}
+	characters := cloneCharacters(account.Characters)
+	changed := false
+	for i, character := range characters {
+		if character.ID == 0 || character.Name != "MkmkWar" {
+			continue
+		}
+		if character.MapIndex != bootstrapMapIndex || character.X != legacyFakeStubMkmkWarX || character.Y != legacyFakeStubMkmkWarY {
+			continue
+		}
+		character.X = bootstrapShinsooYonganStartX
+		character.Y = bootstrapShinsooYonganStartY
+		characters[i] = character
+		changed = true
+	}
+	if !changed {
+		return account, false
+	}
+	account.Characters = characters
 	return account, true
 }
 
@@ -1428,8 +1463,8 @@ func stubCharacters() []loginticket.Character {
 		ChangeName:  0,
 		HairPart:    201,
 		Dummy:       [4]byte{1, 2, 3, 4},
-		X:           1000,
-		Y:           2000,
+		X:           bootstrapShinsooYonganStartX,
+		Y:           bootstrapShinsooYonganStartY,
 		Z:           0,
 		MapIndex:    bootstrapMapIndex,
 		Empire:      2,

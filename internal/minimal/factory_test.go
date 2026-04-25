@@ -81,6 +81,54 @@ func TestNewAuthSessionFactoryAcceptsStubCredentials(t *testing.T) {
 	}
 }
 
+func TestLoadOrCreateAccountSeedsMkmkWarInShinsooYongan(t *testing.T) {
+	accounts := accountstore.NewFileStore(t.TempDir())
+	account, ok := loadOrCreateAccount(accounts, StubLogin)
+	if !ok {
+		t.Fatal("expected bootstrap account load/create to succeed")
+	}
+	if len(account.Characters) == 0 {
+		t.Fatal("expected seeded bootstrap characters")
+	}
+	mkmkWar := account.Characters[0]
+	if mkmkWar.Name != "MkmkWar" {
+		t.Fatalf("expected first bootstrap character MkmkWar, got %+v", mkmkWar)
+	}
+	if mkmkWar.MapIndex != bootstrapMapIndex || mkmkWar.X != 469300 || mkmkWar.Y != 964200 {
+		t.Fatalf("expected MkmkWar to seed at Shinsoo Yongan start map=%d x=%d y=%d, got map=%d x=%d y=%d", bootstrapMapIndex, 469300, 964200, mkmkWar.MapIndex, mkmkWar.X, mkmkWar.Y)
+	}
+	persisted, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted bootstrap account: %v", err)
+	}
+	if persisted.Characters[0].MapIndex != bootstrapMapIndex || persisted.Characters[0].X != 469300 || persisted.Characters[0].Y != 964200 {
+		t.Fatalf("expected persisted MkmkWar to seed at Shinsoo Yongan start map=%d x=%d y=%d, got map=%d x=%d y=%d", bootstrapMapIndex, 469300, 964200, persisted.Characters[0].MapIndex, persisted.Characters[0].X, persisted.Characters[0].Y)
+	}
+}
+
+func TestLoadOrCreateAccountMigratesLegacyFakeMkmkWarPositionToShinsooYongan(t *testing.T) {
+	accounts := accountstore.NewFileStore(t.TempDir())
+	legacy := accountstore.Account{Login: StubLogin, Empire: 2, Characters: legacyFakeStubCharacters()}
+	if err := accounts.Save(legacy); err != nil {
+		t.Fatalf("save legacy bootstrap account: %v", err)
+	}
+	account, ok := loadOrCreateAccount(accounts, StubLogin)
+	if !ok {
+		t.Fatal("expected legacy bootstrap account load to succeed")
+	}
+	mkmkWar := account.Characters[0]
+	if mkmkWar.MapIndex != bootstrapMapIndex || mkmkWar.X != 469300 || mkmkWar.Y != 964200 {
+		t.Fatalf("expected migrated MkmkWar at Shinsoo Yongan start map=%d x=%d y=%d, got map=%d x=%d y=%d", bootstrapMapIndex, 469300, 964200, mkmkWar.MapIndex, mkmkWar.X, mkmkWar.Y)
+	}
+	persisted, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load migrated bootstrap account: %v", err)
+	}
+	if persisted.Characters[0].MapIndex != bootstrapMapIndex || persisted.Characters[0].X != 469300 || persisted.Characters[0].Y != 964200 {
+		t.Fatalf("expected persisted migrated MkmkWar at Shinsoo Yongan start map=%d x=%d y=%d, got map=%d x=%d y=%d", bootstrapMapIndex, 469300, 964200, persisted.Characters[0].MapIndex, persisted.Characters[0].X, persisted.Characters[0].Y)
+	}
+}
+
 func TestNewGameSessionFactoryExposesSecureLegacyTransportHooks(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
@@ -840,6 +888,15 @@ func sampleMovePacket() movep.MovePacket {
 
 func sampleSelectedSyncPositionPacket() movep.SyncPositionPacket {
 	return movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: 0x01020305, X: 1400, Y: 2500}}}
+}
+
+func legacyFakeStubCharacters() []loginticket.Character {
+	characters := stubCharacters()
+	if len(characters) > 0 {
+		characters[0].X = 1000
+		characters[0].Y = 2000
+	}
+	return characters
 }
 
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {

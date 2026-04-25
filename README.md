@@ -164,7 +164,7 @@ Legend:
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, chat, and bootstrap transfer-trigger slices; a first live `internal/player` runtime model now exists separately from persisted snapshots. |
+| Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, chat, and bootstrap transfer-trigger slices; a first live `internal/player` runtime model now exists separately from persisted snapshots, and the default bootstrap `mkmk` account now seeds `MkmkWar` at the legacy Shinsoo Yongan start while auto-migrating the untouched old fake `(1000,2000)` snapshot on load. |
 | Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; persist-before-commit ordering and the current self-session rebootstrap burst are documented, but the final warp/loading packet is still not frozen. |
 | Inventory | [ ] | Not started. |
 | Equipment | [ ] | Not started. |
