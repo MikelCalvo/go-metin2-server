@@ -43,8 +43,10 @@ type SyncPositionResult struct {
 }
 
 type ChatResult struct {
-	Accepted bool
-	Delivery chatproto.ChatDeliveryPacket
+	Accepted  bool
+	Delivery  *chatproto.ChatDeliveryPacket
+	Frames    [][]byte
+	NextPhase session.Phase
 }
 
 type WhisperResult struct {
@@ -125,7 +127,22 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		if !result.Accepted {
 			return nil, nil
 		}
-		return [][]byte{chatproto.EncodeChatDelivery(result.Delivery)}, nil
+		out := make([][]byte, 0, 1+len(result.Frames))
+		if result.NextPhase != "" {
+			phaseRaw, err := control.EncodePhase(result.NextPhase)
+			if err != nil {
+				return nil, err
+			}
+			if err := f.machine.Transition(result.NextPhase); err != nil {
+				return nil, err
+			}
+			out = append(out, phaseRaw)
+		}
+		out = append(out, result.Frames...)
+		if result.Delivery != nil {
+			out = append(out, chatproto.EncodeChatDelivery(*result.Delivery))
+		}
+		return out, nil
 	case chatproto.HeaderClientWhisper:
 		packet, err := chatproto.DecodeClientWhisper(in)
 		if err != nil {

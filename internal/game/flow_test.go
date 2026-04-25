@@ -132,7 +132,8 @@ func TestHandleClientFrameAcceptsChatInGameAndReturnsDelivery(t *testing.T) {
 			if packet.Type != chatproto.ChatTypeTalking || packet.Message != "hola" {
 				t.Fatalf("unexpected chat packet: %+v", packet)
 			}
-			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeTalking, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola"}}
+			delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeTalking, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola"}
+			return ChatResult{Accepted: true, Delivery: &delivery}
 		},
 	})
 
@@ -152,6 +153,66 @@ func TestHandleClientFrameAcceptsChatInGameAndReturnsDelivery(t *testing.T) {
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameChatCanTransitionBackToSelect(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleChat: func(packet chatproto.ClientChatPacket) ChatResult {
+			if packet.Type != chatproto.ChatTypeTalking || packet.Message != "/phase_select" {
+				t.Fatalf("unexpected chat packet: %+v", packet)
+			}
+			return ChatResult{Accepted: true, NextPhase: session.PhaseSelect}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/phase_select"})))
+	if err != nil {
+		t.Fatalf("unexpected chat command error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing phase-select frame, got %d", len(out))
+	}
+	phase, err := control.DecodePhase(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode phase-select frame: %v", err)
+	}
+	if phase.Phase != session.PhaseSelect {
+		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, phase.Phase)
+	}
+	if machine.Current() != session.PhaseSelect {
+		t.Fatalf("expected machine phase %q after chat command, got %q", session.PhaseSelect, machine.Current())
+	}
+}
+
+func TestHandleClientFrameChatCanTransitionToClose(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleChat: func(packet chatproto.ClientChatPacket) ChatResult {
+			if packet.Type != chatproto.ChatTypeTalking || packet.Message != "/logout" {
+				t.Fatalf("unexpected chat packet: %+v", packet)
+			}
+			return ChatResult{Accepted: true, NextPhase: session.PhaseClose}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/logout"})))
+	if err != nil {
+		t.Fatalf("unexpected chat logout error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing phase-close frame, got %d", len(out))
+	}
+	phase, err := control.DecodePhase(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode phase-close frame: %v", err)
+	}
+	if phase.Phase != session.PhaseClose {
+		t.Fatalf("expected phase %q, got %q", session.PhaseClose, phase.Phase)
+	}
+	if machine.Current() != session.PhaseClose {
+		t.Fatalf("expected machine phase %q after logout command, got %q", session.PhaseClose, machine.Current())
 	}
 }
 
@@ -192,7 +253,8 @@ func TestHandleClientFrameAcceptsPartyChatInGameAndReturnsDelivery(t *testing.T)
 			if packet.Type != chatproto.ChatTypeParty || packet.Message != "hola party" {
 				t.Fatalf("unexpected party chat packet: %+v", packet)
 			}
-			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeParty, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola party"}}
+			delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeParty, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola party"}
+			return ChatResult{Accepted: true, Delivery: &delivery}
 		},
 	})
 
@@ -222,7 +284,8 @@ func TestHandleClientFrameAcceptsGuildChatInGameAndReturnsDelivery(t *testing.T)
 			if packet.Type != chatproto.ChatTypeGuild || packet.Message != "hola guild" {
 				t.Fatalf("unexpected guild chat packet: %+v", packet)
 			}
-			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeGuild, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola guild"}}
+			delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeGuild, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola guild"}
+			return ChatResult{Accepted: true, Delivery: &delivery}
 		},
 	})
 
@@ -252,7 +315,8 @@ func TestHandleClientFrameAcceptsShoutChatInGameAndReturnsDelivery(t *testing.T)
 			if packet.Type != chatproto.ChatTypeShout || packet.Message != "hola shout" {
 				t.Fatalf("unexpected shout chat packet: %+v", packet)
 			}
-			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeShout, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola shout"}}
+			delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeShout, VID: 0x02040102, Empire: 0, Message: "PeerTwo : hola shout"}
+			return ChatResult{Accepted: true, Delivery: &delivery}
 		},
 	})
 
@@ -282,7 +346,8 @@ func TestHandleClientFrameAcceptsInfoChatInGameAndReturnsDelivery(t *testing.T) 
 			if packet.Type != chatproto.ChatTypeInfo || packet.Message != "mensaje info" {
 				t.Fatalf("unexpected info chat packet: %+v", packet)
 			}
-			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: "mensaje info"}}
+			delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: "mensaje info"}
+			return ChatResult{Accepted: true, Delivery: &delivery}
 		},
 	})
 
@@ -312,7 +377,8 @@ func TestHandleClientFrameAcceptsNoticeChatInGameAndReturnsDelivery(t *testing.T
 			if packet.Type != chatproto.ChatTypeNotice || packet.Message != "mensaje notice" {
 				t.Fatalf("unexpected notice chat packet: %+v", packet)
 			}
-			return ChatResult{Accepted: true, Delivery: chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeNotice, VID: 0, Empire: 0, Message: "mensaje notice"}}
+			delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeNotice, VID: 0, Empire: 0, Message: "mensaje notice"}
+			return ChatResult{Accepted: true, Delivery: &delivery}
 		},
 	})
 

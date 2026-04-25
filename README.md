@@ -49,6 +49,7 @@ Current scope of the project:
 - Minimal bootstrap `CHAT_TYPE_GUILD` fanout across connected `GAME` sessions that share the same non-zero `GuildID`.
 - Minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions in the same empire.
 - Minimal bootstrap system `CHAT_TYPE_INFO` self-delivery in `GAME`, plus a server-originated `CHAT_TYPE_NOTICE` broadcast path exposed through a local-only `gamed` ops endpoint; client-originated `CHAT_TYPE_NOTICE` remains rejected.
+- A first owned in-game slash-command bootstrap path: `/quit` now returns a self-facing `CHAT_TYPE_COMMAND quit`, `/logout` now leaves the bootstrap shared world and emits `PHASE(CLOSE)`, and `/phase_select` now leaves the bootstrap shared world and emits `PHASE(SELECT)` so the same session can choose another character again instead of echoing those strings as normal talking chat.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.

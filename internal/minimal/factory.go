@@ -32,6 +32,7 @@ import (
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
+	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	"github.com/MikelCalvo/go-metin2-server/internal/warp"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -705,6 +706,32 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
+					if command, ok := slashGameCommand(packet.Message); ok {
+						leaveSharedWorld := func() {
+							if !joinedSharedWorld || sharedWorldID == 0 {
+								return
+							}
+							sharedWorld.Leave(sharedWorldID)
+							joinedSharedWorld = false
+							sharedWorldID = 0
+						}
+						switch command {
+						case "quit":
+							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "quit"}
+							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+						case "logout":
+							leaveSharedWorld()
+							hasSelected = false
+							selectedPlayer = nil
+							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseClose}
+						case "phase_select":
+							leaveSharedWorld()
+							hasSelected = false
+							selectedPlayer = nil
+							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseSelect}
+						}
+					}
+
 					selectedPlayer, ok := currentSelectedPlayer()
 					if !ok {
 						return gameflow.ChatResult{Accepted: false}
@@ -720,13 +747,13 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						if liveSharedWorld {
 							sharedWorld.EnqueueToOtherSessionsInEmpireOnMap(sharedWorldID, selected, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
-						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
+						return gameflow.ChatResult{Accepted: true, Delivery: &chatDelivery}
 					case chatproto.ChatTypeParty:
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
 						if liveSharedWorld {
 							sharedWorld.EnqueueToOtherSessions(sharedWorldID, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
-						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
+						return gameflow.ChatResult{Accepted: true, Delivery: &chatDelivery}
 					case chatproto.ChatTypeGuild:
 						if selected.GuildID == 0 {
 							return gameflow.ChatResult{Accepted: false}
@@ -735,15 +762,16 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 						if liveSharedWorld {
 							sharedWorld.EnqueueToOtherSessionsInGuild(sharedWorldID, selected, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
-						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
+						return gameflow.ChatResult{Accepted: true, Delivery: &chatDelivery}
 					case chatproto.ChatTypeShout:
 						chatDelivery := ticketActorChatDeliveryPacket(selected, packet)
 						if liveSharedWorld {
 							sharedWorld.EnqueueToOtherSessionsInEmpire(sharedWorldID, selected, [][]byte{chatproto.EncodeChatDelivery(chatDelivery)})
 						}
-						return gameflow.ChatResult{Accepted: true, Delivery: chatDelivery}
+						return gameflow.ChatResult{Accepted: true, Delivery: &chatDelivery}
 					case chatproto.ChatTypeInfo:
-						return gameflow.ChatResult{Accepted: true, Delivery: ticketSystemChatDeliveryPacket(packet)}
+						delivery := ticketSystemChatDeliveryPacket(packet)
+						return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 					default:
 						return gameflow.ChatResult{Accepted: false}
 					}
@@ -1003,6 +1031,22 @@ func ticketEmpire(ticket loginticket.Ticket) uint8 {
 		}
 	}
 	return 0
+}
+
+func slashGameCommand(message string) (string, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return "", false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) == 0 {
+		return "", false
+	}
+	switch fields[0] {
+	case "quit", "logout", "phase_select":
+		return fields[0], true
+	default:
+		return "", false
+	}
 }
 
 func ticketLoginSuccessPacket(ticket loginticket.Ticket, addr uint32, port uint16) loginproto.LoginSuccess4Packet {

@@ -69,7 +69,9 @@ func (m *StateMachine) CanTransition(next Phase) bool {
 		return next == PhaseLoading
 	case PhaseLoading:
 		return next == PhaseGame
-	case PhaseGame, PhaseDead, PhaseClose:
+	case PhaseGame:
+		return next == PhaseSelect
+	case PhaseDead, PhaseClose:
 		return false
 	default:
 		return false

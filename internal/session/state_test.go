@@ -46,6 +46,18 @@ func TestStateMachineAllowsAuthFromHandshake(t *testing.T) {
 	}
 }
 
+func TestStateMachineAllowsReturnToSelectFromGame(t *testing.T) {
+	machine := NewStateMachineAt(PhaseGame)
+
+	if err := machine.Transition(PhaseSelect); err != nil {
+		t.Fatalf("expected transition from %q to %q to succeed: %v", PhaseGame, PhaseSelect, err)
+	}
+
+	if machine.Current() != PhaseSelect {
+		t.Fatalf("expected current phase %q after return-to-select, got %q", PhaseSelect, machine.Current())
+	}
+}
+
 func TestStateMachineAllowsCloseFromAnyPhase(t *testing.T) {
 	phases := []Phase{
 		PhaseHandshake,

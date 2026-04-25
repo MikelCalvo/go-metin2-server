@@ -9,6 +9,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
@@ -4102,6 +4103,173 @@ func TestGameRuntimeRegistersAndListsStaticActors(t *testing.T) {
 	}
 	if actors[1].EntityID != guard.EntityID || actors[1].Name != "VillageGuard" || actors[1].RaceNum != 20300 {
 		t.Fatalf("expected VillageGuard second in sorted runtime snapshot, got %+v", actors[1])
+	}
+}
+
+func TestGameRuntimeSlashQuitReturnsClientCommandChat(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	character := peerVisibilityCharacter("QuitPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	if _, ok := issueLoginTicket(store, "quit-player", character.Empire, []loginticket.Character{character}, func() (uint32, error) {
+		return 0x11111111, nil
+	}); !ok {
+		t.Fatal("expected login ticket issuance to succeed")
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quit-player", 0x11111111)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected 5 enter-game frames before quit command, got %d", len(enterOut))
+	}
+
+	quitOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/quit"})))
+	if err != nil {
+		t.Fatalf("unexpected /quit error: %v", err)
+	}
+	if len(quitOut) != 1 {
+		t.Fatalf("expected 1 outgoing quit command frame, got %d", len(quitOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, quitOut[0]))
+	if err != nil {
+		t.Fatalf("decode quit command chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeCommand || delivery.Message != "quit" {
+		t.Fatalf("expected command chat 'quit', got %+v", delivery)
+	}
+	phaseAware, ok := flow.(interface{ CurrentPhase() session.Phase })
+	if !ok {
+		t.Fatal("expected queued flow to expose current phase")
+	}
+	if phaseAware.CurrentPhase() != session.PhaseGame {
+		t.Fatalf("expected /quit to keep session in game until client disconnects, got %q", phaseAware.CurrentPhase())
+	}
+}
+
+func TestGameRuntimeSlashLogoutTransitionsToClosePhase(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	character := peerVisibilityCharacter("LogoutPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	if _, ok := issueLoginTicket(store, "logout-player", character.Empire, []loginticket.Character{character}, func() (uint32, error) {
+		return 0x11111111, nil
+	}); !ok {
+		t.Fatal("expected login ticket issuance to succeed")
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "logout-player", 0x11111111)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected 5 enter-game frames before logout command, got %d", len(enterOut))
+	}
+
+	logoutOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/logout"})))
+	if err != nil {
+		t.Fatalf("unexpected /logout error: %v", err)
+	}
+	if len(logoutOut) != 1 {
+		t.Fatalf("expected 1 outgoing close-phase frame, got %d", len(logoutOut))
+	}
+	phase, err := control.DecodePhase(decodeSingleFrame(t, logoutOut[0]))
+	if err != nil {
+		t.Fatalf("decode logout phase frame: %v", err)
+	}
+	if phase.Phase != session.PhaseClose {
+		t.Fatalf("expected phase %q after /logout, got %q", session.PhaseClose, phase.Phase)
+	}
+	phaseAware, ok := flow.(interface{ CurrentPhase() session.Phase })
+	if !ok {
+		t.Fatal("expected queued flow to expose current phase")
+	}
+	if phaseAware.CurrentPhase() != session.PhaseClose {
+		t.Fatalf("expected /logout to transition to close phase, got %q", phaseAware.CurrentPhase())
+	}
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 0 {
+		t.Fatalf("expected /logout to leave shared world immediately, got %+v", snapshots)
+	}
+}
+
+func TestGameRuntimeSlashPhaseSelectReturnsToSelectAndAllowsAnotherCharacterChoice(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	first := peerVisibilityCharacter("MkmkWar", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	second := peerVisibilityCharacter("MkmkSura", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	if _, ok := issueLoginTicket(store, "phase-select-player", first.Empire, []loginticket.Character{first, second}, func() (uint32, error) {
+		return 0x11111111, nil
+	}); !ok {
+		t.Fatal("expected login ticket issuance to succeed")
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow := runtime.SessionFactory()()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "phase-select-player", LoginKey: 0x11111111})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	loginOut, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw))
+	if err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if len(loginOut) != 3 {
+		t.Fatalf("expected 3 login frames, got %d", len(loginOut))
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0}))); err != nil {
+		t.Fatalf("unexpected initial character select error: %v", err)
+	}
+	enterOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	if len(enterOut) != 5 {
+		t.Fatalf("expected 5 enter-game frames before /phase_select, got %d", len(enterOut))
+	}
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 1 || snapshots[0].Name != first.Name {
+		t.Fatalf("expected first character to own the shared world before /phase_select, got %+v", snapshots)
+	}
+
+	phaseSelectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/phase_select"})))
+	if err != nil {
+		t.Fatalf("unexpected /phase_select error: %v", err)
+	}
+	if len(phaseSelectOut) != 1 {
+		t.Fatalf("expected 1 outgoing select-phase frame, got %d", len(phaseSelectOut))
+	}
+	phase, err := control.DecodePhase(decodeSingleFrame(t, phaseSelectOut[0]))
+	if err != nil {
+		t.Fatalf("decode phase-select frame: %v", err)
+	}
+	if phase.Phase != session.PhaseSelect {
+		t.Fatalf("expected phase %q after /phase_select, got %q", session.PhaseSelect, phase.Phase)
+	}
+	phaseAware, ok := flow.(interface{ CurrentPhase() session.Phase })
+	if !ok {
+		t.Fatal("expected queued flow to expose current phase")
+	}
+	if phaseAware.CurrentPhase() != session.PhaseSelect {
+		t.Fatalf("expected /phase_select to transition back to select phase, got %q", phaseAware.CurrentPhase())
+	}
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 0 {
+		t.Fatalf("expected /phase_select to leave shared world before reselection, got %+v", snapshots)
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1})))
+	if err != nil {
+		t.Fatalf("unexpected second character select error after /phase_select: %v", err)
+	}
+	if len(selectOut) != 3 {
+		t.Fatalf("expected 3 select frames after /phase_select, got %d", len(selectOut))
+	}
+	mainCharacter, err := worldproto.DecodeMainCharacter(decodeSingleFrame(t, selectOut[1]))
+	if err != nil {
+		t.Fatalf("decode second main character after /phase_select: %v", err)
+	}
+	if mainCharacter.Name != second.Name {
+		t.Fatalf("expected second character %q after /phase_select, got %q", second.Name, mainCharacter.Name)
 	}
 }
 
