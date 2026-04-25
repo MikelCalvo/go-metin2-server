@@ -1,7 +1,10 @@
 package minimal
 
 import (
+	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -16,6 +19,7 @@ import (
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 )
 
@@ -4273,6 +4277,148 @@ func TestGameRuntimeSlashPhaseSelectReturnsToSelectAndAllowsAnotherCharacterChoi
 	}
 }
 
+func TestNewGameRuntimeBootLoadsPersistedStaticActorsBeforeEnterGame(t *testing.T) {
+	loginStore := loginticket.NewFileStore(t.TempDir())
+	player := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, loginStore, "peer-one", 0x11111111, player)
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	staticActorStore := staticstore.NewFileStore(staticPath)
+	if err := staticActorStore.Save(staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: 42, Name: "VillageGuard", MapIndex: bootstrapMapIndex, X: 1200, Y: 2200, RaceNum: 20300}}}); err != nil {
+		t.Fatalf("save static actor snapshot: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndStaticStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginStore, nil, staticActorStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 loaded static actor snapshot, got %d", len(actors))
+	}
+	if actors[0].EntityID != 42 || actors[0].Name != "VillageGuard" || actors[0].MapIndex != bootstrapMapIndex || actors[0].X != 1200 || actors[0].Y != 2200 || actors[0].RaceNum != 20300 {
+		t.Fatalf("unexpected loaded static actor snapshot: %+v", actors[0])
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with loaded persisted static actor, got %d", len(enterOut))
+	}
+	loadedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, enterOut[5]))
+	if err != nil {
+		t.Fatalf("decode loaded static actor add: %v", err)
+	}
+	if loadedAdd.VID != 42 || loadedAdd.Type != 1 || loadedAdd.X != 1200 || loadedAdd.Y != 2200 || loadedAdd.RaceNum != 20300 {
+		t.Fatalf("unexpected loaded static actor add: %+v", loadedAdd)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after enter bootstrap with loaded static actor, got %d", len(queued))
+	}
+}
+
+func TestNewGameRuntimeRejectsMalformedPersistedStaticActorSnapshot(t *testing.T) {
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	if err := os.WriteFile(staticPath, []byte("{not-json"), 0o644); err != nil {
+		t.Fatalf("write malformed static actor snapshot: %v", err)
+	}
+
+	_, err := newGameRuntimeWithAccountStoreAndStaticStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticstore.NewFileStore(staticPath))
+	if !errors.Is(err, staticstore.ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot on malformed persisted static actor snapshot, got %v", err)
+	}
+}
+
+func TestGameRuntimeRegisterStaticActorPersistsSnapshotOnSuccess(t *testing.T) {
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	staticActorStore := staticstore.NewFileStore(staticPath)
+	runtime, err := newGameRuntimeWithAccountStoreAndStaticStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted static actor snapshot: %v", err)
+	}
+	want := staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: actor.EntityID, Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300}}}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("unexpected persisted static actor snapshot after register:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
+func TestGameRuntimeRegisterStaticActorDoesNotMutateRuntimeWhenSnapshotPersistFails(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStoreAndStaticStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, &failingStaticActorStore{})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	if actor, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300); ok || actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected static actor registration to fail closed on snapshot persist error, got actor=%+v ok=%v", actor, ok)
+	}
+	if actors := runtime.StaticActors(); len(actors) != 0 {
+		t.Fatalf("expected no runtime static actors after failed snapshot persist, got %+v", actors)
+	}
+}
+
+func TestGameRuntimeUpdateStaticActorPersistsSnapshotOnSuccess(t *testing.T) {
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	staticActorStore := staticstore.NewFileStore(staticPath)
+	runtime, err := newGameRuntimeWithAccountStoreAndStaticStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated, ok := runtime.UpdateStaticActor(actor.EntityID, "Merchant", 43, 1800, 2900, 20301)
+	if !ok {
+		t.Fatal("expected static actor update to succeed")
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted static actor snapshot after update: %v", err)
+	}
+	want := staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: updated.EntityID, Name: "Merchant", MapIndex: 43, X: 1800, Y: 2900, RaceNum: 20301}}}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("unexpected persisted static actor snapshot after update:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
+func TestGameRuntimeRemoveStaticActorPersistsSnapshotOnSuccess(t *testing.T) {
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	staticActorStore := staticstore.NewFileStore(staticPath)
+	runtime, err := newGameRuntimeWithAccountStoreAndStaticStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	guard, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	blacksmith, ok := runtime.RegisterStaticActor("Blacksmith", 42, 1900, 3000, 20301)
+	if !ok {
+		t.Fatal("expected blacksmith registration to succeed")
+	}
+
+	removed, ok := runtime.RemoveStaticActor(guard.EntityID)
+	if !ok || removed.EntityID != guard.EntityID {
+		t.Fatalf("expected static actor removal to return guard snapshot, got actor=%+v ok=%v", removed, ok)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted static actor snapshot after remove: %v", err)
+	}
+	want := staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: blacksmith.EntityID, Name: "Blacksmith", MapIndex: 42, X: 1900, Y: 3000, RaceNum: 20301}}}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("unexpected persisted static actor snapshot after remove:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
 func TestGameRuntimeRegisterStaticActorRejectsInvalidSeed(t *testing.T) {
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
 	if err != nil {
@@ -4689,6 +4835,16 @@ func TestGameRuntimeUpdateStaticActorUpdatesSnapshot(t *testing.T) {
 	if maps[1].MapIndex != 99 || len(maps[1].StaticActors) != 1 || maps[1].StaticActors[0].EntityID != guard.EntityID || maps[1].StaticActors[0].Name != "Merchant" {
 		t.Fatalf("expected Merchant on new map after update, got %+v", maps[1])
 	}
+}
+
+type failingStaticActorStore struct{}
+
+func (f *failingStaticActorStore) Load() (staticstore.Snapshot, error) {
+	return staticstore.Snapshot{}, staticstore.ErrSnapshotNotFound
+}
+
+func (f *failingStaticActorStore) Save(staticstore.Snapshot) error {
+	return errors.New("save failed")
 }
 
 func enterGameWithLoginTicket(t *testing.T, factory service.SessionFactory, login string, loginKey uint32) (service.SessionFlow, [][]byte) {

@@ -531,7 +531,22 @@ func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
 	return r.mapOccupancySnapshots()
 }
 
+func (r *sharedWorldRegistry) NextStaticActorEntityID() uint64 {
+	if r == nil || r.entities == nil {
+		return 0
+	}
+	return r.entities.NextEntityID()
+}
+
 func (r *sharedWorldRegistry) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
+	return r.registerStaticActor(0, name, mapIndex, x, y, raceNum)
+}
+
+func (r *sharedWorldRegistry) RegisterStaticActorWithEntityID(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
+	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum)
+}
+
+func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
 	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 {
 		return StaticActorSnapshot{}, false
 	}
@@ -543,21 +558,30 @@ func (r *sharedWorldRegistry) RegisterStaticActor(name string, mapIndex uint32, 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	actor, ok := r.entities.RegisterStaticActor(worldruntime.StaticEntity{
-		Entity:   worldruntime.Entity{Name: name},
+	var (
+		registered worldruntime.StaticEntity
+		ok         bool
+	)
+	candidate := worldruntime.StaticEntity{
+		Entity:   worldruntime.Entity{ID: entityID, Name: name},
 		Position: position,
 		RaceNum:  raceNum,
-	})
+	}
+	if entityID == 0 {
+		registered, ok = r.entities.RegisterStaticActor(candidate)
+	} else {
+		registered, ok = r.entities.RegisterStaticActorWithID(candidate)
+	}
 	if !ok {
 		return StaticActorSnapshot{}, false
 	}
-	frames := encodeStaticActorVisibilityFrames(actor)
+	frames := encodeStaticActorVisibilityFrames(registered)
 	if len(frames) > 0 {
-		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(registered) {
 			r.enqueueToEntityLocked(target.Entity.ID, frames)
 		}
 	}
-	return staticActorSnapshot(r.topology, actor), true
+	return staticActorSnapshot(r.topology, registered), true
 }
 
 func (r *sharedWorldRegistry) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {

@@ -45,16 +45,33 @@ func (r *EntityRegistry) RegisterStaticActor(actor StaticEntity) (StaticEntity, 
 	if r == nil || r.staticActors == nil || r.maps == nil {
 		return StaticEntity{}, false
 	}
+	return r.registerStaticActor(actor)
+}
+
+func (r *EntityRegistry) RegisterStaticActorWithID(actor StaticEntity) (StaticEntity, bool) {
+	if r == nil || actor.Entity.ID == 0 || r.staticActors == nil || r.maps == nil {
+		return StaticEntity{}, false
+	}
+	return r.registerStaticActor(actor)
+}
+
+func (r *EntityRegistry) registerStaticActor(actor StaticEntity) (StaticEntity, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.nextID++
-	registered := newStaticEntity(r.nextID, actor)
+	id := actor.Entity.ID
+	if id == 0 {
+		id = r.nextID + 1
+	}
+	registered := newStaticEntity(id, actor)
 	if !r.staticActors.Register(registered) {
 		return StaticEntity{}, false
 	}
 	if !r.maps.RegisterStatic(registered) {
 		_, _ = r.staticActors.Remove(registered.Entity.ID)
 		return StaticEntity{}, false
+	}
+	if registered.Entity.ID > r.nextID {
+		r.nextID = registered.Entity.ID
 	}
 	return registered, true
 }
@@ -224,6 +241,15 @@ func (r *EntityRegistry) StaticActors(mapIndex uint32) []StaticEntity {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.maps.StaticActors(mapIndex)
+}
+
+func (r *EntityRegistry) NextEntityID() uint64 {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.nextID + 1
 }
 
 func newPlayerEntity(id uint64, character loginticket.Character) PlayerEntity {

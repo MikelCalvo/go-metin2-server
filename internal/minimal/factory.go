@@ -33,6 +33,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/warp"
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -94,13 +95,17 @@ type RelocationPreview = worldruntime.RelocationPreview
 type gameRuntime struct {
 	sessionFactory service.SessionFactory
 	sharedWorld    *sharedWorldRegistry
+	staticStore    staticstore.Store
+	staticActorMu  sync.Mutex
 }
 
 func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
-	return newGameRuntimeWithAccountStore(
+	return newGameRuntimeWithStoresAndTransferTriggers(
 		cfg,
 		loginticket.NewFileStore(defaultTicketStoreDir()),
 		accountstore.NewFileStore(defaultAccountStoreDir()),
+		staticstore.NewFileStore(defaultStaticActorStorePath()),
+		nil,
 	)
 }
 
@@ -188,7 +193,25 @@ func (r *gameRuntime) RegisterStaticActor(name string, mapIndex uint32, x int32,
 	if name == "" || mapIndex == 0 || raceNum == 0 {
 		return StaticActorSnapshot{}, false
 	}
-	return r.sharedWorld.RegisterStaticActor(name, mapIndex, x, y, raceNum)
+
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+
+	current := r.sharedWorld.StaticActors()
+	nextEntityID := r.sharedWorld.NextStaticActorEntityID()
+	if nextEntityID == 0 {
+		return StaticActorSnapshot{}, false
+	}
+	target := appendStaticActorSnapshot(current, StaticActorSnapshot{EntityID: nextEntityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum})
+	if !r.persistStaticActorSnapshot(target) {
+		return StaticActorSnapshot{}, false
+	}
+	registered, ok := r.sharedWorld.RegisterStaticActorWithEntityID(nextEntityID, name, mapIndex, x, y, raceNum)
+	if !ok {
+		_ = r.persistStaticActorSnapshot(current)
+		return StaticActorSnapshot{}, false
+	}
+	return registered, true
 }
 
 func (r *gameRuntime) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
@@ -199,7 +222,26 @@ func (r *gameRuntime) UpdateStaticActor(entityID uint64, name string, mapIndex u
 	if name == "" || mapIndex == 0 || raceNum == 0 {
 		return StaticActorSnapshot{}, false
 	}
-	return r.sharedWorld.UpdateStaticActor(entityID, name, mapIndex, x, y, raceNum)
+
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+
+	current := r.sharedWorld.StaticActors()
+	idx := staticActorSnapshotIndex(current, entityID)
+	if idx == -1 {
+		return StaticActorSnapshot{}, false
+	}
+	target := cloneStaticActorSnapshots(current)
+	target[idx] = StaticActorSnapshot{EntityID: entityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum}
+	if !r.persistStaticActorSnapshot(target) {
+		return StaticActorSnapshot{}, false
+	}
+	updated, ok := r.sharedWorld.UpdateStaticActor(entityID, name, mapIndex, x, y, raceNum)
+	if !ok {
+		_ = r.persistStaticActorSnapshot(current)
+		return StaticActorSnapshot{}, false
+	}
+	return updated, true
 }
 
 func (r *gameRuntime) StaticActors() []StaticActorSnapshot {
@@ -213,7 +255,25 @@ func (r *gameRuntime) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, b
 	if r == nil || r.sharedWorld == nil {
 		return StaticActorSnapshot{}, false
 	}
-	return r.sharedWorld.RemoveStaticActor(entityID)
+
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+
+	current := r.sharedWorld.StaticActors()
+	idx := staticActorSnapshotIndex(current, entityID)
+	if idx == -1 {
+		return StaticActorSnapshot{}, false
+	}
+	target := append(cloneStaticActorSnapshots(current[:idx]), cloneStaticActorSnapshots(current[idx+1:])...)
+	if !r.persistStaticActorSnapshot(target) {
+		return StaticActorSnapshot{}, false
+	}
+	removed, ok := r.sharedWorld.RemoveStaticActor(entityID)
+	if !ok {
+		_ = r.persistStaticActorSnapshot(current)
+		return StaticActorSnapshot{}, false
+	}
+	return removed, true
 }
 
 func NewAuthSessionFactory() service.SessionFactory {
@@ -295,7 +355,11 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 }
 
 func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store) (*gameRuntime, error) {
-	return newGameRuntimeWithAccountStoreAndTransferTriggers(cfg, store, accounts, nil)
+	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, nil, nil)
+}
+
+func newGameRuntimeWithAccountStoreAndStaticStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store) (*gameRuntime, error) {
+	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, staticActors, nil)
 }
 
 func bootstrapTopologyFromConfig(cfg config.Service) (worldruntime.BootstrapTopology, error) {
@@ -323,6 +387,10 @@ func bootstrapTopologyFromConfig(cfg config.Service) (worldruntime.BootstrapTopo
 }
 
 func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store loginticket.Store, accounts accountstore.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
+	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, nil, transferTriggers)
+}
+
+func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
 	advertisedPort, err := parsePort(cfg.LegacyAddr)
 	if err != nil {
 		return nil, err
@@ -342,7 +410,10 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
 	}
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
-	runtime := &gameRuntime{sharedWorld: sharedWorld}
+	runtime := &gameRuntime{sharedWorld: sharedWorld, staticStore: staticActors}
+	if err := runtime.loadPersistedStaticActors(); err != nil {
+		return nil, err
+	}
 	transferTriggers = cloneBootstrapTransferTriggers(transferTriggers)
 
 	runtime.sessionFactory = func() service.SessionFlow {
@@ -1527,6 +1598,70 @@ func stubCharacters() []loginticket.Character {
 	return []loginticket.Character{first, second}
 }
 
+func (r *gameRuntime) loadPersistedStaticActors() error {
+	if r == nil || r.staticStore == nil || r.sharedWorld == nil {
+		return nil
+	}
+	snapshot, err := r.staticStore.Load()
+	if err != nil {
+		if errors.Is(err, staticstore.ErrSnapshotNotFound) {
+			return nil
+		}
+		return err
+	}
+	for _, actor := range snapshot.StaticActors {
+		if _, ok := r.sharedWorld.RegisterStaticActorWithEntityID(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum); !ok {
+			return fmt.Errorf("%w: apply static actor snapshot", staticstore.ErrInvalidSnapshot)
+		}
+	}
+	return nil
+}
+
+func (r *gameRuntime) persistStaticActorSnapshot(snapshot []StaticActorSnapshot) bool {
+	if r == nil || r.staticStore == nil {
+		return true
+	}
+	return r.staticStore.Save(buildStaticActorStoreSnapshot(snapshot)) == nil
+}
+
+func buildStaticActorStoreSnapshot(snapshot []StaticActorSnapshot) staticstore.Snapshot {
+	actors := make([]staticstore.StaticActor, 0, len(snapshot))
+	for _, actor := range snapshot {
+		actors = append(actors, staticstore.StaticActor{
+			EntityID: actor.EntityID,
+			Name:     actor.Name,
+			MapIndex: actor.MapIndex,
+			X:        actor.X,
+			Y:        actor.Y,
+			RaceNum:  actor.RaceNum,
+		})
+	}
+	return staticstore.Snapshot{StaticActors: actors}
+}
+
+func cloneStaticActorSnapshots(snapshot []StaticActorSnapshot) []StaticActorSnapshot {
+	if len(snapshot) == 0 {
+		return nil
+	}
+	cloned := make([]StaticActorSnapshot, len(snapshot))
+	copy(cloned, snapshot)
+	return cloned
+}
+
+func appendStaticActorSnapshot(snapshot []StaticActorSnapshot, actor StaticActorSnapshot) []StaticActorSnapshot {
+	cloned := cloneStaticActorSnapshots(snapshot)
+	return append(cloned, actor)
+}
+
+func staticActorSnapshotIndex(snapshot []StaticActorSnapshot, entityID uint64) int {
+	for i, actor := range snapshot {
+		if actor.EntityID == entityID {
+			return i
+		}
+	}
+	return -1
+}
+
 func currentServerTimeMillis() uint32 {
 	return uint32(time.Now().UnixMilli())
 }
@@ -1537,6 +1672,10 @@ func defaultTicketStoreDir() string {
 
 func defaultAccountStoreDir() string {
 	return filepath.Join(os.TempDir(), "go-metin2-server-accounts")
+}
+
+func defaultStaticActorStorePath() string {
+	return filepath.Join(os.TempDir(), "go-metin2-server-static-actors.json")
 }
 
 func sequentialBytes32(start byte) [32]byte {
