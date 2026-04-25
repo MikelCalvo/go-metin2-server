@@ -619,6 +619,12 @@ func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSna
 	if !ok {
 		return StaticActorSnapshot{}, false
 	}
+	deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
+	if encodable {
+		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
+		}
+	}
 	return staticActorSnapshot(r.topology, actor), true
 }
 
