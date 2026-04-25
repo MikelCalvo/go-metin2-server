@@ -4334,6 +4334,151 @@ func TestGameRuntimeUpdateStaticActorRefreshesVisibleActorForOnlinePlayers(t *te
 	}
 }
 
+func TestGameRuntimeUpdateStaticActorRelocateAcrossAOIBoundaryQueuesVisibilityDeltasForOnlinePlayers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	farPlayer := peerVisibilityCharacter("FarPlayer", 0x01030102, 0x02040102, 1900, 3000, 2, 102, 202)
+	issuePeerTicket(t, store, "near-player", 0x11111111, nearPlayer)
+	issuePeerTicket(t, store, "far-player", 0x22222222, farPlayer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	nearFlow, _ := enterGameWithLoginTicket(t, factory, "near-player", 0x11111111)
+	farFlow, _ := enterGameWithLoginTicket(t, factory, "far-player", 0x22222222)
+	_ = flushServerFrames(t, nearFlow)
+	_ = flushServerFrames(t, farFlow)
+
+	updated, ok := runtime.UpdateStaticActor(actor.EntityID, "VillageGuard", bootstrapMapIndex, 1900, 3000, 20300)
+	if !ok {
+		t.Fatal("expected static actor update to succeed")
+	}
+	if updated.EntityID != actor.EntityID || updated.X != 1900 || updated.Y != 3000 {
+		t.Fatalf("unexpected updated actor snapshot: %+v", updated)
+	}
+
+	nearQueued := flushServerFrames(t, nearFlow)
+	if len(nearQueued) != 1 {
+		t.Fatalf("expected 1 queued static actor delete for player leaving AOI visibility, got %d", len(nearQueued))
+	}
+	actorDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, nearQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued static actor delete across AOI update: %v", err)
+	}
+	if actorDelete.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected queued static actor delete across AOI update: %+v", actorDelete)
+	}
+
+	farQueued := flushServerFrames(t, farFlow)
+	if len(farQueued) != 3 {
+		t.Fatalf("expected 3 queued static actor bootstrap frames for player entering AOI visibility, got %d", len(farQueued))
+	}
+	actorAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, farQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued static actor add across AOI update: %v", err)
+	}
+	if actorAdd.VID != uint32(actor.EntityID) || actorAdd.X != 1900 || actorAdd.Y != 3000 || actorAdd.RaceNum != 20300 {
+		t.Fatalf("unexpected queued static actor add across AOI update: %+v", actorAdd)
+	}
+	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, farQueued[1]))
+	if err != nil {
+		t.Fatalf("decode queued static actor additional info across AOI update: %v", err)
+	}
+	if actorInfo.VID != uint32(actor.EntityID) || actorInfo.Name != "VillageGuard" {
+		t.Fatalf("unexpected queued static actor additional info across AOI update: %+v", actorInfo)
+	}
+	actorUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, farQueued[2]))
+	if err != nil {
+		t.Fatalf("decode queued static actor update across AOI update: %v", err)
+	}
+	if actorUpdate.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected queued static actor update across AOI update: %+v", actorUpdate)
+	}
+}
+
+func TestGameRuntimeUpdateStaticActorRelocateAcrossMapBoundaryQueuesVisibilityDeltasForOnlinePlayers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	originPlayer := peerVisibilityCharacter("OriginPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	destinationPlayer := peerVisibilityCharacter("DestinationPlayer", 0x01030102, 0x02040102, 1700, 2800, 2, 102, 202)
+	destinationPlayer.MapIndex = 42
+	issuePeerTicket(t, store, "origin-player", 0x11111111, originPlayer)
+	issuePeerTicket(t, store, "destination-player", 0x22222222, destinationPlayer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	originFlow, _ := enterGameWithLoginTicket(t, factory, "origin-player", 0x11111111)
+	destinationFlow, _ := enterGameWithLoginTicket(t, factory, "destination-player", 0x22222222)
+	_ = flushServerFrames(t, originFlow)
+	_ = flushServerFrames(t, destinationFlow)
+
+	updated, ok := runtime.UpdateStaticActor(actor.EntityID, "Merchant", 42, 1700, 2800, 20301)
+	if !ok {
+		t.Fatal("expected static actor update to succeed")
+	}
+	if updated.EntityID != actor.EntityID || updated.MapIndex != 42 || updated.X != 1700 || updated.Y != 2800 || updated.Name != "Merchant" || updated.RaceNum != 20301 {
+		t.Fatalf("unexpected updated actor snapshot: %+v", updated)
+	}
+
+	originQueued := flushServerFrames(t, originFlow)
+	if len(originQueued) != 1 {
+		t.Fatalf("expected 1 queued static actor delete for player leaving map visibility, got %d", len(originQueued))
+	}
+	actorDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, originQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued static actor delete across map update: %v", err)
+	}
+	if actorDelete.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected queued static actor delete across map update: %+v", actorDelete)
+	}
+
+	destinationQueued := flushServerFrames(t, destinationFlow)
+	if len(destinationQueued) != 3 {
+		t.Fatalf("expected 3 queued static actor bootstrap frames for player entering map visibility, got %d", len(destinationQueued))
+	}
+	actorAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, destinationQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued static actor add across map update: %v", err)
+	}
+	if actorAdd.VID != uint32(actor.EntityID) || actorAdd.X != 1700 || actorAdd.Y != 2800 || actorAdd.RaceNum != 20301 {
+		t.Fatalf("unexpected queued static actor add across map update: %+v", actorAdd)
+	}
+	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, destinationQueued[1]))
+	if err != nil {
+		t.Fatalf("decode queued static actor additional info across map update: %v", err)
+	}
+	if actorInfo.VID != uint32(actor.EntityID) || actorInfo.Name != "Merchant" {
+		t.Fatalf("unexpected queued static actor additional info across map update: %+v", actorInfo)
+	}
+	actorUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, destinationQueued[2]))
+	if err != nil {
+		t.Fatalf("decode queued static actor update across map update: %v", err)
+	}
+	if actorUpdate.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected queued static actor update across map update: %+v", actorUpdate)
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorUpdatesSnapshot(t *testing.T) {
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
 	if err != nil {

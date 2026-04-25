@@ -239,6 +239,35 @@ func TestScopesRelocateStaticActorVisibilityDiffUsesConfiguredPolicyAndOrder(t *
 	}
 }
 
+func TestScopesRelocateStaticActorTargetDiffUsesConfiguredPolicyAndOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	originNear := registry.RegisterPlayer(entityRegistryCharacter("OriginNear", 0x02040101, 42, 1700, 2800))
+	registry.RegisterPlayer(entityRegistryCharacter("FarPeer", 0x02040102, 42, 2600, 3800))
+	alphaTarget := registry.RegisterPlayer(entityRegistryCharacter("AlphaTarget", 0x02040103, 42, 5000, 5000))
+	bravoTarget := registry.RegisterPlayer(entityRegistryCharacter("BravoTarget", 0x02040104, 42, 5200, 5100))
+
+	current := StaticEntity{Entity: Entity{ID: 1, Name: "Blacksmith"}, Position: NewPosition(42, 1750, 2850), RaceNum: 20300}
+	target := StaticEntity{Entity: Entity{ID: 1, Name: "Merchant"}, Position: NewPosition(42, 5000, 5000), RaceNum: 20301}
+
+	diff := NewScopes(topology, registry).RelocateStaticActorTargetDiff(current, target)
+	if len(diff.CurrentVisibleTargets) != 1 || diff.CurrentVisibleTargets[0].Entity.ID != originNear.Entity.ID {
+		t.Fatalf("expected current visible targets [OriginNear], got %+v", diff.CurrentVisibleTargets)
+	}
+	if len(diff.TargetVisibleTargets) != 2 || diff.TargetVisibleTargets[0].Entity.ID != alphaTarget.Entity.ID || diff.TargetVisibleTargets[1].Entity.ID != bravoTarget.Entity.ID {
+		t.Fatalf("expected target visible targets [AlphaTarget BravoTarget], got %+v", diff.TargetVisibleTargets)
+	}
+	if len(diff.RetainedVisibleTargets) != 0 {
+		t.Fatalf("expected no retained visible targets, got %+v", diff.RetainedVisibleTargets)
+	}
+	if len(diff.RemovedVisibleTargets) != 1 || diff.RemovedVisibleTargets[0].Entity.ID != originNear.Entity.ID {
+		t.Fatalf("expected removed visible targets [OriginNear], got %+v", diff.RemovedVisibleTargets)
+	}
+	if len(diff.AddedVisibleTargets) != 2 || diff.AddedVisibleTargets[0].Entity.ID != alphaTarget.Entity.ID || diff.AddedVisibleTargets[1].Entity.ID != bravoTarget.Entity.ID {
+		t.Fatalf("expected added visible targets [AlphaTarget BravoTarget], got %+v", diff.AddedVisibleTargets)
+	}
+}
+
 func TestScopesEnterVisibilityDiffUsesConfiguredPolicyAndRegistrySnapshot(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)

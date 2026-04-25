@@ -18,6 +18,14 @@ type StaticActorVisibilityDiff struct {
 	AddedVisibleActors   []StaticEntity
 }
 
+type StaticActorTargetDiff struct {
+	CurrentVisibleTargets  []PlayerEntity
+	TargetVisibleTargets   []PlayerEntity
+	RetainedVisibleTargets []PlayerEntity
+	RemovedVisibleTargets  []PlayerEntity
+	AddedVisibleTargets    []PlayerEntity
+}
+
 type ConnectedCharacterSnapshot struct {
 	Name     string `json:"name"`
 	VID      uint32 `json:"vid"`
@@ -199,6 +207,10 @@ func (s Scopes) VisibleTargetsForStaticActor(actor StaticEntity) []PlayerEntity 
 	return s.filterTargets(0, staticActorVisibilityCharacter(actor), s.Topology.SharesVisibleWorld)
 }
 
+func (s Scopes) RelocateStaticActorTargetDiff(current, target StaticEntity) StaticActorTargetDiff {
+	return buildStaticActorTargetDiff(s.VisibleTargetsForStaticActor(current), s.VisibleTargetsForStaticActor(target))
+}
+
 func (s Scopes) RelocateStaticActorVisibilityDiff(current, target loginticket.Character) StaticActorVisibilityDiff {
 	return buildStaticActorVisibilityDiff(s.VisibleStaticActors(current), s.VisibleStaticActors(target))
 }
@@ -332,6 +344,46 @@ func buildStaticActorVisibilityDiff(currentVisibleActors []StaticEntity, targetV
 	}
 }
 
+func buildStaticActorTargetDiff(currentVisibleTargets []PlayerEntity, targetVisibleTargets []PlayerEntity) StaticActorTargetDiff {
+	currentVisibleTargets = clonePlayerEntities(currentVisibleTargets)
+	targetVisibleTargets = clonePlayerEntities(targetVisibleTargets)
+	currentByID := make(map[uint64]PlayerEntity, len(currentVisibleTargets))
+	for _, target := range currentVisibleTargets {
+		currentByID[target.Entity.ID] = target
+	}
+	targetByID := make(map[uint64]PlayerEntity, len(targetVisibleTargets))
+	for _, target := range targetVisibleTargets {
+		targetByID[target.Entity.ID] = target
+	}
+
+	retainedVisibleTargets := make([]PlayerEntity, 0)
+	removedVisibleTargets := make([]PlayerEntity, 0)
+	for _, target := range currentVisibleTargets {
+		if _, ok := targetByID[target.Entity.ID]; ok {
+			retainedVisibleTargets = append(retainedVisibleTargets, target)
+			continue
+		}
+		removedVisibleTargets = append(removedVisibleTargets, target)
+	}
+	addedVisibleTargets := make([]PlayerEntity, 0)
+	for _, target := range targetVisibleTargets {
+		if _, ok := currentByID[target.Entity.ID]; ok {
+			continue
+		}
+		addedVisibleTargets = append(addedVisibleTargets, target)
+	}
+	sortPlayerEntities(retainedVisibleTargets)
+	sortPlayerEntities(removedVisibleTargets)
+	sortPlayerEntities(addedVisibleTargets)
+	return StaticActorTargetDiff{
+		CurrentVisibleTargets:  currentVisibleTargets,
+		TargetVisibleTargets:   targetVisibleTargets,
+		RetainedVisibleTargets: retainedVisibleTargets,
+		RemovedVisibleTargets:  removedVisibleTargets,
+		AddedVisibleTargets:    addedVisibleTargets,
+	}
+}
+
 func diffVisibleStaticActors(current []StaticEntity, target []StaticEntity) ([]StaticEntity, []StaticEntity) {
 	currentByID := make(map[uint64]StaticEntity, len(current))
 	for _, actor := range current {
@@ -368,6 +420,24 @@ func cloneStaticActors(actors []StaticEntity) []StaticEntity {
 	cloned := append([]StaticEntity(nil), actors...)
 	sortStaticEntities(cloned)
 	return cloned
+}
+
+func clonePlayerEntities(players []PlayerEntity) []PlayerEntity {
+	if len(players) == 0 {
+		return nil
+	}
+	cloned := append([]PlayerEntity(nil), players...)
+	sortPlayerEntities(cloned)
+	return cloned
+}
+
+func sortPlayerEntities(players []PlayerEntity) {
+	sort.Slice(players, func(i int, j int) bool {
+		if players[i].Entity.Name == players[j].Entity.Name {
+			return players[i].Entity.ID < players[j].Entity.ID
+		}
+		return players[i].Entity.Name < players[j].Entity.Name
+	})
 }
 
 func buildMapOccupancySnapshots(topology BootstrapTopology, occupancies []MapOccupancy) []MapOccupancySnapshot {

@@ -576,22 +576,33 @@ func (r *sharedWorldRegistry) UpdateStaticActor(entityID uint64, name string, ma
 	if !ok {
 		return StaticActorSnapshot{}, false
 	}
-	currentVisibleTargets := r.scopesLocked().VisibleTargetsForStaticActor(previous)
-	actor, ok := r.entities.UpdateStaticActor(worldruntime.StaticEntity{
+	targetActor := worldruntime.StaticEntity{
 		Entity:   worldruntime.Entity{ID: entityID, Name: name},
 		Position: position,
 		RaceNum:  raceNum,
-	})
+	}
+	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(previous, targetActor)
+	actor, ok := r.entities.UpdateStaticActor(targetActor)
 	if !ok {
 		return StaticActorSnapshot{}, false
 	}
-	targetVisibleTargets := r.scopesLocked().VisibleTargetsForStaticActor(actor)
-	if samePlayerEntityIDs(currentVisibleTargets, targetVisibleTargets) {
-		refreshFrames := buildStaticActorRefreshFrames(previous, actor)
-		if len(refreshFrames) > 0 {
-			for _, target := range targetVisibleTargets {
-				r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
-			}
+
+	refreshFrames := buildStaticActorRefreshFrames(previous, actor)
+	if len(refreshFrames) > 0 {
+		for _, target := range targetDiff.RetainedVisibleTargets {
+			r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
+		}
+	}
+	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(previous)
+	if deleteEncodable {
+		for _, target := range targetDiff.RemovedVisibleTargets {
+			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
+		}
+	}
+	addFrames := encodeStaticActorVisibilityFrames(actor)
+	if len(addFrames) > 0 {
+		for _, target := range targetDiff.AddedVisibleTargets {
+			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
 	return staticActorSnapshot(r.topology, actor), true
@@ -962,25 +973,6 @@ func staticActorVisibilityVID(actor worldruntime.StaticEntity) (uint32, bool) {
 		return 0, false
 	}
 	return uint32(actor.Entity.ID), true
-}
-
-func samePlayerEntityIDs(current []worldruntime.PlayerEntity, target []worldruntime.PlayerEntity) bool {
-	if len(current) != len(target) {
-		return false
-	}
-	if len(current) == 0 {
-		return true
-	}
-	currentIDs := make(map[uint64]struct{}, len(current))
-	for _, player := range current {
-		currentIDs[player.Entity.ID] = struct{}{}
-	}
-	for _, player := range target {
-		if _, ok := currentIDs[player.Entity.ID]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 func staticActorCharacterAddPacket(actor worldruntime.StaticEntity, vid uint32) worldproto.CharacterAddPacket {
