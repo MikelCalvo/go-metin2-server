@@ -4122,6 +4122,66 @@ func TestGameRuntimeRegisterStaticActorRejectsInvalidSeed(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeRegisterStaticActorQueuesVisibleBootstrapForOnlinePlayers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	farPlayer := peerVisibilityCharacter("FarPlayer", 0x01030102, 0x02040102, 2800, 3800, 2, 102, 202)
+	issuePeerTicket(t, store, "near-player", 0x11111111, nearPlayer)
+	issuePeerTicket(t, store, "far-player", 0x22222222, farPlayer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	nearFlow, _ := enterGameWithLoginTicket(t, factory, "near-player", 0x11111111)
+	farFlow, _ := enterGameWithLoginTicket(t, factory, "far-player", 0x22222222)
+	_ = flushServerFrames(t, nearFlow)
+	_ = flushServerFrames(t, farFlow)
+
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	nearQueued := flushServerFrames(t, nearFlow)
+	if len(nearQueued) != 3 {
+		t.Fatalf("expected 3 queued static actor bootstrap frames for nearby player, got %d", len(nearQueued))
+	}
+	actorAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, nearQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued static actor add: %v", err)
+	}
+	if actorAdd.VID != uint32(actor.EntityID) || actorAdd.Type != 1 || actorAdd.X != 1200 || actorAdd.Y != 2200 || actorAdd.RaceNum != 20300 {
+		t.Fatalf("unexpected queued static actor add: %+v", actorAdd)
+	}
+	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, nearQueued[1]))
+	if err != nil {
+		t.Fatalf("decode queued static actor additional info: %v", err)
+	}
+	if actorInfo.VID != uint32(actor.EntityID) || actorInfo.Name != "VillageGuard" {
+		t.Fatalf("unexpected queued static actor additional info: %+v", actorInfo)
+	}
+	actorUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, nearQueued[2]))
+	if err != nil {
+		t.Fatalf("decode queued static actor update: %v", err)
+	}
+	if actorUpdate.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected queued static actor update: %+v", actorUpdate)
+	}
+
+	if farQueued := flushServerFrames(t, farFlow); len(farQueued) != 0 {
+		t.Fatalf("expected no queued static actor bootstrap frames for far player, got %d", len(farQueued))
+	}
+}
+
 func TestGameRuntimeRemoveStaticActorUpdatesSnapshot(t *testing.T) {
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
 	if err != nil {

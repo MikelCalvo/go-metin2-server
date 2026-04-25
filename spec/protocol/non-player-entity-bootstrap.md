@@ -23,13 +23,15 @@ This contract applies only to:
 - operator/runtime map-occupancy and static-actor snapshots that can now surface those actors through `internal/worldruntime/scopes.go`
 - the first loopback-only operator seed/snapshot/update/remove surface used to create, inspect, edit, and delete those runtime actors on `gamed`
 - the first client-visible enter-game bootstrap burst for static actors that already share the entering player's visible world under the current bootstrap topology/AOI policy
+- the first live operator-seed visibility burst for newly created static actors that already share some connected player's visible world under those same bootstrap topology/AOI rules
 
-This slice now claims only three narrow client-visible behaviors for non-player actors:
+This slice now claims only four narrow client-visible behaviors for non-player actors:
 - when a player enters `GAME`, already-visible bootstrap static actors can be appended to that enter-game result with deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` frames
+- when an operator seeds a new static actor while players are already online, sessions that already share visible world with that actor can immediately receive the same deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst
 - when that same player later crosses the configured AOI boundary through `MOVE` or `SYNC_POSITION`, the runtime can queue the corresponding self-facing static-actor add/delete rebuild frames
 - when gameplay-triggered transfer rebootstrap moves that player into another visible-world scope, the runtime can append the corresponding self-facing static-actor delete/add rebuild frames after the relocated self burst
 
-It still does **not** yet claim general spawn/update/delete replication to other sessions, dynamic actor behavior, or gameplay systems behind those actors.
+It still does **not** yet claim general update/delete replication to other sessions, dynamic actor behavior, or gameplay systems behind those actors.
 
 ## Current owned non-player contract
 
@@ -97,6 +99,7 @@ The next runtime checkpoint after this document should be able to say:
 - relocate-preview and transfer results can now also expose explicit added/removed visible static actors beside the before/after occupancy snapshots
 - `gamed` can seed, inspect, update, and remove those bootstrap static actors through loopback-only operator paths
 - entering players can now receive a first deterministic bootstrap burst for static actors that already share their visible world, reusing `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`
+- newly seeded static actors can now also enqueue that same deterministic visibility burst to already-visible online players without requiring those players to relog or move first
 - moving/syncing players can now receive the first deterministic self-facing add/delete rebuild for static actors when configured AOI changes whether those actors are visible
 - player-only runtime behavior remains unchanged while this scaffolding lands
 

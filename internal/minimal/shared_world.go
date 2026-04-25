@@ -551,6 +551,12 @@ func (r *sharedWorldRegistry) RegisterStaticActor(name string, mapIndex uint32, 
 	if !ok {
 		return StaticActorSnapshot{}, false
 	}
+	frames := encodeStaticActorVisibilityFrames(actor)
+	if len(frames) > 0 {
+		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+			r.enqueueToEntityLocked(target.Entity.ID, frames)
+		}
+	}
 	return staticActorSnapshot(r.topology, actor), true
 }
 

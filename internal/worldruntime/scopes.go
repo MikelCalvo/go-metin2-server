@@ -195,6 +195,10 @@ func (s Scopes) VisibleStaticActors(subject loginticket.Character) []StaticEntit
 	return visible
 }
 
+func (s Scopes) VisibleTargetsForStaticActor(actor StaticEntity) []PlayerEntity {
+	return s.filterTargets(0, staticActorVisibilityCharacter(actor), s.Topology.SharesVisibleWorld)
+}
+
 func (s Scopes) RelocateStaticActorVisibilityDiff(current, target loginticket.Character) StaticActorVisibilityDiff {
 	return buildStaticActorVisibilityDiff(s.VisibleStaticActors(current), s.VisibleStaticActors(target))
 }
