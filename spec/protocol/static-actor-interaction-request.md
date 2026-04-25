@@ -45,20 +45,20 @@ Owned Go codec boundary:
 
 ## Current owned behavior
 
-At this stage the repository owns only the request ingress seam:
+At this stage the repository owns a narrow but real first response vertical:
 - `internal/game` accepts `INTERACT` while the session is already in `GAME`
 - the decoded request is dispatched to a dedicated interaction handler
 - `internal/worldruntime` can now resolve a bootstrap static actor by that client-visible `VID`
 - that runtime lookup is now also visibility-gated, so only actors that currently share visible world with the subject are eligible targets
-- `internal/minimal/shared_world` now owns the first validated interaction-attempt seam, returning a structured result for the current subject/target pair before any authored `info` / `talk` content resolution exists
-- that structured runtime result now distinguishes at least:
+- `internal/minimal/shared_world` now owns the first validated interaction-attempt seam, returning a structured result for the current subject/target pair before content resolution branches further
+- that validated runtime result now distinguishes at least:
   - `subject_not_found`
   - `target_not_visible`
   - `target_has_no_interaction`
+- `gamed` now also resolves authored interaction definitions by `interaction_kind + interaction_ref`
+- when that definition resolves to `interaction_kind = "info"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored definition text
 - malformed payloads are rejected at the codec/flow boundary
-- unsupported/unhandled interactions may still resolve to no outgoing frames
-
-This slice does **not** yet claim what the server does with a valid request after dispatch.
+- `talk` and other unsupported interaction kinds may still resolve to no outgoing frames yet
 
 ## Target identity rule
 
@@ -69,7 +69,7 @@ That keeps the request aligned with the already-owned static-actor visibility bo
 
 ## Failure semantics
 
-The current owned failure boundary is narrow:
+The current owned failure boundary is now explicit and still fail-closed:
 - wrong phase -> existing `GAME` flow rejection rules apply
 - unexpected header at the codec -> rejected
 - malformed payload size -> rejected
@@ -77,9 +77,12 @@ The current owned failure boundary is narrow:
   - `subject_not_found`
   - `target_not_visible`
   - `target_has_no_interaction`
-- accepted request with no implemented behavior -> may legally produce no outgoing frames yet
+  - `interaction_definition_not_found`
+  - `unsupported_interaction_kind`
+- failed interaction resolution currently produces no outgoing frames
+- accepted `info` interaction currently produces exactly one self-only `GC_CHAT` delivery with `CHAT_TYPE_INFO`
 
-Future slices should freeze richer failure/reporting semantics only when the runtime actually resolves visible targets and authored `info` / `talk` content.
+Future slices should freeze richer reporting only when `talk` and later interaction families exist.
 
 ## Success definition
 
@@ -89,4 +92,5 @@ After this slice, the repository should be able to say:
 - the game flow can dispatch that request to a dedicated interaction handler
 - `internal/worldruntime` can resolve a visible bootstrap static actor by that `VID` under the active topology/AOI rules
 - `internal/minimal/shared_world` can now turn that subject/target pair into a structured validated interaction attempt before later content resolution exists
-- the protocol surface is ready for the next slice to implement self-only `info` / `talk` behavior without redesigning the ingress or target-lookup contract
+- `gamed` can now resolve authored `info` definitions behind visible static actors and answer the interacting player with one self-only `CHAT_TYPE_INFO` delivery carrying the authored text
+- the protocol surface is ready for the next slice to implement the first owned `talk` response without redesigning the ingress or target-lookup contract

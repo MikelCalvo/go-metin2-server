@@ -28,6 +28,7 @@ import (
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
+	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
@@ -83,6 +84,20 @@ type MapOccupancySnapshot = worldruntime.MapOccupancySnapshot
 type StaticActorSnapshot = worldruntime.StaticActorSnapshot
 
 type InteractionDefinition = interactionstore.Definition
+
+const (
+	staticActorInteractionFailureDefinitionNotFound = "interaction_definition_not_found"
+	staticActorInteractionFailureUnsupportedKind    = "unsupported_interaction_kind"
+)
+
+type staticActorInteractionResolution struct {
+	Accepted   bool
+	Failure    string
+	TargetVID  uint32
+	Actor      StaticActorSnapshot
+	Definition InteractionDefinition
+	Delivery   *chatproto.ChatDeliveryPacket
+}
 
 type RuntimeConfigSnapshot struct {
 	LocalChannelID       uint8  `json:"local_channel_id"`
@@ -905,6 +920,19 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 					notFound := ticketWhisperNotExistPacket(packet.Target)
 					return gameflow.WhisperResult{Accepted: true, Delivery: &notFound}
 				},
+				HandleInteraction: func(packet interactproto.RequestPacket) gameflow.InteractionResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if !ownsLiveSharedWorldSession() {
+						return gameflow.InteractionResult{Accepted: false}
+					}
+					resolution := runtime.resolveStaticActorInteraction(sharedWorldID, packet.TargetVID)
+					if !resolution.Accepted || resolution.Delivery == nil {
+						return gameflow.InteractionResult{Accepted: false}
+					}
+					return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
+				},
 			},
 		})
 		return newQueuedSessionFlow(inner, pending, func() {
@@ -1689,6 +1717,34 @@ func (r *gameRuntime) ResolveInteractionDefinition(kind string, ref string) (Int
 		return InteractionDefinition{}, false
 	}
 	return definition, true
+}
+
+func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID uint32) staticActorInteractionResolution {
+	resolution := staticActorInteractionResolution{TargetVID: targetVID}
+	if r == nil || r.sharedWorld == nil {
+		resolution.Failure = StaticActorInteractionFailureSubjectNotFound
+		return resolution
+	}
+	attempt := r.sharedWorld.AttemptStaticActorInteraction(subjectID, targetVID)
+	resolution.Actor = attempt.Actor
+	if !attempt.Accepted {
+		resolution.Failure = attempt.Failure
+		return resolution
+	}
+	definition, ok := r.ResolveInteractionDefinition(attempt.Actor.InteractionKind, attempt.Actor.InteractionRef)
+	if !ok {
+		resolution.Failure = staticActorInteractionFailureDefinitionNotFound
+		return resolution
+	}
+	resolution.Definition = definition
+	if definition.Kind != interactionstore.KindInfo {
+		resolution.Failure = staticActorInteractionFailureUnsupportedKind
+		return resolution
+	}
+	delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: definition.Text}
+	resolution.Accepted = true
+	resolution.Delivery = &delivery
+	return resolution
 }
 
 func (r *gameRuntime) interactionDefinitionExists(kind string, ref string) bool {
