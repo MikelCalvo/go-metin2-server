@@ -6,6 +6,7 @@ import (
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
@@ -23,11 +24,14 @@ type HandleChatFunc func(chatproto.ClientChatPacket) ChatResult
 
 type HandleWhisperFunc func(chatproto.ClientWhisperPacket) WhisperResult
 
+type HandleInteractionFunc func(interactproto.RequestPacket) InteractionResult
+
 type Config struct {
 	HandleMove         HandleMoveFunc
 	HandleSyncPosition HandleSyncPositionFunc
 	HandleChat         HandleChatFunc
 	HandleWhisper      HandleWhisperFunc
+	HandleInteraction  HandleInteractionFunc
 }
 
 type Result struct {
@@ -54,12 +58,18 @@ type WhisperResult struct {
 	Delivery *chatproto.ServerWhisperPacket
 }
 
+type InteractionResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type Flow struct {
 	machine            *session.StateMachine
 	handleMove         HandleMoveFunc
 	handleSyncPosition HandleSyncPositionFunc
 	handleChat         HandleChatFunc
 	handleWhisper      HandleWhisperFunc
+	handleInteraction  HandleInteractionFunc
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -79,7 +89,11 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if whisperHandler == nil {
 		whisperHandler = func(chatproto.ClientWhisperPacket) WhisperResult { return WhisperResult{Accepted: false} }
 	}
-	return &Flow{machine: machine, handleMove: handler, handleSyncPosition: syncHandler, handleChat: chatHandler, handleWhisper: whisperHandler}
+	interactionHandler := cfg.HandleInteraction
+	if interactionHandler == nil {
+		interactionHandler = func(interactproto.RequestPacket) InteractionResult { return InteractionResult{Accepted: false} }
+	}
+	return &Flow{machine: machine, handleMove: handler, handleSyncPosition: syncHandler, handleChat: chatHandler, handleWhisper: whisperHandler, handleInteraction: interactionHandler}
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
@@ -156,6 +170,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, nil
 		}
 		return [][]byte{chatproto.EncodeServerWhisper(*result.Delivery)}, nil
+	case interactproto.HeaderRequest:
+		packet, err := interactproto.DecodeRequest(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleInteraction(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
 	default:
 		return nil, ErrUnexpectedClientPacket
 	}

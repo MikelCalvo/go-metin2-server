@@ -1,12 +1,14 @@
 package game
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
@@ -395,6 +397,52 @@ func TestHandleClientFrameAcceptsNoticeChatInGameAndReturnsDelivery(t *testing.T
 	}
 	if delivery.Type != chatproto.ChatTypeNotice || delivery.VID != 0 || delivery.Message != "mensaje notice" {
 		t.Fatalf("unexpected notice chat delivery: %+v", delivery)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsInteractionInGameAndReturnsFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	expected := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
+	flow := NewFlow(machine, Config{
+		HandleInteraction: func(packet interactproto.RequestPacket) InteractionResult {
+			if packet.TargetVID != 0x02040107 {
+				t.Fatalf("unexpected interaction packet: %+v", packet)
+			}
+			return InteractionResult{Accepted: true, Frames: [][]byte{expected}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: 0x02040107})))
+	if err != nil {
+		t.Fatalf("unexpected interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing interaction frame, got %d", len(out))
+	}
+	if !bytes.Equal(out[0], expected) {
+		t.Fatalf("unexpected interaction frames: got %x want %x", out[0], expected)
+	}
+	ping, err := control.DecodePing(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode interaction ping frame: %v", err)
+	}
+	if ping.ServerTime != 0x01020304 {
+		t.Fatalf("unexpected interaction ping payload: %+v", ping)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsMalformedInteractionInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	_, err := flow.HandleClientFrame(frame.Frame{Header: interactproto.HeaderRequest, Length: 7, Payload: []byte{0x01, 0x02, 0x03}})
+	if !errors.Is(err, interactproto.ErrInvalidPayload) {
+		t.Fatalf("expected interactproto.ErrInvalidPayload, got %v", err)
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())

@@ -77,6 +77,12 @@ Status values:
 | `CHAT` | server -> client | `0x0603` | game | documented | deterministic sender echo for talking/party/guild/shout; current fanout scope is same-map + same-empire for talking, same empire for shout, same non-zero `GuildID` for guild, and all connected sessions for party; sender-only bootstrap system info uses `vid = 0`; server-originated notice broadcasts also use `vid = 0` raw system text |
 | `WHISPER` | server -> client | `0x0604` | game | documented | direct whisper delivery to the named target on success and current `WHISPER_TYPE_NOT_EXIST` sender feedback for unknown targets |
 
+## Interaction
+
+| Name | Direction | Header | Phase | Status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `INTERACT` | client -> server | `0x0501` | game | documented | first owned client-originated interaction request for a visible bootstrap static actor target by `vid`; current payload is a little-endian `uint32 target_vid`, current routing stops at the dedicated `GAME`-phase interaction handler, and later `info` / `talk` response behavior is frozen separately |
+
 ## Notes
 
 - This matrix is a working contract, not a dump of every observed packet family.
