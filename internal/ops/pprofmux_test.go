@@ -767,7 +767,7 @@ func TestLocalStaticActorsEndpointRegistersActorForLoopbackPost(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
-	if registrar.calls != 1 || registrar.lastName != "VillageGuard" || registrar.lastMapIndex != 42 || registrar.lastX != 1700 || registrar.lastY != 2800 || registrar.lastRaceNum != 20300 {
+	if registrar.calls != 1 || registrar.lastName != "VillageGuard" || registrar.lastMapIndex != 42 || registrar.lastX != 1700 || registrar.lastY != 2800 || registrar.lastRaceNum != 20300 || registrar.lastInteractionKind != "" || registrar.lastInteractionRef != "" {
 		t.Fatalf("unexpected static actor registrar call state: %+v", registrar)
 	}
 	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
@@ -778,6 +778,31 @@ func TestLocalStaticActorsEndpointRegistersActorForLoopbackPost(t *testing.T) {
 		t.Fatalf("read response body: %v", err)
 	}
 	if !strings.Contains(string(body), `"entity_id":1`) || !strings.Contains(string(body), `"name":"VillageGuard"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorsEndpointRegistersActorWithInteractionMetadataForLoopbackPost(t *testing.T) {
+	registrar := &stubStaticActorRegistrar{registered: true, actor: map[string]any{"entity_id": uint64(1), "name": "VillageGuard", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20300), "interaction_kind": "talk", "interaction_ref": "npc:village_guard"}}
+	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), nil, registrar.RegisterStaticActor)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors", strings.NewReader(`{"name":"VillageGuard","map_index":42,"x":1700,"y":2800,"race_num":20300,"interaction_kind":"talk","interaction_ref":"npc:village_guard"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if registrar.calls != 1 || registrar.lastInteractionKind != "talk" || registrar.lastInteractionRef != "npc:village_guard" {
+		t.Fatalf("expected interaction metadata to reach static actor registrar, got %+v", registrar)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"interaction_kind":"talk"`) || !strings.Contains(string(body), `"interaction_ref":"npc:village_guard"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
@@ -835,7 +860,7 @@ func TestLocalStaticActorUpdateEndpointUpdatesActorForLoopbackPatch(t *testing.T
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
-	if updater.calls != 1 || updater.lastEntityID != 7 || updater.lastName != "Merchant" || updater.lastMapIndex != 99 || updater.lastX != 900 || updater.lastY != 1200 || updater.lastRaceNum != 9001 {
+	if updater.calls != 1 || updater.lastEntityID != 7 || updater.lastName != "Merchant" || updater.lastMapIndex != 99 || updater.lastX != 900 || updater.lastY != 1200 || updater.lastRaceNum != 9001 || updater.lastInteractionKind != "" || updater.lastInteractionRef != "" {
 		t.Fatalf("unexpected static actor updater call state: %+v", updater)
 	}
 	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
@@ -846,6 +871,31 @@ func TestLocalStaticActorUpdateEndpointUpdatesActorForLoopbackPatch(t *testing.T
 		t.Fatalf("read response body: %v", err)
 	}
 	if !strings.Contains(string(body), `"entity_id":7`) || !strings.Contains(string(body), `"name":"Merchant"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorUpdateEndpointUpdatesInteractionMetadataForLoopbackPatch(t *testing.T) {
+	updater := &stubStaticActorUpdater{updated: true, actor: map[string]any{"entity_id": uint64(7), "name": "Merchant", "map_index": uint32(99), "x": int32(900), "y": int32(1200), "race_num": uint32(9001), "interaction_kind": "info", "interaction_ref": "lore:merchant"}}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodPatch, "/local/static-actors/7", strings.NewReader(`{"name":"Merchant","map_index":99,"x":900,"y":1200,"race_num":9001,"interaction_kind":"info","interaction_ref":"lore:merchant"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if updater.calls != 1 || updater.lastInteractionKind != "info" || updater.lastInteractionRef != "lore:merchant" {
+		t.Fatalf("expected interaction metadata to reach static actor updater, got %+v", updater)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"interaction_kind":"info"`) || !strings.Contains(string(body), `"interaction_ref":"lore:merchant"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
@@ -1067,39 +1117,45 @@ func (s *stubStaticActorSnapshotter) StaticActors() any {
 }
 
 type stubStaticActorRegistrar struct {
-	actor        map[string]any
-	registered   bool
-	calls        int
-	lastName     string
-	lastMapIndex uint32
-	lastX        int32
-	lastY        int32
-	lastRaceNum  uint32
+	actor               map[string]any
+	registered          bool
+	calls               int
+	lastName            string
+	lastMapIndex        uint32
+	lastX               int32
+	lastY               int32
+	lastRaceNum         uint32
+	lastInteractionKind string
+	lastInteractionRef  string
 }
 
-func (r *stubStaticActorRegistrar) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (any, bool) {
+func (r *stubStaticActorRegistrar) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (any, bool) {
 	r.calls++
 	r.lastName = name
 	r.lastMapIndex = mapIndex
 	r.lastX = x
 	r.lastY = y
 	r.lastRaceNum = raceNum
+	r.lastInteractionKind = interactionKind
+	r.lastInteractionRef = interactionRef
 	return r.actor, r.registered
 }
 
 type stubStaticActorUpdater struct {
-	actor        map[string]any
-	updated      bool
-	calls        int
-	lastEntityID uint64
-	lastName     string
-	lastMapIndex uint32
-	lastX        int32
-	lastY        int32
-	lastRaceNum  uint32
+	actor               map[string]any
+	updated             bool
+	calls               int
+	lastEntityID        uint64
+	lastName            string
+	lastMapIndex        uint32
+	lastX               int32
+	lastY               int32
+	lastRaceNum         uint32
+	lastInteractionKind string
+	lastInteractionRef  string
 }
 
-func (r *stubStaticActorUpdater) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (any, bool) {
+func (r *stubStaticActorUpdater) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (any, bool) {
 	r.calls++
 	r.lastEntityID = entityID
 	r.lastName = name
@@ -1107,6 +1163,8 @@ func (r *stubStaticActorUpdater) UpdateStaticActor(entityID uint64, name string,
 	r.lastX = x
 	r.lastY = y
 	r.lastRaceNum = raceNum
+	r.lastInteractionKind = interactionKind
+	r.lastInteractionRef = interactionRef
 	return r.actor, r.updated
 }
 

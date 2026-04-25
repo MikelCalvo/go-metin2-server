@@ -4363,6 +4363,47 @@ func TestGameRuntimeRegisterStaticActorDoesNotMutateRuntimeWhenSnapshotPersistFa
 	}
 }
 
+func TestGameRuntimeRegisterStaticActorWithInteractionUpdatesSnapshot(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", 42, 1700, 2800, 20300, "talk", "npc:village_guard")
+	if !ok {
+		t.Fatal("expected static actor registration with interaction metadata to succeed")
+	}
+	if actor.InteractionKind != "talk" || actor.InteractionRef != "npc:village_guard" {
+		t.Fatalf("expected interaction metadata in registered static actor snapshot, got %+v", actor)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].InteractionKind != "talk" || actors[0].InteractionRef != "npc:village_guard" {
+		t.Fatalf("expected interaction metadata in runtime static actor snapshot, got %+v", actors)
+	}
+}
+
+func TestGameRuntimeRegisterStaticActorWithInteractionPersistsSnapshotOnSuccess(t *testing.T) {
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	staticActorStore := staticstore.NewFileStore(staticPath)
+	runtime, err := newGameRuntimeWithAccountStoreAndStaticStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", 42, 1700, 2800, 20300, "talk", "npc:village_guard")
+	if !ok {
+		t.Fatal("expected static actor registration with interaction metadata to succeed")
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted static actor snapshot: %v", err)
+	}
+	want := staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: actor.EntityID, Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: "talk", InteractionRef: "npc:village_guard"}}}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("unexpected persisted static actor snapshot after interaction register:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorPersistsSnapshotOnSuccess(t *testing.T) {
 	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
 	staticActorStore := staticstore.NewFileStore(staticPath)

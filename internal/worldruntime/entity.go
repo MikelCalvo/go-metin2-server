@@ -26,7 +26,9 @@ func (p PlayerEntity) Position() Position {
 }
 
 type StaticEntity struct {
-	Entity   Entity
-	Position Position
-	RaceNum  uint32
+	Entity          Entity
+	Position        Position
+	RaceNum         uint32
+	InteractionKind string
+	InteractionRef  string
 }

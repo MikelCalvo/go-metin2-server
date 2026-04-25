@@ -63,8 +63,8 @@ func main() {
 	opsHandler = ops.RegisterLocalStaticActorEndpoints(
 		opsHandler,
 		func() any { return gameRuntime.StaticActors() },
-		func(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (any, bool) {
-			actor, ok := gameRuntime.RegisterStaticActor(name, mapIndex, x, y, raceNum)
+		func(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (any, bool) {
+			actor, ok := gameRuntime.RegisterStaticActorWithInteraction(name, mapIndex, x, y, raceNum, interactionKind, interactionRef)
 			if !ok {
 				return nil, false
 			}
@@ -73,8 +73,8 @@ func main() {
 	)
 	opsHandler = ops.RegisterLocalStaticActorUpdateEndpoint(
 		opsHandler,
-		func(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (any, bool) {
-			actor, ok := gameRuntime.UpdateStaticActor(entityID, name, mapIndex, x, y, raceNum)
+		func(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (any, bool) {
+			actor, ok := gameRuntime.UpdateStaticActorWithInteraction(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef)
 			if !ok {
 				return nil, false
 			}

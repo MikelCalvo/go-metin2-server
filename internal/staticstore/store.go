@@ -12,12 +12,14 @@ var (
 )
 
 type StaticActor struct {
-	EntityID uint64 `json:"entity_id"`
-	Name     string `json:"name"`
-	MapIndex uint32 `json:"map_index"`
-	X        int32  `json:"x"`
-	Y        int32  `json:"y"`
-	RaceNum  uint32 `json:"race_num"`
+	EntityID        uint64 `json:"entity_id"`
+	Name            string `json:"name"`
+	MapIndex        uint32 `json:"map_index"`
+	X               int32  `json:"x"`
+	Y               int32  `json:"y"`
+	RaceNum         uint32 `json:"race_num"`
+	InteractionKind string `json:"interaction_kind,omitempty"`
+	InteractionRef  string `json:"interaction_ref,omitempty"`
 }
 
 type Snapshot struct {
@@ -46,12 +48,22 @@ func validateSnapshot(snapshot Snapshot) error {
 		if actor.EntityID == 0 || actor.Name == "" || actor.MapIndex == 0 || actor.RaceNum == 0 {
 			return ErrInvalidSnapshot
 		}
+		if !validInteractionMetadata(actor.InteractionKind, actor.InteractionRef) {
+			return ErrInvalidSnapshot
+		}
 		if _, ok := seen[actor.EntityID]; ok {
 			return ErrInvalidSnapshot
 		}
 		seen[actor.EntityID] = struct{}{}
 	}
 	return nil
+}
+
+func validInteractionMetadata(kind string, ref string) bool {
+	if kind == "" && ref == "" {
+		return true
+	}
+	return kind != "" && ref != ""
 }
 
 func cloneStaticActors(actors []StaticActor) []StaticActor {

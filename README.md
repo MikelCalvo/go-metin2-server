@@ -146,7 +146,7 @@ Legend:
 | Channel topology | [ ] | No real multi-channel topology, shard routing, or inter-channel ownership yet. |
 | Interest management / culling | [~] | The first AOI boundary now exists as a whole-map visibility policy, an opt-in bootstrap radius/sector helper now exists beside it, topology now carries explicit helpers for selecting whole-map vs radius visibility policy, and `gamed` can now wire that choice from service config/env into the live bootstrap runtime, but there is still no production range-, sector-, or distance-based culling policy wired through the runtime by default. |
 | Warp / map transfer | [~] | A server-side visibility-rebuild primitive, structured transfer commit path, and first self-session transfer rebootstrap burst exist, but there is still no final end-to-end client/server warp/loading flow yet. |
-| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, reconnect/teardown and the first non-player runtime contract are now frozen in docs, duplicate-live `ENTERGAME` rejection can now be retried on the same encrypted game socket once the live owner disappears, the first static non-player actor scaffolding now owns entity identity plus map presence, `gamed` now exposes loopback-only operator seed/snapshot/remove paths for those static actors, a deterministic file-backed static-actor snapshot store now exists for the full bootstrap actor set and is now wired into boot plus successful operator create/update/delete mutations, and runtime map-occupancy snapshots now surface static actors on their effective maps, but broader reconnect hardening, richer AOI, and real non-player gameplay behavior are still ahead. |
+| Entity runtime beyond players | [~] | A first generic entity registry, dedicated player directory, topology-aware map index, and transport-only session directory now exist in `internal/worldruntime`; shared-world transport routing now consumes that session directory, reconnect/teardown and the first non-player runtime contract are now frozen in docs, duplicate-live `ENTERGAME` rejection can now be retried on the same encrypted game socket once the live owner disappears, the first static non-player actor scaffolding now owns entity identity plus map presence, `gamed` now exposes loopback-only operator seed/snapshot/remove paths for those static actors, a deterministic file-backed static-actor snapshot store now exists for the full bootstrap actor set and is now wired into boot plus successful operator create/update/delete mutations, static-actor visibility introspection now also reports per-player `visible_static_actors`, interaction-ready `interaction_kind` / `interaction_ref` metadata can now be stored and persisted on those bootstrap actors, and runtime map-occupancy snapshots now surface static actors on their effective maps, but broader reconnect hardening, richer AOI, and real non-player gameplay behavior are still ahead. |
 
 ### Social, chat, and operator surfaces
 
@@ -158,7 +158,7 @@ Legend:
 | Guild chat | [~] | Scoped by non-zero `GuildID`, but no guild lifecycle/roster system exists yet. |
 | Shout | [~] | Same-empire bootstrap fanout exists; no real world/channel topology behind it yet. |
 | System info / notice | [~] | `INFO` self-delivery, server-originated `NOTICE`, and local-only notice trigger exist; bootstrap-global notice target selection now routes through `internal/worldruntime` instead of ad hoc shared-world scans. |
-| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/runtime-config`, `GET /local/players`, `GET /local/visibility`, `GET /local/maps`, plus `GET`/`POST /local/static-actors`, `PATCH`/`PUT /local/static-actors/{entity_id}`, and `DELETE /local/static-actors/{entity_id}` for bootstrap non-player runtime seeding/introspection/edit/removal, exist on `gamed`; `/local/runtime-config` now reports the active local channel and visibility-policy selection, `/local/visibility` now also reports `visible_static_actors` per connected player under the active topology/AOI policy, `/local/maps` now reports static actors alongside connected players in each effective-map snapshot, newly seeded static actors now immediately enqueue their visibility burst to already-visible online players, operator-driven static-actor deletes now immediately enqueue `CHARACTER_DEL` to those same already-visible sessions, PATCH/PUT updates now refresh retained viewers with delete-plus-rebootstrap and also emit delete/add visibility deltas when the actor crosses map/AOI boundaries, and the structured relocate-preview/transfer responses now include full before/after map-occupancy snapshots plus explicit static-actor visibility diffs beside the delta counts; broader admin/auth tooling does not. |
+| Operator/admin surface | [~] | Loopback-only `POST /local/notice`, `POST /local/relocate`, `POST /local/relocate-preview`, `POST /local/transfer`, `GET /local/runtime-config`, `GET /local/players`, `GET /local/visibility`, `GET /local/maps`, plus `GET`/`POST /local/static-actors`, `PATCH`/`PUT /local/static-actors/{entity_id}`, and `DELETE /local/static-actors/{entity_id}` for bootstrap non-player runtime seeding/introspection/edit/removal, exist on `gamed`; `/local/runtime-config` now reports the active local channel and visibility-policy selection, `/local/visibility` now also reports `visible_static_actors` per connected player under the active topology/AOI policy, `/local/static-actors` create/update payloads can now also carry optional paired `interaction_kind` / `interaction_ref` metadata, `/local/maps` now reports static actors alongside connected players in each effective-map snapshot, newly seeded static actors now immediately enqueue their visibility burst to already-visible online players, operator-driven static-actor deletes now immediately enqueue `CHARACTER_DEL` to those same already-visible sessions, PATCH/PUT updates now refresh retained viewers with delete-plus-rebootstrap and also emit delete/add visibility deltas when the actor crosses map/AOI boundaries, and the structured relocate-preview/transfer responses now include full before/after map-occupancy snapshots plus explicit static-actor visibility diffs beside the delta counts; broader admin/auth tooling does not. |
 
 ### Character systems and gameplay
 
@@ -261,6 +261,7 @@ Legend:
 - `spec/protocol/transfer-rebootstrap-burst.md`
 - `spec/protocol/runtime-reconnect-cleanup.md`
 - `spec/protocol/non-player-entity-bootstrap.md`
+- `spec/protocol/static-actor-interaction-bootstrap.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -307,7 +308,12 @@ Both binaries expose an ops server with:
 - `GET /local/visibility`
   - loopback clients only
   - returns a JSON snapshot of currently connected bootstrap characters plus the peers each one can currently see under the shared-world bootstrap rules
-  - each entry exposes the same effective runtime location fields plus a `visible_peers` array
+  - each entry exposes the same effective runtime location fields plus `visible_peers` and `visible_static_actors`
+- `GET` / `POST /local/static-actors` and `PATCH` / `PUT` / `DELETE /local/static-actors/{entity_id}`
+  - loopback clients only
+  - create/update bodies use JSON fields `name`, `map_index`, `x`, `y`, `race_num`
+  - create/update may also carry optional paired `interaction_kind` and `interaction_ref`
+  - if one interaction field is present, the other must also be present
 - `GET /local/maps`
   - loopback clients only
   - returns a JSON snapshot of effective `MapIndex` occupancy in the current bootstrap runtime

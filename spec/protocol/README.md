@@ -38,6 +38,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `transfer-rebootstrap-burst.md` — first owned self-session rebootstrap burst for bootstrap map transfer on the game socket
 - `runtime-reconnect-cleanup.md` — first owned close/disconnect/reconnect cleanup contract for bootstrap shared-world runtime ownership
 - `non-player-entity-bootstrap.md` — first owned non-player runtime contract for identity and map presence before packet/content behavior exists
+- `static-actor-interaction-bootstrap.md` — first interaction-ready metadata seam for bootstrap static actors and the next self-only info/talk vertical to implement
 - `exact-position-bootstrap-transfer-trigger.md` — first gameplay-side exact-position trigger that can invoke the bootstrap transfer commit path from `MOVE` / `SYNC_POSITION`
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`

@@ -65,7 +65,14 @@ func (d *NonPlayerDirectory) StaticActors() []StaticEntity {
 }
 
 func validStaticEntity(actor StaticEntity) bool {
-	return actor.Entity.ID != 0 && actor.Entity.Kind == EntityKindStaticActor && actor.Position.Valid()
+	return actor.Entity.ID != 0 && actor.Entity.Kind == EntityKindStaticActor && actor.Position.Valid() && ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef)
+}
+
+func ValidStaticActorInteractionMetadata(kind string, ref string) bool {
+	if kind == "" && ref == "" {
+		return true
+	}
+	return kind != "" && ref != ""
 }
 
 func sortStaticEntities(actors []StaticEntity) {

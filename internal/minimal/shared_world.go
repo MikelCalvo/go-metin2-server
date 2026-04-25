@@ -539,15 +539,15 @@ func (r *sharedWorldRegistry) NextStaticActorEntityID() uint64 {
 }
 
 func (r *sharedWorldRegistry) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(0, name, mapIndex, x, y, raceNum)
+	return r.registerStaticActor(0, name, mapIndex, x, y, raceNum, "", "")
 }
 
-func (r *sharedWorldRegistry) RegisterStaticActorWithEntityID(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum)
+func (r *sharedWorldRegistry) RegisterStaticActorWithInteraction(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
+	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef)
 }
 
-func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
-	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 {
+func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
+	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) {
 		return StaticActorSnapshot{}, false
 	}
 	position := worldruntime.NewPosition(mapIndex, x, y)
@@ -563,9 +563,11 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 		ok         bool
 	)
 	candidate := worldruntime.StaticEntity{
-		Entity:   worldruntime.Entity{ID: entityID, Name: name},
-		Position: position,
-		RaceNum:  raceNum,
+		Entity:          worldruntime.Entity{ID: entityID, Name: name},
+		Position:        position,
+		RaceNum:         raceNum,
+		InteractionKind: interactionKind,
+		InteractionRef:  interactionRef,
 	}
 	if entityID == 0 {
 		registered, ok = r.entities.RegisterStaticActor(candidate)
@@ -585,7 +587,15 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 }
 
 func (r *sharedWorldRegistry) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
-	if r == nil || r.entities == nil || entityID == 0 || name == "" || mapIndex == 0 || raceNum == 0 {
+	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "")
+}
+
+func (r *sharedWorldRegistry) UpdateStaticActorWithInteraction(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
+	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef)
+}
+
+func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) {
 		return StaticActorSnapshot{}, false
 	}
 	position := worldruntime.NewPosition(mapIndex, x, y)
@@ -601,9 +611,11 @@ func (r *sharedWorldRegistry) UpdateStaticActor(entityID uint64, name string, ma
 		return StaticActorSnapshot{}, false
 	}
 	targetActor := worldruntime.StaticEntity{
-		Entity:   worldruntime.Entity{ID: entityID, Name: name},
-		Position: position,
-		RaceNum:  raceNum,
+		Entity:          worldruntime.Entity{ID: entityID, Name: name},
+		Position:        position,
+		RaceNum:         raceNum,
+		InteractionKind: interactionKind,
+		InteractionRef:  interactionRef,
 	}
 	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(previous, targetActor)
 	actor, ok := r.entities.UpdateStaticActor(targetActor)
@@ -855,12 +867,14 @@ func connectedCharacterSnapshot(topology worldruntime.BootstrapTopology, charact
 
 func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldruntime.StaticEntity) StaticActorSnapshot {
 	return StaticActorSnapshot{
-		EntityID: actor.Entity.ID,
-		Name:     actor.Entity.Name,
-		MapIndex: topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
-		X:        actor.Position.X,
-		Y:        actor.Position.Y,
-		RaceNum:  actor.RaceNum,
+		EntityID:        actor.Entity.ID,
+		Name:            actor.Entity.Name,
+		MapIndex:        topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
+		X:               actor.Position.X,
+		Y:               actor.Position.Y,
+		RaceNum:         actor.RaceNum,
+		InteractionKind: actor.InteractionKind,
+		InteractionRef:  actor.InteractionRef,
 	}
 }
 

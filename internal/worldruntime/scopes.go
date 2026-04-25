@@ -43,12 +43,14 @@ type CharacterVisibilitySnapshot struct {
 }
 
 type StaticActorSnapshot struct {
-	EntityID uint64 `json:"entity_id"`
-	Name     string `json:"name"`
-	MapIndex uint32 `json:"map_index"`
-	X        int32  `json:"x"`
-	Y        int32  `json:"y"`
-	RaceNum  uint32 `json:"race_num"`
+	EntityID        uint64 `json:"entity_id"`
+	Name            string `json:"name"`
+	MapIndex        uint32 `json:"map_index"`
+	X               int32  `json:"x"`
+	Y               int32  `json:"y"`
+	RaceNum         uint32 `json:"race_num"`
+	InteractionKind string `json:"interaction_kind,omitempty"`
+	InteractionRef  string `json:"interaction_ref,omitempty"`
 }
 
 type MapOccupancySnapshot struct {
@@ -303,12 +305,14 @@ func connectedCharacterSnapshot(topology BootstrapTopology, character loginticke
 
 func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticActorSnapshot {
 	return StaticActorSnapshot{
-		EntityID: actor.Entity.ID,
-		Name:     actor.Entity.Name,
-		MapIndex: topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
-		X:        actor.Position.X,
-		Y:        actor.Position.Y,
-		RaceNum:  actor.RaceNum,
+		EntityID:        actor.Entity.ID,
+		Name:            actor.Entity.Name,
+		MapIndex:        topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
+		X:               actor.Position.X,
+		Y:               actor.Position.Y,
+		RaceNum:         actor.RaceNum,
+		InteractionKind: actor.InteractionKind,
+		InteractionRef:  actor.InteractionRef,
 	}
 }
 

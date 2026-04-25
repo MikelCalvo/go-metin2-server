@@ -19,11 +19,13 @@ type localRelocationRequest struct {
 }
 
 type localStaticActorRequest struct {
-	Name     string `json:"name"`
-	MapIndex uint32 `json:"map_index"`
-	X        int32  `json:"x"`
-	Y        int32  `json:"y"`
-	RaceNum  uint32 `json:"race_num"`
+	Name            string `json:"name"`
+	MapIndex        uint32 `json:"map_index"`
+	X               int32  `json:"x"`
+	Y               int32  `json:"y"`
+	RaceNum         uint32 `json:"race_num"`
+	InteractionKind string `json:"interaction_kind"`
+	InteractionRef  string `json:"interaction_ref"`
 }
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -64,7 +66,7 @@ func RegisterLocalRuntimeConfigEndpoint(mux *http.ServeMux, runtimeConfig func()
 	return mux
 }
 
-func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() any, registerStaticActor func(string, uint32, int32, int32, uint32) (any, bool)) *http.ServeMux {
+func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() any, registerStaticActor func(string, uint32, int32, int32, uint32, string, string) (any, bool)) *http.ServeMux {
 	if mux == nil || (staticActors == nil && registerStaticActor == nil) {
 		return mux
 	}
@@ -98,7 +100,7 @@ func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() a
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			actor, ok := registerStaticActor(request.Name, request.MapIndex, request.X, request.Y, request.RaceNum)
+			actor, ok := registerStaticActor(request.Name, request.MapIndex, request.X, request.Y, request.RaceNum, request.InteractionKind, request.InteractionRef)
 			if !ok {
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -142,7 +144,7 @@ func RegisterLocalStaticActorDeleteEndpoint(mux *http.ServeMux, removeStaticActo
 	return mux
 }
 
-func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActor func(uint64, string, uint32, int32, int32, uint32) (any, bool)) *http.ServeMux {
+func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActor func(uint64, string, uint32, int32, int32, uint32, string, string) (any, bool)) *http.ServeMux {
 	if mux == nil || updateStaticActor == nil {
 		return mux
 	}
@@ -162,7 +164,7 @@ func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActo
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		actor, ok := updateStaticActor(entityID, request.Name, request.MapIndex, request.X, request.Y, request.RaceNum)
+		actor, ok := updateStaticActor(entityID, request.Name, request.MapIndex, request.X, request.Y, request.RaceNum, request.InteractionKind, request.InteractionRef)
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -384,7 +386,12 @@ func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bo
 		return localStaticActorRequest{}, false
 	}
 	request.Name = strings.TrimSpace(request.Name)
+	request.InteractionKind = strings.TrimSpace(request.InteractionKind)
+	request.InteractionRef = strings.TrimSpace(request.InteractionRef)
 	if request.Name == "" || request.MapIndex == 0 || request.RaceNum == 0 {
+		return localStaticActorRequest{}, false
+	}
+	if (request.InteractionKind == "") != (request.InteractionRef == "") {
 		return localStaticActorRequest{}, false
 	}
 	return request, true

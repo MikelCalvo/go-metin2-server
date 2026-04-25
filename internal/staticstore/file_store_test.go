@@ -12,8 +12,8 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)
 	want := Snapshot{StaticActors: []StaticActor{
-		{EntityID: 2, Name: "Alchemist", MapIndex: 21, X: 52070, Y: 166600, RaceNum: 20001},
-		{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355},
+		{EntityID: 2, Name: "Alchemist", MapIndex: 21, X: 52070, Y: 166600, RaceNum: 20001, InteractionKind: "info", InteractionRef: "lore:alchemist"},
+		{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk", InteractionRef: "npc:village_guard"},
 	}}
 
 	if err := store.Save(want); err != nil {
@@ -87,5 +87,9 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	invalid := Snapshot{StaticActors: []StaticActor{{EntityID: 7, Name: "", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355}}}
 	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for invalid actor, got %v", err)
+	}
+	invalidInteraction := Snapshot{StaticActors: []StaticActor{{EntityID: 8, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk"}}}
+	if err := store.Save(invalidInteraction); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for partial interaction metadata, got %v", err)
 	}
 }

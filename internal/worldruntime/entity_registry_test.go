@@ -176,6 +176,36 @@ func TestEntityRegistryRegistersAndLooksUpStaticActors(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryStaticActorsPreserveInteractionMetadata(t *testing.T) {
+	registry := NewEntityRegistry()
+	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, InteractionKind: "talk", InteractionRef: "npc:village_guard"})
+	if !ok {
+		t.Fatal("expected static actor registration with interaction metadata to succeed")
+	}
+	lookup, ok := registry.StaticActor(registered.Entity.ID)
+	if !ok {
+		t.Fatal("expected static actor lookup to succeed")
+	}
+	if lookup.InteractionKind != "talk" || lookup.InteractionRef != "npc:village_guard" {
+		t.Fatalf("expected interaction metadata to round-trip through registry lookup, got %+v", lookup)
+	}
+
+	updated := lookup
+	updated.InteractionKind = "info"
+	updated.InteractionRef = "lore:village_guard"
+	result, ok := registry.UpdateStaticActor(updated)
+	if !ok {
+		t.Fatal("expected static actor update with interaction metadata to succeed")
+	}
+	if result.InteractionKind != "info" || result.InteractionRef != "lore:village_guard" {
+		t.Fatalf("expected updated interaction metadata in result, got %+v", result)
+	}
+	actors := registry.AllStaticActors()
+	if len(actors) != 1 || actors[0].InteractionKind != "info" || actors[0].InteractionRef != "lore:village_guard" {
+		t.Fatalf("expected interaction metadata in static actor snapshot, got %+v", actors)
+	}
+}
+
 func TestEntityRegistryReturnsDeterministicSortedStaticActors(t *testing.T) {
 	registry := NewEntityRegistry()
 	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
