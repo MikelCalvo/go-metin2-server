@@ -30,6 +30,7 @@ Current scope of the project:
 - A first owned client-originated bootstrap static-actor interaction ingress: `GAME` sessions can now send `INTERACT (0x0501)` targeting a visible static actor by `vid`, with deterministic codec coverage and dedicated `internal/game` dispatch hooks ready for the next `info` / `talk` runtime slices without yet claiming the response behavior.
 - `internal/worldruntime` can now also resolve bootstrap static actors by that client-visible `vid` under the active topology/AOI rules, so later interaction slices can fail closed on invisible or unknown targets without inventing a second target-lookup contract.
 - `internal/minimal/shared_world` now owns the first validated static-actor interaction-attempt seam, distinguishing unknown subject, invisible target, and visible-but-non-interactable actors before later `info` / `talk` content resolution lands.
+- A deterministic file-backed interaction-definition store now exists in `internal/interactionstore` for minimal `info` / `talk` content keyed by stable `kind + ref`, ready for later boot/runtime wiring.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation, now including full before/after map-occupancy snapshots and explicit static-actor visibility diffs alongside the delta counts, and composing that structured preview through `internal/worldruntime/scopes.go`.
@@ -186,6 +187,7 @@ Legend:
 | Login tickets | [x] | Working file-backed ticket flow between `authd` and `gamed`. |
 | Bootstrap account snapshots | [~] | File-backed account/character persistence exists, but it is not compatibility-grade yet. |
 | Bootstrap static-actor snapshots | [x] | A deterministic file-backed snapshot store now exists under `internal/staticstore`, and `gamed` now loads it at boot and rewrites it after successful static-actor create/update/delete mutations. |
+| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for minimal `info` / `talk` content keyed by `kind + ref`, but runtime/boot wiring is still ahead. |
 | Database schema / migrations | [ ] | No real DB-backed persistence layer or live migrations yet. |
 | Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection/map-occupancy/dry-run/transfer/static-actor seed-remove endpoints exist; metrics/logging/admin depth still needs work. |
 | CI / public validation | [x] | GitHub Actions baseline checks formatting, tests, vet, daemon builds, and runtime/debug image builds. |
@@ -217,6 +219,7 @@ Legend:
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/staticstore` — deterministic file-backed bootstrap static-actor snapshots, ready for later boot/runtime wiring
+- `internal/interactionstore` — deterministic file-backed minimal `info` / `talk` interaction definitions keyed by `kind + ref`, ready for later boot/runtime wiring
 - `internal/ops` — health and pprof endpoints
 - `internal/service` — shared service bootstrap / shutdown helpers and legacy session runtime hooks
 - `docs/` — engineering and clean-room documentation
