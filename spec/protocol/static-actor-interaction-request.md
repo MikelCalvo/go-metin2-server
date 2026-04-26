@@ -62,9 +62,10 @@ At this stage the repository owns a narrow but real first response vertical:
 - delete requests now fail closed while a bootstrap static actor still references the targeted definition
 - when that definition resolves to `interaction_kind = "info"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored definition text
 - when that definition resolves to `interaction_kind = "talk"`, the interacting player now receives one self-only chat-backed delivery using a deterministic speaker-prefixed multi-line payload
+- known bootstrap interaction failures now also resolve to one deterministic self-only `GC_CHAT` delivery instead of silently disappearing on the socket
 - the next frozen NPC gameplay families on top of this same ingress are now service-style `warp` and `shop_preview`
 - malformed payloads are rejected at the codec/flow boundary
-- other unsupported interaction kinds may still resolve to no outgoing frames yet
+- future interaction result paths outside the currently known bootstrap rejection reasons may still resolve to no outgoing frames yet
 
 ## Loopback authoring surface
 
@@ -92,17 +93,17 @@ That keeps the request aligned with the already-owned static-actor visibility bo
 
 ## Failure semantics
 
-The current owned failure boundary is now explicit and still fail-closed:
+The current owned failure boundary is now explicit and split in two layers:
 - wrong phase -> existing `GAME` flow rejection rules apply
 - unexpected header at the codec -> rejected
 - malformed payload size -> rejected
-- once the request is decoded, the bootstrap runtime can now fail closed as:
+- once the request is decoded, the bootstrap runtime can now reject resolution as:
   - `subject_not_found`
   - `target_not_visible`
   - `target_has_no_interaction`
   - `interaction_definition_not_found`
   - `unsupported_interaction_kind`
-- failed interaction resolution currently produces no outgoing frames
+- those known runtime rejection reasons now return exactly one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and a deterministic bootstrap message
 - accepted `info` interaction currently produces exactly one self-only `GC_CHAT` delivery with `CHAT_TYPE_INFO`
 - accepted `talk` interaction currently produces exactly one self-only chat-backed delivery whose payload is speaker-prefixed and multi-line
 

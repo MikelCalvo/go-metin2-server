@@ -977,7 +977,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 						return gameflow.InteractionResult{Accepted: false}
 					}
 					resolution := runtime.resolveStaticActorInteraction(sharedWorldID, packet.TargetVID)
-					if !resolution.Accepted || resolution.Delivery == nil {
+					if resolution.Delivery == nil {
 						return gameflow.InteractionResult{Accepted: false}
 					}
 					return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
@@ -1968,29 +1968,59 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 	resolution := staticActorInteractionResolution{TargetVID: targetVID}
 	if r == nil || r.sharedWorld == nil {
 		resolution.Failure = StaticActorInteractionFailureSubjectNotFound
+		resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
 		return resolution
 	}
 	attempt := r.sharedWorld.AttemptStaticActorInteraction(subjectID, targetVID)
 	resolution.Actor = attempt.Actor
 	if !attempt.Accepted {
 		resolution.Failure = attempt.Failure
+		resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
 		return resolution
 	}
 	definition, ok := r.ResolveInteractionDefinition(attempt.Actor.InteractionKind, attempt.Actor.InteractionRef)
 	if !ok {
 		resolution.Failure = staticActorInteractionFailureDefinitionNotFound
+		resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
 		return resolution
 	}
 	resolution.Definition = definition
 	preview, ok := interactionDefinitionPreview(attempt.Actor.Name, definition)
 	if !ok {
 		resolution.Failure = staticActorInteractionFailureUnsupportedKind
+		resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
 		return resolution
 	}
 	delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: preview}
 	resolution.Accepted = true
 	resolution.Delivery = &delivery
 	return resolution
+}
+
+func staticActorInteractionFailureDelivery(failure string) *chatproto.ChatDeliveryPacket {
+	message, ok := staticActorInteractionFailureMessage(failure)
+	if !ok {
+		return nil
+	}
+	delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message}
+	return &delivery
+}
+
+func staticActorInteractionFailureMessage(failure string) (string, bool) {
+	switch failure {
+	case StaticActorInteractionFailureSubjectNotFound:
+		return "Interaction unavailable right now.", true
+	case StaticActorInteractionFailureTargetNotVisible:
+		return "You cannot interact with that target right now.", true
+	case StaticActorInteractionFailureTargetHasNoInteraction:
+		return "Nothing happens.", true
+	case staticActorInteractionFailureDefinitionNotFound:
+		return "Interaction content is missing.", true
+	case staticActorInteractionFailureUnsupportedKind:
+		return "Interaction not supported yet.", true
+	default:
+		return "", false
+	}
 }
 
 func interactionDefinitionPreview(actorName string, definition InteractionDefinition) (string, bool) {

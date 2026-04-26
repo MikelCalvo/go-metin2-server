@@ -5123,8 +5123,11 @@ func TestGameRuntimeResolveStaticActorInfoInteractionRejectsMissingDefinition(t 
 	if resolution.Failure != staticActorInteractionFailureDefinitionNotFound {
 		t.Fatalf("expected dangling-definition failure %q, got %+v", staticActorInteractionFailureDefinitionNotFound, resolution)
 	}
-	if resolution.Delivery != nil {
-		t.Fatalf("expected dangling-definition info interaction to produce no chat delivery, got %+v", resolution)
+	if resolution.Delivery == nil {
+		t.Fatalf("expected dangling-definition info interaction to return a self chat delivery, got %+v", resolution)
+	}
+	if resolution.Delivery.Type != chatproto.ChatTypeInfo || resolution.Delivery.VID != 0 || resolution.Delivery.Empire != 0 || resolution.Delivery.Message != "Interaction content is missing." {
+		t.Fatalf("unexpected dangling-definition interaction delivery: %+v", resolution.Delivery)
 	}
 }
 
@@ -5236,6 +5239,155 @@ func TestGameSessionFlowStaticActorTalkInteractionReturnsSelfOnlyChatDelivery(t 
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for self-only talk interaction, got %d", len(queued))
+	}
+}
+
+func TestGameRuntimeResolveStaticActorFailureInteractionReturnsSelfOnlyChatDelivery(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	blacksmith, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1200, 2200, 20301)
+	if !ok {
+		t.Fatal("expected non-interactable static actor registration to succeed")
+	}
+	farActor, ok := runtime.RegisterStaticActorWithInteraction("FarAlchemist", bootstrapMapIndex+1, 1200, 2200, 20300, interactionstore.KindInfo, "lore:alchemist")
+	if !ok {
+		t.Fatal("expected invisible interactable static actor registration to succeed")
+	}
+	brokenActor, ok := runtime.sharedWorld.RegisterStaticActorWithInteraction(0, "BrokenAlchemist", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindInfo, "lore:missing")
+	if !ok {
+		t.Fatal("expected direct shared-world registration with dangling ref to succeed for fail-closed runtime test")
+	}
+	unsupportedActor, ok := runtime.sharedWorld.RegisterStaticActorWithInteraction(0, "MysticWarp", bootstrapMapIndex, 1200, 2200, 20300, "warp", "npc:mystic")
+	if !ok {
+		t.Fatal("expected direct shared-world registration with unsupported kind to succeed for fail-closed runtime test")
+	}
+	runtime.interactionDefinitionMu.Lock()
+	runtime.interactionDefinitions[interactionDefinitionKey("warp", "npc:mystic")] = InteractionDefinition{Kind: "warp", Ref: "npc:mystic", Text: "teleport"}
+	runtime.interactionDefinitionMu.Unlock()
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	subject, ok := runtime.sharedWorld.entities.PlayerByName(peer.Name)
+	if !ok {
+		t.Fatalf("expected live shared-world entity for %q after enter", peer.Name)
+	}
+
+	tests := []struct {
+		name        string
+		subjectID   uint64
+		targetVID   uint32
+		wantFailure string
+		wantMessage string
+	}{
+		{name: "subject not found", subjectID: 999, targetVID: uint32(blacksmith.EntityID), wantFailure: StaticActorInteractionFailureSubjectNotFound, wantMessage: "Interaction unavailable right now."},
+		{name: "target not visible", subjectID: subject.Entity.ID, targetVID: uint32(farActor.EntityID), wantFailure: StaticActorInteractionFailureTargetNotVisible, wantMessage: "You cannot interact with that target right now."},
+		{name: "target has no interaction", subjectID: subject.Entity.ID, targetVID: uint32(blacksmith.EntityID), wantFailure: StaticActorInteractionFailureTargetHasNoInteraction, wantMessage: "Nothing happens."},
+		{name: "interaction definition not found", subjectID: subject.Entity.ID, targetVID: uint32(brokenActor.EntityID), wantFailure: staticActorInteractionFailureDefinitionNotFound, wantMessage: "Interaction content is missing."},
+		{name: "unsupported interaction kind", subjectID: subject.Entity.ID, targetVID: uint32(unsupportedActor.EntityID), wantFailure: staticActorInteractionFailureUnsupportedKind, wantMessage: "Interaction not supported yet."},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resolution := runtime.resolveStaticActorInteraction(tc.subjectID, tc.targetVID)
+			if resolution.Accepted {
+				t.Fatalf("expected failure interaction resolution to remain rejected, got %+v", resolution)
+			}
+			if resolution.Failure != tc.wantFailure {
+				t.Fatalf("expected failure %q, got %+v", tc.wantFailure, resolution)
+			}
+			if resolution.Delivery == nil {
+				t.Fatalf("expected failure interaction resolution to return a self chat delivery, got %+v", resolution)
+			}
+			if resolution.Delivery.Type != chatproto.ChatTypeInfo || resolution.Delivery.VID != 0 || resolution.Delivery.Empire != 0 || resolution.Delivery.Message != tc.wantMessage {
+				t.Fatalf("unexpected failure interaction delivery for %q: %+v", tc.name, resolution.Delivery)
+			}
+		})
+	}
+}
+
+func TestGameSessionFlowStaticActorFailedInteractionReturnsSelfOnlyChatDelivery(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, nil)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("Blacksmith", bootstrapMapIndex, 1200, 2200, 20301)
+	if !ok {
+		t.Fatal("expected non-interactable static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible non-interactable static actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected failed interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only failed interaction frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode failed interaction chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Nothing happens." {
+		t.Fatalf("unexpected failed interaction chat delivery: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for failed self-only interaction, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorMissingDefinitionFailureReturnsSelfOnlyChatDelivery(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, nil)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithInteraction(0, "BrokenAlchemist", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindInfo, "lore:missing")
+	if !ok {
+		t.Fatal("expected direct shared-world registration with dangling ref to succeed for failed session-flow interaction test")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible interactable static actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected missing-definition interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only missing-definition interaction frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode missing-definition interaction chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Interaction content is missing." {
+		t.Fatalf("unexpected missing-definition interaction chat delivery: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for missing-definition self-only interaction, got %d", len(queued))
 	}
 }
 
