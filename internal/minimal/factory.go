@@ -20,6 +20,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/authboot"
 	"github.com/MikelCalvo/go-metin2-server/internal/boot"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
@@ -65,6 +66,7 @@ var (
 	ErrInteractionDefinitionExists       = errors.New("interaction definition already exists")
 	ErrInteractionDefinitionNotFound     = errors.New("interaction definition not found")
 	ErrInteractionDefinitionReferenced   = errors.New("interaction definition referenced by static actor")
+	ErrContentBundleUnavailable          = errors.New("content bundle unavailable")
 )
 
 type loginKeyGenerator func() (uint32, error)
@@ -1782,6 +1784,39 @@ func (r *gameRuntime) InteractionDefinitions() []InteractionDefinition {
 	return sortedInteractionDefinitions(r.interactionDefinitions)
 }
 
+func (r *gameRuntime) ExportContentBundle() (contentbundle.Bundle, error) {
+	if r == nil || r.staticStore == nil || r.interactionStore == nil {
+		return contentbundle.Bundle{}, ErrContentBundleUnavailable
+	}
+	return contentbundle.FromSnapshots(buildStaticActorStoreSnapshot(r.StaticActors()), buildInteractionDefinitionSnapshot(r.interactionDefinitions))
+}
+
+func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentbundle.Bundle, error) {
+	if r == nil || r.staticStore == nil || r.interactionStore == nil {
+		return contentbundle.Bundle{}, ErrContentBundleUnavailable
+	}
+	normalized, err := contentbundle.Canonicalize(bundle)
+	if err != nil {
+		return contentbundle.Bundle{}, err
+	}
+	previousBundle, err := r.ExportContentBundle()
+	if err != nil {
+		return contentbundle.Bundle{}, err
+	}
+	if err := r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: normalized.InteractionDefinitions}); err != nil {
+		return contentbundle.Bundle{}, err
+	}
+	if err := r.replaceStaticActorsFromBundle(normalized); err != nil {
+		rollbackErr := r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions})
+		rollbackErr = errors.Join(rollbackErr, r.replaceStaticActorsFromBundle(previousBundle))
+		if rollbackErr != nil {
+			return contentbundle.Bundle{}, errors.Join(err, rollbackErr)
+		}
+		return contentbundle.Bundle{}, err
+	}
+	return normalized, nil
+}
+
 func (r *gameRuntime) CreateInteractionDefinition(kind string, ref string, text string) (InteractionDefinition, error) {
 	if r == nil || r.interactionStore == nil {
 		return InteractionDefinition{}, ErrInteractionDefinitionsUnavailable
@@ -1870,6 +1905,37 @@ func (r *gameRuntime) RemoveInteractionDefinition(kind string, ref string) (Inte
 
 func buildInteractionDefinitionSnapshot(definitions map[string]interactionstore.Definition) interactionstore.Snapshot {
 	return interactionstore.Snapshot{Definitions: sortedInteractionDefinitions(definitions)}
+}
+
+func (r *gameRuntime) replaceInteractionDefinitions(snapshot interactionstore.Snapshot) error {
+	if r == nil || r.interactionStore == nil {
+		return ErrInteractionDefinitionsUnavailable
+	}
+	if err := r.interactionStore.Save(snapshot); err != nil {
+		return err
+	}
+	definitions := buildInteractionDefinitionIndex(snapshot)
+	r.interactionDefinitionMu.Lock()
+	r.interactionDefinitions = definitions
+	r.interactionDefinitionMu.Unlock()
+	return nil
+}
+
+func (r *gameRuntime) replaceStaticActorsFromBundle(bundle contentbundle.Bundle) error {
+	if r == nil {
+		return ErrContentBundleUnavailable
+	}
+	for _, actor := range r.StaticActors() {
+		if _, ok := r.RemoveStaticActor(actor.EntityID); !ok {
+			return ErrContentBundleUnavailable
+		}
+	}
+	for _, actor := range bundle.StaticActors {
+		if _, ok := r.RegisterStaticActorWithInteraction(actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef); !ok {
+			return ErrContentBundleUnavailable
+		}
+	}
+	return nil
 }
 
 func sortedInteractionDefinitions(definitions map[string]interactionstore.Definition) []InteractionDefinition {

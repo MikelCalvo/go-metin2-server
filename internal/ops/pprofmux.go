@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 )
 
 type localRelocationRequest struct {
@@ -300,6 +302,52 @@ func RegisterLocalInteractionVisibilityEndpoint(mux *http.ServeMux, interactionV
 	return mux
 }
 
+func RegisterLocalContentBundleEndpoint(mux *http.ServeMux, exportContentBundle func() (any, int), importContentBundle func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || (exportContentBundle == nil && importContentBundle == nil) {
+		return mux
+	}
+
+	mux.HandleFunc("/local/content-bundle", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			if exportContentBundle == nil {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			result, status := exportContentBundle()
+			writeLocalJSONMutationResponse(w, result, status)
+		case http.MethodPost:
+			if importContentBundle == nil {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			bundle, ok := decodeLocalContentBundleRequest(r)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			normalized, err := contentbundle.Canonicalize(bundle)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			result, status := importContentBundle(normalized)
+			writeLocalJSONMutationResponse(w, result, status)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	return mux
+}
+
 func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, previewRelocation func(string, uint32, int32, int32) (any, bool), transferCharacter func(string, uint32, int32, int32) (any, bool), connectedCharacters func() any, characterVisibility func() any, mapOccupancy func() any) *http.ServeMux {
 	mux := http.NewServeMux()
 
@@ -558,6 +606,20 @@ func decodeLocalInteractionDefinitionIdentity(r *http.Request) (string, string, 
 		return "", "", false
 	}
 	return kind, ref, true
+}
+
+func decodeLocalContentBundleRequest(r *http.Request) (contentbundle.Bundle, bool) {
+	var bundle contentbundle.Bundle
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&bundle); err != nil {
+		return contentbundle.Bundle{}, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return contentbundle.Bundle{}, false
+	}
+	return bundle, true
 }
 
 func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {

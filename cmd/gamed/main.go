@@ -12,6 +12,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/minimal"
 	"github.com/MikelCalvo/go-metin2-server/internal/ops"
@@ -144,6 +145,28 @@ func main() {
 			case errors.Is(err, minimal.ErrInteractionDefinitionReferenced):
 				return nil, http.StatusConflict
 			case errors.Is(err, interactionstore.ErrInvalidSnapshot):
+				return nil, http.StatusBadRequest
+			default:
+				return nil, http.StatusInternalServerError
+			}
+		},
+	)
+	opsHandler = ops.RegisterLocalContentBundleEndpoint(
+		opsHandler,
+		func() (any, int) {
+			bundle, err := gameRuntime.ExportContentBundle()
+			if err != nil {
+				return nil, http.StatusInternalServerError
+			}
+			return bundle, http.StatusOK
+		},
+		func(bundle contentbundle.Bundle) (any, int) {
+			imported, err := gameRuntime.ImportContentBundle(bundle)
+			if err == nil {
+				return imported, http.StatusOK
+			}
+			switch {
+			case errors.Is(err, contentbundle.ErrInvalidBundle):
 				return nil, http.StatusBadRequest
 			default:
 				return nil, http.StatusInternalServerError
