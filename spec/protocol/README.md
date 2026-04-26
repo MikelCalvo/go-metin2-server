@@ -40,6 +40,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `non-player-entity-bootstrap.md` — first owned non-player runtime contract for identity and map presence before packet/content behavior exists
 - `static-actor-interaction-bootstrap.md` — first interaction-ready metadata seam for bootstrap static actors and the next self-only info/talk vertical to implement
 - `static-actor-interaction-request.md` — first owned client-originated `GAME`-phase interaction request for a visible bootstrap static actor target by `VID`
+- `npc-service-interactions-bootstrap.md` — first frozen service-style NPC gameplay contract built on top of bootstrap static actors and the existing `INTERACT` ingress
 - `static-actor-interaction-authoring.md` — first loopback-only authoring, QA visibility, and deterministic bundle surface for bootstrap static actors plus interaction definitions
 - `exact-position-bootstrap-transfer-trigger.md` — first gameplay-side exact-position trigger that can invoke the bootstrap transfer commit path from `MOVE` / `SYNC_POSITION`
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`

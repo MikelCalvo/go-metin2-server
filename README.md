@@ -176,7 +176,7 @@ Legend:
 | Derived stats / combat formulas | [ ] | Not started. |
 | Combat loop | [ ] | No targeting, attacks, damage, or death loop yet. |
 | Respawn / death handling | [ ] | Not started. |
-| NPCs / shops | [ ] | Not started. |
+| NPCs / shops | [~] | Bootstrap static actors already support interaction metadata plus self-only `info` / `talk` responses; the next owned NPC gameplay contract is now frozen around service-style `warp` and read-only `shop_preview`, but real shop transactions, quest logic, and richer NPC UI are still not started. |
 | Mobs / AI / spawn groups | [ ] | Not started. |
 | Quest / script runtime | [ ] | Not started. |
 
@@ -237,6 +237,7 @@ Legend:
 - `docs/plans/2026-04-18-open-mt2-style-next-steps-roadmap.md`
 - `docs/plans/2026-04-21-world-runtime-and-character-state-next-twenty-five-slices.md`
 - `docs/plans/2026-04-24-runtime-aoi-and-static-actor-next-ten-slices.md`
+- `docs/plans/2026-04-26-npc-gameplay-next-ten-vertical-slices.md`
 - `spec/protocol/README.md`
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
@@ -269,6 +270,7 @@ Legend:
 - `spec/protocol/non-player-entity-bootstrap.md`
 - `spec/protocol/static-actor-interaction-bootstrap.md`
 - `spec/protocol/static-actor-interaction-request.md`
+- `spec/protocol/npc-service-interactions-bootstrap.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`

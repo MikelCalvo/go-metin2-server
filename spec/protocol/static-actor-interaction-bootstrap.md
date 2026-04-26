@@ -6,11 +6,12 @@ It sits on top of:
 - `non-player-entity-bootstrap.md`
 - `visible-world-bootstrap.md`
 - `character-update-bootstrap.md`
+- `npc-service-interactions-bootstrap.md`
 
 The goal is narrow:
 - let bootstrap static actors carry minimal interaction metadata in runtime state
 - expose and persist that metadata through the existing local operator surfaces
-- freeze the first interaction family to implement next without claiming that the interaction behavior already exists
+- freeze the owned interaction families carried by that metadata without claiming richer NPC gameplay is already complete
 
 ## Scope
 
@@ -60,9 +61,13 @@ At this stage, the repository owns metadata plus the first narrow self-only beha
 - visible static actors whose metadata resolves to `interaction_kind = "info"` now answer with a self-only informational chat-backed delivery
 - visible static actors whose metadata resolves to `interaction_kind = "talk"` now answer with a self-only speaker-prefixed multi-line chat-backed delivery
 
-## Owned interaction family
+## Owned interaction families
 
-The first owned interaction family stays intentionally narrow as a **self-only info/talk interaction**:
+The first owned interaction families stay intentionally narrow:
+- current implemented self-only `info` / `talk`
+- next frozen service-style `warp` / `shop_preview`
+
+The currently implemented family remains a **self-only info/talk interaction**:
 - the actor must already be visible to the player
 - the runtime resolves `interaction_kind` + `interaction_ref`
 - the response is self-facing only
@@ -74,12 +79,18 @@ Current owned meanings:
 - `interaction_kind = "talk"`
   - return a simple self-facing talk/dialog-style response carrying a deterministic speaker-prefixed multi-line payload
 
+Next frozen meanings:
+- `interaction_kind = "warp"`
+  - resolve a teleporter-style service interaction using the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime rather than a dedicated dialog or warp packet family
+- `interaction_kind = "shop_preview"`
+  - resolve a browse-only merchant-style preview with no item, price, or inventory mutation yet
+
 ## Explicit non-goals
 
 This slice does not yet freeze:
 - click packet handling
 - NPC dialog trees
-- shops or item purchase flows
+- shops or item purchase flows beyond read-only preview
 - quests, mission flags, or script runtimes
 - actor targeting/combat semantics
 - animation/emote/state-machine behavior
@@ -96,3 +107,4 @@ After this slice, the repository should be able to say:
 - loopback-only CRUD endpoints now author that catalog while preserving stable `kind + ref` identity on update and rejecting deletes for referenced definitions
 - static actors that point at missing interaction definitions are now rejected fail closed at boot and on runtime create/update
 - visible actors can now answer the interacting player with a tiny self-only `info` or `talk` interaction without redesigning the actor model first
+- the same metadata seam is now also explicitly frozen as the base for the next service-style NPC gameplay families (`warp` and `shop_preview`)

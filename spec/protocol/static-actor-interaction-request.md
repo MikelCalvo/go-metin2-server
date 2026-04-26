@@ -10,7 +10,7 @@ It sits on top of:
 The goal is intentionally narrow:
 - let a `GAME` session ask to interact with one currently visible bootstrap static actor
 - identify that target using the same client-visible `VID` already used in static-actor visibility bootstrap
-- route the request through the owned game-flow dispatch boundary before any real `info` / `talk` behavior exists
+- route the request through the owned game-flow dispatch boundary before richer NPC gameplay such as service interactions, dialog trees, or real shops exists
 
 ## Scope
 
@@ -19,11 +19,12 @@ This contract currently applies only to:
 - bootstrap static actors that were already made visible through the existing static-actor visibility contract
 - one target field: the actor's client-visible `VID`
 - the game-flow dispatch seam in `internal/game`
+- later service-style NPC behavior that still reuses this same request shape
 
 It does **not** yet claim:
-- any guaranteed response packet family
 - NPC dialog windows
-- shops, quests, combat, or pathing
+- branching dialogs, quests, combat, or pathing
+- real shop buy/sell flows
 - target selection persistence
 - click-to-move or range/path validation beyond existing visibility ownership
 
@@ -61,6 +62,7 @@ At this stage the repository owns a narrow but real first response vertical:
 - delete requests now fail closed while a bootstrap static actor still references the targeted definition
 - when that definition resolves to `interaction_kind = "info"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored definition text
 - when that definition resolves to `interaction_kind = "talk"`, the interacting player now receives one self-only chat-backed delivery using a deterministic speaker-prefixed multi-line payload
+- the next frozen NPC gameplay families on top of this same ingress are now service-style `warp` and `shop_preview`
 - malformed payloads are rejected at the codec/flow boundary
 - other unsupported interaction kinds may still resolve to no outgoing frames yet
 
@@ -74,10 +76,12 @@ The first owned operator surface for interaction content is loopback-only:
 - `DELETE /local/interactions/{kind}/{ref}`
 
 The current contract is intentionally narrow:
-- request/response bodies use `kind`, `ref`, `text`
+- request/response bodies currently use `kind`, `ref`, `text`
 - `PATCH` / `PUT` are full-identity upserts, not partial nested edits
 - the body `kind` + `ref` must match the path exactly on update
 - delete fails closed while a bootstrap static actor still references that definition
+
+Later slices may extend that authored payload shape for service-style NPC definitions without changing the `INTERACT` request packet itself.
 
 ## Target identity rule
 
@@ -113,4 +117,4 @@ After this slice, the repository should be able to say:
 - `internal/worldruntime` can resolve a visible bootstrap static actor by that `VID` under the active topology/AOI rules
 - `internal/minimal/shared_world` can now turn that subject/target pair into a structured validated interaction attempt before later content resolution exists
 - `gamed` can now resolve authored `info` and `talk` definitions behind visible static actors and answer the interacting player with one self-only chat-backed delivery carrying the authored text
-- the protocol surface is ready for the next slice to add loopback authoring and richer QA/runtime introspection without redesigning the ingress or target-lookup contract
+- the same ingress and target-lookup contract is now explicitly frozen as the base for the next service-style NPC families (`warp` and `shop_preview`) without inventing a new client request packet first
