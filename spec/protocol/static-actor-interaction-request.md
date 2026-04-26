@@ -17,6 +17,7 @@ The goal is intentionally narrow:
 This contract currently applies only to:
 - client -> server interaction requests on the main game socket while already in `GAME`
 - bootstrap static actors that were already made visible through the existing static-actor visibility contract
+- a current bootstrap distance gate that still requires the player to be near enough to that visible actor before the interaction can resolve
 - one target field: the actor's client-visible `VID`
 - the game-flow dispatch seam in `internal/game`
 - later service-style NPC behavior that still reuses this same request shape
@@ -26,7 +27,7 @@ It does **not** yet claim:
 - branching dialogs, quests, combat, or pathing
 - real shop buy/sell flows
 - target selection persistence
-- click-to-move or range/path validation beyond existing visibility ownership
+- click-to-move choreography or path validation beyond the current direct visibility-plus-distance gate
 
 ## Packet
 
@@ -51,10 +52,12 @@ At this stage the repository owns a narrow but real first response vertical:
 - the decoded request is dispatched to a dedicated interaction handler
 - `internal/worldruntime` can now resolve a bootstrap static actor by that client-visible `VID`
 - that runtime lookup is now also visibility-gated, so only actors that currently share visible world with the subject are eligible targets
+- the bootstrap runtime now also applies an explicit interaction distance gate after visibility lookup; the current owned limit is a fixed `300` world-unit radius
 - `internal/minimal/shared_world` now owns the first validated interaction-attempt seam, returning a structured result for the current subject/target pair before content resolution branches further
 - that validated runtime result now distinguishes at least:
   - `subject_not_found`
   - `target_not_visible`
+  - `target_out_of_range`
   - `target_has_no_interaction`
 - `gamed` now also resolves authored interaction definitions by `interaction_kind + interaction_ref`
 - loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` now author that deterministic definition catalog without hand-editing the backing JSON file
@@ -100,6 +103,7 @@ The current owned failure boundary is now explicit and split in two layers:
 - once the request is decoded, the bootstrap runtime can now reject resolution as:
   - `subject_not_found`
   - `target_not_visible`
+  - `target_out_of_range`
   - `target_has_no_interaction`
   - `interaction_definition_not_found`
   - `unsupported_interaction_kind`

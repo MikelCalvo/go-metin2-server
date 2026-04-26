@@ -37,8 +37,11 @@ type sharedWorldRegistry struct {
 const (
 	StaticActorInteractionFailureSubjectNotFound        = "subject_not_found"
 	StaticActorInteractionFailureTargetNotVisible       = "target_not_visible"
+	StaticActorInteractionFailureTargetOutOfRange       = "target_out_of_range"
 	StaticActorInteractionFailureTargetHasNoInteraction = "target_has_no_interaction"
 )
+
+const staticActorInteractionMaxDistance int32 = 300
 
 type StaticActorInteractionAttempt struct {
 	Accepted  bool
@@ -713,6 +716,10 @@ func (r *sharedWorldRegistry) AttemptStaticActorInteraction(subjectID uint64, ta
 		return attempt
 	}
 	attempt.Actor = staticActorSnapshot(r.topology, actor)
+	if !worldruntime.StaticActorWithinInteractionRange(subject, actor, staticActorInteractionMaxDistance) {
+		attempt.Failure = StaticActorInteractionFailureTargetOutOfRange
+		return attempt
+	}
 	if actor.InteractionKind == "" || actor.InteractionRef == "" {
 		attempt.Failure = StaticActorInteractionFailureTargetHasNoInteraction
 		return attempt

@@ -226,6 +226,33 @@ func TestScopesVisibleStaticActorByVIDRequiresCurrentVisibility(t *testing.T) {
 	}
 }
 
+func TestScopesVisibleStaticActorByVIDWithinInteractionRangeRequiresCurrentRange(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	subject := entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800)
+	registry.RegisterPlayer(subject)
+	nearActor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Blacksmith"}, Position: NewPosition(42, 1850, 2900), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected near static actor registration to succeed")
+	}
+	farActor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 3200, 4300), RaceNum: 20301})
+	if !ok {
+		t.Fatal("expected far static actor registration to succeed")
+	}
+
+	scopes := NewScopes(topology, registry)
+	lookup, ok := scopes.VisibleStaticActorByVIDWithinInteractionRange(subject, uint32(nearActor.Entity.ID), 300)
+	if !ok || lookup.Entity.ID != nearActor.Entity.ID {
+		t.Fatalf("expected near static actor to stay interactable within range, got actor=%+v ok=%v", lookup, ok)
+	}
+	if _, ok := scopes.VisibleStaticActorByVIDWithinInteractionRange(subject, uint32(farActor.Entity.ID), 300); ok {
+		t.Fatal("expected visible but far static actor to be rejected by interaction range gate")
+	}
+	if _, ok := scopes.VisibleStaticActorByVIDWithinInteractionRange(subject, 0, 300); ok {
+		t.Fatal("expected zero static actor VID range lookup to fail")
+	}
+}
+
 func TestScopesCharacterVisibilitySnapshotsIncludeVisibleStaticActors(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)

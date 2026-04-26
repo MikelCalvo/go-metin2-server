@@ -252,6 +252,25 @@ func (s Scopes) VisibleStaticActorByVID(subject loginticket.Character, vid uint3
 	return actor, true
 }
 
+func (s Scopes) VisibleStaticActorByVIDWithinInteractionRange(subject loginticket.Character, vid uint32, maxDistance int32) (StaticEntity, bool) {
+	actor, ok := s.VisibleStaticActorByVID(subject, vid)
+	if !ok || !StaticActorWithinInteractionRange(subject, actor, maxDistance) {
+		return StaticEntity{}, false
+	}
+	return actor, true
+}
+
+func StaticActorWithinInteractionRange(subject loginticket.Character, actor StaticEntity, maxDistance int32) bool {
+	if maxDistance <= 0 {
+		return false
+	}
+	dx := int64(subject.X) - int64(actor.Position.X)
+	dy := int64(subject.Y) - int64(actor.Position.Y)
+	distanceSquared := dx*dx + dy*dy
+	maxDistanceSquared := int64(maxDistance) * int64(maxDistance)
+	return distanceSquared <= maxDistanceSquared
+}
+
 func (s Scopes) VisibleTargetsForStaticActor(actor StaticEntity) []PlayerEntity {
 	return s.filterTargets(0, staticActorVisibilityCharacter(actor), s.Topology.SharesVisibleWorld)
 }

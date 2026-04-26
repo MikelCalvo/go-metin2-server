@@ -5010,6 +5010,31 @@ func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsInvisibleTarget(
 	}
 }
 
+func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsVisibleActorOutsideInteractionRange(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithInteraction(0, "VillageGuard", bootstrapMapIndex, 2600, 3600, 20300, "talk", "npc:village_guard")
+	if !ok {
+		t.Fatal("expected visible but far interactable static actor registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorInteraction(subjectID, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected out-of-range static actor interaction attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorInteractionFailureTargetOutOfRange {
+		t.Fatalf("expected out-of-range static actor failure %q, got %+v", StaticActorInteractionFailureTargetOutOfRange, attempt)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "VillageGuard" || attempt.Actor.InteractionKind != "talk" || attempt.Actor.InteractionRef != "npc:village_guard" {
+		t.Fatalf("expected out-of-range interaction attempt to preserve the resolved actor snapshot, got %+v", attempt)
+	}
+}
+
 func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsActorWithoutMetadata(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
@@ -5388,6 +5413,45 @@ func TestGameSessionFlowStaticActorMissingDefinitionFailureReturnsSelfOnlyChatDe
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for missing-definition self-only interaction, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorOutOfRangeInteractionReturnsSelfOnlyChatDelivery(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", bootstrapMapIndex, 2600, 3600, 20300, interactionstore.KindTalk, "npc:village_guard")
+	if !ok {
+		t.Fatal("expected visible but far interactable static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible far interactable static actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected out-of-range interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only out-of-range interaction frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode out-of-range interaction chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "You are too far away to interact with that target." {
+		t.Fatalf("unexpected out-of-range interaction chat delivery: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for out-of-range self-only interaction, got %d", len(queued))
 	}
 }
 

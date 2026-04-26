@@ -2012,6 +2012,8 @@ func staticActorInteractionFailureMessage(failure string) (string, bool) {
 		return "Interaction unavailable right now.", true
 	case StaticActorInteractionFailureTargetNotVisible:
 		return "You cannot interact with that target right now.", true
+	case StaticActorInteractionFailureTargetOutOfRange:
+		return "You are too far away to interact with that target.", true
 	case StaticActorInteractionFailureTargetHasNoInteraction:
 		return "Nothing happens.", true
 	case staticActorInteractionFailureDefinitionNotFound:
