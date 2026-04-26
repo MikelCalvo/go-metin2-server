@@ -20,6 +20,10 @@ This contract applies only to:
 - transfers that move the player from one effective `MapIndex` visibility scope to another
 - the current single-process bootstrap runtime on the same encrypted game socket
 
+Today that includes both:
+- gameplay-triggered map-transfer slices driven from `MOVE` / `SYNC_POSITION`
+- the first service-style NPC `warp` interaction resolved from a visible static actor through `INTERACT`
+
 It does not yet freeze a final warp/loading-screen UX, reconnect choreography, or inter-channel migration.
 
 ## Current owned self-session contract

@@ -27,8 +27,9 @@ This contract applies only to:
 - self-facing or transfer-triggered outcomes that reuse already-owned packet/runtime contracts
 - deterministic authored interaction definitions loaded and validated by `gamed`
 
-This document does **not** claim those next service interactions are already implemented.
-It freezes the exact behavior later slices should implement.
+This document now freezes the contract and also records the first landed service-style vertical:
+- `warp` is now implemented on top of the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime
+- `shop_preview` remains the next frozen follow-up family, not yet implemented
 
 ## Why service-style NPCs first
 
@@ -61,7 +62,7 @@ Frozen target behavior:
 - the runtime then reuses the existing gameplay transfer / self-session rebootstrap contract
 - no dialog state, option selection, or persistent conversation session is created
 
-This is the first intended **real NPC gameplay loop** because it reuses already-owned transfer behavior instead of requiring speculative new subsystems.
+This is now the first implemented **real NPC gameplay loop** because it reuses already-owned transfer behavior instead of requiring speculative new subsystems.
 
 ### 2. `shop_preview`
 A visible static actor can act as a merchant-style browse-only NPC.
@@ -89,7 +90,7 @@ No new client-originated packet family is frozen in this stage.
 
 The current owned response families stay intentionally conservative:
 - `info` and `talk` remain self-only chat-backed authored responses
-- `warp` should reuse the already-owned transfer / rebootstrap contract rather than inventing a separate NPC warp packet
+- `warp` now reuses the already-owned transfer / rebootstrap contract rather than inventing a separate NPC warp packet; if authored `text` is present, the interacting player first receives one self-only informational chat delivery and then the transfer rebootstrap frames
 - `shop_preview` should remain self-only and deterministic until a real shop transaction system exists
 
 ## Ordered implementation intent
@@ -116,9 +117,9 @@ This stage still does **not** freeze:
 
 ## Success definition
 
-After the later code slices implementing this contract land, the repository should be able to say:
+After the currently landed and later follow-up slices, the repository should be able to say:
 - bootstrap static actors already support self-only `info` / `talk`
 - the next owned NPC gameplay families are explicitly frozen as `warp` and `shop_preview`
-- `warp` is the first real NPC gameplay action and reuses the existing transfer / rebootstrap runtime
+- `warp` is the first real NPC gameplay action and already reuses the existing transfer / rebootstrap runtime through `INTERACT`
 - `shop_preview` is explicitly browse-only until inventory/currency/item mutation exists
 - the project still avoids speculative dialog-window, quest, and real shop semantics until the underlying systems exist

@@ -977,6 +977,24 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 						return gameflow.InteractionResult{Accepted: false}
 					}
 					resolution := runtime.resolveStaticActorInteraction(sharedWorldID, packet.TargetVID)
+					if !resolution.Accepted {
+						if resolution.Delivery == nil {
+							return gameflow.InteractionResult{Accepted: false}
+						}
+						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
+					}
+					if resolution.Definition.Kind == interactionstore.KindWarp {
+						_, transferFrames, ok := applySelectedCharacterTransfer(resolution.Definition.MapIndex, resolution.Definition.X, resolution.Definition.Y, true)
+						if !ok {
+							return gameflow.InteractionResult{Accepted: false}
+						}
+						frames := make([][]byte, 0, len(transferFrames)+1)
+						if resolution.Delivery != nil {
+							frames = append(frames, chatproto.EncodeChatDelivery(*resolution.Delivery))
+						}
+						frames = append(frames, transferFrames...)
+						return gameflow.InteractionResult{Accepted: true, Frames: frames}
+					}
 					if resolution.Delivery == nil {
 						return gameflow.InteractionResult{Accepted: false}
 					}
@@ -1987,6 +2005,15 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 		return resolution
 	}
 	resolution.Definition = definition
+	if definition.Kind == interactionstore.KindWarp {
+		resolution.Accepted = true
+		message := strings.TrimSpace(definition.Text)
+		if message != "" {
+			delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message}
+			resolution.Delivery = &delivery
+		}
+		return resolution
+	}
 	preview, ok := interactionDefinitionPreview(attempt.Actor.Name, definition)
 	if !ok {
 		resolution.Failure = staticActorInteractionFailureUnsupportedKind
