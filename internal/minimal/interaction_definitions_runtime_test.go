@@ -37,7 +37,7 @@ func TestGameRuntimeCreateInteractionDefinitionPersistsSnapshotAndResolvesDefini
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 
-	definition, err := runtime.CreateInteractionDefinition(interactionstore.KindInfo, "lore:alchemist", "The alchemist studies forgotten herbs.")
+	definition, err := runtime.CreateInteractionDefinition(interactionstore.Definition{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."})
 	if err != nil {
 		t.Fatalf("create interaction definition: %v", err)
 	}
@@ -58,6 +58,34 @@ func TestGameRuntimeCreateInteractionDefinitionPersistsSnapshotAndResolvesDefini
 	}
 }
 
+func TestGameRuntimeCreateWarpInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	definition, err := runtime.CreateInteractionDefinition(interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."})
+	if err != nil {
+		t.Fatalf("create warp interaction definition: %v", err)
+	}
+	if definition.Kind != interactionstore.KindWarp || definition.Ref != "npc:teleporter" || definition.MapIndex != 42 || definition.X != 1700 || definition.Y != 2800 || definition.Text != "Step through the gate." {
+		t.Fatalf("unexpected created warp interaction definition: %+v", definition)
+	}
+	resolved, ok := runtime.ResolveInteractionDefinition(interactionstore.KindWarp, "npc:teleporter")
+	if !ok || !reflect.DeepEqual(resolved, definition) {
+		t.Fatalf("expected created warp interaction definition to resolve, got definition=%+v ok=%v", resolved, ok)
+	}
+	persisted, err := interactionStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted interaction definitions: %v", err)
+	}
+	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."}}}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("unexpected persisted warp interaction definitions:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
 func TestGameRuntimeCreateInteractionDefinitionRejectsDuplicateDefinition(t *testing.T) {
 	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}})
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
@@ -65,7 +93,7 @@ func TestGameRuntimeCreateInteractionDefinitionRejectsDuplicateDefinition(t *tes
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 
-	if _, err := runtime.CreateInteractionDefinition(interactionstore.KindInfo, "lore:alchemist", "Duplicate"); !errors.Is(err, ErrInteractionDefinitionExists) {
+	if _, err := runtime.CreateInteractionDefinition(interactionstore.Definition{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "Duplicate"}); !errors.Is(err, ErrInteractionDefinitionExists) {
 		t.Fatalf("expected ErrInteractionDefinitionExists, got %v", err)
 	}
 }
@@ -77,7 +105,7 @@ func TestGameRuntimeUpsertInteractionDefinitionPersistsDefinitionText(t *testing
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 
-	definition, err := runtime.UpsertInteractionDefinition(interactionstore.KindTalk, "npc:village_guard", "Keep your blade sharp.")
+	definition, err := runtime.UpsertInteractionDefinition(interactionstore.Definition{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."})
 	if err != nil {
 		t.Fatalf("upsert interaction definition: %v", err)
 	}
@@ -95,6 +123,34 @@ func TestGameRuntimeUpsertInteractionDefinitionPersistsDefinitionText(t *testing
 	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}}}
 	if !reflect.DeepEqual(persisted, want) {
 		t.Fatalf("unexpected persisted interaction definitions after upsert:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
+func TestGameRuntimeUpsertWarpInteractionDefinitionPersistsPayload(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 1, X: 100, Y: 200, Text: "Old gate."}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	definition, err := runtime.UpsertInteractionDefinition(interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."})
+	if err != nil {
+		t.Fatalf("upsert warp interaction definition: %v", err)
+	}
+	if definition.Kind != interactionstore.KindWarp || definition.Ref != "npc:teleporter" || definition.MapIndex != 42 || definition.X != 1700 || definition.Y != 2800 || definition.Text != "Step through the gate." {
+		t.Fatalf("unexpected upserted warp interaction definition: %+v", definition)
+	}
+	resolved, ok := runtime.ResolveInteractionDefinition(interactionstore.KindWarp, "npc:teleporter")
+	if !ok || !reflect.DeepEqual(resolved, definition) {
+		t.Fatalf("expected upserted warp interaction definition to resolve, got definition=%+v ok=%v", resolved, ok)
+	}
+	persisted, err := interactionStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted interaction definitions: %v", err)
+	}
+	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."}}}
+	if !reflect.DeepEqual(persisted, want) {
+		t.Fatalf("unexpected persisted warp interaction definitions after upsert:\n got: %#v\nwant: %#v", persisted, want)
 	}
 }
 

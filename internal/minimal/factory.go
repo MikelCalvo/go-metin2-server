@@ -1817,11 +1817,12 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	return normalized, nil
 }
 
-func (r *gameRuntime) CreateInteractionDefinition(kind string, ref string, text string) (InteractionDefinition, error) {
+func (r *gameRuntime) CreateInteractionDefinition(definition InteractionDefinition) (InteractionDefinition, error) {
 	if r == nil || r.interactionStore == nil {
 		return InteractionDefinition{}, ErrInteractionDefinitionsUnavailable
 	}
-	definition := interactionstore.Definition{Kind: strings.TrimSpace(kind), Ref: strings.TrimSpace(ref), Text: text}
+	definition.Kind = strings.TrimSpace(definition.Kind)
+	definition.Ref = strings.TrimSpace(definition.Ref)
 	key := interactionDefinitionKey(definition.Kind, definition.Ref)
 
 	r.interactionDefinitionMu.Lock()
@@ -1841,11 +1842,12 @@ func (r *gameRuntime) CreateInteractionDefinition(kind string, ref string, text 
 	return definition, nil
 }
 
-func (r *gameRuntime) UpsertInteractionDefinition(kind string, ref string, text string) (InteractionDefinition, error) {
+func (r *gameRuntime) UpsertInteractionDefinition(definition InteractionDefinition) (InteractionDefinition, error) {
 	if r == nil || r.interactionStore == nil {
 		return InteractionDefinition{}, ErrInteractionDefinitionsUnavailable
 	}
-	definition := interactionstore.Definition{Kind: strings.TrimSpace(kind), Ref: strings.TrimSpace(ref), Text: text}
+	definition.Kind = strings.TrimSpace(definition.Kind)
+	definition.Ref = strings.TrimSpace(definition.Ref)
 	key := interactionDefinitionKey(definition.Kind, definition.Ref)
 
 	r.interactionDefinitionMu.Lock()

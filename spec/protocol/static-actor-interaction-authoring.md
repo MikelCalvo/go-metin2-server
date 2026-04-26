@@ -11,11 +11,8 @@ It sits on top of:
 
 This contract currently applies only to:
 - loopback-only operator HTTP endpoints on `gamed`
-- deterministic authoring of minimal `info` / `talk` definitions
+- deterministic authoring of minimal `info`, `talk`, and `warp` definitions
 - deterministic export/import of bootstrap static actors together with their interaction definitions
-
-At the store level, `internal/interactionstore` now also owns the first deterministic `warp` definition shape (`map_index`, `x`, `y`, optional `text`).
-That broader payload is not yet fully exposed through the loopback HTTP or bundle surfaces in this document; later slices widen those surfaces.
 
 It does **not** yet claim:
 - public/admin-authenticated remote authoring
@@ -34,15 +31,13 @@ The first owned catalog surface is:
 - `DELETE /local/interactions/{kind}/{ref}`
 
 Current rules:
-- bodies use JSON `kind`, `ref`, `text`
+- bodies always use JSON `kind` and `ref`
+- `info` / `talk` currently use authored `text`
+- `warp` currently uses authored `map_index`, `x`, `y`, with optional `text`
 - updates are full-identity upserts, not partial nested edits
 - update body `kind + ref` must match the path exactly
 - delete fails closed while any bootstrap static actor still references that definition
 - the backing catalog remains deterministic and file-backed under `internal/interactionstore`
-
-This means the current HTTP surface is still narrower than the backing store:
-- `info` / `talk` are fully authorable through loopback HTTP today
-- authored `warp` definition fields exist in the store contract already, but loopback HTTP widening is a follow-up slice
 
 ## Interaction-focused QA visibility
 
@@ -69,16 +64,17 @@ Current rules:
 - export returns one deterministic JSON artifact containing:
   - `static_actors`
   - `interaction_definitions`
+- exported interaction definitions preserve the current per-kind payload fields, including `warp` destinations
 - exported static actors are **portable authored content**, not runtime entities, so the bundle omits runtime-only `entity_id`
 - import is full-replace for the authored bootstrap content currently loaded by `gamed`
 - import validates that every referenced interaction definition exists before mutating runtime state
+- import also rejects malformed per-kind definition payloads, including invalid `warp` destinations
 - import updates the live bootstrap runtime so the resulting static-actor content becomes the current authored state, not only the on-disk store contents
 
 ## Success definition
 
 After this slice, the repository should be able to say:
-- minimal `info` / `talk` definitions are authorable through loopback HTTP
-- the backing interaction-definition store already owns the first deterministic `warp` payload shape for later NPC teleporter work
+- minimal `info`, `talk`, and `warp` definitions are authorable through loopback HTTP
 - visible interactables can be inspected live with compact resolved previews
 - bootstrap static actors and their interaction definitions can be exported/imported as one deterministic authored-content bundle
 - bundle import validates referenced definitions before replacing the authored bootstrap content

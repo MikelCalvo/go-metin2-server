@@ -108,15 +108,7 @@ func validateBundle(bundle Bundle) error {
 }
 
 func validDefinition(definition interactionstore.Definition) bool {
-	if strings.TrimSpace(definition.Ref) == "" || strings.TrimSpace(definition.Text) == "" {
-		return false
-	}
-	switch definition.Kind {
-	case interactionstore.KindInfo, interactionstore.KindTalk:
-		return true
-	default:
-		return false
-	}
+	return interactionstore.ValidDefinition(definition)
 }
 
 func validInteractionMetadata(kind string, ref string) bool {

@@ -18,6 +18,7 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 		interactionstore.Snapshot{Definitions: []interactionstore.Definition{
 			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 		}},
 	)
 	if err != nil {
@@ -31,6 +32,7 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 		InteractionDefinitions: []interactionstore.Definition{
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 		},
 	}
 	if !reflect.DeepEqual(bundle, want) {
@@ -57,5 +59,14 @@ func TestCanonicalizeRejectsDuplicateInteractionDefinitions(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for duplicate interaction definitions, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsInvalidWarpInteractionDefinition(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", X: 1700, Y: 2800}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for invalid warp interaction definition, got %v", err)
 	}
 }

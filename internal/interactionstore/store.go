@@ -85,6 +85,10 @@ func validDefinition(definition Definition) bool {
 	}
 }
 
+func ValidDefinition(definition Definition) bool {
+	return validDefinition(definition)
+}
+
 func cloneDefinitions(definitions []Definition) []Definition {
 	if len(definitions) == 0 {
 		return nil

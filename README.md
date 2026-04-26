@@ -30,7 +30,7 @@ Current scope of the project:
 - A first owned client-originated bootstrap static-actor interaction ingress: `GAME` sessions can now send `INTERACT (0x0501)` targeting a visible static actor by `vid`, with deterministic codec coverage and dedicated `internal/game` dispatch hooks.
 - `internal/worldruntime` can now also resolve bootstrap static actors by that client-visible `vid` under the active topology/AOI rules, so later interaction slices can fail closed on invisible or unknown targets without inventing a second target-lookup contract.
 - `internal/minimal/shared_world` now owns the first validated static-actor interaction-attempt seam, distinguishing unknown subject, invisible target, visible-but-too-far target, and visible-but-non-interactable actors before later `info` / `talk` content resolution lands.
-- A deterministic file-backed interaction-definition store now exists in `internal/interactionstore` for authored interaction content keyed by stable `kind + ref`; it still fully serves today's `info` / `talk` loopback HTTP authoring flow, now also owns the first store-level `warp` payload shape (`map_index`, `x`, `y`, optional `text`) for later teleporter NPC slices, `gamed` now loads that catalog at boot when present, static actors that point at missing definitions now fail closed at boot plus on runtime create/update paths, visible static actors whose metadata resolves to `interaction_kind = "info"` or `interaction_kind = "talk"` now answer the interacting player with a self-only chat-backed authored delivery, known bootstrap interaction failures now also answer the player with one deterministic self-only `CHAT_TYPE_INFO` message instead of silently disappearing, loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` still expose the current minimal HTTP authoring shape, loopback-only `GET /local/interaction-visibility` now exposes compact resolved previews for the interactable actors each connected player can currently see, and loopback-only `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content bundle for static actors plus interaction definitions.
+- A deterministic file-backed interaction-definition store now exists in `internal/interactionstore` for authored interaction content keyed by stable `kind + ref`; it now serves loopback HTTP authoring for `info`, `talk`, and the first `warp` payload shape (`map_index`, `x`, `y`, optional `text`), `gamed` now loads that catalog at boot when present, static actors that point at missing definitions now fail closed at boot plus on runtime create/update paths, visible static actors whose metadata resolves to `interaction_kind = "info"` or `interaction_kind = "talk"` now answer the interacting player with a self-only chat-backed authored delivery, known bootstrap interaction failures now also answer the player with one deterministic self-only `CHAT_TYPE_INFO` message instead of silently disappearing, loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` now expose that widened authoring shape, loopback-only `GET /local/interaction-visibility` now exposes compact resolved previews for the interactable actors each connected player can currently see, and loopback-only `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content bundle for static actors plus interaction definitions.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation, now including full before/after map-occupancy snapshots and explicit static-actor visibility diffs alongside the delta counts, and composing that structured preview through `internal/worldruntime/scopes.go`.
@@ -187,7 +187,7 @@ Legend:
 | Login tickets | [x] | Working file-backed ticket flow between `authd` and `gamed`. |
 | Bootstrap account snapshots | [~] | File-backed account/character persistence exists, but it is not compatibility-grade yet. |
 | Bootstrap static-actor snapshots | [x] | A deterministic file-backed snapshot store now exists under `internal/staticstore`, and `gamed` now loads it at boot and rewrites it after successful static-actor create/update/delete mutations. |
-| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for authored interaction content keyed by `kind + ref`; `gamed` now loads that catalog at boot, loopback-only CRUD endpoints still author the current minimal `info` / `talk` HTTP shape without raw JSON edits, the backing store now also owns the first `warp` payload shape (`map_index`, `x`, `y`, optional `text`) for later teleporter NPC slices, deletes now fail closed while bootstrap static actors still reference a definition, loopback-only interaction-visibility snapshots now preview what visible interactables would resolve to, `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content artifact spanning both stores, and `info` plus `talk` interactions now produce self-only authored chat deliveries. |
+| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for authored interaction content keyed by `kind + ref`; `gamed` now loads that catalog at boot, loopback-only CRUD endpoints now author `info`, `talk`, and the first `warp` payload shape without raw JSON edits, deletes now fail closed while bootstrap static actors still reference a definition, loopback-only interaction-visibility snapshots now preview what visible interactables would resolve to, `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content artifact spanning both stores, and `info` plus `talk` interactions now produce self-only authored chat deliveries. |
 | Database schema / migrations | [ ] | No real DB-backed persistence layer or live migrations yet. |
 | Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection/map-occupancy/dry-run/transfer/static-actor seed-remove endpoints exist; metrics/logging/admin depth still needs work. |
 | CI / public validation | [x] | GitHub Actions baseline checks formatting, tests, vet, daemon builds, and runtime/debug image builds. |
@@ -219,7 +219,7 @@ Legend:
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/staticstore` — deterministic file-backed bootstrap static-actor snapshots, ready for later boot/runtime wiring
-- `internal/interactionstore` — deterministic file-backed interaction definitions keyed by `kind + ref`; currently used for authored `info` / `talk`, now also owning the first store-level `warp` payload shape for later teleporter NPC slices, and loaded by `gamed` at boot for static-actor interaction-ref validation
+- `internal/interactionstore` — deterministic file-backed interaction definitions keyed by `kind + ref`; currently used for authored `info`, `talk`, and the first `warp` payload shape, and loaded by `gamed` at boot for static-actor interaction-ref validation
 - `internal/ops` — health and pprof endpoints
 - `internal/service` — shared service bootstrap / shutdown helpers and legacy session runtime hooks
 - `docs/` — engineering and clean-room documentation
@@ -325,7 +325,9 @@ Both binaries expose an ops server with:
   - if one interaction field is present, the other must also be present
 - `GET` / `POST /local/interactions` and `PATCH` / `PUT` / `DELETE /local/interactions/{kind}/{ref}`
   - loopback clients only
-  - bodies use JSON fields `kind`, `ref`, `text`
+  - bodies always use JSON fields `kind` and `ref`
+  - `info` / `talk` also use `text`
+  - `warp` also uses `map_index`, `x`, `y`, with optional `text`
   - PATCH/PUT are full-identity upserts, so body `kind` + `ref` must match the path exactly
   - DELETE returns conflict while a bootstrap static actor still references that definition
 - `GET /local/interaction-visibility`
@@ -385,6 +387,9 @@ curl -X POST http://127.0.0.1:6060/local/interactions \
 curl -X PUT http://127.0.0.1:6060/local/interactions/talk/npc:village_guard \
   -H 'Content-Type: application/json' \
   --data '{"kind":"talk","ref":"npc:village_guard","text":"Keep your blade sharp."}'
+curl -X POST http://127.0.0.1:6060/local/interactions \
+  -H 'Content-Type: application/json' \
+  --data '{"kind":"warp","ref":"npc:teleporter","map_index":42,"x":1700,"y":2800,"text":"Step through the gate."}'
 ```
 
 Do not expose pprof directly to the public internet.

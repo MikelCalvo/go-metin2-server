@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 )
 
 func TestLocalInteractionDefinitionsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
@@ -67,7 +69,7 @@ func TestLocalInteractionDefinitionsEndpointCreatesDefinitionForLoopbackPost(t *
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
-	if creator.calls != 1 || creator.lastKind != "info" || creator.lastRef != "lore:alchemist" || creator.lastText != "The alchemist studies forgotten herbs." {
+	if creator.calls != 1 || creator.lastDefinition.Kind != "info" || creator.lastDefinition.Ref != "lore:alchemist" || creator.lastDefinition.Text != "The alchemist studies forgotten herbs." {
 		t.Fatalf("unexpected interaction definition creator call state: %+v", creator)
 	}
 	body, err := io.ReadAll(rec.Body)
@@ -97,6 +99,31 @@ func TestLocalInteractionDefinitionsEndpointPropagatesCreateStatusForLoopbackPos
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointCreatesWarpDefinitionForLoopbackPost(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "warp", "ref": "npc:teleporter", "map_index": float64(42), "x": float64(1700), "y": float64(2800), "text": "Step through the gate."}}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"warp","ref":"npc:teleporter","map_index":42,"x":1700,"y":2800,"text":"Step through the gate."}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if creator.calls != 1 || creator.lastDefinition.Kind != interactionstore.KindWarp || creator.lastDefinition.Ref != "npc:teleporter" || creator.lastDefinition.MapIndex != 42 || creator.lastDefinition.X != 1700 || creator.lastDefinition.Y != 2800 || creator.lastDefinition.Text != "Step through the gate." {
+		t.Fatalf("unexpected warp interaction definition creator call state: %+v", creator)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"kind":"warp"`) || !strings.Contains(string(body), `"map_index":42`) || !strings.Contains(string(body), `"x":1700`) || !strings.Contains(string(body), `"y":2800`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
 func TestLocalInteractionDefinitionUpdateEndpointUpsertsDefinitionForLoopbackPatch(t *testing.T) {
 	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "talk", "ref": "npc:village_guard", "text": "Keep your blade sharp."}}
 	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
@@ -110,7 +137,7 @@ func TestLocalInteractionDefinitionUpdateEndpointUpsertsDefinitionForLoopbackPat
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
-	if updater.calls != 1 || updater.lastKind != "talk" || updater.lastRef != "npc:village_guard" || updater.lastText != "Keep your blade sharp." {
+	if updater.calls != 1 || updater.lastDefinition.Kind != "talk" || updater.lastDefinition.Ref != "npc:village_guard" || updater.lastDefinition.Text != "Keep your blade sharp." {
 		t.Fatalf("unexpected interaction definition updater call state: %+v", updater)
 	}
 	body, err := io.ReadAll(rec.Body)
@@ -137,6 +164,31 @@ func TestLocalInteractionDefinitionUpdateEndpointRejectsIdentityMismatch(t *test
 	}
 	if updater.calls != 0 {
 		t.Fatalf("expected interaction definition updater not to be called, got %d calls", updater.calls)
+	}
+}
+
+func TestLocalInteractionDefinitionUpdateEndpointUpsertsWarpDefinitionForLoopbackPut(t *testing.T) {
+	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "warp", "ref": "npc:teleporter", "map_index": float64(42), "x": float64(1700), "y": float64(2800), "text": "Step through the gate."}}
+	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPut, "/local/interactions/warp/npc:teleporter", strings.NewReader(`{"kind":"warp","ref":"npc:teleporter","map_index":42,"x":1700,"y":2800,"text":"Step through the gate."}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if updater.calls != 1 || updater.lastDefinition.Kind != interactionstore.KindWarp || updater.lastDefinition.Ref != "npc:teleporter" || updater.lastDefinition.MapIndex != 42 || updater.lastDefinition.X != 1700 || updater.lastDefinition.Y != 2800 || updater.lastDefinition.Text != "Step through the gate." {
+		t.Fatalf("unexpected warp interaction definition updater call state: %+v", updater)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"kind":"warp"`) || !strings.Contains(string(body), `"map_index":42`) || !strings.Contains(string(body), `"x":1700`) || !strings.Contains(string(body), `"y":2800`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
 
@@ -194,36 +246,28 @@ func (s *stubInteractionDefinitionSnapshotter) InteractionDefinitions() any {
 }
 
 type stubInteractionDefinitionCreator struct {
-	definition map[string]any
-	status     int
-	calls      int
-	lastKind   string
-	lastRef    string
-	lastText   string
+	definition     map[string]any
+	status         int
+	calls          int
+	lastDefinition interactionstore.Definition
 }
 
-func (s *stubInteractionDefinitionCreator) CreateInteractionDefinition(kind string, ref string, text string) (any, int) {
+func (s *stubInteractionDefinitionCreator) CreateInteractionDefinition(definition interactionstore.Definition) (any, int) {
 	s.calls++
-	s.lastKind = kind
-	s.lastRef = ref
-	s.lastText = text
+	s.lastDefinition = definition
 	return s.definition, s.status
 }
 
 type stubInteractionDefinitionUpdater struct {
-	definition map[string]any
-	status     int
-	calls      int
-	lastKind   string
-	lastRef    string
-	lastText   string
+	definition     map[string]any
+	status         int
+	calls          int
+	lastDefinition interactionstore.Definition
 }
 
-func (s *stubInteractionDefinitionUpdater) UpsertInteractionDefinition(kind string, ref string, text string) (any, int) {
+func (s *stubInteractionDefinitionUpdater) UpsertInteractionDefinition(definition interactionstore.Definition) (any, int) {
 	s.calls++
-	s.lastKind = kind
-	s.lastRef = ref
-	s.lastText = text
+	s.lastDefinition = definition
 	return s.definition, s.status
 }
 

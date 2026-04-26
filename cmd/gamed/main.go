@@ -102,8 +102,8 @@ func main() {
 	opsHandler = ops.RegisterLocalInteractionDefinitionEndpoints(
 		opsHandler,
 		func() any { return gameRuntime.InteractionDefinitions() },
-		func(kind string, ref string, text string) (any, int) {
-			definition, err := gameRuntime.CreateInteractionDefinition(kind, ref, text)
+		func(definition interactionstore.Definition) (any, int) {
+			definition, err := gameRuntime.CreateInteractionDefinition(definition)
 			if err == nil {
 				return definition, http.StatusOK
 			}
@@ -119,8 +119,8 @@ func main() {
 	)
 	opsHandler = ops.RegisterLocalInteractionDefinitionUpdateEndpoint(
 		opsHandler,
-		func(kind string, ref string, text string) (any, int) {
-			definition, err := gameRuntime.UpsertInteractionDefinition(kind, ref, text)
+		func(definition interactionstore.Definition) (any, int) {
+			definition, err := gameRuntime.UpsertInteractionDefinition(definition)
 			if err == nil {
 				return definition, http.StatusOK
 			}

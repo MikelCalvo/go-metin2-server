@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 )
 
 type localRelocationRequest struct {
@@ -32,9 +33,12 @@ type localStaticActorRequest struct {
 }
 
 type localInteractionDefinitionRequest struct {
-	Kind string `json:"kind"`
-	Ref  string `json:"ref"`
-	Text string `json:"text"`
+	Kind     string `json:"kind"`
+	Ref      string `json:"ref"`
+	Text     string `json:"text"`
+	MapIndex uint32 `json:"map_index"`
+	X        int32  `json:"x"`
+	Y        int32  `json:"y"`
 }
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -188,7 +192,7 @@ func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActo
 	return mux
 }
 
-func RegisterLocalInteractionDefinitionEndpoints(mux *http.ServeMux, interactionDefinitions func() any, createInteractionDefinition func(string, string, string) (any, int)) *http.ServeMux {
+func RegisterLocalInteractionDefinitionEndpoints(mux *http.ServeMux, interactionDefinitions func() any, createInteractionDefinition func(interactionstore.Definition) (any, int)) *http.ServeMux {
 	if mux == nil || (interactionDefinitions == nil && createInteractionDefinition == nil) {
 		return mux
 	}
@@ -222,7 +226,7 @@ func RegisterLocalInteractionDefinitionEndpoints(mux *http.ServeMux, interaction
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			definition, status := createInteractionDefinition(request.Kind, request.Ref, request.Text)
+			definition, status := createInteractionDefinition(request)
 			writeLocalJSONMutationResponse(w, definition, status)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -231,7 +235,7 @@ func RegisterLocalInteractionDefinitionEndpoints(mux *http.ServeMux, interaction
 	return mux
 }
 
-func RegisterLocalInteractionDefinitionUpdateEndpoint(mux *http.ServeMux, upsertInteractionDefinition func(string, string, string) (any, int)) *http.ServeMux {
+func RegisterLocalInteractionDefinitionUpdateEndpoint(mux *http.ServeMux, upsertInteractionDefinition func(interactionstore.Definition) (any, int)) *http.ServeMux {
 	if mux == nil || upsertInteractionDefinition == nil {
 		return mux
 	}
@@ -251,7 +255,7 @@ func RegisterLocalInteractionDefinitionUpdateEndpoint(mux *http.ServeMux, upsert
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		definition, status := upsertInteractionDefinition(request.Kind, request.Ref, request.Text)
+		definition, status := upsertInteractionDefinition(request)
 		writeLocalJSONMutationResponse(w, definition, status)
 	}
 	mux.HandleFunc("PATCH /local/interactions/", handler)
@@ -566,23 +570,29 @@ func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bo
 	return request, true
 }
 
-func decodeLocalInteractionDefinitionRequest(r *http.Request) (localInteractionDefinitionRequest, bool) {
+func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.Definition, bool) {
 	var request localInteractionDefinitionRequest
 	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
-		return localInteractionDefinitionRequest{}, false
+		return interactionstore.Definition{}, false
 	}
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return localInteractionDefinitionRequest{}, false
+		return interactionstore.Definition{}, false
 	}
-	request.Kind = strings.TrimSpace(request.Kind)
-	request.Ref = strings.TrimSpace(request.Ref)
-	if request.Kind == "" || request.Ref == "" || strings.TrimSpace(request.Text) == "" {
-		return localInteractionDefinitionRequest{}, false
+	definition := interactionstore.Definition{
+		Kind:     strings.TrimSpace(request.Kind),
+		Ref:      strings.TrimSpace(request.Ref),
+		Text:     request.Text,
+		MapIndex: request.MapIndex,
+		X:        request.X,
+		Y:        request.Y,
 	}
-	return request, true
+	if !interactionstore.ValidDefinition(definition) {
+		return interactionstore.Definition{}, false
+	}
+	return definition, true
 }
 
 func decodeLocalInteractionDefinitionIdentity(r *http.Request) (string, string, bool) {
