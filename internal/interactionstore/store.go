@@ -9,6 +9,7 @@ import (
 const (
 	KindInfo = "info"
 	KindTalk = "talk"
+	KindWarp = "warp"
 )
 
 var (
@@ -18,9 +19,12 @@ var (
 )
 
 type Definition struct {
-	Kind string `json:"kind"`
-	Ref  string `json:"ref"`
-	Text string `json:"text"`
+	Kind     string `json:"kind"`
+	Ref      string `json:"ref"`
+	Text     string `json:"text"`
+	MapIndex uint32 `json:"map_index,omitempty"`
+	X        int32  `json:"x,omitempty"`
+	Y        int32  `json:"y,omitempty"`
 }
 
 type Snapshot struct {
@@ -46,7 +50,7 @@ func normalizeSnapshot(snapshot Snapshot) Snapshot {
 func validateSnapshot(snapshot Snapshot) error {
 	seen := make(map[string]struct{}, len(snapshot.Definitions))
 	for _, definition := range snapshot.Definitions {
-		if !validKind(definition.Kind) || strings.TrimSpace(definition.Ref) == "" || strings.TrimSpace(definition.Text) == "" {
+		if !validDefinition(definition) {
 			return ErrInvalidSnapshot
 		}
 		key := definition.Kind + "\x00" + definition.Ref
@@ -60,8 +64,22 @@ func validateSnapshot(snapshot Snapshot) error {
 
 func validKind(kind string) bool {
 	switch kind {
-	case KindInfo, KindTalk:
+	case KindInfo, KindTalk, KindWarp:
 		return true
+	default:
+		return false
+	}
+}
+
+func validDefinition(definition Definition) bool {
+	if !validKind(definition.Kind) || strings.TrimSpace(definition.Ref) == "" {
+		return false
+	}
+	switch definition.Kind {
+	case KindInfo, KindTalk:
+		return strings.TrimSpace(definition.Text) != "" && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0
+	case KindWarp:
+		return definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0
 	default:
 		return false
 	}

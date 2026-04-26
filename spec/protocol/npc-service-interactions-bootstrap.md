@@ -56,6 +56,7 @@ A visible static actor can act as a teleporter-style NPC.
 Frozen target behavior:
 - the player sends the existing `INTERACT (0x0501)` request
 - the runtime resolves a deterministic authored `warp` definition behind that actor
+- that authored store-level definition is now expected to carry `map_index`, `x`, `y`, and optional informational text
 - the runtime may deliver one small self-facing informational message if the authored definition carries text
 - the runtime then reuses the existing gameplay transfer / self-session rebootstrap contract
 - no dialog state, option selection, or persistent conversation session is created

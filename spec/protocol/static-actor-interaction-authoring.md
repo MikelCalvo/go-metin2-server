@@ -1,6 +1,6 @@
 # Static Actor Interaction Authoring
 
-This document freezes the first loopback-only authoring and promotion surface for bootstrap static actors plus their minimal `info` / `talk` interaction definitions.
+This document freezes the first loopback-only authoring and promotion surface for bootstrap static actors plus their minimal interaction definitions.
 
 It sits on top of:
 - `static-actor-interaction-bootstrap.md`
@@ -13,6 +13,9 @@ This contract currently applies only to:
 - loopback-only operator HTTP endpoints on `gamed`
 - deterministic authoring of minimal `info` / `talk` definitions
 - deterministic export/import of bootstrap static actors together with their interaction definitions
+
+At the store level, `internal/interactionstore` now also owns the first deterministic `warp` definition shape (`map_index`, `x`, `y`, optional `text`).
+That broader payload is not yet fully exposed through the loopback HTTP or bundle surfaces in this document; later slices widen those surfaces.
 
 It does **not** yet claim:
 - public/admin-authenticated remote authoring
@@ -36,6 +39,10 @@ Current rules:
 - update body `kind + ref` must match the path exactly
 - delete fails closed while any bootstrap static actor still references that definition
 - the backing catalog remains deterministic and file-backed under `internal/interactionstore`
+
+This means the current HTTP surface is still narrower than the backing store:
+- `info` / `talk` are fully authorable through loopback HTTP today
+- authored `warp` definition fields exist in the store contract already, but loopback HTTP widening is a follow-up slice
 
 ## Interaction-focused QA visibility
 
@@ -71,6 +78,7 @@ Current rules:
 
 After this slice, the repository should be able to say:
 - minimal `info` / `talk` definitions are authorable through loopback HTTP
+- the backing interaction-definition store already owns the first deterministic `warp` payload shape for later NPC teleporter work
 - visible interactables can be inspected live with compact resolved previews
 - bootstrap static actors and their interaction definitions can be exported/imported as one deterministic authored-content bundle
 - bundle import validates referenced definitions before replacing the authored bootstrap content
