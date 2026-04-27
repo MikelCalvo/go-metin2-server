@@ -59,6 +59,8 @@ At this stage the repository owns a narrow but real first response vertical:
   - `target_not_visible`
   - `target_out_of_range`
   - `target_has_no_interaction`
+  - `warp_destination_invalid`
+  - `warp_not_applied`
 - `gamed` now also resolves authored interaction definitions by `interaction_kind + interaction_ref`
 - loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` now author that deterministic definition catalog without hand-editing the backing JSON file
 - update requests preserve stable `kind + ref` identity by requiring the full body identity to match the path exactly
@@ -105,11 +107,14 @@ The current owned failure boundary is now explicit and split in two layers:
   - `target_not_visible`
   - `target_out_of_range`
   - `target_has_no_interaction`
+  - `warp_destination_invalid`
+  - `warp_not_applied`
   - `interaction_definition_not_found`
   - `unsupported_interaction_kind`
 - those known runtime rejection reasons now return exactly one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and a deterministic bootstrap message
 - accepted `info` interaction currently produces exactly one self-only `GC_CHAT` delivery with `CHAT_TYPE_INFO`
 - accepted `talk` interaction currently produces exactly one self-only chat-backed delivery whose payload is speaker-prefixed and multi-line
+- accepted `warp` interaction currently reuses the existing self-session transfer rebootstrap path; if authored `text` is present, one self-only `CHAT_TYPE_INFO` delivery is emitted before those transfer frames
 
 Future slices should freeze richer reporting only when dialog UI or later interaction families exist.
 

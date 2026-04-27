@@ -5339,6 +5339,86 @@ func TestGameSessionFlowStaticActorWarpInteractionReturnsTransferRebootstrapFram
 	}
 }
 
+func TestGameRuntimeResolveStaticActorWarpInteractionRejectsInvalidDestinationDefinition(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, nil)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithInteraction(0, "BrokenTeleporter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindWarp, "npc:broken-teleporter")
+	if !ok {
+		t.Fatal("expected direct shared-world registration with warp metadata to succeed for invalid-destination runtime test")
+	}
+	runtime.interactionDefinitionMu.Lock()
+	if runtime.interactionDefinitions == nil {
+		runtime.interactionDefinitions = make(map[string]interactionstore.Definition)
+	}
+	runtime.interactionDefinitions[interactionDefinitionKey(interactionstore.KindWarp, "npc:broken-teleporter")] = InteractionDefinition{Kind: interactionstore.KindWarp, Ref: "npc:broken-teleporter", MapIndex: 0, X: 1700, Y: 2800}
+	runtime.interactionDefinitionMu.Unlock()
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	subject, ok := runtime.sharedWorld.entities.PlayerByName(peer.Name)
+	if !ok {
+		t.Fatalf("expected live shared-world entity for %q after enter", peer.Name)
+	}
+	resolution := runtime.resolveStaticActorInteraction(subject.Entity.ID, uint32(actor.EntityID))
+	if resolution.Accepted {
+		t.Fatalf("expected invalid warp interaction definition to be rejected, got %+v", resolution)
+	}
+	if resolution.Failure != staticActorInteractionFailureWarpDestinationInvalid {
+		t.Fatalf("expected invalid warp destination failure %q, got %+v", staticActorInteractionFailureWarpDestinationInvalid, resolution)
+	}
+	if resolution.Delivery == nil || resolution.Delivery.Type != chatproto.ChatTypeInfo || resolution.Delivery.Message != "Warp destination is invalid." {
+		t.Fatalf("unexpected invalid warp destination delivery: %+v", resolution.Delivery)
+	}
+}
+
+func TestGameSessionFlowStaticActorWarpInteractionReturnsSelfOnlyChatWhenTransferNotApplied(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	accounts := newPreloadedFailingAccountStore(accountstore.Account{Login: "peer-one", Empire: peer.Empire, Characters: []loginticket.Character{peer}})
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Teleporter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindWarp, "npc:teleporter")
+	if !ok {
+		t.Fatal("expected warp static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected warp transfer failure interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only warp transfer failure frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode warp transfer failure chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Warp unavailable right now." {
+		t.Fatalf("unexpected warp transfer failure chat delivery: %+v", delivery)
+	}
+	connected := runtime.ConnectedCharacters()
+	if len(connected) != 1 || connected[0].MapIndex != bootstrapMapIndex || connected[0].X != peer.X || connected[0].Y != peer.Y {
+		t.Fatalf("expected failed warp interaction to keep the player at the original location, got %+v", connected)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for failed self-only warp interaction, got %d", len(queued))
+	}
+}
+
 func TestGameRuntimeResolveStaticActorFailureInteractionReturnsSelfOnlyChatDelivery(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

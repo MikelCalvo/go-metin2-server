@@ -104,8 +104,10 @@ type CharacterInteractionVisibilitySnapshot struct {
 }
 
 const (
-	staticActorInteractionFailureDefinitionNotFound = "interaction_definition_not_found"
-	staticActorInteractionFailureUnsupportedKind    = "unsupported_interaction_kind"
+	staticActorInteractionFailureDefinitionNotFound     = "interaction_definition_not_found"
+	staticActorInteractionFailureUnsupportedKind        = "unsupported_interaction_kind"
+	staticActorInteractionFailureWarpDestinationInvalid = "warp_destination_invalid"
+	staticActorInteractionFailureWarpNotApplied         = "warp_not_applied"
 )
 
 type staticActorInteractionResolution struct {
@@ -986,7 +988,11 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 					if resolution.Definition.Kind == interactionstore.KindWarp {
 						_, transferFrames, ok := applySelectedCharacterTransfer(resolution.Definition.MapIndex, resolution.Definition.X, resolution.Definition.Y, true)
 						if !ok {
-							return gameflow.InteractionResult{Accepted: false}
+							failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureWarpNotApplied)
+							if failureDelivery == nil {
+								return gameflow.InteractionResult{Accepted: false}
+							}
+							return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*failureDelivery)}}
 						}
 						frames := make([][]byte, 0, len(transferFrames)+1)
 						if resolution.Delivery != nil {
@@ -2006,6 +2012,11 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 	}
 	resolution.Definition = definition
 	if definition.Kind == interactionstore.KindWarp {
+		if !interactionstore.ValidDefinition(definition) {
+			resolution.Failure = staticActorInteractionFailureWarpDestinationInvalid
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
 		resolution.Accepted = true
 		message := strings.TrimSpace(definition.Text)
 		if message != "" {
@@ -2049,6 +2060,10 @@ func staticActorInteractionFailureMessage(failure string) (string, bool) {
 		return "Interaction content is missing.", true
 	case staticActorInteractionFailureUnsupportedKind:
 		return "Interaction not supported yet.", true
+	case staticActorInteractionFailureWarpDestinationInvalid:
+		return "Warp destination is invalid.", true
+	case staticActorInteractionFailureWarpNotApplied:
+		return "Warp unavailable right now.", true
 	default:
 		return "", false
 	}

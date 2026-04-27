@@ -62,6 +62,10 @@ Frozen target behavior:
 - the runtime then reuses the existing gameplay transfer / self-session rebootstrap contract
 - no dialog state, option selection, or persistent conversation session is created
 
+Current owned warp failure semantics:
+- if the resolved warp definition is malformed inside live runtime state, the player receives one self-only `CHAT_TYPE_INFO` message: `Warp destination is invalid.`
+- if the runtime cannot apply the transfer after resolution, the player receives one self-only `CHAT_TYPE_INFO` message: `Warp unavailable right now.`
+
 This is now the first implemented **real NPC gameplay loop** because it reuses already-owned transfer behavior instead of requiring speculative new subsystems.
 
 ### 2. `shop_preview`
