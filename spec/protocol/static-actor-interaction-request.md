@@ -115,6 +115,7 @@ The current owned failure boundary is now explicit and split in two layers:
 - accepted `info` interaction currently produces exactly one self-only `GC_CHAT` delivery with `CHAT_TYPE_INFO`
 - accepted `talk` interaction currently produces exactly one self-only chat-backed delivery whose payload is speaker-prefixed and multi-line
 - accepted `warp` interaction currently reuses the existing self-session transfer rebootstrap path; if authored `text` is present, one self-only `CHAT_TYPE_INFO` delivery is emitted before those transfer frames
+- repeated requests against the same target `VID` inside the current fixed `1s` per-session cooldown are consumed as a deliberate no-op with no outgoing frames
 
 Future slices should freeze richer reporting only when dialog UI or later interaction families exist.
 

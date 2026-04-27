@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
@@ -5264,6 +5265,181 @@ func TestGameSessionFlowStaticActorTalkInteractionReturnsSelfOnlyChatDelivery(t 
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for self-only talk interaction, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorInteractionCooldownSuppressesRepeatedFramesPerActorAndExpires(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+		{Kind: interactionstore.KindTalk, Ref: "npc:guard", Text: "Keep your blade sharp."},
+		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+	})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000000, 0)
+	runtime.now = func() time.Time { return currentTime }
+	guard, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindTalk, "npc:guard")
+	if !ok {
+		t.Fatal("expected talk static actor registration to succeed")
+	}
+	alchemist, ok := runtime.RegisterStaticActorWithInteraction("Alchemist", bootstrapMapIndex, 1300, 2300, 20302, interactionstore.KindInfo, "lore:alchemist")
+	if !ok {
+		t.Fatal("expected info static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	first, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(guard.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected first interaction error: %v", err)
+	}
+	if len(first) != 1 {
+		t.Fatalf("expected 1 first interaction frame, got %d", len(first))
+	}
+	firstDelivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, first[0]))
+	if err != nil {
+		t.Fatalf("decode first interaction delivery: %v", err)
+	}
+	if firstDelivery.Message != "VillageGuard:\nKeep your blade sharp." {
+		t.Fatalf("unexpected first interaction delivery: %+v", firstDelivery)
+	}
+
+	repeated, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(guard.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected repeated interaction error: %v", err)
+	}
+	if len(repeated) != 0 {
+		t.Fatalf("expected cooldown to suppress repeated interaction frames, got %d", len(repeated))
+	}
+
+	otherActor, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(alchemist.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected second-actor interaction error: %v", err)
+	}
+	if len(otherActor) != 1 {
+		t.Fatalf("expected different actor interaction to bypass the first actor cooldown, got %d frames", len(otherActor))
+	}
+	otherDelivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, otherActor[0]))
+	if err != nil {
+		t.Fatalf("decode second-actor interaction delivery: %v", err)
+	}
+	if otherDelivery.Message != "The alchemist studies forgotten herbs." {
+		t.Fatalf("unexpected second-actor interaction delivery: %+v", otherDelivery)
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	afterCooldown, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(guard.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected post-cooldown interaction error: %v", err)
+	}
+	if len(afterCooldown) != 1 {
+		t.Fatalf("expected cooldown expiry to restore interaction delivery, got %d frames", len(afterCooldown))
+	}
+}
+
+func TestGameSessionFlowStaticActorInteractionCooldownIsPerPlayerAndClearsAcrossReconnect(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guard", Text: "Keep your blade sharp."}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000100, 0)
+	runtime.now = func() time.Time { return currentTime }
+	guard, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindTalk, "npc:guard")
+	if !ok {
+		t.Fatal("expected talk static actor registration to succeed")
+	}
+
+	flowOne, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	firstOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(guard.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected first player interaction error: %v", err)
+	}
+	if len(firstOut) != 1 {
+		t.Fatalf("expected first player interaction to produce 1 frame, got %d", len(firstOut))
+	}
+	firstRepeat, err := flowOne.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(guard.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected first player repeated interaction error: %v", err)
+	}
+	if len(firstRepeat) != 0 {
+		t.Fatalf("expected first player repeated interaction to be cooldown-suppressed, got %d frames", len(firstRepeat))
+	}
+
+	flowTwo, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	defer closeSessionFlow(t, flowTwo)
+	secondPlayerOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(guard.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected second player interaction error: %v", err)
+	}
+	if len(secondPlayerOut) != 1 {
+		t.Fatalf("expected second player interaction to bypass the first player's cooldown, got %d frames", len(secondPlayerOut))
+	}
+
+	closeSessionFlow(t, flowOne)
+	issuePeerTicket(t, store, "peer-one", 0x33333333, peerOne)
+	flowReconnect, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x33333333)
+	defer closeSessionFlow(t, flowReconnect)
+	reconnectOut, err := flowReconnect.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(guard.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected reconnect interaction error: %v", err)
+	}
+	if len(reconnectOut) != 1 {
+		t.Fatalf("expected reconnect to clear the prior session cooldown, got %d frames", len(reconnectOut))
+	}
+}
+
+func TestGameSessionFlowStaticActorWarpInteractionCooldownSuppressesRepeatedTransfers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: bootstrapMapIndex, X: peer.X, Y: peer.Y, Text: "Step through the gate."}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000200, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Teleporter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindWarp, "npc:teleporter")
+	if !ok {
+		t.Fatal("expected warp static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	first, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected first warp interaction error: %v", err)
+	}
+	if len(first) == 0 {
+		t.Fatal("expected first warp interaction to produce frames")
+	}
+	firstDelivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, first[0]))
+	if err != nil {
+		t.Fatalf("decode first warp interaction delivery: %v", err)
+	}
+	if firstDelivery.Message != "Step through the gate." {
+		t.Fatalf("unexpected first warp interaction delivery: %+v", firstDelivery)
+	}
+
+	repeated, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected repeated warp interaction error: %v", err)
+	}
+	if len(repeated) != 0 {
+		t.Fatalf("expected cooldown to suppress repeated warp interaction frames, got %d", len(repeated))
 	}
 }
 

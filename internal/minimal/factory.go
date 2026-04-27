@@ -108,6 +108,7 @@ const (
 	staticActorInteractionFailureUnsupportedKind        = "unsupported_interaction_kind"
 	staticActorInteractionFailureWarpDestinationInvalid = "warp_destination_invalid"
 	staticActorInteractionFailureWarpNotApplied         = "warp_not_applied"
+	staticActorInteractionCooldown                      = time.Second
 )
 
 type staticActorInteractionResolution struct {
@@ -138,6 +139,7 @@ type gameRuntime struct {
 	interactionDefinitionMu sync.RWMutex
 	interactionDefinitions  map[string]interactionstore.Definition
 	staticActorMu           sync.Mutex
+	now                     func() time.Time
 }
 
 func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
@@ -502,7 +504,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
 	}
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
-	runtime := &gameRuntime{sharedWorld: sharedWorld, staticStore: staticActors, interactionStore: interactions}
+	runtime := &gameRuntime{sharedWorld: sharedWorld, staticStore: staticActors, interactionStore: interactions, now: time.Now}
 	if err := runtime.loadInteractionDefinitions(); err != nil {
 		return nil, err
 	}
@@ -521,6 +523,23 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 		pending := newPendingServerFrames()
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
+		interactionCooldowns := make(map[uint32]time.Time)
+		interactionNow := func() time.Time {
+			if runtime != nil && runtime.now != nil {
+				return runtime.now()
+			}
+			return time.Now()
+		}
+		interactionOnCooldown := func(targetVID uint32) bool {
+			until, ok := interactionCooldowns[targetVID]
+			return ok && interactionNow().Before(until)
+		}
+		markInteractionCooldown := func(targetVID uint32) {
+			if targetVID == 0 {
+				return
+			}
+			interactionCooldowns[targetVID] = interactionNow().Add(staticActorInteractionCooldown)
+		}
 		refreshSelectedPlayerFromAccountSnapshot := func() bool {
 			if accounts == nil {
 				return true
@@ -978,11 +997,15 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 					if !ownsLiveSharedWorldSession() {
 						return gameflow.InteractionResult{Accepted: false}
 					}
+					if interactionOnCooldown(packet.TargetVID) {
+						return gameflow.InteractionResult{Accepted: true}
+					}
 					resolution := runtime.resolveStaticActorInteraction(sharedWorldID, packet.TargetVID)
 					if !resolution.Accepted {
 						if resolution.Delivery == nil {
 							return gameflow.InteractionResult{Accepted: false}
 						}
+						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
 					}
 					if resolution.Definition.Kind == interactionstore.KindWarp {
@@ -992,6 +1015,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 							if failureDelivery == nil {
 								return gameflow.InteractionResult{Accepted: false}
 							}
+							markInteractionCooldown(packet.TargetVID)
 							return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*failureDelivery)}}
 						}
 						frames := make([][]byte, 0, len(transferFrames)+1)
@@ -999,11 +1023,13 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 							frames = append(frames, chatproto.EncodeChatDelivery(*resolution.Delivery))
 						}
 						frames = append(frames, transferFrames...)
+						markInteractionCooldown(packet.TargetVID)
 						return gameflow.InteractionResult{Accepted: true, Frames: frames}
 					}
 					if resolution.Delivery == nil {
 						return gameflow.InteractionResult{Accepted: false}
 					}
+					markInteractionCooldown(packet.TargetVID)
 					return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
 				},
 			},

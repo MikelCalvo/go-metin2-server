@@ -66,6 +66,12 @@ Current owned warp failure semantics:
 - if the resolved warp definition is malformed inside live runtime state, the player receives one self-only `CHAT_TYPE_INFO` message: `Warp destination is invalid.`
 - if the runtime cannot apply the transfer after resolution, the player receives one self-only `CHAT_TYPE_INFO` message: `Warp unavailable right now.`
 
+Current owned interaction cooldown semantics:
+- a fixed `1s` runtime cooldown now applies per live session and per target static-actor `VID`
+- the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, and `warp`
+- repeated `INTERACT` requests for the same target while that cooldown is active are consumed as a deliberate no-op with no outgoing frames
+- different players do not share a cooldown bucket with each other, and a fresh reconnect starts with a fresh cooldown state
+
 This is now the first implemented **real NPC gameplay loop** because it reuses already-owned transfer behavior instead of requiring speculative new subsystems.
 
 ### 2. `shop_preview`
