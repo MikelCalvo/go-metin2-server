@@ -20,7 +20,7 @@ Current scope of the project:
 - A tolerant `PONG` control path accepted in `GAME` for server-driven ping probes.
 - An explicit bootstrap world-topology model that centralizes local channel, map, and chat scope decisions for the current single-process runtime.
 - Character deletion on the selection surface with deterministic success/failure responses.
-- A first exact loading-to-game bootstrap burst after `ENTERGAME`: `PHASE(GAME)`, selected-character `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`, `PLAYER_POINT_CHANGE`, then any trailing peer visibility frames.
+- A first exact loading-to-game bootstrap burst after `ENTERGAME`: `PHASE(GAME)`, selected-character `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`, `PLAYER_POINT_CHANGE`, zero or more self-only `ITEM_SET` inventory/equipment frames for occupied carried/equipped slots, then any trailing peer visibility frames.
 - Minimal shared-world peer visibility for players that are already connected to the bootstrap runtime and share the same bootstrap `MapIndex`.
 - Minimal MOVE fanout so visible peers on the same bootstrap `MapIndex` receive queued movement replication from other connected players, with AOI-aware visibility rebuild on `MOVE` when an opt-in runtime radius policy causes peers to newly enter or leave visible range.
 - Minimal `SYNC_POSITION` fanout so visible peers on the same bootstrap `MapIndex` receive queued reconciliation updates from other connected players, with AOI-aware visibility rebuild on `SYNC_POSITION` when an opt-in runtime radius policy causes peers to newly enter or leave visible range.
@@ -56,7 +56,7 @@ Current scope of the project:
 - A first owned in-game slash-command bootstrap path: `/quit` now returns a self-facing `CHAT_TYPE_COMMAND quit`, `/logout` now leaves the bootstrap shared world and emits `PHASE(CLOSE)`, and `/phase_select` now leaves the bootstrap shared world and emits `PHASE(SELECT)` so the same session can choose another character again instead of echoing those strings as normal talking chat.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
-- A first protocol-owned M3 inventory/equipment bootstrap contract is now frozen in docs and packet matrix: the selected character will later receive self-only slot-addressed carried/equipped item bootstrap frames immediately after `PLAYER_POINT_CHANGE`, the first `internal/proto/item` codec slice now owns `ITEM_SET` / `ITEM_DEL` golden fixtures for that legacy wire family, and loopback-only `GET /local/inventory/{name}`, `GET /local/equipment/{name}`, plus `GET /local/currency/{name}` now expose the selected character's live M3 runtime state for local debugging before broader client refresh slices land.
+- A first protocol-owned M3 inventory/equipment bootstrap contract is now frozen in docs and packet matrix: the selected character now receives self-only slot-addressed carried/equipped `ITEM_SET` bootstrap frames immediately after `PLAYER_POINT_CHANGE`, the first `internal/proto/item` codec slice owns `ITEM_SET` / `ITEM_DEL` golden fixtures for that legacy wire family, and loopback-only `GET /local/inventory/{name}`, `GET /local/equipment/{name}`, plus `GET /local/currency/{name}` expose the selected character's live M3 runtime state for local debugging while later move/equip refresh slices land.
 - A first `internal/inventory` package now owns slot identity, deterministic equipment-slot naming, carried/equipped item-instance shape, and basic validation rules before persistence/runtime wiring lands.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
 
@@ -437,7 +437,7 @@ Current stub bootstrap credentials:
 
 Current minimal runtime path exposed by the shipped binaries:
 - `authd`: `HANDSHAKE -> AUTH -> LOGIN3 -> AUTH_SUCCESS`
-- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_DELETE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> peer CHARACTER_ADD/CHAR_ADDITIONAL_INFO/CHARACTER_UPDATE/CHARACTER_DEL -> peer MOVE/SYNC_POSITION/CHAT -> MOVE/SYNC_POSITION/CHAT/WHISPER/PARTY_CHAT/GUILD_CHAT/SHOUT_CHAT/INFO_CHAT`
+- `gamed`: `HANDSHAKE -> LOGIN -> SELECT -> EMPIRE_SELECT? -> CHARACTER_CREATE? -> CHARACTER_DELETE? -> CHARACTER_SELECT -> LOADING -> CLIENT_VERSION? -> ENTERGAME -> GAME -> CHARACTER_ADD -> CHAR_ADDITIONAL_INFO -> CHARACTER_UPDATE -> PLAYER_POINT_CHANGE -> self ITEM_SET* -> peer CHARACTER_ADD/CHAR_ADDITIONAL_INFO/CHARACTER_UPDATE/CHARACTER_DEL -> peer MOVE/SYNC_POSITION/CHAT -> MOVE/SYNC_POSITION/CHAT/WHISPER/PARTY_CHAT/GUILD_CHAT/SHOUT_CHAT/INFO_CHAT`
 
 This is still a bootstrap runtime, not full gameplay.
 What exists today:
@@ -454,7 +454,7 @@ What exists today:
 - empty-account bootstrap flow can select empire before first character creation, and that choice persists across fresh auth/game sessions
 - tolerant `CLIENT_VERSION` acceptance in `LOADING` with no phase transition and no server response
 - tolerant `PONG` acceptance in `GAME` with no phase transition and no server response
-- the selected character is inserted into the visible world after `ENTERGAME` via minimal `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` + `PLAYER_POINT_CHANGE`
+- the selected character is inserted into the visible world after `ENTERGAME` via minimal `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` + `PLAYER_POINT_CHANGE` + self-only occupied-slot `ITEM_SET` bootstrap frames
 - a later entering player receives already-connected peers as `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap frames when they share the same bootstrap `MapIndex`
 - already-connected peers receive queued `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` when a new player enters and `CHARACTER_DEL` when that peer disconnects, again within the same bootstrap `MapIndex`
 - already-connected peers on the same bootstrap `MapIndex` receive queued `MOVE` replication when a visible peer moves

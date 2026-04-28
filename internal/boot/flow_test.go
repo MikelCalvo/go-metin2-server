@@ -8,6 +8,7 @@ import (
 	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
@@ -618,7 +619,7 @@ func testConfig() Config {
 
 func testVisibleWorldConfig() Config {
 	cfg := testConfig()
-	cfg.WorldEntry.EnterGame = func() worldentry.EnterGameResult {
+	cfg.WorldEntry.EnterGame = func(_ *player.Runtime) worldentry.EnterGameResult {
 		addRaw := worldproto.EncodeCharacterAdd(sampleVisibleCharacterAddPacket())
 		infoRaw, _ := worldproto.EncodeCharacterAdditionalInfo(sampleVisibleCharacterAdditionalInfoPacket())
 		updateRaw := worldproto.EncodeCharacterUpdate(sampleVisibleCharacterUpdatePacket())

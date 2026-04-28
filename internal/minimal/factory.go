@@ -24,6 +24,7 @@ import (
 	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/player"
@@ -31,6 +32,7 @@ import (
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
@@ -1010,7 +1012,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 						PlayerPoints:  ticketPlayerPointsPacket(selectedPlayer.PersistedSnapshot()),
 					}
 				},
-				EnterGame: func() worldentry.EnterGameResult {
+				EnterGame: func(_ *player.Runtime) worldentry.EnterGameResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
@@ -1026,6 +1028,11 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 					if err != nil {
 						return worldentry.EnterGameResult{Rejected: true}
 					}
+					itemBootstrapFrames, err := buildSelectedItemBootstrapFrames(selected)
+					if err != nil {
+						return worldentry.EnterGameResult{Rejected: true}
+					}
+					bootstrapFrames = append(bootstrapFrames, itemBootstrapFrames...)
 					var trailingFrames [][]byte
 					if !joinedSharedWorld {
 						var existingPeers []loginticket.Character
@@ -1667,6 +1674,113 @@ func ticketPlayerPointChangePacket(character loginticket.Character) worldproto.P
 		Amount: character.Points[bootstrapPlayerPointValueIndex],
 		Value:  character.Points[bootstrapPlayerPointValueIndex],
 	}
+}
+
+func buildSelectedItemBootstrapFrames(character loginticket.Character) ([][]byte, error) {
+	if len(character.Inventory) == 0 && len(character.Equipment) == 0 {
+		return nil, nil
+	}
+	frames := make([][]byte, 0, len(character.Inventory)+len(character.Equipment))
+	carried := append([]inventory.ItemInstance(nil), character.Inventory...)
+	sort.Slice(carried, func(i int, j int) bool {
+		return carried[i].Slot < carried[j].Slot
+	})
+	for _, instance := range carried {
+		raw, err := encodeBootstrapInventoryItemFrame(instance)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, raw)
+	}
+	equipped := append([]inventory.ItemInstance(nil), character.Equipment...)
+	sort.Slice(equipped, func(i int, j int) bool {
+		leftCell, leftOK := equipmentBootstrapCell(equipped[i].EquipSlot)
+		rightCell, rightOK := equipmentBootstrapCell(equipped[j].EquipSlot)
+		if !leftOK || !rightOK {
+			return equipped[i].EquipSlot < equipped[j].EquipSlot
+		}
+		return leftCell < rightCell
+	})
+	for _, instance := range equipped {
+		raw, err := encodeBootstrapEquipmentItemFrame(instance)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, raw)
+	}
+	return frames, nil
+}
+
+func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte, error) {
+	if err := instance.Validate(); err != nil {
+		return nil, err
+	}
+	if instance.Equipped {
+		return nil, fmt.Errorf("bootstrap inventory item must be unequipped: %d", instance.ID)
+	}
+	if uint16(instance.Slot) >= itemproto.InventoryMaxCell {
+		return nil, fmt.Errorf("bootstrap inventory slot out of range: %d", instance.Slot)
+	}
+	return encodeBootstrapItemFrame(itemproto.Position{WindowType: itemproto.WindowInventory, Cell: uint16(instance.Slot)}, instance)
+}
+
+func encodeBootstrapEquipmentItemFrame(instance inventory.ItemInstance) ([]byte, error) {
+	if err := instance.Validate(); err != nil {
+		return nil, err
+	}
+	if !instance.Equipped {
+		return nil, fmt.Errorf("bootstrap equipment item must be equipped: %d", instance.ID)
+	}
+	cell, ok := equipmentBootstrapCell(instance.EquipSlot)
+	if !ok {
+		return nil, fmt.Errorf("bootstrap equipment slot unsupported: %s", instance.EquipSlot.String())
+	}
+	return encodeBootstrapItemFrame(itemproto.Position{WindowType: itemproto.WindowInventory, Cell: cell}, instance)
+}
+
+func encodeBootstrapItemFrame(position itemproto.Position, instance inventory.ItemInstance) ([]byte, error) {
+	if instance.Count > 255 {
+		return nil, fmt.Errorf("bootstrap item count exceeds legacy uint8: %d", instance.Count)
+	}
+	return itemproto.EncodeSet(itemproto.SetPacket{
+		Position: position,
+		Vnum:     instance.Vnum,
+		Count:    uint8(instance.Count),
+	}), nil
+}
+
+func equipmentBootstrapCell(slot inventory.EquipmentSlot) (uint16, bool) {
+	const costumeHairWearIndex uint16 = 20
+	var wearIndex uint16
+	switch slot {
+	case inventory.EquipmentSlotBody:
+		wearIndex = 0
+	case inventory.EquipmentSlotHead:
+		wearIndex = 1
+	case inventory.EquipmentSlotShoes:
+		wearIndex = 2
+	case inventory.EquipmentSlotWrist:
+		wearIndex = 3
+	case inventory.EquipmentSlotWeapon:
+		wearIndex = 4
+	case inventory.EquipmentSlotNeck:
+		wearIndex = 5
+	case inventory.EquipmentSlotEar:
+		wearIndex = 6
+	case inventory.EquipmentSlotUnique1:
+		wearIndex = 7
+	case inventory.EquipmentSlotUnique2:
+		wearIndex = 8
+	case inventory.EquipmentSlotArrow:
+		wearIndex = 9
+	case inventory.EquipmentSlotShield:
+		wearIndex = 10
+	case inventory.EquipmentSlotHair:
+		wearIndex = costumeHairWearIndex
+	default:
+		return 0, false
+	}
+	return itemproto.InventoryMaxCell + wearIndex, true
 }
 
 func ticketMoveAckPacket(character loginticket.Character, packet movep.MovePacket) movep.MoveAckPacket {

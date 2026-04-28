@@ -15,6 +15,7 @@ import (
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
@@ -576,6 +577,63 @@ func TestNewGameSessionFactoryReturnsVisibleWorldBootstrapForCreatedCharacter(t 
 	}
 	if pointChange.VID != 0x01020306 || pointChange.Type != 1 || pointChange.Amount != 650 || pointChange.Value != 650 {
 		t.Fatalf("unexpected created player point change packet: %+v", pointChange)
+	}
+}
+
+func TestNewGameSessionFactoryReturnsItemBootstrapForSelectedCharacter(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 3, Slot: 7}}
+	characters[1].Equipment = []inventory.ItemInstance{{ID: 2002, Vnum: 0x55667788, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotShield}}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+
+	enterGameOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	if len(enterGameOut) != 7 {
+		t.Fatalf("expected 7 game bootstrap frames, got %d", len(enterGameOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, enterGameOut[4]))
+	if err != nil {
+		t.Fatalf("decode player point change: %v", err)
+	}
+	if pointChange.VID != 0x01020305 || pointChange.Type != 1 || pointChange.Amount != 900 || pointChange.Value != 900 {
+		t.Fatalf("unexpected selected player point change packet: %+v", pointChange)
+	}
+	inventorySet, err := itemproto.DecodeSet(decodeSingleFrame(t, enterGameOut[5]))
+	if err != nil {
+		t.Fatalf("decode inventory item bootstrap: %v", err)
+	}
+	if inventorySet.Position.WindowType != itemproto.WindowInventory || inventorySet.Position.Cell != 7 || inventorySet.Vnum != 0x11223344 || inventorySet.Count != 3 {
+		t.Fatalf("unexpected inventory item bootstrap packet: %+v", inventorySet)
+	}
+	equipmentSet, err := itemproto.DecodeSet(decodeSingleFrame(t, enterGameOut[6]))
+	if err != nil {
+		t.Fatalf("decode equipment item bootstrap: %v", err)
+	}
+	if equipmentSet.Position.WindowType != itemproto.WindowInventory || equipmentSet.Position.Cell != itemproto.InventoryMaxCell+10 || equipmentSet.Vnum != 0x55667788 || equipmentSet.Count != 1 {
+		t.Fatalf("unexpected equipment item bootstrap packet: %+v", equipmentSet)
 	}
 }
 

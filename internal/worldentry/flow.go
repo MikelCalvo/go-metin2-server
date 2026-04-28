@@ -27,7 +27,7 @@ type DeleteCharacterFunc func(worldproto.CharacterDeletePacket) DeleteResult
 
 type SelectCharacterFunc func(index uint8) Result
 
-type EnterGameFunc func() EnterGameResult
+type EnterGameFunc func(selectedPlayer *player.Runtime) EnterGameResult
 
 type Config struct {
 	SelectEmpire    EmpireSelectFunc
@@ -99,7 +99,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	}
 	enterGame := cfg.EnterGame
 	if enterGame == nil {
-		enterGame = func() EnterGameResult { return EnterGameResult{} }
+		enterGame = func(*player.Runtime) EnterGameResult { return EnterGameResult{} }
 	}
 	return &Flow{machine: machine, selectEmpire: empireSelector, createCharacter: creator, deleteCharacter: deleter, selectCharacter: selector, enterGame: enterGame}
 }
@@ -190,7 +190,7 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			result := f.enterGame()
+			result := f.enterGame(f.selectedPlayer)
 			if result.Rejected {
 				return nil, ErrEnterGameRejected
 			}

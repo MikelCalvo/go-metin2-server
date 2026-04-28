@@ -272,7 +272,7 @@ func TestHandleClientFrameReturnsBootstrapBurstThenTrailingFramesAfterEnterGame(
 	}
 	peerAddRaw := worldproto.EncodeCharacterAdd(samplePeerCharacterAdd())
 	flow := NewFlow(machine, Config{
-		EnterGame: func() EnterGameResult {
+		EnterGame: func(_ *player.Runtime) EnterGameResult {
 			return EnterGameResult{
 				BootstrapFrames: [][]byte{addRaw, infoRaw},
 				TrailingFrames:  [][]byte{peerAddRaw},
@@ -303,10 +303,60 @@ func TestHandleClientFrameReturnsBootstrapBurstThenTrailingFramesAfterEnterGame(
 	}
 }
 
+func TestHandleClientFramePassesSelectedPlayerToEnterGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseSelect)
+	selectedPlayer := player.NewRuntime(loginticket.Character{
+		ID:       0x01030102,
+		VID:      0x02040102,
+		Name:     "PeerTwo",
+		MapIndex: 1,
+		X:        1300,
+		Y:        2300,
+	}, player.SessionLink{Login: "peer-two", CharacterIndex: 1})
+	addRaw := worldproto.EncodeCharacterAdd(sampleCharacterAdd())
+	var seenPlayer *player.Runtime
+	flow := NewFlow(machine, Config{
+		SelectCharacter: func(index uint8) Result {
+			if index != 1 {
+				t.Fatalf("unexpected character index: %d", index)
+			}
+			return Result{Accepted: true, Player: selectedPlayer, MainCharacter: sampleMainCharacter(), PlayerPoints: samplePlayerPoints()}
+		},
+		EnterGame: func(got *player.Runtime) EnterGameResult {
+			seenPlayer = got
+			return EnterGameResult{BootstrapFrames: [][]byte{addRaw}}
+		},
+	})
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	if seenPlayer != selectedPlayer {
+		t.Fatalf("expected enter game to receive selected runtime %p, got %p", selectedPlayer, seenPlayer)
+	}
+	wantPhase, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected phase encode error: %v", err)
+	}
+	want := [][]byte{wantPhase, addRaw}
+	if len(out) != len(want) {
+		t.Fatalf("expected %d outgoing frames, got %d", len(want), len(out))
+	}
+	for i := range want {
+		if !bytes.Equal(out[i], want[i]) {
+			t.Fatalf("unexpected outgoing frame %d: got %x want %x", i, out[i], want[i])
+		}
+	}
+}
+
 func TestHandleClientFrameKeepsLoadingWhenEnterGameIsRejected(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseLoading)
 	flow := NewFlow(machine, Config{
-		EnterGame: func() EnterGameResult {
+		EnterGame: func(_ *player.Runtime) EnterGameResult {
 			return EnterGameResult{Rejected: true}
 		},
 	})
@@ -329,7 +379,7 @@ func TestHandleClientFrameAllowsRetryAfterEnterGameRejection(t *testing.T) {
 	}
 	attempts := 0
 	flow := NewFlow(machine, Config{
-		EnterGame: func() EnterGameResult {
+		EnterGame: func(_ *player.Runtime) EnterGameResult {
 			attempts++
 			if attempts == 1 {
 				return EnterGameResult{Rejected: true}

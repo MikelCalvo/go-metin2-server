@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
+	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 )
 
 func expectBootHandshakeStart(t *testing.T, client *bootTestClient, challenge control.KeyChallengePacket) {
@@ -497,6 +502,121 @@ func TestBootFlowSynchronizesInGameOverTCP(t *testing.T) {
 	}
 	if got := server.currentPhase(); got != session.PhaseGame {
 		t.Fatalf("expected server phase %q after sync position, got %q", session.PhaseGame, got)
+	}
+}
+
+func TestBootFlowReturnsItemBootstrapAfterPointChangeOverTCP(t *testing.T) {
+	cfg := testConfig()
+	selectedPlayer := player.NewRuntime(loginticket.Character{
+		ID:       2,
+		VID:      sampleMainCharacter().VID,
+		Name:     sampleMainCharacter().Name,
+		MapIndex: 1,
+		X:        sampleMainCharacter().X,
+		Y:        sampleMainCharacter().Y,
+		Inventory: []inventory.ItemInstance{{
+			ID:    1001,
+			Vnum:  0x11223344,
+			Count: 3,
+			Slot:  7,
+		}},
+		Equipment: []inventory.ItemInstance{{
+			ID:        2002,
+			Vnum:      0x55667788,
+			Count:     1,
+			Equipped:  true,
+			EquipSlot: inventory.EquipmentSlotWeapon,
+		}},
+	}, player.SessionLink{Login: "mkmk", CharacterIndex: 1})
+	cfg.WorldEntry.SelectCharacter = func(index uint8) worldentry.Result {
+		if index != 1 {
+			return worldentry.Result{Accepted: false}
+		}
+		return worldentry.Result{Accepted: true, Player: selectedPlayer, MainCharacter: sampleMainCharacter(), PlayerPoints: samplePlayerPoints()}
+	}
+	cfg.WorldEntry.EnterGame = func(got *player.Runtime) worldentry.EnterGameResult {
+		if got != selectedPlayer {
+			t.Fatalf("expected selected runtime %p, got %p", selectedPlayer, got)
+		}
+		selected := got.LiveCharacter()
+		addRaw := worldproto.EncodeCharacterAdd(sampleVisibleCharacterAddPacket())
+		infoRaw, err := worldproto.EncodeCharacterAdditionalInfo(sampleVisibleCharacterAdditionalInfoPacket())
+		if err != nil {
+			t.Fatalf("encode additional info: %v", err)
+		}
+		updateRaw := worldproto.EncodeCharacterUpdate(sampleVisibleCharacterUpdatePacket())
+		pointChangeRaw := worldproto.EncodePlayerPointChange(sampleVisiblePlayerPointChangePacket())
+		inventoryRaw := itemproto.EncodeSet(itemproto.SetPacket{
+			Position: itemproto.Position{WindowType: itemproto.WindowInventory, Cell: uint16(selected.Inventory[0].Slot)},
+			Vnum:     selected.Inventory[0].Vnum,
+			Count:    uint8(selected.Inventory[0].Count),
+		})
+		equipmentRaw := itemproto.EncodeSet(itemproto.SetPacket{
+			Position: itemproto.Position{WindowType: itemproto.WindowInventory, Cell: itemproto.InventoryMaxCell + 4},
+			Vnum:     selected.Equipment[0].Vnum,
+			Count:    uint8(selected.Equipment[0].Count),
+		})
+		return worldentry.EnterGameResult{BootstrapFrames: [][]byte{addRaw, infoRaw, updateRaw, pointChangeRaw, inventoryRaw, equipmentRaw}}
+	}
+
+	server := startBootTestServer(t, cfg)
+	client := newBootTestClient(t, server.address())
+
+	expectBootHandshakeStart(t, client, cfg.Handshake.KeyChallenge)
+	client.writeFrame(t, control.EncodeKeyResponse(control.KeyResponsePacket{
+		ClientPublicKey:   sequentialBytes32(0x40),
+		ChallengeResponse: sequentialBytes32(0x60),
+	}))
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	client.writeFrame(t, login2Raw)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	client.writeFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	client.writeFrame(t, worldproto.EncodeEnterGame())
+
+	phaseGame := client.readFrame(t)
+	wantPhaseGame, err := control.EncodePhase(session.PhaseGame)
+	if err != nil {
+		t.Fatalf("unexpected game phase encode error: %v", err)
+	}
+	if !bytes.Equal(phaseGame.Raw, wantPhaseGame) {
+		t.Fatalf("unexpected game phase bytes: got %x want %x", phaseGame.Raw, wantPhaseGame)
+	}
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	_ = client.readFrame(t)
+	pointChange := client.readFrame(t)
+	wantPointChange := worldproto.EncodePlayerPointChange(sampleVisiblePlayerPointChangePacket())
+	if !bytes.Equal(pointChange.Raw, wantPointChange) {
+		t.Fatalf("unexpected player point change bytes: got %x want %x", pointChange.Raw, wantPointChange)
+	}
+	inventoryItem := client.readFrame(t)
+	inventorySet, err := itemproto.DecodeSet(inventoryItem.Frame)
+	if err != nil {
+		t.Fatalf("decode inventory item bootstrap: %v", err)
+	}
+	if inventorySet.Position.WindowType != itemproto.WindowInventory || inventorySet.Position.Cell != 7 || inventorySet.Vnum != 0x11223344 || inventorySet.Count != 3 {
+		t.Fatalf("unexpected inventory item bootstrap packet: %+v", inventorySet)
+	}
+	equipmentItem := client.readFrame(t)
+	equipmentSet, err := itemproto.DecodeSet(equipmentItem.Frame)
+	if err != nil {
+		t.Fatalf("decode equipment item bootstrap: %v", err)
+	}
+	if equipmentSet.Position.WindowType != itemproto.WindowInventory || equipmentSet.Position.Cell != itemproto.InventoryMaxCell+4 || equipmentSet.Vnum != 0x55667788 || equipmentSet.Count != 1 {
+		t.Fatalf("unexpected equipment item bootstrap packet: %+v", equipmentSet)
+	}
+	if got := server.currentPhase(); got != session.PhaseGame {
+		t.Fatalf("expected server phase %q after item bootstrap, got %q", session.PhaseGame, got)
 	}
 }
 

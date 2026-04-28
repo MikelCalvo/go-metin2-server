@@ -21,16 +21,7 @@ This slice does not yet freeze peer-visible item state, storage/safebox surfaces
 
 ## Working flow
 
-The current bootstrap burst after `ENTERGAME` is still:
-
-1. `PHASE(GAME)`
-2. `CHARACTER_ADD`
-3. `CHAR_ADDITIONAL_INFO`
-4. `CHARACTER_UPDATE`
-5. `PLAYER_POINT_CHANGE`
-6. trailing peer/static-actor visibility frames when needed
-
-The first inventory/equipment extension reserves the next self-only slot in that flow:
+The first owned inventory/equipment extension now occupies the next self-only slot in the live bootstrap burst after `ENTERGAME`:
 
 1. `PHASE(GAME)`
 2. `CHARACTER_ADD`
@@ -127,7 +118,7 @@ For the current owned bootstrap surface:
 - carried inventory uses `window_type = INVENTORY (1)` with `0 <= cell < 90`
 - equipped items also travel with `window_type = INVENTORY (1)` and the legacy combined item cell namespace `cell = 90 + wear_index`
 - the wire does **not** expose the project's named equipment-slot enum directly; it reuses the legacy wear indices in the combined inventory/equipment cell space
-- examples: `body -> cell 90`, `weapon -> cell 94`, `shield -> cell 100`
+- examples: `body -> cell 90`, `weapon -> cell 94`, `shield -> cell 100`, `hair -> cell 110` (`WEAR_COSTUME_HAIR`)
 
 ## Frozen frame shapes
 
@@ -170,5 +161,6 @@ This slice does **not** yet freeze:
 After this slice, the repository should be able to say:
 - inventory/equipment are no longer undefined territory in project docs
 - the first self-only bootstrap ordering for item state is frozen relative to `ENTERGAME`
+- the loading-to-game burst now emits owned `ITEM_SET` frames for occupied carried/equipped slots immediately after `PLAYER_POINT_CHANGE`
 - the repo owns a stable vocabulary for carried inventory slots, equipment slots, and minimum item snapshot semantics
-- the packet matrix reserves the first item-family names without pretending the byte-level codec is already finished
+- the packet matrix and `internal/proto/item` codec now agree on the first byte-level item bootstrap family

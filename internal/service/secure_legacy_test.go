@@ -15,6 +15,7 @@ import (
 	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
@@ -443,7 +444,7 @@ func TestServeLegacyKeepsTheEncryptedGameSocketAliveThroughSelectionLoadingClien
 					SelectCharacter: func(uint8) worldentry.Result {
 						return worldentry.Result{Accepted: true, MainCharacter: mainCharacter, PlayerPoints: playerPoints}
 					},
-					EnterGame: func() worldentry.EnterGameResult {
+					EnterGame: func(_ *player.Runtime) worldentry.EnterGameResult {
 						return worldentry.EnterGameResult{
 							BootstrapFrames: [][]byte{
 								characterAddRaw,
@@ -710,7 +711,7 @@ func TestServeLegacyKeepsTheEncryptedGameSocketAliveAfterRejectedEnterGameAndAll
 					SelectCharacter: func(uint8) worldentry.Result {
 						return worldentry.Result{Accepted: true, MainCharacter: mainCharacter, PlayerPoints: playerPoints}
 					},
-					EnterGame: func() worldentry.EnterGameResult {
+					EnterGame: func(_ *player.Runtime) worldentry.EnterGameResult {
 						if !rejected {
 							rejected = true
 							return worldentry.EnterGameResult{Rejected: true}
@@ -990,7 +991,7 @@ func TestServeLegacyKeepsTheEncryptedGameSocketAliveForSelectedCharacterMoveAfte
 					SelectCharacter: func(uint8) worldentry.Result {
 						return worldentry.Result{Accepted: true, MainCharacter: mainCharacter, PlayerPoints: playerPoints}
 					},
-					EnterGame: func() worldentry.EnterGameResult {
+					EnterGame: func(_ *player.Runtime) worldentry.EnterGameResult {
 						return worldentry.EnterGameResult{
 							BootstrapFrames: [][]byte{
 								characterAddRaw,
@@ -1256,7 +1257,7 @@ func TestServeLegacyKeepsTheEncryptedGameSocketAliveForSelectedCharacterSyncPosi
 					SelectCharacter: func(uint8) worldentry.Result {
 						return worldentry.Result{Accepted: true, MainCharacter: mainCharacter, PlayerPoints: playerPoints}
 					},
-					EnterGame: func() worldentry.EnterGameResult {
+					EnterGame: func(_ *player.Runtime) worldentry.EnterGameResult {
 						return worldentry.EnterGameResult{
 							BootstrapFrames: [][]byte{
 								characterAddRaw,
