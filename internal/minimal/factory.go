@@ -2103,6 +2103,13 @@ func interactionDefinitionPreview(actorName string, definition InteractionDefini
 		return fmt.Sprintf("%s:\n%s", actorName, definition.Text), true
 	case interactionstore.KindShopPreview:
 		return definition.Text, true
+	case interactionstore.KindWarp:
+		summary := fmt.Sprintf("warp -> map %d @ %d,%d", definition.MapIndex, definition.X, definition.Y)
+		message := strings.TrimSpace(definition.Text)
+		if message == "" {
+			return summary, true
+		}
+		return fmt.Sprintf("%s [%s]", message, summary), true
 	default:
 		return "", false
 	}

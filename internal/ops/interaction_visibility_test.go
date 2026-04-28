@@ -15,14 +15,32 @@ func TestLocalInteractionVisibilityEndpointReturnsPreviewJSONForLoopbackGet(t *t
 		"map_index": uint32(42),
 		"x":         int32(1700),
 		"y":         int32(2800),
-		"visible_interactable_static_actors": []map[string]any{{
-			"entity_id":          uint64(7),
-			"name":               "VillageGuard",
-			"interaction_kind":   "talk",
-			"interaction_ref":    "npc:village_guard",
-			"preview":            "VillageGuard:\nKeep your blade sharp.",
-			"resolution_failure": "",
-		}},
+		"visible_interactable_static_actors": []map[string]any{
+			{
+				"entity_id":          uint64(7),
+				"name":               "VillageGuard",
+				"interaction_kind":   "talk",
+				"interaction_ref":    "npc:village_guard",
+				"preview":            "VillageGuard:\nKeep your blade sharp.",
+				"resolution_failure": "",
+			},
+			{
+				"entity_id":          uint64(8),
+				"name":               "Merchant",
+				"interaction_kind":   "shop_preview",
+				"interaction_ref":    "npc:merchant",
+				"preview":            "Browse wares.",
+				"resolution_failure": "",
+			},
+			{
+				"entity_id":          uint64(9),
+				"name":               "Teleporter",
+				"interaction_kind":   "warp",
+				"interaction_ref":    "npc:teleporter",
+				"preview":            "Step through the gate. [warp -> map 42 @ 1700,2800]",
+				"resolution_failure": "",
+			},
+		},
 	}}}
 	mux := RegisterLocalInteractionVisibilityEndpoint(NewPprofMux("gamed"), snapshotter.InteractionVisibility)
 
@@ -42,7 +60,7 @@ func TestLocalInteractionVisibilityEndpointReturnsPreviewJSONForLoopbackGet(t *t
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"visible_interactable_static_actors"`) || !strings.Contains(string(body), `"interaction_kind":"talk"`) || !strings.Contains(string(body), `"preview":"VillageGuard:\nKeep your blade sharp."`) {
+	if !strings.Contains(string(body), `"visible_interactable_static_actors"`) || !strings.Contains(string(body), `"interaction_kind":"talk"`) || !strings.Contains(string(body), `"preview":"VillageGuard:\nKeep your blade sharp."`) || !strings.Contains(string(body), `"interaction_kind":"shop_preview"`) || !strings.Contains(string(body), `"preview":"Browse wares."`) || !strings.Contains(string(body), `"interaction_kind":"warp"`) || !strings.Contains(string(body), `"preview":"Step through the gate. [warp -\u003e map 42 @ 1700,2800]"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }

@@ -1,0 +1,51 @@
+{
+  "static_actors": [
+    {
+      "name": "Merchant",
+      "map_index": 1,
+      "x": 469500,
+      "y": 964200,
+      "race_num": 20301,
+      "interaction_kind": "shop_preview",
+      "interaction_ref": "npc:qa_merchant"
+    },
+    {
+      "name": "Teleporter",
+      "map_index": 1,
+      "x": 469650,
+      "y": 964200,
+      "race_num": 20300,
+      "interaction_kind": "warp",
+      "interaction_ref": "npc:qa_teleporter"
+    },
+    {
+      "name": "VillageGuide",
+      "map_index": 1,
+      "x": 469350,
+      "y": 964200,
+      "race_num": 20302,
+      "interaction_kind": "talk",
+      "interaction_ref": "npc:qa_guide"
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "shop_preview",
+      "ref": "npc:qa_merchant",
+      "text": "Starter wares:\n- Red potion\n- Blue potion\n- Town scroll"
+    },
+    {
+      "kind": "talk",
+      "ref": "npc:qa_guide",
+      "text": "Welcome to the QA square."
+    },
+    {
+      "kind": "warp",
+      "ref": "npc:qa_teleporter",
+      "text": "Step through the gate.",
+      "map_index": 1,
+      "x": 470200,
+      "y": 964200
+    }
+  ]
+}

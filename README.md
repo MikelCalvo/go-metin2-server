@@ -187,7 +187,7 @@ Legend:
 | Login tickets | [x] | Working file-backed ticket flow between `authd` and `gamed`. |
 | Bootstrap account snapshots | [~] | File-backed account/character persistence exists, but it is not compatibility-grade yet. |
 | Bootstrap static-actor snapshots | [x] | A deterministic file-backed snapshot store now exists under `internal/staticstore`, and `gamed` now loads it at boot and rewrites it after successful static-actor create/update/delete mutations. |
-| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for authored interaction content keyed by `kind + ref`; `gamed` now loads that catalog at boot, loopback-only CRUD endpoints now author `info`, `talk`, `shop_preview`, and the first `warp` payload shape without raw JSON edits, deletes now fail closed while bootstrap static actors still reference a definition, loopback-only interaction-visibility snapshots now preview what visible interactables would resolve to for the currently supported preview kinds, `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content artifact spanning both stores, and `info`, `talk`, plus `shop_preview` interactions now produce self-only authored chat deliveries while `warp` reuses the transfer path. |
+| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for authored interaction content keyed by `kind + ref`; `gamed` now loads that catalog at boot, loopback-only CRUD endpoints now author `info`, `talk`, `shop_preview`, and the first `warp` payload shape without raw JSON edits, deletes now fail closed while bootstrap static actors still reference a definition, loopback-only interaction-visibility snapshots now preview what visible interactables would resolve to including browse-only shop text and compact warp destination summaries, `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content artifact spanning both stores, and `info`, `talk`, plus `shop_preview` interactions now produce self-only authored chat deliveries while `warp` reuses the transfer path. |
 | Database schema / migrations | [ ] | No real DB-backed persistence layer or live migrations yet. |
 | Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection/map-occupancy/dry-run/transfer/static-actor seed-remove endpoints exist; metrics/logging/admin depth still needs work. |
 | CI / public validation | [x] | GitHub Actions baseline checks formatting, tests, vet, daemon builds, and runtime/debug image builds. |
@@ -335,11 +335,13 @@ Both binaries expose an ops server with:
   - loopback clients only
   - returns a JSON snapshot of each connected bootstrap character plus the currently visible interactable static actors that would resolve for them
   - each visible interactable entry includes `interaction_kind`, `interaction_ref`, and a compact preview or `resolution_failure`
+  - current previews cover self-only `info` / `talk` / `shop_preview` text plus compact `warp` destination summaries for authored teleporter actors
 - `GET` / `POST /local/content-bundle`
   - loopback clients only
   - `GET` exports one deterministic authored-content bundle covering bootstrap static actors plus interaction definitions
   - `POST` imports that bundle as a full replace of the current authored bootstrap content
   - import rejects dangling interaction refs before mutating runtime state
+  - `docs/examples/bootstrap-npc-service-bundle.json` is a small reference artifact for QA seeding and operator smoke tests
 - `GET /local/maps`
   - loopback clients only
   - returns a JSON snapshot of effective `MapIndex` occupancy in the current bootstrap runtime

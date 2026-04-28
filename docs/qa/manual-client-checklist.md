@@ -246,6 +246,38 @@ Expected result:
 - the character still exists
 - login, selection, and enter-game still work after reconnect
 
+### 5.4 Bootstrap NPC interaction smoke
+
+Run this only when the target build has authored QA NPC content loaded nearby.
+
+If the lab currently has no such content, either:
+- import/adapt `docs/examples/bootstrap-npc-service-bundle.json` through `/local/content-bundle`, or
+- record this subsection as **N/A** instead of treating the absence of authored NPCs as a gameplay regression.
+
+#### 5.4.1 Talk / info / shop-preview interactions
+
+- [ ] Approach a visible authored QA NPC with `info`, `talk`, or `shop_preview`
+- [ ] Interact once and wait for the self-only response
+- [ ] Re-interact immediately once to confirm repeated spam is suppressed or remains stable within the current cooldown contract
+
+Expected result:
+- `info` and `talk` still return deterministic self-only text
+- `shop_preview` returns browse-only self-only preview text
+- no inventory mutation, buy/sell flow, or quest state appears
+- repeated interaction does not disconnect the client
+
+#### 5.4.2 Warp interaction
+
+- [ ] Approach a visible authored QA warp NPC
+- [ ] Interact once
+- [ ] Confirm any authored informational text appears first if configured
+- [ ] Confirm the client re-enters the world at the authored destination and remains connected
+
+Expected result:
+- the warp actor relocates the character through the current transfer/rebootstrap flow
+- the client remains stable after the warp
+- no merchant window, quest window, or inventory mutation appears
+
 ---
 
 ## 6. Two-client shared-world checks
@@ -369,17 +401,17 @@ These are currently out of scope for the present server state unless the milesto
 - [ ] inventory UX completeness
 - [ ] equipment logic
 - [ ] item use
-- [ ] NPC interaction
-- [ ] shops
+- [ ] real shop buy/sell flow
+- [ ] inventory or currency mutation from NPC interactions
 - [ ] mobs, combat, or skills
-- [ ] quest runtime
+- [ ] quest acceptance, progression, or rewards
 - [ ] death / respawn loop
 - [ ] multi-channel real behavior
 - [ ] polished client-facing warp/loading choreography
 
 Important note:
 - the project has operator-side transfer primitives and ongoing runtime transfer work
-- client-visible final warp behavior is not yet a stable manual QA gate for general milestone checks
+- for current QA, validate only the existing bootstrap warp/rebootstrap path; polished final warp/loading choreography is still not a general pass/fail gate
 
 ---
 
@@ -393,6 +425,7 @@ A current build is a good candidate when all of these pass:
 - [ ] create/select/enter-game work
 - [ ] single-client movement works
 - [ ] reconnect works
+- [ ] when authored QA NPC content is loaded, supported NPC smoke checks (`info` / `talk`, `shop_preview`, `warp`) pass without disconnecting the client
 - [ ] with two clients: peer visibility works
 - [ ] with two clients: peer movement works
 - [ ] with two clients: local chat and whisper work

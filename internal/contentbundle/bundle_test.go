@@ -1,7 +1,10 @@
 package contentbundle
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -14,11 +17,14 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 		staticstore.Snapshot{StaticActors: []staticstore.StaticActor{
 			{EntityID: 9, Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
 			{EntityID: 3, Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20301},
+			{EntityID: 7, Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{EntityID: 11, Name: "Teleporter", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
 		}},
 		interactionstore.Snapshot{Definitions: []interactionstore.Definition{
 			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."},
 		}},
 	)
 	if err != nil {
@@ -27,10 +33,13 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 	want := Bundle{
 		StaticActors: []StaticActor{
 			{Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20301},
+			{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{Name: "Teleporter", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
 			{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
 		},
 		InteractionDefinitions: []interactionstore.Definition{
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."},
 			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 		},
@@ -68,5 +77,24 @@ func TestCanonicalizeRejectsInvalidWarpInteractionDefinition(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for invalid warp interaction definition, got %v", err)
+	}
+}
+
+func TestExampleBootstrapNPCServiceBundleCanonicalizes(t *testing.T) {
+	path := filepath.Join("..", "..", "docs", "examples", "bootstrap-npc-service-bundle.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode example bundle: %v", err)
+	}
+	canonical, err := Canonicalize(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize example bundle: %v", err)
+	}
+	if !reflect.DeepEqual(canonical, bundle) {
+		t.Fatalf("expected example bundle to already be canonical:\n got: %#v\nwant: %#v", canonical, bundle)
 	}
 }
