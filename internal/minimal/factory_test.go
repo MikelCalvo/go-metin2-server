@@ -9,7 +9,9 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
@@ -880,6 +882,90 @@ func TestNewGameSessionFactoryRejectsInvalidRadiusVisibilityConfig(t *testing.T)
 	})
 	if !errors.Is(err, ErrInvalidVisibilitySectorSize) {
 		t.Fatalf("expected ErrInvalidVisibilitySectorSize, got %v", err)
+	}
+}
+
+func TestSelectedCharacterSnapshotUpdateCarriesLiveRuntimeItemStateIntoPersistedSlice(t *testing.T) {
+	characters := stubCharacters()
+	characters[1].Gold = 125000
+	characters[1].Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}
+	characters[1].Equipment = []inventory.ItemInstance{
+		{ID: 21, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+	}
+	original := characters[1]
+	runtime := player.NewRuntime(characters[1], player.SessionLink{Login: StubLogin, CharacterIndex: 1})
+	if !runtime.MoveInventoryItem(5, 6) {
+		t.Fatal("expected inventory move to succeed")
+	}
+	if !runtime.EquipItem(8, inventory.EquipmentSlotBody) {
+		t.Fatal("expected equip to succeed")
+	}
+	runtime.SetLiveGold(88000)
+	live := runtime.LiveCharacter()
+	live.MapIndex = 42
+	live.X = 1700
+	live.Y = 2800
+
+	updated, ok := selectedCharacterSnapshotUpdate(characters, 1, live)
+	if !ok {
+		t.Fatal("expected selected snapshot update to succeed")
+	}
+	if !reflect.DeepEqual(updated[1], live) {
+		t.Fatalf("expected full live runtime snapshot to be persisted, got %#v want %#v", updated[1], live)
+	}
+	if !reflect.DeepEqual(characters[1], original) {
+		t.Fatalf("expected original character slice to stay unchanged, got %#v want %#v", characters[1], original)
+	}
+}
+
+func TestSelectedCharacterSnapshotUpdateRejectsInvalidSelection(t *testing.T) {
+	characters := stubCharacters()
+	updated, ok := selectedCharacterSnapshotUpdate(characters, 9, loginticket.Character{ID: 99})
+	if ok {
+		t.Fatal("expected invalid selected index to fail")
+	}
+	if updated != nil {
+		t.Fatalf("expected no updated slice on failure, got %#v", updated)
+	}
+}
+
+func TestSelectedCharacterSnapshotUpdateRejectsIdentityMismatch(t *testing.T) {
+	characters := stubCharacters()
+	updatedCharacter := characters[1]
+	updatedCharacter.ID = 99
+
+	updated, ok := selectedCharacterSnapshotUpdate(characters, 1, updatedCharacter)
+	if ok {
+		t.Fatal("expected selected snapshot update to reject mismatched identity")
+	}
+	if updated != nil {
+		t.Fatalf("expected no updated slice on mismatch, got %#v", updated)
+	}
+}
+
+func TestSelectedCharacterSnapshotUpdateClonesUpdatedItemState(t *testing.T) {
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}}
+	characters[1].Equipment = []inventory.ItemInstance{{ID: 21, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	updatedCharacter := characters[1]
+	updatedCharacter.X = 1700
+	updatedCharacter.Y = 2800
+
+	updated, ok := selectedCharacterSnapshotUpdate(characters, 1, updatedCharacter)
+	if !ok {
+		t.Fatal("expected selected snapshot update to succeed")
+	}
+	updatedCharacter.Inventory[0].Count = 99
+	updatedCharacter.Equipment[0].Vnum = 9999
+
+	if got := updated[1].Inventory[0].Count; got != 3 {
+		t.Fatalf("expected persisted inventory clone to stay unchanged, got %d", got)
+	}
+	if got := updated[1].Equipment[0].Vnum; got != 19 {
+		t.Fatalf("expected persisted equipment clone to stay unchanged, got %d", got)
 	}
 }
 

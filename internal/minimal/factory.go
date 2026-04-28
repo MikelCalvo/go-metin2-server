@@ -598,7 +598,18 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 			selected := selectedPlayer.PersistedSnapshot()
 			selectedLink := selectedPlayer.SessionLink()
 			buildUpdatedSelection := func(updated loginticket.Character) ([]loginticket.Character, loginticket.Character, bool) {
-				return selectedCharacterLocationUpdate(sessionTicket.Characters, selectedLink.CharacterIndex, updated.MapIndex, updated.X, updated.Y)
+				current := selectedPlayer.LiveCharacter()
+				if current.ID == 0 {
+					return nil, loginticket.Character{}, false
+				}
+				current.MapIndex = updated.MapIndex
+				current.X = updated.X
+				current.Y = updated.Y
+				updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedLink.CharacterIndex, current)
+				if !ok {
+					return nil, loginticket.Character{}, false
+				}
+				return updatedCharacters, current, true
 			}
 			var transferResult RelocationPreview
 			var transferFrames [][]byte
@@ -658,8 +669,14 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 				selectedPlayer.SetLivePosition(selected.MapIndex, x, y)
 				return selectedPlayer.LiveCharacter(), true
 			}
-			updatedCharacters, updatedSelected, ok := updateSelectedCharacterPosition(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, x, y)
-			if !ok {
+			updatedSelected := selectedPlayer.LiveCharacter()
+			if updatedSelected.ID == 0 {
+				return loginticket.Character{}, false
+			}
+			updatedSelected.X = x
+			updatedSelected.Y = y
+			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updatedSelected)
+			if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
 				return loginticket.Character{}, false
 			}
 			sessionTicket.Characters = updatedCharacters
@@ -1221,10 +1238,12 @@ func updateSelectedCharacterPosition(store accountstore.Store, login string, emp
 	if selected.ID == 0 {
 		return nil, loginticket.Character{}, false
 	}
-	updatedCharacters := cloneCharacters(characters)
 	selected.X = x
 	selected.Y = y
-	updatedCharacters[index] = selected
+	updatedCharacters, ok := selectedCharacterSnapshotUpdate(characters, selectedIndex, selected)
+	if !ok {
+		return nil, loginticket.Character{}, false
+	}
 	if !saveAccountSnapshot(store, login, empire, updatedCharacters) {
 		return nil, loginticket.Character{}, false
 	}
@@ -1251,12 +1270,29 @@ func selectedCharacterLocationUpdate(characters []loginticket.Character, selecte
 	if selected.ID == 0 {
 		return nil, loginticket.Character{}, false
 	}
-	updatedCharacters := cloneCharacters(characters)
 	selected.MapIndex = mapIndex
 	selected.X = x
 	selected.Y = y
-	updatedCharacters[index] = selected
+	updatedCharacters, ok := selectedCharacterSnapshotUpdate(characters, selectedIndex, selected)
+	if !ok {
+		return nil, loginticket.Character{}, false
+	}
 	return updatedCharacters, selected, true
+}
+
+func selectedCharacterSnapshotUpdate(characters []loginticket.Character, selectedIndex uint8, updated loginticket.Character) ([]loginticket.Character, bool) {
+	index := int(selectedIndex)
+	if index < 0 || index >= len(characters) || updated.ID == 0 || characters[index].ID == 0 || updated.ID != characters[index].ID {
+		return nil, false
+	}
+	clonedUpdated := loginticket.CloneCharacters([]loginticket.Character{updated})
+	if len(clonedUpdated) != 1 {
+		return nil, false
+	}
+	clonedUpdated[0].NormalizeItemState()
+	updatedCharacters := cloneCharacters(characters)
+	updatedCharacters[index] = clonedUpdated[0]
+	return updatedCharacters, true
 }
 
 func cloneCharacters(characters []loginticket.Character) []loginticket.Character {
