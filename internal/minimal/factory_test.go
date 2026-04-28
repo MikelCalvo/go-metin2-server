@@ -969,6 +969,117 @@ func TestSelectedCharacterSnapshotUpdateClonesUpdatedItemState(t *testing.T) {
 	}
 }
 
+func TestNewGameRuntimeExposesSelectedCharacterItemStateSnapshotsAfterSelect(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Gold = 88000
+	characters[1].Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}
+	characters[1].Equipment = []inventory.ItemInstance{
+		{ID: 21, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow := runtime.SessionFactory()()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+
+	inventorySnapshot, ok := runtime.InventorySnapshot("MkmkSura")
+	if !ok {
+		t.Fatal("expected inventory snapshot to be available after select")
+	}
+	if inventorySnapshot.Name != "MkmkSura" || len(inventorySnapshot.Inventory) != 2 {
+		t.Fatalf("unexpected inventory snapshot: %+v", inventorySnapshot)
+	}
+	if inventorySnapshot.Inventory[0].ID != 11 || inventorySnapshot.Inventory[0].Slot != 5 || inventorySnapshot.Inventory[1].Slot != 8 {
+		t.Fatalf("unexpected inventory items: %+v", inventorySnapshot.Inventory)
+	}
+
+	equipmentSnapshot, ok := runtime.EquipmentSnapshot("MkmkSura")
+	if !ok {
+		t.Fatal("expected equipment snapshot to be available after select")
+	}
+	if equipmentSnapshot.Name != "MkmkSura" || len(equipmentSnapshot.Equipment) != 1 {
+		t.Fatalf("unexpected equipment snapshot: %+v", equipmentSnapshot)
+	}
+	if equipmentSnapshot.Equipment[0].ID != 21 || equipmentSnapshot.Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon.String() {
+		t.Fatalf("unexpected equipment items: %+v", equipmentSnapshot.Equipment)
+	}
+
+	currencySnapshot, ok := runtime.CurrencySnapshot("MkmkSura")
+	if !ok {
+		t.Fatal("expected currency snapshot to be available after select")
+	}
+	if currencySnapshot.Name != "MkmkSura" || currencySnapshot.Gold != 88000 {
+		t.Fatalf("unexpected currency snapshot: %+v", currencySnapshot)
+	}
+	if _, ok := runtime.InventorySnapshot("Unknown"); ok {
+		t.Fatal("expected unknown character inventory snapshot lookup to fail")
+	}
+}
+
+func TestNewGameRuntimeClearsSelectedCharacterItemStateSnapshotsOnClose(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Gold = 88000
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}}
+	characters[1].Equipment = []inventory.ItemInstance{{ID: 21, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow := runtime.SessionFactory()()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, ok := runtime.InventorySnapshot("MkmkSura"); !ok {
+		t.Fatal("expected inventory snapshot to exist before close")
+	}
+	closer, ok := flow.(interface{ Close() error })
+	if !ok {
+		t.Fatal("expected session flow to expose Close")
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatalf("close session flow: %v", err)
+	}
+	if _, ok := runtime.InventorySnapshot("MkmkSura"); ok {
+		t.Fatal("expected inventory snapshot to be removed after close")
+	}
+	if _, ok := runtime.EquipmentSnapshot("MkmkSura"); ok {
+		t.Fatal("expected equipment snapshot to be removed after close")
+	}
+	if _, ok := runtime.CurrencySnapshot("MkmkSura"); ok {
+		t.Fatal("expected currency snapshot to be removed after close")
+	}
+}
+
 type failingAccountStore struct{}
 
 func (f *failingAccountStore) Load(string) (accountstore.Account, error) {

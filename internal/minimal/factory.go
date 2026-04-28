@@ -103,6 +103,35 @@ type CharacterInteractionVisibilitySnapshot struct {
 	VisibleInteractableStaticActors []InteractableStaticActorVisibilitySnapshot `json:"visible_interactable_static_actors"`
 }
 
+type InventoryItemSnapshot struct {
+	ID    uint64 `json:"id"`
+	Vnum  uint32 `json:"vnum"`
+	Count uint16 `json:"count"`
+	Slot  uint16 `json:"slot"`
+}
+
+type EquipmentItemSnapshot struct {
+	ID        uint64 `json:"id"`
+	Vnum      uint32 `json:"vnum"`
+	Count     uint16 `json:"count"`
+	EquipSlot string `json:"equip_slot"`
+}
+
+type CharacterInventorySnapshot struct {
+	Name      string                  `json:"name"`
+	Inventory []InventoryItemSnapshot `json:"inventory"`
+}
+
+type CharacterEquipmentSnapshot struct {
+	Name      string                  `json:"name"`
+	Equipment []EquipmentItemSnapshot `json:"equipment"`
+}
+
+type CharacterCurrencySnapshot struct {
+	Name string `json:"name"`
+	Gold uint64 `json:"gold"`
+}
+
 const (
 	staticActorInteractionFailureDefinitionNotFound     = "interaction_definition_not_found"
 	staticActorInteractionFailureUnsupportedKind        = "unsupported_interaction_kind"
@@ -136,10 +165,27 @@ type gameRuntime struct {
 	sharedWorld             *sharedWorldRegistry
 	staticStore             staticstore.Store
 	interactionStore        interactionstore.Store
+	liveCharacterMu         sync.RWMutex
+	liveCharacterNextID     uint64
+	liveCharactersByName    map[string]liveCharacterRegistration
 	interactionDefinitionMu sync.RWMutex
 	interactionDefinitions  map[string]interactionstore.Definition
 	staticActorMu           sync.Mutex
 	now                     func() time.Time
+}
+
+type liveCharacterStateSnapshot struct {
+	Name      string
+	Gold      uint64
+	Inventory []InventoryItemSnapshot
+	Equipment []EquipmentItemSnapshot
+}
+
+type liveCharacterStateSnapshotter func() (liveCharacterStateSnapshot, bool)
+
+type liveCharacterRegistration struct {
+	id          uint64
+	snapshotter liveCharacterStateSnapshotter
 }
 
 func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
@@ -257,6 +303,122 @@ func (r *gameRuntime) RuntimeConfigSnapshot() RuntimeConfigSnapshot {
 		snapshot.VisibilityMode = "custom"
 	}
 	return snapshot
+}
+
+func (r *gameRuntime) InventorySnapshot(name string) (CharacterInventorySnapshot, bool) {
+	state, ok := r.liveCharacterState(name)
+	if !ok {
+		return CharacterInventorySnapshot{}, false
+	}
+	return CharacterInventorySnapshot{
+		Name:      state.Name,
+		Inventory: append([]InventoryItemSnapshot(nil), state.Inventory...),
+	}, true
+}
+
+func (r *gameRuntime) EquipmentSnapshot(name string) (CharacterEquipmentSnapshot, bool) {
+	state, ok := r.liveCharacterState(name)
+	if !ok {
+		return CharacterEquipmentSnapshot{}, false
+	}
+	return CharacterEquipmentSnapshot{
+		Name:      state.Name,
+		Equipment: append([]EquipmentItemSnapshot(nil), state.Equipment...),
+	}, true
+}
+
+func (r *gameRuntime) CurrencySnapshot(name string) (CharacterCurrencySnapshot, bool) {
+	state, ok := r.liveCharacterState(name)
+	if !ok {
+		return CharacterCurrencySnapshot{}, false
+	}
+	return CharacterCurrencySnapshot{Name: state.Name, Gold: state.Gold}, true
+}
+
+func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, snapshotter liveCharacterStateSnapshotter) uint64 {
+	if r == nil || snapshotter == nil {
+		return 0
+	}
+	name = normalizeLiveCharacterName(name)
+	if name == "" {
+		return 0
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if r.liveCharactersByName == nil {
+		r.liveCharactersByName = make(map[string]liveCharacterRegistration)
+	}
+	r.liveCharacterNextID++
+	registrationID := r.liveCharacterNextID
+	r.liveCharactersByName[name] = liveCharacterRegistration{id: registrationID, snapshotter: snapshotter}
+	return registrationID
+}
+
+func (r *gameRuntime) unregisterLiveCharacterSnapshotter(name string, registrationID uint64) {
+	if r == nil || registrationID == 0 {
+		return
+	}
+	name = normalizeLiveCharacterName(name)
+	if name == "" {
+		return
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	registration, ok := r.liveCharactersByName[name]
+	if !ok || registration.id != registrationID {
+		return
+	}
+	delete(r.liveCharactersByName, name)
+	if len(r.liveCharactersByName) == 0 {
+		r.liveCharactersByName = nil
+	}
+}
+
+func (r *gameRuntime) liveCharacterState(name string) (liveCharacterStateSnapshot, bool) {
+	if r == nil {
+		return liveCharacterStateSnapshot{}, false
+	}
+	name = normalizeLiveCharacterName(name)
+	if name == "" {
+		return liveCharacterStateSnapshot{}, false
+	}
+	r.liveCharacterMu.RLock()
+	registration, ok := r.liveCharactersByName[name]
+	r.liveCharacterMu.RUnlock()
+	if !ok || registration.snapshotter == nil {
+		return liveCharacterStateSnapshot{}, false
+	}
+	return registration.snapshotter()
+}
+
+func normalizeLiveCharacterName(name string) string {
+	return strings.TrimSpace(name)
+}
+
+func buildLiveCharacterStateSnapshot(character loginticket.Character) liveCharacterStateSnapshot {
+	state := liveCharacterStateSnapshot{
+		Name:      character.Name,
+		Gold:      character.Gold,
+		Inventory: make([]InventoryItemSnapshot, 0, len(character.Inventory)),
+		Equipment: make([]EquipmentItemSnapshot, 0, len(character.Equipment)),
+	}
+	for _, item := range character.Inventory {
+		state.Inventory = append(state.Inventory, InventoryItemSnapshot{
+			ID:    item.ID,
+			Vnum:  item.Vnum,
+			Count: item.Count,
+			Slot:  uint16(item.Slot),
+		})
+	}
+	for _, item := range character.Equipment {
+		state.Equipment = append(state.Equipment, EquipmentItemSnapshot{
+			ID:        item.ID,
+			Vnum:      item.Vnum,
+			Count:     item.Count,
+			EquipSlot: item.EquipSlot.String(),
+		})
+	}
+	return state
 }
 
 func (r *gameRuntime) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
@@ -504,7 +666,13 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
 	}
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
-	runtime := &gameRuntime{sharedWorld: sharedWorld, staticStore: staticActors, interactionStore: interactions, now: time.Now}
+	runtime := &gameRuntime{
+		sharedWorld:          sharedWorld,
+		staticStore:          staticActors,
+		interactionStore:     interactions,
+		liveCharactersByName: make(map[string]liveCharacterRegistration),
+		now:                  time.Now,
+	}
 	if err := runtime.loadInteractionDefinitions(); err != nil {
 		return nil, err
 	}
@@ -520,6 +688,8 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 		var hasSelected bool
 		var selectedPlayer *player.Runtime
 		var stateMu sync.Mutex
+		var liveCharacterRegistrationName string
+		var liveCharacterRegistrationID uint64
 		pending := newPendingServerFrames()
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
@@ -540,6 +710,41 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 			}
 			interactionCooldowns[targetVID] = interactionNow().Add(staticActorInteractionCooldown)
 		}
+		clearLiveCharacterRegistration := func() {
+			if liveCharacterRegistrationID == 0 {
+				return
+			}
+			runtime.unregisterLiveCharacterSnapshotter(liveCharacterRegistrationName, liveCharacterRegistrationID)
+			liveCharacterRegistrationName = ""
+			liveCharacterRegistrationID = 0
+		}
+		refreshLiveCharacterRegistration := func() {
+			clearLiveCharacterRegistration()
+			if runtime == nil || !hasSelected || selectedPlayer == nil {
+				return
+			}
+			selected := selectedPlayer.LiveCharacter()
+			if selected.ID == 0 {
+				return
+			}
+			name := normalizeLiveCharacterName(selected.Name)
+			if name == "" {
+				return
+			}
+			liveCharacterRegistrationName = name
+			liveCharacterRegistrationID = runtime.registerLiveCharacterSnapshotter(name, func() (liveCharacterStateSnapshot, bool) {
+				stateMu.Lock()
+				defer stateMu.Unlock()
+				if !hasSelected || selectedPlayer == nil {
+					return liveCharacterStateSnapshot{}, false
+				}
+				current := selectedPlayer.LiveCharacter()
+				if current.ID == 0 || normalizeLiveCharacterName(current.Name) != name {
+					return liveCharacterStateSnapshot{}, false
+				}
+				return buildLiveCharacterStateSnapshot(current), true
+			})
+		}
 		refreshSelectedPlayerFromAccountSnapshot := func() bool {
 			if accounts == nil {
 				return true
@@ -550,17 +755,20 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 			account, ok := loadOrCreateAccount(accounts, sessionTicket.Login)
 			if !ok {
 				selectedPlayer = nil
+				clearLiveCharacterRegistration()
 				return false
 			}
 			sessionTicket.Empire = account.Empire
 			sessionTicket.Characters = cloneCharacters(account.Characters)
 			if int(selectedIndex) >= len(sessionTicket.Characters) {
 				selectedPlayer = nil
+				clearLiveCharacterRegistration()
 				return false
 			}
 			selected := sessionTicket.Characters[selectedIndex]
 			if selected.ID == 0 {
 				selectedPlayer = nil
+				clearLiveCharacterRegistration()
 				return false
 			}
 			if selectedPlayer == nil {
@@ -568,6 +776,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 			} else {
 				selectedPlayer.ApplyPersistedSnapshot(selected)
 			}
+			refreshLiveCharacterRegistration()
 			return true
 		}
 		currentSelectedPlayer := func() (*player.Runtime, bool) {
@@ -585,6 +794,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 				return nil, false
 			}
 			selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: selectedIndex})
+			refreshLiveCharacterRegistration()
 			return selectedPlayer, true
 		}
 		ownsLiveSharedWorldSession := func() bool {
@@ -713,6 +923,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 					hasTicket = true
 					hasSelected = false
 					selectedPlayer = nil
+					clearLiveCharacterRegistration()
 					selectedIndex = 0
 					return loginflow.Result{
 						Accepted:      true,
@@ -772,6 +983,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 					if hasSelected && selectedIndex == deletedIndex {
 						hasSelected = false
 						selectedPlayer = nil
+						clearLiveCharacterRegistration()
 					}
 					return worldentry.DeleteResult{Accepted: true, Index: deletedIndex}
 				},
@@ -790,6 +1002,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 					selectedIndex = index
 					hasSelected = true
 					selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: index})
+					refreshLiveCharacterRegistration()
 					return worldentry.Result{
 						Accepted:      true,
 						Player:        selectedPlayer,
@@ -929,11 +1142,13 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
+							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseClose}
 						case "phase_select":
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
+							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseSelect}
 						}
 					}
@@ -1056,6 +1271,7 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 			leaveID := sharedWorldID
 			shouldLeave := joinedSharedWorld
 			joinedSharedWorld = false
+			clearLiveCharacterRegistration()
 			stateMu.Unlock()
 			if shouldLeave {
 				sharedWorld.Leave(leaveID)

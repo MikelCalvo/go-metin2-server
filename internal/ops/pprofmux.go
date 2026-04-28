@@ -79,6 +79,42 @@ func RegisterLocalRuntimeConfigEndpoint(mux *http.ServeMux, runtimeConfig func()
 	return mux
 }
 
+func RegisterLocalInventoryEndpoint(mux *http.ServeMux, inventorySnapshot func(string) (any, bool)) *http.ServeMux {
+	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/inventory/", "/local/inventory/", inventorySnapshot)
+}
+
+func RegisterLocalEquipmentEndpoint(mux *http.ServeMux, equipmentSnapshot func(string) (any, bool)) *http.ServeMux {
+	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/equipment/", "/local/equipment/", equipmentSnapshot)
+}
+
+func RegisterLocalCurrencyEndpoint(mux *http.ServeMux, currencySnapshot func(string) (any, bool)) *http.ServeMux {
+	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/currency/", "/local/currency/", currencySnapshot)
+}
+
+func registerLocalNamedSnapshotEndpoint(mux *http.ServeMux, pattern string, prefix string, snapshot func(string) (any, bool)) *http.ServeMux {
+	if mux == nil || snapshot == nil {
+		return mux
+	}
+	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		name, ok := decodeLocalCharacterName(r, prefix)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := snapshot(name)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() any, registerStaticActor func(string, uint32, int32, int32, uint32, string, string) (any, bool)) *http.ServeMux {
 	if mux == nil || (staticActors == nil && registerStaticActor == nil) {
 		return mux
@@ -643,6 +679,23 @@ func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {
 		return 0, false
 	}
 	return entityID, true
+}
+
+func decodeLocalCharacterName(r *http.Request, prefix string) (string, bool) {
+	raw := strings.TrimPrefix(r.URL.Path, prefix)
+	raw = strings.TrimSpace(raw)
+	if raw == "" || strings.Contains(raw, "/") {
+		return "", false
+	}
+	name, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", false
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || strings.Contains(name, "/") {
+		return "", false
+	}
+	return name, true
 }
 
 func writeLocalJSONMutationResponse(w http.ResponseWriter, value any, status int) {

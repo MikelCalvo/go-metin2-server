@@ -615,6 +615,174 @@ func TestLocalRuntimeConfigEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalInventoryEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"MkmkSura": map[string]any{"name": "MkmkSura", "inventory": []map[string]any{{"id": uint64(11), "vnum": uint32(50501), "count": uint16(2), "slot": uint16(5)}}}}}
+	mux := RegisterLocalInventoryEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/inventory/MkmkSura", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 || snapshotter.lastName != "MkmkSura" {
+		t.Fatalf("expected inventory snapshotter call for MkmkSura, got calls=%d name=%q", snapshotter.calls, snapshotter.lastName)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"name":"MkmkSura"`) || !strings.Contains(string(body), `"slot":5`) || !strings.Contains(string(body), `"vnum":50501`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalInventoryEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{}
+	mux := RegisterLocalInventoryEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/inventory/MkmkSura", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected inventory snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalInventoryEndpointRejectsUnknownCharacter(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"Other": map[string]any{"name": "Other"}}}
+	mux := RegisterLocalInventoryEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/inventory/MkmkSura", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if snapshotter.calls != 1 || snapshotter.lastName != "MkmkSura" {
+		t.Fatalf("expected inventory snapshotter call for MkmkSura, got calls=%d name=%q", snapshotter.calls, snapshotter.lastName)
+	}
+}
+
+func TestLocalInventoryEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{}
+	mux := RegisterLocalInventoryEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/inventory/MkmkSura", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected inventory snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalInventoryEndpointDecodesEscapedCharacterName(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"Mkmk Sura": map[string]any{"name": "Mkmk Sura", "inventory": []map[string]any{{"slot": uint16(5)}}}}}
+	mux := RegisterLocalInventoryEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/inventory/Mkmk%20Sura", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 || snapshotter.lastName != "Mkmk Sura" {
+		t.Fatalf("expected decoded name Mkmk Sura, got calls=%d name=%q", snapshotter.calls, snapshotter.lastName)
+	}
+}
+
+func TestLocalInventoryEndpointRejectsNamesContainingSlashes(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{}
+	mux := RegisterLocalInventoryEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/inventory/Mkmk%2FSura", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected inventory snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalEquipmentEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"MkmkSura": map[string]any{"name": "MkmkSura", "equipment": []map[string]any{{"id": uint64(21), "vnum": uint32(19), "count": uint16(1), "equip_slot": "weapon"}}}}}
+	mux := RegisterLocalEquipmentEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/equipment/MkmkSura", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 || snapshotter.lastName != "MkmkSura" {
+		t.Fatalf("expected equipment snapshotter call for MkmkSura, got calls=%d name=%q", snapshotter.calls, snapshotter.lastName)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"equip_slot":"weapon"`) || !strings.Contains(string(body), `"vnum":19`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalCurrencyEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"MkmkSura": map[string]any{"name": "MkmkSura", "gold": uint64(123456)}}}
+	mux := RegisterLocalCurrencyEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/currency/MkmkSura", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 || snapshotter.lastName != "MkmkSura" {
+		t.Fatalf("expected currency snapshotter call for MkmkSura, got calls=%d name=%q", snapshotter.calls, snapshotter.lastName)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"gold":123456`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
 func TestLocalMapsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubMapOccupancySnapshotter{snapshots: []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "Zulu"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "Alpha"}, {"name": "PeerTwo"}}}}}
 	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, nil, snapshotter.MapOccupancy)
@@ -1104,6 +1272,19 @@ type stubRuntimeConfigSnapshotter struct {
 func (s *stubRuntimeConfigSnapshotter) RuntimeConfig() any {
 	s.calls++
 	return s.snapshot
+}
+
+type stubNamedSnapshotter struct {
+	snapshots map[string]any
+	calls     int
+	lastName  string
+}
+
+func (s *stubNamedSnapshotter) Snapshot(name string) (any, bool) {
+	s.calls++
+	s.lastName = name
+	value, ok := s.snapshots[name]
+	return value, ok
 }
 
 type stubStaticActorSnapshotter struct {

@@ -64,6 +64,36 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.RuntimeConfigSnapshot() },
 	)
+	opsHandler = ops.RegisterLocalInventoryEndpoint(
+		opsHandler,
+		func(name string) (any, bool) {
+			snapshot, ok := gameRuntime.InventorySnapshot(name)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
+	opsHandler = ops.RegisterLocalEquipmentEndpoint(
+		opsHandler,
+		func(name string) (any, bool) {
+			snapshot, ok := gameRuntime.EquipmentSnapshot(name)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
+	opsHandler = ops.RegisterLocalCurrencyEndpoint(
+		opsHandler,
+		func(name string) (any, bool) {
+			snapshot, ok := gameRuntime.CurrencySnapshot(name)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalInteractionVisibilityEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.InteractionVisibility() },
