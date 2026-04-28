@@ -895,6 +895,27 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
 			return selectedPlayer.LiveCharacter(), true
 		}
+		commitSelectedItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
+			if selectedPlayer == nil {
+				return gameflow.ChatResult{Accepted: false}
+			}
+			updatedSelected := selectedPlayer.LiveCharacter()
+			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updatedSelected)
+			if !ok {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return gameflow.ChatResult{Accepted: false}
+			}
+			if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return gameflow.ChatResult{Accepted: false}
+			}
+			sessionTicket.Characters = updatedCharacters
+			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
+			refreshLiveCharacterRegistration()
+			return gameflow.ChatResult{Accepted: true, Frames: frames}
+		}
 
 		inner := boot.NewFlow(boot.Config{
 			Handshake: handshake.Config{
@@ -1145,28 +1166,51 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 						if !moveResult.Changed {
 							return gameflow.ChatResult{Accepted: true}
 						}
-						updatedSelected := selectedPlayer.LiveCharacter()
 						frames, err := inventoryMoveResultFrames(moveResult)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: false}
 						}
-						updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updatedSelected)
+						return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
+					}
+
+					if fromSlot, equipSlot, ok := slashEquipItemCommand(packet.Message); ok {
+						selectedPlayer, ok := currentSelectedPlayer()
 						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						previousSelected := selectedPlayer.LiveCharacter()
+						equippedItem, ok := selectedPlayer.EquipItem(fromSlot, equipSlot)
+						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						frames, err := equipResultFrames(fromSlot, equippedItem)
+						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: false}
 						}
-						if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+						return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
+					}
+
+					if equipSlot, toSlot, ok := slashUnequipItemCommand(packet.Message); ok {
+						selectedPlayer, ok := currentSelectedPlayer()
+						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						previousSelected := selectedPlayer.LiveCharacter()
+						inventoryItem, ok := selectedPlayer.UnequipItem(equipSlot, toSlot)
+						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						frames, err := unequipResultFrames(equipSlot, inventoryItem)
+						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: false}
 						}
-						sessionTicket.Characters = updatedCharacters
-						selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
-						refreshLiveCharacterRegistration()
-						return gameflow.ChatResult{Accepted: true, Frames: frames}
+						return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
 					}
 
 					if command, ok := slashGameCommand(packet.Message); ok {
@@ -1621,6 +1665,44 @@ func slashInventoryMoveCommand(message string) (inventory.SlotIndex, inventory.S
 	return inventory.SlotIndex(from), inventory.SlotIndex(to), true
 }
 
+func slashEquipItemCommand(message string) (inventory.SlotIndex, inventory.EquipmentSlot, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, inventory.EquipmentSlotNone, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 3 || fields[0] != "equip_item" {
+		return 0, inventory.EquipmentSlotNone, false
+	}
+	from, err := strconv.ParseUint(fields[1], 10, 16)
+	if err != nil {
+		return 0, inventory.EquipmentSlotNone, false
+	}
+	equipSlot, ok := inventory.ParseEquipmentSlot(fields[2])
+	if !ok || !equipSlot.Valid() {
+		return 0, inventory.EquipmentSlotNone, false
+	}
+	return inventory.SlotIndex(from), equipSlot, true
+}
+
+func slashUnequipItemCommand(message string) (inventory.EquipmentSlot, inventory.SlotIndex, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return inventory.EquipmentSlotNone, 0, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 3 || fields[0] != "unequip_item" {
+		return inventory.EquipmentSlotNone, 0, false
+	}
+	equipSlot, ok := inventory.ParseEquipmentSlot(fields[1])
+	if !ok || !equipSlot.Valid() {
+		return inventory.EquipmentSlotNone, 0, false
+	}
+	to, err := strconv.ParseUint(fields[2], 10, 16)
+	if err != nil {
+		return inventory.EquipmentSlotNone, 0, false
+	}
+	return equipSlot, inventory.SlotIndex(to), true
+}
+
 func ticketLoginSuccessPacket(ticket loginticket.Ticket, addr uint32, port uint16) loginproto.LoginSuccess4Packet {
 	packet := loginproto.LoginSuccess4Packet{
 		Handle:    0x11223344,
@@ -1751,12 +1833,12 @@ func buildSelectedItemBootstrapFrames(character loginticket.Character) ([][]byte
 	}
 	equipped := append([]inventory.ItemInstance(nil), character.Equipment...)
 	sort.Slice(equipped, func(i int, j int) bool {
-		leftCell, leftOK := equipmentBootstrapCell(equipped[i].EquipSlot)
-		rightCell, rightOK := equipmentBootstrapCell(equipped[j].EquipSlot)
+		leftPosition, leftOK := equipmentBootstrapPosition(equipped[i].EquipSlot)
+		rightPosition, rightOK := equipmentBootstrapPosition(equipped[j].EquipSlot)
 		if !leftOK || !rightOK {
 			return equipped[i].EquipSlot < equipped[j].EquipSlot
 		}
-		return leftCell < rightCell
+		return leftPosition.Cell < rightPosition.Cell
 	})
 	for _, instance := range equipped {
 		raw, err := encodeBootstrapEquipmentItemFrame(instance)
@@ -1780,7 +1862,7 @@ func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
 		}
 		frames = append(frames, frame)
 	} else {
-		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.Position{WindowType: itemproto.WindowInventory, Cell: uint16(result.From)}}))
+		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(uint16(result.From))}))
 	}
 	if result.ToOccupied {
 		frame, err := encodeBootstrapInventoryItemFrame(result.ToItem)
@@ -1790,6 +1872,32 @@ func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
 		frames = append(frames, frame)
 	}
 	return frames, nil
+}
+
+func equipResultFrames(from inventory.SlotIndex, equippedItem inventory.ItemInstance) ([][]byte, error) {
+	setFrame, err := encodeBootstrapEquipmentItemFrame(equippedItem)
+	if err != nil {
+		return nil, err
+	}
+	return [][]byte{
+		itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(uint16(from))}),
+		setFrame,
+	}, nil
+}
+
+func unequipResultFrames(from inventory.EquipmentSlot, inventoryItem inventory.ItemInstance) ([][]byte, error) {
+	position, ok := equipmentBootstrapPosition(from)
+	if !ok {
+		return nil, fmt.Errorf("bootstrap equipment slot unsupported: %s", from.String())
+	}
+	setFrame, err := encodeBootstrapInventoryItemFrame(inventoryItem)
+	if err != nil {
+		return nil, err
+	}
+	return [][]byte{
+		itemproto.EncodeDel(itemproto.DelPacket{Position: position}),
+		setFrame,
+	}, nil
 }
 
 func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte, error) {
@@ -1802,7 +1910,7 @@ func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte,
 	if uint16(instance.Slot) >= itemproto.InventoryMaxCell {
 		return nil, fmt.Errorf("bootstrap inventory slot out of range: %d", instance.Slot)
 	}
-	return encodeBootstrapItemFrame(itemproto.Position{WindowType: itemproto.WindowInventory, Cell: uint16(instance.Slot)}, instance)
+	return encodeBootstrapItemFrame(itemproto.InventoryPosition(uint16(instance.Slot)), instance)
 }
 
 func encodeBootstrapEquipmentItemFrame(instance inventory.ItemInstance) ([]byte, error) {
@@ -1812,11 +1920,11 @@ func encodeBootstrapEquipmentItemFrame(instance inventory.ItemInstance) ([]byte,
 	if !instance.Equipped {
 		return nil, fmt.Errorf("bootstrap equipment item must be equipped: %d", instance.ID)
 	}
-	cell, ok := equipmentBootstrapCell(instance.EquipSlot)
+	position, ok := equipmentBootstrapPosition(instance.EquipSlot)
 	if !ok {
 		return nil, fmt.Errorf("bootstrap equipment slot unsupported: %s", instance.EquipSlot.String())
 	}
-	return encodeBootstrapItemFrame(itemproto.Position{WindowType: itemproto.WindowInventory, Cell: cell}, instance)
+	return encodeBootstrapItemFrame(position, instance)
 }
 
 func encodeBootstrapItemFrame(position itemproto.Position, instance inventory.ItemInstance) ([]byte, error) {
@@ -1830,7 +1938,19 @@ func encodeBootstrapItemFrame(position itemproto.Position, instance inventory.It
 	}), nil
 }
 
-func equipmentBootstrapCell(slot inventory.EquipmentSlot) (uint16, bool) {
+func equipmentBootstrapPosition(slot inventory.EquipmentSlot) (itemproto.Position, bool) {
+	wearIndex, ok := equipmentBootstrapWearIndex(slot)
+	if !ok {
+		return itemproto.Position{}, false
+	}
+	position, err := itemproto.EquipmentPosition(wearIndex)
+	if err != nil {
+		return itemproto.Position{}, false
+	}
+	return position, true
+}
+
+func equipmentBootstrapWearIndex(slot inventory.EquipmentSlot) (uint16, bool) {
 	const costumeHairWearIndex uint16 = 20
 	var wearIndex uint16
 	switch slot {
@@ -1861,7 +1981,7 @@ func equipmentBootstrapCell(slot inventory.EquipmentSlot) (uint16, bool) {
 	default:
 		return 0, false
 	}
-	return itemproto.InventoryMaxCell + wearIndex, true
+	return wearIndex, true
 }
 
 func ticketMoveAckPacket(character loginticket.Character, packet movep.MovePacket) movep.MoveAckPacket {

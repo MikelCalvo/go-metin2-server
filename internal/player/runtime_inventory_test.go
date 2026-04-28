@@ -19,8 +19,12 @@ func TestRuntimeKeepsLiveCurrencyAndItemStateSeparateFromPersistedSnapshot(t *te
 	if moveResult.From != 5 || moveResult.To != 6 || moveResult.FromOccupied || !moveResult.ToOccupied || moveResult.ToItem.Slot != 6 || moveResult.ToItem.ID != 11 {
 		t.Fatalf("unexpected move result: %+v", moveResult)
 	}
-	if !runtime.EquipItem(8, inventory.EquipmentSlotBody) {
+	equippedItem, ok := runtime.EquipItem(8, inventory.EquipmentSlotBody)
+	if !ok {
 		t.Fatal("expected equip to succeed")
+	}
+	if !equippedItem.Equipped || equippedItem.EquipSlot != inventory.EquipmentSlotBody || equippedItem.Slot != 0 || equippedItem.ID != 12 {
+		t.Fatalf("unexpected equipped item result: %+v", equippedItem)
 	}
 	runtime.SetLiveGold(88000)
 
@@ -90,8 +94,12 @@ func TestRuntimeApplyPersistedSnapshotRealignsLiveCurrencyInventoryAndEquipment(
 	if _, ok := runtime.MoveInventoryItem(5, 6); !ok {
 		t.Fatal("expected inventory move to succeed")
 	}
-	if !runtime.EquipItem(8, inventory.EquipmentSlotBody) {
+	equippedItem, ok := runtime.EquipItem(8, inventory.EquipmentSlotBody)
+	if !ok {
 		t.Fatal("expected equip to succeed")
+	}
+	if !equippedItem.Equipped || equippedItem.EquipSlot != inventory.EquipmentSlotBody || equippedItem.ID != 12 {
+		t.Fatalf("unexpected equipped item result: %+v", equippedItem)
 	}
 	runtime.SetLiveGold(1)
 
@@ -140,8 +148,12 @@ func TestRuntimeCanUnequipLiveItemBackIntoInventory(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	if !runtime.UnequipItem(inventory.EquipmentSlotWeapon, 4) {
+	item, ok := runtime.UnequipItem(inventory.EquipmentSlotWeapon, 4)
+	if !ok {
 		t.Fatal("expected unequip to succeed")
+	}
+	if item.Equipped || item.EquipSlot != inventory.EquipmentSlotNone || item.Slot != 4 || item.ID != 21 {
+		t.Fatalf("unexpected unequipped item result: %+v", item)
 	}
 
 	gotLive := runtime.LiveCharacter()
@@ -209,10 +221,10 @@ func TestNilRuntimeInventoryEquipmentAndCurrencyHelpersAreSafe(t *testing.T) {
 	if _, ok := runtime.MoveInventoryItem(1, 2); ok {
 		t.Fatal("expected nil runtime inventory move to fail")
 	}
-	if runtime.EquipItem(1, inventory.EquipmentSlotBody) {
+	if _, ok := runtime.EquipItem(1, inventory.EquipmentSlotBody); ok {
 		t.Fatal("expected nil runtime equip to fail")
 	}
-	if runtime.UnequipItem(inventory.EquipmentSlotWeapon, 2) {
+	if _, ok := runtime.UnequipItem(inventory.EquipmentSlotWeapon, 2); ok {
 		t.Fatal("expected nil runtime unequip to fail")
 	}
 }

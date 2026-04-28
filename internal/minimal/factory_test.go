@@ -770,6 +770,146 @@ func TestNewGameSessionFactoryInventorySwapPersistsAndEmitsTwoSetFrames(t *testi
 	}
 }
 
+func TestNewGameSessionFactoryEquipPersistsAndEmitsInventoryDeleteThenEquipmentSet(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	if err != nil {
+		t.Fatalf("unexpected equip error: %v", err)
+	}
+	if len(equipOut) != 2 {
+		t.Fatalf("expected delete+set frames for equip, got %d", len(equipOut))
+	}
+	delPacket, err := itemproto.DecodeDel(decodeSingleFrame(t, equipOut[0]))
+	if err != nil {
+		t.Fatalf("decode equip inventory delete: %v", err)
+	}
+	if delPacket.Position.WindowType != itemproto.WindowInventory || delPacket.Position.Cell != 8 {
+		t.Fatalf("unexpected equip inventory delete packet: %+v", delPacket)
+	}
+	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, equipOut[1]))
+	if err != nil {
+		t.Fatalf("decode equip equipment set: %v", err)
+	}
+	wantBodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("resolve body equipment position: %v", err)
+	}
+	if setPacket.Position != wantBodyPosition || setPacket.Vnum != 0x11223344 || setPacket.Count != 1 {
+		t.Fatalf("unexpected equip equipment set packet: %+v", setPacket)
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if len(account.Characters[1].Inventory) != 0 {
+		t.Fatalf("expected persisted inventory to be empty after equip, got %#v", account.Characters[1].Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Equipment, []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}) {
+		t.Fatalf("unexpected persisted equipment after equip: %#v", account.Characters[1].Equipment)
+	}
+}
+
+func TestNewGameSessionFactoryUnequipPersistsAndEmitsEquipmentDeleteThenInventorySet(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{}
+	characters[1].Equipment = []inventory.ItemInstance{{ID: 2002, Vnum: 0x55667788, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	unequipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item weapon 4"})))
+	if err != nil {
+		t.Fatalf("unexpected unequip error: %v", err)
+	}
+	if len(unequipOut) != 2 {
+		t.Fatalf("expected delete+set frames for unequip, got %d", len(unequipOut))
+	}
+	delPacket, err := itemproto.DecodeDel(decodeSingleFrame(t, unequipOut[0]))
+	if err != nil {
+		t.Fatalf("decode unequip equipment delete: %v", err)
+	}
+	wantWeaponPosition, err := itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("resolve weapon equipment position: %v", err)
+	}
+	if delPacket.Position != wantWeaponPosition {
+		t.Fatalf("unexpected unequip equipment delete packet: %+v", delPacket)
+	}
+	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, unequipOut[1]))
+	if err != nil {
+		t.Fatalf("decode unequip inventory set: %v", err)
+	}
+	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 4 || setPacket.Vnum != 0x55667788 || setPacket.Count != 1 {
+		t.Fatalf("unexpected unequip inventory set packet: %+v", setPacket)
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Inventory, []inventory.ItemInstance{{ID: 2002, Vnum: 0x55667788, Count: 1, Slot: 4}}) {
+		t.Fatalf("unexpected persisted inventory after unequip: %#v", account.Characters[1].Inventory)
+	}
+	if len(account.Characters[1].Equipment) != 0 {
+		t.Fatalf("expected persisted equipment to be empty after unequip, got %#v", account.Characters[1].Equipment)
+	}
+}
+
 func TestNewGameSessionFactoryMovesTheSelectedCharacterInGame(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Characters: stubCharacters()}); err != nil {
@@ -1091,7 +1231,7 @@ func TestSelectedCharacterSnapshotUpdateCarriesLiveRuntimeItemStateIntoPersisted
 	if _, ok := runtime.MoveInventoryItem(5, 6); !ok {
 		t.Fatal("expected inventory move to succeed")
 	}
-	if !runtime.EquipItem(8, inventory.EquipmentSlotBody) {
+	if _, ok := runtime.EquipItem(8, inventory.EquipmentSlotBody); !ok {
 		t.Fatal("expected equip to succeed")
 	}
 	runtime.SetLiveGold(88000)

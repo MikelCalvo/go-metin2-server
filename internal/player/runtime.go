@@ -131,45 +131,45 @@ func (r *Runtime) MoveInventoryItem(from inventory.SlotIndex, to inventory.SlotI
 	return result, true
 }
 
-func (r *Runtime) EquipItem(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot) bool {
+func (r *Runtime) EquipItem(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (inventory.ItemInstance, bool) {
 	if r == nil || !equipSlot.Valid() || equipmentSlotOccupied(r.liveEquipment, equipSlot) {
-		return false
+		return inventory.ItemInstance{}, false
 	}
 	fromIndex := findInventorySlot(r.liveInventory, from)
 	if fromIndex < 0 {
-		return false
+		return inventory.ItemInstance{}, false
 	}
 	item := r.liveInventory[fromIndex]
 	item.Slot = 0
 	item.Equipped = true
 	item.EquipSlot = equipSlot
 	if err := item.Validate(); err != nil {
-		return false
+		return inventory.ItemInstance{}, false
 	}
 	r.liveInventory = removeInventoryIndex(r.liveInventory, fromIndex)
 	r.liveEquipment = append(r.liveEquipment, item)
 	sortInventoryItems(r.liveInventory)
 	sortEquipmentItems(r.liveEquipment)
-	return true
+	return item, true
 }
 
-func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.SlotIndex) bool {
+func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.SlotIndex) (inventory.ItemInstance, bool) {
 	if r == nil || !equipSlot.Valid() || inventorySlotOccupied(r.liveInventory, to) {
-		return false
+		return inventory.ItemInstance{}, false
 	}
 	equipIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
 	if equipIndex < 0 {
-		return false
+		return inventory.ItemInstance{}, false
 	}
 	item, err := r.liveEquipment[equipIndex].WithInventorySlot(to)
 	if err != nil {
-		return false
+		return inventory.ItemInstance{}, false
 	}
 	r.liveEquipment = removeInventoryIndex(r.liveEquipment, equipIndex)
 	r.liveInventory = append(r.liveInventory, item)
 	sortEquipmentItems(r.liveEquipment)
 	sortInventoryItems(r.liveInventory)
-	return true
+	return item, true
 }
 
 func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {

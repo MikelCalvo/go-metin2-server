@@ -65,6 +65,23 @@ func TestDecodeSetReturnsExpectedEquipmentFieldsInTheLegacyCombinedCellNamespace
 	}
 }
 
+func TestEquipmentPositionBuildsTheLegacyCombinedInventoryCellNamespace(t *testing.T) {
+	position, err := EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("unexpected equipment position error: %v", err)
+	}
+	if position != (Position{WindowType: WindowInventory, Cell: InventoryMaxCell + 4}) {
+		t.Fatalf("unexpected equipment position: %+v", position)
+	}
+}
+
+func TestEquipmentPositionRejectsOutOfRangeWearCell(t *testing.T) {
+	_, err := EquipmentPosition(WearMaxCell)
+	if err == nil {
+		t.Fatal("expected out-of-range wear cell to fail")
+	}
+}
+
 func TestEncodeDelBuildsAFrame(t *testing.T) {
 	want := loadHexFixture(t, "item-del-frame.hex")
 	got := EncodeDel(sampleDelPacket())

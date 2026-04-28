@@ -111,15 +111,22 @@ The exact wire layout is now frozen by `internal/proto/item` golden tests.
 
 ## First live mutation refresh boundary
 
-After the bootstrap burst, the first owned mutation loop remains intentionally bootstrap-scoped:
-- ingress is a server-owned slash command seam, `/inventory_move <from> <to>`, rather than the final legacy drag/drop packet family
-- only carried inventory slots participate in this first mutation slice
-- successful mutations must persist the updated selected-character inventory snapshot before the runtime commits the new live state
+After the bootstrap burst, the owned mutation surface remains intentionally bootstrap-scoped:
+- ingress is still server-owned slash-command seams rather than the final legacy drag/drop / item-use packet families
+- the current supported seams are:
+  - `/inventory_move <from> <to>` for carried-slot move/swap
+  - `/equip_item <from> <equip_slot>` for carried -> worn transitions
+  - `/unequip_item <equip_slot> <to>` for worn -> carried transitions
+- carried inventory keeps using `window_type = INVENTORY (1)` with `0 <= cell < 90`
+- worn equipment still refreshes through the legacy combined inventory namespace `window_type = INVENTORY (1), cell = 90 + wear_index`
+- successful mutations must persist the updated selected-character inventory/equipment snapshot before the runtime commits the new live state
 - failed persistence must fail closed and leave the selected runtime on the pre-mutation snapshot
 
 Refresh rules for a successful self-only mutation:
 - move into an empty slot emits `ITEM_DEL(from)` then `ITEM_SET(to)`
 - swap with an occupied slot emits `ITEM_SET(from)` for the item that moved back into the source slot, then `ITEM_SET(to)` for the item that moved into the destination slot
+- equip emits `ITEM_DEL(inventory_from)` then `ITEM_SET(equipment_cell)`
+- unequip emits `ITEM_DEL(equipment_cell)` then `ITEM_SET(inventory_to)`
 - the response stays self-only; peer-visible equipment/appearance/state links remain out of scope here
 
 ## Frozen wire position addressing
@@ -176,6 +183,6 @@ After this slice, the repository should be able to say:
 - inventory/equipment are no longer undefined territory in project docs
 - the first self-only bootstrap ordering for item state is frozen relative to `ENTERGAME`
 - the loading-to-game burst now emits owned `ITEM_SET` frames for occupied carried/equipped slots immediately after `PLAYER_POINT_CHANGE`
-- the first carried-inventory mutation loop now persists selected-character slot move/swap changes and refreshes the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames
+- the first carried/worn mutation loops now persist selected-character move/swap/equip/unequip changes and refresh the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames
 - the repo owns a stable vocabulary for carried inventory slots, equipment slots, minimum item snapshot semantics, and the first self-only mutation refresh rules
 - the packet matrix and `internal/proto/item` codec now agree on the first byte-level item bootstrap family

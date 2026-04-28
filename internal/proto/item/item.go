@@ -31,8 +31,9 @@ const (
 )
 
 var (
-	ErrUnexpectedHeader = errors.New("unexpected item packet header")
-	ErrInvalidPayload   = errors.New("invalid item packet payload")
+	ErrUnexpectedHeader       = errors.New("unexpected item packet header")
+	ErrInvalidPayload         = errors.New("invalid item packet payload")
+	ErrEquipmentWearCellRange = errors.New("equipment wear cell is out of range")
 )
 
 type Position struct {
@@ -58,6 +59,17 @@ type SetPacket struct {
 
 type DelPacket struct {
 	Position Position
+}
+
+func InventoryPosition(cell uint16) Position {
+	return Position{WindowType: WindowInventory, Cell: cell}
+}
+
+func EquipmentPosition(wearCell uint16) (Position, error) {
+	if wearCell >= WearMaxCell {
+		return Position{}, ErrEquipmentWearCellRange
+	}
+	return InventoryPosition(InventoryMaxCell + wearCell), nil
 }
 
 func EncodeSet(packet SetPacket) []byte {
