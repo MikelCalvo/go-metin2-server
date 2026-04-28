@@ -57,7 +57,7 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 | `PLAYER_DELETE_FAILURE` | server -> client | `0x020F` | select | documented | minimal delete rejection placeholder using a header-only failure frame |
 | `MAIN_CHARACTER` | server -> client | `0x0210` | loading | documented | main actor bootstrap |
 | `PLAYER_POINTS` | server -> client | `0x0214` | loading/game bootstrap | documented | initial stat payload |
-| `PLAYER_POINT_CHANGE` | server -> client | `0x0215` | game bootstrap | documented | first self-only point refresh after the selected-character bootstrap |
+| `PLAYER_POINT_CHANGE` | server -> client | `0x0215` | game bootstrap / game | documented | first self-only point refresh after the selected-character bootstrap; the first owned consumable-use vertical also reuses it for the selected character with `type = 1`, fixed `amount = 50`, and `value = updated Points[1]` |
 
 ## Movement
 
@@ -74,7 +74,7 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `CHAT` | client -> server | `0x0601` | game | documented | current slice accepts `CHAT_TYPE_TALKING`, bootstrap `CHAT_TYPE_PARTY`, bootstrap `CHAT_TYPE_GUILD`, bootstrap `CHAT_TYPE_SHOUT`, and bootstrap `CHAT_TYPE_INFO`; client-originated `CHAT_TYPE_NOTICE` is currently rejected |
+| `CHAT` | client -> server | `0x0601` | game | documented | current slice accepts `CHAT_TYPE_TALKING`, bootstrap `CHAT_TYPE_PARTY`, bootstrap `CHAT_TYPE_GUILD`, bootstrap `CHAT_TYPE_SHOUT`, and bootstrap `CHAT_TYPE_INFO`; client-originated `CHAT_TYPE_NOTICE` is currently rejected; bootstrap `CHAT_TYPE_TALKING` currently also hosts the server-owned slash seams `/inventory_move`, `/equip_item`, `/unequip_item`, and the first item-use bootstrap seam `/use_item <slot>` |
 | `WHISPER` | client -> server | `0x0602` | game | documented | current slice routes by exact target character name with variable text payload |
 | `CHAT` | server -> client | `0x0603` | game | documented | deterministic sender echo for talking/party/guild/shout; current fanout scope is same-map + same-empire for talking, same empire for shout, same non-zero `GuildID` for guild, and all connected sessions for party; sender-only bootstrap system info uses `vid = 0`; server-originated notice broadcasts also use `vid = 0` raw system text |
 | `WHISPER` | server -> client | `0x0604` | game | documented | direct whisper delivery to the named target on success and current `WHISPER_TYPE_NOT_EXIST` sender feedback for unknown targets |
@@ -89,8 +89,9 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `ITEM_SET` | server -> client | `0x0511` | game bootstrap | documented | first owned self-only occupied-slot bootstrap/update family for carried inventory and equipped items; total frame length `54`; position is packed `TItemPos(window:uint8, cell:uint16)` and equipped items currently ride the legacy combined inventory/equipment cell namespace (`window = INVENTORY`, `cell = 90 + wear_index`) |
-| `ITEM_DEL` | server -> client | `0x0510` | game | documented | self-only slot-clear/remove companion for carried/equipped item mutations; total frame length `7` and payload is only packed `TItemPos` |
+| `ITEM_USE` | client -> server | `TBD` | game | planned | final legacy compatibility ingress is not frozen yet; the current project-owned bootstrap path uses the slash seam `/use_item <slot>` for exactly one consumable prototype instead |
+| `ITEM_SET` | server -> client | `0x0511` | game bootstrap / game | documented | first owned self-only occupied-slot bootstrap/update family for carried inventory and equipped items; total frame length `54`; position is packed `TItemPos(window:uint8, cell:uint16)` and equipped items currently ride the legacy combined inventory/equipment cell namespace (`window = INVENTORY`, `cell = 90 + wear_index`); the first consumable-use vertical also reuses it when consuming one stacked item leaves a non-zero count in the same carried slot |
+| `ITEM_DEL` | server -> client | `0x0510` | game | documented | self-only slot-clear/remove companion for carried/equipped item mutations; total frame length `7` and payload is only packed `TItemPos`; the first consumable-use vertical also reuses it when consuming the last item removes that carried-slot stack entirely |
 
 ## Notes
 
