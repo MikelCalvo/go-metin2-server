@@ -1132,6 +1132,43 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
+					if fromSlot, toSlot, ok := slashInventoryMoveCommand(packet.Message); ok {
+						selectedPlayer, ok := currentSelectedPlayer()
+						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						previousSelected := selectedPlayer.LiveCharacter()
+						moveResult, ok := selectedPlayer.MoveInventoryItem(fromSlot, toSlot)
+						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						if !moveResult.Changed {
+							return gameflow.ChatResult{Accepted: true}
+						}
+						updatedSelected := selectedPlayer.LiveCharacter()
+						frames, err := inventoryMoveResultFrames(moveResult)
+						if err != nil {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.ChatResult{Accepted: false}
+						}
+						updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updatedSelected)
+						if !ok {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.ChatResult{Accepted: false}
+						}
+						if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.ChatResult{Accepted: false}
+						}
+						sessionTicket.Characters = updatedCharacters
+						selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
+						refreshLiveCharacterRegistration()
+						return gameflow.ChatResult{Accepted: true, Frames: frames}
+					}
+
 					if command, ok := slashGameCommand(packet.Message); ok {
 						leaveSharedWorld := func() {
 							if !joinedSharedWorld || sharedWorldID == 0 {
@@ -1565,6 +1602,25 @@ func slashGameCommand(message string) (string, bool) {
 	}
 }
 
+func slashInventoryMoveCommand(message string) (inventory.SlotIndex, inventory.SlotIndex, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, 0, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 3 || fields[0] != "inventory_move" {
+		return 0, 0, false
+	}
+	from, err := strconv.ParseUint(fields[1], 10, 16)
+	if err != nil {
+		return 0, 0, false
+	}
+	to, err := strconv.ParseUint(fields[2], 10, 16)
+	if err != nil {
+		return 0, 0, false
+	}
+	return inventory.SlotIndex(from), inventory.SlotIndex(to), true
+}
+
 func ticketLoginSuccessPacket(ticket loginticket.Ticket, addr uint32, port uint16) loginproto.LoginSuccess4Packet {
 	packet := loginproto.LoginSuccess4Packet{
 		Handle:    0x11223344,
@@ -1680,6 +1736,7 @@ func buildSelectedItemBootstrapFrames(character loginticket.Character) ([][]byte
 	if len(character.Inventory) == 0 && len(character.Equipment) == 0 {
 		return nil, nil
 	}
+
 	frames := make([][]byte, 0, len(character.Inventory)+len(character.Equipment))
 	carried := append([]inventory.ItemInstance(nil), character.Inventory...)
 	sort.Slice(carried, func(i int, j int) bool {
@@ -1707,6 +1764,30 @@ func buildSelectedItemBootstrapFrames(character loginticket.Character) ([][]byte
 			return nil, err
 		}
 		frames = append(frames, raw)
+	}
+	return frames, nil
+}
+
+func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
+	if !result.Changed {
+		return nil, nil
+	}
+	frames := make([][]byte, 0, 2)
+	if result.FromOccupied {
+		frame, err := encodeBootstrapInventoryItemFrame(result.FromItem)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, frame)
+	} else {
+		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.Position{WindowType: itemproto.WindowInventory, Cell: uint16(result.From)}}))
+	}
+	if result.ToOccupied {
+		frame, err := encodeBootstrapInventoryItemFrame(result.ToItem)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, frame)
 	}
 	return frames, nil
 }

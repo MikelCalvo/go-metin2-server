@@ -91,3 +91,27 @@ func TestItemInstanceValidateRejectsInconsistentEquipmentState(t *testing.T) {
 		})
 	}
 }
+
+func TestItemInstanceWithInventorySlotClearsEquipmentState(t *testing.T) {
+	item := ItemInstance{ID: 42, Vnum: 1120, Count: 1, Slot: 3, Equipped: true, EquipSlot: EquipmentSlotWeapon}
+
+	moved, err := item.WithInventorySlot(8)
+	if err != nil {
+		t.Fatalf("WithInventorySlot() unexpected error: %v", err)
+	}
+	if moved.Slot != 8 || moved.Equipped || moved.EquipSlot != EquipmentSlotNone {
+		t.Fatalf("unexpected carried item after WithInventorySlot(): %+v", moved)
+	}
+	if item.Slot != 3 || !item.Equipped || item.EquipSlot != EquipmentSlotWeapon {
+		t.Fatalf("expected original item to stay unchanged, got %+v", item)
+	}
+}
+
+func TestItemInstanceWithInventorySlotRejectsOutOfRangeSlot(t *testing.T) {
+	item := ItemInstance{ID: 42, Vnum: 1120, Count: 1, Slot: 3}
+
+	_, err := item.WithInventorySlot(90)
+	if !errors.Is(err, ErrInventorySlotOutOfRange) {
+		t.Fatalf("expected ErrInventorySlotOutOfRange, got %v", err)
+	}
+}

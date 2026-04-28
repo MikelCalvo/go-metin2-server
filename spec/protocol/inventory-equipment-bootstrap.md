@@ -2,10 +2,11 @@
 
 This document freezes the first minimal owned inventory/equipment contract for `go-metin2-server`.
 
-The goal of this slice is narrow:
-- define the first self-only M3 item-state surface before runtime and persistence code starts inventing ad hoc semantics
-- reserve a deterministic slot-addressed bootstrap shape for carried items and worn equipment
-- keep the scope small enough that later slices can add value objects, persistence, codecs, and mutations without rewriting the contract
+The goal of the current contract is still narrow:
+- define the first self-only M3 item-state surface for carried inventory and worn equipment
+- reserve a deterministic slot-addressed bootstrap shape for owned items
+- freeze the first self-only mutation refresh semantics for inventory slot move/swap without pretending the final client drag/drop packet family already exists
+- keep the scope small enough that later slices can add richer runtime, equip/use semantics, and final compatibility packet ingress without rewriting the contract
 
 It does **not** yet define the full compatibility-grade item system.
 
@@ -108,6 +109,19 @@ The packet matrix now documents the first project-owned family names for this su
 
 The exact wire layout is now frozen by `internal/proto/item` golden tests.
 
+## First live mutation refresh boundary
+
+After the bootstrap burst, the first owned mutation loop remains intentionally bootstrap-scoped:
+- ingress is a server-owned slash command seam, `/inventory_move <from> <to>`, rather than the final legacy drag/drop packet family
+- only carried inventory slots participate in this first mutation slice
+- successful mutations must persist the updated selected-character inventory snapshot before the runtime commits the new live state
+- failed persistence must fail closed and leave the selected runtime on the pre-mutation snapshot
+
+Refresh rules for a successful self-only mutation:
+- move into an empty slot emits `ITEM_DEL(from)` then `ITEM_SET(to)`
+- swap with an occupied slot emits `ITEM_SET(from)` for the item that moved back into the source slot, then `ITEM_SET(to)` for the item that moved into the destination slot
+- the response stays self-only; peer-visible equipment/appearance/state links remain out of scope here
+
 ## Frozen wire position addressing
 
 The first item family uses a packed legacy-compatible `TItemPos` equivalent:
@@ -162,5 +176,6 @@ After this slice, the repository should be able to say:
 - inventory/equipment are no longer undefined territory in project docs
 - the first self-only bootstrap ordering for item state is frozen relative to `ENTERGAME`
 - the loading-to-game burst now emits owned `ITEM_SET` frames for occupied carried/equipped slots immediately after `PLAYER_POINT_CHANGE`
-- the repo owns a stable vocabulary for carried inventory slots, equipment slots, and minimum item snapshot semantics
+- the first carried-inventory mutation loop now persists selected-character slot move/swap changes and refreshes the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames
+- the repo owns a stable vocabulary for carried inventory slots, equipment slots, minimum item snapshot semantics, and the first self-only mutation refresh rules
 - the packet matrix and `internal/proto/item` codec now agree on the first byte-level item bootstrap family

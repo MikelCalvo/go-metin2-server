@@ -12,8 +12,12 @@ func TestRuntimeKeepsLiveCurrencyAndItemStateSeparateFromPersistedSnapshot(t *te
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	if !runtime.MoveInventoryItem(5, 6) {
+	moveResult, ok := runtime.MoveInventoryItem(5, 6)
+	if !ok {
 		t.Fatal("expected inventory move to succeed")
+	}
+	if moveResult.From != 5 || moveResult.To != 6 || moveResult.FromOccupied || !moveResult.ToOccupied || moveResult.ToItem.Slot != 6 || moveResult.ToItem.ID != 11 {
+		t.Fatalf("unexpected move result: %+v", moveResult)
 	}
 	if !runtime.EquipItem(8, inventory.EquipmentSlotBody) {
 		t.Fatal("expected equip to succeed")
@@ -83,7 +87,7 @@ func TestRuntimeApplyPersistedSnapshotRealignsLiveCurrencyInventoryAndEquipment(
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	if !runtime.MoveInventoryItem(5, 6) {
+	if _, ok := runtime.MoveInventoryItem(5, 6); !ok {
 		t.Fatal("expected inventory move to succeed")
 	}
 	if !runtime.EquipItem(8, inventory.EquipmentSlotBody) {
@@ -156,6 +160,39 @@ func TestRuntimeCanUnequipLiveItemBackIntoInventory(t *testing.T) {
 	}
 }
 
+func TestRuntimeMoveInventoryItemSwapsOccupiedSlots(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.MoveInventoryItem(5, 8)
+	if !ok {
+		t.Fatal("expected inventory swap to succeed")
+	}
+	if !result.Changed || !result.FromOccupied || !result.ToOccupied {
+		t.Fatalf("expected swap result to describe both occupied slots, got %+v", result)
+	}
+	if result.From != 5 || result.To != 8 {
+		t.Fatalf("unexpected swap slots: %+v", result)
+	}
+	if result.FromItem.ID != 12 || result.FromItem.Slot != 5 {
+		t.Fatalf("expected destination occupant to move into slot 5, got %+v", result.FromItem)
+	}
+	if result.ToItem.ID != 11 || result.ToItem.Slot != 8 {
+		t.Fatalf("expected source item to move into slot 8, got %+v", result.ToItem)
+	}
+
+	gotLive := runtime.LiveInventory()
+	if !reflect.DeepEqual(gotLive, []inventory.ItemInstance{
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 5},
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after swap: %#v", gotLive)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestNilRuntimeInventoryEquipmentAndCurrencyHelpersAreSafe(t *testing.T) {
 	var runtime *Runtime
 
@@ -169,7 +206,7 @@ func TestNilRuntimeInventoryEquipmentAndCurrencyHelpersAreSafe(t *testing.T) {
 		t.Fatalf("expected empty live equipment, got %#v", got)
 	}
 	runtime.SetLiveGold(10)
-	if runtime.MoveInventoryItem(1, 2) {
+	if _, ok := runtime.MoveInventoryItem(1, 2); ok {
 		t.Fatal("expected nil runtime inventory move to fail")
 	}
 	if runtime.EquipItem(1, inventory.EquipmentSlotBody) {

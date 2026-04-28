@@ -91,27 +91,44 @@ func (r *Runtime) SetLiveGold(gold uint64) {
 	r.liveGold = gold
 }
 
-func (r *Runtime) MoveInventoryItem(from inventory.SlotIndex, to inventory.SlotIndex) bool {
+func (r *Runtime) MoveInventoryItem(from inventory.SlotIndex, to inventory.SlotIndex) (inventory.MoveResult, bool) {
 	if r == nil {
-		return false
+		return inventory.MoveResult{}, false
 	}
+	result := inventory.MoveResult{From: from, To: to}
 	if from == to {
-		return true
+		return result, true
 	}
 	fromIndex := findInventorySlot(r.liveInventory, from)
-	if fromIndex < 0 || inventorySlotOccupied(r.liveInventory, to) {
-		return false
+	if fromIndex < 0 {
+		return inventory.MoveResult{}, false
 	}
-	item := r.liveInventory[fromIndex]
-	item.Slot = to
-	item.Equipped = false
-	item.EquipSlot = inventory.EquipmentSlotNone
-	if err := item.Validate(); err != nil {
-		return false
+	movedItem, err := r.liveInventory[fromIndex].WithInventorySlot(to)
+	if err != nil {
+		return inventory.MoveResult{}, false
 	}
-	r.liveInventory[fromIndex] = item
+	toIndex := findInventorySlot(r.liveInventory, to)
+	if toIndex < 0 {
+		r.liveInventory[fromIndex] = movedItem
+		sortInventoryItems(r.liveInventory)
+		result.Changed = true
+		result.ToOccupied = true
+		result.ToItem = movedItem
+		return result, true
+	}
+	swappedItem, err := r.liveInventory[toIndex].WithInventorySlot(from)
+	if err != nil {
+		return inventory.MoveResult{}, false
+	}
+	r.liveInventory[fromIndex] = swappedItem
+	r.liveInventory[toIndex] = movedItem
 	sortInventoryItems(r.liveInventory)
-	return true
+	result.Changed = true
+	result.FromOccupied = true
+	result.FromItem = swappedItem
+	result.ToOccupied = true
+	result.ToItem = movedItem
+	return result, true
 }
 
 func (r *Runtime) EquipItem(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot) bool {
@@ -144,11 +161,8 @@ func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.Sl
 	if equipIndex < 0 {
 		return false
 	}
-	item := r.liveEquipment[equipIndex]
-	item.Slot = to
-	item.Equipped = false
-	item.EquipSlot = inventory.EquipmentSlotNone
-	if err := item.Validate(); err != nil {
+	item, err := r.liveEquipment[equipIndex].WithInventorySlot(to)
+	if err != nil {
 		return false
 	}
 	r.liveEquipment = removeInventoryIndex(r.liveEquipment, equipIndex)
