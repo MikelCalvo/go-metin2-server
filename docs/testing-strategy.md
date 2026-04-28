@@ -22,12 +22,13 @@ Typical use cases:
 - login and selection packets
 - main-character bootstrap packets
 - movement packets
-- inventory/equipment bootstrap packets once the first owned item-family headers and layouts are frozen
+- inventory/equipment bootstrap packets frozen by `internal/proto/item` golden tests
 
 Golden tests answer:
 - “does this packet match the expected wire format exactly?”
 
-Store project-owned fixtures under `testdata/packets/`.
+Store project-owned fixtures under package-local `testdata/` directories unless a shared cross-package fixture set is explicitly needed.
+Current protocol fixtures live beside their codec packages (for example `internal/proto/item/testdata/`).
 
 ## 2. Unit tests
 

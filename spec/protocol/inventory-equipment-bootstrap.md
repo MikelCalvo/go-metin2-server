@@ -40,8 +40,10 @@ The first inventory/equipment extension reserves the next self-only slot in that
 6. zero or more self-only inventory/equipment item bootstrap frames
 7. trailing peer/static-actor visibility frames
 
-This document intentionally freezes the ordering and scope first.
-The exact packet headers and byte layouts for those item bootstrap frames remain deferred until the dedicated `internal/proto/item` golden-test slice lands.
+This document now also freezes the first byte-level owned item bootstrap contract.
+The exact packet headers and layouts are owned by `internal/proto/item` and verified by project-owned golden tests:
+- `ITEM_SET = 0x0511`
+- `ITEM_DEL = 0x0510`
 
 ## Logical item snapshot shape
 
@@ -109,15 +111,47 @@ Backwards-compatibility rules for this persistence boundary:
 
 ## First packet-family boundary
 
-The packet matrix now reserves the first project-owned family names for this surface:
-- `ITEM_SET` — self-only occupied-slot bootstrap/update surface for carried or equipped items
-- `ITEM_DEL` — future self-only clear/remove surface for slot eviction, unequip, consume, or move follow-up
+The packet matrix now documents the first project-owned family names for this surface:
+- `ITEM_SET` — self-only occupied-slot bootstrap/update surface for carried or equipped items (`0x0511`)
+- `ITEM_DEL` — self-only clear/remove surface for slot eviction, unequip, consume, or move follow-up (`0x0510`)
 
-These rows are intentionally marked `planned` with `Header = TBD` until:
-- the exact TMP4-compatible wire shape is frozen in `internal/proto/item`
-- project-owned golden packet tests exist for the final byte layout
+The exact wire layout is now frozen by `internal/proto/item` golden tests.
 
-This docs-first slice therefore freezes **names, scope, ordering, and non-goals** before freezing the exact bytes.
+## Frozen wire position addressing
+
+The first item family uses a packed legacy-compatible `TItemPos` equivalent:
+- `window_type` — `uint8`
+- `cell` — little-endian `uint16`
+
+For the current owned bootstrap surface:
+- carried inventory uses `window_type = INVENTORY (1)` with `0 <= cell < 90`
+- equipped items also travel with `window_type = INVENTORY (1)` and the legacy combined item cell namespace `cell = 90 + wear_index`
+- the wire does **not** expose the project's named equipment-slot enum directly; it reuses the legacy wear indices in the combined inventory/equipment cell space
+- examples: `body -> cell 90`, `weapon -> cell 94`, `shield -> cell 100`
+
+## Frozen frame shapes
+
+`ITEM_DEL` frame:
+- header `0x0510`
+- total frame length `7`
+- payload: packed `TItemPos`
+
+`ITEM_SET` frame:
+- header `0x0511`
+- total frame length `54`
+- payload order:
+  1. packed `TItemPos`
+  2. `vnum uint32`
+  3. `count uint8`
+  4. `flags uint32`
+  5. `anti_flags uint32`
+  6. `highlight uint8`
+  7. `sockets [3]int32`
+  8. `attributes [7]` of `{type uint8, value int16}`
+
+Although the first logical item snapshot contract still does not assign gameplay meaning to sockets, attributes, or most legacy flag bits yet, the first codec carries them as opaque compatibility fields so later slices do not need to redraw the frame boundary.
+
+This docs-first contract therefore now freezes **names, ordering, scope, byte layout, and non-goals** for the first owned item bootstrap family.
 
 ## Explicit non-goals
 

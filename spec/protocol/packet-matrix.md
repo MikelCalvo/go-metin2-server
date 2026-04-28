@@ -89,8 +89,8 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `ITEM_SET` | server -> client | `TBD` | game bootstrap | planned | first owned self-only occupied-slot bootstrap/update family for carried inventory and equipped items; `inventory-equipment-bootstrap.md` freezes ordering and scope first while the exact byte layout waits for `internal/proto/item` golden tests |
-| `ITEM_DEL` | server -> client | `TBD` | game | planned | future self-only slot-clear/remove companion for carried/equipped item mutations; listed now so the slot-addressed family is explicit before move/equip/use slices land |
+| `ITEM_SET` | server -> client | `0x0511` | game bootstrap | documented | first owned self-only occupied-slot bootstrap/update family for carried inventory and equipped items; total frame length `54`; position is packed `TItemPos(window:uint8, cell:uint16)` and equipped items currently ride the legacy combined inventory/equipment cell namespace (`window = INVENTORY`, `cell = 90 + wear_index`) |
+| `ITEM_DEL` | server -> client | `0x0510` | game | documented | self-only slot-clear/remove companion for carried/equipped item mutations; total frame length `7` and payload is only packed `TItemPos` |
 
 ## Notes
 
