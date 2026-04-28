@@ -24,6 +24,14 @@ type Account struct {
 	Characters []loginticket.Character `json:"characters"`
 }
 
+func normalizeAccountCharacters(characters []loginticket.Character) []loginticket.Character {
+	cloned := loginticket.CloneCharacters(characters)
+	for i := range cloned {
+		cloned[i].NormalizeItemState()
+	}
+	return cloned
+}
+
 type Store interface {
 	Load(login string) (Account, error)
 	Save(account Account) error
@@ -57,6 +65,7 @@ func (s *FileStore) Load(login string) (Account, error) {
 	if err := json.Unmarshal(raw, &account); err != nil {
 		return Account{}, fmt.Errorf("decode account: %w", err)
 	}
+	account.Characters = normalizeAccountCharacters(account.Characters)
 	return account, nil
 }
 
@@ -67,6 +76,7 @@ func (s *FileStore) Save(account Account) error {
 	if account.Login == "" {
 		return ErrLoginRequired
 	}
+	account.Characters = normalizeAccountCharacters(account.Characters)
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create account store dir: %w", err)
 	}

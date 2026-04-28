@@ -1260,12 +1260,7 @@ func selectedCharacterLocationUpdate(characters []loginticket.Character, selecte
 }
 
 func cloneCharacters(characters []loginticket.Character) []loginticket.Character {
-	if len(characters) == 0 {
-		return nil
-	}
-	cloned := make([]loginticket.Character, len(characters))
-	copy(cloned, characters)
-	return cloned
+	return loginticket.CloneCharacters(characters)
 }
 
 func randomLoginKey() (uint32, error) {

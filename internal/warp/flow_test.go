@@ -1,6 +1,7 @@
 package warp
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -136,7 +137,7 @@ func TestFlowRollsBackPersistedSnapshotWhenCommitFails(t *testing.T) {
 	if !rollbackCalled {
 		t.Fatal("expected commit failure after persist to trigger rollback")
 	}
-	if restored != selected {
+	if !reflect.DeepEqual(restored, selected) {
 		t.Fatalf("expected rollback to receive original snapshot, got %+v want %+v", restored, selected)
 	}
 }

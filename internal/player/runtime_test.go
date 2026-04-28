@@ -1,6 +1,7 @@
 package player
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -73,7 +74,7 @@ func TestRuntimeCanRefreshPersistedAndLiveSnapshotTogether(t *testing.T) {
 
 func TestNilRuntimeReturnsZeroLiveCharacter(t *testing.T) {
 	var runtime *Runtime
-	if got := runtime.LiveCharacter(); got != (loginticket.Character{}) {
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, loginticket.Character{}) {
 		t.Fatalf("expected nil runtime to return zero live character, got %+v", got)
 	}
 }

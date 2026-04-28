@@ -95,6 +95,18 @@ Rules for this first stage:
 - equipped items remain part of the same owned character item state as carried inventory
 - peer-visible appearance still continues to ride the existing `CHARACTER_ADD` / `CHARACTER_UPDATE` bootstrap contract until a later slice explicitly refreshes those links
 
+## Persisted snapshot boundary
+
+Before any live M3 mutation is allowed, the file-backed `accountstore` / `loginticket` character snapshot is also expected to carry explicit owned item-state fields alongside the existing character bootstrap data:
+- `gold` — first explicit currency field for owned character state
+- `inventory` — carried item instances
+- `equipment` — equipped item instances
+
+Backwards-compatibility rules for this persistence boundary:
+- older JSON snapshots that lack these fields must still load successfully
+- missing `inventory` / `equipment` arrays normalize to empty slices rather than malformed or ambiguous state
+- zero `gold` remains explicit state instead of being hidden behind undocumented point indices
+
 ## First packet-family boundary
 
 The packet matrix now reserves the first project-owned family names for this surface:

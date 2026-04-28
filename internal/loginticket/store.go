@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
 
 var (
@@ -17,30 +19,59 @@ var (
 )
 
 type Character struct {
-	ID          uint32     `json:"id"`
-	VID         uint32     `json:"vid"`
-	Name        string     `json:"name"`
-	Job         uint8      `json:"job"`
-	RaceNum     uint16     `json:"race_num"`
-	Level       uint8      `json:"level"`
-	PlayMinutes uint32     `json:"play_minutes"`
-	ST          uint8      `json:"st"`
-	HT          uint8      `json:"ht"`
-	DX          uint8      `json:"dx"`
-	IQ          uint8      `json:"iq"`
-	MainPart    uint16     `json:"main_part"`
-	ChangeName  uint8      `json:"change_name"`
-	HairPart    uint16     `json:"hair_part"`
-	Dummy       [4]byte    `json:"dummy"`
-	X           int32      `json:"x"`
-	Y           int32      `json:"y"`
-	Z           int32      `json:"z"`
-	MapIndex    uint32     `json:"map_index"`
-	Empire      uint8      `json:"empire"`
-	SkillGroup  uint8      `json:"skill_group"`
-	GuildID     uint32     `json:"guild_id"`
-	GuildName   string     `json:"guild_name"`
-	Points      [255]int32 `json:"points"`
+	ID          uint32                   `json:"id"`
+	VID         uint32                   `json:"vid"`
+	Name        string                   `json:"name"`
+	Job         uint8                    `json:"job"`
+	RaceNum     uint16                   `json:"race_num"`
+	Level       uint8                    `json:"level"`
+	PlayMinutes uint32                   `json:"play_minutes"`
+	ST          uint8                    `json:"st"`
+	HT          uint8                    `json:"ht"`
+	DX          uint8                    `json:"dx"`
+	IQ          uint8                    `json:"iq"`
+	MainPart    uint16                   `json:"main_part"`
+	ChangeName  uint8                    `json:"change_name"`
+	HairPart    uint16                   `json:"hair_part"`
+	Dummy       [4]byte                  `json:"dummy"`
+	X           int32                    `json:"x"`
+	Y           int32                    `json:"y"`
+	Z           int32                    `json:"z"`
+	MapIndex    uint32                   `json:"map_index"`
+	Empire      uint8                    `json:"empire"`
+	SkillGroup  uint8                    `json:"skill_group"`
+	GuildID     uint32                   `json:"guild_id"`
+	GuildName   string                   `json:"guild_name"`
+	Points      [255]int32               `json:"points"`
+	Gold        uint64                   `json:"gold"`
+	Inventory   []inventory.ItemInstance `json:"inventory"`
+	Equipment   []inventory.ItemInstance `json:"equipment"`
+}
+
+func (c *Character) NormalizeItemState() {
+	if c.Inventory == nil {
+		c.Inventory = []inventory.ItemInstance{}
+	}
+	if c.Equipment == nil {
+		c.Equipment = []inventory.ItemInstance{}
+	}
+}
+
+func CloneCharacters(characters []Character) []Character {
+	if characters == nil {
+		return nil
+	}
+	cloned := make([]Character, len(characters))
+	copy(cloned, characters)
+	for i := range cloned {
+		if cloned[i].Inventory != nil {
+			cloned[i].Inventory = append(cloned[i].Inventory[:0:0], cloned[i].Inventory...)
+		}
+		if cloned[i].Equipment != nil {
+			cloned[i].Equipment = append(cloned[i].Equipment[:0:0], cloned[i].Equipment...)
+		}
+	}
+	return cloned
 }
 
 type Ticket struct {
@@ -49,6 +80,12 @@ type Ticket struct {
 	Empire     uint8       `json:"empire"`
 	IssuedAt   time.Time   `json:"issued_at"`
 	Characters []Character `json:"characters"`
+}
+
+func normalizeCharactersItemState(characters []Character) {
+	for i := range characters {
+		characters[i].NormalizeItemState()
+	}
 }
 
 type Store interface {
@@ -72,6 +109,8 @@ func (s *FileStore) Issue(ticket Ticket) error {
 	if ticket.IssuedAt.IsZero() {
 		ticket.IssuedAt = time.Now().UTC()
 	}
+	ticket.Characters = CloneCharacters(ticket.Characters)
+	normalizeCharactersItemState(ticket.Characters)
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create login ticket store dir: %w", err)
 	}
@@ -134,6 +173,7 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 	if err := json.Unmarshal(raw, &ticket); err != nil {
 		return Ticket{}, fmt.Errorf("decode login ticket: %w", err)
 	}
+	normalizeCharactersItemState(ticket.Characters)
 	if ticket.Login != login || ticket.LoginKey != loginKey {
 		return Ticket{}, ErrTicketLoginMismatch
 	}

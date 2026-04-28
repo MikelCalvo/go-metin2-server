@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"net"
+	"reflect"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
@@ -497,8 +498,11 @@ func TestNewGameSessionFactoryDeletesCharacterAndPersistsTheEmptySlot(t *testing
 	if err != nil {
 		t.Fatalf("load persisted account: %v", err)
 	}
-	if account.Characters[1] != (loginticket.Character{}) {
-		t.Fatalf("expected deleted slot to be empty, got %+v", account.Characters[1])
+	if account.Characters[1].ID != 0 || account.Characters[1].VID != 0 || account.Characters[1].Name != "" {
+		t.Fatalf("expected deleted slot identity fields to be empty, got %+v", account.Characters[1])
+	}
+	if len(account.Characters[1].Inventory) != 0 || len(account.Characters[1].Equipment) != 0 {
+		t.Fatalf("expected deleted slot item state to normalize to empty slices, got %+v", account.Characters[1])
 	}
 	if account.Characters[0].Name != "MkmkWar" {
 		t.Fatalf("expected other slot to stay intact, got %+v", account.Characters[0])
@@ -722,7 +726,7 @@ func TestUpdateSelectedCharacterPositionDoesNotMutateOnSaveFailure(t *testing.T)
 	if updated != nil {
 		t.Fatalf("expected no updated character slice on failure, got %+v", updated)
 	}
-	if selected != (loginticket.Character{}) {
+	if !reflect.DeepEqual(selected, loginticket.Character{}) {
 		t.Fatalf("expected zero selected character on failure, got %+v", selected)
 	}
 	if characters[1].X != original.X || characters[1].Y != original.Y {
@@ -765,7 +769,7 @@ func TestUpdateSelectedCharacterLocationDoesNotMutateOnSaveFailure(t *testing.T)
 	if updated != nil {
 		t.Fatalf("expected no updated character slice on failure, got %+v", updated)
 	}
-	if selected != (loginticket.Character{}) {
+	if !reflect.DeepEqual(selected, loginticket.Character{}) {
 		t.Fatalf("expected zero selected character on failure, got %+v", selected)
 	}
 	if characters[1].MapIndex != original.MapIndex || characters[1].X != original.X || characters[1].Y != original.Y {
