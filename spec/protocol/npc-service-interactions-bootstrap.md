@@ -27,9 +27,9 @@ This contract applies only to:
 - self-facing or transfer-triggered outcomes that reuse already-owned packet/runtime contracts
 - deterministic authored interaction definitions loaded and validated by `gamed`
 
-This document now freezes the contract and also records the first landed service-style vertical:
+This document now freezes the contract and also records the two landed service-style verticals:
 - `warp` is now implemented on top of the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime
-- `shop_preview` remains the next frozen follow-up family, not yet implemented
+- `shop_preview` is now implemented as a browse-only self-only preview path on top of the same ingress
 
 ## Why service-style NPCs first
 
@@ -68,7 +68,7 @@ Current owned warp failure semantics:
 
 Current owned interaction cooldown semantics:
 - a fixed `1s` runtime cooldown now applies per live session and per target static-actor `VID`
-- the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, and `warp`
+- the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, `shop_preview`, and `warp`
 - repeated `INTERACT` requests for the same target while that cooldown is active are consumed as a deliberate no-op with no outgoing frames
 - different players do not share a cooldown bucket with each other, and a fresh reconnect starts with a fresh cooldown state
 
@@ -80,7 +80,7 @@ A visible static actor can act as a merchant-style browse-only NPC.
 Frozen target behavior:
 - the player sends the existing `INTERACT (0x0501)` request
 - the runtime resolves a deterministic authored `shop_preview` definition behind that actor
-- the player receives a self-only preview payload describing the available catalog
+- the player receives exactly one self-only `CHAT_TYPE_INFO` delivery carrying the authored preview text that describes the available catalog
 - no inventory, item grant, price deduction, purchase, or sell-back path is implied
 
 This is intentionally a preview-only merchant seam until inventory/currency/item mutation exists.
@@ -101,7 +101,7 @@ No new client-originated packet family is frozen in this stage.
 The current owned response families stay intentionally conservative:
 - `info` and `talk` remain self-only chat-backed authored responses
 - `warp` now reuses the already-owned transfer / rebootstrap contract rather than inventing a separate NPC warp packet; if authored `text` is present, the interacting player first receives one self-only informational chat delivery and then the transfer rebootstrap frames
-- `shop_preview` should remain self-only and deterministic until a real shop transaction system exists
+- `shop_preview` now returns one self-only `CHAT_TYPE_INFO` delivery carrying the authored browse-only preview text and should remain deterministic until a real shop transaction system exists
 
 ## Ordered implementation intent
 
@@ -128,8 +128,8 @@ This stage still does **not** freeze:
 ## Success definition
 
 After the currently landed and later follow-up slices, the repository should be able to say:
-- bootstrap static actors already support self-only `info` / `talk`
-- the next owned NPC gameplay families are explicitly frozen as `warp` and `shop_preview`
+- bootstrap static actors already support self-only `info` / `talk` plus browse-only `shop_preview`
+- the current owned service-style NPC gameplay families are `warp` and `shop_preview`
 - `warp` is the first real NPC gameplay action and already reuses the existing transfer / rebootstrap runtime through `INTERACT`
-- `shop_preview` is explicitly browse-only until inventory/currency/item mutation exists
+- `shop_preview` is already implemented as a browse-only preview until inventory/currency/item mutation exists
 - the project still avoids speculative dialog-window, quest, and real shop semantics until the underlying systems exist

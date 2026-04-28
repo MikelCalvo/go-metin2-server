@@ -5268,6 +5268,78 @@ func TestGameSessionFlowStaticActorTalkInteractionReturnsSelfOnlyChatDelivery(t 
 	}
 }
 
+func TestGameRuntimeResolveStaticActorShopPreviewInteractionReturnsChatDelivery(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected shop preview static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	subject, ok := runtime.sharedWorld.entities.PlayerByName(peer.Name)
+	if !ok {
+		t.Fatalf("expected live shared-world entity for %q after enter", peer.Name)
+	}
+	resolution := runtime.resolveStaticActorInteraction(subject.Entity.ID, uint32(actor.EntityID))
+	if !resolution.Accepted {
+		t.Fatalf("expected shop preview interaction resolution to be accepted, got %+v", resolution)
+	}
+	if resolution.Delivery == nil {
+		t.Fatalf("expected accepted shop preview interaction to return a self chat delivery, got %+v", resolution)
+	}
+	if resolution.Delivery.Type != chatproto.ChatTypeInfo || resolution.Delivery.VID != 0 || resolution.Delivery.Empire != 0 || resolution.Delivery.Message != "Browse wares." {
+		t.Fatalf("unexpected shop preview interaction delivery: %+v", resolution.Delivery)
+	}
+}
+
+func TestGameSessionFlowStaticActorShopPreviewInteractionReturnsSelfOnlyChatDelivery(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected shop preview static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible interactable static actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected shop preview interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only shop preview interaction frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode shop preview interaction chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Browse wares." {
+		t.Fatalf("unexpected shop preview interaction chat delivery: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for self-only shop preview interaction, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowStaticActorInteractionCooldownSuppressesRepeatedFramesPerActorAndExpires(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -5617,12 +5689,12 @@ func TestGameRuntimeResolveStaticActorFailureInteractionReturnsSelfOnlyChatDeliv
 	if !ok {
 		t.Fatal("expected direct shared-world registration with dangling ref to succeed for fail-closed runtime test")
 	}
-	unsupportedActor, ok := runtime.sharedWorld.RegisterStaticActorWithInteraction(0, "MysticPreview", bootstrapMapIndex, 1200, 2200, 20300, "shop_preview", "npc:mystic")
+	unsupportedActor, ok := runtime.sharedWorld.RegisterStaticActorWithInteraction(0, "MysticPreview", bootstrapMapIndex, 1200, 2200, 20300, "quest_offer", "npc:mystic")
 	if !ok {
 		t.Fatal("expected direct shared-world registration with unsupported kind to succeed for fail-closed runtime test")
 	}
 	runtime.interactionDefinitionMu.Lock()
-	runtime.interactionDefinitions[interactionDefinitionKey("shop_preview", "npc:mystic")] = InteractionDefinition{Kind: "shop_preview", Ref: "npc:mystic", Text: "preview"}
+	runtime.interactionDefinitions[interactionDefinitionKey("quest_offer", "npc:mystic")] = InteractionDefinition{Kind: "quest_offer", Ref: "npc:mystic", Text: "preview"}
 	runtime.interactionDefinitionMu.Unlock()
 
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)

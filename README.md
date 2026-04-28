@@ -176,7 +176,7 @@ Legend:
 | Derived stats / combat formulas | [ ] | Not started. |
 | Combat loop | [ ] | No targeting, attacks, damage, or death loop yet. |
 | Respawn / death handling | [ ] | Not started. |
-| NPCs / shops | [~] | Bootstrap static actors already support interaction metadata plus self-only `info` / `talk` responses, visible `warp` actors can now transfer the interacting player through the existing self-session rebootstrap path, and a fixed `1s` per-session per-target cooldown now suppresses repeated spam against the same NPC; read-only `shop_preview`, real shop transactions, quest logic, and richer NPC UI are still not started. |
+| NPCs / shops | [~] | Bootstrap static actors already support interaction metadata plus self-only `info` / `talk` / browse-only `shop_preview` responses, visible `warp` actors can now transfer the interacting player through the existing self-session rebootstrap path, and a fixed `1s` per-session per-target cooldown now suppresses repeated spam against the same NPC; real shop transactions, quest logic, and richer NPC UI are still not started. |
 | Mobs / AI / spawn groups | [ ] | Not started. |
 | Quest / script runtime | [ ] | Not started. |
 
@@ -187,7 +187,7 @@ Legend:
 | Login tickets | [x] | Working file-backed ticket flow between `authd` and `gamed`. |
 | Bootstrap account snapshots | [~] | File-backed account/character persistence exists, but it is not compatibility-grade yet. |
 | Bootstrap static-actor snapshots | [x] | A deterministic file-backed snapshot store now exists under `internal/staticstore`, and `gamed` now loads it at boot and rewrites it after successful static-actor create/update/delete mutations. |
-| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for authored interaction content keyed by `kind + ref`; `gamed` now loads that catalog at boot, loopback-only CRUD endpoints now author `info`, `talk`, and the first `warp` payload shape without raw JSON edits, deletes now fail closed while bootstrap static actors still reference a definition, loopback-only interaction-visibility snapshots now preview what visible interactables would resolve to, `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content artifact spanning both stores, and `info` plus `talk` interactions now produce self-only authored chat deliveries. |
+| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for authored interaction content keyed by `kind + ref`; `gamed` now loads that catalog at boot, loopback-only CRUD endpoints now author `info`, `talk`, `shop_preview`, and the first `warp` payload shape without raw JSON edits, deletes now fail closed while bootstrap static actors still reference a definition, loopback-only interaction-visibility snapshots now preview what visible interactables would resolve to for the currently supported preview kinds, `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content artifact spanning both stores, and `info`, `talk`, plus `shop_preview` interactions now produce self-only authored chat deliveries while `warp` reuses the transfer path. |
 | Database schema / migrations | [ ] | No real DB-backed persistence layer or live migrations yet. |
 | Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection/map-occupancy/dry-run/transfer/static-actor seed-remove endpoints exist; metrics/logging/admin depth still needs work. |
 | CI / public validation | [x] | GitHub Actions baseline checks formatting, tests, vet, daemon builds, and runtime/debug image builds. |
@@ -219,7 +219,7 @@ Legend:
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions
 - `internal/staticstore` — deterministic file-backed bootstrap static-actor snapshots, ready for later boot/runtime wiring
-- `internal/interactionstore` — deterministic file-backed interaction definitions keyed by `kind + ref`; currently used for authored `info`, `talk`, and the first `warp` payload shape, and loaded by `gamed` at boot for static-actor interaction-ref validation
+- `internal/interactionstore` — deterministic file-backed interaction definitions keyed by `kind + ref`; currently used for authored `info`, `talk`, `shop_preview`, and the first `warp` payload shape, and loaded by `gamed` at boot for static-actor interaction-ref validation
 - `internal/ops` — health and pprof endpoints
 - `internal/service` — shared service bootstrap / shutdown helpers and legacy session runtime hooks
 - `docs/` — engineering and clean-room documentation
@@ -271,6 +271,7 @@ Legend:
 - `spec/protocol/static-actor-interaction-bootstrap.md`
 - `spec/protocol/static-actor-interaction-request.md`
 - `spec/protocol/npc-service-interactions-bootstrap.md`
+- `spec/protocol/npc-shop-preview-bootstrap.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -326,7 +327,7 @@ Both binaries expose an ops server with:
 - `GET` / `POST /local/interactions` and `PATCH` / `PUT` / `DELETE /local/interactions/{kind}/{ref}`
   - loopback clients only
   - bodies always use JSON fields `kind` and `ref`
-  - `info` / `talk` also use `text`
+  - `info` / `talk` / `shop_preview` also use `text`
   - `warp` also uses `map_index`, `x`, `y`, with optional `text`
   - PATCH/PUT are full-identity upserts, so body `kind` + `ref` must match the path exactly
   - DELETE returns conflict while a bootstrap static actor still references that definition

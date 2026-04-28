@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	KindInfo = "info"
-	KindTalk = "talk"
-	KindWarp = "warp"
+	KindInfo        = "info"
+	KindTalk        = "talk"
+	KindWarp        = "warp"
+	KindShopPreview = "shop_preview"
 )
 
 var (
@@ -64,7 +65,7 @@ func validateSnapshot(snapshot Snapshot) error {
 
 func validKind(kind string) bool {
 	switch kind {
-	case KindInfo, KindTalk, KindWarp:
+	case KindInfo, KindTalk, KindWarp, KindShopPreview:
 		return true
 	default:
 		return false
@@ -76,7 +77,7 @@ func validDefinition(definition Definition) bool {
 		return false
 	}
 	switch definition.Kind {
-	case KindInfo, KindTalk:
+	case KindInfo, KindTalk, KindShopPreview:
 		return strings.TrimSpace(definition.Text) != "" && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0
 	case KindWarp:
 		return definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0

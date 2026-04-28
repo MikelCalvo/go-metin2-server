@@ -124,6 +124,31 @@ func TestLocalInteractionDefinitionsEndpointCreatesWarpDefinitionForLoopbackPost
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointCreatesShopPreviewDefinitionForLoopbackPost(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "shop_preview", "ref": "npc:merchant", "text": "Browse wares."}}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"shop_preview","ref":"npc:merchant","text":"Browse wares."}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if creator.calls != 1 || creator.lastDefinition.Kind != interactionstore.KindShopPreview || creator.lastDefinition.Ref != "npc:merchant" || creator.lastDefinition.Text != "Browse wares." {
+		t.Fatalf("unexpected shop preview interaction definition creator call state: %+v", creator)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"kind":"shop_preview"`) || !strings.Contains(string(body), `"ref":"npc:merchant"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
 func TestLocalInteractionDefinitionUpdateEndpointUpsertsDefinitionForLoopbackPatch(t *testing.T) {
 	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "talk", "ref": "npc:village_guard", "text": "Keep your blade sharp."}}
 	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
@@ -188,6 +213,31 @@ func TestLocalInteractionDefinitionUpdateEndpointUpsertsWarpDefinitionForLoopbac
 		t.Fatalf("read response body: %v", err)
 	}
 	if !strings.Contains(string(body), `"kind":"warp"`) || !strings.Contains(string(body), `"map_index":42`) || !strings.Contains(string(body), `"x":1700`) || !strings.Contains(string(body), `"y":2800`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalInteractionDefinitionUpdateEndpointUpsertsShopPreviewDefinitionForLoopbackPut(t *testing.T) {
+	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "shop_preview", "ref": "npc:merchant", "text": "Browse wares."}}
+	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPut, "/local/interactions/shop_preview/npc:merchant", strings.NewReader(`{"kind":"shop_preview","ref":"npc:merchant","text":"Browse wares."}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if updater.calls != 1 || updater.lastDefinition.Kind != interactionstore.KindShopPreview || updater.lastDefinition.Ref != "npc:merchant" || updater.lastDefinition.Text != "Browse wares." {
+		t.Fatalf("unexpected shop preview interaction definition updater call state: %+v", updater)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"kind":"shop_preview"`) || !strings.Contains(string(body), `"ref":"npc:merchant"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }

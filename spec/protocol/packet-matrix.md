@@ -81,7 +81,7 @@ Status values:
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `INTERACT` | client -> server | `0x0501` | game | documented | first owned client-originated interaction request for a visible bootstrap static actor target by `vid`; current payload is a little-endian `uint32 target_vid`, current routing stops at the dedicated `GAME`-phase interaction handler, current owned responses include self-only `info` / `talk`, and the next frozen service-style NPC families are `warp` and `shop_preview` |
+| `INTERACT` | client -> server | `0x0501` | game | documented | first owned client-originated interaction request for a visible bootstrap static actor target by `vid`; current payload is a little-endian `uint32 target_vid`, current routing stops at the dedicated `GAME`-phase interaction handler, current owned responses include self-only `info` / `talk` / `shop_preview`, and the current service-style NPC families also include transfer-backed `warp` |
 
 ## Notes
 

@@ -2101,6 +2101,8 @@ func interactionDefinitionPreview(actorName string, definition InteractionDefini
 		return definition.Text, true
 	case interactionstore.KindTalk:
 		return fmt.Sprintf("%s:\n%s", actorName, definition.Text), true
+	case interactionstore.KindShopPreview:
+		return definition.Text, true
 	default:
 		return "", false
 	}
