@@ -56,6 +56,7 @@ Current scope of the project:
 - A first owned in-game slash-command bootstrap path: `/quit` now returns a self-facing `CHAT_TYPE_COMMAND quit`, `/logout` now leaves the bootstrap shared world and emits `PHASE(CLOSE)`, and `/phase_select` now leaves the bootstrap shared world and emits `PHASE(SELECT)` so the same session can choose another character again instead of echoing those strings as normal talking chat.
 - A first self-only `CHARACTER_UPDATE` refresh emitted immediately after the visible-world insert.
 - A first self-only `PLAYER_POINT_CHANGE` refresh emitted immediately after the selected-character update.
+- A first protocol-owned M3 inventory/equipment bootstrap contract is now frozen in docs and packet matrix: the selected character will later receive self-only slot-addressed carried/equipped item bootstrap frames immediately after `PLAYER_POINT_CHANGE`, while exact item packet headers/codecs remain intentionally deferred to the dedicated `internal/proto/item` slice.
 - Multi-stage Docker build with a lightweight runtime image that keeps Go debug information intact by avoiding stripped builds.
 
 ## Near-term goal
@@ -170,8 +171,8 @@ Legend:
 | --- | --- | --- |
 | Character snapshots / bootstrap stats | [~] | Enough for selection, spawn, movement, chat, and bootstrap transfer-trigger slices; a first live `internal/player` runtime model now exists separately from persisted snapshots, the default bootstrap `mkmk` account now seeds `MkmkWar` at the legacy Shinsoo Yongan start while auto-migrating the untouched old fake `(1000,2000)` snapshot on load, and fresh character creation now uses legacy empire-specific create positions instead of fake slot-relative coordinates. |
 | Gameplay transfer triggers | [~] | First exact-position trigger can commit bootstrap map transfer from `MOVE` / `SYNC_POSITION`; the same self-session rebootstrap burst is now also reused by the first `warp` NPC interaction vertical, but the final warp/loading packet is still not frozen. |
-| Inventory | [ ] | Not started. |
-| Equipment | [ ] | Not started. |
+| Inventory | [~] | The first protocol-owned self bootstrap contract is now frozen in `spec/protocol/inventory-equipment-bootstrap.md`, but runtime value objects, persistence, and client-visible packets are still ahead. |
+| Equipment | [~] | The first protocol-owned worn-slot surface is now frozen in docs, but equip/unequip runtime behavior and self refresh packets are still ahead. |
 | Item use / consumables | [ ] | Not started. |
 | Derived stats / combat formulas | [ ] | Not started. |
 | Combat loop | [ ] | No targeting, attacks, damage, or death loop yet. |
@@ -200,7 +201,7 @@ Legend:
 | M0 — Protocol-owned boot path | [x] | Handshake, auth/login, selection, create/delete/select, enter-game, and first movement loop are stable. |
 | M1 — Shared-world pre-alpha | [~] | Players can see each other, move, chat, and receive notices with real map/channel boundaries. |
 | M2 — Entity/world runtime foundation | [~] | Live player runtime, the first generic entity registry, the first owned map index, and the first transport-only session directory now exist; shared-world transport routing and the first transfer rebootstrap burst now go through owned runtime boundaries, the reconnect/teardown contract is now frozen in docs, duplicate-live `ENTERGAME` rejection can now stay retryable on the same encrypted game socket while the waiting session remains in `LOADING`, `gamed` now exposes loopback-only static-actor seed/snapshot/update/remove paths, owned map-occupancy snapshots now include static actors on their effective maps, entering players now receive the first client-visible bootstrap burst for already-visible static actors, and `MOVE` / `SYNC_POSITION` now rebuild self-facing static-actor visibility under configured AOI, while broader reconnect hardening, richer AOI, and fuller non-player systems still need to replace the remaining bootstrap shortcuts. |
-| M3 — Character systems | [ ] | Inventory, equipment, item use, and character-state persistence exist in usable form. |
+| M3 — Character systems | [~] | The first inventory/equipment bootstrap contract is now frozen in project docs and packet matrix, but runtime value objects, persistence, packets, and mutations are still ahead before the milestone is usable. |
 | M4 — Combat vertical slice | [ ] | Targeting, attacks, damage, death, and respawn work for at least one minimal content path. |
 | M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime are available. |
 | M6 — Compatibility-grade persistence and operations | [ ] | DB-backed persistence, richer observability/admin tooling, CI maturity, and deploy guidance are in place. |
@@ -238,6 +239,7 @@ Legend:
 - `docs/plans/2026-04-21-world-runtime-and-character-state-next-twenty-five-slices.md`
 - `docs/plans/2026-04-24-runtime-aoi-and-static-actor-next-ten-slices.md`
 - `docs/plans/2026-04-26-npc-gameplay-next-ten-vertical-slices.md`
+- `docs/plans/2026-04-28-post-shop-preview-next-twenty-slices.md`
 - `spec/protocol/README.md`
 - `spec/protocol/session-phases.md`
 - `spec/protocol/frame-layout.md`
@@ -275,6 +277,7 @@ Legend:
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
+- `spec/protocol/inventory-equipment-bootstrap.md`
 - `spec/protocol/sync-position-bootstrap.md`
 - `spec/protocol/boot-path.md`
 - `spec/protocol/packet-matrix.md`

@@ -22,6 +22,7 @@ Typical use cases:
 - login and selection packets
 - main-character bootstrap packets
 - movement packets
+- inventory/equipment bootstrap packets once the first owned item-family headers and layouts are frozen
 
 Golden tests answer:
 - “does this packet match the expected wire format exactly?”

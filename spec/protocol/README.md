@@ -46,6 +46,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `exact-position-bootstrap-transfer-trigger.md` — first gameplay-side exact-position trigger that can invoke the bootstrap transfer commit path from `MOVE` / `SYNC_POSITION`
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`
+- `inventory-equipment-bootstrap.md` — first owned self-only inventory/equipment bootstrap surface and item-family boundary for M3 character state
 - `sync-position-bootstrap.md` — first self-only sync-position reconciliation after entering `GAME`
 - `boot-path.md` — first milestone from connect to basic movement
 - `packet-matrix.md` — working inventory for the first protocol slice

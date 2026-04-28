@@ -8,6 +8,8 @@ Status values:
 - `planned` — known to be needed soon, but not yet locked by tests
 - `candidate` — observed or expected, but still awaiting final confirmation in our own suite
 
+Planned rows may temporarily use `Header = TBD` when the project freezes the family name and scope before the exact wire header/layout reaches packet tests.
+
 ## Control plane
 
 | Name | Direction | Header | Phase | Status | Notes |
@@ -82,6 +84,13 @@ Status values:
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `INTERACT` | client -> server | `0x0501` | game | documented | first owned client-originated interaction request for a visible bootstrap static actor target by `vid`; current payload is a little-endian `uint32 target_vid`, current routing stops at the dedicated `GAME`-phase interaction handler, current owned responses include self-only `info` / `talk` / `shop_preview`, and the current service-style NPC families also include transfer-backed `warp` |
+
+## Items, inventory, and equipment
+
+| Name | Direction | Header | Phase | Status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `ITEM_SET` | server -> client | `TBD` | game bootstrap | planned | first owned self-only occupied-slot bootstrap/update family for carried inventory and equipped items; `inventory-equipment-bootstrap.md` freezes ordering and scope first while the exact byte layout waits for `internal/proto/item` golden tests |
+| `ITEM_DEL` | server -> client | `TBD` | game | planned | future self-only slot-clear/remove companion for carried/equipped item mutations; listed now so the slot-addressed family is explicit before move/equip/use slices land |
 
 ## Notes
 
