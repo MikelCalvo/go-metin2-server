@@ -1,6 +1,9 @@
 # NPC Shop Preview Bootstrap
 
-This document freezes the first browse-only merchant-style NPC contract for `go-metin2-server`.
+This document freezes the browse-only merchant-style NPC contract for `go-metin2-server`.
+
+Its authored payload is now paired with the structured catalog contract in:
+- `npc-shop-catalog-bootstrap.md`
 
 It sits on top of:
 - `npc-service-interactions-bootstrap.md`
@@ -15,27 +18,25 @@ This contract currently applies only to:
 - a deterministic authored interaction definition with:
   - `kind = "shop_preview"`
   - stable `ref`
-  - non-blank `text`
+  - the structured merchant payload frozen in `npc-shop-catalog-bootstrap.md`
 - a self-only browse-only response with no inventory or currency mutation
 
 ## Authored definition shape
 
-`shop_preview` currently uses the minimal text-backed shape:
+`shop_preview` is no longer meant to stay conceptually tied to arbitrary merchant text.
 
-```json
-{
-  "kind": "shop_preview",
-  "ref": "npc:merchant",
-  "text": "Browse wares."
-}
-```
+The contract-bearing authored payload is now the structured merchant catalog frozen in:
+- `npc-shop-catalog-bootstrap.md`
 
-Current validation rules:
-- `kind` must equal `shop_preview`
-- `ref` must be non-blank
-- `text` must be non-blank after trimming
-- `map_index`, `x`, and `y` must stay zero for this kind
-- duplicate `(kind, ref)` definitions are rejected
+That follow-up doc owns:
+- the top-level `title + catalog[]` shape
+- stable per-entry `slot`
+- stable per-entry `item_vnum`
+- deterministic preview rendering from template-backed merchant entries
+
+Transition note:
+- the current implementation still serves the old text-backed `shop_preview` payload until the next slice widens store/bundle/runtime wiring
+- this slice freezes the long-term preview contract first so the next RED/GREEN implementation can stay small
 
 ## Runtime behavior
 
@@ -47,9 +48,11 @@ When a player interacts with a visible static actor whose metadata resolves to a
   - `CHAT_TYPE_INFO`
   - `VID = 0`
   - `Empire = 0`
-  - `Message = definition.Text`
+  - `Message = deterministic structured merchant preview render`
 - no peer-visible frames are emitted
 - no transfer, inventory mutation, purchase, sell-back, or persistent merchant state is created
+
+The exact preview-string shape is now frozen in `npc-shop-catalog-bootstrap.md`.
 
 ## Operator authoring and QA visibility
 
@@ -63,7 +66,9 @@ Current loopback authoring surface:
 Current loopback QA/debugging surface:
 - `GET /local/interaction-visibility`
 
-For `shop_preview`, interaction-visibility now returns the actor together with the compact resolved preview text instead of an unsupported-kind marker.
+For `shop_preview`, interaction-visibility returns the actor together with the compact resolved preview string instead of an unsupported-kind marker.
+
+At the time this contract is frozen, the loopback authoring and bundle surfaces still expose the existing text-backed payload; the next slice is expected to adopt the structured merchant catalog shape there.
 
 ## Explicit non-goals
 
@@ -79,8 +84,8 @@ This slice does **not** yet freeze:
 ## Success definition
 
 After this slice, the repository should be able to say:
-- `shop_preview` is a valid authored interaction kind in `internal/interactionstore`
-- loopback interaction-definition CRUD can create and update `shop_preview` definitions
-- visible static actors can resolve `shop_preview` through the existing `INTERACT` ingress
-- the player receives a deterministic self-only preview message
+- `shop_preview` remains a valid browse-only authored interaction kind
+- the player-facing browse response is still frozen as self-only and deterministic
+- the structured merchant payload that will replace raw merchant text is now frozen in project-owned docs
+- visible static actors still resolve `shop_preview` through the existing `INTERACT` ingress
 - the project still does not pretend that a real shop transaction system exists

@@ -30,7 +30,7 @@ Current scope of the project:
 - A first owned client-originated bootstrap static-actor interaction ingress: `GAME` sessions can now send `INTERACT (0x0501)` targeting a visible static actor by `vid`, with deterministic codec coverage and dedicated `internal/game` dispatch hooks.
 - `internal/worldruntime` can now also resolve bootstrap static actors by that client-visible `vid` under the active topology/AOI rules, so later interaction slices can fail closed on invisible or unknown targets without inventing a second target-lookup contract.
 - `internal/minimal/shared_world` now owns the first validated static-actor interaction-attempt seam, distinguishing unknown subject, invisible target, visible-but-too-far target, and visible-but-non-interactable actors before later `info` / `talk` content resolution lands.
-- A deterministic file-backed interaction-definition store now exists in `internal/interactionstore` for authored interaction content keyed by stable `kind + ref`; it now serves loopback HTTP authoring for `info`, `talk`, and the first `warp` payload shape (`map_index`, `x`, `y`, optional `text`), `gamed` now loads that catalog at boot when present, static actors that point at missing definitions now fail closed at boot plus on runtime create/update paths, visible static actors whose metadata resolves to `interaction_kind = "info"` or `interaction_kind = "talk"` now answer the interacting player with a self-only chat-backed authored delivery, visible static actors whose metadata resolves to `interaction_kind = "warp"` can now transfer the interacting player through the existing self-session rebootstrap path, known bootstrap interaction failures now also answer the player with one deterministic self-only `CHAT_TYPE_INFO` message instead of silently disappearing, a fixed `1s` per-session per-target interaction cooldown now suppresses repeated spam against the same NPC with a deliberate no-op, loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` now expose that widened authoring shape, loopback-only `GET /local/interaction-visibility` now exposes compact resolved previews for the interactable actors each connected player can currently see, and loopback-only `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content bundle for static actors plus interaction definitions.
+- A deterministic file-backed interaction-definition store now exists in `internal/interactionstore` for authored interaction content keyed by stable `kind + ref`; it now serves loopback HTTP authoring for `info`, `talk`, and the first `warp` payload shape (`map_index`, `x`, `y`, optional `text`), `gamed` now loads that catalog at boot when present, static actors that point at missing definitions now fail closed at boot plus on runtime create/update paths, visible static actors whose metadata resolves to `interaction_kind = "info"` or `interaction_kind = "talk"` now answer the interacting player with a self-only chat-backed authored delivery, visible static actors whose metadata resolves to `interaction_kind = "warp"` can now transfer the interacting player through the existing self-session rebootstrap path, known bootstrap interaction failures now also answer the player with one deterministic self-only `CHAT_TYPE_INFO` message instead of silently disappearing, a fixed `1s` per-session per-target interaction cooldown now suppresses repeated spam against the same NPC with a deliberate no-op, loopback-only `GET`/`POST /local/interactions` plus `PATCH`/`PUT`/`DELETE /local/interactions/{kind}/{ref}` now expose that widened authoring shape, loopback-only `GET /local/interaction-visibility` now exposes compact resolved previews for the interactable actors each connected player can currently see, loopback-only `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content bundle for static actors plus interaction definitions, and the next structured merchant-catalog contract behind `shop_preview` is now frozen in docs ahead of the following wiring slice.
 - An internal server-side map-relocation visibility rebuild primitive that removes peers from the old bootstrap `MapIndex` and bootstraps peers on the destination `MapIndex`.
 - A loopback-only `gamed` relocation ops trigger that exercises bootstrap `MapIndex` relocation by exact character name without freezing a final client warp contract.
 - A loopback-only `gamed` relocation dry-run endpoint that previews visibility and map-occupancy effects before applying a bootstrap `MapIndex` relocation, now including full before/after map-occupancy snapshots and explicit static-actor visibility diffs alongside the delta counts, and composing that structured preview through `internal/worldruntime/scopes.go`.
@@ -178,7 +178,7 @@ Legend:
 | Derived stats / combat formulas | [ ] | Not started. |
 | Combat loop | [ ] | No targeting, attacks, damage, or death loop yet. |
 | Respawn / death handling | [ ] | Not started. |
-| NPCs / shops | [~] | Bootstrap static actors already support interaction metadata plus self-only `info` / `talk` / browse-only `shop_preview` responses, visible `warp` actors can now transfer the interacting player through the existing self-session rebootstrap path, and a fixed `1s` per-session per-target cooldown now suppresses repeated spam against the same NPC; real shop transactions, quest logic, and richer NPC UI are still not started. |
+| NPCs / shops | [~] | Bootstrap static actors already support interaction metadata plus self-only `info` / `talk` / browse-only `shop_preview` responses, visible `warp` actors can now transfer the interacting player through the existing self-session rebootstrap path, a fixed `1s` per-session per-target cooldown now suppresses repeated spam against the same NPC, and the structured merchant-catalog contract that will replace raw `shop_preview` text is now frozen in project docs; real shop transactions, quest logic, and richer NPC UI are still not started. |
 | Mobs / AI / spawn groups | [ ] | Not started. |
 | Quest / script runtime | [ ] | Not started. |
 
@@ -278,6 +278,7 @@ Legend:
 - `spec/protocol/static-actor-interaction-request.md`
 - `spec/protocol/npc-service-interactions-bootstrap.md`
 - `spec/protocol/npc-shop-preview-bootstrap.md`
+- `spec/protocol/npc-shop-catalog-bootstrap.md`
 - `spec/protocol/visible-world-bootstrap.md`
 - `spec/protocol/character-update-bootstrap.md`
 - `spec/protocol/player-point-change-bootstrap.md`
@@ -335,7 +336,8 @@ Both binaries expose an ops server with:
 - `GET` / `POST /local/interactions` and `PATCH` / `PUT` / `DELETE /local/interactions/{kind}/{ref}`
   - loopback clients only
   - bodies always use JSON fields `kind` and `ref`
-  - `info` / `talk` / `shop_preview` also use `text`
+  - `info` / `talk` currently also use `text`
+  - `shop_preview` still uses `text` in the current implementation, while the next structured `title + catalog[]` merchant shape is already frozen in `spec/protocol/npc-shop-catalog-bootstrap.md`
   - `warp` also uses `map_index`, `x`, `y`, with optional `text`
   - PATCH/PUT are full-identity upserts, so body `kind` + `ref` must match the path exactly
   - DELETE returns conflict while a bootstrap static actor still references that definition
@@ -343,7 +345,7 @@ Both binaries expose an ops server with:
   - loopback clients only
   - returns a JSON snapshot of each connected bootstrap character plus the currently visible interactable static actors that would resolve for them
   - each visible interactable entry includes `interaction_kind`, `interaction_ref`, and a compact preview or `resolution_failure`
-  - current previews cover self-only `info` / `talk` / `shop_preview` text plus compact `warp` destination summaries for authored teleporter actors
+  - current previews cover self-only `info` / `talk` / `shop_preview` text plus compact `warp` destination summaries for authored teleporter actors, and the next structured merchant preview string is already frozen in docs for the following implementation slice
 - `GET` / `POST /local/content-bundle`
   - loopback clients only
   - `GET` exports one deterministic authored-content bundle covering bootstrap static actors plus interaction definitions
