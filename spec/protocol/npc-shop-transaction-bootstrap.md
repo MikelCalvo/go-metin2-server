@@ -4,11 +4,12 @@ This document freezes the first real merchant-transaction gate for `go-metin2-se
 
 The goal is intentionally narrow:
 - move from read-only structured `shop_preview` catalogs toward one real purchase path
-- record the known merchant packet-family names and headers without pretending the project already owns the full client shop-window choreography
+- record the buy request contract inside the now-frozen minimal merchant packet family without pretending the project already owns the full final merchant-window choreography
 - make the buy-only implementation gate explicit enough that the next RED tests can stay small and honest
 - keep sell-back, storage, and richer merchant UI semantics out of scope
 
 It sits on top of:
+- `npc-shop-open-close-bootstrap.md`
 - `npc-shop-preview-bootstrap.md`
 - `npc-shop-catalog-bootstrap.md`
 - `inventory-equipment-bootstrap.md`
@@ -45,6 +46,11 @@ This slice does not reopen those earlier contracts.
 It defines how the first merchant transaction path is allowed to depend on them.
 
 ## Known merchant packet families
+
+Session open/close choreography is now frozen separately in:
+- `npc-shop-open-close-bootstrap.md`
+
+This section focuses only on the merchant packet-family facts that the buy-only transaction gate depends on.
 
 Current compatibility references already indicate the merchant family names and top-level headers:
 - client -> server: `SHOP`, header `0x0801`
@@ -173,10 +179,11 @@ However, the exact mapping between server-side failure causes and final client-v
 
 The following are still intentionally unknown and must be captured or pinned by RED tests before broader implementation claims:
 - the final semantic meaning of the first trailing byte in client `SHOP BUY`
-- whether the normal TMP4 client requires `GC::SHOP START` or `GC::SHOP START_EX` before it will send `BUY`
+- the exact payload layout of the planned `GC::SHOP START` open response
+- whether later compatibility work must switch from the currently planned `GC::SHOP START` path to `GC::SHOP START_EX`
 - the exact minimal `GC::SHOP` success/failure sequence the client expects to keep its merchant UI stable
 - whether successful purchase requires additional merchant-side item/update frames beyond the authoritative state mutation
-- the exact close/end choreography for leaving a merchant window without buying
+- whether explicit `GC::SHOP END` is mandatory on every close path while the socket remains alive in `GAME`
 - whether multi-tab addressing changes the future meaning of `catalog_slot`
 
 These unknowns are the implementation gate.
