@@ -70,7 +70,7 @@ The temporary self-facing effect placeholder is intentionally text-backed in thi
 - `vid = 0`
 - deterministic message text: `consume:27001:+50`
 
-This effect placeholder exists only because there is not yet an owned visual-effect packet family or item-template/name seam.
+This effect placeholder exists only because there is not yet an owned visual-effect packet family or template-driven naming/effect-resolution path wired through the runtime.
 
 ## Failure rules
 

@@ -43,7 +43,7 @@ The first owned inventory/equipment surface must stay slot-addressed and determi
 
 Each occupied carried or equipped slot is expected to map to one owned item snapshot with the following minimum semantics:
 - `slot` — stable inventory slot index for carried items
-- `vnum` — item template identifier
+- `vnum` — item template identifier referencing the deterministic file-backed template catalog seam under `internal/itemstore`
 - `count` — stack count
 - `id` — stable instance identity for persistence/runtime ownership, even if the first client-visible packet family does not expose it directly
 - `equipped` — whether the item is currently worn
