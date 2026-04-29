@@ -195,6 +195,20 @@ This slice does **not** yet freeze:
 - safebox, mall, or storage integration
 - quest-driven merchant dialogs or special-case shop scripts
 
+## Temporary RED harness before wire ownership
+
+The next RED is allowed to exercise the first buy-only merchant path through a **temporary local-only harness**:
+- resolve merchant context through the already-owned `INTERACT` path against a visible structured `shop_preview`
+- trigger a local-only buy attempt by stable authored `catalog_slot`
+- assert authoritative **state-level** outcomes first: gold debit, inventory grant, insufficient-gold rejection, and no-free-slot rejection
+
+For the current bootstrap runtime, that harness may temporarily ride the existing talking-chat command seam if that keeps the next GREEN slice tiny.
+
+This does **not** replace the long-term ownership target:
+- the final compatibility-facing ingress is still the client `SHOP` family
+- the temporary harness must stay local/bootstrap-scoped
+- later packet-binding slices must be free to swap the ingress without changing the state contract frozen above
+
 ## Success definition
 
 After this slice, the repository should be able to say:

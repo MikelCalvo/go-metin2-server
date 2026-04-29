@@ -42,6 +42,31 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadMerchantCatalogKeepsStableBuySlotAddressing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Definitions: []Definition{testMerchantCatalogDefinition()}}); err != nil {
+		t.Fatalf("save merchant snapshot: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load merchant snapshot: %v", err)
+	}
+	if len(loaded.Definitions) != 1 {
+		t.Fatalf("expected 1 merchant definition, got %d", len(loaded.Definitions))
+	}
+	catalog := loaded.Definitions[0].Catalog
+	if len(catalog) != 2 {
+		t.Fatalf("expected 2 merchant catalog entries, got %d", len(catalog))
+	}
+	if catalog[0].Slot != 0 || catalog[0].ItemVnum != 27001 || catalog[0].Price != 50 || catalog[0].Count != 1 {
+		t.Fatalf("unexpected merchant catalog slot 0 after round-trip: %+v", catalog[0])
+	}
+	if catalog[1].Slot != 1 || catalog[1].ItemVnum != 11200 || catalog[1].Price != 500 || catalog[1].Count != 1 {
+		t.Fatalf("unexpected merchant catalog slot 1 after round-trip: %+v", catalog[1])
+	}
+}
+
 func TestFileStoreSaveWritesDeterministicSortedSnapshotAndReplacesPreviousContent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)

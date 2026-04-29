@@ -41,6 +41,11 @@ type ItemUseResult struct {
 	EffectMessage string
 }
 
+type MerchantBuyResult struct {
+	Item inventory.ItemInstance
+	Gold uint64
+}
+
 func NewRuntime(persisted loginticket.Character, sessionLink SessionLink) *Runtime {
 	runtime := &Runtime{sessionLink: sessionLink}
 	runtime.ApplyPersistedSnapshot(persisted)
@@ -234,6 +239,24 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex) (ItemUseResult, bool) {
 	return result, true
 }
 
+func (r *Runtime) BuyMerchantItem(vnum uint32, count uint16, price uint64) (MerchantBuyResult, bool) {
+	if r == nil || vnum == 0 || count == 0 || price == 0 || r.liveGold < price {
+		return MerchantBuyResult{}, false
+	}
+	slot, ok := nextFreeInventorySlot(r.liveInventory)
+	if !ok {
+		return MerchantBuyResult{}, false
+	}
+	item, err := (inventory.ItemInstance{ID: nextLiveItemInstanceID(r.liveInventory, r.liveEquipment), Vnum: vnum, Count: count}).WithInventorySlot(slot)
+	if err != nil {
+		return MerchantBuyResult{}, false
+	}
+	r.liveGold -= price
+	r.liveInventory = append(r.liveInventory, item)
+	sortInventoryItems(r.liveInventory)
+	return MerchantBuyResult{Item: item, Gold: r.liveGold}, true
+}
+
 func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
 	if r == nil {
 		return
@@ -307,6 +330,33 @@ func removeInventoryIndex(items []inventory.ItemInstance, index int) []inventory
 		return items
 	}
 	return append(items[:index], items[index+1:]...)
+}
+
+func nextFreeInventorySlot(items []inventory.ItemInstance) (inventory.SlotIndex, bool) {
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		if !inventorySlotOccupied(items, slot) {
+			return slot, true
+		}
+	}
+	return 0, false
+}
+
+func nextLiveItemInstanceID(inventoryItems []inventory.ItemInstance, equipmentItems []inventory.ItemInstance) uint64 {
+	var maxID uint64
+	for _, item := range inventoryItems {
+		if item.ID > maxID {
+			maxID = item.ID
+		}
+	}
+	for _, item := range equipmentItems {
+		if item.ID > maxID {
+			maxID = item.ID
+		}
+	}
+	if maxID == 0 {
+		return 1
+	}
+	return maxID + 1
 }
 
 func sortInventoryItems(items []inventory.ItemInstance) {

@@ -1511,6 +1511,33 @@ func TestSelectedCharacterSnapshotUpdateClonesUpdatedItemState(t *testing.T) {
 	}
 }
 
+func TestSelectedCharacterSnapshotUpdateCarriesMerchantPurchaseStateIntoPersistedSlice(t *testing.T) {
+	characters := stubCharacters()
+	characters[1].Gold = 125
+	characters[1].Inventory = []inventory.ItemInstance{}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	updatedCharacter := characters[1]
+	updatedCharacter.Gold = 75
+	updatedCharacter.Inventory = []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 1, Slot: 0}}
+
+	updated, ok := selectedCharacterSnapshotUpdate(characters, 1, updatedCharacter)
+	if !ok {
+		t.Fatal("expected selected snapshot update to carry merchant purchase state")
+	}
+	if got := updated[1].Gold; got != 75 {
+		t.Fatalf("expected persisted gold 75 after merchant purchase state update, got %d", got)
+	}
+	if !reflect.DeepEqual(updated[1].Inventory, []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 1, Slot: 0}}) {
+		t.Fatalf("unexpected persisted inventory after merchant purchase state update: %#v", updated[1].Inventory)
+	}
+	if got := characters[1].Gold; got != 125 {
+		t.Fatalf("expected original character gold to stay unchanged, got %d", got)
+	}
+	if len(characters[1].Inventory) != 0 {
+		t.Fatalf("expected original character inventory to stay empty, got %#v", characters[1].Inventory)
+	}
+}
+
 func TestNewGameRuntimeExposesSelectedCharacterItemStateSnapshotsAfterSelect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	characters := stubCharacters()

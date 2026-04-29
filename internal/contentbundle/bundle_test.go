@@ -80,6 +80,37 @@ func TestCanonicalizeNormalizesStructuredShopPreviewCatalog(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeMerchantBundleKeepsStableBuySlotAddressing(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		StaticActors: []StaticActor{{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:merchant",
+			Title: "Village Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize merchant buy bundle: %v", err)
+	}
+	if len(bundle.InteractionDefinitions) != 1 {
+		t.Fatalf("expected 1 interaction definition, got %d", len(bundle.InteractionDefinitions))
+	}
+	catalog := bundle.InteractionDefinitions[0].Catalog
+	if len(catalog) != 2 {
+		t.Fatalf("expected 2 merchant catalog entries, got %d", len(catalog))
+	}
+	if catalog[0].Slot != 0 || catalog[0].ItemVnum != 27001 || catalog[0].Price != 50 || catalog[0].Count != 1 {
+		t.Fatalf("unexpected canonical merchant slot 0: %+v", catalog[0])
+	}
+	if catalog[1].Slot != 1 || catalog[1].ItemVnum != 11200 || catalog[1].Price != 500 || catalog[1].Count != 1 {
+		t.Fatalf("unexpected canonical merchant slot 1: %+v", catalog[1])
+	}
+}
+
 func TestCanonicalizeRejectsDanglingInteractionReference(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		StaticActors:           []StaticActor{{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}},

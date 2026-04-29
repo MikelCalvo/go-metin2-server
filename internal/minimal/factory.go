@@ -152,6 +152,11 @@ type staticActorInteractionResolution struct {
 	Delivery   *chatproto.ChatDeliveryPacket
 }
 
+type merchantBuyContext struct {
+	TargetVID  uint32
+	Definition InteractionDefinition
+}
+
 type RuntimeConfigSnapshot struct {
 	LocalChannelID       uint8  `json:"local_channel_id"`
 	VisibilityMode       string `json:"visibility_mode"`
@@ -713,6 +718,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		pending := newPendingServerFrames()
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
+		var activeMerchantBuy merchantBuyContext
+		var hasActiveMerchantBuy bool
 		interactionCooldowns := make(map[uint32]time.Time)
 		interactionNow := func() time.Time {
 			if runtime != nil && runtime.now != nil {
@@ -729,6 +736,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return
 			}
 			interactionCooldowns[targetVID] = interactionNow().Add(staticActorInteractionCooldown)
+		}
+		clearActiveMerchantBuy := func() {
+			activeMerchantBuy = merchantBuyContext{}
+			hasActiveMerchantBuy = false
 		}
 		clearLiveCharacterRegistration := func() {
 			if liveCharacterRegistrationID == 0 {
@@ -964,6 +975,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					hasTicket = true
 					hasSelected = false
 					selectedPlayer = nil
+					clearActiveMerchantBuy()
 					clearLiveCharacterRegistration()
 					selectedIndex = 0
 					return loginflow.Result{
@@ -1232,6 +1244,28 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 
 					if packet.Type == chatproto.ChatTypeTalking {
+						if catalogSlot, ok := slashShopBuyCommand(packet.Message); ok {
+							selectedPlayer, ok := currentSelectedPlayer()
+							if !ok || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							entry, ok := merchantCatalogEntryBySlot(activeMerchantBuy.Definition, catalogSlot)
+							if !ok {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							previousSelected := selectedPlayer.LiveCharacter()
+							buyResult, ok := selectedPlayer.BuyMerchantItem(entry.ItemVnum, entry.Count, entry.Price)
+							if !ok {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							frames, err := merchantBuyResultFrames(buyResult)
+							if err != nil {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.ChatResult{Accepted: false}
+							}
+							return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
+						}
 						if slot, ok := slashUseItemCommand(packet.Message); ok {
 							selectedPlayer, ok := currentSelectedPlayer()
 							if !ok {
@@ -1269,12 +1303,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
+							clearActiveMerchantBuy()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseClose}
 						case "phase_select":
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
+							clearActiveMerchantBuy()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseSelect}
 						}
@@ -1361,6 +1397,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					resolution := runtime.resolveStaticActorInteraction(sharedWorldID, packet.TargetVID)
 					if !resolution.Accepted {
+						clearActiveMerchantBuy()
 						if resolution.Delivery == nil {
 							return gameflow.InteractionResult{Accepted: false}
 						}
@@ -1368,6 +1405,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
 					}
 					if resolution.Definition.Kind == interactionstore.KindWarp {
+						clearActiveMerchantBuy()
 						_, transferFrames, ok := applySelectedCharacterTransfer(resolution.Definition.MapIndex, resolution.Definition.X, resolution.Definition.Y, true)
 						if !ok {
 							failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureWarpNotApplied)
@@ -1388,6 +1426,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if resolution.Delivery == nil {
 						return gameflow.InteractionResult{Accepted: false}
 					}
+					if resolution.Definition.Kind == interactionstore.KindShopPreview {
+						activeMerchantBuy = merchantBuyContext{TargetVID: packet.TargetVID, Definition: resolution.Definition}
+						hasActiveMerchantBuy = true
+					} else {
+						clearActiveMerchantBuy()
+					}
 					markInteractionCooldown(packet.TargetVID)
 					return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
 				},
@@ -1398,6 +1442,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			leaveID := sharedWorldID
 			shouldLeave := joinedSharedWorld
 			joinedSharedWorld = false
+			clearActiveMerchantBuy()
 			clearLiveCharacterRegistration()
 			stateMu.Unlock()
 			if shouldLeave {
@@ -1757,6 +1802,21 @@ func slashUseItemCommand(message string) (inventory.SlotIndex, bool) {
 	return inventory.SlotIndex(slot), true
 }
 
+func slashShopBuyCommand(message string) (uint16, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 2 || fields[0] != "shop_buy" {
+		return 0, false
+	}
+	slot, err := strconv.ParseUint(fields[1], 10, 16)
+	if err != nil {
+		return 0, false
+	}
+	return uint16(slot), true
+}
+
 func ticketLoginSuccessPacket(ticket loginticket.Ticket, addr uint32, port uint16) loginproto.LoginSuccess4Packet {
 	packet := loginproto.LoginSuccess4Packet{
 		Handle:    0x11223344,
@@ -1977,6 +2037,17 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 	}
 	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: result.EffectMessage}))
 	return frames, nil
+}
+
+func merchantBuyResultFrames(result player.MerchantBuyResult) ([][]byte, error) {
+	setFrame, err := encodeBootstrapInventoryItemFrame(result.Item)
+	if err != nil {
+		return nil, err
+	}
+	return [][]byte{
+		setFrame,
+		chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Merchant purchase complete."}),
+	}, nil
 }
 
 func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte, error) {
@@ -2845,6 +2916,18 @@ func (r *gameRuntime) shopPreviewInteractionPreview(definition InteractionDefini
 		return "", false
 	}
 	return fmt.Sprintf("%s: %s", definition.Title, strings.Join(entries, "; ")), true
+}
+
+func merchantCatalogEntryBySlot(definition InteractionDefinition, slot uint16) (interactionstore.MerchantCatalogEntry, bool) {
+	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview {
+		return interactionstore.MerchantCatalogEntry{}, false
+	}
+	for _, entry := range definition.Catalog {
+		if entry.Slot == slot {
+			return entry, true
+		}
+	}
+	return interactionstore.MerchantCatalogEntry{}, false
 }
 
 func compactInteractionPreview(preview string) string {
