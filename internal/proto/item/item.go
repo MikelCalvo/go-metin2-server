@@ -33,6 +33,7 @@ const (
 var (
 	ErrUnexpectedHeader       = errors.New("unexpected item packet header")
 	ErrInvalidPayload         = errors.New("invalid item packet payload")
+	ErrInventoryCellRange     = errors.New("inventory cell is out of range")
 	ErrEquipmentWearCellRange = errors.New("equipment wear cell is out of range")
 )
 
@@ -63,6 +64,13 @@ type DelPacket struct {
 
 func InventoryPosition(cell uint16) Position {
 	return Position{WindowType: WindowInventory, Cell: cell}
+}
+
+func CarriedInventoryPosition(cell uint16) (Position, error) {
+	if cell >= InventoryMaxCell {
+		return Position{}, ErrInventoryCellRange
+	}
+	return InventoryPosition(cell), nil
 }
 
 func EquipmentPosition(wearCell uint16) (Position, error) {

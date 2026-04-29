@@ -1213,6 +1213,27 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 						return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
 					}
 
+					if packet.Type == chatproto.ChatTypeTalking {
+						if slot, ok := slashUseItemCommand(packet.Message); ok {
+							selectedPlayer, ok := currentSelectedPlayer()
+							if !ok {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							previousSelected := selectedPlayer.LiveCharacter()
+							useResult, ok := selectedPlayer.UseItem(slot)
+							if !ok {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							frames, err := itemUseResultFrames(selectedPlayer.LiveCharacter(), useResult)
+							if err != nil {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.ChatResult{Accepted: false}
+							}
+							return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
+						}
+					}
+
 					if command, ok := slashGameCommand(packet.Message); ok {
 						leaveSharedWorld := func() {
 							if !joinedSharedWorld || sharedWorldID == 0 {
@@ -1703,6 +1724,21 @@ func slashUnequipItemCommand(message string) (inventory.EquipmentSlot, inventory
 	return equipSlot, inventory.SlotIndex(to), true
 }
 
+func slashUseItemCommand(message string) (inventory.SlotIndex, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 2 || fields[0] != "use_item" {
+		return 0, false
+	}
+	slot, err := strconv.ParseUint(fields[1], 10, 16)
+	if err != nil {
+		return 0, false
+	}
+	return inventory.SlotIndex(slot), true
+}
+
 func ticketLoginSuccessPacket(ticket loginticket.Ticket, addr uint32, port uint16) loginproto.LoginSuccess4Packet {
 	packet := loginproto.LoginSuccess4Packet{
 		Handle:    0x11223344,
@@ -1900,6 +1936,31 @@ func unequipResultFrames(from inventory.EquipmentSlot, inventoryItem inventory.I
 	}, nil
 }
 
+func itemUseResultFrames(character loginticket.Character, result player.ItemUseResult) ([][]byte, error) {
+	position, err := itemproto.CarriedInventoryPosition(uint16(result.Slot))
+	if err != nil {
+		return nil, err
+	}
+	frames := make([][]byte, 0, 3)
+	frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+		VID:    character.VID,
+		Type:   result.PointType,
+		Amount: result.PointAmount,
+		Value:  result.PointValue,
+	}))
+	if result.ItemRemoved {
+		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
+	} else {
+		setFrame, err := encodeBootstrapItemFrame(position, result.Item)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, setFrame)
+	}
+	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: result.EffectMessage}))
+	return frames, nil
+}
+
 func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte, error) {
 	if err := instance.Validate(); err != nil {
 		return nil, err
@@ -1907,10 +1968,11 @@ func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte,
 	if instance.Equipped {
 		return nil, fmt.Errorf("bootstrap inventory item must be unequipped: %d", instance.ID)
 	}
-	if uint16(instance.Slot) >= itemproto.InventoryMaxCell {
+	position, err := itemproto.CarriedInventoryPosition(uint16(instance.Slot))
+	if err != nil {
 		return nil, fmt.Errorf("bootstrap inventory slot out of range: %d", instance.Slot)
 	}
-	return encodeBootstrapItemFrame(itemproto.InventoryPosition(uint16(instance.Slot)), instance)
+	return encodeBootstrapItemFrame(position, instance)
 }
 
 func encodeBootstrapEquipmentItemFrame(instance inventory.ItemInstance) ([]byte, error) {

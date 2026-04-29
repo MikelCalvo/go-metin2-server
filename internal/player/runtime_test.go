@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -76,5 +77,79 @@ func TestNilRuntimeReturnsZeroLiveCharacter(t *testing.T) {
 	var runtime *Runtime
 	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, loginticket.Character{}) {
 		t.Fatalf("expected nil runtime to return zero live character, got %+v", got)
+	}
+}
+
+func TestRuntimeItemUseConsumesBootstrapConsumableWithoutMutatingPersistedPoints(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.UseItem(5)
+	if !ok {
+		t.Fatal("expected bootstrap consumable use to succeed")
+	}
+	if result.ItemRemoved {
+		t.Fatal("expected stacked consumable to remain in inventory after one use")
+	}
+	if result.Item.ID != 11 || result.Item.Vnum != 27001 || result.Item.Count != 2 || result.Item.Slot != 5 {
+		t.Fatalf("unexpected updated inventory item: %+v", result.Item)
+	}
+	if result.PointAmount != 50 || result.PointValue != 750 || result.PointType != 1 {
+		t.Fatalf("unexpected point change result: %+v", result)
+	}
+	if result.EffectMessage != "consume:27001:+50" {
+		t.Fatalf("unexpected effect message: %q", result.EffectMessage)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
+		t.Fatalf("expected persisted points to remain unchanged, got %d", got)
+	}
+	live := runtime.LiveCharacter()
+	if live.Points[1] != 750 {
+		t.Fatalf("expected live points[1] to be incremented to 750, got %d", live.Points[1])
+	}
+	if !reflect.DeepEqual(live.Inventory, []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 2, Slot: 5}}) {
+		t.Fatalf("unexpected live inventory after use: %#v", live.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Inventory, []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}}) {
+		t.Fatalf("expected original persisted inventory input to stay unchanged, got %#v", persisted.Inventory)
+	}
+}
+
+func TestRuntimeItemUseRemovesTheLastConsumableStack(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 1, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.UseItem(5)
+	if !ok {
+		t.Fatal("expected final-stack consumable use to succeed")
+	}
+	if !result.ItemRemoved {
+		t.Fatal("expected final-stack consumable use to remove the inventory slot")
+	}
+	if result.PointAmount != 50 || result.PointValue != 750 || result.PointType != 1 {
+		t.Fatalf("unexpected point change result: %+v", result)
+	}
+	live := runtime.LiveCharacter()
+	if len(live.Inventory) != 0 {
+		t.Fatalf("expected live inventory to be empty after consuming the last stack, got %#v", live.Inventory)
+	}
+	if live.Points[1] != 750 {
+		t.Fatalf("expected live points[1] to be incremented to 750, got %d", live.Points[1])
 	}
 }

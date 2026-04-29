@@ -17,9 +17,28 @@ type Runtime struct {
 	persisted     loginticket.Character
 	live          worldruntime.Position
 	liveGold      uint64
+	livePoints    [255]int32
 	liveInventory []inventory.ItemInstance
 	liveEquipment []inventory.ItemInstance
 	sessionLink   SessionLink
+}
+
+const (
+	bootstrapConsumableVnum          uint32 = 27001
+	bootstrapConsumablePointIndex    uint8  = 1
+	bootstrapConsumablePointType     uint8  = 1
+	bootstrapConsumablePointDelta    int32  = 50
+	bootstrapConsumableEffectMessage        = "consume:27001:+50"
+)
+
+type ItemUseResult struct {
+	Slot          inventory.SlotIndex
+	ItemRemoved   bool
+	Item          inventory.ItemInstance
+	PointType     uint8
+	PointAmount   int32
+	PointValue    int32
+	EffectMessage string
 }
 
 func NewRuntime(persisted loginticket.Character, sessionLink SessionLink) *Runtime {
@@ -44,6 +63,7 @@ func (r *Runtime) LiveCharacter() loginticket.Character {
 	live.X = r.live.X
 	live.Y = r.live.Y
 	live.Gold = r.liveGold
+	live.Points = r.livePoints
 	live.Inventory = cloneItemInstances(r.liveInventory)
 	live.Equipment = cloneItemInstances(r.liveEquipment)
 	return live
@@ -172,6 +192,48 @@ func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.Sl
 	return item, true
 }
 
+func (r *Runtime) UseItem(slot inventory.SlotIndex) (ItemUseResult, bool) {
+	if r == nil {
+		return ItemUseResult{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return ItemUseResult{}, false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Vnum != bootstrapConsumableVnum || item.Count == 0 {
+		return ItemUseResult{}, false
+	}
+	currentPointValue := r.livePoints[bootstrapConsumablePointIndex]
+	if currentPointValue > (1<<31-1)-bootstrapConsumablePointDelta {
+		return ItemUseResult{}, false
+	}
+	updatedPointValue := currentPointValue + bootstrapConsumablePointDelta
+	result := ItemUseResult{
+		Slot:          slot,
+		PointType:     bootstrapConsumablePointType,
+		PointAmount:   bootstrapConsumablePointDelta,
+		PointValue:    updatedPointValue,
+		EffectMessage: bootstrapConsumableEffectMessage,
+	}
+	r.livePoints[bootstrapConsumablePointIndex] = updatedPointValue
+	if item.Count == 1 {
+		r.liveInventory = removeInventoryIndex(r.liveInventory, index)
+		sortInventoryItems(r.liveInventory)
+		result.ItemRemoved = true
+		return result, true
+	}
+	item.Count--
+	if err := item.Validate(); err != nil {
+		r.livePoints[bootstrapConsumablePointIndex] = currentPointValue
+		return ItemUseResult{}, false
+	}
+	r.liveInventory[index] = item
+	sortInventoryItems(r.liveInventory)
+	result.Item = item
+	return result, true
+}
+
 func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
 	if r == nil {
 		return
@@ -179,6 +241,7 @@ func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
 	r.persisted = normalizeCharacter(persisted)
 	r.live = worldruntime.PositionFromCharacter(r.persisted)
 	r.liveGold = r.persisted.Gold
+	r.livePoints = r.persisted.Points
 	r.liveInventory = cloneItemInstances(r.persisted.Inventory)
 	r.liveEquipment = cloneItemInstances(r.persisted.Equipment)
 	sortInventoryItems(r.liveInventory)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
@@ -907,6 +908,216 @@ func TestNewGameSessionFactoryUnequipPersistsAndEmitsEquipmentDeleteThenInventor
 	}
 	if len(account.Characters[1].Equipment) != 0 {
 		t.Fatalf("expected persisted equipment to be empty after unequip, got %#v", account.Characters[1].Equipment)
+	}
+}
+
+func TestNewGameSessionFactoryItemUsePersistsPointChangeAndDecrementsTheConsumableStack(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Points[bootstrapPlayerPointValueIndex] = 700
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 3, Slot: 5}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	wantVID := characters[1].VID
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected item use error: %v", err)
+	}
+	if len(useOut) != 3 {
+		t.Fatalf("expected point-change + item-set + info frames for item use, got %d", len(useOut))
+	}
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
+	if err != nil {
+		t.Fatalf("decode point-change frame: %v", err)
+	}
+	if pointPacket.VID != wantVID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != 50 || pointPacket.Value != 750 {
+		t.Fatalf("unexpected point-change packet: %+v", pointPacket)
+	}
+	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useOut[1]))
+	if err != nil {
+		t.Fatalf("decode item-use set frame: %v", err)
+	}
+	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Vnum != 27001 || setPacket.Count != 2 {
+		t.Fatalf("unexpected item-use set packet: %+v", setPacket)
+	}
+	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
+	if err != nil {
+		t.Fatalf("decode item-use info frame: %v", err)
+	}
+	if infoPacket.Type != chatproto.ChatTypeInfo || infoPacket.VID != 0 || infoPacket.Message != "consume:27001:+50" {
+		t.Fatalf("unexpected item-use info packet: %+v", infoPacket)
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if got := account.Characters[1].Points[bootstrapPlayerPointValueIndex]; got != 750 {
+		t.Fatalf("expected persisted points[1] to be 750 after item use, got %d", got)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 2, Slot: 5}}) {
+		t.Fatalf("unexpected persisted inventory after item use: %#v", account.Characters[1].Inventory)
+	}
+}
+
+func TestNewGameSessionFactoryItemUseConsumesTheLastStackAndEmitsDelete(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Points[bootstrapPlayerPointValueIndex] = 700
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 1, Slot: 5}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	wantVID := characters[1].VID
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected item use error: %v", err)
+	}
+	if len(useOut) != 3 {
+		t.Fatalf("expected point-change + item-del + info frames for last-stack item use, got %d", len(useOut))
+	}
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
+	if err != nil {
+		t.Fatalf("decode point-change frame: %v", err)
+	}
+	if pointPacket.VID != wantVID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != 50 || pointPacket.Value != 750 {
+		t.Fatalf("unexpected point-change packet: %+v", pointPacket)
+	}
+	delPacket, err := itemproto.DecodeDel(decodeSingleFrame(t, useOut[1]))
+	if err != nil {
+		t.Fatalf("decode item-use del frame: %v", err)
+	}
+	if delPacket.Position.WindowType != itemproto.WindowInventory || delPacket.Position.Cell != 5 {
+		t.Fatalf("unexpected item-use del packet: %+v", delPacket)
+	}
+	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
+	if err != nil {
+		t.Fatalf("decode item-use info frame: %v", err)
+	}
+	if infoPacket.Type != chatproto.ChatTypeInfo || infoPacket.VID != 0 || infoPacket.Message != "consume:27001:+50" {
+		t.Fatalf("unexpected item-use info packet: %+v", infoPacket)
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if got := account.Characters[1].Points[bootstrapPlayerPointValueIndex]; got != 750 {
+		t.Fatalf("expected persisted points[1] to be 750 after item use, got %d", got)
+	}
+	if len(account.Characters[1].Inventory) != 0 {
+		t.Fatalf("expected persisted inventory to be empty after consuming the last stack, got %#v", account.Characters[1].Inventory)
+	}
+}
+
+func TestNewGameSessionFactoryItemUseOnlyExecutesThroughTalkingChat(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Points[bootstrapPlayerPointValueIndex] = 700
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 3, Slot: 5}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	partyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeParty, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected party chat error: %v", err)
+	}
+	if len(partyOut) != 1 {
+		t.Fatalf("expected /use_item over party chat to stay a normal party delivery, got %d frames", len(partyOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, partyOut[0]))
+	if err != nil {
+		t.Fatalf("decode party chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeParty || !strings.HasSuffix(delivery.Message, "/use_item 5") {
+		t.Fatalf("unexpected party chat delivery: %+v", delivery)
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if got := account.Characters[1].Points[bootstrapPlayerPointValueIndex]; got != 700 {
+		t.Fatalf("expected persisted points[1] to stay unchanged after non-talking item-use attempt, got %d", got)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 3, Slot: 5}}) {
+		t.Fatalf("unexpected persisted inventory after non-talking item-use attempt: %#v", account.Characters[1].Inventory)
 	}
 }
 

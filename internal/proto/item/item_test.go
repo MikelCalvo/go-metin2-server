@@ -82,6 +82,23 @@ func TestEquipmentPositionRejectsOutOfRangeWearCell(t *testing.T) {
 	}
 }
 
+func TestItemUseCarriedInventoryPositionBuildsTheInventoryWindowPosition(t *testing.T) {
+	position, err := CarriedInventoryPosition(5)
+	if err != nil {
+		t.Fatalf("unexpected carried inventory position error: %v", err)
+	}
+	if position != (Position{WindowType: WindowInventory, Cell: 5}) {
+		t.Fatalf("unexpected carried inventory position: %+v", position)
+	}
+}
+
+func TestItemUseCarriedInventoryPositionRejectsOutOfRangeCell(t *testing.T) {
+	_, err := CarriedInventoryPosition(InventoryMaxCell)
+	if err == nil {
+		t.Fatal("expected out-of-range carried inventory cell to fail")
+	}
+}
+
 func TestEncodeDelBuildsAFrame(t *testing.T) {
 	want := loadHexFixture(t, "item-del-frame.hex")
 	got := EncodeDel(sampleDelPacket())

@@ -5,7 +5,7 @@ This document freezes the first owned item-use contract for `go-metin2-server`.
 The goal is intentionally narrow:
 - define exactly one consumable-only vertical before broader gameplay scripting exists
 - keep ingress self-owned by the server runtime instead of pretending the final legacy item-use packet family is already frozen
-- make the first point-changing item path explicit enough that RED tests can pin it down before implementation lands
+- make the first point-changing item path explicit enough that RED tests can pin it down and the minimal runtime can implement it without widening scope
 
 It does **not** yet define the full legacy item-use surface.
 
@@ -110,9 +110,9 @@ This first item-use bootstrap contract does **not** yet freeze:
 
 ## Success definition
 
-After this docs slice, the repository should be able to say:
+With the first implementation slice landed, the repository can now say:
 - the first owned item-use vertical is no longer undefined
-- exactly one consumable path is frozen before broader template/catalog work begins
-- RED tests can target `/use_item <slot>` with `vnum = 27001`
-- the expected self-only outputs are explicit: `PLAYER_POINT_CHANGE`, `ITEM_SET`/`ITEM_DEL`, and one `CHAT_TYPE_INFO` placeholder effect
-- the atomic persistence and rollback expectations are explicit before implementation starts
+- exactly one consumable path is frozen and implemented before broader template/catalog work begins
+- `/use_item <slot>` now mutates carried `vnum = 27001` in the bootstrap minimal runtime
+- the self-only outputs are explicit and exercised: `PLAYER_POINT_CHANGE`, `ITEM_SET`/`ITEM_DEL`, and one `CHAT_TYPE_INFO` placeholder effect
+- the selected-character writeback still preserves the existing atomic persistence and rollback boundary
