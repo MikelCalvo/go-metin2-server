@@ -85,6 +85,13 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 | --- | --- | --- | --- | --- | --- |
 | `INTERACT` | client -> server | `0x0501` | game | documented | first owned client-originated interaction request for a visible bootstrap static actor target by `vid`; current payload is a little-endian `uint32 target_vid`, current routing stops at the dedicated `GAME`-phase interaction handler, current owned responses include self-only `info` / `talk` / `shop_preview`, and the current service-style NPC families also include transfer-backed `warp` |
 
+## Merchants / shops
+
+| Name | Direction | Header | Phase | Status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `SHOP` | client -> server | `0x0801` | game | planned | first real merchant transaction family frozen only as a buy-only gate on top of a successfully resolved structured `shop_preview` catalog; current contract only claims subheader `BUY`, requires an active merchant transaction gate, and freezes one addressing fact from compatibility references: the second trailing byte after the common `SHOP` envelope is the zero-based authored `catalog_slot`; `END` is known to exist, but `SELL` / `SELL2` and the final meaning of the first trailing byte remain out of scope |
+| `SHOP` | server -> client | `0x0810` | game | candidate | compatibility references indicate merchant response subheaders such as `START`, `END`, `UPDATE_ITEM`, `UPDATE_PRICE`, `OK`, `NOT_ENOUGH_MONEY`, `INVENTORY_FULL`, and `INVALID_POS`; the current project-owned contract only acknowledges that a later buy-only path may need minimal compatibility-facing `GC::SHOP` responses, while the exact merchant-window choreography remains capture-gated |
+
 ## Items, inventory, and equipment
 
 | Name | Direction | Header | Phase | Status | Notes |

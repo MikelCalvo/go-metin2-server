@@ -42,6 +42,8 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `static-actor-interaction-request.md` — first owned client-originated `GAME`-phase interaction request for a visible bootstrap static actor target by `VID`
 - `npc-service-interactions-bootstrap.md` — first frozen service-style NPC gameplay contract built on top of bootstrap static actors and the existing `INTERACT` ingress
 - `npc-shop-preview-bootstrap.md` — browse-only merchant preview contract built on top of the existing `INTERACT` ingress and deterministic interaction-definition authoring
+- `npc-shop-catalog-bootstrap.md` — structured merchant catalog contract behind `shop_preview`, with stable catalog slots and template-backed entries
+- `npc-shop-transaction-bootstrap.md` — first buy-only merchant transaction gate built on structured `shop_preview` catalogs while keeping full shop-window choreography capture-gated
 - `static-actor-interaction-authoring.md` — first loopback-only authoring, QA visibility, and deterministic bundle surface for bootstrap static actors plus interaction definitions
 - `exact-position-bootstrap-transfer-trigger.md` — first gameplay-side exact-position trigger that can invoke the bootstrap transfer commit path from `MOVE` / `SYNC_POSITION`
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`

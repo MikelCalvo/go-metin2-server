@@ -262,9 +262,13 @@ If the lab currently has no such content, either:
 
 Expected result:
 - `info` and `talk` still return deterministic self-only text
-- `shop_preview` returns browse-only self-only preview text
+- `shop_preview` returns deterministic structured browse-only self-only preview text
 - no inventory mutation, buy/sell flow, or quest state appears
 - repeated interaction does not disconnect the client
+
+Important note:
+- this smoke step does **not** require a real merchant window or successful purchase path yet
+- the buy-only merchant transaction contract is now documented, but final packet choreography and implementation are still ahead
 
 #### 5.4.2 Warp interaction
 
@@ -401,7 +405,7 @@ These are currently out of scope for the present server state unless the milesto
 - [ ] inventory UX completeness
 - [ ] equipment logic
 - [ ] item use
-- [ ] real shop buy/sell flow
+- [ ] full merchant UI semantics or real shop buy/sell flow
 - [ ] inventory or currency mutation from NPC interactions
 - [ ] mobs, combat, or skills
 - [ ] quest acceptance, progression, or rewards
