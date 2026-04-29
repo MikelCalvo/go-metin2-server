@@ -88,16 +88,17 @@ func TestGameRuntimeCreateWarpInteractionDefinitionPersistsSnapshotAndResolvesDe
 
 func TestGameRuntimeCreateShopPreviewInteractionDefinitionPersistsSnapshotAndResolvesDefinition(t *testing.T) {
 	interactionStore := newInteractionDefinitionStore(t, nil)
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore, itemStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 
-	definition, err := runtime.CreateInteractionDefinition(interactionstore.Definition{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."})
+	definition, err := runtime.CreateInteractionDefinition(defaultMerchantCatalogDefinition())
 	if err != nil {
 		t.Fatalf("create shop preview interaction definition: %v", err)
 	}
-	if definition.Kind != interactionstore.KindShopPreview || definition.Ref != "npc:merchant" || definition.Text != "Browse wares." {
+	if definition.Kind != interactionstore.KindShopPreview || definition.Ref != "npc:merchant" || definition.Title != "Village Merchant" || !reflect.DeepEqual(definition.Catalog, defaultMerchantCatalogDefinition().Catalog) {
 		t.Fatalf("unexpected created shop preview interaction definition: %+v", definition)
 	}
 	resolved, ok := runtime.ResolveInteractionDefinition(interactionstore.KindShopPreview, "npc:merchant")
@@ -108,7 +109,7 @@ func TestGameRuntimeCreateShopPreviewInteractionDefinitionPersistsSnapshotAndRes
 	if err != nil {
 		t.Fatalf("load persisted interaction definitions: %v", err)
 	}
-	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."}}}
+	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()}}
 	if !reflect.DeepEqual(persisted, want) {
 		t.Fatalf("unexpected persisted shop preview interaction definitions:\n got: %#v\nwant: %#v", persisted, want)
 	}
@@ -182,18 +183,26 @@ func TestGameRuntimeUpsertWarpInteractionDefinitionPersistsPayload(t *testing.T)
 	}
 }
 
-func TestGameRuntimeUpsertShopPreviewInteractionDefinitionPersistsPreviewText(t *testing.T) {
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Old wares."}})
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+func TestGameRuntimeUpsertShopPreviewInteractionDefinitionPersistsStructuredCatalog(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Old Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27001, Price: 25, Count: 1},
+		},
+	}})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore, itemStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 
-	definition, err := runtime.UpsertInteractionDefinition(interactionstore.Definition{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."})
+	definition, err := runtime.UpsertInteractionDefinition(defaultMerchantCatalogDefinition())
 	if err != nil {
 		t.Fatalf("upsert shop preview interaction definition: %v", err)
 	}
-	if definition.Kind != interactionstore.KindShopPreview || definition.Ref != "npc:merchant" || definition.Text != "Browse wares." {
+	if definition.Kind != interactionstore.KindShopPreview || definition.Ref != "npc:merchant" || definition.Title != "Village Merchant" || !reflect.DeepEqual(definition.Catalog, defaultMerchantCatalogDefinition().Catalog) {
 		t.Fatalf("unexpected upserted shop preview interaction definition: %+v", definition)
 	}
 	resolved, ok := runtime.ResolveInteractionDefinition(interactionstore.KindShopPreview, "npc:merchant")
@@ -204,7 +213,7 @@ func TestGameRuntimeUpsertShopPreviewInteractionDefinitionPersistsPreviewText(t 
 	if err != nil {
 		t.Fatalf("load persisted interaction definitions: %v", err)
 	}
-	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."}}}
+	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()}}
 	if !reflect.DeepEqual(persisted, want) {
 		t.Fatalf("unexpected persisted shop preview interaction definitions after upsert:\n got: %#v\nwant: %#v", persisted, want)
 	}

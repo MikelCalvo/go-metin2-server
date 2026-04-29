@@ -12,6 +12,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
@@ -26,6 +27,8 @@ import (
 	worldentry "github.com/MikelCalvo/go-metin2-server/internal/worldentry"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
+
+const defaultMerchantPreview = "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"
 
 func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
@@ -5272,9 +5275,10 @@ func TestGameRuntimeResolveStaticActorShopPreviewInteractionReturnsChatDelivery(
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."}})
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore, itemStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -5296,7 +5300,7 @@ func TestGameRuntimeResolveStaticActorShopPreviewInteractionReturnsChatDelivery(
 	if resolution.Delivery == nil {
 		t.Fatalf("expected accepted shop preview interaction to return a self chat delivery, got %+v", resolution)
 	}
-	if resolution.Delivery.Type != chatproto.ChatTypeInfo || resolution.Delivery.VID != 0 || resolution.Delivery.Empire != 0 || resolution.Delivery.Message != "Browse wares." {
+	if resolution.Delivery.Type != chatproto.ChatTypeInfo || resolution.Delivery.VID != 0 || resolution.Delivery.Empire != 0 || resolution.Delivery.Message != defaultMerchantPreview {
 		t.Fatalf("unexpected shop preview interaction delivery: %+v", resolution.Delivery)
 	}
 }
@@ -5305,9 +5309,10 @@ func TestGameSessionFlowStaticActorShopPreviewInteractionReturnsSelfOnlyChatDeli
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."}})
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore, itemStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -5332,7 +5337,7 @@ func TestGameSessionFlowStaticActorShopPreviewInteractionReturnsSelfOnlyChatDeli
 	if err != nil {
 		t.Fatalf("decode shop preview interaction chat delivery: %v", err)
 	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "Browse wares." {
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != defaultMerchantPreview {
 		t.Fatalf("unexpected shop preview interaction chat delivery: %+v", delivery)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -5955,6 +5960,35 @@ func newInteractionDefinitionStore(t *testing.T, definitions []interactionstore.
 		t.Fatalf("save interaction definitions: %v", err)
 	}
 	return store
+}
+
+func newItemTemplateStore(t *testing.T, templates []itemcatalog.Template) itemcatalog.Store {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "item-templates.json")
+	store := itemcatalog.NewFileStore(path)
+	if err := store.Save(itemcatalog.Snapshot{Templates: templates}); err != nil {
+		t.Fatalf("save item templates: %v", err)
+	}
+	return store
+}
+
+func defaultMerchantItemTemplates() []itemcatalog.Template {
+	return []itemcatalog.Template{
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+	}
+}
+
+func defaultMerchantCatalogDefinition() interactionstore.Definition {
+	return interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Village Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+		},
+	}
 }
 
 func peerVisibilityCharacter(name string, id uint32, vid uint32, x int32, y int32, race uint16, mainPart uint16, hairPart uint16) loginticket.Character {

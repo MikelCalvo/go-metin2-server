@@ -33,12 +33,14 @@ type localStaticActorRequest struct {
 }
 
 type localInteractionDefinitionRequest struct {
-	Kind     string `json:"kind"`
-	Ref      string `json:"ref"`
-	Text     string `json:"text"`
-	MapIndex uint32 `json:"map_index"`
-	X        int32  `json:"x"`
-	Y        int32  `json:"y"`
+	Kind     string                                  `json:"kind"`
+	Ref      string                                  `json:"ref"`
+	Text     string                                  `json:"text"`
+	Title    string                                  `json:"title"`
+	Catalog  []interactionstore.MerchantCatalogEntry `json:"catalog"`
+	MapIndex uint32                                  `json:"map_index"`
+	X        int32                                   `json:"x"`
+	Y        int32                                   `json:"y"`
 }
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -617,14 +619,16 @@ func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return interactionstore.Definition{}, false
 	}
-	definition := interactionstore.Definition{
+	definition := interactionstore.NormalizeDefinition(interactionstore.Definition{
 		Kind:     strings.TrimSpace(request.Kind),
 		Ref:      strings.TrimSpace(request.Ref),
 		Text:     request.Text,
+		Title:    request.Title,
+		Catalog:  request.Catalog,
 		MapIndex: request.MapIndex,
 		X:        request.X,
 		Y:        request.Y,
-	}
+	})
 	if !interactionstore.ValidDefinition(definition) {
 		return interactionstore.Definition{}, false
 	}

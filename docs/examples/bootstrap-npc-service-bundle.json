@@ -32,7 +32,21 @@
     {
       "kind": "shop_preview",
       "ref": "npc:qa_merchant",
-      "text": "Starter wares:\n- Red potion\n- Blue potion\n- Town scroll"
+      "title": "QA Merchant",
+      "catalog": [
+        {
+          "slot": 0,
+          "item_vnum": 27001,
+          "price": 50,
+          "count": 1
+        },
+        {
+          "slot": 1,
+          "item_vnum": 11200,
+          "price": 500,
+          "count": 1
+        }
+      ]
     },
     {
       "kind": "talk",

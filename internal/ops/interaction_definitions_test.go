@@ -125,10 +125,10 @@ func TestLocalInteractionDefinitionsEndpointCreatesWarpDefinitionForLoopbackPost
 }
 
 func TestLocalInteractionDefinitionsEndpointCreatesShopPreviewDefinitionForLoopbackPost(t *testing.T) {
-	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "shop_preview", "ref": "npc:merchant", "text": "Browse wares."}}
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "shop_preview", "ref": "npc:merchant", "title": "Village Merchant", "catalog": []map[string]any{{"slot": float64(0), "item_vnum": float64(27001), "price": float64(50), "count": float64(1)}, {"slot": float64(1), "item_vnum": float64(11200), "price": float64(500), "count": float64(1)}}}}
 	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
 
-	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"shop_preview","ref":"npc:merchant","text":"Browse wares."}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1},{"slot":1,"item_vnum":11200,"price":500,"count":1}]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -137,7 +137,7 @@ func TestLocalInteractionDefinitionsEndpointCreatesShopPreviewDefinitionForLoopb
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
-	if creator.calls != 1 || creator.lastDefinition.Kind != interactionstore.KindShopPreview || creator.lastDefinition.Ref != "npc:merchant" || creator.lastDefinition.Text != "Browse wares." {
+	if creator.calls != 1 || creator.lastDefinition.Kind != interactionstore.KindShopPreview || creator.lastDefinition.Ref != "npc:merchant" || creator.lastDefinition.Title != "Village Merchant" || len(creator.lastDefinition.Catalog) != 2 || creator.lastDefinition.Catalog[0].Slot != 0 || creator.lastDefinition.Catalog[0].ItemVnum != 27001 || creator.lastDefinition.Catalog[0].Price != 50 || creator.lastDefinition.Catalog[0].Count != 1 || creator.lastDefinition.Catalog[1].Slot != 1 || creator.lastDefinition.Catalog[1].ItemVnum != 11200 || creator.lastDefinition.Catalog[1].Price != 500 || creator.lastDefinition.Catalog[1].Count != 1 {
 		t.Fatalf("unexpected shop preview interaction definition creator call state: %+v", creator)
 	}
 	body, err := io.ReadAll(rec.Body)
@@ -218,10 +218,10 @@ func TestLocalInteractionDefinitionUpdateEndpointUpsertsWarpDefinitionForLoopbac
 }
 
 func TestLocalInteractionDefinitionUpdateEndpointUpsertsShopPreviewDefinitionForLoopbackPut(t *testing.T) {
-	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "shop_preview", "ref": "npc:merchant", "text": "Browse wares."}}
+	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK, definition: map[string]any{"kind": "shop_preview", "ref": "npc:merchant", "title": "Village Merchant", "catalog": []map[string]any{{"slot": float64(0), "item_vnum": float64(27001), "price": float64(50), "count": float64(1)}, {"slot": float64(1), "item_vnum": float64(11200), "price": float64(500), "count": float64(1)}}}}
 	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
 
-	req := httptest.NewRequest(http.MethodPut, "/local/interactions/shop_preview/npc:merchant", strings.NewReader(`{"kind":"shop_preview","ref":"npc:merchant","text":"Browse wares."}`))
+	req := httptest.NewRequest(http.MethodPut, "/local/interactions/shop_preview/npc:merchant", strings.NewReader(`{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1},{"slot":1,"item_vnum":11200,"price":500,"count":1}]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -230,7 +230,7 @@ func TestLocalInteractionDefinitionUpdateEndpointUpsertsShopPreviewDefinitionFor
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
-	if updater.calls != 1 || updater.lastDefinition.Kind != interactionstore.KindShopPreview || updater.lastDefinition.Ref != "npc:merchant" || updater.lastDefinition.Text != "Browse wares." {
+	if updater.calls != 1 || updater.lastDefinition.Kind != interactionstore.KindShopPreview || updater.lastDefinition.Ref != "npc:merchant" || updater.lastDefinition.Title != "Village Merchant" || len(updater.lastDefinition.Catalog) != 2 || updater.lastDefinition.Catalog[0].Slot != 0 || updater.lastDefinition.Catalog[0].ItemVnum != 27001 || updater.lastDefinition.Catalog[0].Price != 50 || updater.lastDefinition.Catalog[0].Count != 1 || updater.lastDefinition.Catalog[1].Slot != 1 || updater.lastDefinition.Catalog[1].ItemVnum != 11200 || updater.lastDefinition.Catalog[1].Price != 500 || updater.lastDefinition.Catalog[1].Count != 1 {
 		t.Fatalf("unexpected shop preview interaction definition updater call state: %+v", updater)
 	}
 	body, err := io.ReadAll(rec.Body)

@@ -8,14 +8,26 @@ import (
 	"testing"
 )
 
+func testMerchantCatalogDefinition() Definition {
+	return Definition{
+		Kind:  KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Village Merchant",
+		Catalog: []MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+		},
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)
 	want := Snapshot{Definitions: []Definition{
 		{Kind: KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
-		{Kind: KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."},
+		testMerchantCatalogDefinition(),
 		{Kind: KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
-		{Kind: KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: ""},
+		{Kind: KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800},
 	}}
 
 	if err := store.Save(want); err != nil {
@@ -36,7 +48,15 @@ func TestFileStoreSaveWritesDeterministicSortedSnapshotAndReplacesPreviousConten
 	first := Snapshot{Definitions: []Definition{
 		{Kind: KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
 		{Kind: KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
-		{Kind: KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."},
+		{
+			Kind:  KindShopPreview,
+			Ref:   "npc:merchant",
+			Title: "Village Merchant",
+			Catalog: []MerchantCatalogEntry{
+				{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			},
+		},
 		{Kind: KindTalk, Ref: "npc:blacksmith", Text: "Blacksmith : Bring me good ore."},
 		{Kind: KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 42, X: 1700, Y: 2800},
 	}}
@@ -48,7 +68,7 @@ func TestFileStoreSaveWritesDeterministicSortedSnapshotAndReplacesPreviousConten
 	if err != nil {
 		t.Fatalf("read persisted snapshot: %v", err)
 	}
-	wantFirst := "{\n  \"definitions\": [\n    {\n      \"kind\": \"info\",\n      \"ref\": \"lore:alchemist\",\n      \"text\": \"The alchemist studies forgotten herbs.\"\n    },\n    {\n      \"kind\": \"shop_preview\",\n      \"ref\": \"npc:merchant\",\n      \"text\": \"Browse wares.\"\n    },\n    {\n      \"kind\": \"talk\",\n      \"ref\": \"npc:blacksmith\",\n      \"text\": \"Blacksmith : Bring me good ore.\"\n    },\n    {\n      \"kind\": \"talk\",\n      \"ref\": \"npc:village_guard\",\n      \"text\": \"VillageGuard : Keep your blade sharp.\"\n    },\n    {\n      \"kind\": \"warp\",\n      \"ref\": \"npc:teleporter\",\n      \"text\": \"Step through the gate.\",\n      \"map_index\": 42,\n      \"x\": 1700,\n      \"y\": 2800\n    }\n  ]\n}\n"
+	wantFirst := "{\n  \"definitions\": [\n    {\n      \"kind\": \"info\",\n      \"ref\": \"lore:alchemist\",\n      \"text\": \"The alchemist studies forgotten herbs.\"\n    },\n    {\n      \"kind\": \"shop_preview\",\n      \"ref\": \"npc:merchant\",\n      \"title\": \"Village Merchant\",\n      \"catalog\": [\n        {\n          \"slot\": 0,\n          \"item_vnum\": 27001,\n          \"price\": 50,\n          \"count\": 1\n        },\n        {\n          \"slot\": 1,\n          \"item_vnum\": 11200,\n          \"price\": 500,\n          \"count\": 1\n        }\n      ]\n    },\n    {\n      \"kind\": \"talk\",\n      \"ref\": \"npc:blacksmith\",\n      \"text\": \"Blacksmith : Bring me good ore.\"\n    },\n    {\n      \"kind\": \"talk\",\n      \"ref\": \"npc:village_guard\",\n      \"text\": \"VillageGuard : Keep your blade sharp.\"\n    },\n    {\n      \"kind\": \"warp\",\n      \"ref\": \"npc:teleporter\",\n      \"text\": \"Step through the gate.\",\n      \"map_index\": 42,\n      \"x\": 1700,\n      \"y\": 2800\n    }\n  ]\n}\n"
 	if string(raw) != wantFirst {
 		t.Fatalf("unexpected deterministic first snapshot:\n got: %s\nwant: %s", string(raw), wantFirst)
 	}
@@ -100,9 +120,25 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(blankText); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for blank text, got %v", err)
 	}
-	blankShopPreviewText := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Text: "   "}}}
-	if err := store.Save(blankShopPreviewText); !errors.Is(err, ErrInvalidSnapshot) {
-		t.Fatalf("expected ErrInvalidSnapshot for blank shop preview text, got %v", err)
+	blankShopPreviewTitle := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "   ", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}}}
+	if err := store.Save(blankShopPreviewTitle); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for blank shop preview title, got %v", err)
+	}
+	emptyShopPreviewCatalog := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant"}}}
+	if err := store.Save(emptyShopPreviewCatalog); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for empty shop preview catalog, got %v", err)
+	}
+	shopPreviewLegacyText := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", Text: "Browse wares.", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}}}
+	if err := store.Save(shopPreviewLegacyText); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for legacy shop preview text, got %v", err)
+	}
+	shopPreviewSparseSlots := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}, {Slot: 2, ItemVnum: 11200, Price: 500, Count: 1}}}}}
+	if err := store.Save(shopPreviewSparseSlots); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for sparse shop preview slots, got %v", err)
+	}
+	shopPreviewZeroPrice := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 0, Count: 1}}}}}
+	if err := store.Save(shopPreviewZeroPrice); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for zero-price shop preview entry, got %v", err)
 	}
 	warpMissingMap := Snapshot{Definitions: []Definition{{Kind: KindWarp, Ref: "npc:teleporter", X: 1700, Y: 2800}}}
 	if err := store.Save(warpMissingMap); !errors.Is(err, ErrInvalidSnapshot) {

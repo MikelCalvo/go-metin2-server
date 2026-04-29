@@ -138,6 +138,8 @@ func cloneDefinitions(definitions []interactionstore.Definition) []interactionst
 		return nil
 	}
 	cloned := make([]interactionstore.Definition, len(definitions))
-	copy(cloned, definitions)
+	for i, definition := range definitions {
+		cloned[i] = interactionstore.NormalizeDefinition(definition)
+	}
 	return cloned
 }

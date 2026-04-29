@@ -25,6 +25,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	loginflow "github.com/MikelCalvo/go-metin2-server/internal/login"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/player"
@@ -166,7 +167,9 @@ type gameRuntime struct {
 	sessionFactory          service.SessionFactory
 	sharedWorld             *sharedWorldRegistry
 	staticStore             staticstore.Store
+	itemStore               itemcatalog.Store
 	interactionStore        interactionstore.Store
+	itemTemplates           map[uint32]itemcatalog.Template
 	liveCharacterMu         sync.RWMutex
 	liveCharacterNextID     uint64
 	liveCharactersByName    map[string]liveCharacterRegistration
@@ -264,7 +267,7 @@ func (r *gameRuntime) InteractionVisibility() []CharacterInteractionVisibilitySn
 				resolved = append(resolved, resolvedActor)
 				continue
 			}
-			preview, ok := interactionDefinitionPreview(actor.Name, definition)
+			preview, ok := r.interactionDefinitionPreview(actor.Name, definition)
 			if !ok {
 				resolvedActor.ResolutionFailure = staticActorInteractionFailureUnsupportedKind
 				resolved = append(resolved, resolvedActor)
@@ -605,19 +608,23 @@ func newGameSessionFactoryWithAccountStore(cfg config.Service, store loginticket
 }
 
 func newGameRuntimeWithAccountStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store) (*gameRuntime, error) {
-	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, nil, nil, nil)
+	return newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, store, accounts, nil, nil, nil, nil)
 }
 
 func newGameRuntimeWithAccountStoreAndStaticStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store) (*gameRuntime, error) {
-	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, staticActors, nil, nil)
+	return newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, store, accounts, staticActors, nil, nil, nil)
 }
 
 func newGameRuntimeWithAccountStoreAndInteractionStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, interactions interactionstore.Store) (*gameRuntime, error) {
-	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, nil, interactions, nil)
+	return newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, store, accounts, nil, interactions, nil, nil)
+}
+
+func newGameRuntimeWithAccountStoreAndInteractionAndItemStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, interactions interactionstore.Store, items itemcatalog.Store) (*gameRuntime, error) {
+	return newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, store, accounts, nil, interactions, items, nil)
 }
 
 func newGameRuntimeWithAccountStoreAndContentStores(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store) (*gameRuntime, error) {
-	return newGameRuntimeWithStoresAndTransferTriggers(cfg, store, accounts, staticActors, interactions, nil)
+	return newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, store, accounts, staticActors, interactions, nil, nil)
 }
 
 func bootstrapTopologyFromConfig(cfg config.Service) (worldruntime.BootstrapTopology, error) {
@@ -649,6 +656,10 @@ func newGameRuntimeWithAccountStoreAndTransferTriggers(cfg config.Service, store
 }
 
 func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
+	return newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, store, accounts, staticActors, interactions, nil, transferTriggers)
+}
+
+func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, items itemcatalog.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
 	advertisedPort, err := parsePort(cfg.LegacyAddr)
 	if err != nil {
 		return nil, err
@@ -667,13 +678,20 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 	if store == nil {
 		store = loginticket.NewFileStore(defaultTicketStoreDir())
 	}
+	if items == nil {
+		items = itemcatalog.NewFileStore(defaultItemTemplateStorePath())
+	}
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
 		sharedWorld:          sharedWorld,
 		staticStore:          staticActors,
+		itemStore:            items,
 		interactionStore:     interactions,
 		liveCharactersByName: make(map[string]liveCharacterRegistration),
 		now:                  time.Now,
+	}
+	if err := runtime.loadItemTemplates(); err != nil {
+		return nil, err
 	}
 	if err := runtime.loadInteractionDefinitions(); err != nil {
 		return nil, err
@@ -2392,10 +2410,29 @@ func (r *gameRuntime) loadInteractionDefinitions() error {
 		}
 		return err
 	}
+	if err := r.validateInteractionDefinitions(snapshot); err != nil {
+		return err
+	}
 	definitions := buildInteractionDefinitionIndex(snapshot)
 	r.interactionDefinitionMu.Lock()
 	r.interactionDefinitions = definitions
 	r.interactionDefinitionMu.Unlock()
+	return nil
+}
+
+func (r *gameRuntime) loadItemTemplates() error {
+	if r == nil || r.itemStore == nil {
+		return nil
+	}
+	snapshot, err := r.itemStore.Load()
+	if err != nil {
+		if errors.Is(err, itemcatalog.ErrSnapshotNotFound) {
+			r.itemTemplates = nil
+			return nil
+		}
+		return err
+	}
+	r.itemTemplates = buildItemTemplateIndex(snapshot)
 	return nil
 }
 
@@ -2427,9 +2464,55 @@ func buildInteractionDefinitionIndex(snapshot interactionstore.Snapshot) map[str
 	}
 	definitions := make(map[string]interactionstore.Definition, len(snapshot.Definitions))
 	for _, definition := range snapshot.Definitions {
+		definition = interactionstore.NormalizeDefinition(definition)
 		definitions[interactionDefinitionKey(definition.Kind, definition.Ref)] = definition
 	}
 	return definitions
+}
+
+func buildItemTemplateIndex(snapshot itemcatalog.Snapshot) map[uint32]itemcatalog.Template {
+	if len(snapshot.Templates) == 0 {
+		return nil
+	}
+	templates := make(map[uint32]itemcatalog.Template, len(snapshot.Templates))
+	for _, template := range snapshot.Templates {
+		templates[template.Vnum] = template
+	}
+	return templates
+}
+
+func (r *gameRuntime) validateInteractionDefinitions(snapshot interactionstore.Snapshot) error {
+	for _, definition := range snapshot.Definitions {
+		if err := r.validateInteractionDefinition(interactionstore.NormalizeDefinition(definition)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *gameRuntime) validateInteractionDefinition(definition interactionstore.Definition) error {
+	if !interactionstore.ValidDefinition(definition) {
+		return interactionstore.ErrInvalidSnapshot
+	}
+	if definition.Kind != interactionstore.KindShopPreview {
+		return nil
+	}
+	for _, entry := range definition.Catalog {
+		template, ok := r.itemTemplates[entry.ItemVnum]
+		if !ok {
+			return interactionstore.ErrInvalidSnapshot
+		}
+		if template.Stackable {
+			if entry.Count > template.MaxCount {
+				return interactionstore.ErrInvalidSnapshot
+			}
+			continue
+		}
+		if entry.Count != 1 {
+			return interactionstore.ErrInvalidSnapshot
+		}
+	}
+	return nil
 }
 
 func interactionDefinitionKey(kind string, ref string) string {
@@ -2495,8 +2578,10 @@ func (r *gameRuntime) CreateInteractionDefinition(definition InteractionDefiniti
 	if r == nil || r.interactionStore == nil {
 		return InteractionDefinition{}, ErrInteractionDefinitionsUnavailable
 	}
-	definition.Kind = strings.TrimSpace(definition.Kind)
-	definition.Ref = strings.TrimSpace(definition.Ref)
+	definition = interactionstore.NormalizeDefinition(definition)
+	if err := r.validateInteractionDefinition(definition); err != nil {
+		return InteractionDefinition{}, err
+	}
 	key := interactionDefinitionKey(definition.Kind, definition.Ref)
 
 	r.interactionDefinitionMu.Lock()
@@ -2520,8 +2605,10 @@ func (r *gameRuntime) UpsertInteractionDefinition(definition InteractionDefiniti
 	if r == nil || r.interactionStore == nil {
 		return InteractionDefinition{}, ErrInteractionDefinitionsUnavailable
 	}
-	definition.Kind = strings.TrimSpace(definition.Kind)
-	definition.Ref = strings.TrimSpace(definition.Ref)
+	definition = interactionstore.NormalizeDefinition(definition)
+	if err := r.validateInteractionDefinition(definition); err != nil {
+		return InteractionDefinition{}, err
+	}
 	key := interactionDefinitionKey(definition.Kind, definition.Ref)
 
 	r.interactionDefinitionMu.Lock()
@@ -2586,6 +2673,9 @@ func buildInteractionDefinitionSnapshot(definitions map[string]interactionstore.
 func (r *gameRuntime) replaceInteractionDefinitions(snapshot interactionstore.Snapshot) error {
 	if r == nil || r.interactionStore == nil {
 		return ErrInteractionDefinitionsUnavailable
+	}
+	if err := r.validateInteractionDefinitions(snapshot); err != nil {
+		return err
 	}
 	if err := r.interactionStore.Save(snapshot); err != nil {
 		return err
@@ -2675,7 +2765,7 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 		}
 		return resolution
 	}
-	preview, ok := interactionDefinitionPreview(attempt.Actor.Name, definition)
+	preview, ok := r.interactionDefinitionPreview(attempt.Actor.Name, definition)
 	if !ok {
 		resolution.Failure = staticActorInteractionFailureUnsupportedKind
 		resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
@@ -2719,14 +2809,14 @@ func staticActorInteractionFailureMessage(failure string) (string, bool) {
 	}
 }
 
-func interactionDefinitionPreview(actorName string, definition InteractionDefinition) (string, bool) {
+func (r *gameRuntime) interactionDefinitionPreview(actorName string, definition InteractionDefinition) (string, bool) {
 	switch definition.Kind {
 	case interactionstore.KindInfo:
 		return definition.Text, true
 	case interactionstore.KindTalk:
 		return fmt.Sprintf("%s:\n%s", actorName, definition.Text), true
 	case interactionstore.KindShopPreview:
-		return definition.Text, true
+		return r.shopPreviewInteractionPreview(definition)
 	case interactionstore.KindWarp:
 		summary := fmt.Sprintf("warp -> map %d @ %d,%d", definition.MapIndex, definition.X, definition.Y)
 		message := strings.TrimSpace(definition.Text)
@@ -2737,6 +2827,24 @@ func interactionDefinitionPreview(actorName string, definition InteractionDefini
 	default:
 		return "", false
 	}
+}
+
+func (r *gameRuntime) shopPreviewInteractionPreview(definition InteractionDefinition) (string, bool) {
+	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview {
+		return "", false
+	}
+	entries := make([]string, 0, len(definition.Catalog))
+	for _, entry := range definition.Catalog {
+		template, ok := r.itemTemplates[entry.ItemVnum]
+		if !ok {
+			return "", false
+		}
+		entries = append(entries, fmt.Sprintf("[%d] %s x%d @ %dg", entry.Slot, template.Name, entry.Count, entry.Price))
+	}
+	if len(entries) == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("%s: %s", definition.Title, strings.Join(entries, "; ")), true
 }
 
 func compactInteractionPreview(preview string) string {
@@ -2827,6 +2935,10 @@ func defaultStaticActorStorePath() string {
 
 func defaultInteractionStorePath() string {
 	return filepath.Join(os.TempDir(), "go-metin2-server-interaction-definitions.json")
+}
+
+func defaultItemTemplateStorePath() string {
+	return filepath.Join(os.TempDir(), "go-metin2-server-item-templates.json")
 }
 
 func sequentialBytes32(start byte) [32]byte {

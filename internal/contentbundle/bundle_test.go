@@ -12,6 +12,18 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 )
 
+func testMerchantCatalogDefinition() interactionstore.Definition {
+	return interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Village Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+		},
+	}
+}
+
 func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 	bundle, err := FromSnapshots(
 		staticstore.Snapshot{StaticActors: []staticstore.StaticActor{
@@ -24,7 +36,7 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
-			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."},
+			testMerchantCatalogDefinition(),
 		}},
 	)
 	if err != nil {
@@ -39,13 +51,32 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 		},
 		InteractionDefinitions: []interactionstore.Definition{
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
-			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."},
+			testMerchantCatalogDefinition(),
 			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
 			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 		},
 	}
 	if !reflect.DeepEqual(bundle, want) {
 		t.Fatalf("unexpected portable content bundle:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
+func TestCanonicalizeNormalizesStructuredShopPreviewCatalog(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{InteractionDefinitions: []interactionstore.Definition{{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Village Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+		},
+	}}})
+	if err != nil {
+		t.Fatalf("canonicalize structured shop preview bundle: %v", err)
+	}
+	want := Bundle{InteractionDefinitions: []interactionstore.Definition{testMerchantCatalogDefinition()}}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected canonical structured shop preview bundle:\n got: %#v\nwant: %#v", bundle, want)
 	}
 }
 

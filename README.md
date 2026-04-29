@@ -178,7 +178,7 @@ Legend:
 | Derived stats / combat formulas | [ ] | Not started. |
 | Combat loop | [ ] | No targeting, attacks, damage, or death loop yet. |
 | Respawn / death handling | [ ] | Not started. |
-| NPCs / shops | [~] | Bootstrap static actors already support interaction metadata plus self-only `info` / `talk` / browse-only `shop_preview` responses, visible `warp` actors can now transfer the interacting player through the existing self-session rebootstrap path, a fixed `1s` per-session per-target cooldown now suppresses repeated spam against the same NPC, and the structured merchant-catalog contract that will replace raw `shop_preview` text is now frozen in project docs; real shop transactions, quest logic, and richer NPC UI are still not started. |
+| NPCs / shops | [~] | Bootstrap static actors already support interaction metadata plus self-only `info` / `talk` responses, `shop_preview` now renders a structured merchant title+catalog preview from authored entries backed by item templates, visible `warp` actors can now transfer the interacting player through the existing self-session rebootstrap path, a fixed `1s` per-session per-target cooldown now suppresses repeated spam against the same NPC, and real shop transactions, quest logic, and richer NPC UI are still not started. |
 | Mobs / AI / spawn groups | [ ] | Not started. |
 | Quest / script runtime | [ ] | Not started. |
 
@@ -189,8 +189,8 @@ Legend:
 | Login tickets | [x] | Working file-backed ticket flow between `authd` and `gamed`, now carrying explicit per-character `gold`, `inventory`, and `equipment` snapshot fields across the handoff. |
 | Bootstrap account snapshots | [~] | File-backed account/character persistence now keeps explicit `gold`, `inventory`, and `equipment` fields while loading older JSON snapshots compatibly, but it is still not compatibility-grade beyond the current bootstrap slice. |
 | Bootstrap static-actor snapshots | [x] | A deterministic file-backed snapshot store now exists under `internal/staticstore`, and `gamed` now loads it at boot and rewrites it after successful static-actor create/update/delete mutations. |
-| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for authored interaction content keyed by `kind + ref`; `gamed` now loads that catalog at boot, loopback-only CRUD endpoints now author `info`, `talk`, `shop_preview`, and the first `warp` payload shape without raw JSON edits, deletes now fail closed while bootstrap static actors still reference a definition, loopback-only interaction-visibility snapshots now preview what visible interactables would resolve to including browse-only shop text and compact warp destination summaries, `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content artifact spanning both stores, and `info`, `talk`, plus `shop_preview` interactions now produce self-only authored chat deliveries while `warp` reuses the transfer path. |
-| Bootstrap item templates | [~] | A deterministic file-backed store now exists under `internal/itemstore` for stable per-`vnum` template metadata (`name`, `stackable`, `max_count`, optional `equip_slot`) that future merchant/catalog and richer item-resolution slices can reference, but `gamed` does not load or query that catalog yet. |
+| Bootstrap interaction definitions | [~] | A deterministic file-backed store now exists under `internal/interactionstore` for authored interaction content keyed by `kind + ref`; `gamed` now loads that catalog at boot, loopback-only CRUD endpoints now author `info`, `talk`, structured `shop_preview`, and the first `warp` payload shape without raw JSON edits, deletes now fail closed while bootstrap static actors still reference a definition, loopback-only interaction-visibility snapshots now preview what visible interactables would resolve to including structured merchant previews and compact warp destination summaries, `GET`/`POST /local/content-bundle` now exports/imports one deterministic authored-content artifact spanning both stores, and `info`, `talk`, plus `shop_preview` interactions now produce self-only authored chat deliveries while `warp` reuses the transfer path. |
+| Bootstrap item templates | [~] | A deterministic file-backed store now exists under `internal/itemstore` for stable per-`vnum` template metadata (`name`, `stackable`, `max_count`, optional `equip_slot`), and `gamed` now loads that catalog at boot to validate and render structured merchant previews while richer item-resolution slices are still ahead. |
 | Database schema / migrations | [ ] | No real DB-backed persistence layer or live migrations yet. |
 | Observability | [~] | Health, pprof, and small local-only notice/relocation/runtime-introspection/map-occupancy/dry-run/transfer/static-actor seed-remove endpoints exist; live M3 `inventory` / `equipment` / `currency` state is now also exposed through loopback-only exact-name introspection endpoints, but metrics/logging/admin depth still needs work. |
 | CI / public validation | [x] | GitHub Actions baseline checks formatting, tests, vet, daemon builds, and runtime/debug image builds. |
@@ -219,12 +219,12 @@ Legend:
 - `internal/minimal` — stub session factories used by the current authd/gamed bootstrap runtime
 - `internal/player` — live player-runtime objects that separate selected-session world state from persisted bootstrap character snapshots, now also owning live `gold`, `inventory`, and `equipment` state plus narrow runtime mutation helpers before save-back
 - `internal/inventory` — first owned carried-slot, equipment-slot, and item-instance value objects for M3 character state
-- `internal/itemstore` — deterministic file-backed item-template catalog keyed by stable `vnum`, carrying the first owned `name` / `stackable` / `max_count` / optional `equip_slot` metadata for future merchant and richer item-resolution slices
+- `internal/itemstore` — deterministic file-backed item-template catalog keyed by stable `vnum`, carrying the first owned `name` / `stackable` / `max_count` / optional `equip_slot` metadata now used to validate and render structured merchant previews
 - `internal/worldruntime` — bootstrap topology, visibility helpers, and the first generic entity/runtime seams (entity registry + player directory + map index + transport-only session directory, now used by the bootstrap shared-world transport fanout/routing path and topology-aware social scope queries)
 - `internal/warp` — minimal bootstrap transfer/warp boundary used to route gameplay-triggered map moves through a dedicated package
 - `internal/accountstore` — file-backed bootstrap account/character snapshots used across fresh sessions, now including explicit `gold`, `inventory`, and `equipment` fields for M3 state
 - `internal/staticstore` — deterministic file-backed bootstrap static-actor snapshots, ready for later boot/runtime wiring
-- `internal/interactionstore` — deterministic file-backed interaction definitions keyed by `kind + ref`; currently used for authored `info`, `talk`, `shop_preview`, and the first `warp` payload shape, and loaded by `gamed` at boot for static-actor interaction-ref validation
+- `internal/interactionstore` — deterministic file-backed interaction definitions keyed by `kind + ref`; currently used for authored `info`, `talk`, structured `shop_preview`, and the first `warp` payload shape, and loaded by `gamed` at boot for static-actor interaction-ref validation plus merchant-preview resolution
 - `internal/ops` — health and pprof endpoints
 - `internal/service` — shared service bootstrap / shutdown helpers and legacy session runtime hooks
 - `docs/` — engineering and clean-room documentation
@@ -337,7 +337,7 @@ Both binaries expose an ops server with:
   - loopback clients only
   - bodies always use JSON fields `kind` and `ref`
   - `info` / `talk` currently also use `text`
-  - `shop_preview` still uses `text` in the current implementation, while the next structured `title + catalog[]` merchant shape is already frozen in `spec/protocol/npc-shop-catalog-bootstrap.md`
+  - `shop_preview` now uses structured `title` plus `catalog[]` entries (`slot`, `item_vnum`, `price`, `count`) instead of freeform `text`, matching `spec/protocol/npc-shop-catalog-bootstrap.md`
   - `warp` also uses `map_index`, `x`, `y`, with optional `text`
   - PATCH/PUT are full-identity upserts, so body `kind` + `ref` must match the path exactly
   - DELETE returns conflict while a bootstrap static actor still references that definition
@@ -345,7 +345,7 @@ Both binaries expose an ops server with:
   - loopback clients only
   - returns a JSON snapshot of each connected bootstrap character plus the currently visible interactable static actors that would resolve for them
   - each visible interactable entry includes `interaction_kind`, `interaction_ref`, and a compact preview or `resolution_failure`
-  - current previews cover self-only `info` / `talk` / `shop_preview` text plus compact `warp` destination summaries for authored teleporter actors, and the next structured merchant preview string is already frozen in docs for the following implementation slice
+  - current previews cover self-only `info` / `talk`, structured merchant `shop_preview` catalog summaries rendered from item templates, and compact `warp` destination summaries for authored teleporter actors
 - `GET` / `POST /local/content-bundle`
   - loopback clients only
   - `GET` exports one deterministic authored-content bundle covering bootstrap static actors plus interaction definitions
@@ -400,6 +400,9 @@ curl -X POST http://127.0.0.1:6060/local/interactions \
 curl -X PUT http://127.0.0.1:6060/local/interactions/talk/npc:village_guard \
   -H 'Content-Type: application/json' \
   --data '{"kind":"talk","ref":"npc:village_guard","text":"Keep your blade sharp."}'
+curl -X POST http://127.0.0.1:6060/local/interactions \
+  -H 'Content-Type: application/json' \
+  --data '{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1},{"slot":1,"item_vnum":11200,"price":500,"count":1}]}'
 curl -X POST http://127.0.0.1:6060/local/interactions \
   -H 'Content-Type: application/json' \
   --data '{"kind":"warp","ref":"npc:teleporter","map_index":42,"x":1700,"y":2800,"text":"Step through the gate."}'

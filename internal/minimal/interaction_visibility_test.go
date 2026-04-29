@@ -82,11 +82,12 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
 	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
-		{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Text: "Browse wares."},
+		defaultMerchantCatalogDefinition(),
 		{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 	})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore, itemStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	if !ok {
 		t.Fatalf("expected Merchant interaction visibility entry, got %+v", entries)
 	}
-	if merchant.Preview != "Browse wares." || merchant.ResolutionFailure != "" {
+	if merchant.Preview != defaultMerchantPreview || merchant.ResolutionFailure != "" {
 		t.Fatalf("unexpected shop preview interaction visibility entry: %+v", merchant)
 	}
 	teleporter, ok := byName["Teleporter"]
