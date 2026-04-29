@@ -59,6 +59,96 @@ The repository acknowledges other compatibility-oriented subheaders already seen
 
 However, those remain outside the first fully frozen open/close contract unless they are called out explicitly below.
 
+## Selected exact wire shapes for the first codec slice
+
+The first codec slice now freezes one narrow set of exact packet shapes for the merchant family.
+
+The owned Go surface for that slice now lives in `internal/proto/shop` through:
+- `EncodeClientBuy` / `DecodeClientBuy`
+- `EncodeClientEnd` / `DecodeClientEnd`
+- `EncodeServerStart` / `DecodeServerStart`
+- `EncodeServerEnd` / `DecodeServerEnd`
+
+These shapes are intentionally small and buy-only:
+- client `SHOP END`
+- client `SHOP BUY`
+- server `GC::SHOP START`
+- server `GC::SHOP END`
+
+They are enough to own the next packet-codec slice without pretending that richer merchant-window choreography is already final.
+
+### Common envelope
+
+All currently frozen merchant frames use the repository's standard little-endian frame envelope:
+- `header:uint16`
+- `length:uint16`
+- `payload...`
+
+Within that payload, the first byte is always the merchant `subheader:uint8`.
+
+### Client `SHOP END`
+
+The first owned close request is the smallest possible client merchant frame:
+- header: `0x0801`
+- total length: `5`
+- payload bytes:
+  - `subheader = END`
+
+No trailing bytes are currently owned after the client `END` subheader.
+
+### Client `SHOP BUY`
+
+The first owned buy request freezes this exact payload shape:
+- header: `0x0801`
+- total length: `7`
+- payload bytes:
+  - `subheader = BUY`
+  - `raw_leading_byte:uint8`
+  - `catalog_slot:uint8`
+
+The current clean-room contract now distinguishes two facts clearly:
+- the last byte is the zero-based authored `catalog_slot`
+- the first buy-specific byte is preserved as an opaque raw byte in the owned codec surface for now
+
+That means the repository now owns the exact byte layout of the first `BUY` frame without overstating the final gameplay meaning of that leading buy-specific byte.
+
+### Server `GC::SHOP START`
+
+The first owned merchant open response freezes this exact payload shape:
+- header: `0x0810`
+- payload bytes:
+  - `subheader = START`
+  - `owner_vid:uint32` (little-endian)
+  - `items[40]`
+
+Each `items[i]` entry is a fixed-width packed record:
+- `vnum:uint32`
+- `price:uint32`
+- `count:uint8`
+- `display_pos:uint8`
+- `sockets[3]:int32`
+- `attributes[7]`
+  - each attribute = `type:uint8` + `value:int16`
+
+This yields:
+- per-item wire size = `43` bytes
+- `START` item block size = `40 * 43 = 1720` bytes
+- `START` payload size = `1 + 4 + 1720 = 1725` bytes
+- total `GC::SHOP START` frame length = `1729`
+
+For the first owned fixtures, the repository may deliberately keep many trailing entries zeroed.
+That still counts as a fully exact wire shape because the item array size, field order, and packing are now frozen.
+
+### Server `GC::SHOP END`
+
+The first owned close response is the smallest possible server merchant frame:
+- header: `0x0810`
+- total length: `5`
+- payload bytes:
+  - `subheader = END`
+
+No trailing bytes are currently owned after the server `END` subheader.
+
 ## Open rule
 
 The project still does **not** freeze a new client-originated “open shop” request packet.
@@ -152,9 +242,8 @@ is still capture-gated before the repository claims full merchant-window choreog
 ## Explicit unknowns before codec/runtime GREEN
 
 The following remain intentionally unfrozen until the next packet and runtime slices prove them:
-- the exact payload layout of `GC::SHOP START`
 - whether later compatibility work will force `START_EX` instead of the currently planned `START` open path
-- the final semantic meaning of the first trailing byte in client `SHOP BUY`
+- the final gameplay semantic meaning of the opaque leading buy-specific byte in client `SHOP BUY`
 - the exact minimal success/failure `GC::SHOP` sequence needed to keep the TMP4 merchant UI stable after a `BUY`
 - whether `GC::SHOP END` is required on every explicit close path or only while the socket remains otherwise stable in `GAME`
 - whether any merchant-side refresh frames must accompany a successful `BUY` beyond the already-owned self-facing state refresh packets
@@ -167,7 +256,6 @@ This slice does **not** yet freeze:
 - `SELL`
 - `SELL2`
 - `START_EX`
-- full merchant catalog payload bytes for open frames
 - multi-tab merchant indexing
 - cash/coin shop semantics
 - merchant stock depletion or refresh timers
