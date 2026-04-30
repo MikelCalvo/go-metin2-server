@@ -206,6 +206,7 @@ What this document adds is the session choreography around that state mutation:
 - `BUY` is now explicitly the client-side action that follows a successful merchant open
 - `BUY` is invalid before `GC::SHOP START` opens a merchant window context
 - `BUY` remains buy-only and catalog-slot-addressed
+- the live bootstrap runtime still keeps the buy mutation itself behind the temporary `/shop_buy <catalog_slot>` harness until the next slice binds `SHOP BUY` directly
 
 The currently frozen addressing fact still applies unchanged:
 - in client `SHOP BUY`, the second trailing byte after the common `SHOP` envelope selects the zero-based authored `catalog_slot`
@@ -223,10 +224,10 @@ Successful `BUY` still means:
 ### 2. Merchant-window/UI layer
 The merchant family is now expected to own the open/close session boundary, but not yet every success/failure byte sequence inside the window.
 
-The repository can now say only this much honestly:
-- a valid merchant interaction should open through `GC::SHOP START`
-- later `BUY` and `END` requests belong to the `SHOP` family, not to ad hoc chat commands
-- explicit merchant close should use `SHOP END`
+The repository can now say this much honestly:
+- a valid merchant interaction now opens through `GC::SHOP START` on the live bootstrap runtime
+- explicit merchant close now uses client `SHOP END` plus server `GC::SHOP END` while the session still holds an active merchant context in `GAME`
+- the owned `SHOP BUY` packet shape is frozen, but the live bootstrap buy mutation path is still temporarily exercised through `/shop_buy <catalog_slot>` until the next runtime slice binds real `SHOP BUY` ingress
 - successful or failed buys may still require a minimal compatibility-facing `GC::SHOP` acknowledgement sequence in addition to the already-owned self-only `ITEM_SET` / `ITEM_DEL` / `PLAYER_POINT_CHANGE` refresh families
 
 The exact mandatory role of:
@@ -239,16 +240,16 @@ The exact mandatory role of:
 
 is still capture-gated before the repository claims full merchant-window choreography ownership.
 
-## Explicit unknowns before codec/runtime GREEN
+## Explicit remaining unknowns after the first runtime GREEN
 
-The following remain intentionally unfrozen until the next packet and runtime slices prove them:
-- whether later compatibility work will force `START_EX` instead of the currently planned `START` open path
+The following remain intentionally unfrozen for the next merchant packet/runtime slices:
+- whether later compatibility work will force `START_EX` instead of the currently owned `START` open path
 - the final gameplay semantic meaning of the opaque leading buy-specific byte in client `SHOP BUY`
 - the exact minimal success/failure `GC::SHOP` sequence needed to keep the TMP4 merchant UI stable after a `BUY`
-- whether `GC::SHOP END` is required on every explicit close path or only while the socket remains otherwise stable in `GAME`
+- whether non-explicit teardown paths beyond live `SHOP END` also need a visible `GC::SHOP END` before phase/disconnect behavior takes over
 - whether any merchant-side refresh frames must accompany a successful `BUY` beyond the already-owned self-facing state refresh packets
 
-These unknowns are the gate for the next codec and session-flow slices.
+These unknowns are the gate for the next merchant buy runtime slice.
 
 ## Explicit non-goals
 
@@ -266,7 +267,7 @@ This slice does **not** yet freeze:
 After this slice, the repository should be able to say:
 - the first owned merchant window family is no longer only implied in project docs
 - merchant open still starts from the already-owned `INTERACT` ingress and structured merchant resolution path
-- `GC::SHOP START` is now the planned first merchant open response
-- client `SHOP BUY` and `SHOP END` are now the planned client actions inside that merchant session
-- `GC::SHOP END` is now the planned explicit merchant close companion when the runtime can still deliver merchant-specific frames
+- `GC::SHOP START` is now the live merchant open response on the bootstrap runtime
+- client `SHOP END` plus server `GC::SHOP END` are now the live explicit close pair for an active bootstrap merchant session
+- client `SHOP BUY` is now an owned codec shape, but the bootstrap buy mutation path still remains temporarily behind `/shop_buy <catalog_slot>` until the next runtime slice binds real `SHOP BUY`
 - the project still does not pretend that the final wire payloads or the full success/failure response choreography are already capture-confirmed

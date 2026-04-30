@@ -8,6 +8,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
@@ -26,12 +27,18 @@ type HandleWhisperFunc func(chatproto.ClientWhisperPacket) WhisperResult
 
 type HandleInteractionFunc func(interactproto.RequestPacket) InteractionResult
 
+type HandleShopBuyFunc func(shopproto.ClientBuyPacket) ShopResult
+
+type HandleShopCloseFunc func() ShopResult
+
 type Config struct {
 	HandleMove         HandleMoveFunc
 	HandleSyncPosition HandleSyncPositionFunc
 	HandleChat         HandleChatFunc
 	HandleWhisper      HandleWhisperFunc
 	HandleInteraction  HandleInteractionFunc
+	HandleShopBuy      HandleShopBuyFunc
+	HandleShopClose    HandleShopCloseFunc
 }
 
 type Result struct {
@@ -63,6 +70,11 @@ type InteractionResult struct {
 	Frames   [][]byte
 }
 
+type ShopResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type Flow struct {
 	machine            *session.StateMachine
 	handleMove         HandleMoveFunc
@@ -70,6 +82,8 @@ type Flow struct {
 	handleChat         HandleChatFunc
 	handleWhisper      HandleWhisperFunc
 	handleInteraction  HandleInteractionFunc
+	handleShopBuy      HandleShopBuyFunc
+	handleShopClose    HandleShopCloseFunc
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -93,7 +107,24 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if interactionHandler == nil {
 		interactionHandler = func(interactproto.RequestPacket) InteractionResult { return InteractionResult{Accepted: false} }
 	}
-	return &Flow{machine: machine, handleMove: handler, handleSyncPosition: syncHandler, handleChat: chatHandler, handleWhisper: whisperHandler, handleInteraction: interactionHandler}
+	shopBuyHandler := cfg.HandleShopBuy
+	if shopBuyHandler == nil {
+		shopBuyHandler = func(shopproto.ClientBuyPacket) ShopResult { return ShopResult{Accepted: false} }
+	}
+	shopCloseHandler := cfg.HandleShopClose
+	if shopCloseHandler == nil {
+		shopCloseHandler = func() ShopResult { return ShopResult{Accepted: false} }
+	}
+	return &Flow{
+		machine:            machine,
+		handleMove:         handler,
+		handleSyncPosition: syncHandler,
+		handleChat:         chatHandler,
+		handleWhisper:      whisperHandler,
+		handleInteraction:  interactionHandler,
+		handleShopBuy:      shopBuyHandler,
+		handleShopClose:    shopCloseHandler,
+	}
 }
 
 func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
@@ -180,6 +211,33 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, nil
 		}
 		return result.Frames, nil
+	case shopproto.HeaderClientShop:
+		if len(in.Payload) == 0 {
+			return nil, shopproto.ErrInvalidPayload
+		}
+		switch in.Payload[0] {
+		case shopproto.ClientSubheaderEnd:
+			if err := shopproto.DecodeClientEnd(in); err != nil {
+				return nil, err
+			}
+			result := f.handleShopClose()
+			if !result.Accepted {
+				return nil, nil
+			}
+			return result.Frames, nil
+		case shopproto.ClientSubheaderBuy:
+			packet, err := shopproto.DecodeClientBuy(in)
+			if err != nil {
+				return nil, err
+			}
+			result := f.handleShopBuy(packet)
+			if !result.Accepted {
+				return nil, nil
+			}
+			return result.Frames, nil
+		default:
+			return nil, shopproto.ErrUnexpectedSubheader
+		}
 	default:
 		return nil, ErrUnexpectedClientPacket
 	}

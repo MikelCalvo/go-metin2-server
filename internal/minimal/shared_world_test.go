@@ -21,6 +21,7 @@ import (
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
@@ -5306,7 +5307,7 @@ func TestGameRuntimeResolveStaticActorShopPreviewInteractionReturnsChatDelivery(
 	}
 }
 
-func TestGameSessionFlowStaticActorShopPreviewInteractionReturnsSelfOnlyChatDelivery(t *testing.T) {
+func TestGameSessionFlowStaticActorShopPreviewInteractionOpensMerchantWindow(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
@@ -5332,17 +5333,76 @@ func TestGameSessionFlowStaticActorShopPreviewInteractionReturnsSelfOnlyChatDeli
 		t.Fatalf("unexpected shop preview interaction error: %v", err)
 	}
 	if len(out) != 1 {
-		t.Fatalf("expected 1 self-only shop preview interaction frame, got %d", len(out))
+		t.Fatalf("expected 1 merchant shop-open frame, got %d", len(out))
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	start, err := shopproto.DecodeServerStart(decodeSingleFrame(t, out[0]))
 	if err != nil {
-		t.Fatalf("decode shop preview interaction chat delivery: %v", err)
+		t.Fatalf("decode merchant shop start: %v", err)
 	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != defaultMerchantPreview {
-		t.Fatalf("unexpected shop preview interaction chat delivery: %+v", delivery)
+	if start.OwnerVID != uint32(actor.EntityID) {
+		t.Fatalf("expected merchant owner vid %d, got %d", actor.EntityID, start.OwnerVID)
+	}
+	if start.Items[0].Vnum != 27001 || start.Items[0].Price != 50 || start.Items[0].Count != 1 || start.Items[0].DisplayPos != 0 {
+		t.Fatalf("unexpected merchant slot 0 entry: %+v", start.Items[0])
+	}
+	if start.Items[1].Vnum != 11200 || start.Items[1].Price != 500 || start.Items[1].Count != 1 || start.Items[1].DisplayPos != 1 {
+		t.Fatalf("unexpected merchant slot 1 entry: %+v", start.Items[1])
+	}
+	if start.Items[2] != (shopproto.ItemEntry{}) {
+		t.Fatalf("expected trailing merchant shop entries to stay zeroed, got %+v", start.Items[2])
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected no queued peer frames for self-only shop preview interaction, got %d", len(queued))
+		t.Fatalf("expected no queued peer frames for merchant shop open, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerClose", 0x01040104, 0x02050104, 125, nil)
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-close", 0x44444444, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected shop end error: %v", err)
+	}
+	if len(closeOut) != 1 {
+		t.Fatalf("expected 1 merchant shop-end frame, got %d", len(closeOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, closeOut[0])); err != nil {
+		t.Fatalf("decode merchant shop end: %v", err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for merchant shop close, got %d", len(queued))
+	}
+
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/shop_buy 0"})))
+	if err != nil {
+		t.Fatalf("unexpected slash shop-buy error after close: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected closed merchant context to reject slash buy frames, got %d", len(buyOut))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after merchant close")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected merchant close to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after merchant close")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected merchant close to keep inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted merchant close account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted merchant-close account to stay unchanged, got %#v", account.Characters[0])
 	}
 }
 
@@ -6157,12 +6217,18 @@ func interactWithMerchantForBuy(t *testing.T, flow service.SessionFlow, actorID 
 	if len(out) != 1 {
 		t.Fatalf("expected 1 merchant interaction frame before buy, got %d", len(out))
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	start, err := shopproto.DecodeServerStart(decodeSingleFrame(t, out[0]))
 	if err != nil {
-		t.Fatalf("decode merchant interaction delivery: %v", err)
+		t.Fatalf("decode merchant interaction shop start: %v", err)
 	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != defaultMerchantPreview {
-		t.Fatalf("unexpected merchant interaction delivery before buy: %+v", delivery)
+	if start.OwnerVID != uint32(actorID) {
+		t.Fatalf("expected merchant shop owner vid %d, got %d", actorID, start.OwnerVID)
+	}
+	if start.Items[0].Vnum != 27001 || start.Items[0].Price != 50 || start.Items[0].Count != 1 || start.Items[0].DisplayPos != 0 {
+		t.Fatalf("unexpected merchant shop slot 0 before buy: %+v", start.Items[0])
+	}
+	if start.Items[1].Vnum != 11200 || start.Items[1].Price != 500 || start.Items[1].Count != 1 || start.Items[1].DisplayPos != 1 {
+		t.Fatalf("unexpected merchant shop slot 1 before buy: %+v", start.Items[1])
 	}
 }
 

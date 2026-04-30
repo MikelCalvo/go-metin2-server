@@ -36,6 +36,7 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
@@ -1427,13 +1428,29 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.InteractionResult{Accepted: false}
 					}
 					if resolution.Definition.Kind == interactionstore.KindShopPreview {
+						start, ok := merchantShopStartPacket(uint32(resolution.Actor.EntityID), resolution.Definition)
+						if !ok {
+							clearActiveMerchantBuy()
+							return gameflow.InteractionResult{Accepted: false}
+						}
 						activeMerchantBuy = merchantBuyContext{TargetVID: packet.TargetVID, Definition: resolution.Definition}
 						hasActiveMerchantBuy = true
-					} else {
-						clearActiveMerchantBuy()
+						markInteractionCooldown(packet.TargetVID)
+						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{shopproto.EncodeServerStart(start)}}
 					}
+					clearActiveMerchantBuy()
 					markInteractionCooldown(packet.TargetVID)
 					return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
+				},
+				HandleShopClose: func() gameflow.ShopResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					clearActiveMerchantBuy()
+					return gameflow.ShopResult{Accepted: true, Frames: [][]byte{shopproto.EncodeServerEnd()}}
 				},
 			},
 		})
@@ -2048,6 +2065,28 @@ func merchantBuyResultFrames(result player.MerchantBuyResult) ([][]byte, error) 
 		setFrame,
 		chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Merchant purchase complete."}),
 	}, nil
+}
+
+func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition) (shopproto.ServerStartPacket, bool) {
+	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview {
+		return shopproto.ServerStartPacket{}, false
+	}
+	packet := shopproto.ServerStartPacket{OwnerVID: ownerVID}
+	for _, entry := range definition.Catalog {
+		if entry.Slot >= shopproto.ShopHostItemMax {
+			return shopproto.ServerStartPacket{}, false
+		}
+		if entry.Price > uint64(^uint32(0)) || entry.Count > uint16(^uint8(0)) {
+			return shopproto.ServerStartPacket{}, false
+		}
+		packet.Items[entry.Slot] = shopproto.ItemEntry{
+			Vnum:       entry.ItemVnum,
+			Price:      uint32(entry.Price),
+			Count:      uint8(entry.Count),
+			DisplayPos: uint8(entry.Slot),
+		}
+	}
+	return packet, true
 }
 
 func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte, error) {

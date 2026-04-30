@@ -10,6 +10,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
 
@@ -437,12 +438,75 @@ func TestHandleClientFrameAcceptsInteractionInGameAndReturnsFrames(t *testing.T)
 	}
 }
 
+func TestHandleClientFrameAcceptsShopEndInGameAndReturnsFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	expected := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
+	invoked := false
+	flow := NewFlow(machine, Config{
+		HandleShopClose: func() ShopResult {
+			invoked = true
+			return ShopResult{Accepted: true, Frames: [][]byte{expected}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected shop end error: %v", err)
+	}
+	if !invoked {
+		t.Fatal("expected shop end handler to be invoked")
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing shop-close frame, got %d", len(out))
+	}
+	if !bytes.Equal(out[0], expected) {
+		t.Fatalf("unexpected shop-close frames: got %x want %x", out[0], expected)
+	}
+	ping, err := control.DecodePing(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode shop-close ping frame: %v", err)
+	}
+	if ping.ServerTime != 0x01020304 {
+		t.Fatalf("unexpected shop-close ping payload: %+v", ping)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameShopBuyWithoutHandlerIsNoOp(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 2})))
+	if err != nil {
+		t.Fatalf("unexpected shop buy error without handler: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing shop-buy frames without handler, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameRejectsMalformedInteractionInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
 	_, err := flow.HandleClientFrame(frame.Frame{Header: interactproto.HeaderRequest, Length: 7, Payload: []byte{0x01, 0x02, 0x03}})
 	if !errors.Is(err, interactproto.ErrInvalidPayload) {
 		t.Fatalf("expected interactproto.ErrInvalidPayload, got %v", err)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsMalformedShopEndInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	_, err := flow.HandleClientFrame(frame.Frame{Header: shopproto.HeaderClientShop, Length: 6, Payload: []byte{shopproto.ClientSubheaderEnd, 0x01}})
+	if !errors.Is(err, shopproto.ErrInvalidPayload) {
+		t.Fatalf("expected shopproto.ErrInvalidPayload, got %v", err)
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
