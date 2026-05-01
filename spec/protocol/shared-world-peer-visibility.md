@@ -58,6 +58,7 @@ This slice freezes:
 - queued peer enter notifications for already-connected sessions on the same bootstrap `MapIndex`
 - queued peer remove notifications on disconnect within the same bootstrap `MapIndex`
 - reuse of the existing `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` payloads for visible peers
+- reuse of the same bootstrap equipment-appearance projection for peer `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` parts
 
 It does not yet freeze:
 - movement fanout to other sessions

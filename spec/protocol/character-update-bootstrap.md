@@ -61,7 +61,7 @@ Frame length:
 ## Current bootstrap behavior
 
 The bootstrap runtime currently uses deterministic values for the selected-character refresh:
-- visible parts derived from the selected character snapshot
+- visible parts derived from the selected character snapshot plus the first equipped `body` / `weapon` / `head` appearance projection frozen in `equipment-appearance-bootstrap.md`
 - deterministic movement and attack speed values
 - deterministic state flag and affect flags
 - selected character guild, alignment, pk mode, and mount bootstrap values
