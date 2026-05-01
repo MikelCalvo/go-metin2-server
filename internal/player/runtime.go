@@ -262,17 +262,14 @@ func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint1
 		if findMergeableInventoryIndex(r.liveInventory, template.Vnum, count, template.MaxCount) >= 0 {
 			return ""
 		}
-		if _, _, remaining, ok := distributeMerchantGrantAcrossExistingStacks(r.liveInventory, template.Vnum, count, template.MaxCount); ok && remaining == 0 {
-			return ""
-		}
-		if partialMergeIndex := findPartiallyMergeableInventoryIndex(r.liveInventory, template.Vnum, template.MaxCount); partialMergeIndex >= 0 {
-			room := template.MaxCount - r.liveInventory[partialMergeIndex].Count
-			if room > 0 && room < count {
-				if _, ok := nextFreeInventorySlot(r.liveInventory); ok {
-					return ""
-				}
-				return MerchantBuyFailureNoValidPlacement
+		if _, _, remaining, ok := distributeMerchantGrantAcrossExistingStacks(r.liveInventory, template.Vnum, count, template.MaxCount); ok {
+			if remaining == 0 {
+				return ""
 			}
+			if _, ok := nextFreeInventorySlot(r.liveInventory); ok {
+				return ""
+			}
+			return MerchantBuyFailureNoValidPlacement
 		}
 	}
 	if _, ok := nextFreeInventorySlot(r.liveInventory); !ok {
@@ -298,22 +295,10 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 			inventoryItems[mergeIndex] = item
 			changedItems = append(changedItems, item)
 			remaining = 0
-		} else if distributedItems, distributedChanged, distributedRemaining, ok := distributeMerchantGrantAcrossExistingStacks(inventoryItems, template.Vnum, remaining, template.MaxCount); ok && distributedRemaining == 0 {
+		} else if distributedItems, distributedChanged, distributedRemaining, ok := distributeMerchantGrantAcrossExistingStacks(inventoryItems, template.Vnum, remaining, template.MaxCount); ok {
 			inventoryItems = distributedItems
 			changedItems = append(changedItems, distributedChanged...)
-			remaining = 0
-		} else if partialMergeIndex := findPartiallyMergeableInventoryIndex(inventoryItems, template.Vnum, template.MaxCount); partialMergeIndex >= 0 {
-			item := inventoryItems[partialMergeIndex]
-			room := template.MaxCount - item.Count
-			if room > 0 && room < remaining {
-				item.Count += room
-				if err := item.Validate(); err != nil {
-					return MerchantBuyResult{}, false
-				}
-				inventoryItems[partialMergeIndex] = item
-				changedItems = append(changedItems, item)
-				remaining -= room
-			}
+			remaining = distributedRemaining
 		}
 	}
 	if remaining > 0 {
@@ -436,14 +421,6 @@ func findMergeableInventoryIndex(items []inventory.ItemInstance, vnum uint32, co
 		}
 	}
 	return mergeIndex
-}
-
-func findPartiallyMergeableInventoryIndex(items []inventory.ItemInstance, vnum uint32, maxCount uint16) int {
-	indices := findPartiallyMergeableInventoryIndices(items, vnum, maxCount)
-	if len(indices) == 0 {
-		return -1
-	}
-	return indices[0]
 }
 
 func findPartiallyMergeableInventoryIndices(items []inventory.ItemInstance, vnum uint32, maxCount uint16) []int {

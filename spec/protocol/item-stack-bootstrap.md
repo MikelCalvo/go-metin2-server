@@ -25,7 +25,6 @@ This slice does **not** yet apply to:
 - drag-and-drop split/merge UX
 - sell-back or safebox semantics
 - world drops, loot, quest rewards, or mail/mall grants
-- fan-out across several existing carried stacks plus a fresh-slot remainder
 
 ## Template-owned facts
 
@@ -82,22 +81,22 @@ The first owned deterministic rules for this path are:
 - continue in carried-slot order until the full grant is absorbed
 - do not claim a fresh slot on this path
 
-### 4. Otherwise allow one deterministic split across an existing stack plus one fresh slot
+### 4. Otherwise allow deterministic existing-stack fan-out plus one fresh slot
 
-If no existing compatible carried stacks can fully absorb the grant, the runtime may still place the grant across exactly two carried-slot updates when all of these are true:
+If no existing compatible carried stacks can fully absorb the grant, the runtime may still place the grant across one or more existing compatible carried stacks plus one fresh carried slot when all of these are true:
 - the template is stackable
-- an existing compatible carried stack with remaining room exists
+- one or more existing compatible carried stacks with remaining room exist
 - a free carried slot exists
-- after filling that existing compatible stack to `template.max_count`, the remainder still forms one valid fresh stack
+- after filling the compatible existing stacks in deterministic order, the remainder still forms one valid fresh stack
 
-The first owned deterministic rules for this split path are:
-- choose the lowest carried slot index among partially compatible stacks with remaining room
-- fill that existing stack first up to `template.max_count`
-- place the remainder into the lowest free carried slot index
+The first owned deterministic rules for this path are:
+- consider eligible partially compatible stacks in ascending carried-slot order
+- fill each existing compatible stack first up to `template.max_count`
+- if a remainder still exists after those existing-stack fills, place it into the lowest free carried slot index
 
 ### 5. Otherwise claim a fresh carried slot
 
-If no existing carried stack can absorb the full grant, no allowed existing-stack fan-out applies, and no allowed split path applies, the runtime may still place the full grant as a fresh carried stack when:
+If no existing carried stack can absorb the full grant, no allowed existing-stack fan-out applies, and no allowed existing-stack-plus-fresh-slot path applies, the runtime may still place the full grant as a fresh carried stack when:
 - the full grant remains valid for the template (`count <= max_count`)
 - a free carried slot exists
 
@@ -106,25 +105,14 @@ The first owned deterministic rule for fresh placement is:
 
 ### 6. Otherwise fail closed
 
-If neither a compatible full-merge target, an allowed existing-stack fan-out, an allowed split path, nor a free carried slot exists, the grant must fail closed.
-
-## Current non-goal: no fresh-slot remainder after several existing-stack merges
-
-This stack contract now allows deterministic placement across:
-- one existing compatible carried stack
-- several existing compatible carried stacks when they can absorb the full grant
-- one existing compatible carried stack plus one fresh carried slot
-
-Examples that remain out of scope until a later slice:
-- merge part of the grant into two or more existing stacks and place the final remainder into a fresh slot
-- use several existing stacks and then spill the remainder into a new slot
+If neither a compatible full-merge target, an allowed existing-stack fan-out, an allowed existing-stack-plus-fresh-slot path, nor a free carried slot exists, the grant must fail closed.
 
 ## Success semantics
 
 When placement succeeds, one or more carried slots change in this contract:
 - **merge path:** one existing carried stack has its `count` increased
 - **existing-stack fan-out path:** several existing compatible carried stacks increase until the full grant is absorbed
-- **split path:** one existing carried stack is filled first and one fresh carried stack receives the remainder
+- **existing-stack-plus-fresh-slot path:** one or more existing compatible carried stacks fill first and one fresh carried stack receives the final remainder
 - **fresh-slot path:** one new carried stack appears in one free slot
 
 That property matters for the current bootstrap runtime because the self-facing refresh contract can stay deterministic:
@@ -142,7 +130,7 @@ The first stack contract must fail closed when any of these are true:
 - grant `count` is zero
 - grant `count` exceeds `max_count`
 - a non-stackable template is asked to grant `count != 1`
-- the grant cannot be placed through any allowed full-merge, existing-stack fan-out, split, or fresh-slot path
+- the grant cannot be placed through any allowed full-merge, existing-stack fan-out, existing-stack-plus-fresh-slot, or fresh-slot path
 - snapshot persistence/writeback fails
 
 Failure behavior in this bootstrap contract:
@@ -166,7 +154,6 @@ This first stack contract does **not** yet freeze:
 - drag-and-drop client merge rules
 - split-stack UI input
 - merchant sell-back or rebuy semantics
-- fan-out across several existing carried stacks plus a fresh-slot remainder
 - automatic consolidation of duplicate stacks outside the current grant path
 - peer-visible inventory/equipment deltas
 - final legacy item packet families beyond the already-owned `ITEM_SET` / `ITEM_DEL` refresh slice
@@ -175,6 +162,6 @@ This first stack contract does **not** yet freeze:
 
 After this slice, the repository should be able to say:
 - the first carried-item stack contract is no longer implicit runtime behavior
-- merchant grants now have a frozen order of decisions: validate, prefer one full merge, otherwise allow full fan-out across existing compatible stacks, otherwise allow one deterministic split across one existing stack plus one fresh slot, otherwise use one fresh slot, otherwise fail closed
+- merchant grants now have a frozen order of decisions: validate, prefer one full merge, otherwise allow full fan-out across existing compatible stacks, otherwise allow deterministic existing-stack fan-out plus one fresh slot, otherwise use one fresh slot, otherwise fail closed
 - template metadata (`stackable`, `max_count`) now explicitly controls carried merchant-grant placement
-- fan-out across several existing carried stacks plus a fresh-slot remainder remains intentionally deferred instead of being left ambiguous
+- stackable merchant grants can now consume several compatible carried stacks before claiming one deterministic fresh-slot remainder instead of leaving that hybrid case ambiguous

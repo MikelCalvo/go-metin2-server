@@ -295,7 +295,7 @@ func TestRuntimeBuyMerchantItemFansOutAcrossSeveralExistingCompatibleStacksWitho
 	}
 }
 
-func TestRuntimeBuyMerchantItemKeepsSeveralExistingStacksDeferredBeforeFreshSlotFallback(t *testing.T) {
+func TestRuntimeBuyMerchantItemFansOutAcrossSeveralExistingCompatibleStacksThenUsesFreshSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{
 		{ID: 77, Vnum: 27001, Count: 199, Slot: 5},
@@ -305,26 +305,26 @@ func TestRuntimeBuyMerchantItemKeepsSeveralExistingStacksDeferredBeforeFreshSlot
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
 
-	if failure := runtime.ValidateMerchantBuy(template, 4, 50); failure != "" {
-		t.Fatalf("expected deferred multi-stack-plus-fresh merchant buy validation to succeed, got %q", failure)
+	if failure := runtime.ValidateMerchantBuy(template, 4, 200); failure != "" {
+		t.Fatalf("expected distributed-stack-plus-fresh merchant buy validation to succeed, got %q", failure)
 	}
-	result, ok := runtime.BuyMerchantItem(template, 4, 50)
+	result, ok := runtime.BuyMerchantItem(template, 4, 200)
 	if !ok {
-		t.Fatal("expected deferred multi-stack-plus-fresh merchant buy to fall back to one partial merge plus one fresh slot")
+		t.Fatal("expected distributed-stack-plus-fresh merchant buy to succeed")
 	}
-	if result.Gold != 124950 {
-		t.Fatalf("expected deferred multi-stack-plus-fresh merchant buy to debit gold to 124950, got %d", result.Gold)
+	if result.Gold != 124800 {
+		t.Fatalf("expected distributed-stack-plus-fresh merchant buy to debit gold to 124800, got %d", result.Gold)
 	}
-	if len(result.Items) != 2 || result.Items[0].ID != 80 || result.Items[0].Vnum != 27001 || result.Items[0].Count != 3 || result.Items[0].Slot != 0 || result.Items[1].ID != 77 || result.Items[1].Vnum != 27001 || result.Items[1].Count != 200 || result.Items[1].Slot != 5 {
-		t.Fatalf("unexpected deferred multi-stack-plus-fresh merchant buy items result: %+v", result.Items)
+	if len(result.Items) != 3 || result.Items[0].ID != 80 || result.Items[0].Vnum != 27001 || result.Items[0].Count != 1 || result.Items[0].Slot != 0 || result.Items[1].ID != 77 || result.Items[1].Vnum != 27001 || result.Items[1].Count != 200 || result.Items[1].Slot != 5 || result.Items[2].ID != 79 || result.Items[2].Vnum != 27001 || result.Items[2].Count != 200 || result.Items[2].Slot != 7 {
+		t.Fatalf("unexpected distributed-stack-plus-fresh merchant buy items result: %+v", result.Items)
 	}
 	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
-		{ID: 80, Vnum: 27001, Count: 3, Slot: 0},
+		{ID: 80, Vnum: 27001, Count: 1, Slot: 0},
 		{ID: 77, Vnum: 27001, Count: 200, Slot: 5},
-		{ID: 79, Vnum: 27001, Count: 198, Slot: 7},
+		{ID: 79, Vnum: 27001, Count: 200, Slot: 7},
 		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
 	}) {
-		t.Fatalf("unexpected live inventory after deferred multi-stack-plus-fresh merchant buy: %#v", runtime.LiveInventory())
+		t.Fatalf("unexpected live inventory after distributed-stack-plus-fresh merchant buy: %#v", runtime.LiveInventory())
 	}
 }
 
@@ -396,6 +396,36 @@ func TestRuntimeValidateMerchantBuyRejectsNoValidPlacementWithoutMutatingState(t
 	}
 	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
 		t.Fatalf("expected live inventory to stay unchanged after no-placement validation, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	}
+}
+
+func TestRuntimeValidateMerchantBuyRejectsDistributedRemainderWithoutFreshSlot(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = make([]inventory.ItemInstance, 0, int(inventory.CarriedInventorySlotCount))
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		item := inventory.ItemInstance{ID: 2000 + uint64(slot), Vnum: 50000 + uint32(slot), Count: 1, Slot: slot}
+		switch slot {
+		case 5:
+			item = inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 199, Slot: slot}
+		case 7:
+			item = inventory.ItemInstance{ID: 79, Vnum: 27001, Count: 198, Slot: slot}
+		}
+		persisted.Inventory = append(persisted.Inventory, item)
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if failure := runtime.ValidateMerchantBuy(template, 4, 200); failure != MerchantBuyFailureNoValidPlacement {
+		t.Fatalf("expected distributed remainder without fresh-slot merchant buy failure, got %q", failure)
+	}
+	if _, ok := runtime.BuyMerchantItem(template, 4, 200); ok {
+		t.Fatal("expected distributed remainder without fresh-slot merchant buy to fail")
+	}
+	if got := runtime.LiveGold(); got != 125000 {
+		t.Fatalf("expected live gold to stay 125000 after distributed remainder without fresh-slot validation, got %d", got)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected live inventory to stay unchanged after distributed remainder without fresh-slot validation, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
 	}
 }
 
