@@ -24,14 +24,6 @@ type Runtime struct {
 	sessionLink   SessionLink
 }
 
-const (
-	bootstrapConsumableVnum          uint32 = 27001
-	bootstrapConsumablePointIndex    uint8  = 1
-	bootstrapConsumablePointType     uint8  = 1
-	bootstrapConsumablePointDelta    int32  = 50
-	bootstrapConsumableEffectMessage        = "consume:27001:+50"
-)
-
 type ItemUseResult struct {
 	Slot          inventory.SlotIndex
 	ItemRemoved   bool
@@ -206,31 +198,32 @@ func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.Sl
 	return item, true
 }
 
-func (r *Runtime) UseItem(slot inventory.SlotIndex) (ItemUseResult, bool) {
-	if r == nil {
+func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Template) (ItemUseResult, bool) {
+	if r == nil || !itemcatalog.ValidTemplate(template) || template.UseEffect == nil {
 		return ItemUseResult{}, false
 	}
 	index := findInventorySlot(r.liveInventory, slot)
 	if index < 0 {
 		return ItemUseResult{}, false
 	}
+	effect := *template.UseEffect
 	item := r.liveInventory[index]
-	if item.Equipped || item.Vnum != bootstrapConsumableVnum || item.Count == 0 {
+	if item.Equipped || item.Vnum != template.Vnum || item.Count == 0 {
 		return ItemUseResult{}, false
 	}
-	currentPointValue := r.livePoints[bootstrapConsumablePointIndex]
-	if currentPointValue > (1<<31-1)-bootstrapConsumablePointDelta {
+	currentPointValue := r.livePoints[effect.PointIndex]
+	if currentPointValue > (1<<31-1)-effect.PointDelta {
 		return ItemUseResult{}, false
 	}
-	updatedPointValue := currentPointValue + bootstrapConsumablePointDelta
+	updatedPointValue := currentPointValue + effect.PointDelta
 	result := ItemUseResult{
 		Slot:          slot,
-		PointType:     bootstrapConsumablePointType,
-		PointAmount:   bootstrapConsumablePointDelta,
+		PointType:     effect.PointType,
+		PointAmount:   effect.PointDelta,
 		PointValue:    updatedPointValue,
-		EffectMessage: bootstrapConsumableEffectMessage,
+		EffectMessage: effect.Message,
 	}
-	r.livePoints[bootstrapConsumablePointIndex] = updatedPointValue
+	r.livePoints[effect.PointIndex] = updatedPointValue
 	if item.Count == 1 {
 		r.liveInventory = removeInventoryIndex(r.liveInventory, index)
 		sortInventoryItems(r.liveInventory)
@@ -239,7 +232,7 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex) (ItemUseResult, bool) {
 	}
 	item.Count--
 	if err := item.Validate(); err != nil {
-		r.livePoints[bootstrapConsumablePointIndex] = currentPointValue
+		r.livePoints[effect.PointIndex] = currentPointValue
 		return ItemUseResult{}, false
 	}
 	r.liveInventory[index] = item

@@ -1322,7 +1322,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								return gameflow.ChatResult{Accepted: false}
 							}
 							previousSelected := selectedPlayer.LiveCharacter()
-							useResult, ok := selectedPlayer.UseItem(slot)
+							template, ok := runtime.resolveRuntimeUseTemplate(selectedPlayer, slot)
+							if !ok {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							useResult, ok := selectedPlayer.UseItem(slot, template)
 							if !ok {
 								return gameflow.ChatResult{Accepted: false}
 							}
@@ -2654,7 +2658,7 @@ func (r *gameRuntime) loadItemTemplates() error {
 	snapshot, err := r.itemStore.Load()
 	if err != nil {
 		if errors.Is(err, itemcatalog.ErrSnapshotNotFound) {
-			r.itemTemplates = nil
+			r.itemTemplates = buildItemTemplateIndex(defaultBootstrapItemTemplateSnapshot())
 			return nil
 		}
 		return err
@@ -2706,6 +2710,36 @@ func buildItemTemplateIndex(snapshot itemcatalog.Snapshot) map[uint32]itemcatalo
 		templates[template.Vnum] = template
 	}
 	return templates
+}
+
+func defaultBootstrapItemTemplateSnapshot() itemcatalog.Snapshot {
+	return itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()},
+		{
+			Vnum:      27001,
+			Name:      "Small Red Potion",
+			Stackable: true,
+			MaxCount:  200,
+			UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+		},
+	}}
+}
+
+func (r *gameRuntime) resolveRuntimeUseTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {
+	if r == nil || selectedPlayer == nil {
+		return itemcatalog.Template{}, false
+	}
+	for _, item := range selectedPlayer.LiveInventory() {
+		if item.Equipped || item.Slot != slot {
+			continue
+		}
+		template, ok := r.itemTemplates[item.Vnum]
+		if !ok || !itemcatalog.ValidTemplate(template) || template.UseEffect == nil {
+			return itemcatalog.Template{}, false
+		}
+		return template, true
+	}
+	return itemcatalog.Template{}, false
 }
 
 func (r *gameRuntime) validateInteractionDefinitions(snapshot interactionstore.Snapshot) error {

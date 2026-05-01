@@ -312,6 +312,21 @@ Expected result:
 Important note:
 - broader visibility-changing appearance fanout beyond the currently frozen late-join, reconnect-driven, transfer-driven, duplicate-live retry-`ENTERGAME`, and radius-AOI move-into-range branches is still out of scope for this slice
 
+### 5.6 Template-backed consumable item use
+
+- [ ] Seed or confirm one carried consumable whose item template has a `use_effect` payload (current bootstrap QA seed: `27001`)
+- [ ] Use `/use_item <slot>` on that carried consumable
+- [ ] Confirm one self-only `PLAYER_POINT_CHANGE` arrives before the item-slot refresh
+- [ ] Confirm the consumed slot decrements by exactly one stack item or clears entirely if it was the last item
+- [ ] Confirm one self-only `CHAT_TYPE_INFO` placeholder effect arrives using the template-authored message
+- [ ] Reconnect and confirm the consumed stack and updated point value persisted
+
+Expected result:
+- `/use_item <slot>` resolves through item-template metadata rather than a runtime-only hardcoded consumable switch
+- the current seeded bootstrap template still yields `type = 1`, `amount = 50`, `value = updated Points[1]`, and `consume:27001:+50`
+- the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then `CHAT_TYPE_INFO`
+- the selected-character snapshot persists atomically through the current save/rollback boundary
+
 ---
 
 ## 6. Two-client shared-world checks
@@ -469,7 +484,7 @@ Expected result:
 ### 6.14 Reclaimed stale item-use isolation (debug-harness optional)
 
 - [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
-- [ ] On the stale old socket, run `/use_item <slot>` against a supported carried `27001` consumable stack
+- [ ] On the stale old socket, run `/use_item <slot>` against a supported carried template-backed consumable stack (current QA seed: `27001`)
 - [ ] Confirm the stale socket may still receive only its self-local point/item/info refresh frames
 - [ ] Confirm the authoritative live replacement session and any visible watcher do **not** change because of that stale mutation
 - [ ] Confirm loopback-only `/local/inventory/{name}` still reports the replacement live owner's authoritative carried state, not the stale socket's locally decremented stack
@@ -497,7 +512,7 @@ Expected result:
 ### 6.16 Reconnect after stale item-use close rebuilds authoritative state (debug-harness optional)
 
 - [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
-- [ ] On the stale old socket, run `/use_item <slot>` against a supported carried `27001` consumable stack and observe the self-local divergence
+- [ ] On the stale old socket, run `/use_item <slot>` against a supported carried template-backed consumable stack (current QA seed: `27001`) and observe the self-local divergence
 - [ ] Close the authoritative replacement session first, then close the stale old socket
 - [ ] Reconnect fresh on the same character
 - [ ] Confirm the new bootstrap/reconnect frames and loopback state show the authoritative persisted `points`/inventory values from before the stale local-only mutation, not the stale socket's decremented stack or boosted points

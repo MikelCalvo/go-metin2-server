@@ -57,7 +57,7 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 | `PLAYER_DELETE_FAILURE` | server -> client | `0x020F` | select | documented | minimal delete rejection placeholder using a header-only failure frame |
 | `MAIN_CHARACTER` | server -> client | `0x0210` | loading | documented | main actor bootstrap |
 | `PLAYER_POINTS` | server -> client | `0x0214` | loading/game bootstrap | documented | initial stat payload |
-| `PLAYER_POINT_CHANGE` | server -> client | `0x0215` | game bootstrap / game | documented | first self-only point refresh after the selected-character bootstrap; the first owned consumable-use vertical also reuses it for the selected character with `type = 1`, fixed `amount = 50`, and `value = updated Points[1]` |
+| `PLAYER_POINT_CHANGE` | server -> client | `0x0215` | loading/game bootstrap / game | documented | first self-only point refresh after the selected-character bootstrap; the first owned consumable-use vertical also reuses it for the selected character using template-authored `use_effect` metadata (`type`, `amount`, and point index), while the current seeded bootstrap consumable still resolves to `type = 1`, `amount = 50`, and `value = updated Points[1]` |
 
 ## Movement
 
@@ -96,7 +96,7 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `ITEM_USE` | client -> server | `TBD` | game | planned | final legacy compatibility ingress is not frozen yet; the current project-owned bootstrap path uses the slash seam `/use_item <slot>` for exactly one consumable prototype instead |
+| `ITEM_USE` | client -> server | `TBD` | game | planned | final legacy compatibility ingress is not frozen yet; the current project-owned bootstrap path uses the slash seam `/use_item <slot>` for the first template-backed consumable prototype instead |
 | `ITEM_SET` | server -> client | `0x0511` | game bootstrap / game | documented | first owned self-only occupied-slot bootstrap/update family for carried inventory and equipped items; total frame length `54`; position is packed `TItemPos(window:uint8, cell:uint16)` and equipped items currently ride the legacy combined inventory/equipment cell namespace (`window = INVENTORY`, `cell = 90 + wear_index`); the first consumable-use vertical also reuses it when consuming one stacked item leaves a non-zero count in the same carried slot |
 | `ITEM_DEL` | server -> client | `0x0510` | game | documented | self-only slot-clear/remove companion for carried/equipped item mutations; total frame length `7` and payload is only packed `TItemPos`; the first consumable-use vertical also reuses it when consuming the last item removes that carried-slot stack entirely |
 

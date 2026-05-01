@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -80,6 +81,21 @@ func TestNilRuntimeReturnsZeroLiveCharacter(t *testing.T) {
 	}
 }
 
+func bootstrapConsumableTemplate(vnum uint32, pointType uint8, pointIndex uint8, pointDelta int32, message string) itemcatalog.Template {
+	return itemcatalog.Template{
+		Vnum:      vnum,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  pointType,
+			PointIndex: pointIndex,
+			PointDelta: pointDelta,
+			Message:    message,
+		},
+	}
+}
+
 func TestRuntimeItemUseConsumesBootstrapConsumableWithoutMutatingPersistedPoints(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,
@@ -92,7 +108,7 @@ func TestRuntimeItemUseConsumesBootstrapConsumableWithoutMutatingPersistedPoints
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	result, ok := runtime.UseItem(5)
+	result, ok := runtime.UseItem(5, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50"))
 	if !ok {
 		t.Fatal("expected bootstrap consumable use to succeed")
 	}
@@ -135,7 +151,7 @@ func TestRuntimeItemUseRemovesTheLastConsumableStack(t *testing.T) {
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	result, ok := runtime.UseItem(5)
+	result, ok := runtime.UseItem(5, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50"))
 	if !ok {
 		t.Fatal("expected final-stack consumable use to succeed")
 	}
@@ -151,5 +167,45 @@ func TestRuntimeItemUseRemovesTheLastConsumableStack(t *testing.T) {
 	}
 	if live.Points[1] != 750 {
 		t.Fatalf("expected live points[1] to be incremented to 750, got %d", live.Points[1])
+	}
+}
+
+func TestRuntimeItemUseResolvesPointEffectFromTemplateMetadata(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27002, Count: 3, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.UseItem(5, bootstrapConsumableTemplate(27002, 7, 1, 25, "consume:27002:+25"))
+	if !ok {
+		t.Fatal("expected template-defined consumable use to succeed")
+	}
+	if result.ItemRemoved {
+		t.Fatal("expected stacked template-defined consumable to remain in inventory after one use")
+	}
+	if result.PointType != 7 || result.PointAmount != 25 || result.PointValue != 725 {
+		t.Fatalf("expected template-defined point change, got %+v", result)
+	}
+	if result.EffectMessage != "consume:27002:+25" {
+		t.Fatalf("unexpected template-defined effect message: %q", result.EffectMessage)
+	}
+	if result.Item.ID != 11 || result.Item.Vnum != 27002 || result.Item.Count != 2 || result.Item.Slot != 5 {
+		t.Fatalf("unexpected updated template-defined inventory item: %+v", result.Item)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
+		t.Fatalf("expected persisted points to remain unchanged, got %d", got)
+	}
+	live := runtime.LiveCharacter()
+	if live.Points[1] != 725 {
+		t.Fatalf("expected live points[1] to follow template-defined delta, got %d", live.Points[1])
+	}
+	if !reflect.DeepEqual(live.Inventory, []inventory.ItemInstance{{ID: 11, Vnum: 27002, Count: 2, Slot: 5}}) {
+		t.Fatalf("unexpected live inventory after template-defined use: %#v", live.Inventory)
 	}
 }

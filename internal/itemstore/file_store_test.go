@@ -112,3 +112,89 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 		t.Fatalf("expected ErrInvalidSnapshot for duplicate vnum, got %v", err)
 	}
 }
+
+func TestFileStoreSaveThenLoadRoundTripPreservesUseEffectMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{
+			PointType:  7,
+			PointIndex: 1,
+			PointDelta: 25,
+			Message:    "consume:27002:+25",
+		},
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with use effect metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with use effect metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with use effect metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with use effect metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27002,\n      \"name\": \"Practice Elixir\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"use_effect\": {\n        \"point_type\": 7,\n        \"point_index\": 1,\n        \"point_delta\": 25,\n        \"message\": \"consume:27002:+25\"\n      }\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with use effect metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreSaveRejectsInvalidUseEffectMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+
+	missingMessage := Snapshot{Templates: []Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{PointType: 7, PointIndex: 1, PointDelta: 25},
+	}}}
+	if err := store.Save(missingMessage); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for missing use-effect message, got %v", err)
+	}
+
+	zeroType := Snapshot{Templates: []Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{PointType: 0, PointIndex: 1, PointDelta: 25, Message: "consume:27002:+25"},
+	}}}
+	if err := store.Save(zeroType); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for zero use-effect point type, got %v", err)
+	}
+
+	zeroDelta := Snapshot{Templates: []Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{PointType: 7, PointIndex: 1, PointDelta: 0, Message: "consume:27002:+25"},
+	}}}
+	if err := store.Save(zeroDelta); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for zero use-effect point delta, got %v", err)
+	}
+
+	invalidPointIndex := Snapshot{Templates: []Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{PointType: 7, PointIndex: 255, PointDelta: 25, Message: "consume:27002:+25"},
+	}}}
+	if err := store.Save(invalidPointIndex); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for out-of-range use-effect point index, got %v", err)
+	}
+}

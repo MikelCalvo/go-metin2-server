@@ -15,11 +15,19 @@ var (
 )
 
 type Template struct {
-	Vnum      uint32 `json:"vnum"`
-	Name      string `json:"name"`
-	Stackable bool   `json:"stackable"`
-	MaxCount  uint16 `json:"max_count"`
-	EquipSlot string `json:"equip_slot,omitempty"`
+	Vnum      uint32     `json:"vnum"`
+	Name      string     `json:"name"`
+	Stackable bool       `json:"stackable"`
+	MaxCount  uint16     `json:"max_count"`
+	EquipSlot string     `json:"equip_slot,omitempty"`
+	UseEffect *UseEffect `json:"use_effect,omitempty"`
+}
+
+type UseEffect struct {
+	PointType  uint8  `json:"point_type"`
+	PointIndex uint8  `json:"point_index"`
+	PointDelta int32  `json:"point_delta"`
+	Message    string `json:"message"`
 }
 
 type Snapshot struct {
@@ -45,6 +53,11 @@ func normalizeSnapshot(snapshot Snapshot) Snapshot {
 func normalizeTemplate(template Template) Template {
 	template.Name = strings.TrimSpace(template.Name)
 	template.EquipSlot = normalizeEquipSlot(template.EquipSlot)
+	if template.UseEffect != nil {
+		effect := *template.UseEffect
+		effect.Message = strings.TrimSpace(effect.Message)
+		template.UseEffect = &effect
+	}
 	return template
 }
 
@@ -76,10 +89,26 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.EquipSlot == "" {
-		return true
+		return validUseEffect(template.UseEffect)
 	}
 	_, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
-	return ok
+	return ok && validUseEffect(template.UseEffect)
+}
+
+func validUseEffect(effect *UseEffect) bool {
+	if effect == nil {
+		return true
+	}
+	if effect.PointType == 0 {
+		return false
+	}
+	if effect.PointIndex >= 255 {
+		return false
+	}
+	if effect.PointDelta <= 0 {
+		return false
+	}
+	return strings.TrimSpace(effect.Message) != ""
 }
 
 func ValidTemplate(template Template) bool {
@@ -106,6 +135,12 @@ func cloneTemplates(templates []Template) []Template {
 		return nil
 	}
 	cloned := make([]Template, len(templates))
-	copy(cloned, templates)
+	for i := range templates {
+		cloned[i] = templates[i]
+		if templates[i].UseEffect != nil {
+			effect := *templates[i].UseEffect
+			cloned[i].UseEffect = &effect
+		}
+	}
 	return cloned
 }

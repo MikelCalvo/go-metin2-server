@@ -8485,6 +8485,84 @@ func TestQueuedSessionFlowCloseReturnsTheSameInnerErrorOnRepeatedCalls(t *testin
 	}
 }
 
+func TestGameRuntimeItemUseResolvesPointEffectFromItemTemplateStore(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("Owner", 0x01030144, 0x02040144, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 700
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 3, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{}
+	issuePeerTicket(t, store, "owner", 0x44444444, owner)
+	if err := accounts.Save(accountstore.Account{Login: "owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-use owner account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  7,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 25,
+			Message:    "consume:27002:+25",
+		},
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected item-use runtime error: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "owner", 0x44444444)
+	if len(enterOut) < 5 {
+		t.Fatalf("expected item-use owner bootstrap to emit at least 5 frames, got %d", len(enterOut))
+	}
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected template-store item use error: %v", err)
+	}
+	if len(useOut) != 3 {
+		t.Fatalf("expected point-change + item-set + info frames for template-store item use, got %d", len(useOut))
+	}
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
+	if err != nil {
+		t.Fatalf("decode template-store item-use point change: %v", err)
+	}
+	if pointPacket.VID != owner.VID || pointPacket.Type != 7 || pointPacket.Amount != 25 || pointPacket.Value != 725 {
+		t.Fatalf("unexpected template-store item-use point change: %+v", pointPacket)
+	}
+	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useOut[1]))
+	if err != nil {
+		t.Fatalf("decode template-store item-use set: %v", err)
+	}
+	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Vnum != 27002 || setPacket.Count != 2 {
+		t.Fatalf("unexpected template-store item-use set packet: %+v", setPacket)
+	}
+	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
+	if err != nil {
+		t.Fatalf("decode template-store item-use info: %v", err)
+	}
+	if infoPacket.Type != chatproto.ChatTypeInfo || infoPacket.VID != 0 || infoPacket.Message != "consume:27002:+25" {
+		t.Fatalf("unexpected template-store item-use info packet: %+v", infoPacket)
+	}
+
+	persisted, err := accounts.Load("owner")
+	if err != nil {
+		t.Fatalf("load persisted account after template-store item use: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted owner after template-store item use, got %+v", persisted)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 725 {
+		t.Fatalf("expected persisted points[1] to follow template-store delta, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 2, Slot: 5}}) {
+		t.Fatalf("unexpected persisted inventory after template-store item use: %#v", persisted.Characters[0].Inventory)
+	}
+}
+
 func issuePeerTicket(t *testing.T, store loginticket.Store, login string, loginKey uint32, character loginticket.Character) {
 	t.Helper()
 	if err := store.Issue(loginticket.Ticket{Login: login, LoginKey: loginKey, Empire: character.Empire, Characters: []loginticket.Character{character}}); err != nil {
@@ -8515,7 +8593,13 @@ func newItemTemplateStore(t *testing.T, templates []itemcatalog.Template) itemca
 func defaultMerchantItemTemplates() []itemcatalog.Template {
 	return []itemcatalog.Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
-		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{
+			Vnum:      27001,
+			Name:      "Small Red Potion",
+			Stackable: true,
+			MaxCount:  200,
+			UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+		},
 	}
 }
 

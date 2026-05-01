@@ -7,7 +7,7 @@ The goal of this slice is narrow:
 - keep the bootstrap limited to one selected character
 - avoid adding a broader stat system too early
 
-It does not yet define general-purpose point updates during gameplay.
+It does not yet define general-purpose point updates during gameplay beyond the first template-backed consumable reuse.
 
 ## Covered packet
 
@@ -62,10 +62,17 @@ For the current stub/bootstrap characters this means:
 
 This is good enough for the first `PLAYER_POINT_CHANGE` slice, but not yet the final compatibility target.
 
+The same packet is now also reused by the first owned `/use_item <slot>` vertical:
+- runtime `type` comes from `item_template.use_effect.point_type`
+- runtime `amount` comes from `item_template.use_effect.point_delta`
+- runtime `value` mirrors the updated selected-character point at `item_template.use_effect.point_index`
+- the current seeded bootstrap consumable template still resolves to `type = 1`, `amount = 50`, and `value = updated Points[1]`
+
 ## Out of scope
 
 This slice does not yet freeze:
 - repeated point-change streams during gameplay
 - point-change updates for other entities
 - derived stat recalculation rules
+- general-purpose multi-effect template execution
 - inventory, buffs, or combat-driven point updates
