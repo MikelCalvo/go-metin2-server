@@ -5589,6 +5589,63 @@ func TestGameSessionFlowShopBuyPacketPartiallyMergesIntoExistingCompatibleStackT
 	}
 }
 
+func TestGameSessionFlowShopBuyPacketFansOutAcrossSeveralExistingCompatibleStacksWithoutFreshSlot(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerPacketDistributedMerge", 0x01040110, 0x02050110, 1000, merchantBuyerFullInventoryWithDistributedPotionCapacity())
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-p-dist", 0x10101010, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 2})))
+	if err != nil {
+		t.Fatalf("unexpected merchant packet buy distributed-merge error: %v", err)
+	}
+	if len(buyOut) != 3 {
+		t.Fatalf("expected 3 frames for distributed-merge merchant packet buy, got %d", len(buyOut))
+	}
+	firstUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
+	if err != nil {
+		t.Fatalf("decode distributed-merge merchant packet buy first item: %v", err)
+	}
+	if firstUpdate.Position != itemproto.InventoryPosition(5) || firstUpdate.Vnum != 27001 || firstUpdate.Count != 200 {
+		t.Fatalf("unexpected distributed-merge merchant packet buy first item: %+v", firstUpdate)
+	}
+	secondUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[1]))
+	if err != nil {
+		t.Fatalf("decode distributed-merge merchant packet buy second item: %v", err)
+	}
+	if secondUpdate.Position != itemproto.InventoryPosition(7) || secondUpdate.Vnum != 27001 || secondUpdate.Count != 200 {
+		t.Fatalf("unexpected distributed-merge merchant packet buy second item: %+v", secondUpdate)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[2]))
+	if err != nil {
+		t.Fatalf("decode distributed-merge merchant packet buy delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != "Merchant purchase complete." {
+		t.Fatalf("unexpected distributed-merge merchant packet buy delivery: %+v", delivery)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after distributed-merge merchant packet buy")
+	}
+	if currencySnapshot.Gold != 900 {
+		t.Fatalf("expected gold to drop to 900 after distributed-merge merchant packet buy, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after distributed-merge merchant packet buy")
+	}
+	if len(inventorySnapshot.Inventory) != int(inventory.CarriedInventorySlotCount) || inventorySnapshot.Inventory[5].ID != 77 || inventorySnapshot.Inventory[5].Vnum != 27001 || inventorySnapshot.Inventory[5].Count != 200 || inventorySnapshot.Inventory[5].Slot != 5 || inventorySnapshot.Inventory[7].ID != 79 || inventorySnapshot.Inventory[7].Vnum != 27001 || inventorySnapshot.Inventory[7].Count != 200 || inventorySnapshot.Inventory[7].Slot != 7 {
+		t.Fatalf("unexpected runtime merchant buyer distributed-merge inventory: %#v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted distributed-merge merchant buyer account: %v", err)
+	}
+	if account.Characters[0].Gold != 900 || len(account.Characters[0].Inventory) != int(inventory.CarriedInventorySlotCount) || account.Characters[0].Inventory[5] != (inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 200, Slot: 5}) || account.Characters[0].Inventory[7] != (inventory.ItemInstance{ID: 79, Vnum: 27001, Count: 200, Slot: 7}) {
+		t.Fatalf("unexpected persisted merchant buyer distributed-merge inventory: %#v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyPacketReturnsInfoDeliveryOnInsufficientCurrency(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacketPoor", 0x01040107, 0x02050107, 25, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet-poor", 0x77777777, buyer)
@@ -6464,6 +6521,13 @@ func merchantBuyerFullInventory() []inventory.ItemInstance {
 	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
 		items = append(items, inventory.ItemInstance{ID: 1000 + uint64(slot), Vnum: 40000 + uint32(slot), Count: 1, Slot: slot})
 	}
+	return items
+}
+
+func merchantBuyerFullInventoryWithDistributedPotionCapacity() []inventory.ItemInstance {
+	items := merchantBuyerFullInventory()
+	items[5] = inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 199, Slot: 5}
+	items[7] = inventory.ItemInstance{ID: 79, Vnum: 27001, Count: 199, Slot: 7}
 	return items
 }
 

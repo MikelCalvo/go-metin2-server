@@ -262,6 +262,9 @@ func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint1
 		if findMergeableInventoryIndex(r.liveInventory, template.Vnum, count, template.MaxCount) >= 0 {
 			return ""
 		}
+		if _, _, remaining, ok := distributeMerchantGrantAcrossExistingStacks(r.liveInventory, template.Vnum, count, template.MaxCount); ok && remaining == 0 {
+			return ""
+		}
 		if partialMergeIndex := findPartiallyMergeableInventoryIndex(r.liveInventory, template.Vnum, template.MaxCount); partialMergeIndex >= 0 {
 			room := template.MaxCount - r.liveInventory[partialMergeIndex].Count
 			if room > 0 && room < count {
@@ -294,6 +297,10 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 			}
 			inventoryItems[mergeIndex] = item
 			changedItems = append(changedItems, item)
+			remaining = 0
+		} else if distributedItems, distributedChanged, distributedRemaining, ok := distributeMerchantGrantAcrossExistingStacks(inventoryItems, template.Vnum, remaining, template.MaxCount); ok && distributedRemaining == 0 {
+			inventoryItems = distributedItems
+			changedItems = append(changedItems, distributedChanged...)
 			remaining = 0
 		} else if partialMergeIndex := findPartiallyMergeableInventoryIndex(inventoryItems, template.Vnum, template.MaxCount); partialMergeIndex >= 0 {
 			item := inventoryItems[partialMergeIndex]
@@ -432,19 +439,64 @@ func findMergeableInventoryIndex(items []inventory.ItemInstance, vnum uint32, co
 }
 
 func findPartiallyMergeableInventoryIndex(items []inventory.ItemInstance, vnum uint32, maxCount uint16) int {
-	if vnum == 0 || maxCount == 0 {
+	indices := findPartiallyMergeableInventoryIndices(items, vnum, maxCount)
+	if len(indices) == 0 {
 		return -1
 	}
-	mergeIndex := -1
+	return indices[0]
+}
+
+func findPartiallyMergeableInventoryIndices(items []inventory.ItemInstance, vnum uint32, maxCount uint16) []int {
+	if vnum == 0 || maxCount == 0 {
+		return nil
+	}
+	indices := make([]int, 0)
 	for i, item := range items {
 		if item.Equipped || item.Vnum != vnum || item.Count == 0 || item.Count >= maxCount {
 			continue
 		}
-		if mergeIndex < 0 || item.Slot < items[mergeIndex].Slot {
-			mergeIndex = i
-		}
+		indices = append(indices, i)
 	}
-	return mergeIndex
+	sort.Slice(indices, func(i, j int) bool {
+		return items[indices[i]].Slot < items[indices[j]].Slot
+	})
+	return indices
+}
+
+func distributeMerchantGrantAcrossExistingStacks(items []inventory.ItemInstance, vnum uint32, count uint16, maxCount uint16) ([]inventory.ItemInstance, []inventory.ItemInstance, uint16, bool) {
+	if count == 0 {
+		return cloneItemInstances(items), nil, 0, false
+	}
+	indices := findPartiallyMergeableInventoryIndices(items, vnum, maxCount)
+	if len(indices) == 0 {
+		return cloneItemInstances(items), nil, count, false
+	}
+	cloned := cloneItemInstances(items)
+	changed := make([]inventory.ItemInstance, 0, len(indices))
+	remaining := count
+	for _, index := range indices {
+		if remaining == 0 {
+			break
+		}
+		item := cloned[index]
+		room := maxCount - item.Count
+		if room == 0 {
+			continue
+		}
+		add := room
+		if add > remaining {
+			add = remaining
+		}
+		item.Count += add
+		if err := item.Validate(); err != nil {
+			return cloneItemInstances(items), nil, count, false
+		}
+		cloned[index] = item
+		changed = append(changed, item)
+		remaining -= add
+	}
+	sortInventoryItems(changed)
+	return cloned, changed, remaining, len(changed) > 0
 }
 
 func nextLiveItemInstanceID(inventoryItems []inventory.ItemInstance, equipmentItems []inventory.ItemInstance) uint64 {

@@ -261,6 +261,7 @@ If the lab currently has no such content, either:
 - [ ] For a merchant actor, interact once and confirm a merchant window opens instead of only a chat preview
 - [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one buy from the open window
 - [ ] If the bought item is stackable and the character already carries the same `vnum`, confirm the count can increase on that existing stack instead of always creating a new slot
+- [ ] If the QA setup allows it, fill the carried inventory, leave two compatible carried stacks nearly full, buy a stackable merchant entry whose count exactly matches their combined remaining room, and confirm both existing stacks fill without needing any fresh slot
 - [ ] If the QA setup allows it, leave one compatible carried stack nearly full, buy a stackable merchant entry whose count overflows that stack, and confirm the existing stack fills first while the remainder lands in a fresh carried slot
 - [ ] If the QA setup allows it, force one insufficient-gold merchant buy and confirm the client receives the current placeholder info feedback (`Not enough gold.`)
 - [ ] If the QA setup allows it, force one no-placement merchant buy and confirm the client receives the current placeholder info feedback (`Inventory full.`)
@@ -271,6 +272,7 @@ Expected result:
 - merchant interaction opens a stable bootstrap `GC::SHOP START` window
 - a bootstrap `SHOP BUY` request can debit gold and grant the authored item without disconnecting the client
 - when the authored item is stackable and a compatible carried stack already exists, the buy can refresh that same slot with the increased count
+- when several compatible carried stacks together can absorb the full authored count, the buy can fill those existing stacks in carried-slot order without needing a fresh slot
 - when that compatible stack cannot absorb the full authored count but one free carried slot exists, the buy can fill the existing stack first and place the remainder into one fresh carried slot
 - insufficient-gold and no-placement merchant failures preserve state and currently surface one self-only placeholder info chat instead of silently failing
 - repeated interaction does not disconnect the client
