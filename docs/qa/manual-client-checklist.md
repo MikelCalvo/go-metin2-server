@@ -310,7 +310,7 @@ Expected result:
 - the client remains connected, inventory/equipment state stays consistent, and already-visible stable peers can refresh the same appearance without reconnecting
 
 Important note:
-- broader visibility-changing appearance fanout beyond the currently frozen late-join, reconnect-driven, transfer-driven, and radius-AOI move-into-range branches is still out of scope for this slice
+- broader visibility-changing appearance fanout beyond the currently frozen late-join, reconnect-driven, transfer-driven, duplicate-live retry-`ENTERGAME`, and radius-AOI move-into-range branches is still out of scope for this slice
 
 ---
 
@@ -438,6 +438,19 @@ Expected result:
 - client B first sees A disappear cleanly on disconnect
 - the reconnect peer-entry burst carries A's latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
 - no stale duplicate actor or manual refresh is needed after the reconnect
+
+### 6.12 Duplicate-live retry `ENTERGAME` appearance reuse (debug-harness optional)
+
+- [ ] Using a debug harness or controlled same-character duplicate-session setup, leave a second session for the same character waiting in `LOADING` after rejected `ENTERGAME`
+- [ ] While the original live owner stays visible to another client, equip or unequip a supported `body`, `weapon`, or `head` item on that live owner
+- [ ] Close the original live owner
+- [ ] Retry `ENTERGAME` on the waiting duplicate session
+- [ ] Confirm the watcher sees the retried owner re-enter with the latest visible body/weapon/head appearance in the normal peer-entry burst
+
+Expected result:
+- the waiting session does not reuse stale pre-rejection appearance cached before the runtime mutation
+- the retried peer-entry burst carries the latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
+- no stale duplicate actor or manual refresh is needed after the retry
 
 ---
 ## 7. Optional bootstrap chat-scope checks

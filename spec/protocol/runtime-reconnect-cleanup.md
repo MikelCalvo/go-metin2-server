@@ -85,9 +85,11 @@ The project now owns these reconnect rules:
 6. if that reconnected player had already changed a supported `body`, `weapon`, or `head` item through the owned equip/unequip seam before disconnect, that peer re-entry visibility burst reuses the latest projected appearance from the persisted account snapshot
 7. if a second fresh session reaches `ENTERGAME` for the same selected character while the original live owner is still registered, the bootstrap runtime now rejects that `ENTERGAME` instead of allowing a ghost `GAME` session with no shared-world ownership
 8. that rejected duplicate `ENTERGAME` does not force an immediate socket teardown: the session remains in `LOADING`, and if the original live owner later disappears, the same socket can retry `ENTERGAME` and transition into `GAME` with the normal bootstrap burst
-9. once a session loses live shared-world ownership because another session reclaimed that character, subsequent gameplay fanout from the stale socket must not keep replicating movement/chat to live peers
-10. later `MOVE` / `SYNC_POSITION` packets on that stale socket may still receive self-local acknowledgements, but they must not overwrite the persisted character snapshot or the replacement live owner's runtime position after reclaim
-11. later stale `WHISPER` traffic from that socket must stay self-local and non-delivering too; it must not reach live peers, and it must not fabricate a target-missing reply just because the socket no longer owns live shared-world state
+9. that later retry on the same waiting `LOADING` session must refresh from the latest persisted account snapshot before entering `GAME`, rather than reusing stale pre-rejection selected-character state cached before the runtime mutation
+10. if still-online visible peers receive that retried owner again, they see the normal peer-entry burst with the latest projected appearance from that refreshed persisted snapshot rather than stale pre-rejection appearance
+11. once a session loses live shared-world ownership because another session reclaimed that character, subsequent gameplay fanout from the stale socket must not keep replicating movement/chat to live peers
+12. later `MOVE` / `SYNC_POSITION` packets on that stale socket may still receive self-local acknowledgements, but they must not overwrite the persisted character snapshot or the replacement live owner's runtime position after reclaim
+13. later stale `WHISPER` traffic from that socket must stay self-local and non-delivering too; it must not reach live peers, and it must not fabricate a target-missing reply just because the socket no longer owns live shared-world state
 
 This is the current bootstrap ownership contract for correctness.
 It does **not** yet claim resumable gameplay state, preserved socket identity, or any special reconnect shortcut.

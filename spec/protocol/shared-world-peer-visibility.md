@@ -10,6 +10,7 @@ The goal of this slice is narrow:
 - let the first radius-AOI move-driven peer-entry burst also reuse that latest projected appearance when visibility is rebuilt after the mutation already happened
 - let the first transfer-driven peer-entry burst also reuse that latest projected appearance when visibility is rebuilt after the mutation already happened
 - let the first reconnect-driven peer-entry burst also reuse that latest projected appearance when visibility is rebuilt after the mutation already happened
+- let the first duplicate-live retry-`ENTERGAME` peer-entry burst also reuse that latest projected appearance when a waiting `LOADING` session later enters `GAME` after the previous live owner mutated and disappeared
 
 This document is still intentionally minimal.
 It does not yet freeze the full compatibility-grade shared-world visibility system.
@@ -41,6 +42,7 @@ The current bootstrap runtime behavior is:
 9. if the runtime is configured with radius AOI and player C later crosses into player B's visible range through the owned move-driven visibility rebuild after that supported equip/unequip mutation, player C receives the same normal peer-entry burst for player B with those refreshed projected parts
 10. if player B later becomes newly visible to player C through the owned transfer-driven visibility rebuild after that supported equip/unequip mutation, player C receives that same normal peer-entry burst for player B with those refreshed projected parts
 11. if player B later disconnects and reconnects after that supported equip/unequip mutation while player A remains online and mutually visible, player A receives the normal reconnect peer-entry burst for player B with those same refreshed projected parts
+12. if player B already has a duplicate-live retry session waiting in `LOADING`, later mutates supported equipment on the live owner, then closes that live owner and retries `ENTERGAME` on the waiting session, player A receives the normal retry peer-entry burst for player B with those same refreshed projected parts
 
 ## `CHARACTER_DEL`
 
@@ -73,6 +75,7 @@ This slice freezes:
 - radius-AOI move-driven peer-entry bursts that reuse that same refreshed projected appearance after the supported mutation already happened
 - transfer-driven peer-entry bursts that reuse that same refreshed projected appearance after the supported mutation already happened
 - reconnect-driven peer-entry bursts that reuse that same refreshed projected appearance after the supported mutation already happened
+- duplicate-live retry-`ENTERGAME` peer-entry bursts that reuse that same refreshed projected appearance after the supported mutation already happened
 
 It does not yet freeze:
 - broader item or currency mutation fanout beyond that one appearance refresh

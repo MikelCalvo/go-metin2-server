@@ -18,6 +18,7 @@ This first appearance slice currently applies only to:
 - radius-AOI move-into-range peer-visibility bursts that rebuild visibility after another session already changed supported equipment at runtime
 - transfer-driven peer-visibility bursts emitted after another visible session already changed supported equipment at runtime
 - reconnect-driven peer-visibility bursts emitted after another visible session already changed supported equipment at runtime
+- duplicate-live retry-`ENTERGAME` peer-visibility bursts emitted after another visible session already changed supported equipment at runtime
 - self-only live `CHARACTER_UPDATE` refreshes emitted after successful `/equip_item` / `/unequip_item` mutations
 - queued peer-visible live `CHARACTER_UPDATE` refreshes for already-visible stable peers after those same successful `/equip_item` / `/unequip_item` mutations
 - visible part refresh values carried by `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
@@ -72,6 +73,7 @@ When the selected character successfully equips or unequips a supported `body`, 
 - any later radius-AOI move-into-range peer-entry burst must also reuse those latest projected part values from the updated shared-world character snapshot
 - any later transfer-driven peer-entry burst must also reuse those latest projected part values from the updated shared-world character snapshot
 - any later reconnect-driven peer-entry burst must also reuse those latest projected part values from the updated shared-world character snapshot
+- any later duplicate-live retry-`ENTERGAME` peer-entry burst must also reuse those latest projected part values from the updated persisted account snapshot instead of stale pre-rejection selection state
 
 `CHARACTER_ADD` remains unchanged in this slice.
 
@@ -79,7 +81,7 @@ When the selected character successfully equips or unequips a supported `body`, 
 
 This slice does **not** yet freeze:
 - live peer appearance fanout that also changes visibility membership during the same mutation itself
-- other visibility-membership changes beyond the currently frozen late-join, transfer-driven, reconnect-driven, and radius-AOI move-into-range branches
+- other visibility-membership changes beyond the currently frozen late-join, transfer-driven, reconnect-driven, duplicate-live retry-`ENTERGAME`, and radius-AOI move-into-range branches
 - `hair` equipped-item projection over `parts[3]`
 - shield, arrow, unique-slot, necklace, bracelet, or shoes appearance semantics
 - costume, transmutation, refine-glow, or affect overlays
@@ -96,4 +98,5 @@ After this slice, the repository should be able to say:
 - radius-AOI move-into-range peer-entry bursts now also reuse that latest projected appearance when visibility is rebuilt after the runtime mutation already happened
 - transfer-driven peer-entry bursts now also reuse that latest projected appearance when visibility is rebuilt after the runtime mutation already happened
 - reconnect-driven peer-entry bursts now also reuse that latest projected appearance when visibility is rebuilt after the runtime mutation already happened
+- duplicate-live retry-`ENTERGAME` peer-entry bursts now also reuse that latest projected appearance when a waiting `LOADING` session later enters `GAME` after the previous live owner mutated and disappeared
 - the repo owns an explicit written contract for what the current bootstrap runtime does before broader live peer appearance choreography slices land
