@@ -100,6 +100,12 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 | `ITEM_SET` | server -> client | `0x0511` | game bootstrap / game | documented | first owned self-only occupied-slot bootstrap/update family for carried inventory and equipped items; total frame length `54`; position is packed `TItemPos(window:uint8, cell:uint16)` and equipped items currently ride the legacy combined inventory/equipment cell namespace (`window = INVENTORY`, `cell = 90 + wear_index`); the first consumable-use vertical also reuses it when consuming one stacked item leaves a non-zero count in the same carried slot |
 | `ITEM_DEL` | server -> client | `0x0510` | game | documented | self-only slot-clear/remove companion for carried/equipped item mutations; total frame length `7` and payload is only packed `TItemPos`; the first consumable-use vertical also reuses it when consuming the last item removes that carried-slot stack entirely |
 
+## Combat (planned)
+
+| Name | Direction | Header | Phase | Status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `TARGET` | client -> server | `TBD` | game | planned | first owned combat-preparation request for selecting one currently visible `training_dummy` actor by visible `vid`; the current docs-first contract freezes a little-endian `uint32 target_vid`, a fixed `300` world-unit range band, and fail-closed lookup/targetable gating while leaving server ack, target-clear, attack, and damage packet families out of scope |
+
 ## Notes
 
 - This matrix is a working contract, not a dump of every observed packet family.

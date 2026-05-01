@@ -565,6 +565,18 @@ Expected result:
 - compatible existing stacks fill first in slot order, then the remainder lands in the lowest free carried slot
 - no harness-only placement drift appears in persisted or live runtime state
 
+### 6.19 Training-dummy combat target selection (future slice placeholder)
+
+- [ ] Only run this once a QA build lands the first owned combat target request and one visible authored `training_dummy` actor exists
+- [ ] Put the QA character near that visible dummy and attempt one target-selection action
+- [ ] Repeat once from outside the current planned bootstrap combat-selection range band
+- [ ] Repeat once against a visible non-player actor that is *not* authored/runtime-marked as `training_dummy`
+
+Expected result:
+- for the current docs-only slice, treat this subsection as **N/A** rather than as a regression on live builds
+- once the next combat slices land, in-range visible `training_dummy` selection should become the only accepted bootstrap combat target path
+- out-of-range, invisible, or non-targetable non-player actors should fail closed without implying attacks, damage, or UI-rich combat state yet
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 

@@ -41,6 +41,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `static-actor-interaction-bootstrap.md` — first interaction-ready metadata seam for bootstrap static actors and the next self-only info/talk vertical to implement
 - `static-actor-interaction-request.md` — first owned client-originated `GAME`-phase interaction request for a visible bootstrap static actor target by `VID`
 - `npc-service-interactions-bootstrap.md` — first frozen service-style NPC gameplay contract built on top of bootstrap static actors and the existing `INTERACT` ingress
+- `combat-training-dummy-bootstrap.md` — first frozen combat-preparation target contract around one visible `training_dummy` actor
 - `npc-shop-preview-bootstrap.md` — browse-only merchant preview contract built on top of the existing `INTERACT` ingress and deterministic interaction-definition authoring
 - `npc-shop-catalog-bootstrap.md` — structured merchant catalog contract behind `shop_preview`, with stable catalog slots and template-backed entries
 - `npc-shop-open-close-bootstrap.md` — first client-visible merchant window contract, keeping merchant open anchored to `INTERACT` while freezing planned `SHOP START` / `BUY` / `END` roles
