@@ -7735,6 +7735,70 @@ func TestGameSessionFlowShopBuyInteractionDebitsCurrencyAndAddsItem(t *testing.T
 	}
 }
 
+func TestGameSessionFlowShopBuyInteractionFansOutAcrossSeveralExistingCompatibleStacksThenUsesFreshSlot(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerSlashDistributedMergeFresh", 0x01040112, 0x02050112, 1000, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 199, Slot: 5}, {ID: 79, Vnum: 27001, Count: 198, Slot: 7}, {ID: 12, Vnum: 1120, Count: 1, Slot: 8}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySessionWithCatalogDefinition(t, "m-buy-slash-dist-slot", 0x12101010, buyer, merchantCatalogDefinitionWithPotionCount(4, 200))
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuyWithExpectedSlotTwo(t, flow, actorID, 4, 200)
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/shop_buy 2"})))
+	if err != nil {
+		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy error: %v", err)
+	}
+	if len(buyOut) != 4 {
+		t.Fatalf("expected 4 frames for slash distributed-merge-plus-slot merchant buy, got %d", len(buyOut))
+	}
+	firstUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
+	if err != nil {
+		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy first item: %v", err)
+	}
+	if firstUpdate.Position != itemproto.InventoryPosition(0) || firstUpdate.Vnum != 27001 || firstUpdate.Count != 1 {
+		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy first item: %+v", firstUpdate)
+	}
+	secondUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[1]))
+	if err != nil {
+		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy second item: %v", err)
+	}
+	if secondUpdate.Position != itemproto.InventoryPosition(5) || secondUpdate.Vnum != 27001 || secondUpdate.Count != 200 {
+		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy second item: %+v", secondUpdate)
+	}
+	thirdUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[2]))
+	if err != nil {
+		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy third item: %v", err)
+	}
+	if thirdUpdate.Position != itemproto.InventoryPosition(7) || thirdUpdate.Vnum != 27001 || thirdUpdate.Count != 200 {
+		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy third item: %+v", thirdUpdate)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[3]))
+	if err != nil {
+		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != "Merchant purchase complete." {
+		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy delivery: %+v", delivery)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after slash distributed-merge-plus-slot merchant buy")
+	}
+	if currencySnapshot.Gold != 800 {
+		t.Fatalf("expected gold to drop to 800 after slash distributed-merge-plus-slot merchant buy, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after slash distributed-merge-plus-slot merchant buy")
+	}
+	if len(inventorySnapshot.Inventory) != 4 || inventorySnapshot.Inventory[0].ID != 80 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 || inventorySnapshot.Inventory[1].ID != 77 || inventorySnapshot.Inventory[1].Vnum != 27001 || inventorySnapshot.Inventory[1].Count != 200 || inventorySnapshot.Inventory[1].Slot != 5 || inventorySnapshot.Inventory[2].ID != 79 || inventorySnapshot.Inventory[2].Vnum != 27001 || inventorySnapshot.Inventory[2].Count != 200 || inventorySnapshot.Inventory[2].Slot != 7 || inventorySnapshot.Inventory[3].ID != 12 || inventorySnapshot.Inventory[3].Vnum != 1120 || inventorySnapshot.Inventory[3].Count != 1 || inventorySnapshot.Inventory[3].Slot != 8 {
+		t.Fatalf("unexpected runtime slash distributed-merge-plus-slot inventory: %#v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted slash distributed-merge-plus-slot merchant buyer account: %v", err)
+	}
+	if account.Characters[0].Gold != 800 || !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{{ID: 80, Vnum: 27001, Count: 1, Slot: 0}, {ID: 77, Vnum: 27001, Count: 200, Slot: 5}, {ID: 79, Vnum: 27001, Count: 200, Slot: 7}, {ID: 12, Vnum: 1120, Count: 1, Slot: 8}}) {
+		t.Fatalf("unexpected persisted slash distributed-merge-plus-slot inventory: %#v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyInteractionReturnsInfoDeliveryOnInsufficientCurrency(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPoor", 0x01040102, 0x02050102, 25, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-poor", 0x22222222, buyer)

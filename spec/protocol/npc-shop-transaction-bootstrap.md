@@ -120,6 +120,8 @@ The purchased slot must address the same stable merchant entry identity already 
 - authored `price`
 - authored `count`
 
+Where the local `/shop_buy <slot>` debug harness exists, it must resolve through the same owned validation and carried-placement path as the current packet `SHOP BUY` gate for those same authored slots.
+
 ## Server-side validation rules
 
 When a gated `BUY` request arrives, the runtime must validate all of the following before mutating state:

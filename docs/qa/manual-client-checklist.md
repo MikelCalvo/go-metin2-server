@@ -520,6 +520,18 @@ Expected result:
 - reconnect rebuilds from authoritative persisted gold/inventory state
 - no stale granted item leaks into the new session bootstrap
 
+### 6.18 `/shop_buy` complex merchant-placement parity (debug-harness optional)
+
+- [ ] Using the local merchant debug harness, prepare a buyer with several compatible partial `27001` carried stacks plus at least one free carried slot
+- [ ] Open the merchant context and run `/shop_buy <slot>` for an authored entry whose `count` requires filling those compatible carried stacks and placing the final remainder into the lowest free carried slot
+- [ ] Confirm the harness returns one `ITEM_SET` per changed carried slot in carried-slot order plus the current merchant success info delivery
+- [ ] Confirm persisted `gold` and inventory match the same final state already frozen for the packet `SHOP BUY` path
+
+Expected result:
+- the local `/shop_buy` harness reuses the same deterministic carried-placement semantics as packet `SHOP BUY`
+- compatible existing stacks fill first in slot order, then the remainder lands in the lowest free carried slot
+- no harness-only placement drift appears in persisted or live runtime state
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 
