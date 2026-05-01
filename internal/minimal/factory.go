@@ -1255,7 +1255,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
 						}
-						frames, err := equipResultFrames(fromSlot, equippedItem)
+						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), fromSlot, equippedItem)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
@@ -1274,7 +1274,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
 						}
-						frames, err := unequipResultFrames(equipSlot, inventoryItem)
+						frames, err := unequipResultFrames(selectedPlayer.LiveCharacter(), equipSlot, inventoryItem)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
@@ -2065,7 +2065,7 @@ func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
 	return frames, nil
 }
 
-func equipResultFrames(from inventory.SlotIndex, equippedItem inventory.ItemInstance) ([][]byte, error) {
+func equipResultFrames(character loginticket.Character, from inventory.SlotIndex, equippedItem inventory.ItemInstance) ([][]byte, error) {
 	setFrame, err := encodeBootstrapEquipmentItemFrame(equippedItem)
 	if err != nil {
 		return nil, err
@@ -2073,10 +2073,11 @@ func equipResultFrames(from inventory.SlotIndex, equippedItem inventory.ItemInst
 	return [][]byte{
 		itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(uint16(from))}),
 		setFrame,
+		worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)),
 	}, nil
 }
 
-func unequipResultFrames(from inventory.EquipmentSlot, inventoryItem inventory.ItemInstance) ([][]byte, error) {
+func unequipResultFrames(character loginticket.Character, from inventory.EquipmentSlot, inventoryItem inventory.ItemInstance) ([][]byte, error) {
 	position, ok := equipmentBootstrapPosition(from)
 	if !ok {
 		return nil, fmt.Errorf("bootstrap equipment slot unsupported: %s", from.String())
@@ -2088,6 +2089,7 @@ func unequipResultFrames(from inventory.EquipmentSlot, inventoryItem inventory.I
 	return [][]byte{
 		itemproto.EncodeDel(itemproto.DelPacket{Position: position}),
 		setFrame,
+		worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)),
 	}, nil
 }
 

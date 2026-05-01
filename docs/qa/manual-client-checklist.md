@@ -294,6 +294,24 @@ Expected result:
 - the client remains stable after the warp
 - no merchant window, quest window, or inventory mutation appears
 
+### 5.5 Bootstrap equip / unequip appearance refresh
+
+Run this only when the QA character has one wearable `body`, `weapon`, or `head` item plus at least one free carried slot.
+
+- [ ] Use the current QA slash seam to equip a supported wearable item
+- [ ] Confirm the item leaves the carried inventory and appears in the expected equipment cell
+- [ ] Confirm the selected character's visible body/weapon/head appearance refreshes immediately without reconnecting
+- [ ] Use the current QA slash seam to unequip that same item back into a carried slot
+- [ ] Confirm the item returns to carried inventory and the selected character's visible body/weapon/head appearance reverts immediately
+
+Expected result:
+- successful equip/unequip stays self-only in the current slice
+- successful equip/unequip now appends one visible-character refresh after the item-slot frames
+- the client remains connected and inventory/equipment state stays consistent
+
+Important note:
+- live peer appearance fanout after equip/unequip is still out of scope for this slice
+
 ---
 
 ## 6. Two-client shared-world checks
@@ -415,7 +433,7 @@ When a regression appears, record:
 These are currently out of scope for the present server state unless the milestone explicitly says otherwise:
 
 - [ ] inventory UX completeness
-- [ ] equipment logic
+- [ ] full equipment UX/stat semantics beyond the current bootstrap equip/unequip + self appearance refresh slice
 - [ ] item use
 - [ ] full merchant UI semantics beyond the current bootstrap open / buy / close slice, or any sell flow
 - [ ] inventory or currency mutation from non-merchant NPC interactions

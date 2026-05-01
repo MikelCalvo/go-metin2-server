@@ -60,11 +60,12 @@ Frame length:
 
 ## Current bootstrap behavior
 
-The bootstrap runtime currently uses deterministic values for the selected-character refresh:
+The bootstrap runtime currently uses deterministic values for the selected-character refreshes:
 - visible parts derived from the selected character snapshot plus the first equipped `body` / `weapon` / `head` appearance projection frozen in `equipment-appearance-bootstrap.md`
 - deterministic movement and attack speed values
 - deterministic state flag and affect flags
 - selected character guild, alignment, pk mode, and mount bootstrap values
+- the same selected-character payload is now also reused for the current self-only live equip/unequip appearance refresh after the item slot frames
 
 This is good enough for the first `CHARACTER_UPDATE` slice, but not yet the final compatibility target.
 

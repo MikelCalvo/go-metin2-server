@@ -126,8 +126,9 @@ After the bootstrap burst, the owned mutation surface remains intentionally boot
 Refresh rules for a successful self-only mutation:
 - move into an empty slot emits `ITEM_DEL(from)` then `ITEM_SET(to)`
 - swap with an occupied slot emits `ITEM_SET(from)` for the item that moved back into the source slot, then `ITEM_SET(to)` for the item that moved into the destination slot
-- equip emits `ITEM_DEL(inventory_from)` then `ITEM_SET(equipment_cell)`
-- unequip emits `ITEM_DEL(equipment_cell)` then `ITEM_SET(inventory_to)`
+- equip emits `ITEM_DEL(inventory_from)` then `ITEM_SET(equipment_cell)` then one self-only `CHARACTER_UPDATE`
+- unequip emits `ITEM_DEL(equipment_cell)` then `ITEM_SET(inventory_to)` then one self-only `CHARACTER_UPDATE`
+- the current self-only equip/unequip `CHARACTER_UPDATE` reuses the appearance projection frozen in `spec/protocol/equipment-appearance-bootstrap.md`
 - the response stays self-only; peer-visible equipment/appearance/state links remain out of scope here
 
 ## Frozen wire position addressing
@@ -184,6 +185,6 @@ After this slice, the repository should be able to say:
 - inventory/equipment are no longer undefined territory in project docs
 - the first self-only bootstrap ordering for item state is frozen relative to `ENTERGAME`
 - the loading-to-game burst now emits owned `ITEM_SET` frames for occupied carried/equipped slots immediately after `PLAYER_POINT_CHANGE`
-- the first carried/worn mutation loops now persist selected-character move/swap/equip/unequip changes and refresh the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames
+- the first carried/worn mutation loops now persist selected-character move/swap/equip/unequip changes and refresh the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames, plus one self-only `CHARACTER_UPDATE` after successful equip/unequip appearance changes
 - the repo owns a stable vocabulary for carried inventory slots, equipment slots, minimum item snapshot semantics, and the first self-only mutation refresh rules
 - the packet matrix and `internal/proto/item` codec now agree on the first byte-level item bootstrap family

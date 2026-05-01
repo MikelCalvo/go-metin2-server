@@ -14,6 +14,7 @@ It does **not** yet define the full compatibility-grade appearance system.
 This first appearance slice currently applies only to:
 - the selected character during the normal `ENTERGAME` bootstrap burst
 - peer-visibility bursts that reuse the same visible-character packet builders
+- self-only live `CHARACTER_UPDATE` refreshes emitted after successful `/equip_item` / `/unequip_item` mutations
 - visible part refresh values carried by `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
 
 It does **not** yet apply to:
@@ -57,12 +58,17 @@ When a character has equipped `body`, `weapon`, or `head` items in the persisted
 - `CHARACTER_UPDATE` must expose the same projected part values
 - both self-bootstrap and peer-visibility bursts must agree because they reuse the same projection helper
 
+When the selected character successfully equips or unequips a supported `body`, `weapon`, or `head` item after bootstrap:
+- the self-only equip/unequip response must append one `CHARACTER_UPDATE`
+- that refresh must expose the same current projected part values derived from the updated selected-character snapshot
+- peer-visible live fanout still remains out of scope in this slice
+
 `CHARACTER_ADD` remains unchanged in this slice.
 
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- live appearance fanout after bootstrap-time `/equip_item` / `/unequip_item`
+- live peer appearance fanout after bootstrap-time `/equip_item` / `/unequip_item`
 - `hair` equipped-item projection over `parts[3]`
 - shield, arrow, unique-slot, necklace, bracelet, or shoes appearance semantics
 - costume, transmutation, refine-glow, or affect overlays
@@ -73,4 +79,5 @@ This slice does **not** yet freeze:
 After this slice, the repository should be able to say:
 - bootstrap visible-character packets no longer ignore equipped `body`, `weapon`, and `head` items
 - self-bootstrap and peer-visibility bursts project the same deterministic appearance values from the persisted equipped-item snapshot
-- the repo owns an explicit written contract for what the current bootstrap runtime does before live appearance fanout slices land
+- successful self-only `/equip_item` / `/unequip_item` mutations now also append one deterministic `CHARACTER_UPDATE` carrying the updated projected appearance
+- the repo owns an explicit written contract for what the current bootstrap runtime does before live peer appearance fanout slices land
