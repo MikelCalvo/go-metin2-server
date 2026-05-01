@@ -4965,6 +4965,240 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleSessionWhisperSelfLocal(t *testing
 	closeSessionFlow(t, flowOwnerNew)
 }
 
+func TestGameRuntimeEnterGameReclaimKeepsStaleEquipAppearanceMutationNonAuthoritative(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 8001, Vnum: 11500, Count: 1, Slot: 8}}
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	for _, account := range []accountstore.Account{
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher, got %d", len(watcherEnter))
+	}
+	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerOldEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for original owner with carried item and watcher already visible, got %d", len(ownerOldEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after original owner join, got %d", len(queued))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName("PeerOne")
+	if !ok {
+		t.Fatal("expected live player entity for PeerOne before simulating stale ownership")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale session-directory entry removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerNewEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for replacement owner after reclaim, got %d", len(ownerNewEnter))
+	}
+	_ = flushServerFrames(t, flowWatcher)
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to start with no queued frames, got %d", len(queued))
+	}
+
+	beforePersisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account before stale equip: %v", err)
+	}
+	beforeEquipment, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner equipment snapshot before stale equip")
+	}
+	beforeInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner inventory snapshot before stale equip")
+	}
+
+	equipOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	if err != nil {
+		t.Fatalf("unexpected stale owner equip error: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected stale owner equip to remain self-local with 3 frames, got %d", len(equipOut))
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[2]))
+	if err != nil {
+		t.Fatalf("decode stale owner self equip update: %v", err)
+	}
+	if selfUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 201} {
+		t.Fatalf("unexpected stale owner self equip appearance: %+v", selfUpdate.Parts)
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected watcher to receive no appearance refresh from stale owner equip, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale owner equip, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account after stale equip: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted character after stale equip, got %+v", persisted)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) || !reflect.DeepEqual(persisted.Characters[0].Equipment, beforePersisted.Characters[0].Equipment) {
+		t.Fatalf("expected stale equip to leave persisted carried/equipped state unchanged, before inventory=%+v before equipment=%+v after inventory=%+v after equipment=%+v", beforePersisted.Characters[0].Inventory, beforePersisted.Characters[0].Equipment, persisted.Characters[0].Inventory, persisted.Characters[0].Equipment)
+	}
+
+	afterEquipment, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner equipment snapshot after stale equip")
+	}
+	afterInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner inventory snapshot after stale equip")
+	}
+	if !reflect.DeepEqual(afterEquipment, beforeEquipment) {
+		t.Fatalf("expected stale equip to leave replacement owner equipment snapshot unchanged, before=%+v after=%+v", beforeEquipment, afterEquipment)
+	}
+	if !reflect.DeepEqual(afterInventory, beforeInventory) {
+		t.Fatalf("expected stale equip to leave replacement owner inventory snapshot unchanged, before=%+v after=%+v", beforeInventory, afterInventory)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
+func TestGameRuntimeEnterGameReclaimKeepsStaleUnequipAppearanceMutationNonAuthoritative(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Equipment = []inventory.ItemInstance{{ID: 8002, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	for _, account := range []accountstore.Account{
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher, got %d", len(watcherEnter))
+	}
+	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerOldEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for original owner with equipped item and watcher already visible, got %d", len(ownerOldEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after original owner join, got %d", len(queued))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName("PeerOne")
+	if !ok {
+		t.Fatal("expected live player entity for PeerOne before simulating stale ownership")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale session-directory entry removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerNewEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for replacement owner after reclaim, got %d", len(ownerNewEnter))
+	}
+	_ = flushServerFrames(t, flowWatcher)
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to start with no queued frames, got %d", len(queued))
+	}
+
+	beforePersisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account before stale unequip: %v", err)
+	}
+	beforeEquipment, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner equipment snapshot before stale unequip")
+	}
+	beforeInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner inventory snapshot before stale unequip")
+	}
+
+	unequipOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item weapon 4"})))
+	if err != nil {
+		t.Fatalf("unexpected stale owner unequip error: %v", err)
+	}
+	if len(unequipOut) != 3 {
+		t.Fatalf("expected stale owner unequip to remain self-local with 3 frames, got %d", len(unequipOut))
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, unequipOut[2]))
+	if err != nil {
+		t.Fatalf("decode stale owner self unequip update: %v", err)
+	}
+	if selfUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 201} {
+		t.Fatalf("unexpected stale owner self unequip appearance: %+v", selfUpdate.Parts)
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected watcher to receive no appearance refresh from stale owner unequip, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale owner unequip, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account after stale unequip: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted character after stale unequip, got %+v", persisted)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) || !reflect.DeepEqual(persisted.Characters[0].Equipment, beforePersisted.Characters[0].Equipment) {
+		t.Fatalf("expected stale unequip to leave persisted carried/equipped state unchanged, before inventory=%+v before equipment=%+v after inventory=%+v after equipment=%+v", beforePersisted.Characters[0].Inventory, beforePersisted.Characters[0].Equipment, persisted.Characters[0].Inventory, persisted.Characters[0].Equipment)
+	}
+
+	afterEquipment, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner equipment snapshot after stale unequip")
+	}
+	afterInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner inventory snapshot after stale unequip")
+	}
+	if !reflect.DeepEqual(afterEquipment, beforeEquipment) {
+		t.Fatalf("expected stale unequip to leave replacement owner equipment snapshot unchanged, before=%+v after=%+v", beforeEquipment, afterEquipment)
+	}
+	if !reflect.DeepEqual(afterInventory, beforeInventory) {
+		t.Fatalf("expected stale unequip to leave replacement owner inventory snapshot unchanged, before=%+v after=%+v", beforeInventory, afterInventory)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
 func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestinationSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

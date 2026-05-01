@@ -74,6 +74,7 @@ When the selected character successfully equips or unequips a supported `body`, 
 - any later transfer-driven peer-entry burst must also reuse those latest projected part values from the updated shared-world character snapshot
 - any later reconnect-driven peer-entry burst must also reuse those latest projected part values from the updated shared-world character snapshot
 - any later duplicate-live retry-`ENTERGAME` peer-entry burst must also reuse those latest projected part values from the updated persisted account snapshot instead of stale pre-rejection selection state
+- if a stale old socket later loses live ownership because another session reclaimed that character, any later `/equip_item` / `/unequip_item` on the stale socket may remain self-local only, but it must not change the persisted/shared-world authoritative appearance seen by peers or the replacement live owner's exact-name loopback inventory/equipment snapshots
 
 `CHARACTER_ADD` remains unchanged in this slice.
 
@@ -99,4 +100,5 @@ After this slice, the repository should be able to say:
 - transfer-driven peer-entry bursts now also reuse that latest projected appearance when visibility is rebuilt after the runtime mutation already happened
 - reconnect-driven peer-entry bursts now also reuse that latest projected appearance when visibility is rebuilt after the runtime mutation already happened
 - duplicate-live retry-`ENTERGAME` peer-entry bursts now also reuse that latest projected appearance when a waiting `LOADING` session later enters `GAME` after the previous live owner mutated and disappeared
+- stale post-reclaim `/equip_item` / `/unequip_item` sockets may still observe self-local appearance refreshes, but they no longer change persisted/shared-world authoritative appearance or the replacement live owner's exact-name loopback inventory/equipment snapshots
 - the repo owns an explicit written contract for what the current bootstrap runtime does before broader live peer appearance choreography slices land

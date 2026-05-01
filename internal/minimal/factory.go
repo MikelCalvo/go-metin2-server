@@ -1271,6 +1271,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							refreshLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: false}
 						}
+						if !ownsLiveSharedWorldSession() {
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
+						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot)
 						return commitSelectedItemMutationWithStablePeerFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 					}
@@ -1290,6 +1293,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: false}
+						}
+						if !ownsLiveSharedWorldSession() {
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot)
 						return commitSelectedItemMutationWithStablePeerFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)

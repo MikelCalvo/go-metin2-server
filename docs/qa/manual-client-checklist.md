@@ -452,6 +452,20 @@ Expected result:
 - the retried peer-entry burst carries the latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
 - no stale duplicate actor or manual refresh is needed after the retry
 
+### 6.13 Reclaimed stale equip / unequip isolation (debug-harness optional)
+
+- [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
+- [ ] On the stale old socket, run `/equip_item` or `/unequip_item` for a supported `body`, `weapon`, or `head` item
+- [ ] Confirm the stale socket may still receive only its self-local item/appearance refresh frames
+- [ ] Confirm the authoritative live replacement session and any visible watcher do **not** change appearance because of that stale mutation
+- [ ] Confirm loopback-only `/local/inventory/{name}` and `/local/equipment/{name}` still report the replacement live owner's authoritative state, not the stale socket's local divergence
+
+Expected result:
+- stale post-reclaim equip/unequip remains non-authoritative
+- no persisted carried/equipped state changes because of the stale socket
+- no queued peer appearance refresh is emitted from the stale socket
+- exact-name loopback inventory/equipment snapshots remain owned by the replacement live session
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 

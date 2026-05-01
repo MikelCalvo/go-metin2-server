@@ -120,7 +120,7 @@ After the bootstrap burst, the owned mutation surface remains intentionally boot
   - `/unequip_item <equip_slot> <to>` for worn -> carried transitions
 - carried inventory keeps using `window_type = INVENTORY (1)` with `0 <= cell < 90`
 - worn equipment still refreshes through the legacy combined inventory namespace `window_type = INVENTORY (1), cell = 90 + wear_index`
-- successful mutations must persist the updated selected-character inventory/equipment snapshot before the runtime commits the new live state
+- successful mutations by the authoritative selected-character session must persist the updated selected-character inventory/equipment snapshot before the runtime commits the new live state
 - failed persistence must fail closed and leave the selected runtime on the pre-mutation snapshot
 
 Refresh rules for a successful self-only mutation:
@@ -130,6 +130,7 @@ Refresh rules for a successful self-only mutation:
 - unequip emits `ITEM_DEL(equipment_cell)` then `ITEM_SET(inventory_to)` then one self-only `CHARACTER_UPDATE`
 - the current self-only equip/unequip `CHARACTER_UPDATE` reuses the appearance projection frozen in `spec/protocol/equipment-appearance-bootstrap.md`
 - the direct item-slot response stays self-only; when the mutating character is already registered in shared-world visibility, already-visible stable peers now also receive one queued `CHARACTER_UPDATE` reusing the same projected appearance
+- if a stale old socket has already lost live shared-world ownership because another session reclaimed that character, later `/equip_item` / `/unequip_item` may still return those self-local frames but must not persist carried/equipped state, must not queue peer-visible appearance refreshes, and must not overwrite the replacement live owner's exact-name loopback inventory/equipment snapshots
 
 ## Frozen wire position addressing
 
