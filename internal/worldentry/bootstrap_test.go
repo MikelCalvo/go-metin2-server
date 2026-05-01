@@ -3,6 +3,7 @@ package worldentry
 import (
 	"testing"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
@@ -22,6 +23,11 @@ func TestBuildBootstrapFramesReturnsSelectedCharacterBurst(t *testing.T) {
 		Empire:     2,
 		GuildID:    10,
 		SkillGroup: 1,
+		Equipment: []inventory.ItemInstance{
+			{ID: 71, Vnum: 11500, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+			{ID: 72, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+			{ID: 73, Vnum: 50053, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+		},
 	}
 	character.Points[1] = 750
 
@@ -45,7 +51,7 @@ func TestBuildBootstrapFramesReturnsSelectedCharacterBurst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode bootstrap additional info: %v", err)
 	}
-	if info.VID != character.VID || info.Name != character.Name || info.Parts[0] != character.MainPart || info.Parts[3] != character.HairPart {
+	if info.VID != character.VID || info.Name != character.Name || info.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, character.HairPart} {
 		t.Fatalf("unexpected bootstrap additional info packet: %+v", info)
 	}
 
@@ -53,7 +59,7 @@ func TestBuildBootstrapFramesReturnsSelectedCharacterBurst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode bootstrap update: %v", err)
 	}
-	if update.VID != character.VID || update.Parts[0] != character.MainPart || update.Parts[3] != character.HairPart {
+	if update.VID != character.VID || update.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, character.HairPart} {
 		t.Fatalf("unexpected bootstrap update packet: %+v", update)
 	}
 

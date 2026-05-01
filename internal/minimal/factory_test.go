@@ -301,6 +301,62 @@ func TestNewGameSessionFactoryReachesGamePhase(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryProjectsEquippedAppearanceIntoBootstrapFrames(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Equipment = []inventory.ItemInstance{
+		{ID: 71, Vnum: 11500, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+		{ID: 72, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+		{ID: 73, Vnum: 50053, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err = flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err = flow.HandleClientFrame(decodeSingleFrame(t, frame.Encode(worldproto.HeaderCharacterSelect, []byte{1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+
+	enterGameOut, err := flow.HandleClientFrame(decodeSingleFrame(t, frame.Encode(worldproto.HeaderEnterGame, nil)))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	if len(enterGameOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with equipped items, got %d", len(enterGameOut))
+	}
+
+	info, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, enterGameOut[2]))
+	if err != nil {
+		t.Fatalf("decode character additional info: %v", err)
+	}
+	if info.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 202} {
+		t.Fatalf("unexpected projected additional-info parts: %+v", info.Parts)
+	}
+
+	update, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, enterGameOut[3]))
+	if err != nil {
+		t.Fatalf("decode character update: %v", err)
+	}
+	if update.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 202} {
+		t.Fatalf("unexpected projected update parts: %+v", update.Parts)
+	}
+}
+
 func TestNewGameSessionFactoryRespondsToStateCheckerDuringHandshake(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)

@@ -80,6 +80,50 @@ func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *tes
 	}
 }
 
+func TestNewGameSessionFactoryProjectsPeerEquipmentAppearanceDuringBootstrap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerOne.Equipment = []inventory.ItemInstance{
+		{ID: 81, Vnum: 11500, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+		{ID: 82, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+		{ID: 83, Vnum: 50053, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+	}
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	_, firstEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(firstEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for first player with equipped items, got %d", len(firstEnter))
+	}
+
+	_, secondEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(secondEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for second player with equipped peer snapshot, got %d", len(secondEnter))
+	}
+
+	peerInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, secondEnter[6]))
+	if err != nil {
+		t.Fatalf("decode peer character additional info: %v", err)
+	}
+	if peerInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 201} {
+		t.Fatalf("unexpected projected peer additional-info parts: %+v", peerInfo.Parts)
+	}
+
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, secondEnter[7]))
+	if err != nil {
+		t.Fatalf("decode peer character update: %v", err)
+	}
+	if peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 201} {
+		t.Fatalf("unexpected projected peer update parts: %+v", peerUpdate.Parts)
+	}
+}
+
 func TestNewGameSessionFactoryAppendsVisibleStaticActorFramesAfterPeerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

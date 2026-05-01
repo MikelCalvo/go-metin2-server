@@ -1953,7 +1953,7 @@ func ticketCharacterAdditionalInfoPacket(character loginticket.Character) worldp
 	return worldproto.CharacterAdditionalInfoPacket{
 		VID:       character.VID,
 		Name:      character.Name,
-		Parts:     [worldproto.CharacterEquipmentPartCount]uint16{character.MainPart, 0, 0, character.HairPart},
+		Parts:     ticketCharacterAppearanceParts(character),
 		Empire:    character.Empire,
 		GuildID:   character.GuildID,
 		Level:     uint32(character.Level),
@@ -1966,7 +1966,7 @@ func ticketCharacterAdditionalInfoPacket(character loginticket.Character) worldp
 func ticketCharacterUpdatePacket(character loginticket.Character) worldproto.CharacterUpdatePacket {
 	return worldproto.CharacterUpdatePacket{
 		VID:         character.VID,
-		Parts:       [worldproto.CharacterEquipmentPartCount]uint16{character.MainPart, 0, 0, character.HairPart},
+		Parts:       ticketCharacterAppearanceParts(character),
 		MovingSpeed: 150,
 		AttackSpeed: 100,
 		StateFlag:   2,
@@ -1976,6 +1976,24 @@ func ticketCharacterUpdatePacket(character loginticket.Character) worldproto.Cha
 		PKMode:      0,
 		MountVnum:   0,
 	}
+}
+
+func ticketCharacterAppearanceParts(character loginticket.Character) [worldproto.CharacterEquipmentPartCount]uint16 {
+	parts := [worldproto.CharacterEquipmentPartCount]uint16{character.MainPart, 0, 0, character.HairPart}
+	for _, instance := range character.Equipment {
+		if !instance.Equipped {
+			continue
+		}
+		switch instance.EquipSlot {
+		case inventory.EquipmentSlotBody:
+			parts[0] = uint16(instance.Vnum)
+		case inventory.EquipmentSlotWeapon:
+			parts[1] = uint16(instance.Vnum)
+		case inventory.EquipmentSlotHead:
+			parts[2] = uint16(instance.Vnum)
+		}
+	}
+	return parts
 }
 
 func ticketPlayerPointChangePacket(character loginticket.Character) worldproto.PlayerPointChangePacket {
