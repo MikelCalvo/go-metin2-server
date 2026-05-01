@@ -5540,6 +5540,100 @@ func TestGameRuntimeReconnectAfterStaleItemUseCloseRebuildsAuthoritativeState(t 
 	closeSessionFlow(t, flowReconnect)
 }
 
+func TestGameRuntimeReconnectAfterStaleMerchantBuyCloseRebuildsAuthoritativeState(t *testing.T) {
+	buyer := merchantBuyerCharacter("ReconnectAfterStaleMerchant", 0x01030122, 0x02040122, 125, nil)
+	runtime, accounts, flowOwnerOld, actorID, login := setupMerchantBuySession(t, "reconnect-stale-merchant", 0x77777777, buyer)
+	factory := runtime.SessionFactory()
+
+	interactWithMerchantForBuy(t, flowOwnerOld, actorID)
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(buyer.Name)
+	if !ok {
+		t.Fatal("expected live merchant buyer entity before reclaim for reconnect stale-merchant test")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale-merchant session-directory entry removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, login, 0x77777777)
+	if len(ownerNewEnter) < 8 {
+		t.Fatalf("expected replacement merchant buyer bootstrap to emit at least 8 frames, got %d", len(ownerNewEnter))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement merchant buyer to start with no queued frames, got %d", len(queued))
+	}
+
+	buyOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected stale merchant-buy error before reconnect rebuild: %v", err)
+	}
+	if len(buyOut) != 2 {
+		t.Fatalf("expected stale merchant buy to remain self-local with 2 frames before reconnect rebuild, got %d", len(buyOut))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement merchant buyer to receive no queued frames from stale merchant buy before reconnect rebuild, got %d", len(queued))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected authoritative currency snapshot after stale merchant buy before reconnect rebuild")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected authoritative gold to remain 125 after stale merchant buy before reconnect rebuild, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected authoritative inventory snapshot after stale merchant buy before reconnect rebuild")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected authoritative inventory to stay empty after stale merchant buy before reconnect rebuild, got %+v", inventorySnapshot.Inventory)
+	}
+
+	closeSessionFlow(t, flowOwnerNew)
+	closeSessionFlow(t, flowOwnerOld)
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted account after stale merchant-buy closes: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted character after stale merchant-buy closes, got %+v", persisted)
+	}
+	if persisted.Characters[0].Gold != 125 || len(persisted.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted authoritative merchant state after stale merchant-buy closes, got %+v", persisted.Characters[0])
+	}
+
+	flowReconnect, reenterFrames := enterGameWithLoginTicket(t, factory, login, 0x77777777)
+	if len(reenterFrames) < 8 {
+		t.Fatalf("expected reconnect merchant bootstrap to emit at least 8 frames, got %d", len(reenterFrames))
+	}
+
+	var foundItemSet bool
+	for _, raw := range reenterFrames {
+		decoded := decodeSingleFrame(t, raw)
+		if _, err := itemproto.DecodeSet(decoded); err == nil {
+			foundItemSet = true
+		}
+	}
+	if foundItemSet {
+		t.Fatalf("expected reconnect merchant bootstrap to include no carried item refresh after stale merchant-buy closes, got item frames in %d bootstrap frames", len(reenterFrames))
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected reconnect currency snapshot after stale merchant-buy closes")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected reconnect authoritative gold 125 after stale merchant-buy closes, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected reconnect inventory snapshot after stale merchant-buy closes")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected reconnect authoritative inventory to stay empty after stale merchant-buy closes, got %+v", inventorySnapshot.Inventory)
+	}
+
+	closeSessionFlow(t, flowReconnect)
+}
+
 func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestinationSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

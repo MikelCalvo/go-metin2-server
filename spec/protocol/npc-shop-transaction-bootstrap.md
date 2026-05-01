@@ -158,6 +158,7 @@ If a socket already lost live shared-world ownership because another session rec
 - merchant `SHOP BUY` and the local `/shop_buy <slot>` debug harness may still return the same self-local inventory/info success burst to that stale socket
 - that stale buy mutation must not persist updated `gold` or `inventory`
 - that stale buy mutation must not replace the replacement live owner's exact-name loopback inventory/currency snapshots
+- if that stale socket later closes, a fresh reconnect/bootstrap must still reload the authoritative persisted `gold`/inventory state rather than the stale socket's local divergence
 - no peer-facing packets are emitted from that stale socket for this bootstrap merchant-buy path
 
 This keeps the first merchant transaction seam consistent with the current reconnect/reclaim ownership contract without widening it into final duplicate-session merchant semantics.

@@ -507,6 +507,19 @@ Expected result:
 - reconnect rebuilds from authoritative persisted state
 - no stale point/inventory divergence leaks into the new session bootstrap
 
+### 6.17 Reconnect after stale merchant-buy close rebuilds authoritative state (debug-harness optional)
+
+- [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
+- [ ] On the stale old socket, keep the merchant gate active and issue `SHOP BUY` (or `/shop_buy <slot>` in the local harness) so only the stale socket sees the local success burst
+- [ ] Close the authoritative replacement session first, then close the stale old socket
+- [ ] Reconnect fresh on the same character
+- [ ] Confirm the new bootstrap/reconnect state keeps the authoritative persisted `gold` and empty/unchanged carried inventory from before the stale local-only buy, not the stale socket's local grant
+
+Expected result:
+- stale local-only merchant-buy divergence dies with the stale socket
+- reconnect rebuilds from authoritative persisted gold/inventory state
+- no stale granted item leaks into the new session bootstrap
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 
