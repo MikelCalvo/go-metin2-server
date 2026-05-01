@@ -34,6 +34,7 @@ The current bootstrap runtime behavior is:
 5. if player A and player B share the same bootstrap `MapIndex`, player A receives the same three peer-visibility frames for player B via the queued server-frame runtime hook
 6. when player B disconnects, player A receives `CHARACTER_DEL` carrying player B's `vid` only if they shared the same bootstrap `MapIndex`
 7. if player A and player B remain mutually visible on the same bootstrap visibility scope and player B successfully equips or unequips a supported `body`, `weapon`, or `head` item, player A receives one queued `CHARACTER_UPDATE` carrying player B's refreshed projected parts
+8. if player C later enters that same bootstrap visibility scope after player B already performed that supported equip/unequip mutation, player C receives the normal peer-visibility burst for player B with the same refreshed projected parts in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
 
 ## `CHARACTER_DEL`
 
@@ -62,6 +63,7 @@ This slice freezes:
 - reuse of the existing `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` payloads for visible peers
 - reuse of the same bootstrap equipment-appearance projection for peer `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` parts
 - the first queued peer-visible `CHARACTER_UPDATE` refresh after a successful supported equip/unequip mutation while visibility remains stable
+- late-join peer-visibility bursts that reuse the same refreshed projected appearance after that supported mutation already happened
 
 It does not yet freeze:
 - broader item or currency mutation fanout beyond that one appearance refresh

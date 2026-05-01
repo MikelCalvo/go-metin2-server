@@ -283,6 +283,130 @@ func TestGameRuntimeUnequipQueuesPeerAppearanceUpdateForVisibleWatcher(t *testin
 	closeSessionFlow(t, flowOwner)
 }
 
+func TestGameRuntimeLateJoinSeesPeerAppearanceAfterRuntimeEquip(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 3001, Vnum: 11500, Count: 1, Slot: 8}}
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOwner, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	equipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	if err != nil {
+		t.Fatalf("unexpected equip error: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected 3 self equip frames before late join, got %d", len(equipOut))
+	}
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for late-joining watcher, got %d", len(watcherEnter))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, watcherEnter[5]))
+	if err != nil {
+		t.Fatalf("decode late-join peer add after equip: %v", err)
+	}
+	if peerAdd.VID != owner.VID {
+		t.Fatalf("unexpected late-join peer add after equip: %+v", peerAdd)
+	}
+	peerInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, watcherEnter[6]))
+	if err != nil {
+		t.Fatalf("decode late-join peer additional info after equip: %v", err)
+	}
+	if peerInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 201} {
+		t.Fatalf("unexpected late-join peer additional info parts after equip: %+v", peerInfo.Parts)
+	}
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, watcherEnter[7]))
+	if err != nil {
+		t.Fatalf("decode late-join peer update after equip: %v", err)
+	}
+	if peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 201} {
+		t.Fatalf("unexpected late-join peer update parts after equip: %+v", peerUpdate.Parts)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwner)
+}
+
+func TestGameRuntimeLateJoinSeesPeerAppearanceAfterRuntimeUnequip(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Equipment = []inventory.ItemInstance{{ID: 3002, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOwner, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	unequipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item weapon 4"})))
+	if err != nil {
+		t.Fatalf("unexpected unequip error: %v", err)
+	}
+	if len(unequipOut) != 3 {
+		t.Fatalf("expected 3 self unequip frames before late join, got %d", len(unequipOut))
+	}
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for late-joining watcher after unequip, got %d", len(watcherEnter))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, watcherEnter[5]))
+	if err != nil {
+		t.Fatalf("decode late-join peer add after unequip: %v", err)
+	}
+	if peerAdd.VID != owner.VID {
+		t.Fatalf("unexpected late-join peer add after unequip: %+v", peerAdd)
+	}
+	peerInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, watcherEnter[6]))
+	if err != nil {
+		t.Fatalf("decode late-join peer additional info after unequip: %v", err)
+	}
+	if peerInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 201} {
+		t.Fatalf("unexpected late-join peer additional info parts after unequip: %+v", peerInfo.Parts)
+	}
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, watcherEnter[7]))
+	if err != nil {
+		t.Fatalf("decode late-join peer update after unequip: %v", err)
+	}
+	if peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 201} {
+		t.Fatalf("unexpected late-join peer update parts after unequip: %+v", peerUpdate.Parts)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwner)
+}
+
 func TestNewGameSessionFactoryAppendsVisibleStaticActorFramesAfterPeerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

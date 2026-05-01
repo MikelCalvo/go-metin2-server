@@ -14,6 +14,7 @@ It does **not** yet define the full compatibility-grade appearance system.
 This first appearance slice currently applies only to:
 - the selected character during the normal `ENTERGAME` bootstrap burst
 - peer-visibility bursts that reuse the same visible-character packet builders
+- late-join peer-visibility bursts emitted after another visible session already changed supported equipment at runtime
 - self-only live `CHARACTER_UPDATE` refreshes emitted after successful `/equip_item` / `/unequip_item` mutations
 - queued peer-visible live `CHARACTER_UPDATE` refreshes for already-visible stable peers after those same successful `/equip_item` / `/unequip_item` mutations
 - visible part refresh values carried by `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
@@ -64,6 +65,7 @@ When the selected character successfully equips or unequips a supported `body`, 
 - that refresh must expose the same current projected part values derived from the updated selected-character snapshot
 - each already-visible peer that remains visible after the mutation must also receive one queued `CHARACTER_UPDATE`
 - that queued peer refresh must reuse the same projected part values and must not introduce extra `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` frames
+- any later peer-visibility burst for a newly entering visible player must also reuse the latest projected part values from the updated shared-world character snapshot
 
 `CHARACTER_ADD` remains unchanged in this slice.
 
@@ -83,4 +85,5 @@ After this slice, the repository should be able to say:
 - self-bootstrap and peer-visibility bursts project the same deterministic appearance values from the persisted equipped-item snapshot
 - successful `/equip_item` / `/unequip_item` mutations now append one deterministic self-only `CHARACTER_UPDATE` carrying the updated projected appearance
 - already-visible stable peers now also receive one queued deterministic `CHARACTER_UPDATE` carrying that same updated projected appearance
+- late-joining visible peers now also see that latest projected appearance through the normal peer-visibility burst without requiring the mutating session to reconnect
 - the repo owns an explicit written contract for what the current bootstrap runtime does before broader live peer appearance choreography slices land

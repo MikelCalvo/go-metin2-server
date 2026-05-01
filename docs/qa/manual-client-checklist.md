@@ -389,6 +389,18 @@ Expected result:
 - already-visible stable peers now also receive one visible-character refresh carrying the same projected appearance
 - no reconnect, duplicate peer insert, or forced visibility reset is required
 
+### 6.8 Late join after peer appearance mutation
+
+- [ ] Connect client A first and enter the world alone
+- [ ] Equip or unequip a supported `body`, `weapon`, or `head` item on client A
+- [ ] Connect client B afterward and enter the same bootstrap map
+- [ ] Confirm client B immediately sees A with the latest visible body/weapon/head appearance in the normal peer burst
+
+Expected result:
+- no extra reconnect or manual refresh is needed on client A
+- client B sees the same projected appearance that already-visible peers would see
+- the peer bootstrap burst stays the normal `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` sequence
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 
@@ -476,4 +488,5 @@ A current build is a good candidate when all of these pass:
 - [ ] with two clients: peer movement works
 - [ ] with two clients: local chat and whisper work
 - [ ] with two clients: peer equip/unequip appearance refresh works
+- [ ] with two clients: late-join peer appearance after runtime equip/unequip works
 - [ ] no crash or forced disconnect occurs during the run
