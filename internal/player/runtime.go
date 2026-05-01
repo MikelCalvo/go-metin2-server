@@ -47,6 +47,14 @@ type MerchantBuyResult struct {
 	Gold uint64
 }
 
+type MerchantBuyFailure string
+
+const (
+	MerchantBuyFailureInvalid          MerchantBuyFailure = "invalid"
+	MerchantBuyFailureInsufficientGold MerchantBuyFailure = "insufficient_gold"
+	MerchantBuyFailureNoValidPlacement MerchantBuyFailure = "no_valid_placement"
+)
+
 func NewRuntime(persisted loginticket.Character, sessionLink SessionLink) *Runtime {
 	runtime := &Runtime{sessionLink: sessionLink}
 	runtime.ApplyPersistedSnapshot(persisted)
@@ -240,11 +248,27 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex) (ItemUseResult, bool) {
 	return result, true
 }
 
-func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, price uint64) (MerchantBuyResult, bool) {
-	if r == nil || !itemcatalog.ValidTemplate(template) || count == 0 || count > template.MaxCount || price == 0 || r.liveGold < price {
-		return MerchantBuyResult{}, false
+func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint16, price uint64) MerchantBuyFailure {
+	if r == nil || !itemcatalog.ValidTemplate(template) || count == 0 || count > template.MaxCount || price == 0 {
+		return MerchantBuyFailureInvalid
 	}
 	if !template.Stackable && count != 1 {
+		return MerchantBuyFailureInvalid
+	}
+	if r.liveGold < price {
+		return MerchantBuyFailureInsufficientGold
+	}
+	if template.Stackable && findMergeableInventoryIndex(r.liveInventory, template.Vnum, count, template.MaxCount) >= 0 {
+		return ""
+	}
+	if _, ok := nextFreeInventorySlot(r.liveInventory); !ok {
+		return MerchantBuyFailureNoValidPlacement
+	}
+	return ""
+}
+
+func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, price uint64) (MerchantBuyResult, bool) {
+	if failure := r.ValidateMerchantBuy(template, count, price); failure != "" {
 		return MerchantBuyResult{}, false
 	}
 	if template.Stackable {

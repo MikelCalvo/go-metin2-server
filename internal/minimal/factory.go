@@ -961,11 +961,18 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
-			previousSelected := selectedPlayer.LiveCharacter()
 			template, ok := runtime.itemTemplates[entry.ItemVnum]
 			if !ok {
 				return nil, false
 			}
+			if failure := selectedPlayer.ValidateMerchantBuy(template, entry.Count, entry.Price); failure != "" {
+				delivery := merchantBuyFailureDelivery(failure)
+				if delivery == nil {
+					return nil, false
+				}
+				return [][]byte{chatproto.EncodeChatDelivery(*delivery)}, true
+			}
+			previousSelected := selectedPlayer.LiveCharacter()
 			buyResult, ok := selectedPlayer.BuyMerchantItem(template, entry.Count, entry.Price)
 			if !ok {
 				return nil, false
@@ -2100,6 +2107,19 @@ func merchantBuyResultFrames(result player.MerchantBuyResult) ([][]byte, error) 
 		setFrame,
 		chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Merchant purchase complete."}),
 	}, nil
+}
+
+func merchantBuyFailureDelivery(failure player.MerchantBuyFailure) *chatproto.ChatDeliveryPacket {
+	switch failure {
+	case player.MerchantBuyFailureInsufficientGold:
+		delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Not enough gold."}
+		return &delivery
+	case player.MerchantBuyFailureNoValidPlacement:
+		delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Inventory full."}
+		return &delivery
+	default:
+		return nil
+	}
 }
 
 func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition) (shopproto.ServerStartPacket, bool) {

@@ -167,6 +167,7 @@ Failure behavior in this bootstrap contract:
 - no gold may be debited on failure
 - no item may be granted on failure
 - the runtime must preserve the pre-request selected-character state
+- insufficient-gold and no-valid-placement failures now emit one self-only placeholder `CHAT_TYPE_INFO` delivery (`"Not enough gold."` / `"Inventory full."`) on the owned bootstrap buy path while richer `GC::SHOP` failure choreography remains unfrozen
 
 Compatibility-oriented server `SHOP` failure subheaders are now acknowledged as likely relevant, especially:
 - `NOT_ENOUGH_MONEY`

@@ -283,6 +283,52 @@ func TestRuntimeBuyMerchantItemMergesIntoLowestCompatibleSlot(t *testing.T) {
 	}
 }
 
+func TestRuntimeValidateMerchantBuyRejectsInsufficientGoldWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if failure := runtime.ValidateMerchantBuy(template, 1, 125001); failure != MerchantBuyFailureInsufficientGold {
+		t.Fatalf("expected insufficient-gold merchant buy failure, got %q", failure)
+	}
+	if _, ok := runtime.BuyMerchantItem(template, 1, 125001); ok {
+		t.Fatal("expected insufficient-gold merchant buy to fail")
+	}
+	if got := runtime.LiveGold(); got != 125000 {
+		t.Fatalf("expected live gold to stay 125000 after insufficient-gold validation, got %d", got)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected live inventory to stay unchanged after insufficient-gold validation, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	}
+}
+
+func TestRuntimeValidateMerchantBuyRejectsNoValidPlacementWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = make([]inventory.ItemInstance, 0, int(inventory.CarriedInventorySlotCount))
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		item := inventory.ItemInstance{ID: 1000 + uint64(slot), Vnum: 40000 + uint32(slot), Count: 1, Slot: slot}
+		if slot == 5 {
+			item = inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 199, Slot: slot}
+		}
+		persisted.Inventory = append(persisted.Inventory, item)
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if failure := runtime.ValidateMerchantBuy(template, 2, 50); failure != MerchantBuyFailureNoValidPlacement {
+		t.Fatalf("expected no-valid-placement merchant buy failure, got %q", failure)
+	}
+	if _, ok := runtime.BuyMerchantItem(template, 2, 50); ok {
+		t.Fatal("expected no-valid-placement merchant buy to fail")
+	}
+	if got := runtime.LiveGold(); got != 125000 {
+		t.Fatalf("expected live gold to stay 125000 after no-placement validation, got %d", got)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected live inventory to stay unchanged after no-placement validation, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	}
+}
+
 func TestNilRuntimeInventoryEquipmentAndCurrencyHelpersAreSafe(t *testing.T) {
 	var runtime *Runtime
 
