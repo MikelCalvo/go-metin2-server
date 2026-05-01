@@ -69,7 +69,7 @@ The same packet is now also reused by the first owned `/use_item <slot>` vertica
 - the current seeded bootstrap consumable template still resolves to `type = 1`, `amount = 50`, and `value = updated Points[1]`
 
 The same packet is now also reused by the first narrow template-backed equip/unequip point slice:
-- successful `/equip_item <from> <equip_slot>` and `/unequip_item <equip_slot> <to>` can append one self-only `PLAYER_POINT_CHANGE` when the matched item template carries `equip_effect`
+- successful `/equip_item <from> <equip_slot>` and `/unequip_item <equip_slot> <to>` can append one self-only `PLAYER_POINT_CHANGE` when the matched item template carries `equip_effect` on that same authored `equip_slot`
 - runtime `type` comes from `item_template.equip_effect.point_type`
 - runtime `amount` comes from `+item_template.equip_effect.point_delta` on equip and `-item_template.equip_effect.point_delta` on unequip
 - runtime `value` mirrors the updated selected-character point at `item_template.equip_effect.point_index`

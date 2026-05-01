@@ -126,8 +126,8 @@ After the bootstrap burst, the owned mutation surface remains intentionally boot
 Refresh rules for a successful self-only mutation:
 - move into an empty slot emits `ITEM_DEL(from)` then `ITEM_SET(to)`
 - swap with an occupied slot emits `ITEM_SET(from)` for the item that moved back into the source slot, then `ITEM_SET(to)` for the item that moved into the destination slot
-- equip emits `ITEM_DEL(inventory_from)` then `ITEM_SET(equipment_cell)` then, when the equipped template carries the current narrow `equip_effect` metadata, one self-only `PLAYER_POINT_CHANGE`, then one self-only `CHARACTER_UPDATE`
-- unequip emits `ITEM_DEL(equipment_cell)` then `ITEM_SET(inventory_to)` then, when the unequipped template carries the current narrow `equip_effect` metadata, one self-only `PLAYER_POINT_CHANGE`, then one self-only `CHARACTER_UPDATE`
+- equip emits `ITEM_DEL(inventory_from)` then `ITEM_SET(equipment_cell)` then, when the equipped template carries the current narrow `equip_effect` metadata on that same authored `equip_slot`, one self-only `PLAYER_POINT_CHANGE`, then one self-only `CHARACTER_UPDATE`
+- unequip emits `ITEM_DEL(equipment_cell)` then `ITEM_SET(inventory_to)` then, when the unequipped template carries the current narrow `equip_effect` metadata on that same authored `equip_slot`, one self-only `PLAYER_POINT_CHANGE`, then one self-only `CHARACTER_UPDATE`
 - the current self-only equip/unequip `CHARACTER_UPDATE` reuses the appearance projection frozen in `spec/protocol/equipment-appearance-bootstrap.md`
 - the first equip-driven point refresh is still intentionally narrow: it is self-only, template-authored, and limited to the selected session's runtime/persisted point snapshot; peer-visible point fanout and bootstrap recomputation from already-worn bonus items remain out of scope
 - the direct item-slot response stays self-only; when the mutating character is already registered in shared-world visibility, already-visible stable peers now also receive one queued `CHARACTER_UPDATE` reusing the same projected appearance

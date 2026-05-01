@@ -327,6 +327,7 @@ Expected result:
 - equip/unequip point refresh is driven by item-template `equip_effect` metadata instead of a runtime-only hardcoded item switch
 - the current seeded practice blade still resolves to `vnum = 12200`, `type = 1`, and `amount = +/-10` on equip/unequip
 - the response burst stays self-only and ordered as `ITEM_DEL` + `ITEM_SET` + optional `PLAYER_POINT_CHANGE` + `CHARACTER_UPDATE`
+- if a point-bearing wearable is forced through the wrong slash seam slot, the item mutation can still stay appearance-only in the current bootstrap slice but the template-backed `PLAYER_POINT_CHANGE` must not fire
 - already-visible peers still only receive the projected appearance refresh; no peer-visible point stream is frozen by this slice
 
 ### 5.6 Template-backed consumable item use
