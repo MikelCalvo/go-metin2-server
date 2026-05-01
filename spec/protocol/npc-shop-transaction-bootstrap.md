@@ -202,19 +202,22 @@ This slice does **not** yet freeze:
 - safebox, mall, or storage integration
 - quest-driven merchant dialogs or special-case shop scripts
 
-## Temporary RED harness before wire ownership
+## Temporary local debug harness beside wire ownership
 
-The next RED is allowed to exercise the first buy-only merchant path through a **temporary local-only harness**:
+The bootstrap runtime now accepts the client `SHOP BUY` packet family as the primary ingress for the first buy-only merchant path:
 - resolve merchant context through the already-owned `INTERACT` path against a visible structured `shop_preview`
-- trigger a local-only buy attempt by stable authored `catalog_slot`
+- bind that catalog snapshot as the session's active merchant transaction gate
+- interpret the later client `SHOP BUY` request against that active context by authored `catalog_slot`
 - assert authoritative **state-level** outcomes first: gold debit, inventory grant, insufficient-gold rejection, and no-free-slot rejection
 
-For the current bootstrap runtime, that harness may temporarily ride the existing talking-chat command seam if that keeps the next GREEN slice tiny.
+The local talking-chat command seam may still exist as a **temporary local-only debug harness**:
+- `/shop_buy <catalog_slot>` may exercise the same state contract for QA and recovery
+- it must remain bootstrap-scoped rather than becoming the primary client-facing merchant path
 
 This does **not** replace the long-term ownership target:
-- the final compatibility-facing ingress is still the client `SHOP` family
-- the temporary harness must stay local/bootstrap-scoped
-- later packet-binding slices must be free to swap the ingress without changing the state contract frozen above
+- the compatibility-facing ingress is the client `SHOP` family
+- the temporary slash harness must stay local/bootstrap-scoped
+- later merchant-window slices may refine success/failure choreography without changing the state contract frozen above
 
 ## Success definition
 
@@ -223,4 +226,6 @@ After this slice, the repository should be able to say:
 - the project now knows the buy-only gate sits on top of the existing structured `shop_preview` merchant surface
 - the known `SHOP` family names and headers are recorded without overstating full UI ownership
 - the minimum stable `BUY` addressing fact is frozen: the second trailing byte selects the authored catalog slot
-- the next RED tests can target gold debit, inventory grant, insufficient-gold rejection, and no-free-slot rejection without pretending sell or full merchant-window choreography already exist
+- active merchant sessions can now route real client `SHOP BUY` requests through the same authoritative gold/inventory mutation contract
+- the temporary `/shop_buy <catalog_slot>` harness remains available only as a local debug seam
+- focused tests can target gold debit, inventory grant, insufficient-gold rejection, and no-free-slot rejection without pretending sell or full merchant-window choreography already exist

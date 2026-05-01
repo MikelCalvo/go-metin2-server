@@ -474,6 +474,45 @@ func TestHandleClientFrameAcceptsShopEndInGameAndReturnsFrames(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsShopBuyInGameAndReturnsFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	expected := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
+	invoked := false
+	flow := NewFlow(machine, Config{
+		HandleShopBuy: func(packet shopproto.ClientBuyPacket) ShopResult {
+			invoked = true
+			if packet.RawLeadingByte != 1 || packet.CatalogSlot != 2 {
+				t.Fatalf("unexpected shop buy packet: %+v", packet)
+			}
+			return ShopResult{Accepted: true, Frames: [][]byte{expected}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 2})))
+	if err != nil {
+		t.Fatalf("unexpected shop buy error: %v", err)
+	}
+	if !invoked {
+		t.Fatal("expected shop buy handler to be invoked")
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing shop-buy frame, got %d", len(out))
+	}
+	if !bytes.Equal(out[0], expected) {
+		t.Fatalf("unexpected shop-buy frames: got %x want %x", out[0], expected)
+	}
+	ping, err := control.DecodePing(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode shop-buy ping frame: %v", err)
+	}
+	if ping.ServerTime != 0x01020304 {
+		t.Fatalf("unexpected shop-buy ping payload: %+v", ping)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameShopBuyWithoutHandlerIsNoOp(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})

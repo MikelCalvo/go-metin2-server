@@ -254,21 +254,23 @@ If the lab currently has no such content, either:
 - import/adapt `docs/examples/bootstrap-npc-service-bundle.json` through `/local/content-bundle`, or
 - record this subsection as **N/A** instead of treating the absence of authored NPCs as a gameplay regression.
 
-#### 5.4.1 Talk / info / shop-preview interactions
+#### 5.4.1 Talk / info / merchant interactions
 
-- [ ] Approach a visible authored QA NPC with `info`, `talk`, or `shop_preview`
-- [ ] Interact once and wait for the self-only response
+- [ ] Approach a visible authored QA NPC with `info`, `talk`, or merchant `shop_preview`
+- [ ] For `info` / `talk`, interact once and wait for the self-only response
+- [ ] For a merchant actor, interact once and confirm a merchant window opens instead of only a chat preview
+- [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one buy from the open window
 - [ ] Re-interact immediately once to confirm repeated spam is suppressed or remains stable within the current cooldown contract
 
 Expected result:
 - `info` and `talk` still return deterministic self-only text
-- `shop_preview` returns deterministic structured browse-only self-only preview text
-- no inventory mutation, buy/sell flow, or quest state appears
+- merchant interaction opens a stable bootstrap `GC::SHOP START` window
+- a bootstrap `SHOP BUY` request can debit gold and grant the authored item without disconnecting the client
 - repeated interaction does not disconnect the client
 
 Important note:
-- this smoke step does **not** require a real merchant window or successful purchase path yet
-- the buy-only merchant transaction contract is now documented, but final packet choreography and implementation are still ahead
+- this smoke step validates only the current bootstrap open / buy / close merchant slice
+- final merchant failure choreography, sell flow, stock semantics, and richer NPC UI are still ahead
 
 #### 5.4.2 Warp interaction
 
@@ -405,8 +407,8 @@ These are currently out of scope for the present server state unless the milesto
 - [ ] inventory UX completeness
 - [ ] equipment logic
 - [ ] item use
-- [ ] full merchant UI semantics or real shop buy/sell flow
-- [ ] inventory or currency mutation from NPC interactions
+- [ ] full merchant UI semantics beyond the current bootstrap open / buy / close slice, or any sell flow
+- [ ] inventory or currency mutation from non-merchant NPC interactions
 - [ ] mobs, combat, or skills
 - [ ] quest acceptance, progression, or rewards
 - [ ] death / respawn loop

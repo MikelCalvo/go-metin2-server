@@ -19,6 +19,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
@@ -5376,6 +5377,14 @@ func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 		t.Fatalf("expected no queued peer frames for merchant shop close, got %d", len(queued))
 	}
 
+	packetBuyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop-buy error after close: %v", err)
+	}
+	if len(packetBuyOut) != 0 {
+		t.Fatalf("expected closed merchant context to reject packet buy frames, got %d", len(packetBuyOut))
+	}
+
 	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/shop_buy 0"})))
 	if err != nil {
 		t.Fatalf("unexpected slash shop-buy error after close: %v", err)
@@ -5403,6 +5412,66 @@ func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 	}
 	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
 		t.Fatalf("expected persisted merchant-close account to stay unchanged, got %#v", account.Characters[0])
+	}
+}
+
+func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerPacket", 0x01040105, 0x02050105, 125, nil)
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet", 0x55555555, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy attempt error: %v", err)
+	}
+	if len(buyOut) != 2 {
+		t.Fatalf("expected packet shop buy success path to emit 2 frames, got %d", len(buyOut))
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
+	if err != nil {
+		t.Fatalf("decode packet shop-buy item frame: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(0) || set.Vnum != 27001 || set.Count != 1 {
+		t.Fatalf("unexpected packet shop-buy item frame: %+v", set)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[1]))
+	if err != nil {
+		t.Fatalf("decode packet shop-buy delivery frame: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != "Merchant purchase complete." {
+		t.Fatalf("unexpected packet shop-buy delivery: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for packet shop buy, got %d", len(queued))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after packet shop buy attempt")
+	}
+	if currencySnapshot.Gold != 75 {
+		t.Fatalf("expected packet shop buy to debit gold to 75, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after packet shop buy attempt")
+	}
+	if len(inventorySnapshot.Inventory) != 1 {
+		t.Fatalf("expected packet shop buy to add one inventory item, got %+v", inventorySnapshot.Inventory)
+	}
+	bought := inventorySnapshot.Inventory[0]
+	if bought.ID == 0 || bought.Vnum != 27001 || bought.Count != 1 || bought.Slot != 0 {
+		t.Fatalf("unexpected packet shop-buy inventory item: %+v", bought)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted packet merchant buyer account: %v", err)
+	}
+	if account.Characters[0].Gold != 75 {
+		t.Fatalf("expected persisted packet merchant buyer gold 75, got %d", account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 || account.Characters[0].Inventory[0].Slot != 0 {
+		t.Fatalf("unexpected persisted packet merchant buyer inventory: %#v", account.Characters[0].Inventory)
 	}
 }
 

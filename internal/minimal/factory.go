@@ -925,26 +925,54 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
 			return selectedPlayer.LiveCharacter(), true
 		}
-		commitSelectedItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
+		commitSelectedItemMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) ([][]byte, bool) {
 			if selectedPlayer == nil {
-				return gameflow.ChatResult{Accepted: false}
+				return nil, false
 			}
 			updatedSelected := selectedPlayer.LiveCharacter()
 			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updatedSelected)
 			if !ok {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
-				return gameflow.ChatResult{Accepted: false}
+				return nil, false
 			}
 			if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
-				return gameflow.ChatResult{Accepted: false}
+				return nil, false
 			}
 			sessionTicket.Characters = updatedCharacters
 			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
 			refreshLiveCharacterRegistration()
+			return frames, true
+		}
+		commitSelectedItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
+			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames)
+			if !ok {
+				return gameflow.ChatResult{Accepted: false}
+			}
 			return gameflow.ChatResult{Accepted: true, Frames: frames}
+		}
+		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16) ([][]byte, bool) {
+			if selectedPlayer == nil || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
+				return nil, false
+			}
+			entry, ok := merchantCatalogEntryBySlot(activeMerchantBuy.Definition, catalogSlot)
+			if !ok {
+				return nil, false
+			}
+			previousSelected := selectedPlayer.LiveCharacter()
+			buyResult, ok := selectedPlayer.BuyMerchantItem(entry.ItemVnum, entry.Count, entry.Price)
+			if !ok {
+				return nil, false
+			}
+			frames, err := merchantBuyResultFrames(buyResult)
+			if err != nil {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			return commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames)
 		}
 
 		inner := boot.NewFlow(boot.Config{
@@ -1247,25 +1275,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if packet.Type == chatproto.ChatTypeTalking {
 						if catalogSlot, ok := slashShopBuyCommand(packet.Message); ok {
 							selectedPlayer, ok := currentSelectedPlayer()
-							if !ok || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
-								return gameflow.ChatResult{Accepted: false}
-							}
-							entry, ok := merchantCatalogEntryBySlot(activeMerchantBuy.Definition, catalogSlot)
 							if !ok {
 								return gameflow.ChatResult{Accepted: false}
 							}
-							previousSelected := selectedPlayer.LiveCharacter()
-							buyResult, ok := selectedPlayer.BuyMerchantItem(entry.ItemVnum, entry.Count, entry.Price)
+							frames, ok := executeActiveMerchantBuy(selectedPlayer, catalogSlot)
 							if !ok {
 								return gameflow.ChatResult{Accepted: false}
 							}
-							frames, err := merchantBuyResultFrames(buyResult)
-							if err != nil {
-								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-								refreshLiveCharacterRegistration()
-								return gameflow.ChatResult{Accepted: false}
-							}
-							return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						if slot, ok := slashUseItemCommand(packet.Message); ok {
 							selectedPlayer, ok := currentSelectedPlayer()
@@ -1441,6 +1458,20 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					clearActiveMerchantBuy()
 					markInteractionCooldown(packet.TargetVID)
 					return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
+				},
+				HandleShopBuy: func(packet shopproto.ClientBuyPacket) gameflow.ShopResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					frames, ok := executeActiveMerchantBuy(selectedPlayer, uint16(packet.CatalogSlot))
+					if !ok {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					return gameflow.ShopResult{Accepted: true, Frames: frames}
 				},
 				HandleShopClose: func() gameflow.ShopResult {
 					stateMu.Lock()
