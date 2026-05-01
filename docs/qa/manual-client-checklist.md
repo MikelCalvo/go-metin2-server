@@ -312,6 +312,23 @@ Expected result:
 Important note:
 - broader visibility-changing appearance fanout beyond the currently frozen late-join, reconnect-driven, transfer-driven, duplicate-live retry-`ENTERGAME`, and radius-AOI move-into-range branches is still out of scope for this slice
 
+#### 5.5.1 Template-backed equip point refresh
+
+- [ ] Seed or confirm one wearable item whose template carries `equip_effect` metadata (current bootstrap QA seed: `12200`, weapon)
+- [ ] Record the current selected-character point value used by the seeded template (`Points[1]` in the current bootstrap slice)
+- [ ] Use `/equip_item <from> weapon` on that item
+- [ ] Confirm one self-only `PLAYER_POINT_CHANGE` arrives after the item-slot frames and before the self-only `CHARACTER_UPDATE`
+- [ ] Confirm the point refresh uses the template-authored delta (`+10` for the current seeded practice blade) and the updated value persists after reconnect
+- [ ] Use `/unequip_item weapon <to>` on that same item
+- [ ] Confirm one self-only `PLAYER_POINT_CHANGE` again arrives after the item-slot frames and before the self-only `CHARACTER_UPDATE`
+- [ ] Confirm the unequip point refresh uses the inverse template-authored delta (`-10` for the current seeded practice blade) and restores the previous selected-character point value after reconnect
+
+Expected result:
+- equip/unequip point refresh is driven by item-template `equip_effect` metadata instead of a runtime-only hardcoded item switch
+- the current seeded practice blade still resolves to `vnum = 12200`, `type = 1`, and `amount = +/-10` on equip/unequip
+- the response burst stays self-only and ordered as `ITEM_DEL` + `ITEM_SET` + optional `PLAYER_POINT_CHANGE` + `CHARACTER_UPDATE`
+- already-visible peers still only receive the projected appearance refresh; no peer-visible point stream is frozen by this slice
+
 ### 5.6 Template-backed consumable item use
 
 - [ ] Seed or confirm one carried consumable whose item template has a `use_effect` payload (current bootstrap QA seed: `27001`)

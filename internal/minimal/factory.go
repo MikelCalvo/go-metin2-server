@@ -1264,11 +1264,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()
+						template, hasEquipTemplate := runtime.resolveRuntimeEquipTemplate(selectedPlayer, fromSlot, equipSlot)
 						equippedItem, ok := selectedPlayer.EquipItem(fromSlot, equipSlot)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
 						}
-						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), fromSlot, equippedItem)
+						var pointChange *player.PointChangeResult
+						if hasEquipTemplate {
+							result, ok := selectedPlayer.ApplyEquipTemplateEffect(template)
+							if !ok {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.ChatResult{Accepted: false}
+							}
+							pointChange = &result
+						}
+						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), fromSlot, equippedItem, pointChange)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
@@ -1287,11 +1298,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()
+						template, hasEquipTemplate := runtime.resolveRuntimeUnequipTemplate(selectedPlayer, equipSlot)
 						inventoryItem, ok := selectedPlayer.UnequipItem(equipSlot, toSlot)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
 						}
-						frames, err := unequipResultFrames(selectedPlayer.LiveCharacter(), equipSlot, inventoryItem)
+						var pointChange *player.PointChangeResult
+						if hasEquipTemplate {
+							result, ok := selectedPlayer.RemoveEquipTemplateEffect(template)
+							if !ok {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.ChatResult{Accepted: false}
+							}
+							pointChange = &result
+						}
+						frames, err := unequipResultFrames(selectedPlayer.LiveCharacter(), equipSlot, inventoryItem, pointChange)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
@@ -2109,19 +2131,24 @@ func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
 	return frames, nil
 }
 
-func equipResultFrames(character loginticket.Character, from inventory.SlotIndex, equippedItem inventory.ItemInstance) ([][]byte, error) {
+func equipResultFrames(character loginticket.Character, from inventory.SlotIndex, equippedItem inventory.ItemInstance, pointChange *player.PointChangeResult) ([][]byte, error) {
 	setFrame, err := encodeBootstrapEquipmentItemFrame(equippedItem)
 	if err != nil {
 		return nil, err
 	}
-	return [][]byte{
+	frames := make([][]byte, 0, 4)
+	frames = append(frames,
 		itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(uint16(from))}),
 		setFrame,
-		worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)),
-	}, nil
+	)
+	if pointChange != nil {
+		frames = append(frames, encodePlayerPointChangeFrame(character.VID, *pointChange))
+	}
+	frames = append(frames, worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)))
+	return frames, nil
 }
 
-func unequipResultFrames(character loginticket.Character, from inventory.EquipmentSlot, inventoryItem inventory.ItemInstance) ([][]byte, error) {
+func unequipResultFrames(character loginticket.Character, from inventory.EquipmentSlot, inventoryItem inventory.ItemInstance, pointChange *player.PointChangeResult) ([][]byte, error) {
 	position, ok := equipmentBootstrapPosition(from)
 	if !ok {
 		return nil, fmt.Errorf("bootstrap equipment slot unsupported: %s", from.String())
@@ -2130,11 +2157,16 @@ func unequipResultFrames(character loginticket.Character, from inventory.Equipme
 	if err != nil {
 		return nil, err
 	}
-	return [][]byte{
+	frames := make([][]byte, 0, 4)
+	frames = append(frames,
 		itemproto.EncodeDel(itemproto.DelPacket{Position: position}),
 		setFrame,
-		worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)),
-	}, nil
+	)
+	if pointChange != nil {
+		frames = append(frames, encodePlayerPointChangeFrame(character.VID, *pointChange))
+	}
+	frames = append(frames, worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)))
+	return frames, nil
 }
 
 func itemUseResultFrames(character loginticket.Character, result player.ItemUseResult) ([][]byte, error) {
@@ -2143,11 +2175,10 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 		return nil, err
 	}
 	frames := make([][]byte, 0, 3)
-	frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-		VID:    character.VID,
-		Type:   result.PointType,
-		Amount: result.PointAmount,
-		Value:  result.PointValue,
+	frames = append(frames, encodePlayerPointChangeFrame(character.VID, player.PointChangeResult{
+		PointType:   result.PointType,
+		PointAmount: result.PointAmount,
+		PointValue:  result.PointValue,
 	}))
 	if result.ItemRemoved {
 		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
@@ -2160,6 +2191,15 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 	}
 	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: result.EffectMessage}))
 	return frames, nil
+}
+
+func encodePlayerPointChangeFrame(vid uint32, result player.PointChangeResult) []byte {
+	return worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+		VID:    vid,
+		Type:   result.PointType,
+		Amount: result.PointAmount,
+		Value:  result.PointValue,
+	})
 }
 
 func merchantBuyResultFrames(result player.MerchantBuyResult) ([][]byte, error) {
@@ -2716,6 +2756,18 @@ func defaultBootstrapItemTemplateSnapshot() itemcatalog.Snapshot {
 	return itemcatalog.Snapshot{Templates: []itemcatalog.Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()},
 		{
+			Vnum:      12200,
+			Name:      "Practice Blade",
+			Stackable: false,
+			MaxCount:  1,
+			EquipSlot: inventory.EquipmentSlotWeapon.String(),
+			EquipEffect: &itemcatalog.PointEffect{
+				PointType:  bootstrapPlayerPointType,
+				PointIndex: bootstrapPlayerPointValueIndex,
+				PointDelta: 10,
+			},
+		},
+		{
 			Vnum:      27001,
 			Name:      "Small Red Potion",
 			Stackable: true,
@@ -2740,6 +2792,47 @@ func (r *gameRuntime) resolveRuntimeUseTemplate(selectedPlayer *player.Runtime, 
 		return template, true
 	}
 	return itemcatalog.Template{}, false
+}
+
+func (r *gameRuntime) resolveRuntimeEquipTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool) {
+	if r == nil || selectedPlayer == nil || !equipSlot.Valid() {
+		return itemcatalog.Template{}, false
+	}
+	for _, item := range selectedPlayer.LiveInventory() {
+		if item.Equipped || item.Slot != slot {
+			continue
+		}
+		return r.resolveRuntimeTemplateBackedEquipEffect(item.Vnum, equipSlot)
+	}
+	return itemcatalog.Template{}, false
+}
+
+func (r *gameRuntime) resolveRuntimeUnequipTemplate(selectedPlayer *player.Runtime, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool) {
+	if r == nil || selectedPlayer == nil || !equipSlot.Valid() {
+		return itemcatalog.Template{}, false
+	}
+	for _, item := range selectedPlayer.LiveEquipment() {
+		if !item.Equipped || item.EquipSlot != equipSlot {
+			continue
+		}
+		return r.resolveRuntimeTemplateBackedEquipEffect(item.Vnum, equipSlot)
+	}
+	return itemcatalog.Template{}, false
+}
+
+func (r *gameRuntime) resolveRuntimeTemplateBackedEquipEffect(vnum uint32, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool) {
+	if r == nil || !equipSlot.Valid() {
+		return itemcatalog.Template{}, false
+	}
+	template, ok := r.itemTemplates[vnum]
+	if !ok || !itemcatalog.ValidTemplate(template) || template.EquipEffect == nil {
+		return itemcatalog.Template{}, false
+	}
+	templateSlot, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
+	if !ok || templateSlot != equipSlot {
+		return itemcatalog.Template{}, false
+	}
+	return template, true
 }
 
 func (r *gameRuntime) validateInteractionDefinitions(snapshot interactionstore.Snapshot) error {

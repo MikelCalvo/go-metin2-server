@@ -15,12 +15,19 @@ var (
 )
 
 type Template struct {
-	Vnum      uint32     `json:"vnum"`
-	Name      string     `json:"name"`
-	Stackable bool       `json:"stackable"`
-	MaxCount  uint16     `json:"max_count"`
-	EquipSlot string     `json:"equip_slot,omitempty"`
-	UseEffect *UseEffect `json:"use_effect,omitempty"`
+	Vnum        uint32       `json:"vnum"`
+	Name        string       `json:"name"`
+	Stackable   bool         `json:"stackable"`
+	MaxCount    uint16       `json:"max_count"`
+	EquipSlot   string       `json:"equip_slot,omitempty"`
+	UseEffect   *UseEffect   `json:"use_effect,omitempty"`
+	EquipEffect *PointEffect `json:"equip_effect,omitempty"`
+}
+
+type PointEffect struct {
+	PointType  uint8 `json:"point_type"`
+	PointIndex uint8 `json:"point_index"`
+	PointDelta int32 `json:"point_delta"`
 }
 
 type UseEffect struct {
@@ -58,6 +65,10 @@ func normalizeTemplate(template Template) Template {
 		effect.Message = strings.TrimSpace(effect.Message)
 		template.UseEffect = &effect
 	}
+	if template.EquipEffect != nil {
+		effect := *template.EquipEffect
+		template.EquipEffect = &effect
+	}
 	return template
 }
 
@@ -89,26 +100,37 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.EquipSlot == "" {
-		return validUseEffect(template.UseEffect)
+		return template.EquipEffect == nil && validUseEffect(template.UseEffect)
 	}
 	_, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
-	return ok && validUseEffect(template.UseEffect)
+	return ok && validUseEffect(template.UseEffect) && validPointEffect(template.EquipEffect)
 }
 
 func validUseEffect(effect *UseEffect) bool {
 	if effect == nil {
 		return true
 	}
-	if effect.PointType == 0 {
-		return false
-	}
-	if effect.PointIndex >= 255 {
-		return false
-	}
-	if effect.PointDelta <= 0 {
+	if !validPointFields(effect.PointType, effect.PointIndex, effect.PointDelta) {
 		return false
 	}
 	return strings.TrimSpace(effect.Message) != ""
+}
+
+func validPointEffect(effect *PointEffect) bool {
+	if effect == nil {
+		return true
+	}
+	return validPointFields(effect.PointType, effect.PointIndex, effect.PointDelta)
+}
+
+func validPointFields(pointType uint8, pointIndex uint8, pointDelta int32) bool {
+	if pointType == 0 {
+		return false
+	}
+	if pointIndex >= 255 {
+		return false
+	}
+	return pointDelta > 0
 }
 
 func ValidTemplate(template Template) bool {
@@ -140,6 +162,10 @@ func cloneTemplates(templates []Template) []Template {
 		if templates[i].UseEffect != nil {
 			effect := *templates[i].UseEffect
 			cloned[i].UseEffect = &effect
+		}
+		if templates[i].EquipEffect != nil {
+			effect := *templates[i].EquipEffect
+			cloned[i].EquipEffect = &effect
 		}
 	}
 	return cloned

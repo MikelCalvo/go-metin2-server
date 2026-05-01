@@ -4970,7 +4970,8 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleEquipAppearanceMutationNonAuthorit
 	accounts := accountstore.NewFileStore(t.TempDir())
 	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
-	owner.Inventory = []inventory.ItemInstance{{ID: 8001, Vnum: 11500, Count: 1, Slot: 8}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 700
+	owner.Inventory = []inventory.ItemInstance{{ID: 8001, Vnum: 12200, Count: 1, Slot: 8}}
 	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	for _, account := range []accountstore.Account{
@@ -5030,18 +5031,25 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleEquipAppearanceMutationNonAuthorit
 		t.Fatal("expected replacement owner inventory snapshot before stale equip")
 	}
 
-	equipOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	equipOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 weapon"})))
 	if err != nil {
 		t.Fatalf("unexpected stale owner equip error: %v", err)
 	}
-	if len(equipOut) != 3 {
-		t.Fatalf("expected stale owner equip to remain self-local with 3 frames, got %d", len(equipOut))
+	if len(equipOut) != 4 {
+		t.Fatalf("expected stale owner equip to remain self-local with 4 frames, got %d", len(equipOut))
 	}
-	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[2]))
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, equipOut[2]))
+	if err != nil {
+		t.Fatalf("decode stale owner self equip point change: %v", err)
+	}
+	if pointPacket.VID != owner.VID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != 10 || pointPacket.Value != 710 {
+		t.Fatalf("unexpected stale owner self equip point change: %+v", pointPacket)
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[3]))
 	if err != nil {
 		t.Fatalf("decode stale owner self equip update: %v", err)
 	}
-	if selfUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 201} {
+	if selfUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 12200, 0, 201} {
 		t.Fatalf("unexpected stale owner self equip appearance: %+v", selfUpdate.Parts)
 	}
 	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
@@ -5060,6 +5068,9 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleEquipAppearanceMutationNonAuthorit
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) || !reflect.DeepEqual(persisted.Characters[0].Equipment, beforePersisted.Characters[0].Equipment) {
 		t.Fatalf("expected stale equip to leave persisted carried/equipped state unchanged, before inventory=%+v before equipment=%+v after inventory=%+v after equipment=%+v", beforePersisted.Characters[0].Inventory, beforePersisted.Characters[0].Equipment, persisted.Characters[0].Inventory, persisted.Characters[0].Equipment)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected stale equip to leave persisted points unchanged, before=%d after=%d", beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 
 	afterEquipment, ok := runtime.EquipmentSnapshot(owner.Name)
@@ -5087,7 +5098,8 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleUnequipAppearanceMutationNonAuthor
 	accounts := accountstore.NewFileStore(t.TempDir())
 	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
-	owner.Equipment = []inventory.ItemInstance{{ID: 8002, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 710
+	owner.Equipment = []inventory.ItemInstance{{ID: 8002, Vnum: 12200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
 	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
 	for _, account := range []accountstore.Account{
@@ -5151,10 +5163,17 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleUnequipAppearanceMutationNonAuthor
 	if err != nil {
 		t.Fatalf("unexpected stale owner unequip error: %v", err)
 	}
-	if len(unequipOut) != 3 {
-		t.Fatalf("expected stale owner unequip to remain self-local with 3 frames, got %d", len(unequipOut))
+	if len(unequipOut) != 4 {
+		t.Fatalf("expected stale owner unequip to remain self-local with 4 frames, got %d", len(unequipOut))
 	}
-	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, unequipOut[2]))
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, unequipOut[2]))
+	if err != nil {
+		t.Fatalf("decode stale owner self unequip point change: %v", err)
+	}
+	if pointPacket.VID != owner.VID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != -10 || pointPacket.Value != 700 {
+		t.Fatalf("unexpected stale owner self unequip point change: %+v", pointPacket)
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, unequipOut[3]))
 	if err != nil {
 		t.Fatalf("decode stale owner self unequip update: %v", err)
 	}
@@ -5177,6 +5196,9 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleUnequipAppearanceMutationNonAuthor
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) || !reflect.DeepEqual(persisted.Characters[0].Equipment, beforePersisted.Characters[0].Equipment) {
 		t.Fatalf("expected stale unequip to leave persisted carried/equipped state unchanged, before inventory=%+v before equipment=%+v after inventory=%+v after equipment=%+v", beforePersisted.Characters[0].Inventory, beforePersisted.Characters[0].Equipment, persisted.Characters[0].Inventory, persisted.Characters[0].Equipment)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected stale unequip to leave persisted points unchanged, before=%d after=%d", beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 
 	afterEquipment, ok := runtime.EquipmentSnapshot(owner.Name)

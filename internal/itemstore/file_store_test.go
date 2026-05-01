@@ -198,3 +198,92 @@ func TestFileStoreSaveRejectsInvalidUseEffectMetadata(t *testing.T) {
 		t.Fatalf("expected ErrInvalidSnapshot for out-of-range use-effect point index, got %v", err)
 	}
 }
+
+func TestFileStoreSaveThenLoadRoundTripPreservesEquipEffectMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:      12200,
+		Name:      "Practice Blade",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: "weapon",
+		EquipEffect: &PointEffect{
+			PointType:  1,
+			PointIndex: 1,
+			PointDelta: 10,
+		},
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with equip effect metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with equip effect metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with equip effect metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with equip effect metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 12200,\n      \"name\": \"Practice Blade\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"equip_slot\": \"weapon\",\n      \"equip_effect\": {\n        \"point_type\": 1,\n        \"point_index\": 1,\n        \"point_delta\": 10\n      }\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with equip effect metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreSaveRejectsInvalidEquipEffectMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+
+	missingEquipSlot := Snapshot{Templates: []Template{{
+		Vnum:        12200,
+		Name:        "Practice Blade",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipEffect: &PointEffect{PointType: 1, PointIndex: 1, PointDelta: 10},
+	}}}
+	if err := store.Save(missingEquipSlot); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for equip-effect without equip slot, got %v", err)
+	}
+
+	zeroType := Snapshot{Templates: []Template{{
+		Vnum:        12200,
+		Name:        "Practice Blade",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   "weapon",
+		EquipEffect: &PointEffect{PointType: 0, PointIndex: 1, PointDelta: 10},
+	}}}
+	if err := store.Save(zeroType); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for zero equip-effect point type, got %v", err)
+	}
+
+	zeroDelta := Snapshot{Templates: []Template{{
+		Vnum:        12200,
+		Name:        "Practice Blade",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   "weapon",
+		EquipEffect: &PointEffect{PointType: 1, PointIndex: 1, PointDelta: 0},
+	}}}
+	if err := store.Save(zeroDelta); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for zero equip-effect point delta, got %v", err)
+	}
+
+	invalidPointIndex := Snapshot{Templates: []Template{{
+		Vnum:        12200,
+		Name:        "Practice Blade",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   "weapon",
+		EquipEffect: &PointEffect{PointType: 1, PointIndex: 255, PointDelta: 10},
+	}}}
+	if err := store.Save(invalidPointIndex); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for out-of-range equip-effect point index, got %v", err)
+	}
+}

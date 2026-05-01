@@ -126,9 +126,10 @@ After the bootstrap burst, the owned mutation surface remains intentionally boot
 Refresh rules for a successful self-only mutation:
 - move into an empty slot emits `ITEM_DEL(from)` then `ITEM_SET(to)`
 - swap with an occupied slot emits `ITEM_SET(from)` for the item that moved back into the source slot, then `ITEM_SET(to)` for the item that moved into the destination slot
-- equip emits `ITEM_DEL(inventory_from)` then `ITEM_SET(equipment_cell)` then one self-only `CHARACTER_UPDATE`
-- unequip emits `ITEM_DEL(equipment_cell)` then `ITEM_SET(inventory_to)` then one self-only `CHARACTER_UPDATE`
+- equip emits `ITEM_DEL(inventory_from)` then `ITEM_SET(equipment_cell)` then, when the equipped template carries the current narrow `equip_effect` metadata, one self-only `PLAYER_POINT_CHANGE`, then one self-only `CHARACTER_UPDATE`
+- unequip emits `ITEM_DEL(equipment_cell)` then `ITEM_SET(inventory_to)` then, when the unequipped template carries the current narrow `equip_effect` metadata, one self-only `PLAYER_POINT_CHANGE`, then one self-only `CHARACTER_UPDATE`
 - the current self-only equip/unequip `CHARACTER_UPDATE` reuses the appearance projection frozen in `spec/protocol/equipment-appearance-bootstrap.md`
+- the first equip-driven point refresh is still intentionally narrow: it is self-only, template-authored, and limited to the selected session's runtime/persisted point snapshot; peer-visible point fanout and bootstrap recomputation from already-worn bonus items remain out of scope
 - the direct item-slot response stays self-only; when the mutating character is already registered in shared-world visibility, already-visible stable peers now also receive one queued `CHARACTER_UPDATE` reusing the same projected appearance
 - if a stale old socket has already lost live shared-world ownership because another session reclaimed that character, later `/equip_item` / `/unequip_item` may still return those self-local frames but must not persist carried/equipped state, must not queue peer-visible appearance refreshes, and must not overwrite the replacement live owner's exact-name loopback inventory/equipment snapshots
 
@@ -178,7 +179,7 @@ This slice does **not** yet freeze:
 - real merchant buy/sell transactions
 - sell-back
 - currency packet families
-- equipment bonus formulas or combat-side stat recomputation
+- broader equipment bonus formulas or combat-side stat recomputation beyond the first narrow template-backed equip/unequip point delta
 
 ## Success definition
 
@@ -186,6 +187,6 @@ After this slice, the repository should be able to say:
 - inventory/equipment are no longer undefined territory in project docs
 - the first self-only bootstrap ordering for item state is frozen relative to `ENTERGAME`
 - the loading-to-game burst now emits owned `ITEM_SET` frames for occupied carried/equipped slots immediately after `PLAYER_POINT_CHANGE`
-- the first carried/worn mutation loops now persist selected-character move/swap/equip/unequip changes and refresh the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames, plus one self-only `CHARACTER_UPDATE` after successful equip/unequip appearance changes and one queued peer-visible `CHARACTER_UPDATE` for already-visible stable watchers in shared world
+- the first carried/worn mutation loops now persist selected-character move/swap/equip/unequip changes and refresh the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames, plus one self-only template-backed `PLAYER_POINT_CHANGE` when matched equip templates carry the current narrow `equip_effect`, one self-only `CHARACTER_UPDATE` after successful equip/unequip appearance changes, and one queued peer-visible `CHARACTER_UPDATE` for already-visible stable watchers in shared world
 - the repo owns a stable vocabulary for carried inventory slots, equipment slots, minimum item snapshot semantics, and the first self-only mutation refresh rules
 - the packet matrix and `internal/proto/item` codec now agree on the first byte-level item bootstrap family

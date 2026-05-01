@@ -57,7 +57,7 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 | `PLAYER_DELETE_FAILURE` | server -> client | `0x020F` | select | documented | minimal delete rejection placeholder using a header-only failure frame |
 | `MAIN_CHARACTER` | server -> client | `0x0210` | loading | documented | main actor bootstrap |
 | `PLAYER_POINTS` | server -> client | `0x0214` | loading/game bootstrap | documented | initial stat payload |
-| `PLAYER_POINT_CHANGE` | server -> client | `0x0215` | loading/game bootstrap / game | documented | first self-only point refresh after the selected-character bootstrap; the first owned consumable-use vertical also reuses it for the selected character using template-authored `use_effect` metadata (`type`, `amount`, and point index), while the current seeded bootstrap consumable still resolves to `type = 1`, `amount = 50`, and `value = updated Points[1]` |
+| `PLAYER_POINT_CHANGE` | server -> client | `0x0215` | loading/game bootstrap / game | documented | first self-only point refresh after the selected-character bootstrap; the first owned consumable-use vertical also reuses it for the selected character using template-authored `use_effect` metadata (`type`, `amount`, and point index), while the current seeded bootstrap consumable still resolves to `type = 1`, `amount = 50`, and `value = updated Points[1]`; the first narrow template-backed equip/unequip point slice also reuses it self-only when the matched equipped item carries `equip_effect`, with the current seeded practice blade resolving to `vnum = 12200`, `type = 1`, and `amount = +/-10` on equip/unequip |
 
 ## Movement
 

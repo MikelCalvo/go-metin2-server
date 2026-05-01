@@ -96,6 +96,21 @@ func bootstrapConsumableTemplate(vnum uint32, pointType uint8, pointIndex uint8,
 	}
 }
 
+func bootstrapEquipmentPointTemplate(vnum uint32, equipSlot inventory.EquipmentSlot, pointType uint8, pointIndex uint8, pointDelta int32) itemcatalog.Template {
+	return itemcatalog.Template{
+		Vnum:      vnum,
+		Name:      "Template Blade",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: equipSlot.String(),
+		EquipEffect: &itemcatalog.PointEffect{
+			PointType:  pointType,
+			PointIndex: pointIndex,
+			PointDelta: pointDelta,
+		},
+	}
+}
+
 func TestRuntimeItemUseConsumesBootstrapConsumableWithoutMutatingPersistedPoints(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,
@@ -207,5 +222,60 @@ func TestRuntimeItemUseResolvesPointEffectFromTemplateMetadata(t *testing.T) {
 	}
 	if !reflect.DeepEqual(live.Inventory, []inventory.ItemInstance{{ID: 11, Vnum: 27002, Count: 2, Slot: 5}}) {
 		t.Fatalf("unexpected live inventory after template-defined use: %#v", live.Inventory)
+	}
+}
+
+func TestRuntimeApplyEquipTemplateEffectAdjustsLivePointsWithoutMutatingPersistedSnapshot(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10))
+	if !ok {
+		t.Fatal("expected template-backed equip effect application to succeed")
+	}
+	if result.PointType != 1 || result.PointAmount != 10 || result.PointValue != 710 {
+		t.Fatalf("unexpected equip-derived point change result: %+v", result)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
+		t.Fatalf("expected persisted points to remain unchanged, got %d", got)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 710 {
+		t.Fatalf("expected live points[1] to be incremented to 710, got %d", got)
+	}
+}
+
+func TestRuntimeRemoveEquipTemplateEffectRevertsLivePointsWithoutMutatingPersistedSnapshot(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10)); !ok {
+		t.Fatal("expected template-backed equip effect application to succeed before removal")
+	}
+	result, ok := runtime.RemoveEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10))
+	if !ok {
+		t.Fatal("expected template-backed equip effect removal to succeed")
+	}
+	if result.PointType != 1 || result.PointAmount != -10 || result.PointValue != 700 {
+		t.Fatalf("unexpected equip-derived point removal result: %+v", result)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
+		t.Fatalf("expected persisted points to remain unchanged, got %d", got)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 700 {
+		t.Fatalf("expected live points[1] to be restored to 700, got %d", got)
 	}
 }

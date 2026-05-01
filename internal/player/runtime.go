@@ -34,6 +34,12 @@ type ItemUseResult struct {
 	EffectMessage string
 }
 
+type PointChangeResult struct {
+	PointType   uint8
+	PointAmount int32
+	PointValue  int32
+}
+
 type MerchantBuyResult struct {
 	Items []inventory.ItemInstance
 	Gold  uint64
@@ -196,6 +202,34 @@ func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.Sl
 	sortEquipmentItems(r.liveEquipment)
 	sortInventoryItems(r.liveInventory)
 	return item, true
+}
+
+func (r *Runtime) ApplyEquipTemplateEffect(template itemcatalog.Template) (PointChangeResult, bool) {
+	if r == nil || !itemcatalog.ValidTemplate(template) || template.EquipEffect == nil {
+		return PointChangeResult{}, false
+	}
+	effect := *template.EquipEffect
+	currentPointValue := r.livePoints[effect.PointIndex]
+	if currentPointValue > (1<<31-1)-effect.PointDelta {
+		return PointChangeResult{}, false
+	}
+	updatedPointValue := currentPointValue + effect.PointDelta
+	r.livePoints[effect.PointIndex] = updatedPointValue
+	return PointChangeResult{PointType: effect.PointType, PointAmount: effect.PointDelta, PointValue: updatedPointValue}, true
+}
+
+func (r *Runtime) RemoveEquipTemplateEffect(template itemcatalog.Template) (PointChangeResult, bool) {
+	if r == nil || !itemcatalog.ValidTemplate(template) || template.EquipEffect == nil {
+		return PointChangeResult{}, false
+	}
+	effect := *template.EquipEffect
+	currentPointValue := r.livePoints[effect.PointIndex]
+	if currentPointValue < (-1<<31)+effect.PointDelta {
+		return PointChangeResult{}, false
+	}
+	updatedPointValue := currentPointValue - effect.PointDelta
+	r.livePoints[effect.PointIndex] = updatedPointValue
+	return PointChangeResult{PointType: effect.PointType, PointAmount: -effect.PointDelta, PointValue: updatedPointValue}, true
 }
 
 func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Template) (ItemUseResult, bool) {
