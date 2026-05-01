@@ -5430,6 +5430,116 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantBuyMutationNonAuthoritativ
 	closeSessionFlow(t, flowOwnerNew)
 }
 
+func TestGameRuntimeReconnectAfterStaleItemUseCloseRebuildsAuthoritativeState(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ReconnectAfterStaleUse", 0x01030121, 0x02040121, 1300, 2300, 2, 121, 221)
+	owner.Points[bootstrapPlayerPointValueIndex] = 700
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 3, Slot: 5}}
+	issuePeerTicket(t, store, "reconnect-stale-use", 0x55555555, owner)
+	if err := accounts.Save(accountstore.Account{Login: "reconnect-stale-use", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed reconnect stale-use account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected reconnect stale-use runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, factory, "reconnect-stale-use", 0x55555555)
+	if len(ownerOldEnter) < 6 {
+		t.Fatalf("expected original owner bootstrap to emit at least 6 frames, got %d", len(ownerOldEnter))
+	}
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
+	if !ok {
+		t.Fatal("expected live player entity before reclaim for reconnect stale-use test")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale-use session-directory entry removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, "reconnect-stale-use", 0x55555555)
+	if len(ownerNewEnter) < 6 {
+		t.Fatalf("expected replacement owner bootstrap to emit at least 6 frames, got %d", len(ownerNewEnter))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to start with no queued frames, got %d", len(queued))
+	}
+
+	useOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected stale item-use error before reconnect rebuild: %v", err)
+	}
+	if len(useOut) != 3 {
+		t.Fatalf("expected stale item-use to remain self-local with 3 frames before reconnect rebuild, got %d", len(useOut))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale item use before reconnect rebuild, got %d", len(queued))
+	}
+
+	closeSessionFlow(t, flowOwnerNew)
+	closeSessionFlow(t, flowOwnerOld)
+
+	persisted, err := accounts.Load("reconnect-stale-use")
+	if err != nil {
+		t.Fatalf("load persisted account after stale item-use closes: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted character after stale item-use closes, got %+v", persisted)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 700 || !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected persisted authoritative state after stale item-use closes, got points=%d inventory=%+v", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Inventory)
+	}
+
+	account, ok := loadOrCreateAccount(accounts, "reconnect-stale-use")
+	if !ok {
+		t.Fatal("expected persisted account for reconnect after stale item use")
+	}
+	reconnectKey, ok := issueLoginTicket(store, account.Login, account.Empire, account.Characters, func() (uint32, error) {
+		return 0x66666666, nil
+	})
+	if !ok {
+		t.Fatal("expected fresh login ticket for reconnect after stale item use")
+	}
+	flowReconnect, reenterFrames := enterGameWithLoginTicket(t, factory, "reconnect-stale-use", reconnectKey)
+	if len(reenterFrames) < 6 {
+		t.Fatalf("expected reconnect bootstrap to emit at least 6 frames, got %d", len(reenterFrames))
+	}
+
+	var pointPacket *worldproto.PlayerPointChangePacket
+	var itemPacket *itemproto.SetPacket
+	for _, raw := range reenterFrames {
+		decoded := decodeSingleFrame(t, raw)
+		if pointPacket == nil {
+			if pkt, err := worldproto.DecodePlayerPointChange(decoded); err == nil {
+				copyPkt := pkt
+				pointPacket = &copyPkt
+			}
+		}
+		if itemPacket == nil {
+			if pkt, err := itemproto.DecodeSet(decoded); err == nil && pkt.Position == itemproto.InventoryPosition(5) {
+				copyPkt := pkt
+				itemPacket = &copyPkt
+			}
+		}
+	}
+	if pointPacket == nil {
+		t.Fatalf("expected reconnect bootstrap to include authoritative point snapshot, got %d frames", len(reenterFrames))
+	}
+	if pointPacket.VID != owner.VID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != 700 || pointPacket.Value != 700 {
+		t.Fatalf("unexpected reconnect point snapshot after stale item-use closes: %+v", *pointPacket)
+	}
+	if itemPacket == nil {
+		t.Fatalf("expected reconnect bootstrap to include authoritative inventory slot 5 snapshot, got %d frames", len(reenterFrames))
+	}
+	if itemPacket.Vnum != 27001 || itemPacket.Count != 3 {
+		t.Fatalf("unexpected reconnect inventory snapshot after stale item-use closes: %+v", *itemPacket)
+	}
+
+	closeSessionFlow(t, flowReconnect)
+}
+
 func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestinationSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

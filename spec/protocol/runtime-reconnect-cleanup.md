@@ -93,6 +93,7 @@ The project now owns these reconnect rules:
 14. later stale `/equip_item` / `/unequip_item` appearance mutations on that socket may still return self-local item/appearance frames, but they must not overwrite the persisted account snapshot, must not queue peer-visible appearance refreshes, and must not replace the replacement live owner's exact-name loopback inventory/equipment snapshots after reclaim
 15. later stale `/use_item <slot>` mutations on that socket may still return self-local point/item/info frames, but they must not overwrite the persisted account snapshot and must not replace the replacement live owner's exact-name loopback inventory snapshot after reclaim
 16. later stale merchant `SHOP BUY` / `/shop_buy <slot>` mutations on that socket may still return the self-local inventory/info success burst, but they must not overwrite the persisted account snapshot and must not replace the replacement live owner's exact-name loopback inventory/currency snapshots after reclaim
+17. if a stale socket later closes after one of those non-authoritative item mutations, a fresh reconnect/bootstrap must still rebuild from the authoritative persisted snapshot rather than from that stale socket's local divergence
 
 This is the current bootstrap ownership contract for correctness.
 It does **not** yet claim resumable gameplay state, preserved socket identity, or any special reconnect shortcut.

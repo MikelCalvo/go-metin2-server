@@ -83,9 +83,8 @@ The remaining high-value gap on this path is **what happens after live ownership
 
 ## Immediate execution order
 
-1. Write RED tests proving that after a stale socket attempts a now-non-authoritative item mutation, a later retry/reconnect burst still rebuilds from the authoritative persisted/live-owner state.
-2. Use the smallest existing reclaim setups from stale `/use_item` or stale merchant-buy tests instead of opening a broader reconnect branch.
-3. Freeze the expected authoritative rebuild contract in `shared_world_test.go` before changing production code.
-4. Update reconnect docs and QA in the same slice.
-5. Run focused tests, then `go test ./...`, then `go vet ./...`.
-6. Review, commit, and push before returning to the paused merchant hybrid remainder.
+1. Return to the paused merchant `multi-stack existing + fresh-slot remainder` case with a new narrow RED test.
+2. Keep the slice purely on deterministic placement semantics; do not reopen reconnect/reclaim or broader merchant UI choreography.
+3. Update `item-stack-bootstrap.md`, `npc-shop-transaction-bootstrap.md`, and QA notes in the same slice.
+4. Run focused tests, then `go test ./...`, then `go vet ./...`.
+5. Review, commit, and push before opening any broader merchant/runtime work again.

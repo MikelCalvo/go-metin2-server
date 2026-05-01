@@ -494,6 +494,19 @@ Expected result:
 - no peer-facing packet fanout is emitted from the stale socket
 - exact-name loopback inventory/currency snapshots remain owned by the replacement live session
 
+### 6.16 Reconnect after stale item-use close rebuilds authoritative state (debug-harness optional)
+
+- [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
+- [ ] On the stale old socket, run `/use_item <slot>` against a supported carried `27001` consumable stack and observe the self-local divergence
+- [ ] Close the authoritative replacement session first, then close the stale old socket
+- [ ] Reconnect fresh on the same character
+- [ ] Confirm the new bootstrap/reconnect frames and loopback state show the authoritative persisted `points`/inventory values from before the stale local-only mutation, not the stale socket's decremented stack or boosted points
+
+Expected result:
+- stale local-only item-use divergence dies with the stale socket
+- reconnect rebuilds from authoritative persisted state
+- no stale point/inventory divergence leaks into the new session bootstrap
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 
