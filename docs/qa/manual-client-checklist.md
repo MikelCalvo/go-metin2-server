@@ -310,7 +310,7 @@ Expected result:
 - the client remains connected, inventory/equipment state stays consistent, and already-visible stable peers can refresh the same appearance without reconnecting
 
 Important note:
-- broader visibility-changing peer appearance fanout is still out of scope for this slice
+- broader transfer/reconnect or other non-`MOVE` visibility-changing appearance fanout is still out of scope for this slice
 
 ---
 
@@ -401,6 +401,19 @@ Expected result:
 - client B sees the same projected appearance that already-visible peers would see
 - the peer bootstrap burst stays the normal `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` sequence
 
+### 6.9 Radius-AOI move-into-range after peer appearance mutation
+
+- [ ] Start `gamed` with radius AOI enabled for QA
+- [ ] Put client A and client B on the same effective map but outside the configured visible radius
+- [ ] Equip or unequip a supported `body`, `weapon`, or `head` item on client A while B stays out of range
+- [ ] Move client B into A's visible range
+- [ ] Confirm client B sees A with the latest visible body/weapon/head appearance in the normal peer-entry burst
+
+Expected result:
+- client A still mutates appearance through the normal equip/unequip path while B remains out of range
+- once B crosses into range, the move-driven peer-entry burst carries A's latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
+- no reconnect or manual refresh is needed after the move-driven visibility rebuild
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 
@@ -489,4 +502,5 @@ A current build is a good candidate when all of these pass:
 - [ ] with two clients: local chat and whisper work
 - [ ] with two clients: peer equip/unequip appearance refresh works
 - [ ] with two clients: late-join peer appearance after runtime equip/unequip works
+- [ ] with two clients + radius AOI: move-into-range peer appearance after runtime equip/unequip works
 - [ ] no crash or forced disconnect occurs during the run

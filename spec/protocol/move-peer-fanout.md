@@ -6,6 +6,7 @@ The goal of this slice is narrow:
 - keep the mover's current deterministic self `MOVE` ack path intact
 - queue one `MOVE` replication frame to already-visible peers
 - when configured AOI causes the visible-peer set to change on `MOVE`, rebuild that visibility with add/delete frames instead of pretending the peer set stayed constant
+- when that move-driven peer-entry burst happens after a prior supported equip/unequip mutation, reuse the latest projected visible appearance in the rebuilt peer burst
 - when configured AOI causes already-seeded static actors to enter or leave the mover's visible world on `MOVE`, queue the corresponding self-facing bootstrap/delete frames too
 - avoid broadening the slice into sync-position fanout or full continuous interest-management yet
 
@@ -30,7 +31,8 @@ When the runtime is configured with opt-in radius AOI, there is now one more own
 3. player B still receives the normal deterministic self `MOVE` ack
 4. player A receives the normal peer-entry burst for player B (`CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`) rather than a lone `MOVE` replication for an actor it had not seen yet
 5. player B receives the symmetric peer-entry burst for player A via queued server frames
-6. if player B later moves back out of range, both sides receive the corresponding `CHARACTER_DEL` teardown instead of silent disappearance
+6. if player A had already changed a supported `body`, `weapon`, or `head` item through the owned equip/unequip runtime seam before player B crossed into range, player B's peer-entry burst carries player A's latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
+7. if player B later moves back out of range, both sides receive the corresponding `CHARACTER_DEL` teardown instead of silent disappearance
 
 There is now one more content-facing AOI branch for already-seeded static actors:
 
@@ -47,6 +49,7 @@ This slice freezes:
 - reuse of the existing `MOVE` server packet shape for peer fanout to peers that stay visible across the move
 - mover and peer seeing the same updated coordinates for that move event
 - AOI-aware add/delete visibility rebuild on `MOVE` when the configured runtime visibility policy changes the peer set during the move
+- reuse of the latest projected visible appearance during the move-driven peer-entry burst when a supported equip/unequip mutation already happened before that visibility rebuild
 - AOI-aware self-facing add/delete rebuild for already-seeded static actors when `MOVE` changes whether they share visible world with the mover
 
 It does not yet freeze:

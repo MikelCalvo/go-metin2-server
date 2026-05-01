@@ -407,6 +407,216 @@ func TestGameRuntimeLateJoinSeesPeerAppearanceAfterRuntimeUnequip(t *testing.T) 
 	closeSessionFlow(t, flowOwner)
 }
 
+func TestGameRuntimeRadiusAOIMoveIntoRangeSeesPeerAppearanceAfterRuntimeEquip(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 4001, Vnum: 11500, Count: 1, Slot: 8}}
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1700, 2900, 0, 100, 200)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerEnter) != 6 {
+		t.Fatalf("expected 6 bootstrap frames for owner outside radius AOI with one carried item, got %d", len(ownerEnter))
+	}
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher outside radius AOI, got %d", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, flowOwner); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames for owner outside radius AOI, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames for watcher outside radius AOI, got %d", len(queued))
+	}
+
+	equipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	if err != nil {
+		t.Fatalf("unexpected equip error outside radius AOI: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected 3 self equip frames outside radius AOI, got %d", len(equipOut))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected no queued peer appearance frames while watcher remains outside radius AOI, got %d", len(queued))
+	}
+
+	moveOut, err := flowWatcher.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1300, Y: 2300, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move-into-range error after equip: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame for watcher entering range after equip, got %d", len(moveOut))
+	}
+
+	peerEntry := flushServerFrames(t, flowOwner)
+	if len(peerEntry) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for owner after watcher enters range, got %d", len(peerEntry))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, peerEntry[0]))
+	if err != nil {
+		t.Fatalf("decode watcher add after move into range: %v", err)
+	}
+	if peerAdd.VID != watcher.VID || peerAdd.X != 1300 || peerAdd.Y != 2300 {
+		t.Fatalf("unexpected watcher add after move into range: %+v", peerAdd)
+	}
+
+	originEntry := flushServerFrames(t, flowWatcher)
+	if len(originEntry) != 3 {
+		t.Fatalf("expected 3 queued owner peer-entry frames for watcher after entering range, got %d", len(originEntry))
+	}
+	originAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originEntry[0]))
+	if err != nil {
+		t.Fatalf("decode owner add after watcher enters range: %v", err)
+	}
+	if originAdd.VID != owner.VID || originAdd.X != owner.X || originAdd.Y != owner.Y {
+		t.Fatalf("unexpected owner add after watcher enters range: %+v", originAdd)
+	}
+	originInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, originEntry[1]))
+	if err != nil {
+		t.Fatalf("decode owner additional info after watcher enters range: %v", err)
+	}
+	if originInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 201} {
+		t.Fatalf("unexpected owner additional-info parts after runtime equip then move into range: %+v", originInfo.Parts)
+	}
+	originUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, originEntry[2]))
+	if err != nil {
+		t.Fatalf("decode owner update after watcher enters range: %v", err)
+	}
+	if originUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 201} {
+		t.Fatalf("unexpected owner update parts after runtime equip then move into range: %+v", originUpdate.Parts)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwner)
+}
+
+func TestGameRuntimeRadiusAOIMoveIntoRangeSeesPeerAppearanceAfterRuntimeUnequip(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Equipment = []inventory.ItemInstance{{ID: 4002, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1700, 2900, 0, 100, 200)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerEnter) != 6 {
+		t.Fatalf("expected 6 bootstrap frames for owner outside radius AOI with one equipped item, got %d", len(ownerEnter))
+	}
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher outside radius AOI, got %d", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, flowOwner); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames for owner outside radius AOI, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames for watcher outside radius AOI, got %d", len(queued))
+	}
+
+	unequipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item weapon 4"})))
+	if err != nil {
+		t.Fatalf("unexpected unequip error outside radius AOI: %v", err)
+	}
+	if len(unequipOut) != 3 {
+		t.Fatalf("expected 3 self unequip frames outside radius AOI, got %d", len(unequipOut))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected no queued peer appearance frames while watcher remains outside radius AOI after unequip, got %d", len(queued))
+	}
+
+	moveOut, err := flowWatcher.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1300, Y: 2300, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move-into-range error after unequip: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame for watcher entering range after unequip, got %d", len(moveOut))
+	}
+
+	peerEntry := flushServerFrames(t, flowOwner)
+	if len(peerEntry) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for owner after watcher enters range post-unequip, got %d", len(peerEntry))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, peerEntry[0]))
+	if err != nil {
+		t.Fatalf("decode watcher add after move into range post-unequip: %v", err)
+	}
+	if peerAdd.VID != watcher.VID || peerAdd.X != 1300 || peerAdd.Y != 2300 {
+		t.Fatalf("unexpected watcher add after move into range post-unequip: %+v", peerAdd)
+	}
+
+	originEntry := flushServerFrames(t, flowWatcher)
+	if len(originEntry) != 3 {
+		t.Fatalf("expected 3 queued owner peer-entry frames for watcher after entering range post-unequip, got %d", len(originEntry))
+	}
+	originAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originEntry[0]))
+	if err != nil {
+		t.Fatalf("decode owner add after watcher enters range post-unequip: %v", err)
+	}
+	if originAdd.VID != owner.VID || originAdd.X != owner.X || originAdd.Y != owner.Y {
+		t.Fatalf("unexpected owner add after watcher enters range post-unequip: %+v", originAdd)
+	}
+	originInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, originEntry[1]))
+	if err != nil {
+		t.Fatalf("decode owner additional info after watcher enters range post-unequip: %v", err)
+	}
+	if originInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 201} {
+		t.Fatalf("unexpected owner additional-info parts after runtime unequip then move into range: %+v", originInfo.Parts)
+	}
+	originUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, originEntry[2]))
+	if err != nil {
+		t.Fatalf("decode owner update after watcher enters range post-unequip: %v", err)
+	}
+	if originUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 201} {
+		t.Fatalf("unexpected owner update parts after runtime unequip then move into range: %+v", originUpdate.Parts)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwner)
+}
+
 func TestNewGameSessionFactoryAppendsVisibleStaticActorFramesAfterPeerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
