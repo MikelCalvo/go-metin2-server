@@ -129,7 +129,7 @@ When a gated `BUY` request arrives, the runtime must validate all of the followi
 - the entry `price` is greater than zero
 - the entry `count` is greater than zero
 - the selected character has at least that much gold available
-- the selected character has enough carried-inventory capacity to receive the item count for that template
+- the selected character has a valid carried-inventory placement for that template/count under `item-stack-bootstrap.md`
 - persistence/writeback can succeed before the new live state is committed
 
 The first buy-only contract intentionally remains single-entry and immediate:
@@ -145,7 +145,7 @@ The first buy-only contract intentionally remains single-entry and immediate:
 
 When validation succeeds:
 1. exactly the requested entry price is debited from the selected character's gold
-2. exactly the requested entry count of that template is granted into carried inventory
+2. exactly the requested entry count of that template is granted into carried inventory according to `item-stack-bootstrap.md`
 3. the updated selected-character snapshot is persisted before the new live state is committed
 4. the transaction commits atomically from the perspective of the selected runtime
 
@@ -174,6 +174,12 @@ Compatibility-oriented server `SHOP` failure subheaders are now acknowledged as 
 - `INVALID_POS`
 
 However, the exact mapping between server-side failure causes and final client-visible `GC::SHOP` responses remains capture-gated.
+
+The first repository-owned carried placement contract now lives beside this document in `item-stack-bootstrap.md`:
+- validate merchant grants against template `stackable` / `max_count`
+- prefer one deterministic full merge into an existing compatible carried stack
+- otherwise claim one deterministic fresh carried slot
+- otherwise fail closed without partial placement
 
 ## Explicit unknowns before full GREEN ownership
 

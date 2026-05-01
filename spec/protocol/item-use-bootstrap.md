@@ -41,11 +41,14 @@ Exactly one consumable path is frozen here:
 
 This is intentionally a prototype consumable, not the final item-template or quest-scripted system.
 
+The general carried-stack contract that this consumable now depends on lives in `item-stack-bootstrap.md`.
+That companion document owns merge/new-slot/fail-closed placement semantics for template-driven carried items.
+
 ## Success path
 
 When `/use_item <slot>` targets a carried inventory slot that holds `vnum = 27001` with `count >= 1`:
 
-1. the runtime decrements the stack by exactly `1`
+1. the runtime decrements the stack by exactly `1` while preserving the carried-stack bounds frozen in `item-stack-bootstrap.md`
 2. the selected character's live `Points[1]` increases by exactly `50`
 3. the updated selected-character snapshot must be persisted before the new live state is committed
 4. the server emits a deterministic self-only response burst in this order:
