@@ -993,6 +993,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
+			if !ownsLiveSharedWorldSession() {
+				return frames, true
+			}
 			return commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 		}
 

@@ -83,9 +83,9 @@ The remaining high-value gap on this path is **what happens after live ownership
 
 ## Immediate execution order
 
-1. Write RED tests for stale reclaimed `/use_item <slot>`.
-2. Run the focused `go test` command and confirm the failure is the expected missing hardening.
-3. Implement the smallest `internal/minimal/factory.go` guard so stale item-use stays self-local and non-authoritative.
-4. Update reconnect/item-use docs and QA in the same slice.
+1. Write RED tests proving that after a stale socket attempts a now-non-authoritative item mutation, a later retry/reconnect burst still rebuilds from the authoritative persisted/live-owner state.
+2. Use the smallest existing reclaim setups from stale `/use_item` or stale merchant-buy tests instead of opening a broader reconnect branch.
+3. Freeze the expected authoritative rebuild contract in `shared_world_test.go` before changing production code.
+4. Update reconnect docs and QA in the same slice.
 5. Run focused tests, then `go test ./...`, then `go vet ./...`.
-6. Review, commit, and push before opening the merchant-buy stale-mutation slice.
+6. Review, commit, and push before returning to the paused merchant hybrid remainder.

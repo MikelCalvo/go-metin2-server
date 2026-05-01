@@ -480,6 +480,20 @@ Expected result:
 - no peer-facing packet fanout is emitted from the stale socket
 - exact-name loopback inventory snapshots remain owned by the replacement live session
 
+### 6.15 Reclaimed stale merchant-buy isolation (debug-harness optional)
+
+- [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
+- [ ] On the stale old socket, keep a merchant window/context open and send one real `SHOP BUY` for slot `0` (or the local `/shop_buy 0` harness where appropriate)
+- [ ] Confirm the stale socket may still receive only its self-local merchant success burst (`ITEM_SET`/`CHAT_TYPE_INFO` in the current slice)
+- [ ] Confirm the authoritative live replacement session and any visible watcher do **not** gain gold/items or otherwise change because of that stale mutation
+- [ ] Confirm loopback-only `/local/inventory/{name}` (and currency introspection if available) still report the replacement live owner's authoritative state, not the stale socket's local divergence
+
+Expected result:
+- stale post-reclaim merchant buy remains non-authoritative
+- no persisted gold/inventory change because of the stale socket
+- no peer-facing packet fanout is emitted from the stale socket
+- exact-name loopback inventory/currency snapshots remain owned by the replacement live session
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 

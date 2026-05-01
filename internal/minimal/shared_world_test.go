@@ -5320,6 +5320,116 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleItemUseMutationNonAuthoritative(t 
 	closeSessionFlow(t, flowOwnerNew)
 }
 
+func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantBuyMutationNonAuthoritative(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	buyer := merchantBuyerCharacter("MerchantBuyerStale", 0x01040112, 0x02050112, 125, nil)
+	issuePeerTicket(t, store, "merchant-stale", 0x12121212, buyer)
+	if err := accounts.Save(accountstore.Account{Login: "merchant-stale", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed stale merchant buyer account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected stale merchant runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+
+	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "merchant-stale", 0x12121212)
+	if len(ownerOldEnter) < 8 {
+		t.Fatalf("expected stale merchant owner bootstrap to emit at least 8 frames, got %d", len(ownerOldEnter))
+	}
+	interactWithMerchantForBuy(t, flowOwnerOld, actor.EntityID)
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(buyer.Name)
+	if !ok {
+		t.Fatal("expected live player entity for merchant buyer before reclaim")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale merchant session-directory entry removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "merchant-stale", 0x12121212)
+	if len(ownerNewEnter) < 8 {
+		t.Fatalf("expected replacement merchant owner bootstrap to emit at least 8 frames, got %d", len(ownerNewEnter))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement merchant owner to start with no queued frames, got %d", len(queued))
+	}
+
+	beforePersisted, err := accounts.Load("merchant-stale")
+	if err != nil {
+		t.Fatalf("load persisted account before stale merchant buy: %v", err)
+	}
+	beforeCurrency, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected replacement owner currency snapshot before stale merchant buy")
+	}
+	beforeInventory, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected replacement owner inventory snapshot before stale merchant buy")
+	}
+
+	buyOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected stale merchant packet buy error: %v", err)
+	}
+	if len(buyOut) != 2 {
+		t.Fatalf("expected stale merchant packet buy to remain self-local with 2 frames, got %d", len(buyOut))
+	}
+	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
+	if err != nil {
+		t.Fatalf("decode stale merchant buy item frame: %v", err)
+	}
+	if setPacket.Position != itemproto.InventoryPosition(0) || setPacket.Vnum != 27001 || setPacket.Count != 1 {
+		t.Fatalf("unexpected stale merchant buy item frame: %+v", setPacket)
+	}
+	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[1]))
+	if err != nil {
+		t.Fatalf("decode stale merchant buy info frame: %v", err)
+	}
+	if infoPacket.Type != chatproto.ChatTypeInfo || infoPacket.VID != 0 || infoPacket.Message != "Merchant purchase complete." {
+		t.Fatalf("unexpected stale merchant buy info frame: %+v", infoPacket)
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement merchant owner to receive no queued frames from stale merchant buy, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load("merchant-stale")
+	if err != nil {
+		t.Fatalf("load persisted account after stale merchant buy: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted merchant buyer after stale buy, got %+v", persisted)
+	}
+	if persisted.Characters[0].Gold != beforePersisted.Characters[0].Gold || !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) {
+		t.Fatalf("expected stale merchant buy to leave persisted gold/inventory unchanged, before gold=%d before inventory=%+v after gold=%d after inventory=%+v", beforePersisted.Characters[0].Gold, beforePersisted.Characters[0].Inventory, persisted.Characters[0].Gold, persisted.Characters[0].Inventory)
+	}
+
+	afterCurrency, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected replacement owner currency snapshot after stale merchant buy")
+	}
+	if afterCurrency != beforeCurrency {
+		t.Fatalf("expected stale merchant buy to leave replacement owner currency snapshot unchanged, before=%+v after=%+v", beforeCurrency, afterCurrency)
+	}
+	afterInventory, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected replacement owner inventory snapshot after stale merchant buy")
+	}
+	if !reflect.DeepEqual(afterInventory, beforeInventory) {
+		t.Fatalf("expected stale merchant buy to leave replacement owner inventory snapshot unchanged, before=%+v after=%+v", beforeInventory, afterInventory)
+	}
+
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
 func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestinationSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
