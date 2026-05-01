@@ -414,6 +414,18 @@ Expected result:
 - once B crosses into range, the move-driven peer-entry burst carries A's latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
 - no reconnect or manual refresh is needed after the move-driven visibility rebuild
 
+### 6.10 Transfer-driven peer appearance after runtime mutation
+
+- [ ] Put client A and client B on different effective bootstrap maps
+- [ ] Equip or unequip a supported `body`, `weapon`, or `head` item on client A while they remain on separate maps
+- [ ] Trigger a supported transfer/warp path that makes client A newly visible to client B
+- [ ] Confirm client B sees A with the latest visible body/weapon/head appearance in the normal peer-entry burst after the transfer
+
+Expected result:
+- client A keeps the latest projected appearance through the transfer
+- once the transfer makes A newly visible to B, the destination peer-entry burst carries that latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
+- no extra reconnect or manual refresh is needed after the transfer-driven visibility rebuild
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 
@@ -503,4 +515,5 @@ A current build is a good candidate when all of these pass:
 - [ ] with two clients: peer equip/unequip appearance refresh works
 - [ ] with two clients: late-join peer appearance after runtime equip/unequip works
 - [ ] with two clients + radius AOI: move-into-range peer appearance after runtime equip/unequip works
+- [ ] with two clients + transfer path: transfer-driven peer appearance after runtime equip/unequip works
 - [ ] no crash or forced disconnect occurs during the run

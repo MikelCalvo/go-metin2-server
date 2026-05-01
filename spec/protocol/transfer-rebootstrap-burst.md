@@ -36,6 +36,7 @@ When a bootstrap transfer is committed from gameplay today:
 2. the moved session instead receives an immediate **transfer rebootstrap burst** on that same game socket
 3. the burst reuses the owned selected-character bootstrap packet family with the relocated snapshot
 4. trailing visibility deltas are appended after that self burst
+5. if the moved player had already changed a supported `body`, `weapon`, or `head` item through the owned equip/unequip seam before the transfer, the destination peer-entry burst reuses that latest projected appearance
 
 ## Self rebootstrap frames
 
@@ -89,6 +90,7 @@ then a successful committed transfer currently produces this self-session result
 At the same time:
 - player A receives `CHARACTER_DEL` for player B
 - player C receives the destination visibility burst for player B using B's relocated snapshot
+- if player B had already changed a supported `body`, `weapon`, or `head` item before the transfer, player C sees that latest projected appearance in the `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE` frames of that destination burst
 
 ## Same-map transfers
 

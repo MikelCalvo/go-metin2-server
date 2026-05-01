@@ -2855,6 +2855,200 @@ func TestGameRuntimeRelocateCharacterMovesConnectedSessionAcrossMaps(t *testing.
 	}
 }
 
+func TestGameRuntimeTransferCharacterQueuesPeerAppearanceAfterRuntimeEquip(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	owner.Inventory = []inventory.ItemInstance{{ID: 5001, Vnum: 11500, Count: 1, Slot: 8}}
+	watcher := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	watcher.MapIndex = 42
+	issuePeerTicket(t, store, "peer-two", 0x22222222, owner)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, watcher)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-two", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+		{Login: "peer-three", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(ownerEnter) != 6 {
+		t.Fatalf("expected 6 bootstrap frames for owner with one carried item before transfer, got %d", len(ownerEnter))
+	}
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher on another map before transfer, got %d", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, flowOwner); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames across maps before transfer, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames for watcher across maps before transfer, got %d", len(queued))
+	}
+
+	equipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	if err != nil {
+		t.Fatalf("unexpected equip error before transfer: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected 3 self equip frames before transfer, got %d", len(equipOut))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected no queued watcher frames while owner remains on another map after equip, got %d", len(queued))
+	}
+
+	result, ok := runtime.TransferCharacter("PeerTwo", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected transfer to succeed after runtime equip")
+	}
+	if !result.Applied || result.Target.MapIndex != 42 || result.Target.X != 1700 || result.Target.Y != 2800 {
+		t.Fatalf("unexpected transfer result after runtime equip: %+v", result)
+	}
+
+	originEntry := flushServerFrames(t, flowOwner)
+	if len(originEntry) != 3 {
+		t.Fatalf("expected 3 queued origin peer-entry frames for owner after transfer, got %d", len(originEntry))
+	}
+	originAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originEntry[0]))
+	if err != nil {
+		t.Fatalf("decode watcher add for owner after transfer: %v", err)
+	}
+	if originAdd.VID != watcher.VID {
+		t.Fatalf("unexpected watcher add for owner after transfer: %+v", originAdd)
+	}
+
+	peerEntry := flushServerFrames(t, flowWatcher)
+	if len(peerEntry) != 3 {
+		t.Fatalf("expected 3 queued owner peer-entry frames for watcher after transfer, got %d", len(peerEntry))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, peerEntry[0]))
+	if err != nil {
+		t.Fatalf("decode owner add for watcher after transfer: %v", err)
+	}
+	if peerAdd.VID != owner.VID || peerAdd.X != 1700 || peerAdd.Y != 2800 {
+		t.Fatalf("unexpected owner add for watcher after transfer: %+v", peerAdd)
+	}
+	peerInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, peerEntry[1]))
+	if err != nil {
+		t.Fatalf("decode owner additional info for watcher after transfer: %v", err)
+	}
+	if peerInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 202} {
+		t.Fatalf("unexpected owner additional-info parts after runtime equip then transfer: %+v", peerInfo.Parts)
+	}
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, peerEntry[2]))
+	if err != nil {
+		t.Fatalf("decode owner update for watcher after transfer: %v", err)
+	}
+	if peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 202} {
+		t.Fatalf("unexpected owner update parts after runtime equip then transfer: %+v", peerUpdate.Parts)
+	}
+}
+
+func TestGameRuntimeTransferCharacterQueuesPeerAppearanceAfterRuntimeUnequip(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	owner.Equipment = []inventory.ItemInstance{{ID: 5002, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	watcher := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1500, 2500, 1, 103, 203)
+	watcher.MapIndex = 42
+	issuePeerTicket(t, store, "peer-two", 0x22222222, owner)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, watcher)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-two", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+		{Login: "peer-three", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(ownerEnter) != 6 {
+		t.Fatalf("expected 6 bootstrap frames for owner with one equipped item before transfer, got %d", len(ownerEnter))
+	}
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher on another map before transfer, got %d", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, flowOwner); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames across maps before transfer, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames for watcher across maps before transfer, got %d", len(queued))
+	}
+
+	unequipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item weapon 4"})))
+	if err != nil {
+		t.Fatalf("unexpected unequip error before transfer: %v", err)
+	}
+	if len(unequipOut) != 3 {
+		t.Fatalf("expected 3 self unequip frames before transfer, got %d", len(unequipOut))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected no queued watcher frames while owner remains on another map after unequip, got %d", len(queued))
+	}
+
+	result, ok := runtime.TransferCharacter("PeerTwo", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected transfer to succeed after runtime unequip")
+	}
+	if !result.Applied || result.Target.MapIndex != 42 || result.Target.X != 1700 || result.Target.Y != 2800 {
+		t.Fatalf("unexpected transfer result after runtime unequip: %+v", result)
+	}
+
+	originEntry := flushServerFrames(t, flowOwner)
+	if len(originEntry) != 3 {
+		t.Fatalf("expected 3 queued origin peer-entry frames for owner after transfer post-unequip, got %d", len(originEntry))
+	}
+	originAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originEntry[0]))
+	if err != nil {
+		t.Fatalf("decode watcher add for owner after transfer post-unequip: %v", err)
+	}
+	if originAdd.VID != watcher.VID {
+		t.Fatalf("unexpected watcher add for owner after transfer post-unequip: %+v", originAdd)
+	}
+
+	peerEntry := flushServerFrames(t, flowWatcher)
+	if len(peerEntry) != 3 {
+		t.Fatalf("expected 3 queued owner peer-entry frames for watcher after transfer post-unequip, got %d", len(peerEntry))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, peerEntry[0]))
+	if err != nil {
+		t.Fatalf("decode owner add for watcher after transfer post-unequip: %v", err)
+	}
+	if peerAdd.VID != owner.VID || peerAdd.X != 1700 || peerAdd.Y != 2800 {
+		t.Fatalf("unexpected owner add for watcher after transfer post-unequip: %+v", peerAdd)
+	}
+	peerInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, peerEntry[1]))
+	if err != nil {
+		t.Fatalf("decode owner additional info for watcher after transfer post-unequip: %v", err)
+	}
+	if peerInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{102, 0, 0, 202} {
+		t.Fatalf("unexpected owner additional-info parts after runtime unequip then transfer: %+v", peerInfo.Parts)
+	}
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, peerEntry[2]))
+	if err != nil {
+		t.Fatalf("decode owner update for watcher after transfer post-unequip: %v", err)
+	}
+	if peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{102, 0, 0, 202} {
+		t.Fatalf("unexpected owner update parts after runtime unequip then transfer: %+v", peerUpdate.Parts)
+	}
+}
+
 func TestGameRuntimeTransferCharacterReturnsStructuredResult(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

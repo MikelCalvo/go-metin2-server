@@ -8,6 +8,7 @@ The goal of this slice is narrow:
 - let already-connected peers receive `CHARACTER_DEL` when that peer disconnects
 - let already-visible stable peers later receive the first queued `CHARACTER_UPDATE` appearance refresh when a visible player equips or unequips a supported item
 - let the first radius-AOI move-driven peer-entry burst also reuse that latest projected appearance when visibility is rebuilt after the mutation already happened
+- let the first transfer-driven peer-entry burst also reuse that latest projected appearance when visibility is rebuilt after the mutation already happened
 
 This document is still intentionally minimal.
 It does not yet freeze the full compatibility-grade shared-world visibility system.
@@ -37,6 +38,7 @@ The current bootstrap runtime behavior is:
 7. if player A and player B remain mutually visible on the same bootstrap visibility scope and player B successfully equips or unequips a supported `body`, `weapon`, or `head` item, player A receives one queued `CHARACTER_UPDATE` carrying player B's refreshed projected parts
 8. if player C later enters that same bootstrap visibility scope after player B already performed that supported equip/unequip mutation, player C receives the normal peer-visibility burst for player B with the same refreshed projected parts in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
 9. if the runtime is configured with radius AOI and player C later crosses into player B's visible range through the owned move-driven visibility rebuild after that supported equip/unequip mutation, player C receives the same normal peer-entry burst for player B with those refreshed projected parts
+10. if player B later becomes newly visible to player C through the owned transfer-driven visibility rebuild after that supported equip/unequip mutation, player C receives that same normal peer-entry burst for player B with those refreshed projected parts
 
 ## `CHARACTER_DEL`
 
@@ -67,10 +69,12 @@ This slice freezes:
 - the first queued peer-visible `CHARACTER_UPDATE` refresh after a successful supported equip/unequip mutation while visibility remains stable
 - late-join peer-visibility bursts that reuse the same refreshed projected appearance after that supported mutation already happened
 - radius-AOI move-driven peer-entry bursts that reuse that same refreshed projected appearance after the supported mutation already happened
+- transfer-driven peer-entry bursts that reuse that same refreshed projected appearance after the supported mutation already happened
 
 It does not yet freeze:
 - broader item or currency mutation fanout beyond that one appearance refresh
 - movement fanout to other sessions beyond the currently frozen peer-entry appearance reuse described here and `spec/protocol/move-peer-fanout.md`
+- transfer/rebootstrap appearance choreography beyond the currently frozen peer-entry appearance reuse described here and `spec/protocol/transfer-rebootstrap-burst.md`
 - sync-position fanout to other sessions
 - NPC or item visibility
 - range/sector culling
