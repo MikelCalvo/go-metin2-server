@@ -3948,6 +3948,236 @@ func TestSharedWorldRegistryTransferCharacterUsesSessionDirectoryRelocator(t *te
 	}
 }
 
+func TestGameRuntimeReconnectQueuesPeerAppearanceAfterRuntimeEquip(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	owner.Inventory = []inventory.ItemInstance{{ID: 6001, Vnum: 11500, Count: 1, Slot: 8}}
+	issuePeerTicket(t, store, "peer-one", 0x11111111, watcher)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, owner)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-one", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "peer-two", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher before reconnect slice, got %d", len(watcherEnter))
+	}
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(ownerEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for owner with one carried item and one visible peer, got %d", len(ownerEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 initial peer-entry frames for watcher, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwner); len(queued) != 0 {
+		t.Fatalf("expected no initial queued frames for owner, got %d", len(queued))
+	}
+
+	equipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	if err != nil {
+		t.Fatalf("unexpected equip error before reconnect: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected 3 self equip frames before reconnect, got %d", len(equipOut))
+	}
+	liveRefresh := flushServerFrames(t, flowWatcher)
+	if len(liveRefresh) != 1 {
+		t.Fatalf("expected 1 queued live appearance refresh for watcher before reconnect, got %d", len(liveRefresh))
+	}
+	liveUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, liveRefresh[0]))
+	if err != nil {
+		t.Fatalf("decode live refresh before reconnect: %v", err)
+	}
+	if liveUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 202} {
+		t.Fatalf("unexpected live refresh parts before reconnect after equip: %+v", liveUpdate.Parts)
+	}
+
+	closeSessionFlow(t, flowOwner)
+	peerExit := flushServerFrames(t, flowWatcher)
+	if len(peerExit) != 1 {
+		t.Fatalf("expected 1 queued peer-exit frame before reconnect, got %d", len(peerExit))
+	}
+	peerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, peerExit[0]))
+	if err != nil {
+		t.Fatalf("decode peer delete before reconnect: %v", err)
+	}
+	if peerDelete.VID != owner.VID {
+		t.Fatalf("expected peer delete for owner VID %#08x, got %#08x", owner.VID, peerDelete.VID)
+	}
+
+	account, ok := loadOrCreateAccount(accounts, "peer-two")
+	if !ok {
+		t.Fatal("expected persisted account snapshot for reconnect after equip")
+	}
+	reconnectKey, ok := issueLoginTicket(store, account.Login, account.Empire, account.Characters, func() (uint32, error) {
+		return 0x44444444, nil
+	})
+	if !ok {
+		t.Fatal("expected fresh login ticket for reconnect after equip")
+	}
+
+	flowOwnerReconnect, reenterFrames := enterGameWithLoginTicket(t, factory, "peer-two", reconnectKey)
+	if len(reenterFrames) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for reconnected owner after equip with existing visible peer, got %d", len(reenterFrames))
+	}
+	peerReentry := flushServerFrames(t, flowWatcher)
+	if len(peerReentry) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames after reconnect post-equip, got %d", len(peerReentry))
+	}
+	queuedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, peerReentry[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer re-entry add after equip reconnect: %v", err)
+	}
+	if queuedAdd.VID != owner.VID {
+		t.Fatalf("expected queued peer re-entry add for owner VID %#08x, got %#08x", owner.VID, queuedAdd.VID)
+	}
+	queuedInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, peerReentry[1]))
+	if err != nil {
+		t.Fatalf("decode queued peer re-entry additional info after equip reconnect: %v", err)
+	}
+	if queuedInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 202} {
+		t.Fatalf("unexpected queued peer re-entry additional-info parts after equip reconnect: %+v", queuedInfo.Parts)
+	}
+	queuedUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, peerReentry[2]))
+	if err != nil {
+		t.Fatalf("decode queued peer re-entry update after equip reconnect: %v", err)
+	}
+	if queuedUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 202} {
+		t.Fatalf("unexpected queued peer re-entry update parts after equip reconnect: %+v", queuedUpdate.Parts)
+	}
+
+	closeSessionFlow(t, flowOwnerReconnect)
+	closeSessionFlow(t, flowWatcher)
+}
+
+func TestGameRuntimeReconnectQueuesPeerAppearanceAfterRuntimeUnequip(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	owner.Equipment = []inventory.ItemInstance{{ID: 6002, Vnum: 11200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	issuePeerTicket(t, store, "peer-one", 0x11111111, watcher)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, owner)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-one", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "peer-two", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher before reconnect slice, got %d", len(watcherEnter))
+	}
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	if len(ownerEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for owner with one equipped item and one visible peer, got %d", len(ownerEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 initial peer-entry frames for watcher, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwner); len(queued) != 0 {
+		t.Fatalf("expected no initial queued frames for owner, got %d", len(queued))
+	}
+
+	unequipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item weapon 4"})))
+	if err != nil {
+		t.Fatalf("unexpected unequip error before reconnect: %v", err)
+	}
+	if len(unequipOut) != 3 {
+		t.Fatalf("expected 3 self unequip frames before reconnect, got %d", len(unequipOut))
+	}
+	liveRefresh := flushServerFrames(t, flowWatcher)
+	if len(liveRefresh) != 1 {
+		t.Fatalf("expected 1 queued live appearance refresh for watcher before reconnect, got %d", len(liveRefresh))
+	}
+	liveUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, liveRefresh[0]))
+	if err != nil {
+		t.Fatalf("decode live refresh before reconnect after unequip: %v", err)
+	}
+	if liveUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{102, 0, 0, 202} {
+		t.Fatalf("unexpected live refresh parts before reconnect after unequip: %+v", liveUpdate.Parts)
+	}
+
+	closeSessionFlow(t, flowOwner)
+	peerExit := flushServerFrames(t, flowWatcher)
+	if len(peerExit) != 1 {
+		t.Fatalf("expected 1 queued peer-exit frame before reconnect, got %d", len(peerExit))
+	}
+	peerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, peerExit[0]))
+	if err != nil {
+		t.Fatalf("decode peer delete before reconnect after unequip: %v", err)
+	}
+	if peerDelete.VID != owner.VID {
+		t.Fatalf("expected peer delete for owner VID %#08x after unequip, got %#08x", owner.VID, peerDelete.VID)
+	}
+
+	account, ok := loadOrCreateAccount(accounts, "peer-two")
+	if !ok {
+		t.Fatal("expected persisted account snapshot for reconnect after unequip")
+	}
+	reconnectKey, ok := issueLoginTicket(store, account.Login, account.Empire, account.Characters, func() (uint32, error) {
+		return 0x55555555, nil
+	})
+	if !ok {
+		t.Fatal("expected fresh login ticket for reconnect after unequip")
+	}
+
+	flowOwnerReconnect, reenterFrames := enterGameWithLoginTicket(t, factory, "peer-two", reconnectKey)
+	if len(reenterFrames) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for reconnected owner after unequip with existing visible peer, got %d", len(reenterFrames))
+	}
+	peerReentry := flushServerFrames(t, flowWatcher)
+	if len(peerReentry) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames after reconnect post-unequip, got %d", len(peerReentry))
+	}
+	queuedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, peerReentry[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer re-entry add after unequip reconnect: %v", err)
+	}
+	if queuedAdd.VID != owner.VID {
+		t.Fatalf("expected queued peer re-entry add for owner VID %#08x after unequip, got %#08x", owner.VID, queuedAdd.VID)
+	}
+	queuedInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, peerReentry[1]))
+	if err != nil {
+		t.Fatalf("decode queued peer re-entry additional info after unequip reconnect: %v", err)
+	}
+	if queuedInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{102, 0, 0, 202} {
+		t.Fatalf("unexpected queued peer re-entry additional-info parts after unequip reconnect: %+v", queuedInfo.Parts)
+	}
+	queuedUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, peerReentry[2]))
+	if err != nil {
+		t.Fatalf("decode queued peer re-entry update after unequip reconnect: %v", err)
+	}
+	if queuedUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{102, 0, 0, 202} {
+		t.Fatalf("unexpected queued peer re-entry update parts after unequip reconnect: %+v", queuedUpdate.Parts)
+	}
+
+	closeSessionFlow(t, flowOwnerReconnect)
+	closeSessionFlow(t, flowWatcher)
+}
+
 func TestGameRuntimeReconnectSameCharacterAfterDisconnectKeepsSingleRuntimeEntry(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

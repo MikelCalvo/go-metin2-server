@@ -310,7 +310,7 @@ Expected result:
 - the client remains connected, inventory/equipment state stays consistent, and already-visible stable peers can refresh the same appearance without reconnecting
 
 Important note:
-- broader transfer/reconnect or other non-`MOVE` visibility-changing appearance fanout is still out of scope for this slice
+- broader visibility-changing appearance fanout beyond the currently frozen late-join, reconnect-driven, transfer-driven, and radius-AOI move-into-range branches is still out of scope for this slice
 
 ---
 
@@ -426,6 +426,19 @@ Expected result:
 - once the transfer makes A newly visible to B, the destination peer-entry burst carries that latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
 - no extra reconnect or manual refresh is needed after the transfer-driven visibility rebuild
 
+### 6.11 Reconnect-driven peer appearance after runtime mutation
+
+- [ ] Put client A and client B in the same bootstrap visibility scope and keep them mutually visible
+- [ ] Equip or unequip a supported `body`, `weapon`, or `head` item on client A
+- [ ] Disconnect client A while client B stays in-world
+- [ ] Reconnect client A through a fresh login/select/enter-game flow
+- [ ] Confirm client B sees A re-enter with the latest visible body/weapon/head appearance in the normal peer-entry burst
+
+Expected result:
+- client B first sees A disappear cleanly on disconnect
+- the reconnect peer-entry burst carries A's latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
+- no stale duplicate actor or manual refresh is needed after the reconnect
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 
@@ -516,4 +529,5 @@ A current build is a good candidate when all of these pass:
 - [ ] with two clients: late-join peer appearance after runtime equip/unequip works
 - [ ] with two clients + radius AOI: move-into-range peer appearance after runtime equip/unequip works
 - [ ] with two clients + transfer path: transfer-driven peer appearance after runtime equip/unequip works
+- [ ] with two clients + reconnect: reconnect-driven peer appearance after runtime equip/unequip works
 - [ ] no crash or forced disconnect occurs during the run
