@@ -37,18 +37,29 @@ The remaining high-value gap on this path is **what happens after live ownership
 - `docs/qa/manual-client-checklist.md`
 - `README.md`
 
-### Slice 14 — stale reclaimed merchant/item mutations follow the same non-authoritative rule
-**Objective:** extend the same stale-socket rule from equip/unequip to the remaining selected-item mutation entrypoints that still write through `commitSelectedItemMutationFrames`, especially merchant grants and item-use paths.
+### Slice 14 — stale reclaimed `/use_item` stays non-authoritative
+**Objective:** extend the same stale-socket rule from equip/unequip to the first remaining selected-item mutation entrypoint by freezing `/use_item <slot>` as self-local-only after reclaim.
+
+**Likely files:**
+- `internal/minimal/shared_world_test.go`
+- `internal/minimal/factory.go`
+- `spec/protocol/runtime-reconnect-cleanup.md`
+- `spec/protocol/item-use-bootstrap.md`
+- `docs/qa/manual-client-checklist.md`
+- `README.md`
+
+### Slice 15 — stale reclaimed merchant buy stays non-authoritative
+**Objective:** apply the same stale-socket rule to the active merchant buy path so stale post-reclaim `SHOP BUY` / `/shop_buy` grants cannot persist or replace the authoritative live owner's loopback state.
 
 **Likely files:**
 - `internal/minimal/shared_world_test.go`
 - `internal/minimal/factory.go`
 - `spec/protocol/runtime-reconnect-cleanup.md`
 - `spec/protocol/npc-shop-transaction-bootstrap.md`
-- `spec/protocol/item-use-bootstrap.md`
+- `docs/qa/manual-client-checklist.md`
 - `README.md`
 
-### Slice 15 — retry/reconnect after stale attempted mutation still rebuilds from authoritative state
+### Slice 16 — retry/reconnect after stale attempted mutation still rebuilds from authoritative state
 **Objective:** prove that once a stale socket attempted a non-authoritative item mutation, later retry/reconnect bursts still rebuild from the authoritative persisted/live owner state rather than the stale socket's local divergence.
 
 **Likely files:**
@@ -57,7 +68,7 @@ The remaining high-value gap on this path is **what happens after live ownership
 - `spec/protocol/equipment-appearance-bootstrap.md`
 - `docs/qa/manual-client-checklist.md`
 
-### Slice 16 — return to merchant hybrid multi-stack + fresh-slot remainder
+### Slice 17 — return to merchant hybrid multi-stack + fresh-slot remainder
 **Objective:** resume the paused merchant line and open the explicit RED/green slice for the still-pending `multi-stack existing + fresh-slot remainder` placement case.
 
 **Likely files:**
@@ -72,9 +83,9 @@ The remaining high-value gap on this path is **what happens after live ownership
 
 ## Immediate execution order
 
-1. Write RED tests for stale reclaimed `/equip_item` and `/unequip_item`.
+1. Write RED tests for stale reclaimed `/use_item <slot>`.
 2. Run the focused `go test` command and confirm the failure is the expected missing hardening.
-3. Implement the smallest guard in `internal/minimal/factory.go` so stale item mutations stay non-authoritative.
-4. Update reconnect/appearance docs and QA in the same slice.
+3. Implement the smallest `internal/minimal/factory.go` guard so stale item-use stays self-local and non-authoritative.
+4. Update reconnect/item-use docs and QA in the same slice.
 5. Run focused tests, then `go test ./...`, then `go vet ./...`.
-6. Review, commit, and push before opening Slice 14.
+6. Review, commit, and push before opening the merchant-buy stale-mutation slice.

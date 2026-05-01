@@ -91,6 +91,7 @@ The project now owns these reconnect rules:
 12. later `MOVE` / `SYNC_POSITION` packets on that stale socket may still receive self-local acknowledgements, but they must not overwrite the persisted character snapshot or the replacement live owner's runtime position after reclaim
 13. later stale `WHISPER` traffic from that socket must stay self-local and non-delivering too; it must not reach live peers, and it must not fabricate a target-missing reply just because the socket no longer owns live shared-world state
 14. later stale `/equip_item` / `/unequip_item` appearance mutations on that socket may still return self-local item/appearance frames, but they must not overwrite the persisted account snapshot, must not queue peer-visible appearance refreshes, and must not replace the replacement live owner's exact-name loopback inventory/equipment snapshots after reclaim
+15. later stale `/use_item <slot>` mutations on that socket may still return self-local point/item/info frames, but they must not overwrite the persisted account snapshot and must not replace the replacement live owner's exact-name loopback inventory snapshot after reclaim
 
 This is the current bootstrap ownership contract for correctness.
 It does **not** yet claim resumable gameplay state, preserved socket identity, or any special reconnect shortcut.

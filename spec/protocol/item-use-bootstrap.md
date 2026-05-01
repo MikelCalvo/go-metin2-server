@@ -98,6 +98,16 @@ The first consumable path extends the existing M3 selected-character save-back b
 
 This slice still does **not** introduce separate buff-state stores, quest-state stores, or cooldown persistence.
 
+## Stale post-reclaim isolation
+
+If a socket already lost live shared-world ownership because another session reclaimed the same selected character:
+- `/use_item <slot>` may still return the same self-local `PLAYER_POINT_CHANGE` + item-refresh + `CHAT_TYPE_INFO` burst to that stale socket
+- that stale mutation must not persist updated `points` or `inventory`
+- that stale mutation must not replace the replacement live owner's exact-name loopback inventory snapshot
+- no peer-facing packets are emitted from that stale socket for this bootstrap consumable path
+
+This keeps the first item-use seam consistent with the current reconnect/reclaim ownership contract without widening it into final duplicate-session gameplay semantics.
+
 ## Explicit non-goals
 
 This first item-use bootstrap contract does **not** yet freeze:

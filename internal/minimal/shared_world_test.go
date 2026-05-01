@@ -5199,6 +5199,127 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleUnequipAppearanceMutationNonAuthor
 	closeSessionFlow(t, flowOwnerNew)
 }
 
+func TestGameRuntimeEnterGameReclaimKeepsStaleItemUseMutationNonAuthoritative(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 700
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 3, Slot: 5}}
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	for _, account := range []accountstore.Account{
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher, got %d", len(watcherEnter))
+	}
+	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerOldEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for original owner with consumable and watcher already visible, got %d", len(ownerOldEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after original owner join, got %d", len(queued))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName("PeerOne")
+	if !ok {
+		t.Fatal("expected live player entity for PeerOne before simulating stale ownership")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale session-directory entry removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerNewEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for replacement owner after reclaim, got %d", len(ownerNewEnter))
+	}
+	_ = flushServerFrames(t, flowWatcher)
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to start with no queued frames, got %d", len(queued))
+	}
+
+	beforePersisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account before stale item use: %v", err)
+	}
+	beforeInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner inventory snapshot before stale item use")
+	}
+
+	useOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected stale owner item use error: %v", err)
+	}
+	if len(useOut) != 3 {
+		t.Fatalf("expected stale owner item use to remain self-local with 3 frames, got %d", len(useOut))
+	}
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
+	if err != nil {
+		t.Fatalf("decode stale owner item-use point change: %v", err)
+	}
+	if pointPacket.VID != owner.VID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != 50 || pointPacket.Value != 750 {
+		t.Fatalf("unexpected stale owner item-use point change: %+v", pointPacket)
+	}
+	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useOut[1]))
+	if err != nil {
+		t.Fatalf("decode stale owner item-use set: %v", err)
+	}
+	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Vnum != 27001 || setPacket.Count != 2 {
+		t.Fatalf("unexpected stale owner item-use set packet: %+v", setPacket)
+	}
+	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
+	if err != nil {
+		t.Fatalf("decode stale owner item-use info: %v", err)
+	}
+	if infoPacket.Type != chatproto.ChatTypeInfo || infoPacket.VID != 0 || infoPacket.Message != "consume:27001:+50" {
+		t.Fatalf("unexpected stale owner item-use info packet: %+v", infoPacket)
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected watcher to receive no replication from stale owner item use, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale owner item use, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account after stale item use: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted character after stale item use, got %+v", persisted)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex] || !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) {
+		t.Fatalf("expected stale item use to leave persisted points/inventory unchanged, before points=%d before inventory=%+v after points=%d after inventory=%+v", beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex], beforePersisted.Characters[0].Inventory, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Inventory)
+	}
+
+	afterInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected replacement owner inventory snapshot after stale item use")
+	}
+	if !reflect.DeepEqual(afterInventory, beforeInventory) {
+		t.Fatalf("expected stale item use to leave replacement owner inventory snapshot unchanged, before=%+v after=%+v", beforeInventory, afterInventory)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
 func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestinationSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

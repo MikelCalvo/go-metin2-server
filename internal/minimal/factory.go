@@ -1329,6 +1329,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								refreshLiveCharacterRegistration()
 								return gameflow.ChatResult{Accepted: false}
 							}
+							if !ownsLiveSharedWorldSession() {
+								return gameflow.ChatResult{Accepted: true, Frames: frames}
+							}
 							return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
 						}
 					}

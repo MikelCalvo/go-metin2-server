@@ -466,6 +466,20 @@ Expected result:
 - no queued peer appearance refresh is emitted from the stale socket
 - exact-name loopback inventory/equipment snapshots remain owned by the replacement live session
 
+### 6.14 Reclaimed stale item-use isolation (debug-harness optional)
+
+- [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
+- [ ] On the stale old socket, run `/use_item <slot>` against a supported carried `27001` consumable stack
+- [ ] Confirm the stale socket may still receive only its self-local point/item/info refresh frames
+- [ ] Confirm the authoritative live replacement session and any visible watcher do **not** change because of that stale mutation
+- [ ] Confirm loopback-only `/local/inventory/{name}` still reports the replacement live owner's authoritative carried state, not the stale socket's locally decremented stack
+
+Expected result:
+- stale post-reclaim item use remains non-authoritative
+- no persisted points/inventory change because of the stale socket
+- no peer-facing packet fanout is emitted from the stale socket
+- exact-name loopback inventory snapshots remain owned by the replacement live session
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 
