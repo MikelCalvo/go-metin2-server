@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -239,15 +240,31 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex) (ItemUseResult, bool) {
 	return result, true
 }
 
-func (r *Runtime) BuyMerchantItem(vnum uint32, count uint16, price uint64) (MerchantBuyResult, bool) {
-	if r == nil || vnum == 0 || count == 0 || price == 0 || r.liveGold < price {
+func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, price uint64) (MerchantBuyResult, bool) {
+	if r == nil || !itemcatalog.ValidTemplate(template) || count == 0 || count > template.MaxCount || price == 0 || r.liveGold < price {
 		return MerchantBuyResult{}, false
+	}
+	if !template.Stackable && count != 1 {
+		return MerchantBuyResult{}, false
+	}
+	if template.Stackable {
+		if mergeIndex := findMergeableInventoryIndex(r.liveInventory, template.Vnum, count, template.MaxCount); mergeIndex >= 0 {
+			item := r.liveInventory[mergeIndex]
+			item.Count += count
+			if err := item.Validate(); err != nil {
+				return MerchantBuyResult{}, false
+			}
+			r.liveGold -= price
+			r.liveInventory[mergeIndex] = item
+			sortInventoryItems(r.liveInventory)
+			return MerchantBuyResult{Item: item, Gold: r.liveGold}, true
+		}
 	}
 	slot, ok := nextFreeInventorySlot(r.liveInventory)
 	if !ok {
 		return MerchantBuyResult{}, false
 	}
-	item, err := (inventory.ItemInstance{ID: nextLiveItemInstanceID(r.liveInventory, r.liveEquipment), Vnum: vnum, Count: count}).WithInventorySlot(slot)
+	item, err := (inventory.ItemInstance{ID: nextLiveItemInstanceID(r.liveInventory, r.liveEquipment), Vnum: template.Vnum, Count: count}).WithInventorySlot(slot)
 	if err != nil {
 		return MerchantBuyResult{}, false
 	}
@@ -339,6 +356,25 @@ func nextFreeInventorySlot(items []inventory.ItemInstance) (inventory.SlotIndex,
 		}
 	}
 	return 0, false
+}
+
+func findMergeableInventoryIndex(items []inventory.ItemInstance, vnum uint32, count uint16, maxCount uint16) int {
+	if vnum == 0 || count == 0 || maxCount == 0 || count > maxCount {
+		return -1
+	}
+	mergeIndex := -1
+	for i, item := range items {
+		if item.Equipped || item.Vnum != vnum || item.Count == 0 {
+			continue
+		}
+		if uint32(item.Count)+uint32(count) > uint32(maxCount) {
+			continue
+		}
+		if mergeIndex < 0 || item.Slot < items[mergeIndex].Slot {
+			mergeIndex = i
+		}
+	}
+	return mergeIndex
 }
 
 func nextLiveItemInstanceID(inventoryItems []inventory.ItemInstance, equipmentItems []inventory.ItemInstance) uint64 {

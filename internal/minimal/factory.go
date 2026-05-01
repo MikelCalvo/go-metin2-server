@@ -962,7 +962,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
-			buyResult, ok := selectedPlayer.BuyMerchantItem(entry.ItemVnum, entry.Count, entry.Price)
+			template, ok := runtime.itemTemplates[entry.ItemVnum]
+			if !ok {
+				return nil, false
+			}
+			buyResult, ok := selectedPlayer.BuyMerchantItem(template, entry.Count, entry.Price)
 			if !ok {
 				return nil, false
 			}

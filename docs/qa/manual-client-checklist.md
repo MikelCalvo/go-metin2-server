@@ -260,12 +260,14 @@ If the lab currently has no such content, either:
 - [ ] For `info` / `talk`, interact once and wait for the self-only response
 - [ ] For a merchant actor, interact once and confirm a merchant window opens instead of only a chat preview
 - [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one buy from the open window
+- [ ] If the bought item is stackable and the character already carries the same `vnum`, confirm the count can increase on that existing stack instead of always creating a new slot
 - [ ] Re-interact immediately once to confirm repeated spam is suppressed or remains stable within the current cooldown contract
 
 Expected result:
 - `info` and `talk` still return deterministic self-only text
 - merchant interaction opens a stable bootstrap `GC::SHOP START` window
 - a bootstrap `SHOP BUY` request can debit gold and grant the authored item without disconnecting the client
+- when the authored item is stackable and a compatible carried stack already exists, the buy can refresh that same slot with the increased count
 - repeated interaction does not disconnect the client
 
 Important note:
