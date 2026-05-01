@@ -65,14 +65,13 @@ The bootstrap runtime currently uses deterministic values for the selected-chara
 - deterministic movement and attack speed values
 - deterministic state flag and affect flags
 - selected character guild, alignment, pk mode, and mount bootstrap values
-- the same selected-character payload is now also reused for the current self-only live equip/unequip appearance refresh after the item slot frames
-
+- the same selected-character payload is now also reused for the current self-only live equip/unequip appearance refresh after the item slot frames and for the queued peer-visible refresh sent to already-visible stable peers after successful equip/unequip mutations
 This is good enough for the first `CHARACTER_UPDATE` slice, but not yet the final compatibility target.
 
 ## Out of scope
 
 This slice does not yet freeze:
 - `CHARACTER_UPDATE2`
-- update fanout to nearby players
+- broader update fanout beyond the current bootstrap/static-actor refreshes and the already-visible peer equip/unequip appearance refresh
 - dynamic affect/mount transitions
 - broader visible-world state changes beyond the selected character

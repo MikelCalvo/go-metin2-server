@@ -305,12 +305,12 @@ Run this only when the QA character has one wearable `body`, `weapon`, or `head`
 - [ ] Confirm the item returns to carried inventory and the selected character's visible body/weapon/head appearance reverts immediately
 
 Expected result:
-- successful equip/unequip stays self-only in the current slice
+- successful equip/unequip still returns self-only item-slot frames in the current slice
 - successful equip/unequip now appends one visible-character refresh after the item-slot frames
-- the client remains connected and inventory/equipment state stays consistent
+- the client remains connected, inventory/equipment state stays consistent, and already-visible stable peers can refresh the same appearance without reconnecting
 
 Important note:
-- live peer appearance fanout after equip/unequip is still out of scope for this slice
+- broader visibility-changing peer appearance fanout is still out of scope for this slice
 
 ---
 
@@ -376,8 +376,20 @@ Expected result:
 - A does not crash
 - B disappears from A cleanly within the current bootstrap behavior
 
----
+### 6.7 Peer equip / unequip appearance refresh
 
+- [ ] Put both characters in the same bootstrap map and keep them mutually visible
+- [ ] Equip a supported `body`, `weapon`, or `head` item on client A
+- [ ] Confirm client B sees A's visible body/weapon/head appearance refresh immediately
+- [ ] Unequip the same item on client A
+- [ ] Confirm client B sees A's appearance revert immediately
+
+Expected result:
+- the mutating client still gets only the normal self item-slot frames plus its self refresh
+- already-visible stable peers now also receive one visible-character refresh carrying the same projected appearance
+- no reconnect, duplicate peer insert, or forced visibility reset is required
+
+---
 ## 7. Optional bootstrap chat-scope checks
 
 These checks are useful but secondary.
@@ -433,7 +445,7 @@ When a regression appears, record:
 These are currently out of scope for the present server state unless the milestone explicitly says otherwise:
 
 - [ ] inventory UX completeness
-- [ ] full equipment UX/stat semantics beyond the current bootstrap equip/unequip + self appearance refresh slice
+- [ ] full equipment UX/stat semantics beyond the current bootstrap equip/unequip + shared-world appearance refresh slice
 - [ ] item use
 - [ ] full merchant UI semantics beyond the current bootstrap open / buy / close slice, or any sell flow
 - [ ] inventory or currency mutation from non-merchant NPC interactions
@@ -463,4 +475,5 @@ A current build is a good candidate when all of these pass:
 - [ ] with two clients: peer visibility works
 - [ ] with two clients: peer movement works
 - [ ] with two clients: local chat and whisper work
+- [ ] with two clients: peer equip/unequip appearance refresh works
 - [ ] no crash or forced disconnect occurs during the run

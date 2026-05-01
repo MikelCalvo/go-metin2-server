@@ -4,8 +4,8 @@ This document freezes the first minimal link between owned equipped-item state a
 
 The goal of this slice is narrow:
 - project equipped item state into the already-owned `parts` arrays carried by `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
-- keep the behavior deterministic for the selected-character bootstrap burst and the current peer-visibility reuse path
-- avoid claiming live equip/unequip fanout or final costume semantics too early
+- keep the behavior deterministic for the selected-character bootstrap burst, the current peer-visibility reuse path, and the first stable peer refresh after equip/unequip
+- avoid claiming final costume semantics or broader live appearance choreography too early
 
 It does **not** yet define the full compatibility-grade appearance system.
 
@@ -15,11 +15,12 @@ This first appearance slice currently applies only to:
 - the selected character during the normal `ENTERGAME` bootstrap burst
 - peer-visibility bursts that reuse the same visible-character packet builders
 - self-only live `CHARACTER_UPDATE` refreshes emitted after successful `/equip_item` / `/unequip_item` mutations
+- queued peer-visible live `CHARACTER_UPDATE` refreshes for already-visible stable peers after those same successful `/equip_item` / `/unequip_item` mutations
 - visible part refresh values carried by `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
 
 It does **not** yet apply to:
-- live peer fanout when `/equip_item` or `/unequip_item` succeeds after bootstrap
 - `CHARACTER_ADD`
+- `CHAR_ADDITIONAL_INFO` fanout during live equip/unequip mutations
 - costume / transmutation semantics
 - mount, affect, or combat-side appearance transitions
 
@@ -61,14 +62,15 @@ When a character has equipped `body`, `weapon`, or `head` items in the persisted
 When the selected character successfully equips or unequips a supported `body`, `weapon`, or `head` item after bootstrap:
 - the self-only equip/unequip response must append one `CHARACTER_UPDATE`
 - that refresh must expose the same current projected part values derived from the updated selected-character snapshot
-- peer-visible live fanout still remains out of scope in this slice
+- each already-visible peer that remains visible after the mutation must also receive one queued `CHARACTER_UPDATE`
+- that queued peer refresh must reuse the same projected part values and must not introduce extra `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` frames
 
 `CHARACTER_ADD` remains unchanged in this slice.
 
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- live peer appearance fanout after bootstrap-time `/equip_item` / `/unequip_item`
+- live peer appearance fanout that also changes visibility membership during the same mutation
 - `hair` equipped-item projection over `parts[3]`
 - shield, arrow, unique-slot, necklace, bracelet, or shoes appearance semantics
 - costume, transmutation, refine-glow, or affect overlays
@@ -79,5 +81,6 @@ This slice does **not** yet freeze:
 After this slice, the repository should be able to say:
 - bootstrap visible-character packets no longer ignore equipped `body`, `weapon`, and `head` items
 - self-bootstrap and peer-visibility bursts project the same deterministic appearance values from the persisted equipped-item snapshot
-- successful self-only `/equip_item` / `/unequip_item` mutations now also append one deterministic `CHARACTER_UPDATE` carrying the updated projected appearance
-- the repo owns an explicit written contract for what the current bootstrap runtime does before live peer appearance fanout slices land
+- successful `/equip_item` / `/unequip_item` mutations now append one deterministic self-only `CHARACTER_UPDATE` carrying the updated projected appearance
+- already-visible stable peers now also receive one queued deterministic `CHARACTER_UPDATE` carrying that same updated projected appearance
+- the repo owns an explicit written contract for what the current bootstrap runtime does before broader live peer appearance choreography slices land

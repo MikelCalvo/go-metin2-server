@@ -925,7 +925,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
 			return selectedPlayer.LiveCharacter(), true
 		}
-		commitSelectedItemMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) ([][]byte, bool) {
+		commitSelectedItemMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
 			if selectedPlayer == nil {
 				return nil, false
 			}
@@ -944,10 +944,20 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			sessionTicket.Characters = updatedCharacters
 			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
 			refreshLiveCharacterRegistration()
+			if ownsLiveSharedWorldSession() {
+				sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previousSelected, updatedSelected, stablePeerFrames)
+			}
 			return frames, true
 		}
 		commitSelectedItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
-			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames)
+			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			if !ok {
+				return gameflow.ChatResult{Accepted: false}
+			}
+			return gameflow.ChatResult{Accepted: true, Frames: frames}
+		}
+		commitSelectedItemMutationWithStablePeerFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) gameflow.ChatResult {
+			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 			if !ok {
 				return gameflow.ChatResult{Accepted: false}
 			}
@@ -983,7 +993,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
-			return commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames)
+			return commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 		}
 
 		inner := boot.NewFlow(boot.Config{
@@ -1261,7 +1271,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							refreshLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: false}
 						}
-						return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
+						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot)
+						return commitSelectedItemMutationWithStablePeerFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 					}
 
 					if equipSlot, toSlot, ok := slashUnequipItemCommand(packet.Message); ok {
@@ -1280,7 +1291,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							refreshLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: false}
 						}
-						return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
+						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot)
+						return commitSelectedItemMutationWithStablePeerFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 					}
 
 					if packet.Type == chatproto.ChatTypeTalking {
@@ -1994,6 +2006,22 @@ func ticketCharacterAppearanceParts(character loginticket.Character) [worldproto
 		}
 	}
 	return parts
+}
+
+func projectedAppearanceStablePeerFrames(character loginticket.Character, slot inventory.EquipmentSlot) [][]byte {
+	if !projectedAppearanceEquipmentSlot(slot) {
+		return nil
+	}
+	return [][]byte{worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character))}
+}
+
+func projectedAppearanceEquipmentSlot(slot inventory.EquipmentSlot) bool {
+	switch slot {
+	case inventory.EquipmentSlotBody, inventory.EquipmentSlotWeapon, inventory.EquipmentSlotHead:
+		return true
+	default:
+		return false
+	}
 }
 
 func ticketPlayerPointChangePacket(character loginticket.Character) worldproto.PlayerPointChangePacket {

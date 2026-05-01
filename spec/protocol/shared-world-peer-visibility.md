@@ -6,9 +6,10 @@ The goal of this slice is narrow:
 - let a newly entering player see peers that are already connected
 - let already-connected peers receive the newcomer as a queued server-initiated burst
 - let already-connected peers receive `CHARACTER_DEL` when that peer disconnects
+- let already-visible stable peers later receive the first queued `CHARACTER_UPDATE` appearance refresh when a visible player equips or unequips a supported item
 
-This slice is still intentionally minimal.
-It does not yet fan out movement, chat, combat, or inventory changes.
+This document is still intentionally minimal.
+It does not yet freeze the full compatibility-grade shared-world visibility system.
 
 ## Covered packets
 
@@ -32,6 +33,7 @@ The current bootstrap runtime behavior is:
      - `CHARACTER_UPDATE`
 5. if player A and player B share the same bootstrap `MapIndex`, player A receives the same three peer-visibility frames for player B via the queued server-frame runtime hook
 6. when player B disconnects, player A receives `CHARACTER_DEL` carrying player B's `vid` only if they shared the same bootstrap `MapIndex`
+7. if player A and player B remain mutually visible on the same bootstrap visibility scope and player B successfully equips or unequips a supported `body`, `weapon`, or `head` item, player A receives one queued `CHARACTER_UPDATE` carrying player B's refreshed projected parts
 
 ## `CHARACTER_DEL`
 
@@ -59,8 +61,10 @@ This slice freezes:
 - queued peer remove notifications on disconnect within the same bootstrap `MapIndex`
 - reuse of the existing `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` payloads for visible peers
 - reuse of the same bootstrap equipment-appearance projection for peer `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` parts
+- the first queued peer-visible `CHARACTER_UPDATE` refresh after a successful supported equip/unequip mutation while visibility remains stable
 
 It does not yet freeze:
+- broader item or currency mutation fanout beyond that one appearance refresh
 - movement fanout to other sessions
 - sync-position fanout to other sessions
 - NPC or item visibility
