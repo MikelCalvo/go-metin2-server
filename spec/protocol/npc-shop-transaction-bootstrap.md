@@ -179,8 +179,9 @@ However, the exact mapping between server-side failure causes and final client-v
 The first repository-owned carried placement contract now lives beside this document in `item-stack-bootstrap.md`:
 - validate merchant grants against template `stackable` / `max_count`
 - prefer one deterministic full merge into an existing compatible carried stack
+- otherwise allow one deterministic split across a partially compatible carried stack plus one fresh carried slot
 - otherwise claim one deterministic fresh carried slot
-- otherwise fail closed without partial placement
+- otherwise fail closed without fan-out across several existing carried stacks
 
 ## Explicit unknowns before full GREEN ownership
 

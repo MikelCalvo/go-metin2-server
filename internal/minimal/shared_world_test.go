@@ -31,7 +31,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
-const defaultMerchantPreview = "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"
+const defaultMerchantPreview = "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g; [2] Small Red Potion x2 @ 100g"
 
 func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
@@ -5349,8 +5349,11 @@ func TestGameSessionFlowStaticActorShopPreviewInteractionOpensMerchantWindow(t *
 	if start.Items[1].Vnum != 11200 || start.Items[1].Price != 500 || start.Items[1].Count != 1 || start.Items[1].DisplayPos != 1 {
 		t.Fatalf("unexpected merchant slot 1 entry: %+v", start.Items[1])
 	}
-	if start.Items[2] != (shopproto.ItemEntry{}) {
-		t.Fatalf("expected trailing merchant shop entries to stay zeroed, got %+v", start.Items[2])
+	if start.Items[2].Vnum != 27001 || start.Items[2].Price != 100 || start.Items[2].Count != 2 || start.Items[2].DisplayPos != 2 {
+		t.Fatalf("unexpected merchant slot 2 entry: %+v", start.Items[2])
+	}
+	if start.Items[3] != (shopproto.ItemEntry{}) {
+		t.Fatalf("expected trailing merchant shop entries to stay zeroed, got %+v", start.Items[3])
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for merchant shop open, got %d", len(queued))
@@ -5522,6 +5525,67 @@ func TestGameSessionFlowShopBuyPacketMergesIntoExistingCompatibleCarriedStack(t 
 	}
 	if account.Characters[0].Gold != 75 || len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Slot != 5 || account.Characters[0].Inventory[0].Count != 4 {
 		t.Fatalf("unexpected persisted merchant buyer merged inventory: %+v", account.Characters[0])
+	}
+}
+
+func TestGameSessionFlowShopBuyPacketPartiallyMergesIntoExistingCompatibleStackThenUsesFreshSlot(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerPacketPartialMerge", 0x01040109, 0x02050109, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 199, Slot: 5}, {ID: 12, Vnum: 1120, Count: 1, Slot: 8}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-p-partial", 0x99999999, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 2})))
+	if err != nil {
+		t.Fatalf("unexpected merchant packet buy partial-merge error: %v", err)
+	}
+	if len(buyOut) != 3 {
+		t.Fatalf("expected 3 frames for partial-merge merchant packet buy, got %d", len(buyOut))
+	}
+	firstUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
+	if err != nil {
+		t.Fatalf("decode partial-merge merchant packet buy first item: %v", err)
+	}
+	if firstUpdate.Position != itemproto.InventoryPosition(0) || firstUpdate.Vnum != 27001 || firstUpdate.Count != 1 {
+		t.Fatalf("unexpected partial-merge merchant packet buy first item: %+v", firstUpdate)
+	}
+	secondUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[1]))
+	if err != nil {
+		t.Fatalf("decode partial-merge merchant packet buy second item: %v", err)
+	}
+	if secondUpdate.Position != itemproto.InventoryPosition(5) || secondUpdate.Vnum != 27001 || secondUpdate.Count != 200 {
+		t.Fatalf("unexpected partial-merge merchant packet buy second item: %+v", secondUpdate)
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[2]))
+	if err != nil {
+		t.Fatalf("decode partial-merge merchant packet buy delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != "Merchant purchase complete." {
+		t.Fatalf("unexpected partial-merge merchant packet buy delivery: %+v", delivery)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after partial-merge merchant packet buy")
+	}
+	if currencySnapshot.Gold != 25 {
+		t.Fatalf("expected gold to drop to 25 after partial-merge merchant packet buy, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after partial-merge merchant packet buy")
+	}
+	if len(inventorySnapshot.Inventory) != 3 || inventorySnapshot.Inventory[0].ID != 78 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 || inventorySnapshot.Inventory[1].ID != 77 || inventorySnapshot.Inventory[1].Vnum != 27001 || inventorySnapshot.Inventory[1].Count != 200 || inventorySnapshot.Inventory[1].Slot != 5 || inventorySnapshot.Inventory[2].ID != 12 || inventorySnapshot.Inventory[2].Vnum != 1120 || inventorySnapshot.Inventory[2].Count != 1 || inventorySnapshot.Inventory[2].Slot != 8 {
+		t.Fatalf("unexpected runtime merchant buyer partial-merge inventory: %#v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted partial-merge merchant buyer account: %v", err)
+	}
+	if account.Characters[0].Gold != 25 || !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{
+		{ID: 78, Vnum: 27001, Count: 1, Slot: 0},
+		{ID: 77, Vnum: 27001, Count: 200, Slot: 5},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected persisted merchant buyer partial-merge inventory: %#v", account.Characters[0])
 	}
 }
 
@@ -6382,6 +6446,7 @@ func defaultMerchantCatalogDefinition() interactionstore.Definition {
 		Catalog: []interactionstore.MerchantCatalogEntry{
 			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
 			{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+			{Slot: 2, ItemVnum: 27001, Price: 100, Count: 2},
 		},
 	}
 }
@@ -6448,6 +6513,9 @@ func interactWithMerchantForBuy(t *testing.T, flow service.SessionFlow, actorID 
 	}
 	if start.Items[1].Vnum != 11200 || start.Items[1].Price != 500 || start.Items[1].Count != 1 || start.Items[1].DisplayPos != 1 {
 		t.Fatalf("unexpected merchant shop slot 1 before buy: %+v", start.Items[1])
+	}
+	if start.Items[2].Vnum != 27001 || start.Items[2].Price != 100 || start.Items[2].Count != 2 || start.Items[2].DisplayPos != 2 {
+		t.Fatalf("unexpected merchant shop slot 2 before buy: %+v", start.Items[2])
 	}
 }
 

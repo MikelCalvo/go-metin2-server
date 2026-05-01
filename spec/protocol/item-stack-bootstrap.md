@@ -18,14 +18,14 @@ This first stack contract applies only to:
 - carried inventory slots
 - owned item-template metadata from `internal/itemstore`
 - the first merchant-buy grant path into the selected character runtime
-- deterministic self-facing item refresh semantics when exactly one carried slot changes
+- deterministic self-facing item refresh semantics when one or two carried slots change
 
 This slice does **not** yet apply to:
 - equipment slots
 - drag-and-drop split/merge UX
 - sell-back or safebox semantics
 - world drops, loot, quest rewards, or mail/mall grants
-- multi-slot partial merges of one grant across several carried stacks
+- multi-slot partial merges of one grant across several existing carried stacks
 
 ## Template-owned facts
 
@@ -69,40 +69,52 @@ If one or more eligible merge targets exist, the runtime must merge into exactly
 The first owned deterministic rule is:
 - choose the lowest carried slot index among eligible merge targets
 
-### 3. Otherwise claim a fresh carried slot
+### 3. Otherwise allow one deterministic split across an existing stack plus one fresh slot
 
-If no existing carried stack can absorb the full grant, the runtime may still place the grant as a fresh carried stack when:
+If no existing carried stack can absorb the full grant, the runtime may still place the grant across exactly two carried-slot updates when all of these are true:
+- the template is stackable
+- an existing compatible carried stack with remaining room exists
+- a free carried slot exists
+- after filling that existing compatible stack to `template.max_count`, the remainder still forms one valid fresh stack
+
+The first owned deterministic rules for this split path are:
+- choose the lowest carried slot index among partially compatible stacks with remaining room
+- fill that existing stack first up to `template.max_count`
+- place the remainder into the lowest free carried slot index
+
+### 4. Otherwise claim a fresh carried slot
+
+If no existing carried stack can absorb the full grant and no allowed split path applies, the runtime may still place the full grant as a fresh carried stack when:
 - the full grant remains valid for the template (`count <= max_count`)
 - a free carried slot exists
 
 The first owned deterministic rule for fresh placement is:
 - choose the lowest free carried slot index
 
-### 4. Otherwise fail closed
+### 5. Otherwise fail closed
 
-If neither a compatible full merge target nor a free carried slot exists, the grant must fail closed.
+If neither a compatible full merge target, an allowed split path, nor a free carried slot exists, the grant must fail closed.
 
-## Current non-goal: no partial merge yet
+## Current non-goal: no fan-out across several existing stacks
 
-This first stack contract intentionally does **not** yet allow one grant to be split across multiple placements.
+This stack contract now allows one deterministic split across:
+- one existing compatible carried stack
+- one fresh carried slot
 
 Examples that remain out of scope until a later slice:
-- merge part of the grant into an existing stack and place the remainder in a new slot
 - merge part of the grant into one stack and the remainder into another existing stack
-
-For the current bootstrap contract, if the full grant cannot fit into exactly one existing compatible stack, the runtime must either:
-- place the whole grant into one fresh carried slot, or
-- fail closed if no such fresh placement exists
+- merge one grant across multiple existing stacks before deciding whether a fresh slot is needed
 
 ## Success semantics
 
-When placement succeeds, exactly one carried slot changes in this first contract:
+When placement succeeds, one or two carried slots change in this contract:
 - **merge path:** one existing carried stack has its `count` increased
+- **split path:** one existing carried stack is filled first and one fresh carried stack receives the remainder
 - **fresh-slot path:** one new carried stack appears in one free slot
 
-That single-slot property matters for the current bootstrap runtime because the first self-facing refresh contract can stay narrow:
-- one `ITEM_SET` for the changed carried slot on success
-- no multi-slot refresh burst yet
+That property matters for the current bootstrap runtime because the self-facing refresh contract can stay deterministic:
+- one `ITEM_SET` for single-slot success
+- two `ITEM_SET`s in carried-slot order for the split path
 
 The selected-character persistence boundary remains the same as other M3 item mutations:
 - persist the updated selected snapshot before committing the new live state
@@ -115,13 +127,13 @@ The first stack contract must fail closed when any of these are true:
 - grant `count` is zero
 - grant `count` exceeds `max_count`
 - a non-stackable template is asked to grant `count != 1`
-- no compatible full-merge target exists and no free carried slot exists
+- no compatible full-merge target, no allowed split path, and no free carried slot exist
 - snapshot persistence/writeback fails
 
 Failure behavior in this bootstrap contract:
 - no gold may be debited on merchant-buy failure
-- no carried stack may be partially mutated
-- no partial remainder placement may be committed
+- no carried stack may remain partially mutated if the remainder cannot also be placed and persisted
+- no partial remainder placement may be committed on failure
 - the selected runtime must preserve the pre-request state
 
 ## Relationship to item use
@@ -139,7 +151,7 @@ This first stack contract does **not** yet freeze:
 - drag-and-drop client merge rules
 - split-stack UI input
 - merchant sell-back or rebuy semantics
-- cross-slot partial merge behavior
+- fan-out of one grant across several existing carried stacks
 - automatic consolidation of duplicate stacks outside the current grant path
 - peer-visible inventory/equipment deltas
 - final legacy item packet families beyond the already-owned `ITEM_SET` / `ITEM_DEL` refresh slice
@@ -148,6 +160,6 @@ This first stack contract does **not** yet freeze:
 
 After this slice, the repository should be able to say:
 - the first carried-item stack contract is no longer implicit runtime behavior
-- merchant grants now have a frozen order of decisions: validate, prefer one full merge, otherwise use one fresh slot, otherwise fail closed
+- merchant grants now have a frozen order of decisions: validate, prefer one full merge, otherwise allow one deterministic split across an existing stack plus one fresh slot, otherwise use one fresh slot, otherwise fail closed
 - template metadata (`stackable`, `max_count`) now explicitly controls carried merchant-grant placement
-- partial-merge behavior remains intentionally deferred to a later slice instead of being left ambiguous
+- fan-out across several existing carried stacks remains intentionally deferred instead of being left ambiguous

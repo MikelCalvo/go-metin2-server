@@ -43,8 +43,8 @@ type ItemUseResult struct {
 }
 
 type MerchantBuyResult struct {
-	Item inventory.ItemInstance
-	Gold uint64
+	Items []inventory.ItemInstance
+	Gold  uint64
 }
 
 type MerchantBuyFailure string
@@ -258,8 +258,19 @@ func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint1
 	if r.liveGold < price {
 		return MerchantBuyFailureInsufficientGold
 	}
-	if template.Stackable && findMergeableInventoryIndex(r.liveInventory, template.Vnum, count, template.MaxCount) >= 0 {
-		return ""
+	if template.Stackable {
+		if findMergeableInventoryIndex(r.liveInventory, template.Vnum, count, template.MaxCount) >= 0 {
+			return ""
+		}
+		if partialMergeIndex := findPartiallyMergeableInventoryIndex(r.liveInventory, template.Vnum, template.MaxCount); partialMergeIndex >= 0 {
+			room := template.MaxCount - r.liveInventory[partialMergeIndex].Count
+			if room > 0 && room < count {
+				if _, ok := nextFreeInventorySlot(r.liveInventory); ok {
+					return ""
+				}
+				return MerchantBuyFailureNoValidPlacement
+			}
+		}
 	}
 	if _, ok := nextFreeInventorySlot(r.liveInventory); !ok {
 		return MerchantBuyFailureNoValidPlacement
@@ -271,31 +282,50 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 	if failure := r.ValidateMerchantBuy(template, count, price); failure != "" {
 		return MerchantBuyResult{}, false
 	}
+	inventoryItems := cloneItemInstances(r.liveInventory)
+	changedItems := make([]inventory.ItemInstance, 0, 2)
+	remaining := count
 	if template.Stackable {
-		if mergeIndex := findMergeableInventoryIndex(r.liveInventory, template.Vnum, count, template.MaxCount); mergeIndex >= 0 {
-			item := r.liveInventory[mergeIndex]
-			item.Count += count
+		if mergeIndex := findMergeableInventoryIndex(inventoryItems, template.Vnum, remaining, template.MaxCount); mergeIndex >= 0 {
+			item := inventoryItems[mergeIndex]
+			item.Count += remaining
 			if err := item.Validate(); err != nil {
 				return MerchantBuyResult{}, false
 			}
-			r.liveGold -= price
-			r.liveInventory[mergeIndex] = item
-			sortInventoryItems(r.liveInventory)
-			return MerchantBuyResult{Item: item, Gold: r.liveGold}, true
+			inventoryItems[mergeIndex] = item
+			changedItems = append(changedItems, item)
+			remaining = 0
+		} else if partialMergeIndex := findPartiallyMergeableInventoryIndex(inventoryItems, template.Vnum, template.MaxCount); partialMergeIndex >= 0 {
+			item := inventoryItems[partialMergeIndex]
+			room := template.MaxCount - item.Count
+			if room > 0 && room < remaining {
+				item.Count += room
+				if err := item.Validate(); err != nil {
+					return MerchantBuyResult{}, false
+				}
+				inventoryItems[partialMergeIndex] = item
+				changedItems = append(changedItems, item)
+				remaining -= room
+			}
 		}
 	}
-	slot, ok := nextFreeInventorySlot(r.liveInventory)
-	if !ok {
-		return MerchantBuyResult{}, false
+	if remaining > 0 {
+		slot, ok := nextFreeInventorySlot(inventoryItems)
+		if !ok {
+			return MerchantBuyResult{}, false
+		}
+		item, err := (inventory.ItemInstance{ID: nextLiveItemInstanceID(inventoryItems, r.liveEquipment), Vnum: template.Vnum, Count: remaining}).WithInventorySlot(slot)
+		if err != nil {
+			return MerchantBuyResult{}, false
+		}
+		inventoryItems = append(inventoryItems, item)
+		changedItems = append(changedItems, item)
 	}
-	item, err := (inventory.ItemInstance{ID: nextLiveItemInstanceID(r.liveInventory, r.liveEquipment), Vnum: template.Vnum, Count: count}).WithInventorySlot(slot)
-	if err != nil {
-		return MerchantBuyResult{}, false
-	}
+	sortInventoryItems(inventoryItems)
+	sortInventoryItems(changedItems)
 	r.liveGold -= price
-	r.liveInventory = append(r.liveInventory, item)
-	sortInventoryItems(r.liveInventory)
-	return MerchantBuyResult{Item: item, Gold: r.liveGold}, true
+	r.liveInventory = inventoryItems
+	return MerchantBuyResult{Items: changedItems, Gold: r.liveGold}, true
 }
 
 func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
@@ -392,6 +422,22 @@ func findMergeableInventoryIndex(items []inventory.ItemInstance, vnum uint32, co
 			continue
 		}
 		if uint32(item.Count)+uint32(count) > uint32(maxCount) {
+			continue
+		}
+		if mergeIndex < 0 || item.Slot < items[mergeIndex].Slot {
+			mergeIndex = i
+		}
+	}
+	return mergeIndex
+}
+
+func findPartiallyMergeableInventoryIndex(items []inventory.ItemInstance, vnum uint32, maxCount uint16) int {
+	if vnum == 0 || maxCount == 0 {
+		return -1
+	}
+	mergeIndex := -1
+	for i, item := range items {
+		if item.Equipped || item.Vnum != vnum || item.Count == 0 || item.Count >= maxCount {
 			continue
 		}
 		if mergeIndex < 0 || item.Slot < items[mergeIndex].Slot {

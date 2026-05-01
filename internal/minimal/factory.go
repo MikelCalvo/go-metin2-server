@@ -2099,14 +2099,16 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 }
 
 func merchantBuyResultFrames(result player.MerchantBuyResult) ([][]byte, error) {
-	setFrame, err := encodeBootstrapInventoryItemFrame(result.Item)
-	if err != nil {
-		return nil, err
+	frames := make([][]byte, 0, len(result.Items)+1)
+	for _, item := range result.Items {
+		setFrame, err := encodeBootstrapInventoryItemFrame(item)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, setFrame)
 	}
-	return [][]byte{
-		setFrame,
-		chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Merchant purchase complete."}),
-	}, nil
+	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Merchant purchase complete."}))
+	return frames, nil
 }
 
 func merchantBuyFailureDelivery(failure player.MerchantBuyFailure) *chatproto.ChatDeliveryPacket {

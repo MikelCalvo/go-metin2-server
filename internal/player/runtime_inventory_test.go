@@ -217,8 +217,8 @@ func TestRuntimeBuyMerchantItemMergesIntoExistingCompatibleStackBeforeAllocating
 	if result.Gold != 124950 {
 		t.Fatalf("expected merged merchant buy to debit gold to 124950, got %d", result.Gold)
 	}
-	if result.Item.ID != 11 || result.Item.Vnum != 27001 || result.Item.Count != 5 || result.Item.Slot != 5 {
-		t.Fatalf("unexpected merged merchant buy item result: %+v", result.Item)
+	if len(result.Items) != 1 || result.Items[0].ID != 11 || result.Items[0].Vnum != 27001 || result.Items[0].Count != 5 || result.Items[0].Slot != 5 {
+		t.Fatalf("unexpected merged merchant buy items result: %+v", result.Items)
 	}
 	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
 		{ID: 11, Vnum: 27001, Count: 5, Slot: 5},
@@ -231,30 +231,30 @@ func TestRuntimeBuyMerchantItemMergesIntoExistingCompatibleStackBeforeAllocating
 	}
 }
 
-func TestRuntimeBuyMerchantItemFallsBackToFreshSlotWhenExistingStackCannotFullyAbsorbGrant(t *testing.T) {
+func TestRuntimeBuyMerchantItemPartiallyMergesThenUsesFreshSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory[0].Count = 199
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
 	result, ok := runtime.BuyMerchantItem(itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}, 2, 50)
 	if !ok {
-		t.Fatal("expected merchant buy fresh-slot fallback to succeed")
+		t.Fatal("expected merchant buy partial-merge path to succeed")
 	}
 	if result.Gold != 124950 {
-		t.Fatalf("expected fallback merchant buy to debit gold to 124950, got %d", result.Gold)
+		t.Fatalf("expected partial-merge merchant buy to debit gold to 124950, got %d", result.Gold)
 	}
-	if result.Item.ID != 22 || result.Item.Vnum != 27001 || result.Item.Count != 2 || result.Item.Slot != 0 {
-		t.Fatalf("unexpected fresh-slot merchant buy item result: %+v", result.Item)
+	if len(result.Items) != 2 || result.Items[0].ID != 22 || result.Items[0].Vnum != 27001 || result.Items[0].Count != 1 || result.Items[0].Slot != 0 || result.Items[1].ID != 11 || result.Items[1].Vnum != 27001 || result.Items[1].Count != 200 || result.Items[1].Slot != 5 {
+		t.Fatalf("unexpected partial-merge merchant buy items result: %+v", result.Items)
 	}
 	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
-		{ID: 22, Vnum: 27001, Count: 2, Slot: 0},
-		{ID: 11, Vnum: 27001, Count: 199, Slot: 5},
+		{ID: 22, Vnum: 27001, Count: 1, Slot: 0},
+		{ID: 11, Vnum: 27001, Count: 200, Slot: 5},
 		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
 	}) {
-		t.Fatalf("unexpected live inventory after fallback merchant buy: %#v", runtime.LiveInventory())
+		t.Fatalf("unexpected live inventory after partial-merge merchant buy: %#v", runtime.LiveInventory())
 	}
 	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
-		t.Fatalf("expected persisted inventory to stay unchanged after fallback merchant buy, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+		t.Fatalf("expected persisted inventory to stay unchanged after partial-merge merchant buy, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
 	}
 }
 
@@ -271,8 +271,8 @@ func TestRuntimeBuyMerchantItemMergesIntoLowestCompatibleSlot(t *testing.T) {
 	if !ok {
 		t.Fatal("expected merchant buy lowest-slot merge to succeed")
 	}
-	if result.Item.ID != 52 || result.Item.Vnum != 27001 || result.Item.Count != 5 || result.Item.Slot != 2 {
-		t.Fatalf("unexpected lowest-slot merge result: %+v", result.Item)
+	if len(result.Items) != 1 || result.Items[0].ID != 52 || result.Items[0].Vnum != 27001 || result.Items[0].Count != 5 || result.Items[0].Slot != 2 {
+		t.Fatalf("unexpected lowest-slot merge result: %+v", result.Items)
 	}
 	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
 		{ID: 52, Vnum: 27001, Count: 5, Slot: 2},
