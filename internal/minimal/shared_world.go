@@ -6,6 +6,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
@@ -33,6 +34,7 @@ type sharedWorldRegistry struct {
 	sessionDirectory                *worldruntime.SessionDirectory
 	staticActorCombatHP             map[uint64]uint8
 	staticActorCombatSnapshot       map[uint64]uint64
+	sessionCombatTargets            map[uint64]uint32
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
 }
@@ -87,6 +89,7 @@ type StaticActorCombatAttackAttempt struct {
 	ActiveTargetSnapshotVersion uint64
 	RequestedTargetVID          uint32
 	HPPercent                   uint8
+	Died                        bool
 	Actor                       StaticActorSnapshot
 }
 
@@ -328,6 +331,52 @@ func (r *sharedWorldRegistry) syncStaticActorCombatStateLocked(actor worldruntim
 	r.assignStaticActorCombatSnapshotLocked(actor.Entity.ID)
 }
 
+func (r *sharedWorldRegistry) clearSessionCombatTargetLocked(entityID uint64) {
+	if r == nil || entityID == 0 || r.sessionCombatTargets == nil {
+		return
+	}
+	delete(r.sessionCombatTargets, entityID)
+}
+
+func (r *sharedWorldRegistry) setSessionCombatTargetLocked(entityID uint64, targetVID uint32) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	if targetVID == 0 {
+		r.clearSessionCombatTargetLocked(entityID)
+		return
+	}
+	if r.sessionCombatTargets == nil {
+		r.sessionCombatTargets = make(map[uint64]uint32)
+	}
+	r.sessionCombatTargets[entityID] = targetVID
+}
+
+func (r *sharedWorldRegistry) SetSessionCombatTarget(entityID uint64, targetVID uint32) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.sessionEntryLocked(entityID); !ok {
+		return false
+	}
+	r.setSessionCombatTargetLocked(entityID, targetVID)
+	return true
+}
+
+func (r *sharedWorldRegistry) ClearSessionCombatTarget(entityID uint64) {
+	if r == nil || entityID == 0 {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.clearSessionCombatTargetLocked(entityID)
+}
+
 func (r *sharedWorldRegistry) enqueueToEntityLocked(entityID uint64, frames [][]byte) bool {
 	entry, ok := r.sessionEntryLocked(entityID)
 	if !ok || entry.FrameSink == nil {
@@ -415,6 +464,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 		if r.sessionDirectory != nil {
 			_, _ = r.sessionDirectory.Remove(entityID)
 		}
+		r.clearSessionCombatTargetLocked(entityID)
 		_, _ = r.entities.Remove(entityID)
 		delete(r.lastKnownCharacters, entityID)
 		if !ok {
@@ -477,6 +527,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	if r.sessionDirectory != nil {
 		_, _ = r.sessionDirectory.Remove(id)
 	}
+	r.clearSessionCombatTargetLocked(id)
 	_, _ = r.entities.Remove(id)
 	delete(r.lastKnownCharacters, id)
 	if !ok {
@@ -941,6 +992,29 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 	r.staticActorCombatHP[actor.Entity.ID] = nextHP
 	attempt.Accepted = true
 	attempt.HPPercent = hpPercent
+	if nextHP == 0 {
+		attempt.Died = true
+		deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: requestedTargetVID})
+		clearRaw := combatproto.EncodeServerClearTarget()
+		targetedSessionIDs := make(map[uint64]struct{})
+		for entityID, targetVID := range r.sessionCombatTargets {
+			if targetVID != requestedTargetVID {
+				continue
+			}
+			targetedSessionIDs[entityID] = struct{}{}
+			delete(r.sessionCombatTargets, entityID)
+		}
+		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+			if target.Entity.ID == subjectID {
+				continue
+			}
+			frames := [][]byte{deadRaw}
+			if _, ok := targetedSessionIDs[target.Entity.ID]; ok {
+				frames = append(frames, clearRaw)
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, frames)
+		}
+	}
 	return attempt
 }
 

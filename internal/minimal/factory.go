@@ -171,6 +171,8 @@ type staticActorCombatAttackResolution struct {
 	RequestedTargetVID          uint32
 	Actor                       StaticActorSnapshot
 	Packet                      *combatproto.ServerTargetPacket
+	Frames                      [][]byte
+	ClearActiveTarget           bool
 }
 
 type merchantBuyContext struct {
@@ -767,6 +769,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		clearActiveCombatTarget := func() {
 			activeCombatTargetVID = 0
 			activeCombatTargetSnapshotVersion = 0
+			if sharedWorld != nil && sharedWorldID != 0 {
+				sharedWorld.ClearSessionCombatTarget(sharedWorldID)
+			}
 		}
 		enqueueCombatTargetClear := func() {
 			pending.Enqueue([][]byte{combatproto.EncodeServerClearTarget()})
@@ -1581,6 +1586,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					activeCombatTargetVID = resolution.Packet.TargetVID
 					activeCombatTargetSnapshotVersion = resolution.SnapshotVersion
+					if sharedWorld != nil && sharedWorldID != 0 {
+						sharedWorld.SetSessionCombatTarget(sharedWorldID, resolution.Packet.TargetVID)
+					}
 					return gameflow.TargetResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
 				},
 				HandleAttack: func(packet combatproto.ClientAttackPacket) gameflow.AttackResult {
@@ -1594,7 +1602,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.AttackResult{Accepted: false}
 					}
 					resolution := runtime.resolveSelectedStaticActorNormalAttack(sharedWorldID, activeCombatTargetVID, activeCombatTargetSnapshotVersion, packet.TargetVID)
-					if !resolution.Accepted || resolution.Packet == nil {
+					if !resolution.Accepted {
+						return gameflow.AttackResult{Accepted: false}
+					}
+					if resolution.ClearActiveTarget {
+						clearActiveCombatTarget()
+					}
+					if len(resolution.Frames) > 0 {
+						return gameflow.AttackResult{Accepted: true, Frames: resolution.Frames}
+					}
+					if resolution.Packet == nil {
 						return gameflow.AttackResult{Accepted: false}
 					}
 					return gameflow.AttackResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
@@ -3242,8 +3259,16 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 		resolution.Failure = attempt.Failure
 		return resolution
 	}
-	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: attempt.HPPercent}
 	resolution.Accepted = true
+	if attempt.Died {
+		resolution.ClearActiveTarget = true
+		resolution.Frames = [][]byte{
+			worldproto.EncodeDead(worldproto.DeadPacket{VID: activeTargetVID}),
+			combatproto.EncodeServerClearTarget(),
+		}
+		return resolution
+	}
+	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: attempt.HPPercent}
 	resolution.Packet = &packet
 	return resolution
 }

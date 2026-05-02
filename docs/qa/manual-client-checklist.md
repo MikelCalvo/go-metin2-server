@@ -604,11 +604,12 @@ Expected result:
 
 ### Combat ownership smoke bundle
 
-Treat sections 6.20 through 6.22 as one ownership-focused smoke bundle when debugging bootstrap combat state.
+Treat sections 6.20 through 6.23 as one ownership-focused smoke bundle when debugging bootstrap combat state.
 Together they cover:
 - target clear on bootstrap/reset seams
 - stale reclaim non-authoritative behavior
 - dead or replaced dummy snapshot rejection
+- visible zero-HP death plus selected-target clear behavior
 
 ### 6.20 Training-dummy target clears across transfer / re-enter / reconnect (packet-harness optional)
 
@@ -649,6 +650,23 @@ Expected result:
 - if that snapshot is replaced before reselection, stale `ATTACK` intent fails closed until the client reacquires target ownership with a new accepted `TARGET`
 - a dead (`0` HP) dummy is no longer eligible for accepted bootstrap target selection or attack refreshes
 - these rejections stay silent in the current slice: no peer fanout, no compensating chat spam, and no accidental HP mutation
+
+### 6.23 Training-dummy zero-HP death clears selected targets (packet-harness optional)
+
+- [ ] Prepare two visible sessions if possible: one attacker and one watcher that can also select the same visible `training_dummy`
+- [ ] On both sessions, select the same dummy and confirm the normal self-only `GC TARGET(target_vid, 100)` ack before any attacks
+- [ ] From the attacker, issue successive normal `ATTACK` requests until the dummy reaches its final accepted hit from `1` to `0`
+- [ ] Confirm non-lethal hits still use the normal self-only `GC TARGET(target_vid, hp_percent)` refresh path (`90`, `80`, ... , `10`)
+- [ ] Confirm the final zero-HP hit makes the attacker receive `GC DEAD(vid)` plus one self-only `GC TARGET(0, 0)` clear instead of a final `GC TARGET(..., 0)` refresh
+- [ ] If a second visible selected session is present, confirm it also receives `GC DEAD(vid)` and its own self-only `GC TARGET(0, 0)` clear during that same death window
+- [ ] Without waiting for any future respawn slice, try one fresh `TARGET` and one `ATTACK` against that same dummy `VID`
+
+Expected result:
+- the zero-HP edge is now visibly owned: `GC DEAD(vid)` is emitted to visible sessions when the dummy dies
+- any session that still had that dummy selected receives the existing self-only clear-target companion immediately on death
+- the bootstrap combat loop does not send a synthetic `GC TARGET(..., 0)` refresh at death; it switches surfaces from HP refresh to death + clear
+- fresh `TARGET` and `ATTACK` attempts fail closed while the dummy remains dead
+- respawn/reset behavior is still a later slice, so this QA only validates death, clear, and dead-state rejection
 
 ---
 ## 7. Optional bootstrap chat-scope checks

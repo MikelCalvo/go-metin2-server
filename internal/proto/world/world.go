@@ -26,6 +26,7 @@ const (
 	HeaderMainCharacter           uint16 = 0x0210
 	HeaderPlayerPoints            uint16 = 0x0214
 	HeaderPlayerPointChange       uint16 = 0x0215
+	HeaderDead                    uint16 = 0x0217
 
 	CharacterNameFieldSize      = 65
 	BGMNameFieldSize            = 25
@@ -47,6 +48,7 @@ const (
 	mainCharacterPayloadSize           = 114
 	playerPointsPayloadSize            = PointCount * 4
 	playerPointChangePayloadSize       = 13
+	deadPayloadSize                    = 4
 	simplePlayerPayloadSize            = 103
 )
 
@@ -90,6 +92,10 @@ type PlayerDeleteSuccessPacket struct {
 }
 
 type CharacterDeleteNoticePacket struct {
+	VID uint32
+}
+
+type DeadPacket struct {
 	VID uint32
 }
 
@@ -329,6 +335,22 @@ func DecodeCharacterDeleteNotice(f frame.Frame) (CharacterDeleteNoticePacket, er
 		return CharacterDeleteNoticePacket{}, ErrInvalidPayload
 	}
 	return CharacterDeleteNoticePacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
+}
+
+func EncodeDead(packet DeadPacket) []byte {
+	payload := make([]byte, deadPayloadSize)
+	binary.LittleEndian.PutUint32(payload, packet.VID)
+	return frame.Encode(HeaderDead, payload)
+}
+
+func DecodeDead(f frame.Frame) (DeadPacket, error) {
+	if f.Header != HeaderDead {
+		return DeadPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != deadPayloadSize {
+		return DeadPacket{}, ErrInvalidPayload
+	}
+	return DeadPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
 }
 
 func EncodeCharacterAdd(packet CharacterAddPacket) []byte {

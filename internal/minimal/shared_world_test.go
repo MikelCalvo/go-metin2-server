@@ -8973,6 +8973,208 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 	}
 }
 
+func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndRejectsPostDeathRequests(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before death transition: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame before death transition, got %d", len(selectOut))
+	}
+
+	for attackIndex := 0; attackIndex < 9; attackIndex++ {
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on pre-death hit %d: %v", attackIndex+1, err)
+		}
+		if len(attackOut) != 1 {
+			t.Fatalf("expected 1 self-only target-refresh frame on pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		}
+		refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+		if err != nil {
+			t.Fatalf("decode pre-death target-refresh frame %d: %v", attackIndex+1, err)
+		}
+		wantHPPercent := uint8(90 - (attackIndex * 10))
+		if refresh.TargetVID != targetVID || refresh.HPPercent != wantHPPercent {
+			t.Fatalf("unexpected target-refresh packet on pre-death hit %d: %+v", attackIndex+1, refresh)
+		}
+	}
+
+	finalAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected combat attack error on zero-HP death hit: %v", err)
+	}
+	if len(finalAttack) != 2 {
+		t.Fatalf("expected 2 self-only death-transition frames on zero-HP hit, got %d", len(finalAttack))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, finalAttack[0]))
+	if err != nil {
+		t.Fatalf("decode zero-HP death frame: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("unexpected dead packet on zero-HP hit: %+v", dead)
+	}
+	cleared, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, finalAttack[1]))
+	if err != nil {
+		t.Fatalf("decode zero-HP clear-target frame: %v", err)
+	}
+	if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
+		t.Fatalf("expected zero-target clear after zero-HP death, got %+v", cleared)
+	}
+
+	postDeathAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-death combat attack error: %v", err)
+	}
+	if len(postDeathAttackOut) != 0 {
+		t.Fatalf("expected zero self frames for post-death attack rejection, got %d", len(postDeathAttackOut))
+	}
+
+	postDeathReselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected post-death combat target error: %v", err)
+	}
+	if len(postDeathReselectOut) != 0 {
+		t.Fatalf("expected zero self frames for post-death target rejection, got %d", len(postDeathReselectOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for zero-HP death with a single visible session, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flowOne, enterOne := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOne) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for first player with visible training dummy, got %d", len(enterOne))
+	}
+	defer closeSessionFlow(t, flowOne)
+	flowTwo, enterTwo := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(enterTwo) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for second player with visible peer and training dummy, got %d", len(enterTwo))
+	}
+	defer closeSessionFlow(t, flowTwo)
+	if queued := flushServerFrames(t, flowOne); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for the first player after second player joins, got %d", len(queued))
+	}
+
+	targetVID := uint32(actor.EntityID)
+	for idx, flow := range []service.SessionFlow{flowOne, flowTwo} {
+		selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected combat target error for selected visible session %d: %v", idx+1, err)
+		}
+		if len(selectOut) != 1 {
+			t.Fatalf("expected 1 self-only combat target frame for selected visible session %d, got %d", idx+1, len(selectOut))
+		}
+	}
+
+	for attackIndex := 0; attackIndex < 9; attackIndex++ {
+		attackOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on visible-session pre-death hit %d: %v", attackIndex+1, err)
+		}
+		if len(attackOut) != 1 {
+			t.Fatalf("expected 1 self-only target-refresh frame on visible-session pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		}
+	}
+
+	finalAttack, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected combat attack error on visible-session zero-HP death hit: %v", err)
+	}
+	if len(finalAttack) != 2 {
+		t.Fatalf("expected 2 self-only death-transition frames for the killing hit, got %d", len(finalAttack))
+	}
+	peerFrames := flushServerFrames(t, flowTwo)
+	if len(peerFrames) != 2 {
+		t.Fatalf("expected 2 queued death-transition frames for the other selected visible session, got %d", len(peerFrames))
+	}
+	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode queued dead frame for other selected visible session: %v", err)
+	}
+	if peerDead.VID != targetVID {
+		t.Fatalf("unexpected queued dead packet for other selected visible session: %+v", peerDead)
+	}
+	peerCleared, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, peerFrames[1]))
+	if err != nil {
+		t.Fatalf("decode queued clear-target frame for other selected visible session: %v", err)
+	}
+	if peerCleared.TargetVID != 0 || peerCleared.HPPercent != 0 {
+		t.Fatalf("expected zero-target clear for other selected visible session after zero-HP death, got %+v", peerCleared)
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no queued self frames for the killing session after zero-HP death, got %d", len(queued))
+	}
+
+	peerPostDeathAttackOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-death combat attack error for cleared visible session: %v", err)
+	}
+	if len(peerPostDeathAttackOut) != 0 {
+		t.Fatalf("expected zero self frames for cleared visible-session post-death attack rejection, got %d", len(peerPostDeathAttackOut))
+	}
+
+	peerPostDeathReselectOut, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected post-death combat target error for cleared visible session: %v", err)
+	}
+	if len(peerPostDeathReselectOut) != 0 {
+		t.Fatalf("expected zero self frames for cleared visible-session post-death target rejection, got %d", len(peerPostDeathReselectOut))
+	}
+}
+
 func TestGameSessionFlowStaticActorAttackRejectsSelectedDummyAfterSnapshotReplacement(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

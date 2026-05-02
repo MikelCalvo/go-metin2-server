@@ -36,6 +36,19 @@ This contract does **not** yet claim:
 - persistence of dummy HP, dead state, or respawn timers across reconnect or process restart
 - skill-based or animation-rich death choreography beyond the narrow packet families frozen here
 
+## Current implementation status
+
+The repository now implements the first half of this contract:
+- zero-HP death is live for the bootstrap `training_dummy`
+- visible sessions now receive `GC DEAD(vid)` on the death edge
+- sessions that still had that dummy selected receive the existing self-only `GC TARGET(0, 0)` clear companion in the same transition window
+- post-death `TARGET` / `ATTACK` requests now fail closed while the dummy remains dead
+
+What is still intentionally pending is the respawn half:
+- the first server-driven dead timer
+- the `CHARACTER_DEL` + add/info/update respawn rebuild burst
+- fresh post-respawn target acquisition against the rebuilt live snapshot
+
 ## Why freeze death / respawn separately
 
 The repository now already owns enough combat state to make this boundary explicit:
@@ -121,7 +134,7 @@ What is frozen now:
 - the client does not request respawn through `TARGET`, `ATTACK`, `INTERACT`, movement, reconnect, or any corpse action
 - the first bootstrap respawn uses one deterministic fixed-delay rule for the dummy runtime, not per-player custom timing
 
-What is intentionally left for the implementation slice:
+What remains for the next respawn slice:
 - the exact bootstrap delay constant
 - the exact runtime scheduler/storage helper shape that tracks the pending respawn
 

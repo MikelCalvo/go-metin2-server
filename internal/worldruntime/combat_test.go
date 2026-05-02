@@ -15,16 +15,16 @@ func TestApplyBootstrapStaticActorNormalAttackDecrementsTrainingDummyCombatHP(t 
 	}
 }
 
-func TestApplyBootstrapStaticActorNormalAttackClampsTrainingDummyCombatHPAtMinimumLiveValue(t *testing.T) {
+func TestApplyBootstrapStaticActorNormalAttackTransitionsTrainingDummyCombatHPToDeadValue(t *testing.T) {
 	nextHP, hpPercent, ok := ApplyBootstrapStaticActorNormalAttack(StaticActorCombatKindTrainingDummy, TrainingDummyBootstrapMinLiveHP)
 	if !ok {
 		t.Fatal("expected bootstrap training-dummy normal attack to be supported at low HP")
 	}
-	if nextHP != TrainingDummyBootstrapMinLiveHP {
-		t.Fatalf("expected training-dummy HP to clamp at minimum live value %d, got %d", TrainingDummyBootstrapMinLiveHP, nextHP)
+	if nextHP != 0 {
+		t.Fatalf("expected training-dummy HP to reach dead value 0 from minimum live HP %d, got %d", TrainingDummyBootstrapMinLiveHP, nextHP)
 	}
-	if hpPercent != 10 {
-		t.Fatalf("expected training-dummy HP percent 10 at minimum live HP, got %d", hpPercent)
+	if hpPercent != 0 {
+		t.Fatalf("expected training-dummy HP percent 0 at dead value, got %d", hpPercent)
 	}
 }
 

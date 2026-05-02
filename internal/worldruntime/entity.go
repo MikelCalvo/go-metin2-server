@@ -75,11 +75,10 @@ func ApplyBootstrapStaticActorNormalAttack(combatKind string, currentHP uint8) (
 			currentHP = TrainingDummyBootstrapMaxHP
 		}
 		nextHP := currentHP
-		if nextHP > TrainingDummyBootstrapMinLiveHP {
+		if nextHP <= TrainingDummyBootstrapDamagePerNormalAttack {
+			nextHP = 0
+		} else {
 			nextHP -= TrainingDummyBootstrapDamagePerNormalAttack
-			if nextHP < TrainingDummyBootstrapMinLiveHP {
-				nextHP = TrainingDummyBootstrapMinLiveHP
-			}
 		}
 		hpPercent := bootstrapStaticActorHPPercent(nextHP, TrainingDummyBootstrapMaxHP)
 		return nextHP, hpPercent, true

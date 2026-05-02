@@ -281,6 +281,24 @@ func TestDecodeCharacterDeleteNoticeReturnsExpectedVID(t *testing.T) {
 	}
 }
 
+func TestEncodeDeadBuildsAServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderDead, []byte{0x04, 0x03, 0x02, 0x01})
+	got := EncodeDead(DeadPacket{VID: 0x01020304})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected dead frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeDeadReturnsExpectedVID(t *testing.T) {
+	packet, err := DecodeDead(decodeSingleFrame(t, frame.Encode(HeaderDead, []byte{0x04, 0x03, 0x02, 0x01})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.VID != 0x01020304 {
+		t.Fatalf("unexpected dead vid: got %#08x want %#08x", packet.VID, uint32(0x01020304))
+	}
+}
+
 func TestEncodeMainCharacterBuildsAServerFrame(t *testing.T) {
 	want := loadHexFixture(t, "main-character-frame.hex")
 	got, err := EncodeMainCharacter(MainCharacterPacket{

@@ -198,7 +198,7 @@ This slice does **not** yet freeze:
 - the final gameplay meaning of every `attack_type` value
 - final damage formulas beyond the current bootstrap `1` HP decrement
 - miss/crit/block results
-- the death / respawn implementation itself, even though that follow-up wire contract is now documented separately
+- the server-driven respawn timer, delete/re-add reset burst, and full post-death rebuild that the separate death / respawn doc already freezes for the next slice
 - hostile retaliation
 - player-vs-player attack semantics
 - skills, buffs, debuffs, or status effects
@@ -215,7 +215,8 @@ After this document lands, the repository should be able to say:
 - transfer rebootstrap, same-socket fresh bootstrap re-entry, and reconnect now clear the session-local active target too, but the first owned contract keeps those lifecycle resets silent instead of claiming a visible clear-target packet
 - duplicate-live reclaim now inherits the same shared-world hardening model as movement, whisper, item use, and merchant seams: stale `TARGET` / `ATTACK` packets fail closed and cannot mutate runtime dummy HP or the replacement owner's target state
 - accepted target ownership now also carries the current runtime snapshot behind the selected dummy `VID`, so later `ATTACK` requests fail closed if that dummy is replaced before the session reselects it
-- a dummy whose runtime-owned HP reached `0` is no longer targetable through the bootstrap `TARGET` / `ATTACK` loop once the separate death / respawn contract is implemented
+- the zero-HP transition is now live: the final accepted hit drives the dummy from `1` to `0`, emits `GC DEAD(vid)` to visible sessions, and clears any selected session's combat target on the existing self-only `GC TARGET(0, 0)` surface
+- a dead dummy is no longer targetable or attackable through the current bootstrap `TARGET` / `ATTACK` loop until the separate respawn-reset slice lands
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
-- later HP refreshes should try to stay on the same `GC TARGET(target_vid, hp_percent)` carrier before claiming richer combat packets
-- the first death / respawn wire contract is now frozen separately in `non-player-death-respawn-bootstrap.md`, so later implementation slices can drive zero HP without inventing new target-clear or revive families ad hoc
+- later HP refreshes stay on the same `GC TARGET(target_vid, hp_percent)` carrier until the zero-HP death edge, after which the repo switches to `GC DEAD(vid)` + target clear rather than inventing richer combat-result packets early
+- the first death / respawn wire contract is now frozen separately in `non-player-death-respawn-bootstrap.md`, and this attack slice now implements the death side of that contract while leaving server-driven respawn reset for the next runtime slice
