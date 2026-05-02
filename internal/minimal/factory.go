@@ -933,6 +933,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if _, ok := transferFlow.Apply(selected, warp.Target{MapIndex: mapIndex, X: x, Y: y}); !ok {
 				return RelocationPreview{}, nil, false
 			}
+			clearActiveCombatTarget()
 			return transferResult, transferFrames, true
 		}
 		applySelectedCharacterPosition := func(selectedPlayer *player.Runtime, x int32, y int32, persist bool) (loginticket.Character, bool) {
@@ -1146,6 +1147,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					selectedIndex = index
 					hasSelected = true
 					selectedPlayer = player.NewRuntime(selected, player.SessionLink{Login: sessionTicket.Login, CharacterIndex: index})
+					clearActiveCombatTarget()
 					refreshLiveCharacterRegistration()
 					return worldentry.Result{
 						Accepted:      true,
@@ -1423,6 +1425,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							hasSelected = false
 							selectedPlayer = nil
 							clearActiveMerchantBuy()
+							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseClose}
 						case "phase_select":
@@ -1430,6 +1433,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							hasSelected = false
 							selectedPlayer = nil
 							clearActiveMerchantBuy()
+							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseSelect}
 						}

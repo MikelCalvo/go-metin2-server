@@ -168,18 +168,18 @@ The current visible failure expectations are intentionally narrow:
 The first owned attack-intent contract must inherit the existing shared-world ownership model:
 - attack authority belongs to the current live selected-character session
 - stale reclaimed sockets must not authoritatively damage or clear the live owner's target state
-- reconnect, transfer, and teardown behavior should eventually clear target ownership using the same runtime cleanup style already frozen elsewhere
+- transfer rebootstrap, same-socket fresh bootstrap re-entry, and reconnect now clear session-local active combat target ownership before later attacks can proceed again
 - non-player HP/dead state belongs to runtime world ownership, not to character persistence
 
-This document does not implement those behaviors yet.
-It freezes that later combat slices should align with the existing runtime lifecycle model instead of creating a second combat-only ownership model.
+Only some lifecycle edges are owned so far.
+This document now freezes movement/sync invalidation plus fresh bootstrap/rebootstrap cleanup, while later combat slices still need to align the remaining lifecycle edges with the same runtime ownership model instead of creating a second combat-only ownership model.
 
 ## Explicit unknowns still left for the next RED
 
 The next flow/gameplay slices still need to prove or freeze:
 - whether the runtime should validate or currently only preserve the two trailing raw CRC bytes
 - the exact first timing/rate rule for repeated attack attempts
-- exactly which non-movement lifecycle edges (transfer, reconnect, reclaim, death, actor replacement) should proactively emit `TARGET(0, 0)` instead of only failing closed
+- exactly which remaining lifecycle edges (duplicate-live reclaim, death, actor replacement) should proactively emit `TARGET(0, 0)` instead of only failing closed
 
 Those unknowns are deliberate.
 The codec now owns the exact wire shape, but the gameplay contract is still intentionally narrower than full combat semantics.
@@ -204,5 +204,6 @@ After this document lands, the repository should be able to say:
 - the first accepted bootstrap attack now mutates runtime-owned `training_dummy` HP deterministically from `10` downward in `1`-HP steps while reusing self-only `GC TARGET(target_vid, hp_percent)` as its visible success refresh
 - accepted reselection of the same damaged dummy reuses the same current runtime `hp_percent` instead of resetting the visible target state back to `100`
 - subject movement/sync that makes the selected dummy leave current visibility or the bootstrap combat band now proactively emits one self-only `GC TARGET(0, 0)` and clears the session-local active target
+- transfer rebootstrap, same-socket fresh bootstrap re-entry, and reconnect now clear the session-local active target too, but the first owned contract keeps those lifecycle resets silent instead of claiming a visible clear-target packet
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes should try to stay on the same `GC TARGET(target_vid, hp_percent)` carrier before claiming richer combat packets

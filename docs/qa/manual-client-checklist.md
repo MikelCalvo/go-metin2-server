@@ -602,6 +602,19 @@ Expected result:
 - out-of-range, invisible, or visible non-targetable actors fail closed without self-only chat spam, peer fanout, persistence writes, or a compensating clear-target packet
 - if the QA client does not yet expose a visible HUD reaction for `GC TARGET`, treat the packet-level acceptance as the source of truth for this slice rather than blocking on richer UI choreography
 
+### 6.20 Training-dummy target clears across transfer / re-enter / reconnect (packet-harness optional)
+
+- [ ] Select one visible authored/runtime-marked `training_dummy` and confirm the current session receives the normal self-only `GC TARGET(target_vid, 100)` ack
+- [ ] Cross one owned transfer/rebootstrap seam (for example a QA warp/transfer trigger), then return to the original dummy so it is visible and in range again
+- [ ] Without sending a fresh `TARGET`, issue one normal `ATTACK` toward that same dummy `VID`
+- [ ] Repeat the same expectation after same-socket `/phase_select` → fresh `SELECT`/`ENTERGAME`, or after a full disconnect/reconnect if that is the easier QA path
+- [ ] Finally send a fresh `TARGET` again and confirm the next normal `ATTACK` resumes the expected self-only dummy HP refresh path
+
+Expected result:
+- fresh bootstrap/rebootstrap boundaries clear the active dummy target context instead of carrying stale linkage forward
+- post-transfer, post-`/phase_select` re-entry, and post-reconnect attacks fail closed until the client reacquires target intent with a new accepted `TARGET`
+- once reselected, the same dummy immediately resumes the current self-only `GC TARGET(target_vid, hp_percent)` attack-refresh behavior
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 

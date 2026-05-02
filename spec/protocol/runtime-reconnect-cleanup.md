@@ -22,6 +22,17 @@ This contract applies only to:
 
 It does not yet freeze resumable sessions, inter-channel reconnect, or any final player-facing reconnect UX.
 
+## Fresh bootstrap-scoped combat target context
+
+An accepted `training_dummy` combat target is currently live session-only state.
+The bootstrap runtime now owns three reset rules for that ephemeral combat context:
+- successful transfer rebootstrap clears the active combat target before the new self bootstrap burst returns
+- same-socket re-entry through `/phase_select` + a later fresh `SELECT`/`ENTERGAME` starts with no carried active combat target
+- fresh reconnect/login/select/enter-game also starts with no carried active combat target, even if the same dummy becomes visible again immediately
+
+Later attacks must therefore reacquire combat intent through a fresh accepted `TARGET` request after any of those bootstrap/rebootstrap boundaries.
+This document still does not claim a visible clear-target packet for those lifecycle resets; it only freezes the session-local cleanup contract.
+
 ## Current owned teardown contract
 
 When a connected bootstrap session closes today, the project-owned runtime contract is:

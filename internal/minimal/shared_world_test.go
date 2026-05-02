@@ -8983,6 +8983,235 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesVisi
 	}
 }
 
+func TestGameSessionFlowStaticActorCombatTargetClearsAcrossTransferRebootstrap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}, {
+		SourceMapIndex: 42,
+		SourceX:        1700,
+		SourceY:        2800,
+		TargetMapIndex: bootstrapMapIndex,
+		TargetX:        1100,
+		TargetY:        2100,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected training dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after enter, got %d", len(queued))
+	}
+
+	targetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before transfer: %v", err)
+	}
+	if len(targetOut) != 1 {
+		t.Fatalf("expected 1 target ack frame before transfer, got %d", len(targetOut))
+	}
+
+	transferOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected transfer move error: %v", err)
+	}
+	if len(transferOut) == 0 {
+		t.Fatal("expected transfer rebootstrap frames after first move trigger")
+	}
+	returnOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1700, Y: 2800, Time: 0x21222325})))
+	if err != nil {
+		t.Fatalf("unexpected return transfer move error: %v", err)
+	}
+	if len(returnOut) == 0 {
+		t.Fatal("expected transfer rebootstrap frames after return move trigger")
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after round-trip transfer rebootstrap, got %d", len(queued))
+	}
+
+	attackWithoutReselect, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected attack error after round-trip transfer rebootstrap: %v", err)
+	}
+	if len(attackWithoutReselect) != 0 {
+		t.Fatalf("expected transfer rebootstrap to clear the active combat target, got %d frames", len(attackWithoutReselect))
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected reselect error after transfer rebootstrap: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 target ack frame after transfer rebootstrap, got %d", len(reselectOut))
+	}
+	attackAfterReselect, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected attack error after transfer rebootstrap reselect: %v", err)
+	}
+	if len(attackAfterReselect) != 1 {
+		t.Fatalf("expected 1 self-only attack refresh after transfer rebootstrap reselect, got %d", len(attackAfterReselect))
+	}
+}
+
+func TestGameSessionFlowStaticActorCombatTargetClearsAcrossPhaseSelectReenter(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	first := peerVisibilityCharacter("MkmkWar", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	second := peerVisibilityCharacter("MkmkSura", 0x01030102, 0x02040102, 1120, 2120, 2, 102, 202)
+	if _, ok := issueLoginTicket(store, "phase-select-combat", first.Empire, []loginticket.Character{first, second}, func() (uint32, error) {
+		return 0x11111111, nil
+	}); !ok {
+		t.Fatal("expected login ticket issuance to succeed")
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected training dummy registration to succeed")
+	}
+	flow := runtime.SessionFactory()()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: "phase-select-combat", LoginKey: 0x11111111})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0}))); err != nil {
+		t.Fatalf("unexpected first character select error: %v", err)
+	}
+	firstEnter, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected first enter-game error: %v", err)
+	}
+	if len(firstEnter) != 8 {
+		t.Fatalf("expected 8 first bootstrap frames with visible training dummy, got %d", len(firstEnter))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after first enter, got %d", len(queued))
+	}
+
+	targetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected first target selection error: %v", err)
+	}
+	if len(targetOut) != 1 {
+		t.Fatalf("expected 1 target ack frame before /phase_select, got %d", len(targetOut))
+	}
+
+	phaseSelectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/phase_select"})))
+	if err != nil {
+		t.Fatalf("unexpected /phase_select error: %v", err)
+	}
+	if len(phaseSelectOut) != 1 {
+		t.Fatalf("expected 1 /phase_select frame, got %d", len(phaseSelectOut))
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected second character select error after /phase_select: %v", err)
+	}
+	secondEnter, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected second enter-game error after /phase_select: %v", err)
+	}
+	if len(secondEnter) != 8 {
+		t.Fatalf("expected 8 second bootstrap frames with visible training dummy, got %d", len(secondEnter))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after second enter, got %d", len(queued))
+	}
+
+	attackWithoutReselect, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected attack error after /phase_select re-enter: %v", err)
+	}
+	if len(attackWithoutReselect) != 0 {
+		t.Fatalf("expected /phase_select re-enter to clear the active combat target, got %d frames", len(attackWithoutReselect))
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected second target selection error after /phase_select: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 target ack frame after /phase_select re-enter, got %d", len(reselectOut))
+	}
+}
+
+func TestGameSessionFlowStaticActorCombatTargetClearsAcrossReconnect(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected training dummy registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+	flowOld, enterOut := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	if queued := flushServerFrames(t, flowOld); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after first enter, got %d", len(queued))
+	}
+	targetOut, err := flowOld.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before reconnect: %v", err)
+	}
+	if len(targetOut) != 1 {
+		t.Fatalf("expected 1 target ack frame before reconnect, got %d", len(targetOut))
+	}
+	closeSessionFlow(t, flowOld)
+
+	issuePeerTicket(t, store, "peer-one", 0x22222222, peer)
+	flowReconnect, reconnectEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x22222222)
+	if len(reconnectEnter) != 8 {
+		t.Fatalf("expected 8 reconnect bootstrap frames with visible training dummy, got %d", len(reconnectEnter))
+	}
+	defer closeSessionFlow(t, flowReconnect)
+	if queued := flushServerFrames(t, flowReconnect); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after reconnect enter, got %d", len(queued))
+	}
+
+	attackWithoutReselect, err := flowReconnect.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected attack error after reconnect: %v", err)
+	}
+	if len(attackWithoutReselect) != 0 {
+		t.Fatalf("expected reconnect to clear the active combat target, got %d frames", len(attackWithoutReselect))
+	}
+
+	reselectOut, err := flowReconnect.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error after reconnect: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 target ack frame after reconnect, got %d", len(reselectOut))
+	}
+}
+
 func TestGameSessionFlowStaticActorAttackRejectsWithoutActiveTargetOrMatchingSelection(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

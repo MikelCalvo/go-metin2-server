@@ -98,9 +98,8 @@ The repo now owns:
 
 It does **not** yet freeze:
 - a clear-target request shape
-- target persistence beyond the immediate accepted runtime request
 - a damage or hit-result packet family
-- target-loss packets on transfer, reconnect, reclaim, actor replacement, or death; visibility/range invalidation is now owned by the follow-up combat-normal bootstrap contract via self-only `GC TARGET(0, 0)`
+- visible target-loss packets on transfer, reconnect, re-enter, reclaim, actor replacement, or death; visibility/range invalidation is now owned by the follow-up combat-normal bootstrap contract via self-only `GC TARGET(0, 0)`
 
 ## Target identity and visibility rule
 
@@ -140,8 +139,9 @@ This first contract intentionally expects:
 - selecting a dummy emits at most one self-only `GC TARGET` acknowledgement on accept
 - selecting a dummy does not broadcast to peers
 - selecting a dummy only prepares later attack-intent validation on that same live session
+- target ownership dies at fresh bootstrap/rebootstrap boundaries; transfer rebootstrap, same-socket `/phase_select` re-entry, and fresh reconnect all require a new accepted `TARGET` request before later attacks can proceed again
 
-Future slices may still freeze explicit target-clear rules for transfer, reconnect, reclaim, actor replacement, or death.
+Future slices may still freeze explicit target-clear rules for duplicate-live retry, reclaim, actor replacement, or death.
 Visibility/range invalidation for an already selected dummy now lives in `combat-normal-attack-bootstrap.md` via the self-only `GC TARGET(0, 0)` companion.
 
 ## Runtime seam already owned before and after the packet path
@@ -182,7 +182,7 @@ This slice does **not** yet freeze:
 - weapon swing or projectile choreography
 - hit registration
 - damage numbers or point/HP depletion
-- target persistence across reconnect, transfer, duplicate-live retry, or reclaim
+- target persistence across duplicate-live retry or reclaim
 - selecting player characters as combat targets
 - auto-acquire, tab-target cycling, or click-to-move behavior
 - mobs, spawn groups, aggro, patrols, or scripted encounters
@@ -196,5 +196,6 @@ After this document and slice, the repository should be able to say:
 - the first owned self-only acknowledgement family is `TARGET` in `GAME` with `0x0A10`
 - the first targetable actor class is a visible `training_dummy`, not every static actor or every NPC
 - accepted in-range dummy selection now returns one self-only `GC TARGET` ack without dragging in attack execution, damage, aggro, or AI
+- fresh bootstrap entry, transfer rebootstrap, and reconnect clear previously selected dummy target ownership so later attacks must reacquire intent with a new `TARGET` request
 - rejected attempts still fail closed without chat spam, peer fanout, persistence writes, or clear-target choreography
 - combat remains intentionally tiny, but the first honest target-selection request path is now frozen in both docs and tests
