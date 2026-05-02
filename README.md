@@ -13,7 +13,7 @@ Current snapshot:
 - [x] First shared-world bootstrap: peer visibility, movement replication, local chat, whisper, party/guild/shout fanout, and server notices
 - [x] First content/runtime seams: static actors, interactions, shop open/buy bootstrap, and warp bootstrap
 - [~] First character systems: inventory, equipment, consumable use, and appearance refreshes
-- [~] First combat slice: live target selection for a visible `training_dummy`, exact `ATTACK` ownership, the first deterministic selected-target HP refresh loop, and fail-closed stale/dead/replaced-target hardening are now live; this dummy HP is still runtime-owned only, not a persistence contract yet
+- [~] First combat slice: target selection, owned `ATTACK` ingress, and a deterministic `training_dummy` HP loop are live; the first death/respawn contract is now frozen in docs, but visible death/respawn is not implemented yet and dummy HP remains runtime-only
 - [ ] Still missing: full combat, mobs/AI, quests, compatibility-grade persistence, and production deployment
 
 The README stays intentionally high-level. If you want the deeper technical view, start here:
@@ -29,7 +29,7 @@ The README stays intentionally high-level. If you want the deeper technical view
 | M1 — Shared-world pre-alpha | [~] | Players can already see each other, move, chat, and receive notices inside the current bootstrap world rules. |
 | M2 — Entity/world runtime foundation | [~] | Entities, maps, sessions, transfers, and static actors are moving out of bootstrap-only shortcuts into owned runtime systems. |
 | M3 — Character systems | [~] | Inventory, equipment, item use, appearance, and merchant-driven item state are becoming first-class runtime systems. |
-| M4 — Combat vertical slice | [~] | Target selection is live, the exact `ATTACK` codec is owned, and the first selected-target normal-attack loop now decrements bootstrap dummy HP while reusing `GC TARGET`; target intent is now also snapshot-bound and fail-closes across stale reclaim, dead dummies, and in-place actor replacement, while visible clear-target/death choreography and respawn remain for the next slices. |
+| M4 — Combat vertical slice | [~] | The repo now owns target selection, `ATTACK` ingress, and a deterministic `training_dummy` HP loop. Death/respawn is specified, but the visible death/respawn loop is not live yet. |
 | M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime become available. |
 | M6 — Compatibility-grade persistence and operations | [ ] | DB-backed persistence, richer observability/admin tooling, and a real deploy/release story land. |
 

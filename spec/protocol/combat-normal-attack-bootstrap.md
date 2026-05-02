@@ -18,6 +18,9 @@ What this document adds is the next narrower question:
 
 **What is the smallest honest attack-intent step the project can own next without pretending that full damage, death, aggro, or mob AI already exist?**
 
+The first owned death / respawn follow-up now lives in:
+- `non-player-death-respawn-bootstrap.md`
+
 ## Scope
 
 This contract currently applies only to:
@@ -113,18 +116,20 @@ So the first owned target-state surface is now intentionally tiny but expressive
 
 ## Relationship to later HP / death work
 
-This document now freezes the first deterministic bootstrap HP mutation, but it still does **not** yet claim that death or respawn are implemented.
+This document freezes the first deterministic bootstrap HP mutation and the preferred visible HP-refresh carrier.
+The first owned death / respawn wire contract is now documented separately in `non-player-death-respawn-bootstrap.md`, but the live implementation still has not landed that zero-HP transition yet.
 
 The current owned bootstrap combat state is intentionally tiny:
 - visible `training_dummy` combat state is runtime-owned and starts at `10` HP
 - each accepted bootstrap normal attack decrements the dummy by `1` HP
 - the visible refresh stays on server `TARGET(target_vid, hp_percent)` using the current runtime HP converted to percent in `10`-point steps (`100`, `90`, `80`, ...)
-- until the first death slice exists, this bootstrap loop clamps at the minimum live floor `1 / 10%` instead of claiming corpse/death choreography too early
+- until the death / respawn implementation slice lands, the currently shipped loop may still stop at the pre-death floor instead of claiming live zero-HP behavior too early
 
 What this still freezes about the **visible state carrier** for later slices:
 - accepted later attack-driven HP refreshes should continue preferring server `TARGET` with the same selected `target_vid` plus the updated `hp_percent`
 - target loss, invalidation, death cleanup, reconnect cleanup, transfer cleanup, or reclaim cleanup should prefer the zero-target `TARGET(0, 0)` companion before introducing a new clear-target family
 - when subject movement or sync updates make the selected dummy leave current visibility or the bootstrap combat band, the runtime should proactively clear the active target with one self-only `TARGET(0, 0)` companion
+- when the later zero-HP death transition lands, it should keep death-triggered target clear on the same `TARGET(0, 0)` surface while `GC DEAD(vid)` and respawn rebuild stay owned by `non-player-death-respawn-bootstrap.md`
 
 If future captures or tests prove this carrier insufficient, the repository may add a richer combat packet family later.
 But the next slices should begin from this smaller contract first.
@@ -182,7 +187,7 @@ This document now freezes movement/sync invalidation plus fresh bootstrap/reboot
 The next flow/gameplay slices still need to prove or freeze:
 - whether the runtime should validate or currently only preserve the two trailing raw CRC bytes
 - the exact first timing/rate rule for repeated attack attempts
-- exactly which remaining lifecycle edges (death, actor replacement) should proactively emit `TARGET(0, 0)` instead of only failing closed
+- the exact bootstrap respawn delay constant and scheduler shape for the first server-driven dummy respawn reset
 
 Those unknowns are deliberate.
 The codec now owns the exact wire shape, but the gameplay contract is still intentionally narrower than full combat semantics.
@@ -193,7 +198,7 @@ This slice does **not** yet freeze:
 - the final gameplay meaning of every `attack_type` value
 - final damage formulas beyond the current bootstrap `1` HP decrement
 - miss/crit/block results
-- death or respawn packet choreography
+- the death / respawn implementation itself, even though that follow-up wire contract is now documented separately
 - hostile retaliation
 - player-vs-player attack semantics
 - skills, buffs, debuffs, or status effects
@@ -210,6 +215,7 @@ After this document lands, the repository should be able to say:
 - transfer rebootstrap, same-socket fresh bootstrap re-entry, and reconnect now clear the session-local active target too, but the first owned contract keeps those lifecycle resets silent instead of claiming a visible clear-target packet
 - duplicate-live reclaim now inherits the same shared-world hardening model as movement, whisper, item use, and merchant seams: stale `TARGET` / `ATTACK` packets fail closed and cannot mutate runtime dummy HP or the replacement owner's target state
 - accepted target ownership now also carries the current runtime snapshot behind the selected dummy `VID`, so later `ATTACK` requests fail closed if that dummy is replaced before the session reselects it
-- a dummy whose runtime-owned HP reached `0` is no longer targetable through the bootstrap `TARGET` / `ATTACK` loop until a later slice explicitly owns death/respawn choreography
+- a dummy whose runtime-owned HP reached `0` is no longer targetable through the bootstrap `TARGET` / `ATTACK` loop once the separate death / respawn contract is implemented
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes should try to stay on the same `GC TARGET(target_vid, hp_percent)` carrier before claiming richer combat packets
+- the first death / respawn wire contract is now frozen separately in `non-player-death-respawn-bootstrap.md`, so later implementation slices can drive zero HP without inventing new target-clear or revive families ad hoc

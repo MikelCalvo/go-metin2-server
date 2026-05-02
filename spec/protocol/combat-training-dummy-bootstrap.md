@@ -20,6 +20,9 @@ What this document adds is the next narrower question:
 The follow-up planned attack-intent and clear-target contract now lives in:
 - `combat-normal-attack-bootstrap.md`
 
+The follow-up planned death / respawn contract now lives in:
+- `non-player-death-respawn-bootstrap.md`
+
 ## Scope
 
 This contract currently applies only to:
@@ -35,7 +38,7 @@ It does **not** yet claim:
 - attack animations or timing
 - damage formulas, hit results, or HP bars
 - aggro, retaliation, AI, movement, or spawn groups
-- loot, drops, death, respawn, or corpse state
+- loot, drops, or corpse gameplay; the first death / respawn boundary is now documented separately in `non-player-death-respawn-bootstrap.md`
 - persistent target state across reconnects, transfers, or ownership reclaim
 - target selection for other player characters
 - final client HUD/reticle choreography beyond the minimal request boundary frozen here
@@ -143,8 +146,8 @@ This first contract intentionally expects:
 - a dummy at runtime-owned `0` HP is no longer eligible for accepted bootstrap target selection
 - target ownership dies at fresh bootstrap/rebootstrap boundaries; transfer rebootstrap, same-socket `/phase_select` re-entry, and fresh reconnect all require a new accepted `TARGET` request before later attacks can proceed again
 
-Future slices may still freeze explicit target-clear rules for duplicate-live retry, reclaim, actor replacement, or death.
 Visibility/range invalidation for an already selected dummy now lives in `combat-normal-attack-bootstrap.md` via the self-only `GC TARGET(0, 0)` companion.
+The first death / respawn follow-up now lives in `non-player-death-respawn-bootstrap.md`.
 
 ## Runtime seam already owned before and after the packet path
 

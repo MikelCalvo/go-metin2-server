@@ -43,6 +43,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `npc-service-interactions-bootstrap.md` — first frozen service-style NPC gameplay contract built on top of bootstrap static actors and the existing `INTERACT` ingress
 - `combat-training-dummy-bootstrap.md` — first frozen combat-preparation target contract around one visible `training_dummy` actor
 - `combat-normal-attack-bootstrap.md` — first owned `ATTACK` wire contract, selected-dummy normal-attack gate, deterministic bootstrap HP refresh loop, and clear-target companion on top of the visible `training_dummy` target slice
+- `non-player-death-respawn-bootstrap.md` — first owned zero-HP death, target clear, dead-state rejection, and respawn-reset contract for bootstrap non-player combatants
 - `npc-shop-preview-bootstrap.md` — browse-only merchant preview contract built on top of the existing `INTERACT` ingress and deterministic interaction-definition authoring
 - `npc-shop-catalog-bootstrap.md` — structured merchant catalog contract behind `shop_preview`, with stable catalog slots and template-backed entries
 - `npc-shop-open-close-bootstrap.md` — first client-visible merchant window contract, keeping merchant open anchored to `INTERACT` while freezing planned `SHOP START` / `BUY` / `END` roles
