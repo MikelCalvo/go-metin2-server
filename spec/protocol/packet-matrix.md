@@ -104,7 +104,8 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `TARGET` | client -> server | `TBD` | game | planned | first owned combat-preparation request for selecting one currently visible `training_dummy` actor by visible `vid`; the current docs-first contract freezes a little-endian `uint32 target_vid`, a fixed `300` world-unit range band, and fail-closed lookup/targetable gating while leaving server ack, target-clear, attack, and damage packet families out of scope |
+| `TARGET` | client -> server | `0x0A01` | game | documented | first owned combat-preparation request for selecting one currently visible `training_dummy` actor by visible `vid`; payload is little-endian `uint32 target_vid`; the current live slice routes it through the shared-world `AttemptStaticActorCombatTarget(...)` seam, accepts only visible in-range `training_dummy` targets, and fails closed for malformed payloads, out-of-range targets, invisible actors, or visible non-targetable actors |
+| `TARGET` | server -> client | `0x0A10` | game | documented | minimal self-only target-selection acknowledgement; payload is little-endian `uint32 target_vid` + `uint8 hp_percent`; the current bootstrap dummy path returns `hp_percent = 100` on accepted target selection only and still freezes no peer fanout, no clear-target packet, and no attack/damage choreography |
 
 ## Notes
 

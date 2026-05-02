@@ -71,20 +71,33 @@ What is frozen here is the behavior contract, not the final field name.
 
 ## Planned request boundary
 
-The first owned combat-preparation request is:
+The first owned combat-preparation request is now frozen as:
 - name: `TARGET`
 - direction: client -> server
-- header: `TBD`
+- header: `0x0A01`
 - phase: `GAME`
 - payload: little-endian `uint32 target_vid`
 
-This document freezes only the **family name, direction, phase, and target identity shape**.
-No `TARGET` codec or client-facing request handler is implemented yet; the current repo only owns the underlying targetability metadata plus shared-world validation seam and focused tests for the next combat RED.
+The minimal self-only acknowledgement companion is now also frozen as:
+- name: `TARGET`
+- direction: server -> client
+- header: `0x0A10`
+- phase: `GAME`
+- payload: little-endian `uint32 target_vid` + `uint8 hp_percent`
+- current bootstrap dummy value: `hp_percent = 100`
+
+This contract now freezes the **family name, direction, phase, concrete wire headers, and the narrow request/ack payload shapes**.
+The repo now owns:
+- an exact `internal/proto/combat` codec for both directions
+- `GAME`-phase flow dispatch for the request
+- minimal runtime wiring that reuses the existing shared-world `AttemptStaticActorCombatTarget(...)` seam
+- one accepted self-only `GC TARGET` ack for a visible in-range `training_dummy`
+
 It does **not** yet freeze:
-- the final wire header
 - a clear-target request shape
-- a server acknowledgement packet
+- target persistence beyond the immediate accepted runtime request
 - a damage or hit-result packet family
+- target-loss packets on visibility changes, transfer, reconnect, or reclaim
 
 ## Target identity and visibility rule
 
@@ -119,20 +132,24 @@ Accepted target selection should remain transient live runtime state only.
 This first contract intentionally expects:
 - target ownership is per selected live session
 - selecting a dummy does not mutate persistence, inventory, equipment, or points by itself
+- selecting a dummy emits at most one self-only `GC TARGET` acknowledgement on accept
 - selecting a dummy does not broadcast to peers
 - selecting a dummy only prepares later attack-intent validation on that same live session
 
-Future slices may freeze explicit target-clear rules when transfer, reconnect, visibility-loss, or death handling needs them.
+Future slices may freeze explicit target-clear rules when transfer, reconnect, visibility-loss, reclaim, or death handling needs them.
 This document does not claim those resets yet.
 
-## Runtime seam already owned before the packet path
+## Runtime seam already owned before and after the packet path
 
-Even before the first `TARGET` packet lands, the repository now already owns one narrow runtime checkpoint:
-- `internal/worldruntime.StaticEntity` can now carry optional combat-target metadata using the current `training_dummy` kind
+The repository now owns one narrow runtime path end to end:
+- `internal/worldruntime.StaticEntity` can carry optional combat-target metadata using the current `training_dummy` kind
 - invalid combat kinds fail closed at the non-player directory boundary
-- `internal/minimal/shared_world` now owns a structured target-attempt validation seam for visible training dummies
-- that seam already checks subject ownership, visible-actor lookup by `VID`, fixed `300`-unit range gating, and targetable-class filtering
-- no client-visible combat packet, HUD state, or attack execution is implied by that runtime seam alone
+- `internal/minimal/shared_world` owns the structured target-attempt validation seam for visible training dummies
+- that seam checks subject ownership, visible-actor lookup by `VID`, fixed `300`-unit range gating, and targetable-class filtering
+- `internal/proto/combat` now owns exact client/server `TARGET` codecs for the current request/ack pair
+- `internal/game` now dispatches client `TARGET` in `GAME` and fail-closes malformed payloads or rejected runtime attempts
+- the current runtime reply is still deliberately tiny: one self-only `GC TARGET` ack with `target_vid` and bootstrap `hp_percent = 100`
+- no client-visible combat packet beyond that ack, no HUD state machine, and no attack execution is implied by this path alone
 
 ## Failure semantics
 
@@ -143,6 +160,7 @@ The current owned failure contract should stay minimal and fail closed:
 - target `VID` not found in current visible non-player state -> request fails closed
 - target actor is visible but not marked `training_dummy` -> request fails closed
 - target actor is visible and targetable but out of the `300`-unit range band -> request fails closed
+- rejected attempts do not emit chat, peer fanout, persistence writes, or a compensating clear-target packet in this slice
 
 This slice does **not** yet require:
 - self-only info chat on deny
@@ -150,7 +168,7 @@ This slice does **not** yet require:
 - peer-facing notifications
 - special dummy state transitions
 
-The next RED should therefore focus on *lookup, ownership, targetability, and range gating*, not on speculative UI feedback.
+The next combat RED should therefore build on this request/ack seam without skipping the existing lookup, ownership, targetability, and range gating rules.
 
 ## Explicit non-goals
 
@@ -166,10 +184,12 @@ This slice does **not** yet freeze:
 
 ## Success definition
 
-After this document, the repository should be able to say:
-- the next combat slice is no longer vague; it is specifically a visible `training_dummy` target path
+After this document and slice, the repository should be able to say:
+- the first client-visible combat slice is no longer vague; it is a concrete `TARGET` request/ack path for one visible `training_dummy`
 - the first combat target identity is the already-visible non-player `VID`
-- the first owned target request family is `TARGET` in `GAME` with header still capture-gated
+- the first owned target request family is `TARGET` in `GAME` with `0x0A01`
+- the first owned self-only acknowledgement family is `TARGET` in `GAME` with `0x0A10`
 - the first targetable actor class is a visible `training_dummy`, not every static actor or every NPC
-- the next RED can validate subject ownership, visible target lookup, targetable-class filtering, and fixed-range gating without dragging in damage or AI
-- combat remains intentionally unimplemented, but the first honest target-selection contract is now frozen in project docs
+- accepted in-range dummy selection now returns one self-only `GC TARGET` ack without dragging in attack execution, damage, aggro, or AI
+- rejected attempts still fail closed without chat spam, peer fanout, persistence writes, or clear-target choreography
+- combat remains intentionally tiny, but the first honest target-selection request path is now frozen in both docs and tests

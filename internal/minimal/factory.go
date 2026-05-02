@@ -31,6 +31,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
@@ -137,11 +138,12 @@ type CharacterCurrencySnapshot struct {
 }
 
 const (
-	staticActorInteractionFailureDefinitionNotFound     = "interaction_definition_not_found"
-	staticActorInteractionFailureUnsupportedKind        = "unsupported_interaction_kind"
-	staticActorInteractionFailureWarpDestinationInvalid = "warp_destination_invalid"
-	staticActorInteractionFailureWarpNotApplied         = "warp_not_applied"
-	staticActorInteractionCooldown                      = time.Second
+	staticActorInteractionFailureDefinitionNotFound           = "interaction_definition_not_found"
+	staticActorInteractionFailureUnsupportedKind              = "unsupported_interaction_kind"
+	staticActorInteractionFailureWarpDestinationInvalid       = "warp_destination_invalid"
+	staticActorInteractionFailureWarpNotApplied               = "warp_not_applied"
+	staticActorInteractionCooldown                            = time.Second
+	staticActorCombatTargetBootstrapHPPercent           uint8 = 100
 )
 
 type staticActorInteractionResolution struct {
@@ -151,6 +153,14 @@ type staticActorInteractionResolution struct {
 	Actor      StaticActorSnapshot
 	Definition InteractionDefinition
 	Delivery   *chatproto.ChatDeliveryPacket
+}
+
+type staticActorCombatTargetResolution struct {
+	Accepted  bool
+	Failure   string
+	TargetVID uint32
+	Actor     StaticActorSnapshot
+	Packet    *combatproto.ServerTargetPacket
 }
 
 type merchantBuyContext struct {
@@ -1519,6 +1529,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					clearActiveMerchantBuy()
 					markInteractionCooldown(packet.TargetVID)
 					return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
+				},
+				HandleTarget: func(packet combatproto.ClientTargetPacket) gameflow.TargetResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if !ownsLiveSharedWorldSession() {
+						return gameflow.TargetResult{Accepted: false}
+					}
+					resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, packet.TargetVID)
+					if !resolution.Accepted || resolution.Packet == nil {
+						return gameflow.TargetResult{Accepted: false}
+					}
+					return gameflow.TargetResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
 				},
 				HandleShopBuy: func(packet shopproto.ClientBuyPacket) gameflow.ShopResult {
 					stateMu.Lock()
@@ -3128,6 +3151,24 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 	delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: preview}
 	resolution.Accepted = true
 	resolution.Delivery = &delivery
+	return resolution
+}
+
+func (r *gameRuntime) resolveStaticActorCombatTarget(subjectID uint64, targetVID uint32) staticActorCombatTargetResolution {
+	resolution := staticActorCombatTargetResolution{TargetVID: targetVID}
+	if r == nil || r.sharedWorld == nil {
+		resolution.Failure = StaticActorCombatTargetFailureSubjectNotFound
+		return resolution
+	}
+	attempt := r.sharedWorld.AttemptStaticActorCombatTarget(subjectID, targetVID)
+	resolution.Actor = attempt.Actor
+	if !attempt.Accepted {
+		resolution.Failure = attempt.Failure
+		return resolution
+	}
+	packet := combatproto.ServerTargetPacket{TargetVID: attempt.TargetVID, HPPercent: staticActorCombatTargetBootstrapHPPercent}
+	resolution.Accepted = true
+	resolution.Packet = &packet
 	return resolution
 }
 

@@ -565,17 +565,19 @@ Expected result:
 - compatible existing stacks fill first in slot order, then the remainder lands in the lowest free carried slot
 - no harness-only placement drift appears in persisted or live runtime state
 
-### 6.19 Training-dummy combat target selection (future slice placeholder)
+### 6.19 Training-dummy combat target selection (packet-harness optional)
 
-- [ ] Only run this once a QA build lands the first owned combat target request and one visible authored `training_dummy` actor exists
-- [ ] Put the QA character near that visible dummy and attempt one target-selection action
-- [ ] Repeat once from outside the current planned bootstrap combat-selection range band
+- [ ] Seed or confirm one visible authored/runtime-marked `training_dummy` actor exists near the QA character
+- [ ] Using the first live client path or a packet harness that can emit `TARGET`, send one target-selection request while the character stands within the current bootstrap `300`-unit band
+- [ ] Confirm the selected session receives exactly one self-only `GC TARGET` acknowledgement carrying the dummy's `target_vid` and the current bootstrap `hp_percent = 100`
+- [ ] Repeat once from outside the current `300`-unit target-selection band
 - [ ] Repeat once against a visible non-player actor that is *not* authored/runtime-marked as `training_dummy`
 
 Expected result:
-- for current live client QA, treat this subsection as **N/A** until the first `TARGET` request path lands, even though the underlying shared-world targetability seam is now covered by automated tests
-- once the next combat slices land, in-range visible `training_dummy` selection should become the only accepted bootstrap combat target path
-- out-of-range, invisible, or non-targetable non-player actors should fail closed without implying attacks, damage, or UI-rich combat state yet
+- accepted in-range visible `training_dummy` selection returns exactly one self-only `GC TARGET` ack
+- the ack stays tiny in the current slice: `target_vid` plus `hp_percent`, with no attack, damage, aggro, or death choreography implied
+- out-of-range, invisible, or visible non-targetable actors fail closed without self-only chat spam, peer fanout, persistence writes, or a compensating clear-target packet
+- if the QA client does not yet expose a visible HUD reaction for `GC TARGET`, treat the packet-level acceptance as the source of truth for this slice rather than blocking on richer UI choreography
 
 ---
 ## 7. Optional bootstrap chat-scope checks

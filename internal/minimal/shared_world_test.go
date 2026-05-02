@@ -16,6 +16,7 @@ import (
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
@@ -8540,6 +8541,75 @@ func TestGameSessionFlowStaticActorOutOfRangeInteractionReturnsSelfOnlyChatDeliv
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for out-of-range self-only interaction, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorCombatTargetReturnsSelfOnlyTargetPacket(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame, got %d", len(out))
+	}
+	target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode combat target frame: %v", err)
+	}
+	if target.TargetVID != uint32(actor.EntityID) || target.HPPercent != 100 {
+		t.Fatalf("unexpected combat target packet: %+v", target)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for self-only combat targeting, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorCombatTargetRejectsVisibleNonTargetableActorWithoutFrames(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300)
+	if !ok {
+		t.Fatal("expected visible non-targetable static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible non-targetable actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected non-targetable combat target error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no self frames for rejected non-targetable combat target, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for rejected combat target, got %d", len(queued))
 	}
 }
 
