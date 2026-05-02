@@ -110,6 +110,24 @@ The project now owns these reconnect rules:
 This is the current bootstrap ownership contract for correctness.
 It does **not** yet claim resumable gameplay state, preserved socket identity, or any special reconnect shortcut.
 
+## Operator troubleshooting notes for combat ownership
+
+When debugging bootstrap combat-ownership bugs, keep the current boundaries explicit:
+
+- range / visibility clear:
+  - the accepted dummy target is session-local only
+  - if movement or sync makes that dummy leave the current combat band or visibility graph, the live owner should later observe one self-only `GC TARGET(0, 0)` and no more accepted attacks until reselection
+  - inspect `/local/visibility`, `/local/players`, and `/local/relocate-preview` together when reproducing these edges
+- transfer / reconnect clear:
+  - transfer rebootstrap, same-socket `/phase_select` re-entry, and reconnect all intentionally rebuild with no carried active combat target
+  - if an attack still succeeds without a fresh `TARGET` after one of those seams, treat it as an ownership bug first, not as a client quirk
+- stale reclaim:
+  - after a second session reclaims live ownership, later stale `TARGET` / `ATTACK` traffic may stay self-local or silent, but it must not mutate runtime dummy HP or replace the live owner's selected target
+  - compare the authoritative replacement session with `/local/players` / `/local/visibility` plus normal packet traces instead of trusting stale-socket local output
+- dead / replaced dummy snapshots:
+  - dummy HP is runtime-owned only; it is not persisted character state
+  - if a dummy was replaced in place or its runtime HP reached `0`, later attacks against the old selected snapshot must fail closed until the live session reacquires target intent with a fresh accepted `TARGET`
+
 ## Transfer followed by close
 
 A transfer can commit updated persisted location state before the moved session later disconnects.

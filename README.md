@@ -48,7 +48,7 @@ The README stays intentionally high-level. If you want the deeper technical view
 
 - [Development guide](docs/development.md) — local commands, Docker, runtime addresses, and config knobs
 - [Debugging and profiling](docs/debugging-and-profiling.md) — pprof, local operator endpoints, and examples
-- [Manual client QA checklist](docs/qa/manual-client-checklist.md) — smoke-test reference for a real client
+- [Manual client QA checklist](docs/qa/manual-client-checklist.md) — smoke-test reference for a real client, including the current combat-ownership bundle
 - [Protocol document index](spec/protocol/README.md) — packet docs and wire-level notes
 - [Project assessment](docs/roadmaps/2026-04-18-global-project-assessment.md) — deeper state-of-project write-up
 - [Plans directory](docs/plans/) — implementation roadmaps and next slices

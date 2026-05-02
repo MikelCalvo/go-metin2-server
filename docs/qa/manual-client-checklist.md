@@ -602,6 +602,14 @@ Expected result:
 - out-of-range, invisible, or visible non-targetable actors fail closed without self-only chat spam, peer fanout, persistence writes, or a compensating clear-target packet
 - if the QA client does not yet expose a visible HUD reaction for `GC TARGET`, treat the packet-level acceptance as the source of truth for this slice rather than blocking on richer UI choreography
 
+### Combat ownership smoke bundle
+
+Treat sections 6.20 through 6.22 as one ownership-focused smoke bundle when debugging bootstrap combat state.
+Together they cover:
+- target clear on bootstrap/reset seams
+- stale reclaim non-authoritative behavior
+- dead or replaced dummy snapshot rejection
+
 ### 6.20 Training-dummy target clears across transfer / re-enter / reconnect (packet-harness optional)
 
 - [ ] Select one visible authored/runtime-marked `training_dummy` and confirm the current session receives the normal self-only `GC TARGET(target_vid, 100)` ack

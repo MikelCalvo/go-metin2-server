@@ -204,6 +204,28 @@ Current authored shapes:
 `PATCH` and `PUT` are full-identity upserts, so body `kind` + `ref` must match the path exactly.
 Deletes fail closed while a bootstrap static actor still references the definition.
 
+### Combat ownership troubleshooting workflow
+
+Use the current local-only runtime endpoints together when combat target ownership looks wrong:
+
+1. `GET /local/players`
+   - confirm the authoritative live owner is the expected selected character instance after reconnect/reclaim
+2. `GET /local/visibility`
+   - confirm whether the dummy is still visible to that live owner before assuming a combat bug
+3. `POST /local/relocate-preview`
+   - simulate range/visibility-loss moves before mutating runtime state, then compare with the real `MOVE` / `SYNC_POSITION` path
+4. `POST /local/transfer`
+   - reproduce transfer rebootstrap cleanup explicitly when checking whether stale target ownership survives across a fresh bootstrap
+5. `GET` / `PATCH` / `PUT /local/static-actors/{entity_id}`
+   - inspect or replace the current dummy snapshot in place when reproducing replaced-target fail-closed behavior
+
+Current combat ownership debugging expectations:
+
+- range or visibility loss should eventually collapse the live session's selected target to one self-only `GC TARGET(0, 0)`
+- transfer, `/phase_select` re-entry, and reconnect should all require a fresh accepted `TARGET` before the next live `ATTACK`
+- stale post-reclaim sockets may still produce self-local noise, but they must not mutate runtime dummy HP or the replacement live owner's selected target state
+- dummy HP is runtime-owned only; after a harness/operator-injected `0` HP or in-place actor replacement, the old selected snapshot must fail closed until the session reselects target intent
+
 ### `GET` / `POST /local/content-bundle`
 
 Exports or imports one deterministic authored-content artifact spanning both bootstrap static actors and interaction definitions.
