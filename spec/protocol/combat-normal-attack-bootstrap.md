@@ -156,6 +156,8 @@ An `ATTACK` request must fail closed when any of these are true:
 - the selected target is no longer visible
 - the selected target is no longer a `training_dummy`
 - the selected target is no longer within the current bootstrap combat band
+- the selected target no longer matches the current runtime snapshot bound to the session's accepted target selection
+- the selected target is now at `0` HP / dead under runtime-owned dummy state
 - the session already lost authoritative live ownership because another session reclaimed the same character
 
 The current visible failure expectations are intentionally narrow:
@@ -168,6 +170,7 @@ The current visible failure expectations are intentionally narrow:
 The first owned attack-intent contract must inherit the existing shared-world ownership model:
 - attack authority belongs to the current live selected-character session
 - stale reclaimed sockets must not authoritatively damage runtime-owned dummy HP, clear or replace the live owner's selected combat target, or queue combat-visible refresh frames to the replacement owner
+- accepted target ownership now binds both the current dummy `target_vid` and the current runtime snapshot behind that `VID`; later attacks fail closed if the dummy was replaced before the session reselects it
 - transfer rebootstrap, same-socket fresh bootstrap re-entry, and reconnect now clear session-local active combat target ownership before later attacks can proceed again
 - non-player HP/dead state belongs to runtime world ownership, not to character persistence
 
@@ -206,5 +209,7 @@ After this document lands, the repository should be able to say:
 - subject movement/sync that makes the selected dummy leave current visibility or the bootstrap combat band now proactively emits one self-only `GC TARGET(0, 0)` and clears the session-local active target
 - transfer rebootstrap, same-socket fresh bootstrap re-entry, and reconnect now clear the session-local active target too, but the first owned contract keeps those lifecycle resets silent instead of claiming a visible clear-target packet
 - duplicate-live reclaim now inherits the same shared-world hardening model as movement, whisper, item use, and merchant seams: stale `TARGET` / `ATTACK` packets fail closed and cannot mutate runtime dummy HP or the replacement owner's target state
+- accepted target ownership now also carries the current runtime snapshot behind the selected dummy `VID`, so later `ATTACK` requests fail closed if that dummy is replaced before the session reselects it
+- a dummy whose runtime-owned HP reached `0` is no longer targetable through the bootstrap `TARGET` / `ATTACK` loop until a later slice explicitly owns death/respawn choreography
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes should try to stay on the same `GC TARGET(target_vid, hp_percent)` carrier before claiming richer combat packets

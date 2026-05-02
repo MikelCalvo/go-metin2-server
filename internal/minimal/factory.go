@@ -155,20 +155,22 @@ type staticActorInteractionResolution struct {
 }
 
 type staticActorCombatTargetResolution struct {
-	Accepted  bool
-	Failure   string
-	TargetVID uint32
-	Actor     StaticActorSnapshot
-	Packet    *combatproto.ServerTargetPacket
+	Accepted        bool
+	Failure         string
+	TargetVID       uint32
+	SnapshotVersion uint64
+	Actor           StaticActorSnapshot
+	Packet          *combatproto.ServerTargetPacket
 }
 
 type staticActorCombatAttackResolution struct {
-	Accepted           bool
-	Failure            string
-	ActiveTargetVID    uint32
-	RequestedTargetVID uint32
-	Actor              StaticActorSnapshot
-	Packet             *combatproto.ServerTargetPacket
+	Accepted                    bool
+	Failure                     string
+	ActiveTargetVID             uint32
+	ActiveTargetSnapshotVersion uint64
+	RequestedTargetVID          uint32
+	Actor                       StaticActorSnapshot
+	Packet                      *combatproto.ServerTargetPacket
 }
 
 type merchantBuyContext struct {
@@ -738,6 +740,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
 		var activeCombatTargetVID uint32
+		var activeCombatTargetSnapshotVersion uint64
 		var activeMerchantBuy merchantBuyContext
 		var hasActiveMerchantBuy bool
 		interactionCooldowns := make(map[uint32]time.Time)
@@ -763,6 +766,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		}
 		clearActiveCombatTarget := func() {
 			activeCombatTargetVID = 0
+			activeCombatTargetSnapshotVersion = 0
 		}
 		enqueueCombatTargetClear := func() {
 			pending.Enqueue([][]byte{combatproto.EncodeServerClearTarget()})
@@ -1576,6 +1580,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.TargetResult{Accepted: false}
 					}
 					activeCombatTargetVID = resolution.Packet.TargetVID
+					activeCombatTargetSnapshotVersion = resolution.SnapshotVersion
 					return gameflow.TargetResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
 				},
 				HandleAttack: func(packet combatproto.ClientAttackPacket) gameflow.AttackResult {
@@ -1588,7 +1593,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if packet.AttackType != combatproto.ClientAttackTypeNormal {
 						return gameflow.AttackResult{Accepted: false}
 					}
-					resolution := runtime.resolveSelectedStaticActorNormalAttack(sharedWorldID, activeCombatTargetVID, packet.TargetVID)
+					resolution := runtime.resolveSelectedStaticActorNormalAttack(sharedWorldID, activeCombatTargetVID, activeCombatTargetSnapshotVersion, packet.TargetVID)
 					if !resolution.Accepted || resolution.Packet == nil {
 						return gameflow.AttackResult{Accepted: false}
 					}
@@ -3214,6 +3219,7 @@ func (r *gameRuntime) resolveStaticActorCombatTarget(subjectID uint64, targetVID
 	}
 	attempt := r.sharedWorld.AttemptStaticActorCombatTarget(subjectID, targetVID)
 	resolution.Actor = attempt.Actor
+	resolution.SnapshotVersion = attempt.SnapshotVersion
 	if !attempt.Accepted {
 		resolution.Failure = attempt.Failure
 		return resolution
@@ -3224,13 +3230,13 @@ func (r *gameRuntime) resolveStaticActorCombatTarget(subjectID uint64, targetVID
 	return resolution
 }
 
-func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, activeTargetVID uint32, requestedTargetVID uint32) staticActorCombatAttackResolution {
-	resolution := staticActorCombatAttackResolution{ActiveTargetVID: activeTargetVID, RequestedTargetVID: requestedTargetVID}
+func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, activeTargetVID uint32, activeTargetSnapshotVersion uint64, requestedTargetVID uint32) staticActorCombatAttackResolution {
+	resolution := staticActorCombatAttackResolution{ActiveTargetVID: activeTargetVID, ActiveTargetSnapshotVersion: activeTargetSnapshotVersion, RequestedTargetVID: requestedTargetVID}
 	if r == nil || r.sharedWorld == nil {
 		resolution.Failure = StaticActorCombatAttackFailureSubjectNotFound
 		return resolution
 	}
-	attempt := r.sharedWorld.AttemptSelectedStaticActorAttack(subjectID, activeTargetVID, requestedTargetVID)
+	attempt := r.sharedWorld.AttemptSelectedStaticActorAttack(subjectID, activeTargetVID, activeTargetSnapshotVersion, requestedTargetVID)
 	resolution.Actor = attempt.Actor
 	if !attempt.Accepted {
 		resolution.Failure = attempt.Failure

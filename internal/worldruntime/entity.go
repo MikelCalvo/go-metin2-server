@@ -68,7 +68,10 @@ func BootstrapStaticActorHPPercent(combatKind string, currentHP uint8) (uint8, b
 func ApplyBootstrapStaticActorNormalAttack(combatKind string, currentHP uint8) (uint8, uint8, bool) {
 	switch combatKind {
 	case StaticActorCombatKindTrainingDummy:
-		if currentHP == 0 || currentHP > TrainingDummyBootstrapMaxHP {
+		if currentHP == 0 {
+			return 0, 0, false
+		}
+		if currentHP > TrainingDummyBootstrapMaxHP {
 			currentHP = TrainingDummyBootstrapMaxHP
 		}
 		nextHP := currentHP

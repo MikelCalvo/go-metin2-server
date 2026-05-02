@@ -133,12 +133,14 @@ Accepted target selection should remain transient live runtime state only.
 
 This first contract intentionally expects:
 - target ownership is per selected live session
+- accepted target identity is not just the dummy `VID`; it also binds the current runtime snapshot behind that visible dummy until the session reselects it
 - selecting a dummy does not mutate persistence, inventory, equipment, or points by itself
 - dummy combat HP is world-runtime-owned state, not character/account persistence
 - repeated accepted attacks may later mutate that live dummy HP without implying any player-save write
 - selecting a dummy emits at most one self-only `GC TARGET` acknowledgement on accept
 - selecting a dummy does not broadcast to peers
 - selecting a dummy only prepares later attack-intent validation on that same live session
+- a dummy at runtime-owned `0` HP is no longer eligible for accepted bootstrap target selection
 - target ownership dies at fresh bootstrap/rebootstrap boundaries; transfer rebootstrap, same-socket `/phase_select` re-entry, and fresh reconnect all require a new accepted `TARGET` request before later attacks can proceed again
 
 Future slices may still freeze explicit target-clear rules for duplicate-live retry, reclaim, actor replacement, or death.

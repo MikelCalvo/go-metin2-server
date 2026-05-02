@@ -628,6 +628,20 @@ Expected result:
 - runtime-owned dummy HP does not change because of the stale socket
 - the replacement live owner's selected dummy target remains intact and its next authoritative attack still produces the normal self-only `GC TARGET(target_vid, hp_percent)` refresh
 
+### 6.22 Replaced or dead training-dummy targets fail closed (debug-harness optional)
+
+- [ ] Select one visible `training_dummy` and confirm the normal self-only `GC TARGET(target_vid, 100)` ack
+- [ ] Using a debug harness/admin seam, replace that same dummy's runtime snapshot in place (for example by moving/updating the actor while keeping it visible and in range) without sending a fresh `TARGET`
+- [ ] Immediately send one normal `ATTACK` against the still-visible dummy `VID`
+- [ ] Re-select the dummy and confirm the next normal `ATTACK` works again with the usual self-only `GC TARGET(target_vid, hp_percent)` refresh
+- [ ] Repeat with a harness-injected dead state (`current HP = 0`) and confirm both a fresh `TARGET` and a later `ATTACK` against the old selected dummy fail closed
+
+Expected result:
+- accepted combat ownership is bound to the selected dummy snapshot, not only the visible `VID`
+- if that snapshot is replaced before reselection, stale `ATTACK` intent fails closed until the client reacquires target ownership with a new accepted `TARGET`
+- a dead (`0` HP) dummy is no longer eligible for accepted bootstrap target selection or attack refreshes
+- these rejections stay silent in the current slice: no peer fanout, no compensating chat spam, and no accidental HP mutation
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 

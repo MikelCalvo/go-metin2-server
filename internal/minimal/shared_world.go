@@ -27,12 +27,14 @@ type pendingServerFrames struct {
 }
 
 type sharedWorldRegistry struct {
-	mu                  sync.Mutex
-	topology            worldruntime.BootstrapTopology
-	entities            *worldruntime.EntityRegistry
-	sessionDirectory    *worldruntime.SessionDirectory
-	staticActorCombatHP map[uint64]uint8
-	lastKnownCharacters map[uint64]loginticket.Character
+	mu                              sync.Mutex
+	topology                        worldruntime.BootstrapTopology
+	entities                        *worldruntime.EntityRegistry
+	sessionDirectory                *worldruntime.SessionDirectory
+	staticActorCombatHP             map[uint64]uint8
+	staticActorCombatSnapshot       map[uint64]uint64
+	nextStaticActorCombatSnapshotID uint64
+	lastKnownCharacters             map[uint64]loginticket.Character
 }
 
 const (
@@ -45,13 +47,16 @@ const (
 	StaticActorCombatTargetFailureTargetNotVisible    = "target_not_visible"
 	StaticActorCombatTargetFailureTargetOutOfRange    = "target_out_of_range"
 	StaticActorCombatTargetFailureTargetNotTargetable = "target_not_targetable"
+	StaticActorCombatTargetFailureTargetDead          = "target_dead"
 
-	StaticActorCombatAttackFailureSubjectNotFound     = "subject_not_found"
-	StaticActorCombatAttackFailureNoActiveTarget      = "no_active_target"
-	StaticActorCombatAttackFailureTargetMismatch      = "target_mismatch"
-	StaticActorCombatAttackFailureTargetNotVisible    = "target_not_visible"
-	StaticActorCombatAttackFailureTargetOutOfRange    = "target_out_of_range"
-	StaticActorCombatAttackFailureTargetNotTargetable = "target_not_targetable"
+	StaticActorCombatAttackFailureSubjectNotFound        = "subject_not_found"
+	StaticActorCombatAttackFailureNoActiveTarget         = "no_active_target"
+	StaticActorCombatAttackFailureTargetMismatch         = "target_mismatch"
+	StaticActorCombatAttackFailureTargetNotVisible       = "target_not_visible"
+	StaticActorCombatAttackFailureTargetOutOfRange       = "target_out_of_range"
+	StaticActorCombatAttackFailureTargetNotTargetable    = "target_not_targetable"
+	StaticActorCombatAttackFailureTargetDead             = "target_dead"
+	StaticActorCombatAttackFailureTargetSnapshotMismatch = "target_snapshot_mismatch"
 )
 
 const (
@@ -67,20 +72,22 @@ type StaticActorInteractionAttempt struct {
 }
 
 type StaticActorCombatTargetAttempt struct {
-	Accepted  bool
-	Failure   string
-	TargetVID uint32
-	HPPercent uint8
-	Actor     StaticActorSnapshot
+	Accepted        bool
+	Failure         string
+	TargetVID       uint32
+	SnapshotVersion uint64
+	HPPercent       uint8
+	Actor           StaticActorSnapshot
 }
 
 type StaticActorCombatAttackAttempt struct {
-	Accepted           bool
-	Failure            string
-	ActiveTargetVID    uint32
-	RequestedTargetVID uint32
-	HPPercent          uint8
-	Actor              StaticActorSnapshot
+	Accepted                    bool
+	Failure                     string
+	ActiveTargetVID             uint32
+	ActiveTargetSnapshotVersion uint64
+	RequestedTargetVID          uint32
+	HPPercent                   uint8
+	Actor                       StaticActorSnapshot
 }
 
 func newQueuedSessionFlow(inner service.SessionFlow, pending *pendingServerFrames, onClose func()) *queuedSessionFlow {
@@ -178,11 +185,12 @@ func newSharedWorldRegistry() *sharedWorldRegistry {
 
 func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology) *sharedWorldRegistry {
 	return &sharedWorldRegistry{
-		topology:            topology,
-		entities:            worldruntime.NewEntityRegistryWithTopology(topology),
-		sessionDirectory:    worldruntime.NewSessionDirectory(),
-		staticActorCombatHP: make(map[uint64]uint8),
-		lastKnownCharacters: make(map[uint64]loginticket.Character),
+		topology:                  topology,
+		entities:                  worldruntime.NewEntityRegistryWithTopology(topology),
+		sessionDirectory:          worldruntime.NewSessionDirectory(),
+		staticActorCombatHP:       make(map[uint64]uint8),
+		staticActorCombatSnapshot: make(map[uint64]uint64),
+		lastKnownCharacters:       make(map[uint64]loginticket.Character),
 	}
 }
 
@@ -255,10 +263,37 @@ func (r *sharedWorldRegistry) sessionEntryForCharacterLocked(character logintick
 }
 
 func (r *sharedWorldRegistry) clearStaticActorCombatStateLocked(entityID uint64) {
-	if r == nil || entityID == 0 || r.staticActorCombatHP == nil {
+	if r == nil || entityID == 0 {
 		return
 	}
-	delete(r.staticActorCombatHP, entityID)
+	if r.staticActorCombatHP != nil {
+		delete(r.staticActorCombatHP, entityID)
+	}
+	if r.staticActorCombatSnapshot != nil {
+		delete(r.staticActorCombatSnapshot, entityID)
+	}
+}
+
+func (r *sharedWorldRegistry) assignStaticActorCombatSnapshotLocked(entityID uint64) uint64 {
+	if r == nil || entityID == 0 {
+		return 0
+	}
+	if r.staticActorCombatSnapshot == nil {
+		r.staticActorCombatSnapshot = make(map[uint64]uint64)
+	}
+	r.nextStaticActorCombatSnapshotID++
+	if r.nextStaticActorCombatSnapshotID == 0 {
+		r.nextStaticActorCombatSnapshotID = 1
+	}
+	r.staticActorCombatSnapshot[entityID] = r.nextStaticActorCombatSnapshotID
+	return r.nextStaticActorCombatSnapshotID
+}
+
+func (r *sharedWorldRegistry) staticActorCombatSnapshotLocked(entityID uint64) uint64 {
+	if r == nil || entityID == 0 || r.staticActorCombatSnapshot == nil {
+		return 0
+	}
+	return r.staticActorCombatSnapshot[entityID]
 }
 
 func (r *sharedWorldRegistry) ensureStaticActorCombatCurrentHPLocked(actor worldruntime.StaticEntity) (uint8, bool) {
@@ -290,6 +325,7 @@ func (r *sharedWorldRegistry) syncStaticActorCombatStateLocked(actor worldruntim
 		return
 	}
 	_, _ = r.ensureStaticActorCombatCurrentHPLocked(actor)
+	r.assignStaticActorCombatSnapshotLocked(actor.Entity.ID)
 }
 
 func (r *sharedWorldRegistry) enqueueToEntityLocked(entityID uint64, frames [][]byte) bool {
@@ -830,13 +866,13 @@ func (r *sharedWorldRegistry) AttemptStaticActorCombatTarget(subjectID uint64, t
 	return r.attemptStaticActorCombatTargetLocked(subject, targetVID)
 }
 
-func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64, activeTargetVID uint32, requestedTargetVID uint32) StaticActorCombatAttackAttempt {
-	attempt := StaticActorCombatAttackAttempt{ActiveTargetVID: activeTargetVID, RequestedTargetVID: requestedTargetVID}
+func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64, activeTargetVID uint32, activeTargetSnapshotVersion uint64, requestedTargetVID uint32) StaticActorCombatAttackAttempt {
+	attempt := StaticActorCombatAttackAttempt{ActiveTargetVID: activeTargetVID, ActiveTargetSnapshotVersion: activeTargetSnapshotVersion, RequestedTargetVID: requestedTargetVID}
 	if r == nil || r.entities == nil {
 		attempt.Failure = StaticActorCombatAttackFailureSubjectNotFound
 		return attempt
 	}
-	if activeTargetVID == 0 {
+	if activeTargetVID == 0 || activeTargetSnapshotVersion == 0 {
 		attempt.Failure = StaticActorCombatAttackFailureNoActiveTarget
 		return attempt
 	}
@@ -866,6 +902,8 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 			attempt.Failure = StaticActorCombatAttackFailureTargetOutOfRange
 		case StaticActorCombatTargetFailureTargetNotTargetable:
 			attempt.Failure = StaticActorCombatAttackFailureTargetNotTargetable
+		case StaticActorCombatTargetFailureTargetDead:
+			attempt.Failure = StaticActorCombatAttackFailureTargetDead
 		default:
 			attempt.Failure = targetAttempt.Failure
 		}
@@ -877,10 +915,21 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 		attempt.Failure = StaticActorCombatAttackFailureTargetNotVisible
 		return attempt
 	}
+	currentSnapshotVersion := r.staticActorCombatSnapshotLocked(actor.Entity.ID)
+	if currentSnapshotVersion == 0 || currentSnapshotVersion != activeTargetSnapshotVersion {
+		attempt.Accepted = false
+		attempt.Failure = StaticActorCombatAttackFailureTargetSnapshotMismatch
+		return attempt
+	}
 	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
 	if !ok {
 		attempt.Accepted = false
 		attempt.Failure = StaticActorCombatAttackFailureTargetNotTargetable
+		return attempt
+	}
+	if currentHP == 0 {
+		attempt.Accepted = false
+		attempt.Failure = StaticActorCombatAttackFailureTargetDead
 		return attempt
 	}
 	nextHP, hpPercent, ok := worldruntime.ApplyBootstrapStaticActorNormalAttack(actor.CombatKind, currentHP)
@@ -916,12 +965,17 @@ func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subject login
 		attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
 		return attempt
 	}
+	if currentHP == 0 {
+		attempt.Failure = StaticActorCombatTargetFailureTargetDead
+		return attempt
+	}
 	hpPercent, ok := worldruntime.BootstrapStaticActorHPPercent(actor.CombatKind, currentHP)
 	if !ok {
 		attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
 		return attempt
 	}
 	attempt.Accepted = true
+	attempt.SnapshotVersion = r.staticActorCombatSnapshotLocked(actor.Entity.ID)
 	attempt.HPPercent = hpPercent
 	return attempt
 }

@@ -7226,8 +7226,12 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisib
 	if !ok {
 		t.Fatal("expected visible training-dummy registration to succeed")
 	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected target selection before selected attack to succeed, got %+v", targetAttempt)
+	}
 
-	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, uint32(actor.EntityID), uint32(actor.EntityID))
+	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
 	if !attempt.Accepted {
 		t.Fatalf("expected matching selected training-dummy attack attempt to be accepted, got %+v", attempt)
 	}
@@ -7255,7 +7259,7 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackRejectsWithoutActive
 		t.Fatal("expected visible training-dummy registration to succeed")
 	}
 
-	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, 0, uint32(actor.EntityID))
+	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, 0, 0, uint32(actor.EntityID))
 	if attempt.Accepted {
 		t.Fatalf("expected selected attack without active target to fail, got %+v", attempt)
 	}
@@ -7283,8 +7287,12 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackRejectsMismatchedReq
 	if !ok {
 		t.Fatal("expected second visible training-dummy registration to succeed")
 	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(first.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected target selection before mismatched attack to succeed, got %+v", targetAttempt)
+	}
 
-	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, uint32(first.EntityID), uint32(second.EntityID))
+	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(second.EntityID))
 	if attempt.Accepted {
 		t.Fatalf("expected selected attack with mismatched request target to fail, got %+v", attempt)
 	}
@@ -8962,6 +8970,138 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for accepted bootstrap dummy attack, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorAttackRejectsSelectedDummyAfterSnapshotReplacement(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame before snapshot replacement, got %d", len(selectOut))
+	}
+	if _, ok := runtime.sharedWorld.UpdateStaticActorWithCombatKind(actor.EntityID, "TrainingDummy", bootstrapMapIndex, 1210, 2210, 20350, worldruntime.StaticActorCombatKindTrainingDummy); !ok {
+		t.Fatal("expected training-dummy snapshot replacement to succeed")
+	}
+	if queued := flushServerFrames(t, flow); len(queued) == 0 {
+		t.Fatal("expected actor replacement to enqueue refreshed static-actor frames")
+	}
+
+	staleAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(actor.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected combat attack error after snapshot replacement: %v", err)
+	}
+	if len(staleAttackOut) != 0 {
+		t.Fatalf("expected stale selected-target attack to fail closed after snapshot replacement, got %d frames", len(staleAttackOut))
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat reselect error after snapshot replacement: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame after snapshot replacement reselect, got %d", len(reselectOut))
+	}
+	reselected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode reselected training-dummy target frame after snapshot replacement: %v", err)
+	}
+	if reselected.TargetVID != uint32(actor.EntityID) || reselected.HPPercent != 100 {
+		t.Fatalf("unexpected reselected training-dummy target packet after snapshot replacement: %+v", reselected)
+	}
+
+	freshAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(actor.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected combat attack error after snapshot reselect: %v", err)
+	}
+	if len(freshAttackOut) != 1 {
+		t.Fatalf("expected 1 self-only target-refresh frame after snapshot reselect, got %d", len(freshAttackOut))
+	}
+	freshTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, freshAttackOut[0]))
+	if err != nil {
+		t.Fatalf("decode fresh target-refresh frame after snapshot reselect: %v", err)
+	}
+	if freshTarget.TargetVID != uint32(actor.EntityID) || freshTarget.HPPercent != 90 {
+		t.Fatalf("unexpected target-refresh packet after snapshot reselect: %+v", freshTarget)
+	}
+}
+
+func TestGameSessionFlowStaticActorCombatTargetAndAttackRejectDeadTrainingDummy(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before dead-state injection: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame before dead-state injection, got %d", len(selectOut))
+	}
+
+	runtime.sharedWorld.mu.Lock()
+	runtime.sharedWorld.staticActorCombatHP[actor.EntityID] = 0
+	runtime.sharedWorld.mu.Unlock()
+
+	deadAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(actor.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected combat attack error after dead-state injection: %v", err)
+	}
+	if len(deadAttackOut) != 0 {
+		t.Fatalf("expected dead selected-target attack to fail closed, got %d frames", len(deadAttackOut))
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error after dead-state injection: %v", err)
+	}
+	if len(reselectOut) != 0 {
+		t.Fatalf("expected dead training-dummy reselect to fail closed, got %d frames", len(reselectOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames for dead training-dummy rejection, got %d", len(queued))
 	}
 }
 
