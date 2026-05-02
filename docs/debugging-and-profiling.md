@@ -2,6 +2,8 @@
 
 The project ships with a dedicated ops HTTP server that exposes standard Go pprof handlers.
 
+Do not expose pprof directly to the public internet.
+
 ## Standard endpoints
 
 - `/healthz`
@@ -52,12 +54,16 @@ When debugging the `LOADING -> GAME` boundary, the current expected server-owned
 
 These endpoints are intentionally loopback-only and exist to help inspect or steer the bootstrap runtime safely during development.
 They are not the gameplay protocol.
+Unless noted otherwise, non-loopback callers are rejected with `403`.
+
+### `GET /local/runtime-config`
+
+Returns JSON describing the active bootstrap runtime selection, including the current local-channel wiring and visibility policy (`whole_map` or configured radius AOI).
 
 ### `POST /local/notice`
 
 - request body: raw plain-text notice message
 - success response: `queued N`
-- rejects non-loopback callers with `403`
 
 ### `POST /local/relocate`
 
@@ -71,7 +77,6 @@ They are not the gameplay protocol.
 - compatibility/operator shim for the older plain-text relocation trigger
 - still applies the bootstrap map transfer
 - success response: `relocated 1`
-- rejects non-loopback callers with `403`
 
 ### `POST /local/relocate-preview`
 
@@ -92,7 +97,6 @@ They are not the gameplay protocol.
   - `removed_visible_peers`
   - `added_visible_peers`
   - `map_occupancy_changes`
-- rejects non-loopback callers with `403`
 
 ### `POST /local/transfer`
 
@@ -105,7 +109,6 @@ They are not the gameplay protocol.
 
 - commits the minimal structured bootstrap map-transfer contract
 - returns the same JSON shape as preview, but with `applied = true`
-- rejects non-loopback callers with `403`
 
 ### `GET /local/players`
 
@@ -130,9 +133,7 @@ Returns a JSON snapshot of the current shared-world visibility graph, sorted by 
 Each entry includes the same effective runtime location fields exposed by `/local/players`, plus:
 
 - `visible_peers`
-
-The `visible_peers` array is sorted by peer name and reflects the current bootstrap shared-world rule set.
-At the moment that means visibility is gated by effective `MapIndex` only.
+- `visible_static_actors`
 
 ### `GET /local/maps`
 
@@ -145,6 +146,73 @@ Each entry includes:
 - `characters`
 
 The `characters` array is sorted by name and each character uses the same effective runtime location fields exposed by `/local/players`.
+Static actors are surfaced in the owned map snapshots as the current runtime expands beyond player-only visibility.
+
+### `GET /local/interaction-visibility`
+
+Returns a JSON snapshot of each connected bootstrap character plus the currently visible interactable static actors that would resolve for them.
+
+Each visible interactable entry includes:
+
+- `interaction_kind`
+- `interaction_ref`
+- a compact preview, or
+- `resolution_failure`
+
+Current previews cover self-only `info` / `talk`, structured merchant `shop_preview` catalog summaries, and compact `warp` destination summaries.
+
+### `GET /local/inventory/{name}`, `GET /local/equipment/{name}`, `GET /local/currency/{name}`
+
+Returns the exact-name live M3 runtime state for the selected character.
+These endpoints are intended for loopback-only debugging and QA while the gameplay-facing surfaces are still bootstrap.
+
+### `GET` / `POST /local/static-actors` and `PATCH` / `PUT` / `DELETE /local/static-actors/{entity_id}`
+
+Use these endpoints to inspect and author bootstrap static actors.
+
+Create/update bodies currently use:
+
+- `name`
+- `map_index`
+- `x`
+- `y`
+- `race_num`
+- optional paired `interaction_kind` and `interaction_ref`
+
+If one interaction field is present, the other must also be present.
+
+### `GET` / `POST /local/interactions` and `PATCH` / `PUT` / `DELETE /local/interactions/{kind}/{ref}`
+
+Use these endpoints to inspect and author the deterministic interaction catalog.
+
+Bodies always use identity fields:
+
+- `kind`
+- `ref`
+
+Current authored shapes:
+
+- `info` / `talk`
+  - `text`
+- `shop_preview`
+  - `title`
+  - `catalog[]` entries with `slot`, `item_vnum`, `price`, `count`
+- `warp`
+  - `map_index`, `x`, `y`
+  - optional `text`
+
+`PATCH` and `PUT` are full-identity upserts, so body `kind` + `ref` must match the path exactly.
+Deletes fail closed while a bootstrap static actor still references the definition.
+
+### `GET` / `POST /local/content-bundle`
+
+Exports or imports one deterministic authored-content artifact spanning both bootstrap static actors and interaction definitions.
+
+- `GET` exports the current bundle
+- `POST` imports a full replacement bundle
+- imports reject dangling interaction references before mutating runtime state
+
+A small reference artifact lives at `docs/examples/bootstrap-npc-service-bundle.json`.
 
 ## Examples
 
@@ -172,18 +240,16 @@ Open the interactive pprof UI locally:
 go tool pprof -http=:0 http://127.0.0.1:6060/debug/pprof/heap
 ```
 
+Inspect runtime wiring:
+
+```bash
+curl http://127.0.0.1:6060/local/runtime-config
+```
+
 Send a local-only notice:
 
 ```bash
 curl -X POST http://127.0.0.1:6060/local/notice --data 'server maintenance'
-```
-
-Relocate a connected bootstrap character locally:
-
-```bash
-curl -X POST http://127.0.0.1:6060/local/relocate \
-  -H 'Content-Type: application/json' \
-  --data '{"name":"PeerTwo","map_index":42,"x":1700,"y":2800}'
 ```
 
 Preview a bootstrap relocation without mutating runtime state:
@@ -218,6 +284,48 @@ Inspect current bootstrap map occupancy:
 
 ```bash
 curl http://127.0.0.1:6060/local/maps
+```
+
+Inspect visible interactable actors:
+
+```bash
+curl http://127.0.0.1:6060/local/interaction-visibility
+```
+
+Inspect live inventory, equipment, and currency for a character:
+
+```bash
+curl http://127.0.0.1:6060/local/inventory/MkmkWar
+curl http://127.0.0.1:6060/local/equipment/MkmkWar
+curl http://127.0.0.1:6060/local/currency/MkmkWar
+```
+
+List the authored interaction catalog:
+
+```bash
+curl http://127.0.0.1:6060/local/interactions
+```
+
+Create a talk interaction:
+
+```bash
+curl -X POST http://127.0.0.1:6060/local/interactions \
+  -H 'Content-Type: application/json' \
+  --data '{"kind":"talk","ref":"npc:village_guard","text":"Keep your blade sharp."}'
+```
+
+Create a bootstrap static actor bound to that interaction:
+
+```bash
+curl -X POST http://127.0.0.1:6060/local/static-actors \
+  -H 'Content-Type: application/json' \
+  --data '{"name":"Village Guard","map_index":1,"x":1234,"y":5678,"race_num":20355,"interaction_kind":"talk","interaction_ref":"npc:village_guard"}'
+```
+
+Export the current authored content bundle:
+
+```bash
+curl http://127.0.0.1:6060/local/content-bundle
 ```
 
 ## Docker note
