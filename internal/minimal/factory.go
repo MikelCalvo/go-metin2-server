@@ -138,12 +138,11 @@ type CharacterCurrencySnapshot struct {
 }
 
 const (
-	staticActorInteractionFailureDefinitionNotFound           = "interaction_definition_not_found"
-	staticActorInteractionFailureUnsupportedKind              = "unsupported_interaction_kind"
-	staticActorInteractionFailureWarpDestinationInvalid       = "warp_destination_invalid"
-	staticActorInteractionFailureWarpNotApplied               = "warp_not_applied"
-	staticActorInteractionCooldown                            = time.Second
-	staticActorCombatTargetBootstrapHPPercent           uint8 = 100
+	staticActorInteractionFailureDefinitionNotFound     = "interaction_definition_not_found"
+	staticActorInteractionFailureUnsupportedKind        = "unsupported_interaction_kind"
+	staticActorInteractionFailureWarpDestinationInvalid = "warp_destination_invalid"
+	staticActorInteractionFailureWarpNotApplied         = "warp_not_applied"
+	staticActorInteractionCooldown                      = time.Second
 )
 
 type staticActorInteractionResolution struct {
@@ -3199,7 +3198,7 @@ func (r *gameRuntime) resolveStaticActorCombatTarget(subjectID uint64, targetVID
 		resolution.Failure = attempt.Failure
 		return resolution
 	}
-	packet := combatproto.ServerTargetPacket{TargetVID: attempt.TargetVID, HPPercent: staticActorCombatTargetBootstrapHPPercent}
+	packet := combatproto.ServerTargetPacket{TargetVID: attempt.TargetVID, HPPercent: attempt.HPPercent}
 	resolution.Accepted = true
 	resolution.Packet = &packet
 	return resolution
@@ -3217,7 +3216,7 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 		resolution.Failure = attempt.Failure
 		return resolution
 	}
-	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: staticActorCombatTargetBootstrapHPPercent}
+	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: attempt.HPPercent}
 	resolution.Accepted = true
 	resolution.Packet = &packet
 	return resolution

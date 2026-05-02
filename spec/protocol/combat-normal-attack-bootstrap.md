@@ -107,16 +107,22 @@ Why this reuse is the current preferred contract:
 - reusing it for `no target` avoids inventing a second clear-only family before tests prove a richer path is needed
 
 So the first owned target-state surface is now intentionally tiny but expressive enough for three states:
-1. `TARGET(target_vid > 0, hp_percent = 100)` — selected live dummy with full bootstrap HP percent, including accepted target selection and the first accepted normal-attack refresh before HP mutation exists
-2. `TARGET(target_vid > 0, hp_percent = updated)` — same selected dummy after later accepted attack-driven HP changes
+1. `TARGET(target_vid > 0, hp_percent = 100)` — selected live dummy with fresh full bootstrap HP on first owned selection
+2. `TARGET(target_vid > 0, hp_percent = updated)` — same selected dummy after accepted bootstrap attack-driven HP changes
 3. `TARGET(0, 0)` — selected target cleared or no longer valid
 
 ## Relationship to later HP / death work
 
-This document does **not** yet claim that HP mutation, death, or respawn are already implemented.
+This document now freezes the first deterministic bootstrap HP mutation, but it still does **not** yet claim that death or respawn are implemented.
 
-What it freezes is the **visible state carrier** those later slices should try first:
-- accepted later attack-driven HP refreshes should prefer reusing server `TARGET` with the same selected `target_vid` plus the updated `hp_percent`
+The current owned bootstrap combat state is intentionally tiny:
+- visible `training_dummy` combat state is runtime-owned and starts at `10` HP
+- each accepted bootstrap normal attack decrements the dummy by `1` HP
+- the visible refresh stays on server `TARGET(target_vid, hp_percent)` using the current runtime HP converted to percent in `10`-point steps (`100`, `90`, `80`, ...)
+- until the first death slice exists, this bootstrap loop clamps at the minimum live floor `1 / 10%` instead of claiming corpse/death choreography too early
+
+What this still freezes about the **visible state carrier** for later slices:
+- accepted later attack-driven HP refreshes should continue preferring server `TARGET` with the same selected `target_vid` plus the updated `hp_percent`
 - target loss, invalidation, death cleanup, reconnect cleanup, transfer cleanup, or reclaim cleanup should prefer the zero-target `TARGET(0, 0)` companion before introducing a new clear-target family
 
 If future captures or tests prove this carrier insufficient, the repository may add a richer combat packet family later.
@@ -168,7 +174,7 @@ The codec now owns the exact wire shape, but the gameplay contract is still inte
 
 This slice does **not** yet freeze:
 - the final gameplay meaning of every `attack_type` value
-- damage formulas
+- final damage formulas beyond the current bootstrap `1` HP decrement
 - miss/crit/block results
 - death or respawn packet choreography
 - hostile retaliation
@@ -181,6 +187,7 @@ After this document lands, the repository should be able to say:
 - the next combat ingress is no longer vague; `ATTACK` is frozen exactly as client -> server header `0x0401`
 - the project now owns the first clean-room `ATTACK` codec layout: `attack_type`, `target_vid`, `crc_proc_piece`, `crc_file_piece`
 - the first live dummy attack path accepts only `attack_type = 0` and keeps gameplay target-relative by requiring the request `target_vid` to match the active selected combat target
-- the first accepted bootstrap attack reuses self-only `GC TARGET(target_vid, 100)` as its visible success refresh before HP mutation exists
+- the first accepted bootstrap attack now mutates runtime-owned `training_dummy` HP deterministically from `10` downward in `1`-HP steps while reusing self-only `GC TARGET(target_vid, hp_percent)` as its visible success refresh
+- accepted reselection of the same damaged dummy reuses the same current runtime `hp_percent` instead of resetting the visible target state back to `100`
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes should try to stay on the same `GC TARGET(target_vid, hp_percent)` carrier before claiming richer combat packets

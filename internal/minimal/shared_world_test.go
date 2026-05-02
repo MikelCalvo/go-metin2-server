@@ -8721,23 +8721,63 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only combat target frame, got %d", len(selectOut))
 	}
+	selected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, selectOut[0]))
+	if err != nil {
+		t.Fatalf("decode selected training-dummy target frame: %v", err)
+	}
+	if selected.TargetVID != uint32(actor.EntityID) || selected.HPPercent != 100 {
+		t.Fatalf("unexpected selected training-dummy target packet: %+v", selected)
+	}
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  uint32(actor.EntityID),
 	})))
 	if err != nil {
 		t.Fatalf("unexpected combat attack error: %v", err)
 	}
-	if len(out) != 1 {
-		t.Fatalf("expected 1 self-only target-refresh frame for accepted dummy attack, got %d", len(out))
+	if len(firstAttack) != 1 {
+		t.Fatalf("expected 1 self-only target-refresh frame for accepted dummy attack, got %d", len(firstAttack))
 	}
-	target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, out[0]))
+	firstTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstAttack[0]))
 	if err != nil {
 		t.Fatalf("decode accepted dummy attack target-refresh frame: %v", err)
 	}
-	if target.TargetVID != uint32(actor.EntityID) || target.HPPercent != 100 {
-		t.Fatalf("unexpected accepted dummy attack target-refresh packet: %+v", target)
+	if firstTarget.TargetVID != uint32(actor.EntityID) || firstTarget.HPPercent != 90 {
+		t.Fatalf("unexpected first accepted dummy attack target-refresh packet: %+v", firstTarget)
+	}
+
+	secondAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(actor.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected second combat attack error: %v", err)
+	}
+	if len(secondAttack) != 1 {
+		t.Fatalf("expected 1 self-only target-refresh frame for second accepted dummy attack, got %d", len(secondAttack))
+	}
+	secondTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, secondAttack[0]))
+	if err != nil {
+		t.Fatalf("decode second accepted dummy attack target-refresh frame: %v", err)
+	}
+	if secondTarget.TargetVID != uint32(actor.EntityID) || secondTarget.HPPercent != 80 {
+		t.Fatalf("unexpected second accepted dummy attack target-refresh packet: %+v", secondTarget)
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat reselect error after dummy damage: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame after dummy damage, got %d", len(reselectOut))
+	}
+	reselected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode reselected damaged training-dummy target frame: %v", err)
+	}
+	if reselected.TargetVID != uint32(actor.EntityID) || reselected.HPPercent != 80 {
+		t.Fatalf("unexpected reselected damaged training-dummy target packet: %+v", reselected)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for accepted bootstrap dummy attack, got %d", len(queued))
