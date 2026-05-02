@@ -8,9 +8,11 @@ import (
 )
 
 const (
+	HeaderClientAttack uint16 = 0x0401
 	HeaderClientTarget uint16 = 0x0A01
 	HeaderServerTarget uint16 = 0x0A10
 
+	clientAttackPayloadSize = 7
 	clientTargetPayloadSize = 4
 	serverTargetPayloadSize = 5
 )
@@ -20,6 +22,13 @@ var (
 	ErrInvalidPayload   = errors.New("invalid combat packet payload")
 )
 
+type ClientAttackPacket struct {
+	AttackType   uint8
+	TargetVID    uint32
+	CRCProcPiece uint8
+	CRCFilePiece uint8
+}
+
 type ClientTargetPacket struct {
 	TargetVID uint32
 }
@@ -27,6 +36,30 @@ type ClientTargetPacket struct {
 type ServerTargetPacket struct {
 	TargetVID uint32
 	HPPercent uint8
+}
+
+func EncodeClientAttack(packet ClientAttackPacket) []byte {
+	payload := make([]byte, clientAttackPayloadSize)
+	payload[0] = packet.AttackType
+	binary.LittleEndian.PutUint32(payload[1:5], packet.TargetVID)
+	payload[5] = packet.CRCProcPiece
+	payload[6] = packet.CRCFilePiece
+	return frame.Encode(HeaderClientAttack, payload)
+}
+
+func DecodeClientAttack(f frame.Frame) (ClientAttackPacket, error) {
+	if f.Header != HeaderClientAttack {
+		return ClientAttackPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientAttackPayloadSize {
+		return ClientAttackPacket{}, ErrInvalidPayload
+	}
+	return ClientAttackPacket{
+		AttackType:   f.Payload[0],
+		TargetVID:    binary.LittleEndian.Uint32(f.Payload[1:5]),
+		CRCProcPiece: f.Payload[5],
+		CRCFilePiece: f.Payload[6],
+	}, nil
 }
 
 func EncodeClientTarget(packet ClientTargetPacket) []byte {
@@ -50,6 +83,10 @@ func EncodeServerTarget(packet ServerTargetPacket) []byte {
 	binary.LittleEndian.PutUint32(payload, packet.TargetVID)
 	payload[4] = packet.HPPercent
 	return frame.Encode(HeaderServerTarget, payload)
+}
+
+func EncodeServerClearTarget() []byte {
+	return EncodeServerTarget(ServerTargetPacket{})
 }
 
 func DecodeServerTarget(f frame.Frame) (ServerTargetPacket, error) {

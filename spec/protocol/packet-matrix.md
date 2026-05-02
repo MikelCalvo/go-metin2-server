@@ -100,13 +100,13 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 | `ITEM_SET` | server -> client | `0x0511` | game bootstrap / game | documented | first owned self-only occupied-slot bootstrap/update family for carried inventory and equipped items; total frame length `54`; position is packed `TItemPos(window:uint8, cell:uint16)` and equipped items currently ride the legacy combined inventory/equipment cell namespace (`window = INVENTORY`, `cell = 90 + wear_index`); the first consumable-use vertical also reuses it when consuming one stacked item leaves a non-zero count in the same carried slot |
 | `ITEM_DEL` | server -> client | `0x0510` | game | documented | self-only slot-clear/remove companion for carried/equipped item mutations; total frame length `7` and payload is only packed `TItemPos`; the first consumable-use vertical also reuses it when consuming the last item removes that carried-slot stack entirely |
 
-## Combat (planned)
+## Combat (bootstrap)
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `TARGET` | client -> server | `0x0A01` | game | documented | first owned combat-preparation request for selecting one currently visible `training_dummy` actor by visible `vid`; payload is little-endian `uint32 target_vid`; the current live slice routes it through the shared-world `AttemptStaticActorCombatTarget(...)` seam, accepts only visible in-range `training_dummy` targets, and fails closed for malformed payloads, out-of-range targets, invisible actors, or visible non-targetable actors |
 | `TARGET` | server -> client | `0x0A10` | game | documented | minimal self-only target-selection acknowledgement; payload is little-endian `uint32 target_vid` + `uint8 hp_percent`; the current bootstrap dummy path returns `hp_percent = 100` on accepted target selection only; the next planned attack slices also freeze this same family as the preferred carrier for later attack-driven HP-percent refreshes and for first clear-target delivery through `target_vid = 0`, `hp_percent = 0` |
-| `ATTACK` | client -> server | `TBD` | game | planned | first owned attack-intent family after accepted target selection; valid only while the session currently owns an active selected combat target, and intentionally scoped to attacking that current target rather than selecting a new `vid`; exact header/payload remain capture-gated before codec ownership is claimed |
+| `ATTACK` | client -> server | `0x0401` | game | documented | first owned attack-intent family after accepted target selection; exact payload is `uint8 attack_type`, little-endian `uint32 target_vid`, `uint8 crc_proc_piece`, `uint8 crc_file_piece`; gameplay still treats the request as attacking the currently selected target rather than granting a second arbitrary target-selection path, and exact acceptance/rate rules remain for the next flow slices |
 
 ## Notes
 

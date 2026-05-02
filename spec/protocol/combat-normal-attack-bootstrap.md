@@ -28,7 +28,7 @@ This contract currently applies only to:
 - one tiny target-refresh surface that can still describe `current target`, `updated hp percent`, or `no active target`
 
 This contract does **not** yet claim:
-- the final exact legacy wire header or payload layout for the attack request
+- the full gameplay meaning of every non-zero `attack_type` value beyond the first narrow bootstrap ownership boundary
 - combo chains, animation timing, attack speed, or projectile choreography
 - richer attack-result packets, hit effects, floating damage numbers, or skill systems
 - combat against player targets
@@ -54,27 +54,32 @@ So this document freezes the smallest next ownership boundary first.
 
 ## First owned attack-intent family
 
-The next planned combat request is now frozen conceptually as:
+The first owned combat request is now frozen exactly as:
 - name: `ATTACK`
 - direction: client -> server
 - phase: `GAME`
-- header: `TBD`
-- status: planned, but now part of the owned project contract
+- header: `0x0401`
+- payload length: `7`
+- status: documented and codec-owned in `internal/proto/combat`
 
-Why `TBD` is still acceptable here:
-- the project already distinguishes `planned` rows from fully wire-frozen rows in `packet-matrix.md`
-- the next slice should write RED codec tests before claiming the final exact legacy byte layout
-- the repository can still freeze the family name, scope, gating rules, and relationship to target ownership without inventing a fake exact header too early
+The exact payload layout is:
+1. `uint8 attack_type`
+2. `uint32 target_vid` (little-endian)
+3. `uint8 crc_proc_piece`
+4. `uint8 crc_file_piece`
 
-What is frozen now is the behavioral role of this family:
-- `ATTACK` is the first client-originated step after accepted target selection
-- it is only valid while the session currently owns an active selected combat target
-- it addresses the **current selected target**, not an arbitrary visible `VID` chosen independently of the target-selection contract
-- later exact codec work may still discover trailing bytes or subfields, but those bytes must serve this same narrow attack-intent role
+What is frozen now about those fields:
+- `attack_type` remains a raw owned wire byte in this slice; later combat slices may narrow which values are accepted for the first live dummy path
+- `target_vid` is the wire-visible target identity the client places in the request
+- `crc_proc_piece` and `crc_file_piece` are currently owned as exact trailing raw bytes in the codec, but their higher-level validation role remains intentionally narrow in the clean-room runtime for now
+
+This exact codec ownership matters because the next flow slices no longer need to guess the attack header or open-code a one-off byte layout inside `internal/minimal`.
 
 ## Active-target prerequisite
 
 The first owned attack-intent path is intentionally target-relative rather than free-form.
+
+Even though the exact wire request carries a `target_vid`, the bootstrap runtime contract still treats that field as **subordinate to the currently selected combat target** rather than as permission to attack an arbitrary visible actor.
 
 An `ATTACK` request is only eligible when all of the following are true:
 - the session is already in `GAME`
@@ -147,20 +152,20 @@ It freezes that later combat slices should align with the existing runtime lifec
 
 ## Explicit unknowns still left for the next RED
 
-The next codec/documentation slices still need to prove or freeze:
-- the exact legacy client -> server `ATTACK` header
-- the exact request payload bytes, if any, beyond the common frame envelope
-- whether the first clean-room codec should expose any opaque trailing fields before their meaning is fully known
+The next flow/gameplay slices still need to prove or freeze:
+- whether the first live dummy attack path accepts only `attack_type = 0` or a slightly broader bootstrap subset
+- whether the runtime should validate or currently only preserve the two trailing raw CRC bytes
 - whether accepted attack attempts need any additional tiny server packet besides `TARGET` refreshes to keep the client stable
 - the exact first timing/rate rule for repeated attack attempts
+- the exact first rule for mismatched request `target_vid` versus currently selected target ownership
 
 Those unknowns are deliberate.
-This document narrows the next work enough that the RED tests can be small without overstating wire certainty.
+The codec now owns the exact wire shape, but the gameplay contract is still intentionally narrower than full combat semantics.
 
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- exact attack codec bytes
+- the final gameplay meaning of every `attack_type` value
 - damage formulas
 - miss/crit/block results
 - death or respawn packet choreography
@@ -171,8 +176,9 @@ This slice does **not** yet freeze:
 ## Success definition
 
 After this document lands, the repository should be able to say:
-- the next combat ingress is no longer vague; it is a planned `ATTACK` family in `GAME`
-- that family is now frozen as an attack against the **currently selected** target, not as a second arbitrary target-selection path
+- the next combat ingress is no longer vague; `ATTACK` is frozen exactly as client -> server header `0x0401`
+- the project now owns the first clean-room `ATTACK` codec layout: `attack_type`, `target_vid`, `crc_proc_piece`, `crc_file_piece`
+- that family still remains target-relative in gameplay terms rather than a second arbitrary target-selection path
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes should try to stay on the same `GC TARGET(target_vid, hp_percent)` carrier before claiming richer combat packets
-- the next RED can focus on exact codec ownership and accepted dummy attack gating without reopening target identity, clear-target semantics, or session-ownership rules
+- the next RED can focus on accepted dummy attack gating without reopening exact header choice, payload byte ownership, or clear-target semantics

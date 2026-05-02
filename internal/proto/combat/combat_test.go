@@ -1,6 +1,7 @@
 package combat
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 
@@ -29,6 +30,43 @@ func TestEncodeServerTargetRoundTrip(t *testing.T) {
 	}
 }
 
+func TestEncodeClientAttackUsesLegacyPayloadLayout(t *testing.T) {
+	raw := EncodeClientAttack(ClientAttackPacket{
+		AttackType:   0x03,
+		TargetVID:    0x02040107,
+		CRCProcPiece: 0x12,
+		CRCFilePiece: 0x34,
+	})
+	expected := frame.Encode(HeaderClientAttack, []byte{0x03, 0x07, 0x01, 0x04, 0x02, 0x12, 0x34})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected client attack encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeClientAttack(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode client attack: %v", err)
+	}
+	if decoded.AttackType != 0x03 || decoded.TargetVID != 0x02040107 || decoded.CRCProcPiece != 0x12 || decoded.CRCFilePiece != 0x34 {
+		t.Fatalf("unexpected client attack packet: %+v", decoded)
+	}
+}
+
+func TestEncodeServerClearTargetUsesZeroTargetAndZeroHP(t *testing.T) {
+	raw := EncodeServerClearTarget()
+	expected := frame.Encode(HeaderServerTarget, []byte{0x00, 0x00, 0x00, 0x00, 0x00})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected clear-target encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerTarget(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode clear target: %v", err)
+	}
+	if decoded.TargetVID != 0 || decoded.HPPercent != 0 {
+		t.Fatalf("unexpected clear-target packet: %+v", decoded)
+	}
+}
+
 func TestDecodeClientTargetRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeClientTarget(frame.Frame{Header: HeaderClientTarget, Length: 7, Payload: []byte{0x01, 0x02, 0x03}})
 	if !errors.Is(err, ErrInvalidPayload) {
@@ -38,6 +76,13 @@ func TestDecodeClientTargetRejectsMalformedPayload(t *testing.T) {
 
 func TestDecodeServerTargetRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeServerTarget(frame.Frame{Header: HeaderServerTarget, Length: 8, Payload: []byte{0x01, 0x02, 0x03, 0x04}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeClientAttackRejectsMalformedPayload(t *testing.T) {
+	_, err := DecodeClientAttack(frame.Frame{Header: HeaderClientAttack, Length: 10, Payload: []byte{0x01, 0x07, 0x01, 0x04, 0x02, 0x12}})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}

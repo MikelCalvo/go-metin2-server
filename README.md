@@ -13,7 +13,7 @@ Current snapshot:
 - [x] First shared-world bootstrap: peer visibility, movement replication, local chat, whisper, party/guild/shout fanout, and server notices
 - [x] First content/runtime seams: static actors, interactions, shop open/buy bootstrap, and warp bootstrap
 - [~] First character systems: inventory, equipment, consumable use, and appearance refreshes
-- [~] First combat slice: live target selection for a visible `training_dummy`, with the first attack/clear-target contract now frozen in docs
+- [~] First combat slice: live target selection for a visible `training_dummy`, with the first exact `ATTACK` codec and `GC TARGET(0, 0)` clear-target companion now owned
 - [ ] Still missing: full combat, mobs/AI, quests, compatibility-grade persistence, and production deployment
 
 The README stays intentionally high-level. If you want the deeper technical view, start here:
@@ -29,7 +29,7 @@ The README stays intentionally high-level. If you want the deeper technical view
 | M1 — Shared-world pre-alpha | [~] | Players can already see each other, move, chat, and receive notices inside the current bootstrap world rules. |
 | M2 — Entity/world runtime foundation | [~] | Entities, maps, sessions, transfers, and static actors are moving out of bootstrap-only shortcuts into owned runtime systems. |
 | M3 — Character systems | [~] | Inventory, equipment, item use, appearance, and merchant-driven item state are becoming first-class runtime systems. |
-| M4 — Combat vertical slice | [~] | Target selection is live, and the first attack/clear-target contract is frozen; hit, damage, death, and respawn still need the first end-to-end slice. |
+| M4 — Combat vertical slice | [~] | Target selection is live, the first exact `ATTACK` codec is owned, and `GC TARGET(0, 0)` is frozen as the first clear-target companion; hit, damage, death, and respawn still need the first end-to-end slice. |
 | M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime become available. |
 | M6 — Compatibility-grade persistence and operations | [ ] | DB-backed persistence, richer observability/admin tooling, and a real deploy/release story land. |
 
