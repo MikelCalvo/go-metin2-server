@@ -87,7 +87,7 @@ The minimal self-only acknowledgement companion is now also frozen as:
 - header: `0x0A10`
 - phase: `GAME`
 - payload: little-endian `uint32 target_vid` + `uint8 hp_percent`
-- current bootstrap dummy value: `hp_percent = 100`
+- current bootstrap meaning: fresh accepted dummy selection starts at `hp_percent = 100`, while later accepted dummy attacks may reuse the same packet family with the current runtime-owned percentage
 
 This contract now freezes the **family name, direction, phase, concrete wire headers, and the narrow request/ack payload shapes**.
 The repo now owns:
@@ -135,6 +135,8 @@ Accepted target selection should remain transient live runtime state only.
 This first contract intentionally expects:
 - target ownership is per selected live session
 - selecting a dummy does not mutate persistence, inventory, equipment, or points by itself
+- dummy combat HP is world-runtime-owned state, not character/account persistence
+- repeated accepted attacks may later mutate that live dummy HP without implying any player-save write
 - selecting a dummy emits at most one self-only `GC TARGET` acknowledgement on accept
 - selecting a dummy does not broadcast to peers
 - selecting a dummy only prepares later attack-intent validation on that same live session
@@ -151,7 +153,7 @@ The repository now owns one narrow runtime path end to end:
 - that seam checks subject ownership, visible-actor lookup by `VID`, fixed `300`-unit range gating, and targetable-class filtering
 - `internal/proto/combat` now owns exact client/server `TARGET` codecs for the current request/ack pair
 - `internal/game` now dispatches client `TARGET` in `GAME` and fail-closes malformed payloads or rejected runtime attempts
-- the current runtime reply is still deliberately tiny: one self-only `GC TARGET` ack with `target_vid` and bootstrap `hp_percent = 100`
+- the current runtime reply is still deliberately tiny: one self-only `GC TARGET` ack with `target_vid` and bootstrap-selected `hp_percent`, where a fresh dummy starts at `100` and later attack slices may reuse the same shape with a lower current runtime percentage
 - no client-visible combat packet beyond that ack, no HUD state machine, and no attack execution is implied by this path alone
 
 ## Failure semantics
@@ -176,7 +178,7 @@ The next combat RED should therefore build on this request/ack seam without skip
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- attack implementation, damage application, or repeated-hit semantics
+- broader attack implementation beyond target selection itself
 - weapon swing or projectile choreography
 - hit registration
 - damage numbers or point/HP depletion

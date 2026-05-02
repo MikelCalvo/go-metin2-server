@@ -345,6 +345,29 @@ Expected result:
 - the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then `CHAT_TYPE_INFO`
 - the selected-character snapshot persists atomically through the current save/rollback boundary
 
+### 5.7 Training dummy repeated-hit smoke
+
+Run this only when the target build has a visible authored `training_dummy` nearby.
+
+- [ ] Approach the dummy until it is clearly within the current bootstrap target/attack band
+- [ ] Select the dummy once and confirm the client shows it as the active target
+- [ ] Perform one accepted normal attack
+- [ ] Confirm the selected target remains stable and the dummy HP display moves down from full by one deterministic bootstrap step
+- [ ] Perform at least one more accepted normal attack
+- [ ] Confirm the selected target HP display steps down again instead of bouncing back to full on every hit
+- [ ] If practical, re-select the same still-visible dummy and confirm the current HP display stays at the already-mutated runtime value instead of silently resetting because of the re-selection itself
+- [ ] Confirm the character's own inventory, equipment, and visible player stats do not unexpectedly change because of dummy hits alone
+
+Expected result:
+- repeated accepted hits against the same selected dummy decrement HP in deterministic bootstrap-sized steps
+- the client-visible feedback is still the narrow self-only selected-target refresh surface, not a broader peer/combat fanout contract yet
+- dummy hits do not spend items, grant items, mutate equipment, or alter saved player progression/state by themselves
+
+Important note:
+- the current contract says dummy HP is shared-world runtime state only
+- do **not** treat the absence of account-style persistence for dummy HP as a regression in this slice
+- reconnect/transfer/reset behavior for dummy HP should be recorded if observed, but it is still a later contract than this repeated-hit smoke step
+
 ---
 
 ## 6. Two-client shared-world checks

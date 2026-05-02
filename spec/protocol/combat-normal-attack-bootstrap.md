@@ -128,6 +128,19 @@ What this still freezes about the **visible state carrier** for later slices:
 If future captures or tests prove this carrier insufficient, the repository may add a richer combat packet family later.
 But the next slices should begin from this smaller contract first.
 
+## Repeated-hit loop and runtime-only HP ownership
+
+The current bootstrap repeated-hit rule is now frozen as narrowly as possible:
+- a visible `training_dummy` starts the live combat loop at authored/bootstrap max HP
+- each accepted normal attack against the still-selected dummy decrements current live HP exactly once by the current bootstrap step
+- the server reuses self-only `GC TARGET(target_vid, hp_percent)` after each accepted hit so the same selected target surface shows the updated percentage
+- re-selecting that same still-visible dummy during the same live world runtime should return the current runtime-owned `hp_percent`, not silently recreate full HP on every request
+
+The ownership rule is equally important:
+- dummy HP belongs to shared-world runtime state, not to account or character persistence
+- accepted dummy hits must not write inventory, equipment, player points, or any other character save payload as a side effect of combat alone
+- this document does **not** yet freeze whether a reconnect, transfer, or future world rebuild should preserve or recreate dummy HP; it only freezes that the current bootstrap loop is runtime-owned and non-persistent
+
 ## Failure semantics
 
 The first owned attack-intent path must stay fail-closed.

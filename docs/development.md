@@ -78,6 +78,13 @@ The intent is simple: every small slice should be pushable and publicly re-check
 
 For the default stub credentials and the current real-client smoke flow, see the [manual client QA checklist](qa/manual-client-checklist.md).
 
+### Bootstrap dummy combat state
+
+- the current `training_dummy` HP loop is shared-world runtime state, not account/character persistence
+- accepted dummy hits currently mutate only the dummy's live runtime combat state and self-only target refresh feedback
+- debugging a dummy-hit issue should therefore start in `internal/worldruntime` / `internal/minimal`, not in item, inventory, or character-save code
+- a process restart or world rebuild may legitimately recreate dummy HP because no persistence contract exists for this bootstrap slice yet
+
 ## Legacy session runtime hooks
 
 The legacy TCP runtime supports two optional per-session hooks:
