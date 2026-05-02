@@ -79,7 +79,7 @@ The first owned combat-preparation request is:
 - payload: little-endian `uint32 target_vid`
 
 This document freezes only the **family name, direction, phase, and target identity shape**.
-No `TARGET` codec, runtime handler, or validation test is implemented yet; this slice freezes only the intended contract boundary for the next combat RED.
+No `TARGET` codec or client-facing request handler is implemented yet; the current repo only owns the underlying targetability metadata plus shared-world validation seam and focused tests for the next combat RED.
 It does **not** yet freeze:
 - the final wire header
 - a clear-target request shape
@@ -124,6 +124,15 @@ This first contract intentionally expects:
 
 Future slices may freeze explicit target-clear rules when transfer, reconnect, visibility-loss, or death handling needs them.
 This document does not claim those resets yet.
+
+## Runtime seam already owned before the packet path
+
+Even before the first `TARGET` packet lands, the repository now already owns one narrow runtime checkpoint:
+- `internal/worldruntime.StaticEntity` can now carry optional combat-target metadata using the current `training_dummy` kind
+- invalid combat kinds fail closed at the non-player directory boundary
+- `internal/minimal/shared_world` now owns a structured target-attempt validation seam for visible training dummies
+- that seam already checks subject ownership, visible-actor lookup by `VID`, fixed `300`-unit range gating, and targetable-class filtering
+- no client-visible combat packet, HUD state, or attack execution is implied by that runtime seam alone
 
 ## Failure semantics
 

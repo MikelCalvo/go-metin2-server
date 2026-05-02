@@ -7,6 +7,8 @@ type EntityKind string
 const (
 	EntityKindPlayer      EntityKind = "player"
 	EntityKindStaticActor EntityKind = "static_actor"
+
+	StaticActorCombatKindTrainingDummy = "training_dummy"
 )
 
 type Entity struct {
@@ -31,6 +33,7 @@ type StaticEntity struct {
 	RaceNum         uint32
 	InteractionKind string
 	InteractionRef  string
+	CombatKind      string
 }
 
 func StaticActorVisibilityVID(actor StaticEntity) (uint32, bool) {

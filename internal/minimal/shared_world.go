@@ -39,11 +39,26 @@ const (
 	StaticActorInteractionFailureTargetNotVisible       = "target_not_visible"
 	StaticActorInteractionFailureTargetOutOfRange       = "target_out_of_range"
 	StaticActorInteractionFailureTargetHasNoInteraction = "target_has_no_interaction"
+
+	StaticActorCombatTargetFailureSubjectNotFound     = "subject_not_found"
+	StaticActorCombatTargetFailureTargetNotVisible    = "target_not_visible"
+	StaticActorCombatTargetFailureTargetOutOfRange    = "target_out_of_range"
+	StaticActorCombatTargetFailureTargetNotTargetable = "target_not_targetable"
 )
 
-const staticActorInteractionMaxDistance int32 = 300
+const (
+	staticActorInteractionMaxDistance  int32 = 300
+	staticActorCombatTargetMaxDistance int32 = 300
+)
 
 type StaticActorInteractionAttempt struct {
+	Accepted  bool
+	Failure   string
+	TargetVID uint32
+	Actor     StaticActorSnapshot
+}
+
+type StaticActorCombatTargetAttempt struct {
 	Accepted  bool
 	Failure   string
 	TargetVID uint32
@@ -565,15 +580,19 @@ func (r *sharedWorldRegistry) NextStaticActorEntityID() uint64 {
 }
 
 func (r *sharedWorldRegistry) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(0, name, mapIndex, x, y, raceNum, "", "")
+	return r.registerStaticActor(0, name, mapIndex, x, y, raceNum, "", "", "")
 }
 
 func (r *sharedWorldRegistry) RegisterStaticActorWithInteraction(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef)
+	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, "")
 }
 
-func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
-	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) {
+func (r *sharedWorldRegistry) RegisterStaticActorWithCombatKind(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, combatKind string) (StaticActorSnapshot, bool) {
+	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", combatKind)
+}
+
+func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string) (StaticActorSnapshot, bool) {
+	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) {
 		return StaticActorSnapshot{}, false
 	}
 	position := worldruntime.NewPosition(mapIndex, x, y)
@@ -594,6 +613,7 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 		RaceNum:         raceNum,
 		InteractionKind: interactionKind,
 		InteractionRef:  interactionRef,
+		CombatKind:      combatKind,
 	}
 	if entityID == 0 {
 		registered, ok = r.entities.RegisterStaticActor(candidate)
@@ -613,15 +633,19 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 }
 
 func (r *sharedWorldRegistry) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
-	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "")
+	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", "")
 }
 
 func (r *sharedWorldRegistry) UpdateStaticActorWithInteraction(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
-	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef)
+	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, "")
 }
 
-func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
-	if r == nil || r.entities == nil || entityID == 0 || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) {
+func (r *sharedWorldRegistry) UpdateStaticActorWithCombatKind(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, combatKind string) (StaticActorSnapshot, bool) {
+	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", combatKind)
+}
+
+func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string) (StaticActorSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) {
 		return StaticActorSnapshot{}, false
 	}
 	position := worldruntime.NewPosition(mapIndex, x, y)
@@ -642,6 +666,7 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 		RaceNum:         raceNum,
 		InteractionKind: interactionKind,
 		InteractionRef:  interactionRef,
+		CombatKind:      combatKind,
 	}
 	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(previous, targetActor)
 	actor, ok := r.entities.UpdateStaticActor(targetActor)
@@ -722,6 +747,39 @@ func (r *sharedWorldRegistry) AttemptStaticActorInteraction(subjectID uint64, ta
 	}
 	if actor.InteractionKind == "" || actor.InteractionRef == "" {
 		attempt.Failure = StaticActorInteractionFailureTargetHasNoInteraction
+		return attempt
+	}
+	attempt.Accepted = true
+	return attempt
+}
+
+func (r *sharedWorldRegistry) AttemptStaticActorCombatTarget(subjectID uint64, targetVID uint32) StaticActorCombatTargetAttempt {
+	attempt := StaticActorCombatTargetAttempt{TargetVID: targetVID}
+	if r == nil || r.entities == nil {
+		attempt.Failure = StaticActorCombatTargetFailureSubjectNotFound
+		return attempt
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	subject, ok := r.playerCharacter(subjectID)
+	if !ok {
+		attempt.Failure = StaticActorCombatTargetFailureSubjectNotFound
+		return attempt
+	}
+	actor, ok := r.scopesLocked().VisibleStaticActorByVID(subject, targetVID)
+	if !ok {
+		attempt.Failure = StaticActorCombatTargetFailureTargetNotVisible
+		return attempt
+	}
+	attempt.Actor = staticActorSnapshot(r.topology, actor)
+	if !worldruntime.StaticActorWithinInteractionRange(subject, actor, staticActorCombatTargetMaxDistance) {
+		attempt.Failure = StaticActorCombatTargetFailureTargetOutOfRange
+		return attempt
+	}
+	if actor.CombatKind != worldruntime.StaticActorCombatKindTrainingDummy {
+		attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
 		return attempt
 	}
 	attempt.Accepted = true

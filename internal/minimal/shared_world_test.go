@@ -7004,6 +7004,127 @@ func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsUnknownSubject(t
 	}
 }
 
+func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisibleTrainingDummy(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !attempt.Accepted {
+		t.Fatalf("expected visible training dummy combat-target attempt to be accepted, got %+v", attempt)
+	}
+	if attempt.Failure != "" {
+		t.Fatalf("expected accepted combat-target attempt to have no failure reason, got %+v", attempt)
+	}
+	if attempt.TargetVID != uint32(actor.EntityID) {
+		t.Fatalf("expected combat-target attempt target VID %#08x, got %#08x", uint32(actor.EntityID), attempt.TargetVID)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "TrainingDummy" {
+		t.Fatalf("unexpected resolved training-dummy combat-target attempt: %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsInvisibleTarget(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 2800, 3800, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected far training-dummy registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected invisible training-dummy combat-target attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorCombatTargetFailureTargetNotVisible {
+		t.Fatalf("expected invisible training-dummy failure %q, got %+v", StaticActorCombatTargetFailureTargetNotVisible, attempt)
+	}
+	if attempt.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected invisible training-dummy combat-target attempt to keep actor snapshot empty, got %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsVisibleActorOutsideCombatRange(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 2600, 3600, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible but far training-dummy registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected out-of-range training-dummy combat-target attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorCombatTargetFailureTargetOutOfRange {
+		t.Fatalf("expected out-of-range training-dummy failure %q, got %+v", StaticActorCombatTargetFailureTargetOutOfRange, attempt)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "TrainingDummy" {
+		t.Fatalf("expected out-of-range training-dummy attempt to preserve the resolved actor snapshot, got %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsVisibleNonTargetableActor(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300)
+	if !ok {
+		t.Fatal("expected visible non-targetable static actor registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected visible non-targetable combat-target attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorCombatTargetFailureTargetNotTargetable {
+		t.Fatalf("expected non-targetable static actor failure %q, got %+v", StaticActorCombatTargetFailureTargetNotTargetable, attempt)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "VillageGuard" {
+		t.Fatalf("expected non-targetable combat-target attempt to preserve the resolved actor snapshot, got %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsUnknownSubject(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected training-dummy registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorCombatTarget(999, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected unknown-subject combat-target attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorCombatTargetFailureSubjectNotFound {
+		t.Fatalf("expected unknown-subject failure %q, got %+v", StaticActorCombatTargetFailureSubjectNotFound, attempt)
+	}
+	if attempt.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected unknown-subject combat-target attempt to keep actor snapshot empty, got %+v", attempt)
+	}
+}
+
 func TestGameRuntimeResolveStaticActorInfoInteractionReturnsChatDelivery(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

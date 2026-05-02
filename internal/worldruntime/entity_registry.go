@@ -284,5 +284,6 @@ func newStaticEntity(id uint64, actor StaticEntity) StaticEntity {
 		RaceNum:         actor.RaceNum,
 		InteractionKind: actor.InteractionKind,
 		InteractionRef:  actor.InteractionRef,
+		CombatKind:      actor.CombatKind,
 	}
 }

@@ -573,7 +573,7 @@ Expected result:
 - [ ] Repeat once against a visible non-player actor that is *not* authored/runtime-marked as `training_dummy`
 
 Expected result:
-- for the current docs-only slice, treat this subsection as **N/A** rather than as a regression on live builds
+- for current live client QA, treat this subsection as **N/A** until the first `TARGET` request path lands, even though the underlying shared-world targetability seam is now covered by automated tests
 - once the next combat slices land, in-range visible `training_dummy` selection should become the only accepted bootstrap combat target path
 - out-of-range, invisible, or non-targetable non-player actors should fail closed without implying attacks, damage, or UI-rich combat state yet
 
