@@ -17,6 +17,9 @@ What this document adds is the next narrower question:
 
 **What is the smallest honest combat target path the project can own next before attacks, damage, death, aggro, or mob AI exist?**
 
+The follow-up planned attack-intent and clear-target contract now lives in:
+- `combat-normal-attack-bootstrap.md`
+
 ## Scope
 
 This contract currently applies only to:
@@ -173,7 +176,7 @@ The next combat RED should therefore build on this request/ack seam without skip
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- attack request packets
+- attack implementation, damage application, or repeated-hit semantics
 - weapon swing or projectile choreography
 - hit registration
 - damage numbers or point/HP depletion

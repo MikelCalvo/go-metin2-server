@@ -105,7 +105,8 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `TARGET` | client -> server | `0x0A01` | game | documented | first owned combat-preparation request for selecting one currently visible `training_dummy` actor by visible `vid`; payload is little-endian `uint32 target_vid`; the current live slice routes it through the shared-world `AttemptStaticActorCombatTarget(...)` seam, accepts only visible in-range `training_dummy` targets, and fails closed for malformed payloads, out-of-range targets, invisible actors, or visible non-targetable actors |
-| `TARGET` | server -> client | `0x0A10` | game | documented | minimal self-only target-selection acknowledgement; payload is little-endian `uint32 target_vid` + `uint8 hp_percent`; the current bootstrap dummy path returns `hp_percent = 100` on accepted target selection only and still freezes no peer fanout, no clear-target packet, and no attack/damage choreography |
+| `TARGET` | server -> client | `0x0A10` | game | documented | minimal self-only target-selection acknowledgement; payload is little-endian `uint32 target_vid` + `uint8 hp_percent`; the current bootstrap dummy path returns `hp_percent = 100` on accepted target selection only; the next planned attack slices also freeze this same family as the preferred carrier for later attack-driven HP-percent refreshes and for first clear-target delivery through `target_vid = 0`, `hp_percent = 0` |
+| `ATTACK` | client -> server | `TBD` | game | planned | first owned attack-intent family after accepted target selection; valid only while the session currently owns an active selected combat target, and intentionally scoped to attacking that current target rather than selecting a new `vid`; exact header/payload remain capture-gated before codec ownership is claimed |
 
 ## Notes
 
