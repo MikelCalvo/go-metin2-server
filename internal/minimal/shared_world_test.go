@@ -7033,6 +7033,88 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisibleTrainin
 	}
 }
 
+func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisibleTrainingDummy(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+
+	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, uint32(actor.EntityID), uint32(actor.EntityID))
+	if !attempt.Accepted {
+		t.Fatalf("expected matching selected training-dummy attack attempt to be accepted, got %+v", attempt)
+	}
+	if attempt.Failure != "" {
+		t.Fatalf("expected accepted selected-attack attempt to have no failure reason, got %+v", attempt)
+	}
+	if attempt.ActiveTargetVID != uint32(actor.EntityID) || attempt.RequestedTargetVID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected selected-attack target ownership: %+v", attempt)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "TrainingDummy" {
+		t.Fatalf("unexpected resolved training-dummy selected-attack attempt: %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptSelectedStaticActorAttackRejectsWithoutActiveTarget(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+
+	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, 0, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected selected attack without active target to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorCombatAttackFailureNoActiveTarget {
+		t.Fatalf("expected no-active-target attack failure %q, got %+v", StaticActorCombatAttackFailureNoActiveTarget, attempt)
+	}
+	if attempt.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected selected attack without active target to keep actor snapshot empty, got %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptSelectedStaticActorAttackRejectsMismatchedRequestedTarget(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	first, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummyOne", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected first visible training-dummy registration to succeed")
+	}
+	second, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummyTwo", bootstrapMapIndex, 1210, 2210, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected second visible training-dummy registration to succeed")
+	}
+
+	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, uint32(first.EntityID), uint32(second.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected selected attack with mismatched request target to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorCombatAttackFailureTargetMismatch {
+		t.Fatalf("expected target-mismatch attack failure %q, got %+v", StaticActorCombatAttackFailureTargetMismatch, attempt)
+	}
+	if attempt.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected mismatched selected attack to keep actor snapshot empty, got %+v", attempt)
+	}
+}
+
 func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsInvisibleTarget(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
@@ -8610,6 +8692,123 @@ func TestGameSessionFlowStaticActorCombatTargetRejectsVisibleNonTargetableActorW
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for rejected combat target, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelectedDummy(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame, got %d", len(selectOut))
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(actor.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected combat attack error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only target-refresh frame for accepted dummy attack, got %d", len(out))
+	}
+	target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode accepted dummy attack target-refresh frame: %v", err)
+	}
+	if target.TargetVID != uint32(actor.EntityID) || target.HPPercent != 100 {
+		t.Fatalf("unexpected accepted dummy attack target-refresh packet: %+v", target)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for accepted bootstrap dummy attack, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorAttackRejectsWithoutActiveTargetOrMatchingSelection(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	first, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummyOne", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected first visible training-dummy registration to succeed")
+	}
+	second, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummyTwo", bootstrapMapIndex, 1210, 2210, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected second visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 11 {
+		t.Fatalf("expected 11 bootstrap frames with two visible training dummies, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	withoutSelection, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(first.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected no-selection combat attack error: %v", err)
+	}
+	if len(withoutSelection) != 0 {
+		t.Fatalf("expected no self frames for combat attack without active target selection, got %d", len(withoutSelection))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(first.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame after selection, got %d", len(selectOut))
+	}
+
+	mismatched, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(second.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected mismatched-target combat attack error: %v", err)
+	}
+	if len(mismatched) != 0 {
+		t.Fatalf("expected no self frames for mismatched selected-target attack, got %d", len(mismatched))
+	}
+
+	nonNormal, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal + 1,
+		TargetVID:  uint32(first.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected non-normal combat attack error: %v", err)
+	}
+	if len(nonNormal) != 0 {
+		t.Fatalf("expected no self frames for non-normal bootstrap attack type, got %d", len(nonNormal))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for rejected bootstrap dummy attacks, got %d", len(queued))
 	}
 }
 

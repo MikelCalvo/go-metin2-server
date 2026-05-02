@@ -163,6 +163,15 @@ type staticActorCombatTargetResolution struct {
 	Packet    *combatproto.ServerTargetPacket
 }
 
+type staticActorCombatAttackResolution struct {
+	Accepted           bool
+	Failure            string
+	ActiveTargetVID    uint32
+	RequestedTargetVID uint32
+	Actor              StaticActorSnapshot
+	Packet             *combatproto.ServerTargetPacket
+}
+
 type merchantBuyContext struct {
 	TargetVID  uint32
 	Definition InteractionDefinition
@@ -729,6 +738,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		pending := newPendingServerFrames()
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
+		var activeCombatTargetVID uint32
 		var activeMerchantBuy merchantBuyContext
 		var hasActiveMerchantBuy bool
 		interactionCooldowns := make(map[uint32]time.Time)
@@ -751,6 +761,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		clearActiveMerchantBuy := func() {
 			activeMerchantBuy = merchantBuyContext{}
 			hasActiveMerchantBuy = false
+		}
+		clearActiveCombatTarget := func() {
+			activeCombatTargetVID = 0
 		}
 		clearLiveCharacterRegistration := func() {
 			if liveCharacterRegistrationID == 0 {
@@ -1037,9 +1050,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					sessionTicket = ticket
 					hasTicket = true
 					hasSelected = false
-					selectedPlayer = nil
 					clearActiveMerchantBuy()
+					clearActiveCombatTarget()
+					selectedPlayer = nil
 					clearLiveCharacterRegistration()
+
 					selectedIndex = 0
 					return loginflow.Result{
 						Accepted:      true,
@@ -1541,7 +1556,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !resolution.Accepted || resolution.Packet == nil {
 						return gameflow.TargetResult{Accepted: false}
 					}
+					activeCombatTargetVID = resolution.Packet.TargetVID
 					return gameflow.TargetResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
+				},
+				HandleAttack: func(packet combatproto.ClientAttackPacket) gameflow.AttackResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if !ownsLiveSharedWorldSession() {
+						return gameflow.AttackResult{Accepted: false}
+					}
+					if packet.AttackType != combatproto.ClientAttackTypeNormal {
+						return gameflow.AttackResult{Accepted: false}
+					}
+					resolution := runtime.resolveSelectedStaticActorNormalAttack(sharedWorldID, activeCombatTargetVID, packet.TargetVID)
+					if !resolution.Accepted || resolution.Packet == nil {
+						return gameflow.AttackResult{Accepted: false}
+					}
+					return gameflow.AttackResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
 				},
 				HandleShopBuy: func(packet shopproto.ClientBuyPacket) gameflow.ShopResult {
 					stateMu.Lock()
@@ -1575,6 +1607,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			shouldLeave := joinedSharedWorld
 			joinedSharedWorld = false
 			clearActiveMerchantBuy()
+			clearActiveCombatTarget()
 			clearLiveCharacterRegistration()
 			stateMu.Unlock()
 			if shouldLeave {
@@ -3167,6 +3200,24 @@ func (r *gameRuntime) resolveStaticActorCombatTarget(subjectID uint64, targetVID
 		return resolution
 	}
 	packet := combatproto.ServerTargetPacket{TargetVID: attempt.TargetVID, HPPercent: staticActorCombatTargetBootstrapHPPercent}
+	resolution.Accepted = true
+	resolution.Packet = &packet
+	return resolution
+}
+
+func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, activeTargetVID uint32, requestedTargetVID uint32) staticActorCombatAttackResolution {
+	resolution := staticActorCombatAttackResolution{ActiveTargetVID: activeTargetVID, RequestedTargetVID: requestedTargetVID}
+	if r == nil || r.sharedWorld == nil {
+		resolution.Failure = StaticActorCombatAttackFailureSubjectNotFound
+		return resolution
+	}
+	attempt := r.sharedWorld.AttemptSelectedStaticActorAttack(subjectID, activeTargetVID, requestedTargetVID)
+	resolution.Actor = attempt.Actor
+	if !attempt.Accepted {
+		resolution.Failure = attempt.Failure
+		return resolution
+	}
+	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: staticActorCombatTargetBootstrapHPPercent}
 	resolution.Accepted = true
 	resolution.Packet = &packet
 	return resolution

@@ -30,6 +30,8 @@ type HandleInteractionFunc func(interactproto.RequestPacket) InteractionResult
 
 type HandleTargetFunc func(combatproto.ClientTargetPacket) TargetResult
 
+type HandleAttackFunc func(combatproto.ClientAttackPacket) AttackResult
+
 type HandleShopBuyFunc func(shopproto.ClientBuyPacket) ShopResult
 
 type HandleShopCloseFunc func() ShopResult
@@ -41,6 +43,7 @@ type Config struct {
 	HandleWhisper      HandleWhisperFunc
 	HandleInteraction  HandleInteractionFunc
 	HandleTarget       HandleTargetFunc
+	HandleAttack       HandleAttackFunc
 	HandleShopBuy      HandleShopBuyFunc
 	HandleShopClose    HandleShopCloseFunc
 }
@@ -79,6 +82,11 @@ type TargetResult struct {
 	Frames   [][]byte
 }
 
+type AttackResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type ShopResult struct {
 	Accepted bool
 	Frames   [][]byte
@@ -92,6 +100,7 @@ type Flow struct {
 	handleWhisper      HandleWhisperFunc
 	handleInteraction  HandleInteractionFunc
 	handleTarget       HandleTargetFunc
+	handleAttack       HandleAttackFunc
 	handleShopBuy      HandleShopBuyFunc
 	handleShopClose    HandleShopCloseFunc
 }
@@ -121,6 +130,10 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if targetHandler == nil {
 		targetHandler = func(combatproto.ClientTargetPacket) TargetResult { return TargetResult{Accepted: false} }
 	}
+	attackHandler := cfg.HandleAttack
+	if attackHandler == nil {
+		attackHandler = func(combatproto.ClientAttackPacket) AttackResult { return AttackResult{Accepted: false} }
+	}
 	shopBuyHandler := cfg.HandleShopBuy
 	if shopBuyHandler == nil {
 		shopBuyHandler = func(shopproto.ClientBuyPacket) ShopResult { return ShopResult{Accepted: false} }
@@ -137,6 +150,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleWhisper:      whisperHandler,
 		handleInteraction:  interactionHandler,
 		handleTarget:       targetHandler,
+		handleAttack:       attackHandler,
 		handleShopBuy:      shopBuyHandler,
 		handleShopClose:    shopCloseHandler,
 	}
@@ -232,6 +246,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, err
 		}
 		result := f.handleTarget(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case combatproto.HeaderClientAttack:
+		packet, err := combatproto.DecodeClientAttack(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleAttack(packet)
 		if !result.Accepted {
 			return nil, nil
 		}

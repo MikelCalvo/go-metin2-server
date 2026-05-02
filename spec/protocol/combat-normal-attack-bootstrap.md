@@ -69,7 +69,7 @@ The exact payload layout is:
 4. `uint8 crc_file_piece`
 
 What is frozen now about those fields:
-- `attack_type` remains a raw owned wire byte in this slice; later combat slices may narrow which values are accepted for the first live dummy path
+- the first live dummy attack path accepts only `attack_type = 0` (`normal attack`) in this slice
 - `target_vid` is the wire-visible target identity the client places in the request
 - `crc_proc_piece` and `crc_file_piece` are currently owned as exact trailing raw bytes in the codec, but their higher-level validation role remains intentionally narrow in the clean-room runtime for now
 
@@ -85,6 +85,8 @@ An `ATTACK` request is only eligible when all of the following are true:
 - the session is already in `GAME`
 - the session still owns a selected live character
 - that live character currently holds one active combat target from the existing `TARGET` selection contract
+- the request uses `attack_type = 0` for the first normal-attack bootstrap path
+- the request `target_vid` exactly matches the session's currently selected combat target
 - that selected target still resolves to a visible same-map `training_dummy`
 - that selected target still passes the current bootstrap combat band
 
@@ -105,7 +107,7 @@ Why this reuse is the current preferred contract:
 - reusing it for `no target` avoids inventing a second clear-only family before tests prove a richer path is needed
 
 So the first owned target-state surface is now intentionally tiny but expressive enough for three states:
-1. `TARGET(target_vid > 0, hp_percent = 100)` — selected live dummy with full bootstrap HP percent
+1. `TARGET(target_vid > 0, hp_percent = 100)` — selected live dummy with full bootstrap HP percent, including accepted target selection and the first accepted normal-attack refresh before HP mutation exists
 2. `TARGET(target_vid > 0, hp_percent = updated)` — same selected dummy after later accepted attack-driven HP changes
 3. `TARGET(0, 0)` — selected target cleared or no longer valid
 
@@ -129,6 +131,8 @@ An `ATTACK` request must fail closed when any of these are true:
 - malformed codec payload
 - no selected live character exists
 - no active combat target is currently bound to the session
+- the request uses a non-normal bootstrap `attack_type`
+- the request `target_vid` does not match the session's active combat target
 - the selected target is no longer visible
 - the selected target is no longer a `training_dummy`
 - the selected target is no longer within the current bootstrap combat band
@@ -153,11 +157,9 @@ It freezes that later combat slices should align with the existing runtime lifec
 ## Explicit unknowns still left for the next RED
 
 The next flow/gameplay slices still need to prove or freeze:
-- whether the first live dummy attack path accepts only `attack_type = 0` or a slightly broader bootstrap subset
 - whether the runtime should validate or currently only preserve the two trailing raw CRC bytes
-- whether accepted attack attempts need any additional tiny server packet besides `TARGET` refreshes to keep the client stable
 - the exact first timing/rate rule for repeated attack attempts
-- the exact first rule for mismatched request `target_vid` versus currently selected target ownership
+- exactly when stale-but-still-selected targets should proactively emit `TARGET(0, 0)` instead of only failing closed
 
 Those unknowns are deliberate.
 The codec now owns the exact wire shape, but the gameplay contract is still intentionally narrower than full combat semantics.
@@ -178,7 +180,7 @@ This slice does **not** yet freeze:
 After this document lands, the repository should be able to say:
 - the next combat ingress is no longer vague; `ATTACK` is frozen exactly as client -> server header `0x0401`
 - the project now owns the first clean-room `ATTACK` codec layout: `attack_type`, `target_vid`, `crc_proc_piece`, `crc_file_piece`
-- that family still remains target-relative in gameplay terms rather than a second arbitrary target-selection path
+- the first live dummy attack path accepts only `attack_type = 0` and keeps gameplay target-relative by requiring the request `target_vid` to match the active selected combat target
+- the first accepted bootstrap attack reuses self-only `GC TARGET(target_vid, 100)` as its visible success refresh before HP mutation exists
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes should try to stay on the same `GC TARGET(target_vid, hp_percent)` carrier before claiming richer combat packets
-- the next RED can focus on accepted dummy attack gating without reopening exact header choice, payload byte ownership, or clear-target semantics

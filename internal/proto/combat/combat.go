@@ -12,6 +12,8 @@ const (
 	HeaderClientTarget uint16 = 0x0A01
 	HeaderServerTarget uint16 = 0x0A10
 
+	ClientAttackTypeNormal uint8 = 0
+
 	clientAttackPayloadSize = 7
 	clientTargetPayloadSize = 4
 	serverTargetPayloadSize = 5

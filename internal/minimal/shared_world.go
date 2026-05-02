@@ -44,6 +44,13 @@ const (
 	StaticActorCombatTargetFailureTargetNotVisible    = "target_not_visible"
 	StaticActorCombatTargetFailureTargetOutOfRange    = "target_out_of_range"
 	StaticActorCombatTargetFailureTargetNotTargetable = "target_not_targetable"
+
+	StaticActorCombatAttackFailureSubjectNotFound     = "subject_not_found"
+	StaticActorCombatAttackFailureNoActiveTarget      = "no_active_target"
+	StaticActorCombatAttackFailureTargetMismatch      = "target_mismatch"
+	StaticActorCombatAttackFailureTargetNotVisible    = "target_not_visible"
+	StaticActorCombatAttackFailureTargetOutOfRange    = "target_out_of_range"
+	StaticActorCombatAttackFailureTargetNotTargetable = "target_not_targetable"
 )
 
 const (
@@ -63,6 +70,14 @@ type StaticActorCombatTargetAttempt struct {
 	Failure   string
 	TargetVID uint32
 	Actor     StaticActorSnapshot
+}
+
+type StaticActorCombatAttackAttempt struct {
+	Accepted           bool
+	Failure            string
+	ActiveTargetVID    uint32
+	RequestedTargetVID uint32
+	Actor              StaticActorSnapshot
 }
 
 func newQueuedSessionFlow(inner service.SessionFlow, pending *pendingServerFrames, onClose func()) *queuedSessionFlow {
@@ -768,6 +783,55 @@ func (r *sharedWorldRegistry) AttemptStaticActorCombatTarget(subjectID uint64, t
 		attempt.Failure = StaticActorCombatTargetFailureSubjectNotFound
 		return attempt
 	}
+	return r.attemptStaticActorCombatTargetLocked(subject, targetVID)
+}
+
+func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64, activeTargetVID uint32, requestedTargetVID uint32) StaticActorCombatAttackAttempt {
+	attempt := StaticActorCombatAttackAttempt{ActiveTargetVID: activeTargetVID, RequestedTargetVID: requestedTargetVID}
+	if r == nil || r.entities == nil {
+		attempt.Failure = StaticActorCombatAttackFailureSubjectNotFound
+		return attempt
+	}
+	if activeTargetVID == 0 {
+		attempt.Failure = StaticActorCombatAttackFailureNoActiveTarget
+		return attempt
+	}
+	if requestedTargetVID == 0 || requestedTargetVID != activeTargetVID {
+		attempt.Failure = StaticActorCombatAttackFailureTargetMismatch
+		return attempt
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	subject, ok := r.playerCharacter(subjectID)
+	if !ok {
+		attempt.Failure = StaticActorCombatAttackFailureSubjectNotFound
+		return attempt
+	}
+	targetAttempt := r.attemptStaticActorCombatTargetLocked(subject, activeTargetVID)
+	attempt.Actor = targetAttempt.Actor
+	if !targetAttempt.Accepted {
+		switch targetAttempt.Failure {
+		case StaticActorCombatTargetFailureSubjectNotFound:
+			attempt.Failure = StaticActorCombatAttackFailureSubjectNotFound
+		case StaticActorCombatTargetFailureTargetNotVisible:
+			attempt.Failure = StaticActorCombatAttackFailureTargetNotVisible
+		case StaticActorCombatTargetFailureTargetOutOfRange:
+			attempt.Failure = StaticActorCombatAttackFailureTargetOutOfRange
+		case StaticActorCombatTargetFailureTargetNotTargetable:
+			attempt.Failure = StaticActorCombatAttackFailureTargetNotTargetable
+		default:
+			attempt.Failure = targetAttempt.Failure
+		}
+		return attempt
+	}
+	attempt.Accepted = true
+	return attempt
+}
+
+func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subject loginticket.Character, targetVID uint32) StaticActorCombatTargetAttempt {
+	attempt := StaticActorCombatTargetAttempt{TargetVID: targetVID}
 	actor, ok := r.scopesLocked().VisibleStaticActorByVID(subject, targetVID)
 	if !ok {
 		attempt.Failure = StaticActorCombatTargetFailureTargetNotVisible
