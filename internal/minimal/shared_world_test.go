@@ -5453,6 +5453,187 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantBuyMutationNonAuthoritativ
 	closeSessionFlow(t, flowOwnerNew)
 }
 
+func TestGameRuntimeEnterGameReclaimKeepsStaleCombatAttackNonAuthoritative(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed stale combat account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected stale combat runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20300, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected training dummy registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerOldEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for original owner with visible training dummy, got %d", len(ownerOldEnter))
+	}
+	targetOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected original owner target error before reclaim: %v", err)
+	}
+	if len(targetOut) != 1 {
+		t.Fatalf("expected original owner target ack before reclaim, got %d frames", len(targetOut))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
+	if !ok {
+		t.Fatal("expected live player entity before stale combat reclaim")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale combat session-directory removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerNewEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for replacement owner with visible training dummy, got %d", len(ownerNewEnter))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to start with no queued frames, got %d", len(queued))
+	}
+
+	staleAttackOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected stale combat attack error: %v", err)
+	}
+	if len(staleAttackOut) != 0 {
+		t.Fatalf("expected stale combat attack to remain non-authoritative with no frames, got %d", len(staleAttackOut))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale combat attack, got %d", len(queued))
+	}
+
+	reselectOut, err := flowOwnerNew.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected replacement owner target error after stale combat attack: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected replacement owner target ack after stale combat attack, got %d frames", len(reselectOut))
+	}
+	targetPacket, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode replacement owner target ack after stale combat attack: %v", err)
+	}
+	if targetPacket.TargetVID != uint32(actor.EntityID) || targetPacket.HPPercent != 100 {
+		t.Fatalf("unexpected replacement owner target ack after stale combat attack: %+v", targetPacket)
+	}
+
+	liveAttackOut, err := flowOwnerNew.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected replacement owner attack error after stale combat attack: %v", err)
+	}
+	if len(liveAttackOut) != 1 {
+		t.Fatalf("expected replacement owner live attack to emit 1 frame, got %d", len(liveAttackOut))
+	}
+	attackPacket, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, liveAttackOut[0]))
+	if err != nil {
+		t.Fatalf("decode replacement owner attack refresh after stale combat attack: %v", err)
+	}
+	if attackPacket.TargetVID != uint32(actor.EntityID) || attackPacket.HPPercent != 90 {
+		t.Fatalf("unexpected replacement owner attack refresh after stale combat attack: %+v", attackPacket)
+	}
+
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
+func TestGameRuntimeEnterGameReclaimKeepsStaleCombatTargetSelectionNonAuthoritative(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed stale combat account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected stale combat runtime error: %v", err)
+	}
+	firstDummy, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummyA", bootstrapMapIndex, 1200, 2200, 20300, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected first training dummy registration to succeed")
+	}
+	secondDummy, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummyB", bootstrapMapIndex, 1250, 2250, 20301, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected second training dummy registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerOldEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for original owner with two visible training dummies, got %d", len(ownerOldEnter))
+	}
+	oldTargetOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(firstDummy.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected original owner target error before reclaim: %v", err)
+	}
+	if len(oldTargetOut) != 1 {
+		t.Fatalf("expected original owner target ack before reclaim, got %d frames", len(oldTargetOut))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
+	if !ok {
+		t.Fatal("expected live player entity before stale combat target reclaim")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected stale combat target session-directory removal to succeed")
+	}
+
+	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerNewEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for replacement owner with two visible training dummies, got %d", len(ownerNewEnter))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to start with no queued frames, got %d", len(queued))
+	}
+
+	liveTargetOut, err := flowOwnerNew.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(secondDummy.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected replacement owner target error before stale target attempt: %v", err)
+	}
+	if len(liveTargetOut) != 1 {
+		t.Fatalf("expected replacement owner target ack before stale target attempt, got %d frames", len(liveTargetOut))
+	}
+
+	staleTargetOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(firstDummy.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected stale target error after reclaim: %v", err)
+	}
+	if len(staleTargetOut) != 0 {
+		t.Fatalf("expected stale target attempt to remain non-authoritative with no frames, got %d", len(staleTargetOut))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale target attempt, got %d", len(queued))
+	}
+
+	liveAttackOut, err := flowOwnerNew.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(secondDummy.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected replacement owner attack error after stale target attempt: %v", err)
+	}
+	if len(liveAttackOut) != 1 {
+		t.Fatalf("expected replacement owner attack after stale target attempt to emit 1 frame, got %d", len(liveAttackOut))
+	}
+	attackPacket, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, liveAttackOut[0]))
+	if err != nil {
+		t.Fatalf("decode replacement owner attack refresh after stale target attempt: %v", err)
+	}
+	if attackPacket.TargetVID != uint32(secondDummy.EntityID) || attackPacket.HPPercent != 90 {
+		t.Fatalf("unexpected replacement owner attack refresh after stale target attempt: %+v", attackPacket)
+	}
+
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
 func TestGameRuntimeReconnectAfterStaleItemUseCloseRebuildsAuthoritativeState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

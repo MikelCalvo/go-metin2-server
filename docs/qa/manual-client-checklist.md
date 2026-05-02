@@ -615,6 +615,19 @@ Expected result:
 - post-transfer, post-`/phase_select` re-entry, and post-reconnect attacks fail closed until the client reacquires target intent with a new accepted `TARGET`
 - once reselected, the same dummy immediately resumes the current self-only `GC TARGET(target_vid, hp_percent)` attack-refresh behavior
 
+### 6.21 Stale reclaimed combat attempts stay non-authoritative (debug-harness optional)
+
+- [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
+- [ ] On the authoritative replacement session, select one visible `training_dummy` and keep it ready as the current live combat target
+- [ ] On the stale old socket, try one `TARGET` and one normal `ATTACK` against the same or another visible dummy `VID`
+- [ ] Confirm the stale socket receives no combat-visible success refresh and the authoritative replacement session receives no queued combat frames from those stale requests
+- [ ] On the authoritative replacement session, issue one normal `ATTACK` against its currently selected dummy without reselecting again
+
+Expected result:
+- stale post-reclaim `TARGET` / `ATTACK` attempts fail closed and stay non-authoritative
+- runtime-owned dummy HP does not change because of the stale socket
+- the replacement live owner's selected dummy target remains intact and its next authoritative attack still produces the normal self-only `GC TARGET(target_vid, hp_percent)` refresh
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 
