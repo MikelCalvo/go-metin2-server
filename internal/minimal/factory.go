@@ -764,6 +764,20 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		clearActiveCombatTarget := func() {
 			activeCombatTargetVID = 0
 		}
+		enqueueCombatTargetClear := func() {
+			pending.Enqueue([][]byte{combatproto.EncodeServerClearTarget()})
+		}
+		clearInvalidActiveCombatTargetAfterMovement := func() {
+			if activeCombatTargetVID == 0 || runtime == nil || !joinedSharedWorld || sharedWorldID == 0 || sharedWorld == nil || !sharedWorld.HasLiveSession(sharedWorldID) {
+				return
+			}
+			resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, activeCombatTargetVID)
+			if resolution.Accepted && resolution.Packet != nil && resolution.Packet.TargetVID == activeCombatTargetVID {
+				return
+			}
+			clearActiveCombatTarget()
+			enqueueCombatTargetClear()
+		}
 		clearLiveCharacterRegistration := func() {
 			if liveCharacterRegistrationID == 0 {
 				return
@@ -1214,6 +1228,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					ack := ticketMoveAckPacket(selected, packet)
 					if liveSharedWorld {
 						sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previous, selected, [][]byte{movep.EncodeMoveAck(ack)})
+						clearInvalidActiveCombatTargetAfterMovement()
 					}
 					return gameflow.Result{Accepted: true, Replication: ack}
 				},
@@ -1251,6 +1266,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						ack := ticketSyncPositionAckPacket(selected)
 						if liveSharedWorld {
 							sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previous, selected, [][]byte{movep.EncodeSyncPositionAck(ack)})
+							clearInvalidActiveCombatTargetAfterMovement()
 						}
 						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ack}
 					}

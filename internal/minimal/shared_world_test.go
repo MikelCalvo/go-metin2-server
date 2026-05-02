@@ -8784,6 +8784,205 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 	}
 }
 
+func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesCombatRange(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame after selection, got %d", len(selectOut))
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1700, Y: 2800, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move-out error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame while leaving combat range, got %d", len(moveOut))
+	}
+	moveOutAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode move-out ack: %v", err)
+	}
+	if moveOutAck.VID != peer.VID || moveOutAck.X != 1700 || moveOutAck.Y != 2800 {
+		t.Fatalf("unexpected move-out ack: %+v", moveOutAck)
+	}
+
+	clearedFrames := flushServerFrames(t, flow)
+	if len(clearedFrames) != 1 {
+		t.Fatalf("expected 1 queued clear-target frame after leaving combat range, got %d", len(clearedFrames))
+	}
+	cleared, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, clearedFrames[0]))
+	if err != nil {
+		t.Fatalf("decode clear-target frame after leaving combat range: %v", err)
+	}
+	if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
+		t.Fatalf("expected zero-target clear packet after leaving combat range, got %+v", cleared)
+	}
+
+	moveBack, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 8, X: 1100, Y: 2100, Time: 0x11121315})))
+	if err != nil {
+		t.Fatalf("unexpected move-back error: %v", err)
+	}
+	if len(moveBack) != 1 {
+		t.Fatalf("expected 1 self move ack frame while returning to dummy range, got %d", len(moveBack))
+	}
+	moveBackAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveBack[0]))
+	if err != nil {
+		t.Fatalf("decode move-back ack: %v", err)
+	}
+	if moveBackAck.VID != peer.VID || moveBackAck.X != 1100 || moveBackAck.Y != 2100 {
+		t.Fatalf("unexpected move-back ack: %+v", moveBackAck)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued visibility frames when returning to in-range whole-map visibility, got %d", len(queued))
+	}
+
+	attackWithoutReselect, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(actor.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack-after-range-loss error: %v", err)
+	}
+	if len(attackWithoutReselect) != 0 {
+		t.Fatalf("expected no self frames when attacking after range-loss clear without reselection, got %d", len(attackWithoutReselect))
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat reselect error after range-loss clear: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame after range-loss clear and reselection, got %d", len(reselectOut))
+	}
+	reselected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode reselected training-dummy target frame after range-loss clear: %v", err)
+	}
+	if reselected.TargetVID != uint32(actor.EntityID) || reselected.HPPercent != 100 {
+		t.Fatalf("unexpected reselected target packet after range-loss clear: %+v", reselected)
+	}
+}
+
+func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy inside radius visibility, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame after selection, got %d", len(selectOut))
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1700, Y: 2800, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move-out visibility error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame while leaving visibility, got %d", len(moveOut))
+	}
+
+	clearedFrames := flushServerFrames(t, flow)
+	if len(clearedFrames) != 2 {
+		t.Fatalf("expected static-actor delete plus clear-target frame after leaving visibility, got %d", len(clearedFrames))
+	}
+	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, clearedFrames[0]))
+	if err != nil {
+		t.Fatalf("decode static-actor delete after visibility loss: %v", err)
+	}
+	if deleted.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected static-actor delete after visibility loss: %+v", deleted)
+	}
+	cleared, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, clearedFrames[1]))
+	if err != nil {
+		t.Fatalf("decode clear-target frame after leaving visibility: %v", err)
+	}
+	if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
+		t.Fatalf("expected zero-target clear packet after visibility loss, got %+v", cleared)
+	}
+
+	moveBack, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 8, X: 1100, Y: 2100, Time: 0x11121315})))
+	if err != nil {
+		t.Fatalf("unexpected move-back visibility error: %v", err)
+	}
+	if len(moveBack) != 1 {
+		t.Fatalf("expected 1 self move ack frame while returning to visibility, got %d", len(moveBack))
+	}
+
+	restoreFrames := flushServerFrames(t, flow)
+	if len(restoreFrames) != 3 {
+		t.Fatalf("expected 3 queued static-actor visibility frames after returning into visibility, got %d", len(restoreFrames))
+	}
+	restoredAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restoreFrames[0]))
+	if err != nil {
+		t.Fatalf("decode static-actor add after visibility restore: %v", err)
+	}
+	if restoredAdd.VID != uint32(actor.EntityID) || restoredAdd.X != 1200 || restoredAdd.Y != 2200 {
+		t.Fatalf("unexpected static-actor add after visibility restore: %+v", restoredAdd)
+	}
+
+	attackWithoutReselect, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  uint32(actor.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack-after-visibility-loss error: %v", err)
+	}
+	if len(attackWithoutReselect) != 0 {
+		t.Fatalf("expected no self frames when attacking after visibility-loss clear without reselection, got %d", len(attackWithoutReselect))
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected combat reselect error after visibility-loss clear: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame after visibility-loss clear and reselection, got %d", len(reselectOut))
+	}
+}
+
 func TestGameSessionFlowStaticActorAttackRejectsWithoutActiveTargetOrMatchingSelection(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

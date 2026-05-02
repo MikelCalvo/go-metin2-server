@@ -100,7 +100,7 @@ It does **not** yet freeze:
 - a clear-target request shape
 - target persistence beyond the immediate accepted runtime request
 - a damage or hit-result packet family
-- target-loss packets on visibility changes, transfer, reconnect, or reclaim
+- target-loss packets on transfer, reconnect, reclaim, actor replacement, or death; visibility/range invalidation is now owned by the follow-up combat-normal bootstrap contract via self-only `GC TARGET(0, 0)`
 
 ## Target identity and visibility rule
 
@@ -141,8 +141,8 @@ This first contract intentionally expects:
 - selecting a dummy does not broadcast to peers
 - selecting a dummy only prepares later attack-intent validation on that same live session
 
-Future slices may freeze explicit target-clear rules when transfer, reconnect, visibility-loss, reclaim, or death handling needs them.
-This document does not claim those resets yet.
+Future slices may still freeze explicit target-clear rules for transfer, reconnect, reclaim, actor replacement, or death.
+Visibility/range invalidation for an already selected dummy now lives in `combat-normal-attack-bootstrap.md` via the self-only `GC TARGET(0, 0)` companion.
 
 ## Runtime seam already owned before and after the packet path
 

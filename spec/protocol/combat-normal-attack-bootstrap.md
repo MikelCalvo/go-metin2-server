@@ -124,6 +124,7 @@ The current owned bootstrap combat state is intentionally tiny:
 What this still freezes about the **visible state carrier** for later slices:
 - accepted later attack-driven HP refreshes should continue preferring server `TARGET` with the same selected `target_vid` plus the updated `hp_percent`
 - target loss, invalidation, death cleanup, reconnect cleanup, transfer cleanup, or reclaim cleanup should prefer the zero-target `TARGET(0, 0)` companion before introducing a new clear-target family
+- when subject movement or sync updates make the selected dummy leave current visibility or the bootstrap combat band, the runtime should proactively clear the active target with one self-only `TARGET(0, 0)` companion
 
 If future captures or tests prove this carrier insufficient, the repository may add a richer combat packet family later.
 But the next slices should begin from this smaller contract first.
@@ -160,7 +161,7 @@ An `ATTACK` request must fail closed when any of these are true:
 The current visible failure expectations are intentionally narrow:
 - malformed or wrong-phase requests may still stop at codec/flow rejection without a visible combat packet
 - plain denied attack attempts do not yet require chat spam, peer fanout, or richer combat-result frames
-- when runtime state already held a previously selected combat target but that target is now invalid, the preferred first visible reset companion is `TARGET(0, 0)`
+- when runtime state already held a previously selected combat target and subject movement/sync makes that target invisible or out of the current combat band, the preferred first visible reset companion is one self-only `TARGET(0, 0)` plus local active-target cleanup
 
 ## Ownership and lifecycle rule
 
@@ -178,7 +179,7 @@ It freezes that later combat slices should align with the existing runtime lifec
 The next flow/gameplay slices still need to prove or freeze:
 - whether the runtime should validate or currently only preserve the two trailing raw CRC bytes
 - the exact first timing/rate rule for repeated attack attempts
-- exactly when stale-but-still-selected targets should proactively emit `TARGET(0, 0)` instead of only failing closed
+- exactly which non-movement lifecycle edges (transfer, reconnect, reclaim, death, actor replacement) should proactively emit `TARGET(0, 0)` instead of only failing closed
 
 Those unknowns are deliberate.
 The codec now owns the exact wire shape, but the gameplay contract is still intentionally narrower than full combat semantics.
@@ -202,5 +203,6 @@ After this document lands, the repository should be able to say:
 - the first live dummy attack path accepts only `attack_type = 0` and keeps gameplay target-relative by requiring the request `target_vid` to match the active selected combat target
 - the first accepted bootstrap attack now mutates runtime-owned `training_dummy` HP deterministically from `10` downward in `1`-HP steps while reusing self-only `GC TARGET(target_vid, hp_percent)` as its visible success refresh
 - accepted reselection of the same damaged dummy reuses the same current runtime `hp_percent` instead of resetting the visible target state back to `100`
+- subject movement/sync that makes the selected dummy leave current visibility or the bootstrap combat band now proactively emits one self-only `GC TARGET(0, 0)` and clears the session-local active target
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes should try to stay on the same `GC TARGET(target_vid, hp_percent)` carrier before claiming richer combat packets
