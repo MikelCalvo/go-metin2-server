@@ -37,3 +37,13 @@ func TestApplyBootstrapStaticActorNormalAttackRejectsDeadTrainingDummyCombatHP(t
 		t.Fatalf("expected dead bootstrap training-dummy attack to return zero values, got nextHP=%d hpPercent=%d", nextHP, hpPercent)
 	}
 }
+
+func TestBootstrapStaticActorRespawnDelayReturnsTrainingDummyBootstrapDelay(t *testing.T) {
+	delay, ok := BootstrapStaticActorRespawnDelay(StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected bootstrap training-dummy respawn delay to be supported")
+	}
+	if delay != TrainingDummyBootstrapRespawnDelay {
+		t.Fatalf("expected training-dummy respawn delay %v, got %v", TrainingDummyBootstrapRespawnDelay, delay)
+	}
+}

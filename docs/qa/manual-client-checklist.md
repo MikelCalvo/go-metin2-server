@@ -666,7 +666,23 @@ Expected result:
 - any session that still had that dummy selected receives the existing self-only clear-target companion immediately on death
 - the bootstrap combat loop does not send a synthetic `GC TARGET(..., 0)` refresh at death; it switches surfaces from HP refresh to death + clear
 - fresh `TARGET` and `ATTACK` attempts fail closed while the dummy remains dead
-- respawn/reset behavior is still a later slice, so this QA only validates death, clear, and dead-state rejection
+- the timed respawn/reset path is validated separately in 6.24; this step only proves death, clear, and dead-state rejection before the respawn window expires
+
+### 6.24 Training-dummy timed respawn rebuild requires fresh reselection (packet-harness optional)
+
+- [ ] Starting from the zero-HP death state in 6.23, keep the dead dummy visible to at least one session and, if possible, to a second watcher that had it selected before death
+- [ ] Confirm that no respawn rebuild packets arrive before the first owned `2s` dead timer expires
+- [ ] Once the timer expires, confirm each currently visible session receives the respawn rebuild burst in this order: `CHARACTER_DEL(vid)` -> `CHARACTER_ADD` -> `CHAR_ADDITIONAL_INFO` -> `CHARACTER_UPDATE`
+- [ ] Confirm the rebuilt actor returns at the authored/bootstrap position and uses the same visible `VID`
+- [ ] Without sending a fresh `TARGET`, issue one normal `ATTACK` from the previous attacker and, if applicable, from the previous watcher that still had the dead dummy selected before respawn
+- [ ] Then send a fresh `TARGET` and confirm the next accepted `GC TARGET(target_vid, 100)` and first post-respawn `ATTACK` resume the normal self-only HP loop from full bootstrap HP
+
+Expected result:
+- the first respawn is purely server-driven and waits for the owned fixed `2s` dead interval
+- respawn reuses normal visibility teardown + rebuild packet families instead of inventing a dedicated revive packet
+- the rebuilt dummy is a fresh live combat snapshot even if the visible `VID` is reused
+- stale pre-death target ownership does not survive the respawn boundary; post-respawn attacks fail closed until the session reselects target intent with a new accepted `TARGET`
+- once reselected, the dummy immediately resumes the current bootstrap HP refresh path from `100` -> `90` on the next accepted normal hit
 
 ---
 ## 7. Optional bootstrap chat-scope checks

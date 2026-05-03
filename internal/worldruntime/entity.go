@@ -1,6 +1,10 @@
 package worldruntime
 
-import "github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+import (
+	"time"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+)
 
 type EntityKind string
 
@@ -13,6 +17,7 @@ const (
 	TrainingDummyBootstrapMaxHP                 uint8 = 10
 	TrainingDummyBootstrapMinLiveHP             uint8 = 1
 	TrainingDummyBootstrapDamagePerNormalAttack uint8 = 1
+	TrainingDummyBootstrapRespawnDelay                = 2 * time.Second
 )
 
 type Entity struct {
@@ -51,6 +56,15 @@ func BootstrapStaticActorCurrentHP(combatKind string) (uint8, bool) {
 	switch combatKind {
 	case StaticActorCombatKindTrainingDummy:
 		return TrainingDummyBootstrapMaxHP, true
+	default:
+		return 0, false
+	}
+}
+
+func BootstrapStaticActorRespawnDelay(combatKind string) (time.Duration, bool) {
+	switch combatKind {
+	case StaticActorCombatKindTrainingDummy:
+		return TrainingDummyBootstrapRespawnDelay, true
 	default:
 		return 0, false
 	}

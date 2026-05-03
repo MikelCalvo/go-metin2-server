@@ -93,7 +93,7 @@ The legacy TCP runtime supports two optional per-session hooks:
 - `io.Closer` — allows a session flow to release shared runtime state when the TCP session ends
 
 The runtime checks for pending server frames between client reads.
-This is the foundation for future slices such as asynchronous peer visibility and other server-push behavior.
+This now powers asynchronous peer visibility *and* the bootstrap training-dummy dead-timer respawn rebuild path (`DEAD` -> delayed `CHARACTER_DEL` + add/info/update).
 
 ## Initial engineering priorities
 

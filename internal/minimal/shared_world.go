@@ -3,6 +3,7 @@ package minimal
 import (
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
@@ -15,11 +16,12 @@ import (
 )
 
 type queuedSessionFlow struct {
-	inner     service.SessionFlow
-	pending   *pendingServerFrames
-	onClose   func()
-	closeOnce sync.Once
-	closeErr  error
+	inner       service.SessionFlow
+	pending     *pendingServerFrames
+	beforeFlush func()
+	onClose     func()
+	closeOnce   sync.Once
+	closeErr    error
 }
 
 type pendingServerFrames struct {
@@ -33,10 +35,12 @@ type sharedWorldRegistry struct {
 	entities                        *worldruntime.EntityRegistry
 	sessionDirectory                *worldruntime.SessionDirectory
 	staticActorCombatHP             map[uint64]uint8
+	staticActorCombatRespawnAt      map[uint64]time.Time
 	staticActorCombatSnapshot       map[uint64]uint64
 	sessionCombatTargets            map[uint64]uint32
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
+	now                             func() time.Time
 }
 
 const (
@@ -93,8 +97,8 @@ type StaticActorCombatAttackAttempt struct {
 	Actor                       StaticActorSnapshot
 }
 
-func newQueuedSessionFlow(inner service.SessionFlow, pending *pendingServerFrames, onClose func()) *queuedSessionFlow {
-	return &queuedSessionFlow{inner: inner, pending: pending, onClose: onClose}
+func newQueuedSessionFlow(inner service.SessionFlow, pending *pendingServerFrames, beforeFlush func(), onClose func()) *queuedSessionFlow {
+	return &queuedSessionFlow{inner: inner, pending: pending, beforeFlush: beforeFlush, onClose: onClose}
 }
 
 func (f *queuedSessionFlow) Start() ([][]byte, error) {
@@ -114,6 +118,9 @@ func (f *queuedSessionFlow) CurrentPhase() session.Phase {
 }
 
 func (f *queuedSessionFlow) FlushServerFrames() ([][]byte, error) {
+	if f.beforeFlush != nil {
+		f.beforeFlush()
+	}
 	if f.pending == nil {
 		return nil, nil
 	}
@@ -188,12 +195,14 @@ func newSharedWorldRegistry() *sharedWorldRegistry {
 
 func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology) *sharedWorldRegistry {
 	return &sharedWorldRegistry{
-		topology:                  topology,
-		entities:                  worldruntime.NewEntityRegistryWithTopology(topology),
-		sessionDirectory:          worldruntime.NewSessionDirectory(),
-		staticActorCombatHP:       make(map[uint64]uint8),
-		staticActorCombatSnapshot: make(map[uint64]uint64),
-		lastKnownCharacters:       make(map[uint64]loginticket.Character),
+		topology:                   topology,
+		entities:                   worldruntime.NewEntityRegistryWithTopology(topology),
+		sessionDirectory:           worldruntime.NewSessionDirectory(),
+		staticActorCombatHP:        make(map[uint64]uint8),
+		staticActorCombatRespawnAt: make(map[uint64]time.Time),
+		staticActorCombatSnapshot:  make(map[uint64]uint64),
+		lastKnownCharacters:        make(map[uint64]loginticket.Character),
+		now:                        time.Now,
 	}
 }
 
@@ -272,9 +281,33 @@ func (r *sharedWorldRegistry) clearStaticActorCombatStateLocked(entityID uint64)
 	if r.staticActorCombatHP != nil {
 		delete(r.staticActorCombatHP, entityID)
 	}
+	if r.staticActorCombatRespawnAt != nil {
+		delete(r.staticActorCombatRespawnAt, entityID)
+	}
 	if r.staticActorCombatSnapshot != nil {
 		delete(r.staticActorCombatSnapshot, entityID)
 	}
+}
+
+func (r *sharedWorldRegistry) scheduleStaticActorCombatRespawnLocked(actor worldruntime.StaticEntity) {
+	if r == nil || actor.Entity.ID == 0 {
+		return
+	}
+	delay, ok := worldruntime.BootstrapStaticActorRespawnDelay(actor.CombatKind)
+	if !ok || delay <= 0 {
+		if r.staticActorCombatRespawnAt != nil {
+			delete(r.staticActorCombatRespawnAt, actor.Entity.ID)
+		}
+		return
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	if r.staticActorCombatRespawnAt == nil {
+		r.staticActorCombatRespawnAt = make(map[uint64]time.Time)
+	}
+	r.staticActorCombatRespawnAt[actor.Entity.ID] = now.Add(delay)
 }
 
 func (r *sharedWorldRegistry) assignStaticActorCombatSnapshotLocked(entityID uint64) uint64 {
@@ -327,8 +360,84 @@ func (r *sharedWorldRegistry) syncStaticActorCombatStateLocked(actor worldruntim
 		r.clearStaticActorCombatStateLocked(actor.Entity.ID)
 		return
 	}
-	_, _ = r.ensureStaticActorCombatCurrentHPLocked(actor)
+	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok {
+		r.clearStaticActorCombatStateLocked(actor.Entity.ID)
+		return
+	}
+	if currentHP > 0 && r.staticActorCombatRespawnAt != nil {
+		delete(r.staticActorCombatRespawnAt, actor.Entity.ID)
+	}
 	r.assignStaticActorCombatSnapshotLocked(actor.Entity.ID)
+}
+
+func (r *sharedWorldRegistry) FlushReadyStaticActorRespawns() {
+	if r == nil || r.entities == nil {
+		return
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.staticActorCombatRespawnAt) == 0 {
+		return
+	}
+	dueIDs := make([]uint64, 0, len(r.staticActorCombatRespawnAt))
+	for entityID, readyAt := range r.staticActorCombatRespawnAt {
+		if readyAt.IsZero() || now.Before(readyAt) {
+			continue
+		}
+		dueIDs = append(dueIDs, entityID)
+	}
+	sort.Slice(dueIDs, func(i int, j int) bool {
+		return dueIDs[i] < dueIDs[j]
+	})
+	for _, entityID := range dueIDs {
+		r.flushReadyStaticActorRespawnLocked(entityID)
+	}
+}
+
+func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64) {
+	if r == nil || r.entities == nil || entityID == 0 {
+		return
+	}
+	if r.staticActorCombatRespawnAt != nil {
+		delete(r.staticActorCombatRespawnAt, entityID)
+	}
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok || actor.CombatKind == "" {
+		return
+	}
+	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok || currentHP > 0 {
+		return
+	}
+	resetHP, ok := worldruntime.BootstrapStaticActorCurrentHP(actor.CombatKind)
+	if !ok {
+		return
+	}
+	if r.staticActorCombatHP == nil {
+		r.staticActorCombatHP = make(map[uint64]uint8)
+	}
+	r.staticActorCombatHP[entityID] = resetHP
+	r.assignStaticActorCombatSnapshotLocked(entityID)
+	deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
+	if !encodable {
+		return
+	}
+	addFrames := encodeStaticActorVisibilityFrames(actor)
+	if len(addFrames) == 0 {
+		return
+	}
+	frames := make([][]byte, 0, 1+len(addFrames))
+	frames = append(frames, deleteRaw)
+	frames = append(frames, addFrames...)
+	for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+		r.enqueueToEntityLocked(target.Entity.ID, frames)
+	}
 }
 
 func (r *sharedWorldRegistry) clearSessionCombatTargetLocked(entityID uint64) {
@@ -1014,6 +1123,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 			}
 			r.enqueueToEntityLocked(target.Entity.ID, frames)
 		}
+		r.scheduleStaticActorCombatRespawnLocked(actor)
 	}
 	return attempt
 }

@@ -38,16 +38,14 @@ This contract does **not** yet claim:
 
 ## Current implementation status
 
-The repository now implements the first half of this contract:
-- zero-HP death is live for the bootstrap `training_dummy`
-- visible sessions now receive `GC DEAD(vid)` on the death edge
+The repository now implements this full bootstrap contract for the authored/runtime-marked `training_dummy`:
+- zero-HP death is live
+- visible sessions receive `GC DEAD(vid)` on the death edge
 - sessions that still had that dummy selected receive the existing self-only `GC TARGET(0, 0)` clear companion in the same transition window
-- post-death `TARGET` / `ATTACK` requests now fail closed while the dummy remains dead
-
-What is still intentionally pending is the respawn half:
-- the first server-driven dead timer
-- the `CHARACTER_DEL` + add/info/update respawn rebuild burst
-- fresh post-respawn target acquisition against the rebuilt live snapshot
+- post-death `TARGET` / `ATTACK` requests fail closed while the dummy remains dead
+- the first server-driven dead timer is now live as one fixed `2s` bootstrap delay
+- once that timer expires, currently visible sessions receive the respawn rebuild burst: `CHARACTER_DEL` + `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE`
+- the rebuilt dummy returns at bootstrap HP as a fresh live combat snapshot that requires fresh target acquisition before later attacks succeed again
 
 ## Why freeze death / respawn separately
 
@@ -133,10 +131,8 @@ What is frozen now:
 - the timer starts when the authoritative zero-HP death transition commits
 - the client does not request respawn through `TARGET`, `ATTACK`, `INTERACT`, movement, reconnect, or any corpse action
 - the first bootstrap respawn uses one deterministic fixed-delay rule for the dummy runtime, not per-player custom timing
-
-What remains for the next respawn slice:
-- the exact bootstrap delay constant
-- the exact runtime scheduler/storage helper shape that tracks the pending respawn
+- the exact bootstrap delay constant is `2s`
+- the pending respawn is tracked as runtime-owned shared-world state and is checked through the existing `FlushServerFrames()` server-push seam between legacy-client reads
 
 ## First owned respawn client refresh path
 

@@ -246,6 +246,13 @@ func (r *gameRuntime) BroadcastNotice(message string) int {
 	return r.sharedWorld.EnqueueSystemNotice(message)
 }
 
+func (r *gameRuntime) flushReadyStaticActorRespawns() {
+	if r == nil || r.sharedWorld == nil {
+		return
+	}
+	r.sharedWorld.FlushReadyStaticActorRespawns()
+}
+
 func (r *gameRuntime) RelocateCharacter(name string, mapIndex uint32, x int32, y int32) bool {
 	_, ok := r.TransferCharacter(name, mapIndex, x, y)
 	return ok
@@ -717,6 +724,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		interactionStore:     interactions,
 		liveCharactersByName: make(map[string]liveCharacterRegistration),
 		now:                  time.Now,
+	}
+	sharedWorld.now = func() time.Time {
+		if runtime != nil && runtime.now != nil {
+			return runtime.now()
+		}
+		return time.Now()
 	}
 	if err := runtime.loadItemTemplates(); err != nil {
 		return nil, err
@@ -1643,6 +1656,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			},
 		})
 		return newQueuedSessionFlow(inner, pending, func() {
+			runtime.flushReadyStaticActorRespawns()
+		}, func() {
 			stateMu.Lock()
 			leaveID := sharedWorldID
 			shouldLeave := joinedSharedWorld
