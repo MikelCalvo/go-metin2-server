@@ -15,13 +15,15 @@ Those documents already freeze:
 
 What this document adds is the next narrower question:
 
-**What is the smallest honest combat target path the project can own next before attacks, damage, death, aggro, or mob AI exist?**
+**What is the smallest honest combat target-selection layer the project owns underneath the later attack, death, and respawn follow-up specs?**
 
 The follow-up planned attack-intent and clear-target contract now lives in:
 - `combat-normal-attack-bootstrap.md`
 
 The follow-up planned death / respawn contract now lives in:
 - `non-player-death-respawn-bootstrap.md`
+
+This file intentionally stays scoped to target selection even though the end-to-end `training_dummy` loop now continues through those follow-up documents.
 
 ## Scope
 
@@ -53,8 +55,8 @@ The repository now already owns enough character/runtime state to prepare combat
 
 At the same time, several larger systems are still intentionally absent:
 - real mob AI and spawn systems
-- full combat formulas
-- damage/death/respawn behavior
+- broader combat formulas and richer damage semantics
+- loot, reward, and corpse gameplay systems beyond the separate bootstrap death/respawn contract
 - richer target UI capture work
 
 Because of those constraints, the next honest combat step is **target selection against a fixed visible training dummy**, not a full mob or damage loop.

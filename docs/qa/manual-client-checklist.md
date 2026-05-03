@@ -744,9 +744,9 @@ These are currently out of scope for the present server state unless the milesto
 - [ ] item use
 - [ ] full merchant UI semantics beyond the current bootstrap open / buy / close slice, or any sell flow
 - [ ] inventory or currency mutation from non-merchant NPC interactions
-- [ ] mobs, combat, or skills
+- [ ] broader mob/skill combat beyond the current `training_dummy` target -> hit -> death -> timed-respawn loop
 - [ ] quest acceptance, progression, or rewards
-- [ ] death / respawn loop
+- [ ] player death / respawn, loot, or EXP reward systems
 - [ ] multi-channel real behavior
 - [ ] polished client-facing warp/loading choreography
 
@@ -775,4 +775,5 @@ A current build is a good candidate when all of these pass:
 - [ ] with two clients + radius AOI: move-into-range peer appearance after runtime equip/unequip works
 - [ ] with two clients + transfer path: transfer-driven peer appearance after runtime equip/unequip works
 - [ ] with two clients + reconnect: reconnect-driven peer appearance after runtime equip/unequip works
+- [ ] when authored/runtime-marked training dummies are available: the target -> hit -> death -> timed-respawn loop works and requires fresh reselection after respawn
 - [ ] no crash or forced disconnect occurs during the run
