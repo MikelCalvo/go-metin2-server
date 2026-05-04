@@ -10,6 +10,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func TestGameRuntimeExportContentBundleBuildsDeterministicPortableBundle(t *testing.T) {
@@ -138,5 +139,57 @@ func TestGameRuntimeImportContentBundleRejectsInvalidWarpInteractionDefinition(t
 	}
 	if !reflect.DeepEqual(current, previous) {
 		t.Fatalf("expected runtime content bundle to remain unchanged after failed warp import:\n got: %#v\nwant: %#v", current, previous)
+	}
+}
+
+func TestGameRuntimeExportContentBundleIncludesStaticActorCombatProfile(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", 42, 1800, 2900, 20350, string(worldruntime.StaticActorCombatProfileTrainingDummy)); !ok {
+		t.Fatal("expected training-dummy static actor registration to succeed")
+	}
+
+	bundle, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export content bundle: %v", err)
+	}
+	want := contentbundle.Bundle{StaticActors: []contentbundle.StaticActor{{Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy)}}}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected exported combat-profile content bundle:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
+func TestGameRuntimeImportContentBundlePreservesCombatProfileActors(t *testing.T) {
+	staticPath := t.TempDir() + "/static-actors.json"
+	staticActorStore := staticstore.NewFileStore(staticPath)
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	wantBundle := contentbundle.Bundle{StaticActors: []contentbundle.StaticActor{{Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy)}}}
+	imported, err := runtime.ImportContentBundle(wantBundle)
+	if err != nil {
+		t.Fatalf("import combat-profile content bundle: %v", err)
+	}
+	if !reflect.DeepEqual(imported, wantBundle) {
+		t.Fatalf("unexpected imported combat-profile bundle:\n got: %#v\nwant: %#v", imported, wantBundle)
+	}
+	if bundle, err := runtime.ExportContentBundle(); err != nil {
+		t.Fatalf("re-export combat-profile content bundle: %v", err)
+	} else if !reflect.DeepEqual(bundle, wantBundle) {
+		t.Fatalf("unexpected re-exported combat-profile bundle:\n got: %#v\nwant: %#v", bundle, wantBundle)
+	}
+	persistedActors, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted static actors: %v", err)
+	}
+	if len(persistedActors.StaticActors) != 1 || persistedActors.StaticActors[0].Name != "TrainingDummy" || persistedActors.StaticActors[0].EntityID == 0 || persistedActors.StaticActors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
+		t.Fatalf("unexpected persisted combat-profile static actors after import: %#v", persistedActors)
 	}
 }

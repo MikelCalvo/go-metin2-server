@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
@@ -13,6 +15,7 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(path)
 	want := Snapshot{StaticActors: []StaticActor{
 		{EntityID: 2, Name: "Alchemist", MapIndex: 21, X: 52070, Y: 166600, RaceNum: 20001, InteractionKind: "info", InteractionRef: "lore:alchemist"},
+		{EntityID: 7, Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
 		{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk", InteractionRef: "npc:village_guard"},
 	}}
 
@@ -34,6 +37,7 @@ func TestFileStoreSaveWritesDeterministicSortedSnapshotAndReplacesPreviousConten
 	first := Snapshot{StaticActors: []StaticActor{
 		{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355},
 		{EntityID: 2, Name: "Alchemist", MapIndex: 21, X: 52070, Y: 166600, RaceNum: 20001},
+		{EntityID: 7, Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
 		{EntityID: 5, Name: "VillageGuard", MapIndex: 1, X: 469400, Y: 964300, RaceNum: 20354},
 	}}
 
@@ -44,7 +48,7 @@ func TestFileStoreSaveWritesDeterministicSortedSnapshotAndReplacesPreviousConten
 	if err != nil {
 		t.Fatalf("read persisted snapshot: %v", err)
 	}
-	wantFirst := "{\n  \"static_actors\": [\n    {\n      \"entity_id\": 2,\n      \"name\": \"Alchemist\",\n      \"map_index\": 21,\n      \"x\": 52070,\n      \"y\": 166600,\n      \"race_num\": 20001\n    },\n    {\n      \"entity_id\": 5,\n      \"name\": \"VillageGuard\",\n      \"map_index\": 1,\n      \"x\": 469400,\n      \"y\": 964300,\n      \"race_num\": 20354\n    },\n    {\n      \"entity_id\": 9,\n      \"name\": \"VillageGuard\",\n      \"map_index\": 1,\n      \"x\": 469300,\n      \"y\": 964200,\n      \"race_num\": 20355\n    }\n  ]\n}\n"
+	wantFirst := "{\n  \"static_actors\": [\n    {\n      \"entity_id\": 2,\n      \"name\": \"Alchemist\",\n      \"map_index\": 21,\n      \"x\": 52070,\n      \"y\": 166600,\n      \"race_num\": 20001\n    },\n    {\n      \"entity_id\": 7,\n      \"name\": \"TrainingDummy\",\n      \"map_index\": 42,\n      \"x\": 1800,\n      \"y\": 2900,\n      \"race_num\": 20350,\n      \"combat_profile\": \"training_dummy\"\n    },\n    {\n      \"entity_id\": 5,\n      \"name\": \"VillageGuard\",\n      \"map_index\": 1,\n      \"x\": 469400,\n      \"y\": 964300,\n      \"race_num\": 20354\n    },\n    {\n      \"entity_id\": 9,\n      \"name\": \"VillageGuard\",\n      \"map_index\": 1,\n      \"x\": 469300,\n      \"y\": 964200,\n      \"race_num\": 20355\n    }\n  ]\n}\n"
 	if string(raw) != wantFirst {
 		t.Fatalf("unexpected deterministic first snapshot:\n got: %s\nwant: %s", string(raw), wantFirst)
 	}
@@ -91,5 +95,9 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	invalidInteraction := Snapshot{StaticActors: []StaticActor{{EntityID: 8, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk"}}}
 	if err := store.Save(invalidInteraction); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for partial interaction metadata, got %v", err)
+	}
+	invalidCombatProfile := Snapshot{StaticActors: []StaticActor{{EntityID: 12, Name: "BrokenDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: "boss"}}}
+	if err := store.Save(invalidCombatProfile); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for invalid combat profile, got %v", err)
 	}
 }

@@ -12,7 +12,8 @@ const (
 	EntityKindPlayer      EntityKind = "player"
 	EntityKindStaticActor EntityKind = "static_actor"
 
-	StaticActorCombatKindTrainingDummy = "training_dummy"
+	StaticActorCombatKindTrainingDummy    = "training_dummy"
+	StaticActorCombatProfileTrainingDummy = StaticActorCombatKindTrainingDummy
 
 	TrainingDummyBootstrapMaxHP                 uint8 = 10
 	TrainingDummyBootstrapMinLiveHP             uint8 = 1
@@ -40,9 +41,24 @@ type StaticEntity struct {
 	Entity          Entity
 	Position        Position
 	RaceNum         uint32
+	CombatProfile   string
 	InteractionKind string
 	InteractionRef  string
 	CombatKind      string
+}
+
+func staticActorCombatProfile(profile string, kind string) string {
+	if profile != "" {
+		return profile
+	}
+	return kind
+}
+
+func normalizeStaticEntityCombat(actor StaticEntity) StaticEntity {
+	profile := staticActorCombatProfile(actor.CombatProfile, actor.CombatKind)
+	actor.CombatProfile = profile
+	actor.CombatKind = profile
+	return actor
 }
 
 func StaticActorVisibilityVID(actor StaticEntity) (uint32, bool) {

@@ -3,6 +3,8 @@ package staticstore
 import (
 	"errors"
 	"sort"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 var (
@@ -18,6 +20,7 @@ type StaticActor struct {
 	X               int32  `json:"x"`
 	Y               int32  `json:"y"`
 	RaceNum         uint32 `json:"race_num"`
+	CombatProfile   string `json:"combat_profile,omitempty"`
 	InteractionKind string `json:"interaction_kind,omitempty"`
 	InteractionRef  string `json:"interaction_ref,omitempty"`
 }
@@ -49,6 +52,9 @@ func validateSnapshot(snapshot Snapshot) error {
 			return ErrInvalidSnapshot
 		}
 		if !validInteractionMetadata(actor.InteractionKind, actor.InteractionRef) {
+			return ErrInvalidSnapshot
+		}
+		if !worldruntime.ValidStaticActorCombatProfile(actor.CombatProfile) {
 			return ErrInvalidSnapshot
 		}
 		if _, ok := seen[actor.EntityID]; ok {

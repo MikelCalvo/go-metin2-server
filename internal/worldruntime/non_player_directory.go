@@ -12,6 +12,7 @@ func NewNonPlayerDirectory() *NonPlayerDirectory {
 }
 
 func (d *NonPlayerDirectory) Register(actor StaticEntity) bool {
+	actor = normalizeStaticEntityCombat(actor)
 	if d == nil || !validStaticEntity(actor) {
 		return false
 	}
@@ -49,6 +50,7 @@ func (d *NonPlayerDirectory) ByVID(vid uint32) (StaticEntity, bool) {
 }
 
 func (d *NonPlayerDirectory) Update(actor StaticEntity) bool {
+	actor = normalizeStaticEntityCombat(actor)
 	if d == nil || !validStaticEntity(actor) {
 		return false
 	}
@@ -97,7 +99,8 @@ func (d *NonPlayerDirectory) StaticActors() []StaticEntity {
 }
 
 func validStaticEntity(actor StaticEntity) bool {
-	return actor.Entity.ID != 0 && actor.Entity.Kind == EntityKindStaticActor && actor.Position.Valid() && ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) && ValidStaticActorCombatKind(actor.CombatKind)
+	actor = normalizeStaticEntityCombat(actor)
+	return actor.Entity.ID != 0 && actor.Entity.Kind == EntityKindStaticActor && actor.Position.Valid() && ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) && ValidStaticActorCombatProfile(actor.CombatProfile)
 }
 
 func ValidStaticActorInteractionMetadata(kind string, ref string) bool {
@@ -108,7 +111,11 @@ func ValidStaticActorInteractionMetadata(kind string, ref string) bool {
 }
 
 func ValidStaticActorCombatKind(kind string) bool {
-	switch kind {
+	return ValidStaticActorCombatProfile(kind)
+}
+
+func ValidStaticActorCombatProfile(profile string) bool {
+	switch profile {
 	case "", StaticActorCombatKindTrainingDummy:
 		return true
 	default:

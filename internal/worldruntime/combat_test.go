@@ -47,3 +47,25 @@ func TestBootstrapStaticActorRespawnDelayReturnsTrainingDummyBootstrapDelay(t *t
 		t.Fatalf("expected training-dummy respawn delay %v, got %v", TrainingDummyBootstrapRespawnDelay, delay)
 	}
 }
+
+func TestBootstrapStaticActorCurrentHPSupportsTrainingDummyCombatProfile(t *testing.T) {
+	currentHP, ok := BootstrapStaticActorCurrentHP(StaticActorCombatProfileTrainingDummy)
+	if !ok {
+		t.Fatal("expected bootstrap training-dummy combat profile to be supported")
+	}
+	if currentHP != TrainingDummyBootstrapMaxHP {
+		t.Fatalf("expected training-dummy combat profile bootstrap HP %d, got %d", TrainingDummyBootstrapMaxHP, currentHP)
+	}
+}
+
+func TestValidStaticActorCombatProfileRejectsUnknownProfile(t *testing.T) {
+	if !ValidStaticActorCombatProfile("") {
+		t.Fatal("expected empty combat profile to remain valid for non-combat actors")
+	}
+	if !ValidStaticActorCombatProfile(StaticActorCombatProfileTrainingDummy) {
+		t.Fatal("expected training-dummy combat profile to be valid")
+	}
+	if ValidStaticActorCombatProfile("boss") {
+		t.Fatal("expected unknown combat profile to fail closed")
+	}
+}

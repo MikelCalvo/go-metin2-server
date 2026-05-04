@@ -274,6 +274,7 @@ func newPlayerEntity(id uint64, character loginticket.Character) PlayerEntity {
 }
 
 func newStaticEntity(id uint64, actor StaticEntity) StaticEntity {
+	actor = normalizeStaticEntityCombat(actor)
 	return StaticEntity{
 		Entity: Entity{
 			ID:   id,
@@ -282,6 +283,7 @@ func newStaticEntity(id uint64, actor StaticEntity) StaticEntity {
 		},
 		Position:        actor.Position,
 		RaceNum:         actor.RaceNum,
+		CombatProfile:   actor.CombatProfile,
 		InteractionKind: actor.InteractionKind,
 		InteractionRef:  actor.InteractionRef,
 		CombatKind:      actor.CombatKind,

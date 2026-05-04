@@ -13,8 +13,10 @@ Current snapshot:
 - [x] First shared-world bootstrap: peer visibility, movement replication, local chat, whisper, party/guild/shout fanout, and server notices
 - [x] First content/runtime seams: static actors, interactions, shop open/buy bootstrap, and warp bootstrap
 - [~] First character systems: inventory, equipment, consumable use, and appearance refreshes
-- [~] First combat loop: target selection, owned `ATTACK` ingress, deterministic `training_dummy` HP refreshes, visible zero-HP death/clear, and a timed respawn rebuild are live
+- [~] First combat loop: target selection, owned `ATTACK` ingress, authored `training_dummy` combat-profile HP refreshes, visible zero-HP death/clear, and a timed respawn rebuild are live
 - [ ] Still missing: broader combat systems, mobs/AI, rewards/loot, compatibility-grade persistence, and production deployment
+
+The first authored `combat_profile` seam now survives shared-world registration, static-actor snapshot persistence, and content-bundle import/export, so the `training_dummy` loop is no longer wired only through bootstrap-only runtime metadata.
 
 The README stays intentionally high-level. If you want the deeper technical view, start here:
 - [Project assessment](docs/roadmaps/2026-04-18-global-project-assessment.md)
@@ -29,7 +31,7 @@ The README stays intentionally high-level. If you want the deeper technical view
 | M1 — Shared-world pre-alpha | [~] | Players can already see each other, move, chat, and receive notices inside the current bootstrap world rules. |
 | M2 — Entity/world runtime foundation | [~] | Entities, maps, sessions, transfers, and static actors are moving out of bootstrap-only shortcuts into owned runtime systems. |
 | M3 — Character systems | [~] | Inventory, equipment, item use, appearance, and merchant-driven item state are becoming first-class runtime systems. |
-| M4 — Combat vertical slice | [~] | The repo now owns the first end-to-end `training_dummy` loop: target selection, `ATTACK` ingress, deterministic HP refreshes, visible zero-HP death/clear, and a timed respawn rebuild. |
+| M4 — Combat vertical slice | [~] | The repo now owns the first end-to-end `training_dummy` loop: target selection, `ATTACK` ingress, deterministic authored combat-profile HP refreshes, visible zero-HP death/clear, and a timed respawn rebuild. |
 | M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime become available. |
 | M6 — Compatibility-grade persistence and operations | [ ] | DB-backed persistence, richer observability/admin tooling, and a real deploy/release story land. |
 
@@ -39,7 +41,7 @@ The README stays intentionally high-level. If you want the deeper technical view
 - `internal/boot`, `internal/handshake`, `internal/login` — connection and boot-path flow
 - `internal/worldruntime` — topology, visibility, maps, entities, and session routing
 - `internal/player`, `internal/inventory`, `internal/itemstore` — early character and item systems
-- `internal/staticstore`, `internal/interactionstore` — static actors and authored interaction content
+- `internal/staticstore`, `internal/interactionstore` — static actors, authored combat-profile metadata, and interaction content
 - `internal/proto/*` — packet codecs and wire-level slices
 - `docs/` — engineering notes, testing, QA, workflow, and roadmaps
 - `spec/protocol/` — owned protocol docs and packet inventory

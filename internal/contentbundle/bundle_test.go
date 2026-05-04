@@ -10,6 +10,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func testMerchantCatalogDefinition() interactionstore.Definition {
@@ -30,6 +31,7 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 			{EntityID: 9, Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
 			{EntityID: 3, Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20301},
 			{EntityID: 7, Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{EntityID: 5, Name: "TrainingDummy", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
 			{EntityID: 11, Name: "Teleporter", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
 		}},
 		interactionstore.Snapshot{Definitions: []interactionstore.Definition{
@@ -47,6 +49,7 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 			{Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20301},
 			{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
 			{Name: "Teleporter", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
+			{Name: "TrainingDummy", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
 			{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
 		},
 		InteractionDefinitions: []interactionstore.Definition{
@@ -139,6 +142,15 @@ func TestCanonicalizeRejectsInvalidWarpInteractionDefinition(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for invalid warp interaction definition, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsInvalidCombatProfile(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors: []StaticActor{{Name: "BrokenDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: "boss"}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for invalid combat profile, got %v", err)
 	}
 }
 

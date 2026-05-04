@@ -98,48 +98,68 @@ func TestNonPlayerDirectoryUpdateClearsVisibilityVIDLookupWhenActorStopsBeingEnc
 	}
 }
 
-func TestNonPlayerDirectoryPreservesCombatKindOnRegisterAndUpdate(t *testing.T) {
+func TestNonPlayerDirectoryPreservesCombatProfileOnRegisterAndUpdate(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
-		Entity:     Entity{ID: 9, Kind: EntityKindStaticActor, Name: "TrainingDummy"},
-		Position:   NewPosition(42, 1700, 2800),
-		RaceNum:    20350,
-		CombatKind: StaticActorCombatKindTrainingDummy,
+		Entity:        Entity{ID: 9, Kind: EntityKindStaticActor, Name: "TrainingDummy"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfileTrainingDummy,
 	}
 	if !directory.Register(actor) {
 		t.Fatal("expected combat-targetable static actor registration to succeed")
 	}
 	lookup, ok := directory.ByEntityID(actor.Entity.ID)
 	if !ok {
-		t.Fatal("expected combat-targetable static actor lookup to succeed")
+		t.Fatal("expected registered combat-targetable static actor lookup to succeed")
 	}
-	if lookup.CombatKind != StaticActorCombatKindTrainingDummy {
-		t.Fatalf("expected training-dummy combat kind after register, got %+v", lookup)
+	if lookup.CombatProfile != StaticActorCombatProfileTrainingDummy {
+		t.Fatalf("expected training-dummy combat profile after register, got %+v", lookup)
 	}
 
 	updated := actor
-	updated.CombatKind = ""
+	updated.CombatProfile = ""
 	if !directory.Update(updated) {
 		t.Fatal("expected combat-targetable static actor update to succeed")
 	}
 	lookup, ok = directory.ByEntityID(actor.Entity.ID)
 	if !ok {
-		t.Fatal("expected static actor lookup to succeed after combat-kind update")
+		t.Fatal("expected updated combat-targetable static actor lookup to succeed")
 	}
-	if lookup.CombatKind != "" {
-		t.Fatalf("expected empty combat kind after update, got %+v", lookup)
+	if lookup.CombatProfile != "" {
+		t.Fatalf("expected empty combat profile after update, got %+v", lookup)
 	}
 }
 
-func TestNonPlayerDirectoryRejectsInvalidCombatKind(t *testing.T) {
+func TestNonPlayerDirectoryRejectsInvalidCombatProfile(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
-		Entity:     Entity{ID: 11, Kind: EntityKindStaticActor, Name: "BrokenDummy"},
-		Position:   NewPosition(42, 1700, 2800),
-		RaceNum:    20350,
-		CombatKind: "boss",
+		Entity:        Entity{ID: 11, Kind: EntityKindStaticActor, Name: "BrokenDummy"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20350,
+		CombatProfile: "boss",
 	}
 	if directory.Register(actor) {
-		t.Fatal("expected invalid combat kind registration to fail closed")
+		t.Fatal("expected invalid combat profile registration to fail closed")
+	}
+}
+
+func TestNonPlayerDirectoryNormalizesLegacyCombatKindIntoCombatProfile(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:     Entity{ID: 12, Kind: EntityKindStaticActor, Name: "TrainingDummy"},
+		Position:   NewPosition(42, 1700, 2800),
+		RaceNum:    20350,
+		CombatKind: StaticActorCombatKindTrainingDummy,
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected legacy combat-kind registration to succeed")
+	}
+	lookup, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected legacy combat-kind lookup to succeed")
+	}
+	if lookup.CombatProfile != StaticActorCombatProfileTrainingDummy || lookup.CombatKind != StaticActorCombatKindTrainingDummy {
+		t.Fatalf("expected legacy combat kind to normalize into combat profile, got %+v", lookup)
 	}
 }

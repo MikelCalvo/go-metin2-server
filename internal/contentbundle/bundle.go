@@ -7,6 +7,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 var ErrInvalidBundle = errors.New("invalid content bundle")
@@ -17,6 +18,7 @@ type StaticActor struct {
 	X               int32  `json:"x"`
 	Y               int32  `json:"y"`
 	RaceNum         uint32 `json:"race_num"`
+	CombatProfile   string `json:"combat_profile,omitempty"`
 	InteractionKind string `json:"interaction_kind,omitempty"`
 	InteractionRef  string `json:"interaction_ref,omitempty"`
 }
@@ -36,6 +38,7 @@ func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionst
 			X:               actor.X,
 			Y:               actor.Y,
 			RaceNum:         actor.RaceNum,
+			CombatProfile:   actor.CombatProfile,
 			InteractionKind: actor.InteractionKind,
 			InteractionRef:  actor.InteractionRef,
 		})
@@ -51,10 +54,13 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 				if normalized.StaticActors[i].X == normalized.StaticActors[j].X {
 					if normalized.StaticActors[i].Y == normalized.StaticActors[j].Y {
 						if normalized.StaticActors[i].RaceNum == normalized.StaticActors[j].RaceNum {
-							if normalized.StaticActors[i].InteractionKind == normalized.StaticActors[j].InteractionKind {
-								return normalized.StaticActors[i].InteractionRef < normalized.StaticActors[j].InteractionRef
+							if normalized.StaticActors[i].CombatProfile == normalized.StaticActors[j].CombatProfile {
+								if normalized.StaticActors[i].InteractionKind == normalized.StaticActors[j].InteractionKind {
+									return normalized.StaticActors[i].InteractionRef < normalized.StaticActors[j].InteractionRef
+								}
+								return normalized.StaticActors[i].InteractionKind < normalized.StaticActors[j].InteractionKind
 							}
-							return normalized.StaticActors[i].InteractionKind < normalized.StaticActors[j].InteractionKind
+							return normalized.StaticActors[i].CombatProfile < normalized.StaticActors[j].CombatProfile
 						}
 						return normalized.StaticActors[i].RaceNum < normalized.StaticActors[j].RaceNum
 					}
@@ -92,6 +98,9 @@ func validateBundle(bundle Bundle) error {
 	}
 	for _, actor := range bundle.StaticActors {
 		if strings.TrimSpace(actor.Name) == "" || actor.MapIndex == 0 || actor.RaceNum == 0 {
+			return ErrInvalidBundle
+		}
+		if !worldruntime.ValidStaticActorCombatProfile(actor.CombatProfile) {
 			return ErrInvalidBundle
 		}
 		if !validInteractionMetadata(actor.InteractionKind, actor.InteractionRef) {

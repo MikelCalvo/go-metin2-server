@@ -71,11 +71,11 @@ The first combat target is intentionally narrow:
 
 This slice freezes the rule that **combat targetability is separate from interactability**:
 - a visible NPC/actor being interactable does not automatically make it combat-targetable
-- the first combat target path should only accept actors explicitly authored/runtime-marked as `training_dummy`
+- the first combat target path should only accept actors explicitly authored/runtime-marked with the `training_dummy` combat profile
 - later slices may broaden targetable non-player classes without changing the core identity rule (`visible VID`)
 
-The exact storage field or Go type that carries the `training_dummy` tag may evolve in later implementation slices.
-What is frozen here is the behavior contract, not the final field name.
+The current authored metadata seam names that tag `combat_profile` and persists it through static-actor snapshots plus content-bundle import/export.
+What is frozen here is the behavior contract and authored meaning of the `training_dummy` profile, not a promise that richer future profiles are already implemented.
 
 ## Planned request boundary
 
@@ -154,8 +154,8 @@ The first death / respawn follow-up now lives in `non-player-death-respawn-boots
 ## Runtime seam already owned before and after the packet path
 
 The repository now owns one narrow runtime path end to end:
-- `internal/worldruntime.StaticEntity` can carry optional combat-target metadata using the current `training_dummy` kind
-- invalid combat kinds fail closed at the non-player directory boundary
+- `internal/worldruntime.StaticEntity` can carry optional combat-target metadata using the current `training_dummy` combat profile
+- invalid authored combat profiles fail closed at the non-player directory boundary
 - `internal/minimal/shared_world` owns the structured target-attempt validation seam for visible training dummies
 - that seam checks subject ownership, visible-actor lookup by `VID`, fixed `300`-unit range gating, and targetable-class filtering
 - `internal/proto/combat` now owns exact client/server `TARGET` codecs for the current request/ack pair
