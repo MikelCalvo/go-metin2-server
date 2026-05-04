@@ -31,7 +31,7 @@ This contract currently applies only to:
 This contract does **not** yet claim:
 - loot, gold, EXP, quest credit, ownership rolls, or drop pickup
 - corpse interaction, corpse timers, revive menus, or corpse-specific UI
-- hostile retaliation, aggro, patrol, pathing, or spawn-group AI
+- hostile retaliation, aggro, patrol, pathing, or spawn-group AI beyond the later authored seam frozen in `content-spawn-groups-bootstrap.md`
 - player death / respawn semantics
 - persistence of dummy HP, dead state, or respawn timers across reconnect or process restart
 - skill-based or animation-rich death choreography beyond the narrow packet families frozen here
@@ -133,6 +133,8 @@ What is frozen now:
 - the first bootstrap respawn uses one deterministic fixed-delay rule for the dummy runtime, not per-player custom timing
 - the exact bootstrap delay constant is `2s`
 - the pending respawn is tracked as runtime-owned shared-world state and is checked through the existing `FlushServerFrames()` server-push seam between legacy-client reads
+
+For future content-loaded attackable actors, the authored identity that tells the runtime what to recreate and where to recreate it is now documented separately in `content-spawn-groups-bootstrap.md`.
 
 ## First owned respawn client refresh path
 

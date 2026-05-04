@@ -84,6 +84,7 @@ For the default stub credentials and the current real-client smoke flow, see the
 - accepted dummy hits currently mutate only the dummy's live runtime combat state and self-only target refresh feedback
 - debugging a dummy-hit issue should therefore start in `internal/worldruntime` / `internal/minimal`, not in item, inventory, or character-save code
 - a process restart or world rebuild may legitimately recreate dummy HP because no persistence contract exists for this bootstrap slice yet
+- the next authored content seam for loading attackable combatants from bundle data is documented in [spec/protocol/content-spawn-groups-bootstrap.md](../spec/protocol/content-spawn-groups-bootstrap.md)
 
 ## Legacy session runtime hooks
 

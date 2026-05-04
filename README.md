@@ -32,7 +32,7 @@ The README stays intentionally high-level. If you want the deeper technical view
 | M2 — Entity/world runtime foundation | [~] | Entities, maps, sessions, transfers, and static actors are moving out of bootstrap-only shortcuts into owned runtime systems. |
 | M3 — Character systems | [~] | Inventory, equipment, item use, appearance, and merchant-driven item state are becoming first-class runtime systems. |
 | M4 — Combat vertical slice | [~] | The repo now owns the first end-to-end `training_dummy` loop: target selection, `ATTACK` ingress, deterministic authored combat-profile HP refreshes, visible zero-HP death/clear, and a timed respawn rebuild. |
-| M5 — Content runtime | [ ] | NPCs, mobs, spawns, shops, and the first quest/script runtime become available. |
+| M5 — Content runtime | [ ] | NPCs, mobs, spawn groups, shops, and the first quest/script runtime become available; the next frozen authored seam is `spawn_groups` + `combat_profile` loading for attackable content. |
 | M6 — Compatibility-grade persistence and operations | [ ] | DB-backed persistence, richer observability/admin tooling, and a real deploy/release story land. |
 
 ## What’s in the repo
