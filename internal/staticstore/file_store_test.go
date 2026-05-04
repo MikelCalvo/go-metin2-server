@@ -100,4 +100,19 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(invalidCombatProfile); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for invalid combat profile, got %v", err)
 	}
+	invalidSpawnGroupWithoutCombatProfile := Snapshot{StaticActors: []StaticActor{{EntityID: 13, Name: "PracticeMobAlpha", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, SpawnGroupRef: "practice.mob_alpha"}}}
+	if err := store.Save(invalidSpawnGroupWithoutCombatProfile); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for spawn group without combat profile, got %v", err)
+	}
+	invalidSpawnGroupWithInteraction := Snapshot{StaticActors: []StaticActor{{EntityID: 14, Name: "PracticeMobAlpha", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.mob_alpha", InteractionKind: "talk", InteractionRef: "npc:village_guard"}}}
+	if err := store.Save(invalidSpawnGroupWithInteraction); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for spawn group carrying interaction metadata, got %v", err)
+	}
+	duplicateSpawnGroupRef := Snapshot{StaticActors: []StaticActor{
+		{EntityID: 15, Name: "PracticeMobAlpha", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.mob_alpha"},
+		{EntityID: 16, Name: "PracticeMobBeta", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.mob_alpha"},
+	}}
+	if err := store.Save(duplicateSpawnGroupRef); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for duplicate spawn-group refs, got %v", err)
+	}
 }

@@ -286,6 +286,7 @@ func newStaticEntity(id uint64, actor StaticEntity) StaticEntity {
 		CombatProfile:   actor.CombatProfile,
 		InteractionKind: actor.InteractionKind,
 		InteractionRef:  actor.InteractionRef,
+		SpawnGroupRef:   actor.SpawnGroupRef,
 		CombatKind:      actor.CombatKind,
 	}
 }

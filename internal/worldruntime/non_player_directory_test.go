@@ -163,3 +163,37 @@ func TestNonPlayerDirectoryNormalizesLegacyCombatKindIntoCombatProfile(t *testin
 		t.Fatalf("expected legacy combat kind to normalize into combat profile, got %+v", lookup)
 	}
 }
+
+func TestNonPlayerDirectoryPreservesSpawnGroupRefOnRegisterAndUpdate(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:        Entity{ID: 13, Kind: EntityKindStaticActor, Name: "PracticeMobAlpha"},
+		Position:      NewPosition(42, 1800, 2900),
+		RaceNum:       101,
+		CombatProfile: StaticActorCombatProfileTrainingDummy,
+		SpawnGroupRef: "practice.mob_alpha",
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected spawn-group static actor registration to succeed")
+	}
+	lookup, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected spawn-group static actor lookup to succeed after register")
+	}
+	if lookup.SpawnGroupRef != "practice.mob_alpha" || lookup.CombatProfile != StaticActorCombatProfileTrainingDummy {
+		t.Fatalf("expected spawn-group metadata after register, got %+v", lookup)
+	}
+
+	updated := actor
+	updated.SpawnGroupRef = "practice.mob_beta"
+	if !directory.Update(updated) {
+		t.Fatal("expected spawn-group static actor update to succeed")
+	}
+	lookup, ok = directory.ByEntityID(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected spawn-group static actor lookup to succeed after update")
+	}
+	if lookup.SpawnGroupRef != "practice.mob_beta" {
+		t.Fatalf("expected updated spawn-group ref after update, got %+v", lookup)
+	}
+}

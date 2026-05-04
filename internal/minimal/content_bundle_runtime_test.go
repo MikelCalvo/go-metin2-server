@@ -193,3 +193,46 @@ func TestGameRuntimeImportContentBundlePreservesCombatProfileActors(t *testing.T
 		t.Fatalf("unexpected persisted combat-profile static actors after import: %#v", persistedActors)
 	}
 }
+
+func TestGameRuntimeImportContentBundleMaterializesSpawnGroupsAsAttackablePracticeMobs(t *testing.T) {
+	staticPath := t.TempDir() + "/static-actors.json"
+	staticActorStore := staticstore.NewFileStore(staticPath)
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	wantBundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      42,
+		X:             1800,
+		Y:             2900,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	imported, err := runtime.ImportContentBundle(wantBundle)
+	if err != nil {
+		t.Fatalf("import spawn-group content bundle: %v", err)
+	}
+	if !reflect.DeepEqual(imported, wantBundle) {
+		t.Fatalf("unexpected imported spawn-group bundle:\n got: %#v\nwant: %#v", imported, wantBundle)
+	}
+	if bundle, err := runtime.ExportContentBundle(); err != nil {
+		t.Fatalf("re-export spawn-group content bundle: %v", err)
+	} else if !reflect.DeepEqual(bundle, wantBundle) {
+		t.Fatalf("unexpected re-exported spawn-group bundle:\n got: %#v\nwant: %#v", bundle, wantBundle)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].Name != "PracticeMobAlpha" || actors[0].SpawnGroupRef != "practice.mob_alpha" || actors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
+		t.Fatalf("unexpected runtime practice-mob actors after import: %#v", actors)
+	}
+	persistedActors, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted spawn-group actors: %v", err)
+	}
+	if len(persistedActors.StaticActors) != 1 || persistedActors.StaticActors[0].SpawnGroupRef != "practice.mob_alpha" || persistedActors.StaticActors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
+		t.Fatalf("unexpected persisted spawn-group actors after import: %#v", persistedActors)
+	}
+}

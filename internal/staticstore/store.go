@@ -23,6 +23,7 @@ type StaticActor struct {
 	CombatProfile   string `json:"combat_profile,omitempty"`
 	InteractionKind string `json:"interaction_kind,omitempty"`
 	InteractionRef  string `json:"interaction_ref,omitempty"`
+	SpawnGroupRef   string `json:"spawn_group_ref,omitempty"`
 }
 
 type Snapshot struct {
@@ -47,6 +48,7 @@ func normalizeSnapshot(snapshot Snapshot) Snapshot {
 
 func validateSnapshot(snapshot Snapshot) error {
 	seen := make(map[uint64]struct{}, len(snapshot.StaticActors))
+	spawnGroupRefs := make(map[string]struct{}, len(snapshot.StaticActors))
 	for _, actor := range snapshot.StaticActors {
 		if actor.EntityID == 0 || actor.Name == "" || actor.MapIndex == 0 || actor.RaceNum == 0 {
 			return ErrInvalidSnapshot
@@ -54,8 +56,17 @@ func validateSnapshot(snapshot Snapshot) error {
 		if !validInteractionMetadata(actor.InteractionKind, actor.InteractionRef) {
 			return ErrInvalidSnapshot
 		}
-		if !worldruntime.ValidStaticActorCombatProfile(actor.CombatProfile) {
+		if !worldruntime.ValidStaticActorCombatProfile(actor.CombatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) {
 			return ErrInvalidSnapshot
+		}
+		if actor.SpawnGroupRef != "" {
+			if actor.CombatProfile == "" || actor.InteractionKind != "" || actor.InteractionRef != "" {
+				return ErrInvalidSnapshot
+			}
+			if _, ok := spawnGroupRefs[actor.SpawnGroupRef]; ok {
+				return ErrInvalidSnapshot
+			}
+			spawnGroupRefs[actor.SpawnGroupRef] = struct{}{}
 		}
 		if _, ok := seen[actor.EntityID]; ok {
 			return ErrInvalidSnapshot

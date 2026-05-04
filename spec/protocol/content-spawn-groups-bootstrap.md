@@ -196,4 +196,4 @@ After this document lands, the repository should be able to say:
 - the first spawn group is intentionally size `1`, stationary, and combat-profile driven
 - authored content now has a stable way to say which combatant should exist, where it should appear, and which `combat_profile` it should use
 - respawn ownership is no longer implied to come from ad hoc runtime registration; it is conceptually anchored to the authored spawn-group `ref`
-- the next RED can load one content-authored attackable combatant without also claiming AI, loot, or packs
+- one content-authored practice mob can now be imported through `spawn_groups`, fight using the owned `training_dummy` combat profile, and rebuild after death through the existing server-driven respawn loop without claiming AI, loot, or packs

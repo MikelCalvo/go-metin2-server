@@ -684,6 +684,19 @@ Expected result:
 - stale pre-death target ownership does not survive the respawn boundary; post-respawn attacks fail closed until the session reselects target intent with a new accepted `TARGET`
 - once reselected, the dummy immediately resumes the current bootstrap HP refresh path from `100` -> `90` on the next accepted normal hit
 
+### 6.25 Content-loaded `spawn_groups` practice mob smoke
+
+- [ ] Import or preload one authored `spawn_groups` entry that materializes a visible stationary practice mob using `combat_profile = training_dummy`
+- [ ] Confirm the mob appears at the authored position with the authored display name and can be targeted in the same way as the earlier bootstrap dummy slices
+- [ ] Drive one full target -> hit -> zero-HP death -> timed respawn -> fresh reselect cycle against that content-loaded mob
+- [ ] Re-export or otherwise inspect authored content and confirm the actor still round-trips as `spawn_groups`, not as an interaction-backed `static_actor`
+
+Expected result:
+- the first attackable content-loaded mob now comes from the authored `spawn_groups` seam instead of ad hoc runtime-only bootstrap registration
+- its runtime combat loop still reuses the owned `training_dummy` profile semantics for HP, death, and timed respawn
+- authored respawn ownership is anchored to the spawn-group `ref`, while live entity IDs and death/respawn timing remain runtime-owned
+- import/export stays deterministic: the practice mob keeps round-tripping through `spawn_groups` + `combat_profile` without pretending broader mob AI already exists
+
 ---
 ## 7. Optional bootstrap chat-scope checks
 

@@ -470,6 +470,10 @@ func (r *gameRuntime) RegisterStaticActorWithInteraction(name string, mapIndex u
 }
 
 func (r *gameRuntime) RegisterStaticActorWithInteractionAndCombatProfile(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string) (StaticActorSnapshot, bool) {
+	return r.registerStaticActorWithInteractionCombatProfileAndSpawnGroupRef(name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, "")
+}
+
+func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileAndSpawnGroupRef(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string, spawnGroupRef string) (StaticActorSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil {
 		return StaticActorSnapshot{}, false
 	}
@@ -477,7 +481,11 @@ func (r *gameRuntime) RegisterStaticActorWithInteractionAndCombatProfile(name st
 	interactionKind = strings.TrimSpace(interactionKind)
 	interactionRef = strings.TrimSpace(interactionRef)
 	combatProfile = strings.TrimSpace(combatProfile)
-	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) {
+	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
+	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
+		return StaticActorSnapshot{}, false
+	}
+	if spawnGroupRef != "" && (combatProfile == "" || interactionKind != "" || interactionRef != "") {
 		return StaticActorSnapshot{}, false
 	}
 
@@ -489,11 +497,11 @@ func (r *gameRuntime) RegisterStaticActorWithInteractionAndCombatProfile(name st
 	if nextEntityID == 0 {
 		return StaticActorSnapshot{}, false
 	}
-	target := appendStaticActorSnapshot(current, StaticActorSnapshot{EntityID: nextEntityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef})
+	target := appendStaticActorSnapshot(current, StaticActorSnapshot{EntityID: nextEntityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef})
 	if !r.persistStaticActorSnapshot(target) {
 		return StaticActorSnapshot{}, false
 	}
-	registered, ok := r.sharedWorld.registerStaticActor(nextEntityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile)
+	registered, ok := r.sharedWorld.registerStaticActor(nextEntityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, spawnGroupRef)
 	if !ok {
 		_ = r.persistStaticActorSnapshot(current)
 		return StaticActorSnapshot{}, false
@@ -510,6 +518,10 @@ func (r *gameRuntime) UpdateStaticActorWithInteraction(entityID uint64, name str
 }
 
 func (r *gameRuntime) UpdateStaticActorWithInteractionAndCombatProfile(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string) (StaticActorSnapshot, bool) {
+	return r.updateStaticActorWithInteractionCombatProfileAndSpawnGroupRef(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, "")
+}
+
+func (r *gameRuntime) updateStaticActorWithInteractionCombatProfileAndSpawnGroupRef(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string, spawnGroupRef string) (StaticActorSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil || entityID == 0 {
 		return StaticActorSnapshot{}, false
 	}
@@ -517,7 +529,11 @@ func (r *gameRuntime) UpdateStaticActorWithInteractionAndCombatProfile(entityID 
 	interactionKind = strings.TrimSpace(interactionKind)
 	interactionRef = strings.TrimSpace(interactionRef)
 	combatProfile = strings.TrimSpace(combatProfile)
-	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) {
+	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
+	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
+		return StaticActorSnapshot{}, false
+	}
+	if spawnGroupRef != "" && (combatProfile == "" || interactionKind != "" || interactionRef != "") {
 		return StaticActorSnapshot{}, false
 	}
 
@@ -530,11 +546,11 @@ func (r *gameRuntime) UpdateStaticActorWithInteractionAndCombatProfile(entityID 
 		return StaticActorSnapshot{}, false
 	}
 	target := cloneStaticActorSnapshots(current)
-	target[idx] = StaticActorSnapshot{EntityID: entityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef}
+	target[idx] = StaticActorSnapshot{EntityID: entityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef}
 	if !r.persistStaticActorSnapshot(target) {
 		return StaticActorSnapshot{}, false
 	}
-	updated, ok := r.sharedWorld.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile)
+	updated, ok := r.sharedWorld.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, spawnGroupRef)
 	if !ok {
 		_ = r.persistStaticActorSnapshot(current)
 		return StaticActorSnapshot{}, false
@@ -2844,7 +2860,7 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 		if !r.interactionDefinitionExists(actor.InteractionKind, actor.InteractionRef) {
 			return fmt.Errorf("%w: validate static actor interaction refs", staticstore.ErrInvalidSnapshot)
 		}
-		if _, ok := r.sharedWorld.registerStaticActor(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile); !ok {
+		if _, ok := r.sharedWorld.registerStaticActor(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef); !ok {
 			return fmt.Errorf("%w: apply static actor snapshot", staticstore.ErrInvalidSnapshot)
 		}
 	}
@@ -3177,6 +3193,11 @@ func (r *gameRuntime) replaceStaticActorsFromBundle(bundle contentbundle.Bundle)
 			return ErrContentBundleUnavailable
 		}
 	}
+	for _, spawnGroup := range bundle.SpawnGroups {
+		if _, ok := r.registerStaticActorWithInteractionCombatProfileAndSpawnGroupRef(spawnGroup.Name, spawnGroup.MapIndex, spawnGroup.X, spawnGroup.Y, spawnGroup.RaceNum, "", "", spawnGroup.CombatProfile, spawnGroup.Ref); !ok {
+			return ErrContentBundleUnavailable
+		}
+	}
 	return nil
 }
 
@@ -3423,6 +3444,7 @@ func buildStaticActorStoreSnapshot(snapshot []StaticActorSnapshot) staticstore.S
 			CombatProfile:   actor.CombatProfile,
 			InteractionKind: actor.InteractionKind,
 			InteractionRef:  actor.InteractionRef,
+			SpawnGroupRef:   actor.SpawnGroupRef,
 		})
 	}
 	return staticstore.Snapshot{StaticActors: actors}

@@ -1,6 +1,9 @@
 package worldruntime
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 type NonPlayerDirectory struct {
 	byEntityID    map[uint64]StaticEntity
@@ -100,7 +103,13 @@ func (d *NonPlayerDirectory) StaticActors() []StaticEntity {
 
 func validStaticEntity(actor StaticEntity) bool {
 	actor = normalizeStaticEntityCombat(actor)
-	return actor.Entity.ID != 0 && actor.Entity.Kind == EntityKindStaticActor && actor.Position.Valid() && ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) && ValidStaticActorCombatProfile(actor.CombatProfile)
+	if actor.Entity.ID == 0 || actor.Entity.Kind != EntityKindStaticActor || !actor.Position.Valid() || !ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) || !ValidStaticActorCombatProfile(actor.CombatProfile) || !ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) {
+		return false
+	}
+	if actor.SpawnGroupRef != "" {
+		return actor.CombatProfile != "" && actor.InteractionKind == "" && actor.InteractionRef == ""
+	}
+	return true
 }
 
 func ValidStaticActorInteractionMetadata(kind string, ref string) bool {
@@ -121,6 +130,10 @@ func ValidStaticActorCombatProfile(profile string) bool {
 	default:
 		return false
 	}
+}
+
+func ValidStaticActorSpawnGroupRef(ref string) bool {
+	return ref == strings.TrimSpace(ref)
 }
 
 func sortStaticEntities(actors []StaticEntity) {

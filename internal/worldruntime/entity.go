@@ -1,6 +1,7 @@
 package worldruntime
 
 import (
+	"strings"
 	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -44,6 +45,7 @@ type StaticEntity struct {
 	CombatProfile   string
 	InteractionKind string
 	InteractionRef  string
+	SpawnGroupRef   string
 	CombatKind      string
 }
 
@@ -58,6 +60,7 @@ func normalizeStaticEntityCombat(actor StaticEntity) StaticEntity {
 	profile := staticActorCombatProfile(actor.CombatProfile, actor.CombatKind)
 	actor.CombatProfile = profile
 	actor.CombatKind = profile
+	actor.SpawnGroupRef = strings.TrimSpace(actor.SpawnGroupRef)
 	return actor
 }
 

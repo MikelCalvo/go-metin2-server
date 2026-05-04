@@ -11,6 +11,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
@@ -9310,6 +9311,141 @@ func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequire
 	}
 	if postRespawnTarget.TargetVID != targetVID || postRespawnTarget.HPPercent != 90 {
 		t.Fatalf("unexpected post-respawn target-refresh packet: %+v", postRespawnTarget)
+	}
+}
+
+func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDelayAndRequiresFreshReselect(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000350, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].Name != "PracticeMobAlpha" || actors[0].SpawnGroupRef != "practice.mob_alpha" || actors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
+		t.Fatalf("unexpected runtime spawn-group actors after import: %#v", actors)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	targetVID := uint32(actors[0].EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before content respawn slice: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame before content respawn slice, got %d", len(selectOut))
+	}
+
+	for attackIndex := 0; attackIndex < 9; attackIndex++ {
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on content practice-mob pre-death hit %d: %v", attackIndex+1, err)
+		}
+		if len(attackOut) != 1 {
+			t.Fatalf("expected 1 self-only target-refresh frame on content practice-mob pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		}
+	}
+
+	finalAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected combat attack error on content practice-mob death hit: %v", err)
+	}
+	if len(finalAttack) != 2 {
+		t.Fatalf("expected 2 self-only death-transition frames before content practice-mob respawn, got %d", len(finalAttack))
+	}
+
+	currentTime = currentTime.Add((2 * time.Second) - time.Millisecond)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued content practice-mob respawn frames before the server-driven delay expires, got %d", len(queued))
+	}
+
+	currentTime = currentTime.Add(time.Millisecond)
+	respawnFrames := flushServerFrames(t, flow)
+	if len(respawnFrames) != 4 {
+		t.Fatalf("expected delete + add/info/update respawn rebuild for content practice mob after server-driven delay, got %d frames", len(respawnFrames))
+	}
+	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, respawnFrames[0]))
+	if err != nil {
+		t.Fatalf("decode content practice-mob respawn delete frame: %v", err)
+	}
+	if deleted.VID != targetVID {
+		t.Fatalf("unexpected content practice-mob respawn delete frame: %+v", deleted)
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, respawnFrames[1]))
+	if err != nil {
+		t.Fatalf("decode content practice-mob respawn add frame: %v", err)
+	}
+	if added.VID != targetVID || added.X != 1200 || added.Y != 2200 || added.RaceNum != 101 {
+		t.Fatalf("unexpected content practice-mob respawn add frame: %+v", added)
+	}
+	info, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, respawnFrames[2]))
+	if err != nil {
+		t.Fatalf("decode content practice-mob respawn additional info frame: %v", err)
+	}
+	if info.VID != targetVID || info.Name != "PracticeMobAlpha" {
+		t.Fatalf("unexpected content practice-mob respawn additional info frame: %+v", info)
+	}
+	updated, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, respawnFrames[3]))
+	if err != nil {
+		t.Fatalf("decode content practice-mob respawn update frame: %v", err)
+	}
+	if updated.VID != targetVID {
+		t.Fatalf("unexpected content practice-mob respawn update frame: %+v", updated)
+	}
+
+	attackWithoutReselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-respawn content practice-mob attack-without-reselect error: %v", err)
+	}
+	if len(attackWithoutReselectOut) != 0 {
+		t.Fatalf("expected post-respawn content practice-mob attack without fresh target selection to fail closed, got %d frames", len(attackWithoutReselectOut))
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected post-respawn content practice-mob reselect error: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame after content practice-mob respawn reselection, got %d", len(reselectOut))
+	}
+	reselected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-respawn content practice-mob target frame: %v", err)
+	}
+	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
+		t.Fatalf("unexpected post-respawn content practice-mob target packet: %+v", reselected)
 	}
 }
 

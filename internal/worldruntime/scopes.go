@@ -57,6 +57,7 @@ type StaticActorSnapshot struct {
 	CombatProfile   string `json:"combat_profile,omitempty"`
 	InteractionKind string `json:"interaction_kind,omitempty"`
 	InteractionRef  string `json:"interaction_ref,omitempty"`
+	SpawnGroupRef   string `json:"spawn_group_ref,omitempty"`
 }
 
 type MapOccupancySnapshot struct {
@@ -379,6 +380,7 @@ func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticA
 		CombatProfile:   staticActorCombatProfile(actor.CombatProfile, actor.CombatKind),
 		InteractionKind: actor.InteractionKind,
 		InteractionRef:  actor.InteractionRef,
+		SpawnGroupRef:   actor.SpawnGroupRef,
 	}
 }
 

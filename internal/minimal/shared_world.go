@@ -2,6 +2,7 @@ package minimal
 
 import (
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -833,19 +834,23 @@ func (r *sharedWorldRegistry) NextStaticActorEntityID() uint64 {
 }
 
 func (r *sharedWorldRegistry) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(0, name, mapIndex, x, y, raceNum, "", "", "")
+	return r.registerStaticActor(0, name, mapIndex, x, y, raceNum, "", "", "", "")
 }
 
 func (r *sharedWorldRegistry) RegisterStaticActorWithInteraction(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, "")
+	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, "", "")
 }
 
 func (r *sharedWorldRegistry) RegisterStaticActorWithCombatKind(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, combatKind string) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", combatKind)
+	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", combatKind, "")
 }
 
-func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string) (StaticActorSnapshot, bool) {
-	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) {
+func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string) (StaticActorSnapshot, bool) {
+	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
+	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
+		return StaticActorSnapshot{}, false
+	}
+	if spawnGroupRef != "" && (combatKind == "" || interactionKind != "" || interactionRef != "") {
 		return StaticActorSnapshot{}, false
 	}
 	position := worldruntime.NewPosition(mapIndex, x, y)
@@ -866,6 +871,7 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 		RaceNum:         raceNum,
 		InteractionKind: interactionKind,
 		InteractionRef:  interactionRef,
+		SpawnGroupRef:   spawnGroupRef,
 		CombatKind:      combatKind,
 	}
 	if entityID == 0 {
@@ -887,19 +893,23 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 }
 
 func (r *sharedWorldRegistry) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
-	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", "")
+	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", "", "")
 }
 
 func (r *sharedWorldRegistry) UpdateStaticActorWithInteraction(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
-	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, "")
+	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, "", "")
 }
 
 func (r *sharedWorldRegistry) UpdateStaticActorWithCombatKind(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, combatKind string) (StaticActorSnapshot, bool) {
-	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", combatKind)
+	return r.updateStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", combatKind, "")
 }
 
-func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string) (StaticActorSnapshot, bool) {
-	if r == nil || r.entities == nil || entityID == 0 || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) {
+func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string) (StaticActorSnapshot, bool) {
+	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
+	if r == nil || r.entities == nil || entityID == 0 || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
+		return StaticActorSnapshot{}, false
+	}
+	if spawnGroupRef != "" && (combatKind == "" || interactionKind != "" || interactionRef != "") {
 		return StaticActorSnapshot{}, false
 	}
 	position := worldruntime.NewPosition(mapIndex, x, y)
@@ -920,6 +930,7 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 		RaceNum:         raceNum,
 		InteractionKind: interactionKind,
 		InteractionRef:  interactionRef,
+		SpawnGroupRef:   spawnGroupRef,
 		CombatKind:      combatKind,
 	}
 	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(previous, targetActor)
