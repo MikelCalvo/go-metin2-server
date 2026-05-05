@@ -1,0 +1,126 @@
+# Player Death Bootstrap
+
+This document freezes the first owned zero-HP death signal for the selected player in `go-metin2-server`.
+
+It sits on top of:
+- `player-point-change-bootstrap.md`
+- `combat-normal-attack-bootstrap.md`
+- `content-spawn-groups-bootstrap.md`
+
+Those documents already freeze:
+- the selected player's current self-only `GC PLAYER_POINT_CHANGE` carrier
+- the first hostile content-loaded practice-mob retaliation loop, including immediate hit-triggered point loss and the delayed server-origin cadence
+- fail-closed owner-side `TARGET` / `ATTACK` rejection once that retaliation floor has already reached `0` HP
+
+What this document adds is the next narrower question:
+
+**What is the smallest honest zero-HP owner death signal the repo can own now without pretending that full player death, peer-visible corpse state, or respawn gameplay already exist?**
+
+## Scope
+
+This contract currently applies only to:
+- one selected live player character already engaged with a content-loaded `spawn_groups` practice mob using `combat_profile = training_dummy`
+- one immediate self-only retaliation tick appended to an accepted owner hit
+- one delayed self-only server-origin retaliation beat flushed through the pending server-frame path
+- the edge where either of those retaliation point-loss beats drives the engaged owner's live bootstrap HP from a positive value to `0`
+- one self-only `GC DEAD(owner_vid)` signal paired with the existing self-only combat-target clear companion
+
+This contract does **not** yet claim:
+- peer-visible player death fanout
+- corpse state, knockdown animations, or corpse interaction
+- player respawn, revive menus, town return, or map transfer on death
+- broader movement/chat/input gating after death beyond the already-owned combat `TARGET` / `ATTACK` rejection at `0` HP
+- PvP death semantics or non-combat causes of player death
+
+## Current implementation status
+
+The repository now implements this narrow bootstrap contract:
+- if an immediate retaliation tick reaches the engaged owner's live HP floor at `0`, the accepted attack frames now append one self-only `GC DEAD(owner_vid)` before the existing self-only `GC TARGET(0, 0)` clear
+- if a delayed server-origin retaliation beat reaches that same `0`-HP floor, the queued pending server frames now append the same self-only `GC DEAD(owner_vid)` before the same self-only clear-target companion
+- the current slice stays self-only: no watcher/peer `GC DEAD(owner_vid)` fanout is claimed yet
+- once this floor is reached, the existing delayed retaliation cadence stops and later owner-side combat `TARGET` / `ATTACK` attempts still fail closed as already frozen elsewhere
+
+## Why freeze this separately
+
+The repository already owned enough of the owner-side retaliation loop to make `0` HP observable:
+- retaliation point loss is real
+- it can now reach `0`
+- the current slice already clears the stale engaged target and stops later combat progress at that floor
+
+But without a written death-signal contract, the runtime would still leave the player's `0`-HP edge as only a point mutation plus target clear.
+
+This document freezes one smaller visible step first:
+- keep using the already-owned `GC PLAYER_POINT_CHANGE` carrier for the numeric HP transition
+- add one self-only `GC DEAD(owner_vid)` to mark the zero-HP edge
+- keep broader player death / respawn semantics out of scope until later slices can own them honestly
+
+## First owned owner-side zero-HP death signal
+
+The first owned player-death signal is now frozen as:
+- packet family: server -> client `DEAD`
+- header: `0x0217`
+- payload: little-endian `uint32 vid`
+- audience: self-only, limited to the engaged owner session whose retaliation beat reached `0` HP
+
+The current bootstrap meaning is intentionally narrow:
+- the selected player's live bootstrap HP has just reached `0`
+- this is the owner's own death edge inside the currently owned practice-mob retaliation loop
+- the repo still does **not** yet claim peer-visible player death, corpse gameplay, or respawn choreography from this packet alone
+
+## Ordered frame rule at the floor
+
+When an immediate or delayed retaliation beat reaches the owner's live HP floor at `0`, the current bootstrap frame order is now:
+1. self-only `GC PLAYER_POINT_CHANGE` carrying the final `value = 0`
+2. self-only `GC DEAD(owner_vid)`
+3. self-only `GC TARGET(0, 0)`
+
+That ordering applies in both current bootstrap owners:
+- immediate retaliation piggybacked on an accepted live owner `ATTACK`
+- delayed retaliation flushed later through the pending server-frame path
+
+The target-clear companion remains important even after `GC DEAD(owner_vid)` because the current slice still wants the stale engaged practice-mob target removed deterministically on the same edge.
+
+## Why self-only only
+
+The smallest honest slice stops at self-only death visibility.
+
+The project does **not** yet own enough player-death runtime to claim all of these together:
+- peer-visible player death
+- player corpse lifetime
+- player respawn or revive
+- post-death movement/chat/input policy
+
+So this first owner-side death signal stays narrow:
+- the engaged owner learns about the zero-HP edge immediately
+- the stale target is cleared immediately
+- peers still do not receive a new player-death fanout yet
+- later slices may widen audience and lifecycle only after those contracts are written down explicitly
+
+## Relationship to the existing retaliation floor gate
+
+This document does not replace the already-owned retaliation-floor rules.
+
+Those rules still stand:
+- retaliation point loss clamps at `0`
+- the delayed cadence stops when that floor is reached
+- later same-owner combat `TARGET` / `ATTACK` attempts fail closed once the owner is already at `0`
+
+What this document adds is only the visible death-edge packet companion for that already-owned `0`-HP transition.
+
+## Explicit non-goals
+
+This slice does **not** yet freeze:
+- peer-visible `GC DEAD(owner_vid)` fanout
+- a player respawn timer or revive request packet
+- self-bootstrap or transfer choreography after death
+- movement denial, chat denial, or full action-lock semantics at `0` HP
+- death penalties, EXP loss, inventory drops, or corpse recovery
+
+## Success definition
+
+After this document lands, the repository should be able to say:
+- owner-side retaliation-driven `0` HP is no longer only an implicit point floor; the repo now owns one visible self-only zero-HP death signal for that edge
+- the current bootstrap player-death packet is `GC DEAD(owner_vid)` with header `0x0217`
+- that self-only owner death signal is emitted on both immediate and delayed retaliation beats when they drive the engaged owner to `0` HP
+- the current ordered owner-side floor transition is `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`
+- peer-visible player death, corpse state, respawn, and broader post-death gameplay remain deliberately out of scope
