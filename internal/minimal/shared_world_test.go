@@ -8894,6 +8894,8 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	currentTime := time.Unix(1700000200, 0)
+	runtime.now = func() time.Time { return currentTime }
 	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
 	if !ok {
 		t.Fatal("expected visible training-dummy registration to succeed")
@@ -8937,6 +8939,7 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 		t.Fatalf("unexpected first accepted dummy attack target-refresh packet: %+v", firstTarget)
 	}
 
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
 	secondAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  uint32(actor.EntityID),
@@ -8983,6 +8986,8 @@ func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndR
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	currentTime := time.Unix(1700000250, 0)
+	runtime.now = func() time.Time { return currentTime }
 	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
 	if !ok {
 		t.Fatal("expected visible training-dummy registration to succeed")
@@ -9003,6 +9008,9 @@ func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndR
 	}
 
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
 		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 			AttackType: combatproto.ClientAttackTypeNormal,
 			TargetVID:  targetVID,
@@ -9023,6 +9031,7 @@ func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndR
 		}
 	}
 
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
 	finalAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -9082,6 +9091,8 @@ func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	currentTime := time.Unix(1700000275, 0)
+	runtime.now = func() time.Time { return currentTime }
 	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
 	if !ok {
 		t.Fatal("expected visible training-dummy registration to succeed")
@@ -9112,6 +9123,9 @@ func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(
 	}
 
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
 		attackOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 			AttackType: combatproto.ClientAttackTypeNormal,
 			TargetVID:  targetVID,
@@ -9124,6 +9138,7 @@ func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(
 		}
 	}
 
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
 	finalAttack, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -9207,6 +9222,9 @@ func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequire
 	}
 
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
 		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 			AttackType: combatproto.ClientAttackTypeNormal,
 			TargetVID:  targetVID,
@@ -9219,6 +9237,7 @@ func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequire
 		}
 	}
 
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
 	finalAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -9360,6 +9379,9 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	}
 
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
 		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 			AttackType: combatproto.ClientAttackTypeNormal,
 			TargetVID:  targetVID,
@@ -9372,6 +9394,7 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 		}
 	}
 
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
 	finalAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -9681,6 +9704,91 @@ func TestGameSessionFlowPracticeMobQueuesDelayedServerOriginRetaliationBeatAfter
 	}
 }
 
+func TestGameSessionFlowPracticeMobCadenceWindowDeniedRepeatDoesNotAppendRetaliationOrResetDelayedBeat(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000450, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before cadence-window retaliation test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before cadence-window retaliation test, got %d", len(selectOut))
+	}
+
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before cadence-window retaliation test: %v", err)
+	}
+	if len(firstAttack) != 2 {
+		t.Fatalf("expected target-refresh plus self-only point-loss retaliation on first practice-mob hit before cadence-window denial, got %d frames", len(firstAttack))
+	}
+
+	currentTime = currentTime.Add(100 * time.Millisecond)
+	repeatedAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected repeated attack error inside cadence window before delayed retaliation beat: %v", err)
+	}
+	if len(repeatedAttack) != 0 {
+		t.Fatalf("expected repeated practice-mob attack inside owned 250ms cadence window to fail closed, got %d frames", len(repeatedAttack))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames before delayed retaliation beat after cadence-window denial, got %d", len(queued))
+	}
+
+	currentTime = time.Unix(1700000450, 0).Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected exactly 1 queued delayed retaliation beat after cadence-window denial, got %d frames", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode queued delayed retaliation beat after cadence-window denial: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != -1 || pointChange.Value != owner.Points[bootstrapPlayerPointValueIndex]-2 {
+		t.Fatalf("unexpected delayed retaliation point-change packet after cadence-window denial: %+v", pointChange)
+	}
+}
+
 func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationContinuesAutonomouslyWhileEngaged(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -9913,6 +10021,9 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationDoesNotStackWhi
 	}
 
 	for hitIndex := 0; hitIndex < 2; hitIndex++ {
+		if hitIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
 		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 			AttackType: combatproto.ClientAttackTypeNormal,
 			TargetVID:  targetVID,
@@ -10223,6 +10334,9 @@ func TestGameSessionFlowStaticActorDummyRespawnRebuildsForOtherVisibleSessionsAn
 	}
 
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
 		attackOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 			AttackType: combatproto.ClientAttackTypeNormal,
 			TargetVID:  targetVID,
@@ -10235,6 +10349,7 @@ func TestGameSessionFlowStaticActorDummyRespawnRebuildsForOtherVisibleSessionsAn
 		}
 	}
 
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
 	finalAttack, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -10939,7 +11054,146 @@ func TestGameSessionFlowStaticActorAttackRejectsWithoutActiveTargetOrMatchingSel
 		t.Fatalf("expected no self frames for non-normal bootstrap attack type, got %d", len(nonNormal))
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected no queued peer frames for rejected bootstrap dummy attacks, got %d", len(queued))
+		t.Fatalf("expected no queued peer frames for accepted bootstrap dummy attack, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorAttackSuppressesRepeatedSameTargetHitUntilCadenceWindowExpires(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000400, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before cadence-window test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame before cadence-window test, got %d", len(selectOut))
+	}
+
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first combat attack error before cadence-window test: %v", err)
+	}
+	if len(firstAttack) != 1 {
+		t.Fatalf("expected 1 self-only target-refresh frame on first accepted dummy hit before cadence-window test, got %d", len(firstAttack))
+	}
+
+	repeatedAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected repeated combat attack error inside cadence window: %v", err)
+	}
+	if len(repeatedAttack) != 0 {
+		t.Fatalf("expected repeated same-target attack inside owned 250ms cadence window to fail closed, got %d frames", len(repeatedAttack))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames for cadence-window denied repeated dummy attack, got %d", len(queued))
+	}
+
+	currentTime = currentTime.Add(250 * time.Millisecond)
+	afterCooldown, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected combat attack error after cadence window expired: %v", err)
+	}
+	if len(afterCooldown) != 1 {
+		t.Fatalf("expected same-target attack after cadence window expiry to be accepted, got %d frames", len(afterCooldown))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, afterCooldown[0]))
+	if err != nil {
+		t.Fatalf("decode accepted dummy target-refresh frame after cadence window expiry: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 80 {
+		t.Fatalf("unexpected dummy target-refresh packet after cadence window expiry: %+v", refresh)
+	}
+}
+
+func TestGameSessionFlowStaticActorAttackReselectingSameTargetDoesNotBypassCadenceWindow(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000400, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before cadence-window reselect test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame before cadence-window reselect test, got %d", len(selectOut))
+	}
+
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first combat attack error before cadence-window reselect test: %v", err)
+	}
+	if len(firstAttack) != 1 {
+		t.Fatalf("expected 1 self-only target-refresh frame on first accepted dummy hit before cadence-window reselect test, got %d", len(firstAttack))
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat reselect error inside cadence window: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame for same-target reselect inside cadence window, got %d", len(reselectOut))
+	}
+
+	repeatedAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected repeated combat attack error after same-target reselect inside cadence window: %v", err)
+	}
+	if len(repeatedAttack) != 0 {
+		t.Fatalf("expected same-target reselect not to bypass the owned 250ms cadence window, got %d frames", len(repeatedAttack))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames for cadence-window denied repeated dummy attack after same-target reselect, got %d", len(queued))
 	}
 }
 

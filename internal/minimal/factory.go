@@ -56,6 +56,7 @@ const (
 const bootstrapPlayerPointType uint8 = 1
 const bootstrapPlayerPointValueIndex = 1
 const bootstrapPracticeMobRetaliationPointDelta int32 = -1
+const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
 const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
@@ -784,6 +785,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		var joinedSharedWorld bool
 		var activeCombatTargetVID uint32
 		var activeCombatTargetSnapshotVersion uint64
+		var nextAllowedNormalAttackAt time.Time
 		var pendingPracticeMobServerOriginRetaliation bool
 		var pendingPracticeMobServerOriginRetaliationAt time.Time
 		var pendingPracticeMobServerOriginRetaliationTargetVID uint32
@@ -792,11 +794,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		var activeMerchantBuy merchantBuyContext
 		var hasActiveMerchantBuy bool
 		interactionCooldowns := make(map[uint32]time.Time)
-		interactionNow := func() time.Time {
+		sessionNow := func() time.Time {
 			if runtime != nil && runtime.now != nil {
 				return runtime.now()
 			}
 			return time.Now()
+		}
+		interactionNow := func() time.Time {
+			return sessionNow()
 		}
 		interactionOnCooldown := func(targetVID uint32) bool {
 			until, ok := interactionCooldowns[targetVID]
@@ -815,6 +820,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		clearActiveCombatTarget := func() {
 			activeCombatTargetVID = 0
 			activeCombatTargetSnapshotVersion = 0
+			nextAllowedNormalAttackAt = time.Time{}
 			pendingPracticeMobServerOriginRetaliation = false
 			pendingPracticeMobServerOriginRetaliationAt = time.Time{}
 			pendingPracticeMobServerOriginRetaliationTargetVID = 0
@@ -838,10 +844,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if targetVID == 0 || snapshotVersion == 0 || issuedPracticeMobServerOriginRetaliationSnapshotVersion == snapshotVersion {
 				return
 			}
-			now := time.Now()
-			if runtime != nil && runtime.now != nil {
-				now = runtime.now()
-			}
+			now := sessionNow()
 			pendingPracticeMobServerOriginRetaliation = true
 			pendingPracticeMobServerOriginRetaliationAt = now.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 			pendingPracticeMobServerOriginRetaliationTargetVID = targetVID
@@ -1089,10 +1092,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !pendingPracticeMobServerOriginRetaliation {
 				return
 			}
-			now := time.Now()
-			if runtime != nil && runtime.now != nil {
-				now = runtime.now()
-			}
+			now := sessionNow()
 			if now.Before(pendingPracticeMobServerOriginRetaliationAt) {
 				return
 			}
@@ -1713,6 +1713,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					if activeCombatTargetVID != resolution.Packet.TargetVID || activeCombatTargetSnapshotVersion != resolution.SnapshotVersion {
 						resetPracticeMobServerOriginRetaliationState()
+						nextAllowedNormalAttackAt = time.Time{}
 					}
 					activeCombatTargetVID = resolution.Packet.TargetVID
 					activeCombatTargetSnapshotVersion = resolution.SnapshotVersion
@@ -1735,6 +1736,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok {
 						return gameflow.AttackResult{Accepted: false}
 					}
+					if !nextAllowedNormalAttackAt.IsZero() && sessionNow().Before(nextAllowedNormalAttackAt) {
+						return gameflow.AttackResult{Accepted: false}
+					}
 					previousSelected := selectedPlayer.LiveCharacter()
 					resolution := runtime.resolveSelectedStaticActorNormalAttack(sharedWorldID, activeCombatTargetVID, activeCombatTargetSnapshotVersion, packet.TargetVID)
 					if !resolution.Accepted {
@@ -1742,6 +1746,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					if resolution.ClearActiveTarget {
 						clearActiveCombatTarget()
+					} else {
+						nextAllowedNormalAttackAt = sessionNow().Add(bootstrapNormalAttackCadenceWindow)
 					}
 					frames := append([][]byte(nil), resolution.Frames...)
 					if len(frames) == 0 {
