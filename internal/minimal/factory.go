@@ -1130,6 +1130,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			frames := [][]byte{encodePlayerPointChangeFrame(previousSelected.VID, retaliation)}
 			if clearTarget {
 				clearActiveCombatTarget()
+				frames = append(frames, worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID}))
 				frames = append(frames, combatproto.EncodeServerClearTarget())
 			}
 			frames, ok = commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
@@ -1781,6 +1782,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					frames = append(frames, encodePlayerPointChangeFrame(previousSelected.VID, retaliation))
 					if clearTarget {
 						clearActiveCombatTarget()
+						frames = append(frames, worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID}))
 						frames = append(frames, combatproto.EncodeServerClearTarget())
 					}
 					persistedFrames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
