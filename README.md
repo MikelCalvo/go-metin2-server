@@ -14,12 +14,12 @@ Current snapshot:
 - [x] First content/runtime seams: static actors, interactions, shop open/buy bootstrap, and warp bootstrap
 - [~] First character systems: inventory, equipment, consumable use, and appearance refreshes
 - [~] First combat loop: target selection, owned `ATTACK` ingress, authored `training_dummy` combat-profile HP refreshes, visible zero-HP death/clear, and a timed respawn rebuild are live
-- [~] First content-loaded combatant: `spawn_groups` can now materialize one stationary practice mob through an authored `combat_profile`, and the first post-hit aggro-lite gate now blocks fresh third-party `TARGET` attempts until death / respawn resets engagement, while broader mob/AI systems stay out of scope
+- [~] First content-loaded combatant: `spawn_groups` can now materialize one stationary practice mob through an authored `combat_profile`, the first post-hit aggro-lite gate blocks fresh third-party `TARGET` attempts until death / respawn resets engagement, and accepted owner-side hits now also carry a deterministic self-only HP retaliation tick while broader mob/AI systems stay out of scope
 - [ ] Still missing: broader combat systems, richer mobs/AI, rewards/loot, compatibility-grade persistence, and production deployment
 
 The first authored `combat_profile` seam now survives shared-world registration, static-actor snapshot persistence, and content-bundle import/export, so the `training_dummy` loop is no longer wired only through bootstrap-only runtime metadata.
 
-The first authored `spawn_groups` seam is now live too: content-bundle import/export can round-trip one stationary practice mob whose runtime death/respawn loop is owned by the existing `training_dummy` combat profile, and whose first accepted hit now establishes a tiny aggro-lite gate against fresh third-party `TARGET` attempts until reset.
+The first authored `spawn_groups` seam is now live too: content-bundle import/export can round-trip one stationary practice mob whose runtime death/respawn loop is owned by the existing `training_dummy` combat profile, whose first accepted hit establishes a tiny aggro-lite gate against fresh third-party `TARGET` attempts until reset, and whose accepted owner-side live hits now also append a deterministic self-only HP retaliation tick.
 
 The README stays intentionally high-level. If you want the deeper technical view, start here:
 - [Project assessment](docs/roadmaps/2026-04-18-global-project-assessment.md)
@@ -35,7 +35,7 @@ The README stays intentionally high-level. If you want the deeper technical view
 | M2 — Entity/world runtime foundation | [~] | Entities, maps, sessions, transfers, and static actors are moving out of bootstrap-only shortcuts into owned runtime systems. |
 | M3 — Character systems | [~] | Inventory, equipment, item use, appearance, and merchant-driven item state are becoming first-class runtime systems. |
 | M4 — Combat vertical slice | [~] | The repo now owns the first end-to-end `training_dummy` loop: target selection, `ATTACK` ingress, deterministic authored combat-profile HP refreshes, visible zero-HP death/clear, and a timed respawn rebuild. |
-| M5 — Content runtime | [~] | NPCs, mobs, spawn groups, shops, and the first quest/script runtime become available; `spawn_groups` + `combat_profile` can already load one stationary practice mob, and its first accepted hit now owns a tiny aggro-lite target gate while broader authored content runtime is still pending. |
+| M5 — Content runtime | [~] | NPCs, mobs, spawn groups, shops, and the first quest/script runtime become available; `spawn_groups` + `combat_profile` can already load one stationary practice mob, whose first accepted hit now owns both a tiny aggro-lite target gate and a deterministic self-only retaliation tick while broader authored content runtime is still pending. |
 | M6 — Compatibility-grade persistence and operations | [ ] | DB-backed persistence, richer observability/admin tooling, and a real deploy/release story land. |
 
 ## What’s in the repo

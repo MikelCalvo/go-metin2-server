@@ -9367,8 +9367,8 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on content practice-mob pre-death hit %d: %v", attackIndex+1, err)
 		}
-		if len(attackOut) != 1 {
-			t.Fatalf("expected 1 self-only target-refresh frame on content practice-mob pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		if len(attackOut) != 2 {
+			t.Fatalf("expected target-refresh plus self-only retaliation point-loss frames on content practice-mob pre-death hit %d, got %d", attackIndex+1, len(attackOut))
 		}
 	}
 
@@ -9381,6 +9381,20 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	}
 	if len(finalAttack) != 2 {
 		t.Fatalf("expected 2 self-only death-transition frames before content practice-mob respawn, got %d", len(finalAttack))
+	}
+	death, err := worldproto.DecodeDead(decodeSingleFrame(t, finalAttack[0]))
+	if err != nil {
+		t.Fatalf("decode content practice-mob death frame: %v", err)
+	}
+	if death.VID != targetVID {
+		t.Fatalf("unexpected content practice-mob death packet: %+v", death)
+	}
+	cleared, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, finalAttack[1]))
+	if err != nil {
+		t.Fatalf("decode content practice-mob clear-target frame: %v", err)
+	}
+	if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
+		t.Fatalf("unexpected content practice-mob clear-target packet on death hit: %+v", cleared)
 	}
 
 	currentTime = currentTime.Add((2 * time.Second) - time.Millisecond)
@@ -9509,8 +9523,8 @@ func TestGameSessionFlowPracticeMobAggroLiteRejectsFreshThirdPartyTargetAfterFir
 	if err != nil {
 		t.Fatalf("unexpected first accepted aggro-lite attack error: %v", err)
 	}
-	if len(attackOut) != 1 {
-		t.Fatalf("expected 1 self-only target-refresh frame on first aggro-lite hit, got %d", len(attackOut))
+	if len(attackOut) != 2 {
+		t.Fatalf("expected target-refresh plus self-only retaliation point-loss frames on first aggro-lite hit, got %d", len(attackOut))
 	}
 
 	thirdPartyTarget, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -9519,6 +9533,78 @@ func TestGameSessionFlowPracticeMobAggroLiteRejectsFreshThirdPartyTargetAfterFir
 	}
 	if len(thirdPartyTarget) != 0 {
 		t.Fatalf("expected fresh third-party target selection to fail closed once the content practice mob is engaged, got %d frames", len(thirdPartyTarget))
+	}
+}
+
+func TestGameSessionFlowPracticeMobFirstHostileRetaliationAppliesSelfOnlyPointLossOnAcceptedOwnerHit(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	if actors[0].SpawnGroupRef != "practice.mob_alpha" || actors[0].CombatProfile != worldruntime.StaticActorCombatProfileTrainingDummy {
+		t.Fatalf("expected imported practice-mob actor metadata to preserve spawn_group_ref + combat_profile, got %+v", actors[0])
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before first hostile retaliation hit: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before first hostile retaliation hit, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first hostile retaliation attack error: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected target-refresh plus self-only point-loss retaliation on first hostile practice-mob hit, got %d frames", len(attackOut))
+	}
+	refreshed, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode first hostile retaliation target-refresh frame: %v", err)
+	}
+	if refreshed.TargetVID != targetVID || refreshed.HPPercent != 90 {
+		t.Fatalf("unexpected first hostile retaliation target-refresh packet: %+v", refreshed)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode first hostile retaliation point-change frame: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != -1 || pointChange.Value != owner.Points[bootstrapPlayerPointValueIndex]-1 {
+		t.Fatalf("unexpected first hostile retaliation point-change packet: %+v", pointChange)
 	}
 }
 

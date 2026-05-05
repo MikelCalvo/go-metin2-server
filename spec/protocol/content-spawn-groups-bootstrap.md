@@ -191,8 +191,9 @@ This slice does **not** yet freeze:
 
 The first owned hostile post-hit reaction is intentionally tiny:
 - once a visible content-loaded practice mob from `spawn_groups` accepts its first authoritative hit, fresh third-party `TARGET` attempts now fail closed until the existing death / respawn reset boundary
+- while that practice mob stays alive, each accepted owner-side normal hit now also appends one self-only `GC POINT_CHANGE` HP decrement to the engaged player's outgoing success frames
 - if the owning live session disappears before that reset, the current engagement clears instead of leaving the mob orphan-locked forever
-- that first gate still does **not** imply mob movement, pathing, server-origin damage, pack AI, or a broader aggro system
+- that first gate still does **not** imply movement, pathing, independent server-origin attack scheduling, pack AI, or a broader aggro system
 
 ## Success definition
 
@@ -201,4 +202,4 @@ After this document lands, the repository should be able to say:
 - the first spawn group is intentionally size `1`, stationary, and combat-profile driven
 - authored content now has a stable way to say which combatant should exist, where it should appear, and which `combat_profile` it should use
 - respawn ownership is no longer implied to come from ad hoc runtime registration; it is conceptually anchored to the authored spawn-group `ref`
-- one content-authored practice mob can now be imported through `spawn_groups`, fight using the owned `training_dummy` combat profile, rebuild after death through the existing server-driven respawn loop, and reject fresh third-party `TARGET` attempts after its first accepted hit without claiming AI, loot, or packs
+- one content-authored practice mob can now be imported through `spawn_groups`, fight using the owned `training_dummy` combat profile, rebuild after death through the existing server-driven respawn loop, and reject fresh third-party `TARGET` attempts after its first accepted hit while also applying one self-only owner HP decrement per accepted live hit, without claiming AI, loot, or packs

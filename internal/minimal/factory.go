@@ -55,6 +55,7 @@ const (
 
 const bootstrapPlayerPointType uint8 = 1
 const bootstrapPlayerPointValueIndex = 1
+const bootstrapPracticeMobRetaliationPointDelta int32 = -1
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -1640,6 +1641,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if packet.AttackType != combatproto.ClientAttackTypeNormal {
 						return gameflow.AttackResult{Accepted: false}
 					}
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
+						return gameflow.AttackResult{Accepted: false}
+					}
+					previousSelected := selectedPlayer.LiveCharacter()
 					resolution := runtime.resolveSelectedStaticActorNormalAttack(sharedWorldID, activeCombatTargetVID, activeCombatTargetSnapshotVersion, packet.TargetVID)
 					if !resolution.Accepted {
 						return gameflow.AttackResult{Accepted: false}
@@ -1647,13 +1653,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if resolution.ClearActiveTarget {
 						clearActiveCombatTarget()
 					}
-					if len(resolution.Frames) > 0 {
-						return gameflow.AttackResult{Accepted: true, Frames: resolution.Frames}
+					frames := append([][]byte(nil), resolution.Frames...)
+					if len(frames) == 0 {
+						if resolution.Packet == nil {
+							return gameflow.AttackResult{Accepted: false}
+						}
+						frames = append(frames, combatproto.EncodeServerTarget(*resolution.Packet))
 					}
-					if resolution.Packet == nil {
-						return gameflow.AttackResult{Accepted: false}
+					attackFrames := append([][]byte(nil), frames...)
+					retaliation, ok := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, resolution.ClearActiveTarget)
+					if !ok {
+						return gameflow.AttackResult{Accepted: true, Frames: frames}
 					}
-					return gameflow.AttackResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
+					frames = append(frames, encodePlayerPointChangeFrame(previousSelected.VID, retaliation))
+					persistedFrames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					if !ok {
+						return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
+					}
+					return gameflow.AttackResult{Accepted: true, Frames: persistedFrames}
 				},
 				HandleShopBuy: func(packet shopproto.ClientBuyPacket) gameflow.ShopResult {
 					stateMu.Lock()
@@ -2329,6 +2346,23 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 	}
 	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: result.EffectMessage}))
 	return frames, nil
+}
+
+func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlayer *player.Runtime, actor StaticActorSnapshot, targetDied bool) (player.PointChangeResult, bool) {
+	if selectedPlayer == nil || targetDied {
+		return player.PointChangeResult{}, false
+	}
+	metadata := actor
+	if metadata.SpawnGroupRef == "" && runtime != nil {
+		currentActors := runtime.StaticActors()
+		if idx := staticActorSnapshotIndex(currentActors, actor.EntityID); idx >= 0 {
+			metadata = currentActors[idx]
+		}
+	}
+	if metadata.SpawnGroupRef == "" || metadata.CombatProfile != worldruntime.StaticActorCombatProfileTrainingDummy {
+		return player.PointChangeResult{}, false
+	}
+	return selectedPlayer.ApplyPointDelta(bootstrapPlayerPointType, bootstrapPlayerPointValueIndex, bootstrapPracticeMobRetaliationPointDelta)
 }
 
 func encodePlayerPointChangeFrame(vid uint32, result player.PointChangeResult) []byte {

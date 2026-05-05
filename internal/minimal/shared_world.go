@@ -1135,6 +1135,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 		attempt.Failure = StaticActorCombatAttackFailureTargetNotVisible
 		return attempt
 	}
+	attempt.Actor = staticActorSnapshot(r.topology, actor)
 	currentSnapshotVersion := r.staticActorCombatSnapshotLocked(actor.Entity.ID)
 	if currentSnapshotVersion == 0 || currentSnapshotVersion != activeTargetSnapshotVersion {
 		attempt.Accepted = false

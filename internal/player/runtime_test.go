@@ -238,16 +238,42 @@ func TestRuntimeApplyEquipTemplateEffectAdjustsLivePointsWithoutMutatingPersiste
 
 	result, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10))
 	if !ok {
-		t.Fatal("expected template-backed equip effect application to succeed")
+		t.Fatal("expected equip template effect to succeed")
 	}
 	if result.PointType != 1 || result.PointAmount != 10 || result.PointValue != 710 {
-		t.Fatalf("unexpected equip-derived point change result: %+v", result)
+		t.Fatalf("unexpected equip point change result: %+v", result)
 	}
 	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
 		t.Fatalf("expected persisted points to remain unchanged, got %d", got)
 	}
 	if got := runtime.LiveCharacter().Points[1]; got != 710 {
 		t.Fatalf("expected live points[1] to be incremented to 710, got %d", got)
+	}
+}
+
+func TestRuntimeApplyPointDeltaAdjustsLivePointsWithoutMutatingPersistedSnapshot(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.ApplyPointDelta(1, 1, -1)
+	if !ok {
+		t.Fatal("expected point delta application to succeed")
+	}
+	if result.PointType != 1 || result.PointAmount != -1 || result.PointValue != 699 {
+		t.Fatalf("unexpected point delta result: %+v", result)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
+		t.Fatalf("expected persisted points to remain unchanged, got %d", got)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 699 {
+		t.Fatalf("expected live points[1] to be decremented to 699, got %d", got)
 	}
 }
 

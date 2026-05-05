@@ -123,6 +123,20 @@ func (r *Runtime) SetLiveGold(gold uint64) {
 	r.liveGold = gold
 }
 
+func (r *Runtime) ApplyPointDelta(pointType uint8, pointIndex uint8, pointDelta int32) (PointChangeResult, bool) {
+	if r == nil || int(pointIndex) >= len(r.livePoints) {
+		return PointChangeResult{}, false
+	}
+	currentPointValue := r.livePoints[pointIndex]
+	nextPointValue := int64(currentPointValue) + int64(pointDelta)
+	if nextPointValue < -1<<31 || nextPointValue > 1<<31-1 {
+		return PointChangeResult{}, false
+	}
+	updatedPointValue := int32(nextPointValue)
+	r.livePoints[pointIndex] = updatedPointValue
+	return PointChangeResult{PointType: pointType, PointAmount: pointDelta, PointValue: updatedPointValue}, true
+}
+
 func (r *Runtime) MoveInventoryItem(from inventory.SlotIndex, to inventory.SlotIndex) (inventory.MoveResult, bool) {
 	if r == nil {
 		return inventory.MoveResult{}, false

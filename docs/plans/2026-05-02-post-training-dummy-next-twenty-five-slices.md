@@ -615,3 +615,27 @@ If the full window lands cleanly, the repo should be able to truthfully say:
 - reconnect/reclaim rules also hold for combat mutations
 - one authored hostile practice mob exists on top of the same runtime/content seams
 - the next concrete RED is hostile retaliation / aggro-lite, not a vague “combat someday” placeholder
+
+---
+
+## Follow-on extension after the original 25-slice window
+
+### Slice 26: Close the first aggro-lite ownership gate
+
+**Objective:** turn the Slice 25 RED green by making the first accepted hit on the content-loaded practice mob reserve the current engagement against fresh third-party `TARGET` attempts until death / respawn resets it.
+
+**Status:** landed.
+
+### Slice 27: Implement the first real hostile retaliation without claiming AI
+
+**Objective:** keep the same stationary content-loaded practice mob honest, but add one deterministic hostile consequence for the engaged owner: while the mob stays alive, each accepted owner-side normal hit should now append one self-only HP `POINT_CHANGE` decrement alongside the usual target-refresh success frames.
+
+**Why this shape:** it is the smallest honest move from “target gate only” to “the mob can actually hurt you” without inventing movement, server-side chase logic, or an independent attack scheduler yet.
+
+**Status:** landed.
+
+### Slice 28: Leave the next RED for independent server-origin retaliation cadence
+
+**Objective:** the next honest missing behavior is no longer vague hostility; it is the first retaliation step that does **not** piggyback on the player's own outgoing accepted `ATTACK` frame. The next RED should prove a timer/cadence-owned hostile tick while the engaged practice mob remains alive.
+
+**Why next:** once owner-side hit-triggered retaliation exists, the next realism gap is the lack of independent mob attack cadence.
