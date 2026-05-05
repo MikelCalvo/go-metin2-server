@@ -56,6 +56,7 @@ const (
 const bootstrapPlayerPointType uint8 = 1
 const bootstrapPlayerPointValueIndex = 1
 const bootstrapPracticeMobRetaliationPointDelta int32 = -1
+const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -783,6 +784,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		var joinedSharedWorld bool
 		var activeCombatTargetVID uint32
 		var activeCombatTargetSnapshotVersion uint64
+		var pendingPracticeMobServerOriginRetaliation bool
+		var pendingPracticeMobServerOriginRetaliationAt time.Time
+		var pendingPracticeMobServerOriginRetaliationTargetVID uint32
+		var pendingPracticeMobServerOriginRetaliationSnapshotVersion uint64
+		var issuedPracticeMobServerOriginRetaliationSnapshotVersion uint64
 		var activeMerchantBuy merchantBuyContext
 		var hasActiveMerchantBuy bool
 		interactionCooldowns := make(map[uint32]time.Time)
@@ -809,10 +815,40 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		clearActiveCombatTarget := func() {
 			activeCombatTargetVID = 0
 			activeCombatTargetSnapshotVersion = 0
+			pendingPracticeMobServerOriginRetaliation = false
+			pendingPracticeMobServerOriginRetaliationAt = time.Time{}
+			pendingPracticeMobServerOriginRetaliationTargetVID = 0
+			pendingPracticeMobServerOriginRetaliationSnapshotVersion = 0
+			issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 			if sharedWorld != nil && sharedWorldID != 0 {
 				sharedWorld.ClearSessionCombatTarget(sharedWorldID)
 			}
 		}
+		clearPendingPracticeMobServerOriginRetaliation := func() {
+			pendingPracticeMobServerOriginRetaliation = false
+			pendingPracticeMobServerOriginRetaliationAt = time.Time{}
+			pendingPracticeMobServerOriginRetaliationTargetVID = 0
+			pendingPracticeMobServerOriginRetaliationSnapshotVersion = 0
+		}
+		resetPracticeMobServerOriginRetaliationState := func() {
+			clearPendingPracticeMobServerOriginRetaliation()
+			issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
+		}
+		scheduleFirstPracticeMobServerOriginRetaliation := func(targetVID uint32, snapshotVersion uint64) {
+			if targetVID == 0 || snapshotVersion == 0 || issuedPracticeMobServerOriginRetaliationSnapshotVersion == snapshotVersion {
+				return
+			}
+			now := time.Now()
+			if runtime != nil && runtime.now != nil {
+				now = runtime.now()
+			}
+			pendingPracticeMobServerOriginRetaliation = true
+			pendingPracticeMobServerOriginRetaliationAt = now.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+			pendingPracticeMobServerOriginRetaliationTargetVID = targetVID
+			pendingPracticeMobServerOriginRetaliationSnapshotVersion = snapshotVersion
+			issuedPracticeMobServerOriginRetaliationSnapshotVersion = snapshotVersion
+		}
+		var flushPendingPracticeMobServerOriginRetaliation func(pending *pendingServerFrames)
 		enqueueCombatTargetClear := func() {
 			pending.Enqueue([][]byte{combatproto.EncodeServerClearTarget()})
 		}
@@ -1048,6 +1084,48 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return gameflow.ChatResult{Accepted: false}
 			}
 			return gameflow.ChatResult{Accepted: true, Frames: frames}
+		}
+		flushPendingPracticeMobServerOriginRetaliation = func(pending *pendingServerFrames) {
+			if !pendingPracticeMobServerOriginRetaliation {
+				return
+			}
+			now := time.Now()
+			if runtime != nil && runtime.now != nil {
+				now = runtime.now()
+			}
+			if now.Before(pendingPracticeMobServerOriginRetaliationAt) {
+				return
+			}
+			targetVID := pendingPracticeMobServerOriginRetaliationTargetVID
+			snapshotVersion := pendingPracticeMobServerOriginRetaliationSnapshotVersion
+			clearPendingPracticeMobServerOriginRetaliation()
+			if !ownsLiveSharedWorldSession() {
+				return
+			}
+			selectedPlayer, ok := currentSelectedPlayer()
+			if !ok {
+				return
+			}
+			previousSelected := selectedPlayer.LiveCharacter()
+			if previousSelected.ID == 0 {
+				return
+			}
+			resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, targetVID)
+			if !resolution.Accepted || resolution.SnapshotVersion == 0 || resolution.SnapshotVersion != snapshotVersion {
+				return
+			}
+			if !sharedWorld.StaticActorCombatEngagedBySubject(resolution.Actor.EntityID, sharedWorldID) {
+				return
+			}
+			retaliation, ok := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, false)
+			if !ok {
+				return
+			}
+			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, [][]byte{encodePlayerPointChangeFrame(previousSelected.VID, retaliation)}, nil)
+			if !ok || pending == nil {
+				return
+			}
+			pending.Enqueue(frames)
 		}
 		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16) ([][]byte, bool) {
 			if selectedPlayer == nil || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
@@ -1624,6 +1702,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !resolution.Accepted || resolution.Packet == nil {
 						return gameflow.TargetResult{Accepted: false}
 					}
+					if activeCombatTargetVID != resolution.Packet.TargetVID || activeCombatTargetSnapshotVersion != resolution.SnapshotVersion {
+						resetPracticeMobServerOriginRetaliationState()
+					}
 					activeCombatTargetVID = resolution.Packet.TargetVID
 					activeCombatTargetSnapshotVersion = resolution.SnapshotVersion
 					if sharedWorld != nil && sharedWorldID != 0 {
@@ -1670,6 +1751,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok {
 						return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 					}
+					if !resolution.ClearActiveTarget {
+						scheduleFirstPracticeMobServerOriginRetaliation(resolution.ActiveTargetVID, resolution.ActiveTargetSnapshotVersion)
+					}
 					return gameflow.AttackResult{Accepted: true, Frames: persistedFrames}
 				},
 				HandleShopBuy: func(packet shopproto.ClientBuyPacket) gameflow.ShopResult {
@@ -1700,6 +1784,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		})
 		return newQueuedSessionFlow(inner, pending, func() {
 			runtime.flushReadyStaticActorRespawns()
+			stateMu.Lock()
+			defer stateMu.Unlock()
+			flushPendingPracticeMobServerOriginRetaliation(pending)
 		}, func() {
 			stateMu.Lock()
 			leaveID := sharedWorldID
