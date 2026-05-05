@@ -692,6 +692,8 @@ Expected result:
 - [ ] On the owning client, confirm each accepted live hit now returns both the usual target-refresh and one immediate self-only HP `POINT_CHANGE` decrement while the mob remains alive
 - [ ] After the first accepted live owner hit, stop sending `ATTACK` for at least the owned `1s` retaliation delay and confirm one queued self-only HP `POINT_CHANGE` follow-up beat arrives without a second client attack
 - [ ] Wait one more owned `1s` delay without another accepted hit and confirm no second autonomous follow-up beat arrives yet
+- [ ] Land one more accepted live owner hit after that first delayed beat has already fired, then wait the owned `1s` delay again and confirm one new queued self-only HP `POINT_CHANGE` follow-up beat arrives
+- [ ] If you can control timing precisely, try a rapid second accepted hit before the first delayed beat fires and confirm the current slice still yields only one queued delayed follow-up beat for that pending window
 - [ ] Drive one full target -> hit -> zero-HP death -> timed respawn -> fresh reselect cycle against that content-loaded mob
 - [ ] Re-export or otherwise inspect authored content and confirm the actor still round-trips as `spawn_groups`, not as an interaction-backed `static_actor`
 
@@ -699,8 +701,9 @@ Expected result:
 - the first attackable content-loaded mob now comes from the authored `spawn_groups` seam instead of ad hoc runtime-only bootstrap registration
 - its runtime combat loop still reuses the owned `training_dummy` profile semantics for HP, death, and timed respawn
 - after the first accepted hit, the mob now owns one tiny aggro-lite gate: fresh third-party `TARGET` attempts fail closed until death / respawn resets the current engagement
-- while alive, each accepted owner-side hit also applies one deterministic immediate self-only HP decrement back to that engaged session, and the first accepted live owner hit additionally schedules one delayed self-only follow-up beat after the owned `1s` server timer
-- that first delayed beat is intentionally one-shot in the current slice: without another later slice, a second autonomous follow-up beat should not appear just because more time passed
+- while alive, each accepted owner-side hit also applies one deterministic immediate self-only HP decrement back to that engaged session, and accepted live hits can keep arming one delayed self-only follow-up beat at a time after the owned `1s` server timer
+- without another accepted hit, there is still no free-running autonomous follow-up cadence just because more time passed
+- while one delayed follow-up beat is already pending, rapid extra accepted hits should not stack or accelerate extra queued beats yet
 - authored respawn ownership is anchored to the spawn-group `ref`, while live entity IDs and death/respawn timing remain runtime-owned
 - import/export stays deterministic: the practice mob keeps round-tripping through `spawn_groups` + `combat_profile` without pretending broader mob AI already exists
 

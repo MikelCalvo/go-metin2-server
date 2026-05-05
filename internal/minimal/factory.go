@@ -1099,6 +1099,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			targetVID := pendingPracticeMobServerOriginRetaliationTargetVID
 			snapshotVersion := pendingPracticeMobServerOriginRetaliationSnapshotVersion
 			clearPendingPracticeMobServerOriginRetaliation()
+			issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 			if !ownsLiveSharedWorldSession() {
 				return
 			}
