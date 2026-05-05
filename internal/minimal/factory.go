@@ -1099,34 +1099,42 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			targetVID := pendingPracticeMobServerOriginRetaliationTargetVID
 			snapshotVersion := pendingPracticeMobServerOriginRetaliationSnapshotVersion
 			clearPendingPracticeMobServerOriginRetaliation()
-			issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 			if !ownsLiveSharedWorldSession() {
+				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok {
+				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
 			if previousSelected.ID == 0 {
+				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
 			resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, targetVID)
 			if !resolution.Accepted || resolution.SnapshotVersion == 0 || resolution.SnapshotVersion != snapshotVersion {
+				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
 			if !sharedWorld.StaticActorCombatEngagedBySubject(resolution.Actor.EntityID, sharedWorldID) {
+				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
 			retaliation, ok := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, false)
 			if !ok {
+				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
 			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, [][]byte{encodePlayerPointChangeFrame(previousSelected.VID, retaliation)}, nil)
 			if !ok || pending == nil {
+				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
 			pending.Enqueue(frames)
+			issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
+			scheduleFirstPracticeMobServerOriginRetaliation(targetVID, snapshotVersion)
 		}
 		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16) ([][]byte, bool) {
 			if selectedPlayer == nil || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {

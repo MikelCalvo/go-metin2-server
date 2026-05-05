@@ -634,8 +634,10 @@ If the full window lands cleanly, the repo should be able to truthfully say:
 
 **Status:** landed.
 
-### Slice 28: Leave the next RED for independent server-origin retaliation cadence
+### Slice 28: Land the first delayed server-origin retaliation cadence
 
-**Objective:** the next honest missing behavior is no longer vague hostility; it is the first retaliation step that does **not** piggyback on the player's own outgoing accepted `ATTACK` frame. The next RED should prove a timer/cadence-owned hostile tick while the engaged practice mob remains alive.
+**Objective:** the next honest missing behavior after owner-side hit-triggered retaliation was the first retaliation step that does **not** piggyback only on the player's own outgoing accepted `ATTACK` frame. The landed slice now owns a delayed self-only hostile tick through the pending server-frame path and extends it into a one-beat-at-a-time cadence while the same engagement stays alive.
 
-**Why next:** once owner-side hit-triggered retaliation exists, the next realism gap is the lack of independent mob attack cadence.
+**Why next:** once owner-side hit-triggered retaliation existed, the next realism gap was the lack of any independent mob-origin cadence at all.
+
+**Status:** landed.
