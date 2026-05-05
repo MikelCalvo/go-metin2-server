@@ -2464,7 +2464,21 @@ func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlay
 	if metadata.SpawnGroupRef == "" || metadata.CombatProfile != worldruntime.StaticActorCombatProfileTrainingDummy {
 		return player.PointChangeResult{}, false
 	}
-	return selectedPlayer.ApplyPointDelta(bootstrapPlayerPointType, bootstrapPlayerPointValueIndex, bootstrapPracticeMobRetaliationPointDelta)
+	currentPointValue := selectedPlayer.LiveCharacter().Points[bootstrapPlayerPointValueIndex]
+	if currentPointValue <= 0 {
+		return player.PointChangeResult{}, false
+	}
+	pointDelta := bootstrapPracticeMobRetaliationPointDelta
+	if pointDelta < 0 {
+		minimumDelta := -currentPointValue
+		if pointDelta < minimumDelta {
+			pointDelta = minimumDelta
+		}
+	}
+	if pointDelta == 0 {
+		return player.PointChangeResult{}, false
+	}
+	return selectedPlayer.ApplyPointDelta(bootstrapPlayerPointType, bootstrapPlayerPointValueIndex, pointDelta)
 }
 
 func encodePlayerPointChangeFrame(vid uint32, result player.PointChangeResult) []byte {
