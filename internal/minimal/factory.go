@@ -1736,6 +1736,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok {
 						return gameflow.AttackResult{Accepted: false}
 					}
+					if selectedPlayer.LiveCharacter().Points[bootstrapPlayerPointValueIndex] <= 0 {
+						return gameflow.AttackResult{Accepted: false}
+					}
 					if !nextAllowedNormalAttackAt.IsZero() && sessionNow().Before(nextAllowedNormalAttackAt) {
 						return gameflow.AttackResult{Accepted: false}
 					}

@@ -173,6 +173,7 @@ An `ATTACK` request must fail closed when any of these are true:
 - the selected target is no longer within the current bootstrap combat band
 - the selected target no longer matches the current runtime snapshot bound to the session's accepted target selection
 - the selected target is now at `0` HP / dead under runtime-owned dummy state
+- the engaged owner's current bootstrap HP is already `0` after the current practice-mob retaliation slice reached the floor
 - the session already lost authoritative live ownership because another session reclaimed the same character
 
 The current visible failure expectations are intentionally narrow:
@@ -201,6 +202,7 @@ The first owned delayed server-origin retaliation cadence is still narrow, but i
 - each queued beat is server-origin only: it arrives through the pending server-frame path instead of piggybacking only on a fresh client attack frame
 - it reuses the same bootstrap player-point carrier and `-1` HP decrement already used by the immediate owner-side retaliation piggyback
 - that owner-side retaliation point-loss now clamps at the current bootstrap HP floor instead of driving the owner's visible HP negative; once the owner's live HP reaches `0`, later immediate or delayed retaliation point-loss beats fail closed until broader player-death semantics are owned separately
+- once that engaged owner's live HP is already `0` because an earlier immediate or delayed retaliation beat reached the current bootstrap floor, later normal `ATTACK` attempts from that same owner against the same engaged practice mob also fail closed instead of continuing to mutate dummy HP while broader player-death semantics remain out of scope
 - the runtime still keeps at most one pending delayed beat at a time for that engaged owner/target pair; if another accepted hit lands while a delayed beat is already pending, the current slice does not stack, accelerate, or reset the already-owned cadence timer yet
 - the cadence fails closed and stops if the engaged owner loses live shared-world ownership, clears or replaces the selected target, or the engaged actor dies / rebuilds before the next delay expires
 - this is still a tiny deterministic cadence, not broader AI: it remains owner-only, fixed-delay, and bound to the current engaged live target instead of widening into movement, chase, or mob packet families yet
@@ -225,7 +227,7 @@ This slice does **not** yet freeze:
 - miss/crit/block results
 - the server-driven respawn timer, delete/re-add reset burst, and full post-death rebuild that the separate death / respawn doc already freezes for the next slice
 - broader hostile retaliation beyond the current owner-side self-only point-loss surfaces: one immediate piggyback on accepted practice-mob hits plus one sustained fixed-delay delayed server-origin follow-up cadence at a time
-- broader player-death / respawn semantics or attack rejection for zero-HP owners after that floor is reached
+- broader player-death / respawn semantics or broader non-combat gameplay gating for zero-HP owners after that floor is reached
 - player-vs-player attack semantics
 - skills, buffs, debuffs, or status effects
 - any loot, rewards, corpse gameplay, aggro movement, or independent mob AI
@@ -252,6 +254,7 @@ After this document lands, the repository should be able to say:
 - repeated same-target normal `ATTACK` attempts are now also rate-owned in one narrow bootstrap shape: after an accepted hit, the same live selected target snapshot rejects further normal attacks for `250ms`, then accepts again once that fixed server-owned window expires
 - that same first hostility seam is now slightly richer but still deterministic: while the engaged content-loaded practice mob stays alive, each accepted owner-side normal hit still appends one immediate self-only `GC POINT_CHANGE` HP decrement to the attack success frames, and the first accepted live hit now starts a delayed self-only `GC POINT_CHANGE` follow-up cadence that keeps firing every `1s` while the same engagement remains live
 - those owner-side retaliation point-loss beats now stop at the bootstrap HP floor too: neither the immediate hit-triggered tick nor the delayed server-origin cadence can drive the owner's visible HP below `0`, and once `0` is reached the current slice simply stops further point-loss without yet claiming broader player-death choreography
+- once that retaliation floor has already reached `0`, later same-owner normal `ATTACK` attempts against the still-engaged content practice mob now fail closed too, so the current hostility seam no longer lets a zero-HP owner keep advancing dummy combat state while broader player-death semantics are still pending
 - accepted hits while one delayed follow-up beat is already pending still do not stack, accelerate, or reset the current cadence timer yet; the runtime keeps only one queued delayed beat outstanding at a time
 - same-target normal `ATTACK` attempts denied inside that `250ms` cadence window stay fully silent: they do not refresh target HP, do not append immediate retaliation, and do not create or reset delayed retaliation work
 - if that engaged owner loses live shared-world ownership, clears or replaces target intent, or the engaged actor dies / rebuilds before a pending delay expires, the queued follow-up beat fails closed and the current cadence stops instead of claiming broader AI cleanup
