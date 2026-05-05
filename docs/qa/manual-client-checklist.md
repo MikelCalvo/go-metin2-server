@@ -690,6 +690,8 @@ Expected result:
 - [ ] Confirm the mob appears at the authored position with the authored display name and can be targeted in the same way as the earlier bootstrap dummy slices
 - [ ] With two visible clients, let client one land the first accepted hit and verify client two's fresh `TARGET` attempt on the already-engaged mob fails closed until the existing death / respawn reset boundary
 - [ ] On the owning client, confirm each accepted live hit now returns both the usual target-refresh and one immediate self-only HP `POINT_CHANGE` decrement while the mob remains alive
+- [ ] If you can control timing precisely, send one repeated normal `ATTACK` against that same live selected mob before the owned `250ms` cadence window expires and confirm it fails closed with no target refresh, no extra immediate retaliation tick, and no delayed-cadence reset
+- [ ] Wait at least the owned `250ms` cadence window and confirm the next same-target normal `ATTACK` is accepted again
 - [ ] After the first accepted live owner hit, stop sending `ATTACK` for at least the owned `1s` retaliation delay and confirm one queued self-only HP `POINT_CHANGE` follow-up beat arrives without a second client attack
 - [ ] Wait one more owned `1s` delay without another accepted hit and confirm a second queued self-only HP `POINT_CHANGE` follow-up beat arrives while the mob stays alive and engaged
 - [ ] If you can control timing precisely, land a later accepted owner hit while one autonomous delayed beat is already pending and confirm the current slice still yields only one queued delayed follow-up beat on the original timer rather than accelerating or resetting that cadence window
@@ -701,9 +703,10 @@ Expected result:
 
 Expected result:
 - the first attackable content-loaded mob now comes from the authored `spawn_groups` seam instead of ad hoc runtime-only bootstrap registration
-- its runtime combat loop still reuses the owned `training_dummy` profile semantics for HP, death, and timed respawn
+- its runtime combat loop still reuses the owned `training_dummy` profile semantics for HP, death, timed respawn, and the first fixed same-target `250ms` normal-attack cadence gate
 - after the first accepted hit, the mob now owns one tiny aggro-lite gate: fresh third-party `TARGET` attempts fail closed until death / respawn resets the current engagement
 - while alive, each accepted owner-side hit also applies one deterministic immediate self-only HP decrement back to that engaged session, and the first accepted live hit now starts a delayed self-only follow-up cadence that keeps firing one beat at a time after each owned `1s` server timer while the same engagement remains live
+- same-target normal `ATTACK` attempts inside the owned `250ms` cadence window fail closed without refreshing target HP, without appending another immediate retaliation tick, and without resetting delayed retaliation timing
 - while one delayed follow-up beat is already pending, extra accepted hits should not stack, accelerate, or reset the current cadence timer yet
 - if that engagement loses target intent first — either by replacing the selected practice-mob target or by movement / sync forcing a self `TARGET(0, 0)` clear — the pending delayed follow-up beat should fail closed instead of firing against the stale engagement
 - authored respawn ownership is anchored to the spawn-group `ref`, while live entity IDs and death/respawn timing remain runtime-owned

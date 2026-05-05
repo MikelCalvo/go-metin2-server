@@ -147,6 +147,16 @@ The ownership rule is equally important:
 - accepted dummy hits must not write inventory, equipment, player points, or any other character save payload as a side effect of combat alone
 - this document does **not** yet freeze whether a reconnect, transfer, or future world rebuild should preserve or recreate dummy HP; it only freezes that the current bootstrap loop is runtime-owned and non-persistent
 
+## First target-relative normal-attack cadence window
+
+The next owned timing rule is still intentionally tiny:
+- the bootstrap runtime now owns one fixed `250ms` cadence window for repeated normal `ATTACK` attempts against the same active selected target snapshot
+- the first accepted normal hit on that live selected snapshot starts the server-owned window
+- another same-target normal `ATTACK` that arrives before the `250ms` window expires fails closed with no combat-visible frames, no extra HP mutation, no extra immediate retaliation, and no extra delayed retaliation scheduling side effect
+- once the `250ms` window expires, the next same-target normal `ATTACK` can be accepted again if the rest of the current target/visibility/range/dead-state checks still pass
+- the window is measured from server-owned runtime time (`runtime.now` in tests, wall-clock time otherwise), not from client animation or any client-supplied timestamp
+- clearing or replacing the active selected target resets this first owned cadence window; a broader session-wide attack-speed policy across target swaps still remains out of scope for now
+
 ## Failure semantics
 
 The first owned attack-intent path must stay fail-closed.
@@ -198,7 +208,7 @@ The first owned delayed server-origin retaliation cadence is still narrow, but i
 
 The next flow/gameplay slices still need to prove or freeze:
 - whether the runtime should validate or currently only preserve the two trailing raw CRC bytes
-- the exact first timing/rate rule for repeated attack attempts
+- whether later attack-speed ownership should stay target-relative or widen into a broader session-wide/global policy across target swaps
 - the exact bootstrap respawn delay constant and scheduler shape for the first server-driven dummy respawn reset
 - whether later hostile retaliation should widen beyond the current fixed-delay owner-only cadence into broader AI or richer mob-origin packet surfaces
 
@@ -210,11 +220,14 @@ The codec now owns the exact wire shape, but the gameplay contract is still inte
 This slice does **not** yet freeze:
 - the final gameplay meaning of every `attack_type` value
 - final damage formulas beyond the current bootstrap `1` HP decrement
+- broader session-wide attack-speed rules beyond the first fixed same-target `250ms` cadence window
 - miss/crit/block results
 - the server-driven respawn timer, delete/re-add reset burst, and full post-death rebuild that the separate death / respawn doc already freezes for the next slice
 - broader hostile retaliation beyond the current owner-side self-only point-loss surfaces: one immediate piggyback on accepted practice-mob hits plus one sustained fixed-delay delayed server-origin follow-up cadence at a time
 - player-vs-player attack semantics
 - skills, buffs, debuffs, or status effects
+- any loot, rewards, corpse gameplay, aggro movement, or independent mob AI
+
 
 ## Success definition
 
@@ -234,6 +247,8 @@ After this document lands, the repository should be able to say:
 - later HP refreshes stay on the same `GC TARGET(target_vid, hp_percent)` carrier until the zero-HP death edge, after which the repo switches to `GC DEAD(vid)` + target clear rather than inventing richer combat-result packets early
 - the first death / respawn wire contract is now frozen separately in `non-player-death-respawn-bootstrap.md`, and this attack slice now implements the death side of that contract while leaving server-driven respawn reset for the next runtime slice
 - content-loaded `spawn_groups` practice mobs now own the first aggro-lite post-hit target gate too: once the first authoritative hit is accepted, fresh third-party `TARGET` attempts fail closed until the existing death / respawn reset boundary, without claiming broader mob hostility yet
+- repeated same-target normal `ATTACK` attempts are now also rate-owned in one narrow bootstrap shape: after an accepted hit, the same live selected target snapshot rejects further normal attacks for `250ms`, then accepts again once that fixed server-owned window expires
 - that same first hostility seam is now slightly richer but still deterministic: while the engaged content-loaded practice mob stays alive, each accepted owner-side normal hit still appends one immediate self-only `GC POINT_CHANGE` HP decrement to the attack success frames, and the first accepted live hit now starts a delayed self-only `GC POINT_CHANGE` follow-up cadence that keeps firing every `1s` while the same engagement remains live
 - accepted hits while one delayed follow-up beat is already pending still do not stack, accelerate, or reset the current cadence timer yet; the runtime keeps only one queued delayed beat outstanding at a time
+- same-target normal `ATTACK` attempts denied inside that `250ms` cadence window stay fully silent: they do not refresh target HP, do not append immediate retaliation, and do not create or reset delayed retaliation work
 - if that engaged owner loses live shared-world ownership, clears or replaces target intent, or the engaged actor dies / rebuilds before a pending delay expires, the queued follow-up beat fails closed and the current cadence stops instead of claiming broader AI cleanup

@@ -183,7 +183,7 @@ A future actor might visually resemble a static actor, but attackable respawn-ow
 This slice does **not** yet freeze:
 - multi-member spawn packs
 - patrol routes or idle roaming
-- broader hostile retaliation or aggro-lite behavior beyond the first fresh-third-party `TARGET` gate plus one sustained delayed self-only server-origin retaliation cadence at a time
+- broader hostile retaliation or aggro-lite behavior beyond the first fresh-third-party `TARGET` gate, the first same-target `250ms` normal-attack cadence window, plus one sustained delayed self-only server-origin retaliation cadence at a time
 - random spawn selection from a pool
 - loot tables, kill rewards, or corpse gameplay
 - authored interaction metadata on attackable spawn groups
@@ -191,6 +191,7 @@ This slice does **not** yet freeze:
 
 The first owned hostile post-hit reaction is intentionally tiny:
 - once a visible content-loaded practice mob from `spawn_groups` accepts its first authoritative hit, fresh third-party `TARGET` attempts now fail closed until the existing death / respawn reset boundary
+- repeated normal `ATTACK` attempts against that same live selected target snapshot now also obey one fixed server-owned `250ms` cadence window; denied attempts inside the window stay silent and do not mutate HP or retaliation state
 - while that practice mob stays alive, each accepted owner-side normal hit now also appends one immediate self-only `GC POINT_CHANGE` HP decrement to the engaged player's outgoing success frames
 - the first accepted live owner hit also arms one delayed self-only `GC POINT_CHANGE` follow-up beat after `1s`; it arrives through the pending server-frame path even if the owner sends no second `ATTACK`
 - while that same engagement remains live, each delayed beat that fires automatically arms the next one after the same fixed delay, so the cadence is now independent from later client attack frames
@@ -205,4 +206,4 @@ After this document lands, the repository should be able to say:
 - the first spawn group is intentionally size `1`, stationary, and combat-profile driven
 - authored content now has a stable way to say which combatant should exist, where it should appear, and which `combat_profile` it should use
 - respawn ownership is no longer implied to come from ad hoc runtime registration; it is conceptually anchored to the authored spawn-group `ref`
-- one content-authored practice mob can now be imported through `spawn_groups`, fight using the owned `training_dummy` combat profile, rebuild after death through the existing server-driven respawn loop, and reject fresh third-party `TARGET` attempts after its first accepted hit while also applying one immediate self-only owner HP decrement per accepted live hit plus one sustained delayed self-only server-origin follow-up cadence at a time, without claiming movement AI, loot, or packs
+- one content-authored practice mob can now be imported through `spawn_groups`, fight using the owned `training_dummy` combat profile, rebuild after death through the existing server-driven respawn loop, and reject fresh third-party `TARGET` attempts after its first accepted hit while also applying one fixed same-target `250ms` normal-attack cadence gate, one immediate self-only owner HP decrement per accepted live hit, and one sustained delayed self-only server-origin follow-up cadence at a time, without claiming movement AI, loot, or packs
