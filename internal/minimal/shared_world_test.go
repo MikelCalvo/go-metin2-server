@@ -10023,6 +10023,156 @@ func TestGameSessionFlowPracticeMobAttackFailsClosedAfterDelayedRetaliationReach
 	}
 }
 
+func TestGameSessionFlowPracticeMobTargetFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000450, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected initial target-selection error before zero-HP owner target denial after immediate retaliation: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 initial self-only target frame before zero-HP owner target denial after immediate retaliation, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before zero-HP owner target denial after immediate retaliation: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before zero-HP owner target denial after immediate retaliation, got %d frames", len(attackOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected delayed retaliation cadence to stop once the immediate beat reached owner HP floor before zero-HP owner target denial, got %d queued frames", len(queued))
+	}
+
+	repeatedTarget, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected repeated target-selection error after immediate retaliation reached owner HP floor: %v", err)
+	}
+	if len(repeatedTarget) != 0 {
+		t.Fatalf("expected combat target attempt to fail closed once immediate retaliation reached owner HP floor, got %d frames", len(repeatedTarget))
+	}
+}
+
+func TestGameSessionFlowPracticeMobTargetFailsClosedAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000450, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected initial target-selection error before zero-HP owner target denial after delayed retaliation: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 initial self-only target frame before zero-HP owner target denial after delayed retaliation, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before zero-HP owner target denial after delayed retaliation: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before zero-HP owner target denial after delayed retaliation, got %d frames", len(attackOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected exactly 1 queued delayed retaliation beat before zero-HP owner target denial after delayed retaliation, got %d frames", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change before zero-HP owner target denial after delayed retaliation: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP owner target denial, got %+v", pointChange)
+	}
+
+	repeatedTarget, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected repeated target-selection error after delayed retaliation reached owner HP floor: %v", err)
+	}
+	if len(repeatedTarget) != 0 {
+		t.Fatalf("expected combat target attempt to fail closed once delayed retaliation reached owner HP floor, got %d frames", len(repeatedTarget))
+	}
+}
+
 func TestGameSessionFlowPracticeMobCadenceWindowDeniedRepeatDoesNotAppendRetaliationOrResetDelayedBeat(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

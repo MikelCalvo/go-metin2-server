@@ -115,6 +115,7 @@ That keeps the first combat path aligned with the already-owned shared-world/sta
 A target is eligible only when all of the following are true:
 - the requesting session is already in `GAME`
 - the requesting session still owns a selected live character
+- that live character's current bootstrap HP is still above `0`; once the current practice-mob retaliation slice has already driven the owner to `0`, later combat `TARGET` attempts fail closed until broader player-death semantics are owned separately
 - the target `VID` resolves to a currently visible non-player actor under the active topology/AOI policy
 - that actor is currently marked as a `training_dummy`
 - that actor is within the current bootstrap combat-selection range band
@@ -169,6 +170,7 @@ The current owned failure contract should stay minimal and fail closed:
 - wrong phase -> existing flow rejection rules apply
 - malformed payload -> codec/flow rejection applies
 - subject has no live selected character -> request fails closed
+- subject's current bootstrap HP is already `0` -> request fails closed
 - target `VID` not found in current visible non-player state -> request fails closed
 - target actor is visible but not marked `training_dummy` -> request fails closed
 - target actor is visible and targetable but out of the `300`-unit range band -> request fails closed
@@ -203,6 +205,7 @@ After this document and slice, the repository should be able to say:
 - the first owned self-only acknowledgement family is `TARGET` in `GAME` with `0x0A10`
 - the first targetable actor class is a visible `training_dummy`, not every static actor or every NPC
 - accepted in-range dummy selection now returns one self-only `GC TARGET` ack without dragging in attack execution, damage, aggro, or AI
+- once owner-side practice-mob retaliation has already driven that live character to `0` HP, fresh combat `TARGET` attempts now fail closed too until broader player-death semantics are owned separately
 - fresh bootstrap entry, transfer rebootstrap, and reconnect clear previously selected dummy target ownership so later attacks must reacquire intent with a new `TARGET` request
 - rejected attempts still fail closed without chat spam, peer fanout, persistence writes, or clear-target choreography
 - combat remains intentionally tiny, but the first honest target-selection request path is now frozen in both docs and tests

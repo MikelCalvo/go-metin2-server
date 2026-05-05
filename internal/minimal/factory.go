@@ -1707,6 +1707,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ownsLiveSharedWorldSession() {
 						return gameflow.TargetResult{Accepted: false}
 					}
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
+						return gameflow.TargetResult{Accepted: false}
+					}
+					if selectedPlayer.LiveCharacter().Points[bootstrapPlayerPointValueIndex] <= 0 {
+						return gameflow.TargetResult{Accepted: false}
+					}
 					resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, packet.TargetVID)
 					if !resolution.Accepted || resolution.Packet == nil {
 						return gameflow.TargetResult{Accepted: false}
