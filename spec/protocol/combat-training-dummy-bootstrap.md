@@ -206,6 +206,7 @@ After this document and slice, the repository should be able to say:
 - the first targetable actor class is a visible `training_dummy`, not every static actor or every NPC
 - accepted in-range dummy selection now returns one self-only `GC TARGET` ack without dragging in attack execution, damage, aggro, or AI
 - once owner-side practice-mob retaliation has already driven that live character to `0` HP, fresh combat `TARGET` attempts now fail closed too until broader player-death semantics are owned separately
+- reaching that owner-side `0`-HP floor through the current practice-mob retaliation slice also clears the stale active combat target with one self-only `GC TARGET(0, 0)` instead of keeping the old dummy selected while broader player-death choreography remains pending
 - fresh bootstrap entry, transfer rebootstrap, and reconnect clear previously selected dummy target ownership so later attacks must reacquire intent with a new `TARGET` request
 - rejected attempts still fail closed without chat spam, peer fanout, persistence writes, or clear-target choreography
 - combat remains intentionally tiny, but the first honest target-selection request path is now frozen in both docs and tests

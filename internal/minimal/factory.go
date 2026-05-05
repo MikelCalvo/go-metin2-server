@@ -1122,19 +1122,26 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
-			retaliation, ok := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, false)
+			retaliation, ok, clearTarget := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, false)
 			if !ok {
 				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
-			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, [][]byte{encodePlayerPointChangeFrame(previousSelected.VID, retaliation)}, nil)
+			frames := [][]byte{encodePlayerPointChangeFrame(previousSelected.VID, retaliation)}
+			if clearTarget {
+				clearActiveCombatTarget()
+				frames = append(frames, combatproto.EncodeServerClearTarget())
+			}
+			frames, ok = commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 			if !ok || pending == nil {
 				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
 			pending.Enqueue(frames)
 			issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
-			scheduleFirstPracticeMobServerOriginRetaliation(targetVID, snapshotVersion)
+			if !clearTarget {
+				scheduleFirstPracticeMobServerOriginRetaliation(targetVID, snapshotVersion)
+			}
 		}
 		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16) ([][]byte, bool) {
 			if selectedPlayer == nil || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
@@ -1767,16 +1774,20 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						frames = append(frames, combatproto.EncodeServerTarget(*resolution.Packet))
 					}
 					attackFrames := append([][]byte(nil), frames...)
-					retaliation, ok := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, resolution.ClearActiveTarget)
+					retaliation, ok, clearTarget := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, resolution.ClearActiveTarget)
 					if !ok {
 						return gameflow.AttackResult{Accepted: true, Frames: frames}
 					}
 					frames = append(frames, encodePlayerPointChangeFrame(previousSelected.VID, retaliation))
+					if clearTarget {
+						clearActiveCombatTarget()
+						frames = append(frames, combatproto.EncodeServerClearTarget())
+					}
 					persistedFrames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 					if !ok {
 						return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 					}
-					if !resolution.ClearActiveTarget {
+					if !resolution.ClearActiveTarget && !clearTarget {
 						scheduleFirstPracticeMobServerOriginRetaliation(resolution.ActiveTargetVID, resolution.ActiveTargetSnapshotVersion)
 					}
 					return gameflow.AttackResult{Accepted: true, Frames: persistedFrames}
@@ -2460,23 +2471,22 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 	return frames, nil
 }
 
-func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlayer *player.Runtime, actor StaticActorSnapshot, targetDied bool) (player.PointChangeResult, bool) {
+func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlayer *player.Runtime, actor StaticActorSnapshot, targetDied bool) (player.PointChangeResult, bool, bool) {
 	if selectedPlayer == nil || targetDied {
-		return player.PointChangeResult{}, false
+		return player.PointChangeResult{}, false, false
 	}
-	metadata := actor
-	if metadata.SpawnGroupRef == "" && runtime != nil {
+	if actor.SpawnGroupRef == "" && runtime != nil {
 		currentActors := runtime.StaticActors()
 		if idx := staticActorSnapshotIndex(currentActors, actor.EntityID); idx >= 0 {
-			metadata = currentActors[idx]
+			actor = currentActors[idx]
 		}
 	}
-	if metadata.SpawnGroupRef == "" || metadata.CombatProfile != worldruntime.StaticActorCombatProfileTrainingDummy {
-		return player.PointChangeResult{}, false
+	if actor.SpawnGroupRef == "" || actor.CombatProfile != worldruntime.StaticActorCombatProfileTrainingDummy {
+		return player.PointChangeResult{}, false, false
 	}
 	currentPointValue := selectedPlayer.LiveCharacter().Points[bootstrapPlayerPointValueIndex]
 	if currentPointValue <= 0 {
-		return player.PointChangeResult{}, false
+		return player.PointChangeResult{}, false, false
 	}
 	pointDelta := bootstrapPracticeMobRetaliationPointDelta
 	if pointDelta < 0 {
@@ -2486,9 +2496,10 @@ func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlay
 		}
 	}
 	if pointDelta == 0 {
-		return player.PointChangeResult{}, false
+		return player.PointChangeResult{}, false, false
 	}
-	return selectedPlayer.ApplyPointDelta(bootstrapPlayerPointType, bootstrapPlayerPointValueIndex, pointDelta)
+	pointChange, ok := selectedPlayer.ApplyPointDelta(bootstrapPlayerPointType, bootstrapPlayerPointValueIndex, pointDelta)
+	return pointChange, ok, ok && pointChange.PointValue == 0
 }
 
 func encodePlayerPointChangeFrame(vid uint32, result player.PointChangeResult) []byte {
