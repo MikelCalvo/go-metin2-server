@@ -694,6 +694,8 @@ Expected result:
 - [ ] Wait one more owned `1s` delay without another accepted hit and confirm a second queued self-only HP `POINT_CHANGE` follow-up beat arrives while the mob stays alive and engaged
 - [ ] If you can control timing precisely, land a later accepted owner hit while one autonomous delayed beat is already pending and confirm the current slice still yields only one queued delayed follow-up beat on the original timer rather than accelerating or resetting that cadence window
 - [ ] If you can control timing precisely, also try a rapid second accepted hit before the first delayed beat fires and confirm the current slice still yields only one queued delayed follow-up beat for that first pending window
+- [ ] Replace the selected practice-mob target before the next owned `1s` delay expires and confirm the queued delayed follow-up beat fails closed instead of firing for the old engagement
+- [ ] Move or sync far enough to force a self `TARGET(0, 0)` clear before the next owned `1s` delay expires and confirm that same queued delayed follow-up beat also fails closed after target invalidation
 - [ ] Drive one full target -> hit -> zero-HP death -> timed respawn -> fresh reselect cycle against that content-loaded mob
 - [ ] Re-export or otherwise inspect authored content and confirm the actor still round-trips as `spawn_groups`, not as an interaction-backed `static_actor`
 
@@ -703,6 +705,7 @@ Expected result:
 - after the first accepted hit, the mob now owns one tiny aggro-lite gate: fresh third-party `TARGET` attempts fail closed until death / respawn resets the current engagement
 - while alive, each accepted owner-side hit also applies one deterministic immediate self-only HP decrement back to that engaged session, and the first accepted live hit now starts a delayed self-only follow-up cadence that keeps firing one beat at a time after each owned `1s` server timer while the same engagement remains live
 - while one delayed follow-up beat is already pending, extra accepted hits should not stack, accelerate, or reset the current cadence timer yet
+- if that engagement loses target intent first — either by replacing the selected practice-mob target or by movement / sync forcing a self `TARGET(0, 0)` clear — the pending delayed follow-up beat should fail closed instead of firing against the stale engagement
 - authored respawn ownership is anchored to the spawn-group `ref`, while live entity IDs and death/respawn timing remain runtime-owned
 - import/export stays deterministic: the practice mob keeps round-tripping through `spawn_groups` + `combat_profile` without pretending broader mob AI already exists
 
