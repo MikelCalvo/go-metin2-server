@@ -182,17 +182,17 @@ The first owned attack-intent contract must inherit the existing shared-world ow
 Only some lifecycle edges are owned so far.
 This document now freezes movement/sync invalidation plus fresh bootstrap/rebootstrap cleanup, while later combat slices still need to align the remaining lifecycle edges with the same runtime ownership model instead of creating a second combat-only ownership model.
 
-## First repeatable delayed server-origin retaliation beat for engaged content practice mobs
+## First sustained delayed server-origin retaliation cadence for engaged content practice mobs
 
-The first owned delayed server-origin retaliation cadence is still narrow, but it is now repeatable across later accepted-hit cycles:
+The first owned delayed server-origin retaliation cadence is still narrow, but it is now autonomous once engagement has started:
 - it currently applies only to content-loaded practice mobs imported from `spawn_groups` with `combat_profile = training_dummy`
-- each accepted owner-side normal hit that leaves that engaged mob alive may arm one additional self-only `GC POINT_CHANGE` HP decrement after a fixed `1s` delay
-- that queued beat is server-origin only: it arrives through the pending server-frame path even if the player sends no second `ATTACK`
+- the first accepted owner-side normal hit that leaves that engaged mob alive arms one additional self-only `GC POINT_CHANGE` HP decrement after a fixed `1s` delay
+- once that delayed beat fires while the same engaged mob still owns the same live owner, it automatically arms the next delayed beat after the same fixed `1s` delay even if the player sends no later `ATTACK`
+- each queued beat is server-origin only: it arrives through the pending server-frame path instead of piggybacking only on a fresh client attack frame
 - it reuses the same bootstrap player-point carrier and `-1` HP decrement already used by the immediate owner-side retaliation piggyback
-- the runtime currently keeps at most one pending delayed beat at a time for that engaged owner/target pair; if another accepted hit lands while a delayed beat is already pending, the current slice does not stack or accelerate extra queued beats yet
-- once that pending delayed beat fires, a later accepted live owner hit may arm the next one after the same fixed delay
-- it fails closed if the engaged owner loses live shared-world ownership, clears or replaces the selected target, or the engaged actor dies / rebuilds before the delay expires
-- there is still no free-running autonomous cadence yet; without another later accepted hit, no further delayed beat appears just because more time passed
+- the runtime still keeps at most one pending delayed beat at a time for that engaged owner/target pair; if another accepted hit lands while a delayed beat is already pending, the current slice does not stack, accelerate, or reset the already-owned cadence timer yet
+- the cadence fails closed and stops if the engaged owner loses live shared-world ownership, clears or replaces the selected target, or the engaged actor dies / rebuilds before the next delay expires
+- this is still a tiny deterministic cadence, not broader AI: it remains owner-only, fixed-delay, and bound to the current engaged live target instead of widening into movement, chase, or mob packet families yet
 
 ## Explicit unknowns still left for the next RED
 
@@ -200,7 +200,7 @@ The next flow/gameplay slices still need to prove or freeze:
 - whether the runtime should validate or currently only preserve the two trailing raw CRC bytes
 - the exact first timing/rate rule for repeated attack attempts
 - the exact bootstrap respawn delay constant and scheduler shape for the first server-driven dummy respawn reset
-- whether later hostile retaliation should become a truly autonomous repeating cadence beyond the current hit-armed delayed beat loop
+- whether later hostile retaliation should widen beyond the current fixed-delay owner-only cadence into broader AI or richer mob-origin packet surfaces
 
 Those unknowns are deliberate.
 The codec now owns the exact wire shape, but the gameplay contract is still intentionally narrower than full combat semantics.
@@ -212,7 +212,7 @@ This slice does **not** yet freeze:
 - final damage formulas beyond the current bootstrap `1` HP decrement
 - miss/crit/block results
 - the server-driven respawn timer, delete/re-add reset burst, and full post-death rebuild that the separate death / respawn doc already freezes for the next slice
-- broader hostile retaliation beyond the current owner-side self-only point-loss surfaces: one immediate piggyback on accepted practice-mob hits plus one hit-armed delayed server-origin follow-up beat at a time
+- broader hostile retaliation beyond the current owner-side self-only point-loss surfaces: one immediate piggyback on accepted practice-mob hits plus one sustained fixed-delay delayed server-origin follow-up cadence at a time
 - player-vs-player attack semantics
 - skills, buffs, debuffs, or status effects
 
@@ -234,6 +234,6 @@ After this document lands, the repository should be able to say:
 - later HP refreshes stay on the same `GC TARGET(target_vid, hp_percent)` carrier until the zero-HP death edge, after which the repo switches to `GC DEAD(vid)` + target clear rather than inventing richer combat-result packets early
 - the first death / respawn wire contract is now frozen separately in `non-player-death-respawn-bootstrap.md`, and this attack slice now implements the death side of that contract while leaving server-driven respawn reset for the next runtime slice
 - content-loaded `spawn_groups` practice mobs now own the first aggro-lite post-hit target gate too: once the first authoritative hit is accepted, fresh third-party `TARGET` attempts fail closed until the existing death / respawn reset boundary, without claiming broader mob hostility yet
-- that same first hostility seam is now slightly richer but still deterministic: while the engaged content-loaded practice mob stays alive, each accepted owner-side normal hit still appends one immediate self-only `GC POINT_CHANGE` HP decrement to the attack success frames, and accepted live hits can keep arming one delayed self-only `GC POINT_CHANGE` follow-up beat at a time after `1s` without claiming a free-running autonomous cadence yet
-- accepted hits while one delayed follow-up beat is already pending still do not stack or accelerate extra queued beats yet; once that pending beat fires, the next accepted live hit may arm the next delayed follow-up beat
-- if that engaged owner loses live shared-world ownership, clears or replaces target intent, or the engaged actor dies / rebuilds before a pending delay expires, the queued follow-up beat fails closed instead of claiming broader AI cleanup
+- that same first hostility seam is now slightly richer but still deterministic: while the engaged content-loaded practice mob stays alive, each accepted owner-side normal hit still appends one immediate self-only `GC POINT_CHANGE` HP decrement to the attack success frames, and the first accepted live hit now starts a delayed self-only `GC POINT_CHANGE` follow-up cadence that keeps firing every `1s` while the same engagement remains live
+- accepted hits while one delayed follow-up beat is already pending still do not stack, accelerate, or reset the current cadence timer yet; the runtime keeps only one queued delayed beat outstanding at a time
+- if that engaged owner loses live shared-world ownership, clears or replaces target intent, or the engaged actor dies / rebuilds before a pending delay expires, the queued follow-up beat fails closed and the current cadence stops instead of claiming broader AI cleanup
