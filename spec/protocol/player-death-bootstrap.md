@@ -11,6 +11,7 @@ Those documents already freeze:
 - the selected player's current self-only `GC PLAYER_POINT_CHANGE` carrier
 - the first hostile content-loaded practice-mob retaliation loop, including immediate hit-triggered point loss and the delayed server-origin cadence
 - fail-closed owner-side `TARGET` / `ATTACK` rejection once that retaliation floor has already reached `0` HP
+- fail-closed owner-side `MOVE` / `SYNC_POSITION` rejection at that same retaliation floor before relocation or transfer-trigger rebootstrap can run
 
 What this document adds is the next narrower question:
 
@@ -29,7 +30,7 @@ This contract does **not** yet claim:
 - peer-visible player death fanout
 - corpse state, knockdown animations, or corpse interaction
 - player respawn, revive menus, town return, or map transfer on death
-- broader movement/chat/input gating after death beyond the already-owned combat `TARGET` / `ATTACK` rejection at `0` HP
+- broader chat / interaction / merchant / input gating after death beyond the now-owned combat `TARGET` / `ATTACK` and relocation `MOVE` / `SYNC_POSITION` rejection at `0` HP
 - PvP death semantics or non-combat causes of player death
 
 ## Current implementation status
@@ -39,6 +40,7 @@ The repository now implements this narrow bootstrap contract:
 - if a delayed server-origin retaliation beat reaches that same `0`-HP floor, the queued pending server frames now append the same self-only `GC DEAD(owner_vid)` before the same self-only clear-target companion
 - the current slice stays self-only: no watcher/peer `GC DEAD(owner_vid)` fanout is claimed yet
 - once this floor is reached, the existing delayed retaliation cadence stops and later owner-side combat `TARGET` / `ATTACK` attempts still fail closed as already frozen elsewhere
+- once this floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed with no self ack, no shared-world relocation update, and no transfer-trigger rebootstrap burst
 
 ## Why freeze this separately
 
@@ -88,7 +90,7 @@ The project does **not** yet own enough player-death runtime to claim all of the
 - peer-visible player death
 - player corpse lifetime
 - player respawn or revive
-- post-death movement/chat/input policy
+- broader chat / interaction / merchant / input policy beyond the now-owned combat and relocation rejection seams at `0` HP
 
 So this first owner-side death signal stays narrow:
 - the engaged owner learns about the zero-HP edge immediately
@@ -104,8 +106,22 @@ Those rules still stand:
 - retaliation point loss clamps at `0`
 - the delayed cadence stops when that floor is reached
 - later same-owner combat `TARGET` / `ATTACK` attempts fail closed once the owner is already at `0`
+- later same-owner `MOVE` / `SYNC_POSITION` attempts also fail closed once the owner is already at `0`
 
 What this document adds is only the visible death-edge packet companion for that already-owned `0`-HP transition.
+
+## First owned post-floor relocation denial
+
+The current bootstrap player-death contract now also owns one narrow relocation rule for that same selected live owner session:
+- once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later owner-side `MOVE` requests fail closed
+- once that same floor has been reached, later owner-side `SYNC_POSITION` requests also fail closed
+- those denials happen before the runtime applies live-position mutation, shared-world relocation fanout, or transfer-trigger rebootstrap work
+- the denial stays intentionally quiet in this slice: no self `MOVE_ACK`, no self `SYNC_POSITION_ACK`, no compensating chat/info packet, and no peer-facing relocation packet companion
+
+This keeps the first post-floor expansion small and honest:
+- the repo already owns `TARGET` / `ATTACK` denial at the same floor
+- `MOVE` and `SYNC_POSITION` are the next most dangerous owner-authoritative packets because they can still mutate live world position or trigger transfer rebootstrap even after the owner has already died in the current bootstrap retaliation loop
+- broader chat, interaction, merchant, and full action-lock policy still remain out of scope until later slices freeze them explicitly
 
 ## Explicit non-goals
 
@@ -113,7 +129,7 @@ This slice does **not** yet freeze:
 - peer-visible `GC DEAD(owner_vid)` fanout
 - a player respawn timer or revive request packet
 - self-bootstrap or transfer choreography after death
-- movement denial, chat denial, or full action-lock semantics at `0` HP
+- chat denial, merchant/interact denial, or full action-lock semantics at `0` HP beyond the now-owned combat and relocation rejection seams
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
 ## Success definition
@@ -123,4 +139,5 @@ After this document lands, the repository should be able to say:
 - the current bootstrap player-death packet is `GC DEAD(owner_vid)` with header `0x0217`
 - that self-only owner death signal is emitted on both immediate and delayed retaliation beats when they drive the engaged owner to `0` HP
 - the current ordered owner-side floor transition is `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`
+- once that same floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed before self ack, shared-world relocation mutation, or transfer-trigger rebootstrap work can run
 - peer-visible player death, corpse state, respawn, and broader post-death gameplay remain deliberately out of scope

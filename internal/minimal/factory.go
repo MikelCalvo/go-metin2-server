@@ -953,6 +953,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			refreshLiveCharacterRegistration()
 			return selectedPlayer, true
 		}
+		selectedPlayerAtBootstrapHPFloor := func(selected *player.Runtime) bool {
+			if selected == nil {
+				return false
+			}
+			return selected.LiveCharacter().Points[bootstrapPlayerPointValueIndex] <= 0
+		}
 		ownsLiveSharedWorldSession := func() bool {
 			return joinedSharedWorld && sharedWorldID != 0 && sharedWorld.HasLiveSession(sharedWorldID)
 		}
@@ -1348,7 +1354,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					defer stateMu.Unlock()
 
 					selectedPlayer, ok := currentSelectedPlayer()
-					if !ok {
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 						return gameflow.Result{Accepted: false}
 					}
 					selected := selectedPlayer.LiveCharacter()
@@ -1383,7 +1389,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					defer stateMu.Unlock()
 
 					selectedPlayer, ok := currentSelectedPlayer()
-					if !ok {
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 						return gameflow.SyncPositionResult{Accepted: false}
 					}
 					selected := selectedPlayer.LiveCharacter()
@@ -1716,10 +1722,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.TargetResult{Accepted: false}
 					}
 					selectedPlayer, ok := currentSelectedPlayer()
-					if !ok {
-						return gameflow.TargetResult{Accepted: false}
-					}
-					if selectedPlayer.LiveCharacter().Points[bootstrapPlayerPointValueIndex] <= 0 {
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 						return gameflow.TargetResult{Accepted: false}
 					}
 					resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, packet.TargetVID)
@@ -1748,10 +1751,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.AttackResult{Accepted: false}
 					}
 					selectedPlayer, ok := currentSelectedPlayer()
-					if !ok {
-						return gameflow.AttackResult{Accepted: false}
-					}
-					if selectedPlayer.LiveCharacter().Points[bootstrapPlayerPointValueIndex] <= 0 {
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 						return gameflow.AttackResult{Accepted: false}
 					}
 					if !nextAllowedNormalAttackAt.IsZero() && sessionNow().Before(nextAllowedNormalAttackAt) {

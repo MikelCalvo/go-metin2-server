@@ -700,6 +700,8 @@ Expected result:
 - [ ] When that immediate or delayed retaliation floor reaches `0` HP, confirm the client first receives one self-only `DEAD(owner_vid)` and then one self-only `TARGET(0, 0)` clear instead of keeping the stale engaged practice mob selected
 - [ ] After retaliation has already driven the owning character to `0` HP, send a fresh combat `TARGET` against the same or another visible practice mob and confirm it fails closed with no self-only target acknowledgement
 - [ ] After retaliation has already driven the owning character to `0` HP, wait at least the owned `250ms` cadence window and send another same-target normal `ATTACK`; confirm it fails closed with no target refresh, no extra point-loss, and no re-armed delayed follow-up beat
+- [ ] After retaliation has already driven the owning character to `0` HP, send a `MOVE` toward a different visible coordinate (or a known transfer-trigger coordinate if one is configured) and confirm it fails closed with no self `MOVE_ACK`, no peer movement replication, and no transfer / rebootstrap burst
+- [ ] After retaliation has already driven the owning character to `0` HP, send a `SYNC_POSITION` update for that same character and confirm it fails closed with no self `SYNC_POSITION_ACK` and no peer synchronization replication
 - [ ] Replace the selected practice-mob target before the next owned `1s` delay expires and confirm the queued delayed follow-up beat fails closed instead of firing for the old engagement
 - [ ] Move or sync far enough to force a self `TARGET(0, 0)` clear before the next owned `1s` delay expires and confirm that same queued delayed follow-up beat also fails closed after target invalidation
 - [ ] Drive one full target -> hit -> zero-HP death -> timed respawn -> fresh reselect cycle against that content-loaded mob
@@ -714,6 +716,7 @@ Expected result:
 - same-target normal `ATTACK` attempts inside the owned `250ms` cadence window fail closed without refreshing target HP, without appending another immediate retaliation tick, and without resetting delayed retaliation timing
 - while one delayed follow-up beat is already pending, extra accepted hits should not stack, accelerate, or reset the current cadence timer yet
 - if that engagement loses target intent first — either by replacing the selected practice-mob target or by movement / sync forcing a self `TARGET(0, 0)` clear — the pending delayed follow-up beat should fail closed instead of firing against the stale engagement
+- once retaliation has already driven the owning character to `0` HP, later owner-side combat `TARGET` / `ATTACK` plus owner `MOVE` / `SYNC_POSITION` attempts fail closed too, without yet claiming broader chat, merchant, interaction, or revive policy
 - authored respawn ownership is anchored to the spawn-group `ref`, while live entity IDs and death/respawn timing remain runtime-owned
 - import/export stays deterministic: the practice mob keeps round-tripping through `spawn_groups` + `combat_profile` without pretending broader mob AI already exists
 
