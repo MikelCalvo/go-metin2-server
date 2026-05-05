@@ -183,11 +183,16 @@ A future actor might visually resemble a static actor, but attackable respawn-ow
 This slice does **not** yet freeze:
 - multi-member spawn packs
 - patrol routes or idle roaming
-- hostile retaliation or aggro-lite behavior
+- broader hostile retaliation or aggro-lite behavior beyond the first fresh-third-party `TARGET` gate
 - random spawn selection from a pool
 - loot tables, kill rewards, or corpse gameplay
 - authored interaction metadata on attackable spawn groups
 - migrations from old static-actor records into spawn groups
+
+The first owned hostile post-hit reaction is intentionally tiny:
+- once a visible content-loaded practice mob from `spawn_groups` accepts its first authoritative hit, fresh third-party `TARGET` attempts now fail closed until the existing death / respawn reset boundary
+- if the owning live session disappears before that reset, the current engagement clears instead of leaving the mob orphan-locked forever
+- that first gate still does **not** imply mob movement, pathing, server-origin damage, pack AI, or a broader aggro system
 
 ## Success definition
 
@@ -196,4 +201,4 @@ After this document lands, the repository should be able to say:
 - the first spawn group is intentionally size `1`, stationary, and combat-profile driven
 - authored content now has a stable way to say which combatant should exist, where it should appear, and which `combat_profile` it should use
 - respawn ownership is no longer implied to come from ad hoc runtime registration; it is conceptually anchored to the authored spawn-group `ref`
-- one content-authored practice mob can now be imported through `spawn_groups`, fight using the owned `training_dummy` combat profile, and rebuild after death through the existing server-driven respawn loop without claiming AI, loot, or packs
+- one content-authored practice mob can now be imported through `spawn_groups`, fight using the owned `training_dummy` combat profile, rebuild after death through the existing server-driven respawn loop, and reject fresh third-party `TARGET` attempts after its first accepted hit without claiming AI, loot, or packs

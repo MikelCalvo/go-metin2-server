@@ -220,3 +220,5 @@ After this document lands, the repository should be able to say:
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes stay on the same `GC TARGET(target_vid, hp_percent)` carrier until the zero-HP death edge, after which the repo switches to `GC DEAD(vid)` + target clear rather than inventing richer combat-result packets early
 - the first death / respawn wire contract is now frozen separately in `non-player-death-respawn-bootstrap.md`, and this attack slice now implements the death side of that contract while leaving server-driven respawn reset for the next runtime slice
+- content-loaded `spawn_groups` practice mobs now own the first aggro-lite post-hit target gate too: once the first authoritative hit is accepted, fresh third-party `TARGET` attempts fail closed until the existing death / respawn reset boundary, without claiming broader mob hostility yet
+- if that engaged owner loses live shared-world ownership before the reset, the current gate clears instead of leaving the practice mob permanently orphan-locked

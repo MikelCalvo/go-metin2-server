@@ -567,7 +567,7 @@ go test ./...
 
 ### Slice 25: Leave the next RED for hostile retaliation / aggro-lite
 
-**Objective:** finish this window by writing the failing test and protocol notes for the first hostile post-hit reaction (retaliation or aggro-lite), without implementing it yet.
+**Objective:** finish this window by writing the failing test and protocol notes for the first hostile post-hit reaction, narrowed to one tiny aggro-lite rule: after the first accepted hit on a content-loaded `spawn_group` practice mob, fresh third-party `TARGET` attempts must fail closed until the existing death/respawn reset boundary, without implementing it yet.
 
 **Why now:** this keeps the repo's momentum pattern healthy: end the window with a concrete next vertical already framed by docs and a real RED.
 

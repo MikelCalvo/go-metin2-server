@@ -9449,6 +9449,79 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	}
 }
 
+func TestGameSessionFlowPracticeMobAggroLiteRejectsFreshThirdPartyTargetAfterFirstAcceptedHit(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flowOne, enterOne := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOne) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for first player with visible content practice mob, got %d", len(enterOne))
+	}
+	defer closeSessionFlow(t, flowOne)
+	flowTwo, enterTwo := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(enterTwo) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for second player with visible peer and content practice mob, got %d", len(enterTwo))
+	}
+	defer closeSessionFlow(t, flowTwo)
+	if queued := flushServerFrames(t, flowOne); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for first player after second player joins, got %d", len(queued))
+	}
+
+	selectOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before first aggro-lite hit: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before first aggro-lite hit, got %d", len(selectOut))
+	}
+
+	attackOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first accepted aggro-lite attack error: %v", err)
+	}
+	if len(attackOut) != 1 {
+		t.Fatalf("expected 1 self-only target-refresh frame on first aggro-lite hit, got %d", len(attackOut))
+	}
+
+	thirdPartyTarget, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected third-party target-selection error after first aggro-lite hit: %v", err)
+	}
+	if len(thirdPartyTarget) != 0 {
+		t.Fatalf("expected fresh third-party target selection to fail closed once the content practice mob is engaged, got %d frames", len(thirdPartyTarget))
+	}
+}
+
 func TestGameSessionFlowStaticActorDummyRespawnRebuildsForOtherVisibleSessionsAndRequiresFreshReselect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
