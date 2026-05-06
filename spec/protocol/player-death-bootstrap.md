@@ -15,6 +15,7 @@ Those documents already freeze:
 - fail-closed owner-side static-actor `INTERACT` rejection at that same retaliation floor before talk/info, merchant preview, or warp-side effects can run
 - fail-closed owner-side merchant-buy attempts at that same retaliation floor before inventory / gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
 - fail-closed owner-side slash item-use attempts at that same retaliation floor before inventory consumption or point restoration can run through the local `/use_item` harness path
+- fail-closed owner-side slash carried-inventory move attempts at that same retaliation floor before runtime or persisted slot mutation can run through the local `/inventory_move` harness path
 - fail-closed owner-side slash equipment mutation attempts at that same retaliation floor before carried/equipped item movement, appearance refresh, or template-backed point mutation can run through the local `/equip_item` and `/unequip_item` harness paths
 
 What this document adds is the next narrower question:
@@ -34,7 +35,7 @@ This contract does **not** yet claim:
 - peer-visible player death fanout
 - corpse state, knockdown animations, or corpse interaction
 - player respawn, revive menus, town return, or map transfer on death
-- broader self-only `CHAT_TYPE_INFO` or full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy rejection, slash item-use rejection, slash equipment-mutation rejection, and peer-facing `CHAT` / `WHISPER` rejection at `0` HP
+- broader self-only `CHAT_TYPE_INFO` or full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy rejection, slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, and peer-facing `CHAT` / `WHISPER` rejection at `0` HP
 - PvP death semantics or non-combat causes of player death
 
 ## Current implementation status
@@ -48,9 +49,10 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed with no self chat/info delivery, no merchant preview open, and no warp transfer / rebootstrap burst
 - once this floor is reached, later owner-side merchant-buy attempts also fail closed with no item-set success burst and no inventory / gold mutation, even if a merchant preview had already been opened earlier in that session
 - once this floor is reached, later owner-side slash item-use attempts also fail closed with no point-change / item-set success burst and no runtime or persisted inventory / point mutation
+- once this floor is reached, later owner-side slash `/inventory_move` attempts also fail closed with no item-set success burst and no runtime or persisted carried-slot mutation
 - once this floor is reached, later owner-side slash `/equip_item` and `/unequip_item` attempts also fail closed with no item-delete / item-set / point-change / character-update success burst and no runtime or persisted inventory / equipment / point mutation
 - once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name lookup can run
-- the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, while the already-owned `/shop_buy`, `/use_item`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
+- the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, while the already-owned `/shop_buy`, `/use_item`, `/inventory_move`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
 
 ## Why freeze this separately
 
