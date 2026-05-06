@@ -1134,12 +1134,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return
 			}
 			frames := [][]byte{encodePlayerPointChangeFrame(previousSelected.VID, retaliation)}
+			var stablePeerFrames [][]byte
 			if clearTarget {
 				clearActiveCombatTarget()
-				frames = append(frames, worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID}))
+				deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID})
+				frames = append(frames, deadRaw)
 				frames = append(frames, combatproto.EncodeServerClearTarget())
+				stablePeerFrames = [][]byte{deadRaw}
 			}
-			frames, ok = commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			frames, ok = commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 			if !ok || pending == nil {
 				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
@@ -1793,12 +1796,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.AttackResult{Accepted: true, Frames: frames}
 					}
 					frames = append(frames, encodePlayerPointChangeFrame(previousSelected.VID, retaliation))
+					var stablePeerFrames [][]byte
 					if clearTarget {
 						clearActiveCombatTarget()
-						frames = append(frames, worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID}))
+						deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID})
+						frames = append(frames, deadRaw)
 						frames = append(frames, combatproto.EncodeServerClearTarget())
+						stablePeerFrames = [][]byte{deadRaw}
 					}
-					persistedFrames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					persistedFrames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 					if !ok {
 						return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 					}

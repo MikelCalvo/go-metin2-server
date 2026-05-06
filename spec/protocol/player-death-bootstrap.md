@@ -30,9 +30,9 @@ This contract currently applies only to:
 - one delayed self-only server-origin retaliation beat flushed through the pending server-frame path
 - the edge where either of those retaliation point-loss beats drives the engaged owner's live bootstrap HP from a positive value to `0`
 - one self-only `GC DEAD(owner_vid)` signal paired with the existing self-only combat-target clear companion
+- the first visible-peer `GC DEAD(owner_vid)` fanout to sessions that can currently see that owner through the shared-world visibility rules
 
 This contract does **not** yet claim:
-- peer-visible player death fanout
 - corpse state, knockdown animations, or corpse interaction
 - player respawn, revive menus, town return, or map transfer on death
 - broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy rejection, slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, and self-only `CHAT_TYPE_INFO` rejection at `0` HP
@@ -43,7 +43,7 @@ This contract does **not** yet claim:
 The repository now implements this narrow bootstrap contract:
 - if an immediate retaliation tick reaches the engaged owner's live HP floor at `0`, the accepted attack frames now append one self-only `GC DEAD(owner_vid)` before the existing self-only `GC TARGET(0, 0)` clear
 - if a delayed server-origin retaliation beat reaches that same `0`-HP floor, the queued pending server frames now append the same self-only `GC DEAD(owner_vid)` before the same self-only clear-target companion
-- the current slice stays self-only: no watcher/peer `GC DEAD(owner_vid)` fanout is claimed yet
+- when either of those retaliation beats reaches that same `0`-HP floor, currently visible peer sessions now also receive one queued `GC DEAD(owner_vid)` using the existing shared-world visibility rules
 - once this floor is reached, the existing delayed retaliation cadence stops and later owner-side combat `TARGET` / `ATTACK` attempts still fail closed as already frozen elsewhere
 - once this floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed with no self ack, no shared-world relocation update, and no transfer-trigger rebootstrap burst
 - once this floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed with no self chat/info delivery, no merchant preview open, and no warp transfer / rebootstrap burst
@@ -198,6 +198,19 @@ Why this is the current owned boundary:
 - after peer-facing chat / whisper denial, self-only `CHAT_TYPE_INFO` is the next remaining already-open chat ingress that could still create visible post-floor client output from a dead owner
 - keeping slash commands separate still preserves the smallest honest rule instead of widening the entire chat seam into a blanket post-floor command lock
 
+## First owned peer-visible player death fanout
+
+The current bootstrap player-death contract now also owns one narrow visible-peer death rule for that same selected live owner session:
+- once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, currently visible peer sessions receive one queued `GC DEAD(owner_vid)`
+- that fanout is visibility-gated through the existing shared-world rules: only sessions that can currently see the owner receive it
+- the owner-side transition stays unchanged and still uses the existing self-only `GC DEAD(owner_vid)` plus self-only `GC TARGET(0, 0)` clear ordering
+- this slice does **not** yet add a peer-facing target clear companion because the current owned combat-target model still belongs to bootstrap non-player targets, not player-vs-player selection
+- this slice also does **not** yet delete, respawn, or otherwise rebuild the dead player actor for peers
+
+Why this is the current owned boundary:
+- once the owner-side death signal and the first post-floor input denials were already owned, peer-visible `GC DEAD(owner_vid)` became the next smallest missing visible consequence for the same retaliation-owned death edge
+- reusing the current shared-world visibility fanout keeps the slice honest without pretending corpse state, respawn, or broader player-death choreography already exists
+
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
@@ -220,4 +233,5 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later owner-side slash `/use_item` attempts also fail closed before runtime/persisted inventory consumption or point restoration can run
 - once that same floor is reached, later owner-side peer-facing `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, peer delivery, or exact-name lookup can run
 - once that same floor is reached, later owner-side self-only `CHAT` requests with type `INFO` also fail closed before self info delivery can run
-- peer-visible player death, corpse state, respawn, and broader general post-death gameplay remain deliberately out of scope
+- once either retaliation beat reaches that same floor, currently visible peer sessions also receive one queued `GC DEAD(owner_vid)` while corpse state, respawn, and broader player-death choreography remain deliberately out of scope
+- peer-visible player death beyond that one visible `GC DEAD(owner_vid)` fanout, corpse state, respawn, and broader general post-death gameplay remain deliberately out of scope

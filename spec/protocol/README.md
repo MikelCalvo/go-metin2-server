@@ -44,7 +44,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `combat-training-dummy-bootstrap.md` — first frozen combat-preparation target contract around one visible `training_dummy` actor
 - `combat-normal-attack-bootstrap.md` — first owned `ATTACK` wire contract, selected-dummy normal-attack gate, deterministic bootstrap HP refresh loop, and clear-target companion on top of the visible `training_dummy` target slice
 - `non-player-death-respawn-bootstrap.md` — first owned zero-HP death, target clear, dead-state rejection, and respawn-reset contract for bootstrap non-player combatants
-- `player-death-bootstrap.md` — first owned self-only zero-HP death signal for the engaged player when practice-mob retaliation reaches the bootstrap HP floor, plus the first post-floor `MOVE` / `SYNC_POSITION`, peer-facing `CHAT` / `WHISPER`, and self-only `CHAT_TYPE_INFO` denial seams
+- `player-death-bootstrap.md` — first owned retaliation-driven player-death edge for engaged owners, including self `DEAD` + clear, one visibility-gated peer `DEAD(owner_vid)` fanout, and the first post-floor `MOVE` / `SYNC_POSITION`, peer-facing `CHAT` / `WHISPER`, and self-only `CHAT_TYPE_INFO` denial seams
 - `content-spawn-groups-bootstrap.md` — first authored `spawn_groups` content contract for loading stationary attackable non-player spawns through `combat_profile` + map placement
 - `npc-shop-preview-bootstrap.md` — browse-only merchant preview contract built on top of the existing `INTERACT` ingress and deterministic interaction-definition authoring
 - `npc-shop-catalog-bootstrap.md` — structured merchant catalog contract behind `shop_preview`, with stable catalog slots and template-backed entries
