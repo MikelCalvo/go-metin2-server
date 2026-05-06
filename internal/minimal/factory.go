@@ -1597,6 +1597,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if selected.ID == 0 || packet.Message == "" {
 						return gameflow.ChatResult{Accepted: false}
 					}
+					if selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						switch packet.Type {
+						case chatproto.ChatTypeTalking, chatproto.ChatTypeParty, chatproto.ChatTypeGuild, chatproto.ChatTypeShout:
+							return gameflow.ChatResult{Accepted: false}
+						}
+					}
 					liveSharedWorld := ownsLiveSharedWorldSession()
 					switch packet.Type {
 					case chatproto.ChatTypeTalking:
@@ -1643,6 +1649,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					selected := selectedPlayer.LiveCharacter()
 					if selected.ID == 0 || packet.Target == "" || packet.Message == "" {
+						return gameflow.WhisperResult{Accepted: false}
+					}
+					if selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 						return gameflow.WhisperResult{Accepted: false}
 					}
 					if packet.Target == selected.Name {
