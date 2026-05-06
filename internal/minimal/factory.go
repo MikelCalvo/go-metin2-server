@@ -1452,7 +1452,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 
 					if fromSlot, equipSlot, ok := slashEquipItemCommand(packet.Message); ok {
 						selectedPlayer, ok := currentSelectedPlayer()
-						if !ok {
+						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()
@@ -1486,7 +1486,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 
 					if equipSlot, toSlot, ok := slashUnequipItemCommand(packet.Message); ok {
 						selectedPlayer, ok := currentSelectedPlayer()
-						if !ok {
+						if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()

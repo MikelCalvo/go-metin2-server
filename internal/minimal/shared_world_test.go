@@ -11068,6 +11068,270 @@ func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterDelayedRetaliationReac
 	}
 }
 
+func TestGameSessionFlowPracticeMobEquipItemFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("EquipOwnerImmediate", 0x01030114, 0x02040114, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 12200, Count: 1, Slot: 8}}
+	owner.Equipment = []inventory.ItemInstance{}
+	issuePeerTicket(t, store, "equip-owner-immediate", 0x55555555, owner)
+	if err := accounts.Save(accountstore.Account{Login: "equip-owner-immediate", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed immediate zero-HP equip owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      12200,
+		Name:      "Practice Blade",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: "weapon",
+		EquipEffect: &itemcatalog.PointEffect{
+			PointType:  bootstrapPlayerPointType,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 10,
+		},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected equip/practice-mob runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000480, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for immediate zero-HP equip denial: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before immediate zero-HP equip denial, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "equip-owner-immediate", 0x55555555)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected equip/practice-mob owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before immediate zero-HP equip denial: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP equip denial, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before immediate zero-HP equip denial: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP equip denial, got %d", len(attackOut))
+	}
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no delayed retaliation frames after immediate zero-HP equip denial setup, got %d", len(queued))
+	}
+
+	beforePersisted, err := accounts.Load("equip-owner-immediate")
+	if err != nil {
+		t.Fatalf("load persisted immediate zero-HP equip owner account before denial: %v", err)
+	}
+	beforeEquipment, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected equipment snapshot before immediate zero-HP equip denial")
+	}
+	beforeInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot before immediate zero-HP equip denial")
+	}
+
+	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 weapon"})))
+	if err != nil {
+		t.Fatalf("unexpected slash equip error after immediate retaliation reached owner HP floor: %v", err)
+	}
+	if len(equipOut) != 0 {
+		t.Fatalf("expected /equip_item to fail closed once immediate retaliation reached owner HP floor, got %d frames", len(equipOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected immediate zero-HP equip denial not to queue frames, got %d", len(queued))
+	}
+
+	afterEquipment, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected equipment snapshot after immediate zero-HP equip denial")
+	}
+	afterInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after immediate zero-HP equip denial")
+	}
+	if !reflect.DeepEqual(afterEquipment, beforeEquipment) {
+		t.Fatalf("expected immediate zero-HP equip denial to keep runtime equipment unchanged, before=%+v after=%+v", beforeEquipment, afterEquipment)
+	}
+	if !reflect.DeepEqual(afterInventory, beforeInventory) {
+		t.Fatalf("expected immediate zero-HP equip denial to keep runtime inventory unchanged, before=%+v after=%+v", beforeInventory, afterInventory)
+	}
+	persisted, err := accounts.Load("equip-owner-immediate")
+	if err != nil {
+		t.Fatalf("load persisted immediate zero-HP equip owner account after denial: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) || !reflect.DeepEqual(persisted.Characters[0].Equipment, beforePersisted.Characters[0].Equipment) {
+		t.Fatalf("expected immediate zero-HP equip denial to keep persisted carried/equipped state unchanged, before inventory=%+v before equipment=%+v after inventory=%+v after equipment=%+v", beforePersisted.Characters[0].Inventory, beforePersisted.Characters[0].Equipment, persisted.Characters[0].Inventory, persisted.Characters[0].Equipment)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected immediate zero-HP equip denial to keep persisted points unchanged, before=%d after=%d", beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowPracticeMobUnequipItemFailsClosedAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("EquipOwnerDelayed", 0x01030115, 0x02040115, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	owner.Inventory = []inventory.ItemInstance{}
+	owner.Equipment = []inventory.ItemInstance{{ID: 2002, Vnum: 12200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	issuePeerTicket(t, store, "equip-owner-delayed", 0x56565656, owner)
+	if err := accounts.Save(accountstore.Account{Login: "equip-owner-delayed", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed delayed zero-HP equip owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      12200,
+		Name:      "Practice Blade",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: "weapon",
+		EquipEffect: &itemcatalog.PointEffect{
+			PointType:  bootstrapPlayerPointType,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 10,
+		},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected equip/practice-mob runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000490, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for delayed zero-HP equip denial: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before delayed zero-HP equip denial, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "equip-owner-delayed", 0x56565656)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected equip/practice-mob owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before delayed zero-HP equip denial: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before delayed zero-HP equip denial, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before delayed zero-HP equip denial: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected delayed retaliation setup attack to emit 2 frames before delayed zero-HP equip denial, got %d", len(attackOut))
+	}
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 3 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before delayed zero-HP equip denial, got %d", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change before delayed zero-HP equip denial: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before delayed zero-HP equip denial, got %+v", pointChange)
+	}
+
+	beforePersisted, err := accounts.Load("equip-owner-delayed")
+	if err != nil {
+		t.Fatalf("load persisted delayed zero-HP equip owner account before denial: %v", err)
+	}
+	beforeEquipment, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected equipment snapshot before delayed zero-HP equip denial")
+	}
+	beforeInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot before delayed zero-HP equip denial")
+	}
+
+	unequipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item weapon 4"})))
+	if err != nil {
+		t.Fatalf("unexpected slash unequip error after delayed retaliation reached owner HP floor: %v", err)
+	}
+	if len(unequipOut) != 0 {
+		t.Fatalf("expected /unequip_item to fail closed once delayed retaliation reached owner HP floor, got %d frames", len(unequipOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected delayed zero-HP equip denial not to queue frames, got %d", len(queued))
+	}
+
+	afterEquipment, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected equipment snapshot after delayed zero-HP equip denial")
+	}
+	afterInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after delayed zero-HP equip denial")
+	}
+	if !reflect.DeepEqual(afterEquipment, beforeEquipment) {
+		t.Fatalf("expected delayed zero-HP equip denial to keep runtime equipment unchanged, before=%+v after=%+v", beforeEquipment, afterEquipment)
+	}
+	if !reflect.DeepEqual(afterInventory, beforeInventory) {
+		t.Fatalf("expected delayed zero-HP equip denial to keep runtime inventory unchanged, before=%+v after=%+v", beforeInventory, afterInventory)
+	}
+	persisted, err := accounts.Load("equip-owner-delayed")
+	if err != nil {
+		t.Fatalf("load persisted delayed zero-HP equip owner account after denial: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) || !reflect.DeepEqual(persisted.Characters[0].Equipment, beforePersisted.Characters[0].Equipment) {
+		t.Fatalf("expected delayed zero-HP equip denial to keep persisted carried/equipped state unchanged, before inventory=%+v before equipment=%+v after inventory=%+v after equipment=%+v", beforePersisted.Characters[0].Inventory, beforePersisted.Characters[0].Equipment, persisted.Characters[0].Inventory, persisted.Characters[0].Equipment)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected delayed zero-HP equip denial to keep persisted points unchanged, before=%d after=%d", beforePersisted.Characters[0].Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameSessionFlowPracticeMobPeerChatFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
