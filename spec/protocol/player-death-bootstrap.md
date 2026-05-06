@@ -14,6 +14,7 @@ Those documents already freeze:
 - fail-closed owner-side `MOVE` / `SYNC_POSITION` rejection at that same retaliation floor before relocation or transfer-trigger rebootstrap can run
 - fail-closed owner-side static-actor `INTERACT` rejection at that same retaliation floor before talk/info, merchant preview, or warp-side effects can run
 - fail-closed owner-side merchant-buy attempts at that same retaliation floor before inventory / gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
+- fail-closed owner-side slash item-use attempts at that same retaliation floor before inventory consumption or point restoration can run through the local `/use_item` harness path
 
 What this document adds is the next narrower question:
 
@@ -32,7 +33,7 @@ This contract does **not** yet claim:
 - peer-visible player death fanout
 - corpse state, knockdown animations, or corpse interaction
 - player respawn, revive menus, town return, or map transfer on death
-- broader chat, item-use, or full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, and merchant-buy rejection at `0` HP
+- broader chat or full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy rejection, and slash item-use rejection at `0` HP
 - PvP death semantics or non-combat causes of player death
 
 ## Current implementation status
@@ -45,6 +46,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed with no self ack, no shared-world relocation update, and no transfer-trigger rebootstrap burst
 - once this floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed with no self chat/info delivery, no merchant preview open, and no warp transfer / rebootstrap burst
 - once this floor is reached, later owner-side merchant-buy attempts also fail closed with no item-set success burst and no inventory / gold mutation, even if a merchant preview had already been opened earlier in that session
+- once this floor is reached, later owner-side slash item-use attempts also fail closed with no point-change / item-set success burst and no runtime or persisted inventory / point mutation
 
 ## Why freeze this separately
 
@@ -125,7 +127,7 @@ The current bootstrap player-death contract now also owns one narrow relocation 
 This keeps the first post-floor expansion small and honest:
 - the repo already owns `TARGET` / `ATTACK` denial at the same floor
 - `MOVE` and `SYNC_POSITION` are the next most dangerous owner-authoritative packets because they can still mutate live world position or trigger transfer rebootstrap even after the owner has already died in the current bootstrap retaliation loop
-- broader chat, item use, and full action-lock policy still remain out of scope until later slices freeze them explicitly
+- broader chat and full action-lock policy still remain out of scope until later slices freeze them explicitly
 
 ## First owned post-floor static-actor interaction denial
 
@@ -136,7 +138,7 @@ The current bootstrap player-death contract now also owns one narrow authored-in
 
 This keeps the next post-floor expansion small and honest too:
 - `INTERACT` is the next dangerous client-origin packet after relocation because it can still mutate runtime position through warp or open follow-up merchant context even after the owner has already died in the current bootstrap retaliation loop
-- the repo still does **not** yet claim broader item-use, chat, whisper, or revive policy at `0` HP
+- the repo still does **not** yet claim broader chat, whisper, or revive policy at `0` HP
 
 ## First owned post-floor merchant-buy denial
 
@@ -150,7 +152,18 @@ The current bootstrap player-death contract now also owns one narrow post-previe
 
 This keeps the next post-floor expansion small and honest:
 - after static-actor `INTERACT` denial, merchant buy is the next dangerous already-open gameplay context because it can still mutate runtime and persisted inventory / currency even if the owner has already died in the current bootstrap retaliation loop
-- the repo still does **not** yet claim broader item-use, chat, whisper, or revive policy at `0` HP
+- the repo still does **not** yet claim broader chat, whisper, or revive policy at `0` HP
+
+## First owned post-floor slash item-use denial
+
+The current bootstrap player-death contract now also owns one narrow post-floor item-use rule for that same selected live owner session:
+- once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later slash `/use_item <slot>` attempts fail closed
+- the denial happens before inventory consumption, point restoration, or persistence mutation can run
+- the denial stays intentionally quiet in this slice: no synthetic failure info chat, no fallback revive packet, and no broader consumable UI contract change are claimed yet
+
+This keeps the next post-floor expansion small and honest too:
+- after merchant-buy denial, slash item use is the next dangerous already-open gameplay context because it can still mutate runtime and persisted inventory or restore points even if the owner has already died in the current bootstrap retaliation loop
+- the repo still does **not** yet claim broader chat, whisper, non-slash item packet, or revive policy at `0` HP
 
 ## Explicit non-goals
 
@@ -158,7 +171,7 @@ This slice does **not** yet freeze:
 - peer-visible `GC DEAD(owner_vid)` fanout
 - a player respawn timer or revive request packet
 - self-bootstrap or transfer choreography after death
-- chat denial, item-use denial, or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, and merchant-buy rejection seams
+- chat denial or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, and slash item-use rejection seams
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
 ## Success definition
@@ -171,4 +184,5 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed before self ack, shared-world relocation mutation, or transfer-trigger rebootstrap work can run
 - once that same floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed before talk/info delivery, merchant preview open, or warp transfer / rebootstrap work can run
 - once that same floor is reached, later owner-side merchant-buy attempts also fail closed before runtime/persisted inventory or gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
-- peer-visible player death, corpse state, respawn, item use, chat, and broader post-death gameplay remain deliberately out of scope
+- once that same floor is reached, later owner-side slash `/use_item` attempts also fail closed before runtime/persisted inventory consumption or point restoration can run
+- peer-visible player death, corpse state, respawn, chat, and broader post-death gameplay remain deliberately out of scope

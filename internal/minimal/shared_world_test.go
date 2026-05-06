@@ -10846,6 +10846,228 @@ func TestGameSessionFlowPracticeMobSlashShopBuyFailsClosedAfterDelayedRetaliatio
 	}
 }
 
+func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ItemOwnerImmediate", 0x01030112, 0x02040112, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 3, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{}
+	issuePeerTicket(t, store, "item-owner-immediate", 0x53535353, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-owner-immediate", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed immediate zero-HP item-use owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  7,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 25,
+			Message:    "consume:27002:+25",
+		},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-use/practice-mob runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000460, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for immediate zero-HP item-use denial: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before immediate zero-HP item-use denial, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-owner-immediate", 0x53535353)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected item-use/practice-mob owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before immediate zero-HP item-use denial: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP item-use denial, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before immediate zero-HP item-use denial: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP item-use denial, got %d", len(attackOut))
+	}
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no delayed retaliation frames after immediate zero-HP item-use denial setup, got %d", len(queued))
+	}
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected slash item-use error after immediate retaliation reached owner HP floor: %v", err)
+	}
+	if len(useOut) != 0 {
+		t.Fatalf("expected /use_item to fail closed once immediate retaliation reached owner HP floor, got %d frames", len(useOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected immediate zero-HP item-use denial not to queue frames, got %d", len(queued))
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after immediate zero-HP item-use denial")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != 1001 || inventorySnapshot.Inventory[0].Vnum != 27002 || inventorySnapshot.Inventory[0].Count != 3 || inventorySnapshot.Inventory[0].Slot != 5 {
+		t.Fatalf("expected immediate zero-HP item-use denial to keep runtime inventory unchanged, got %#v", inventorySnapshot.Inventory)
+	}
+	persisted, err := accounts.Load("item-owner-immediate")
+	if err != nil {
+		t.Fatalf("load persisted immediate zero-HP item-use owner account: %v", err)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected persisted immediate zero-HP item-use owner points to stay at 0, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 3, Slot: 5}}) {
+		t.Fatalf("expected persisted immediate zero-HP item-use owner inventory to stay unchanged, got %#v", persisted.Characters[0].Inventory)
+	}
+}
+
+func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ItemOwnerDelayed", 0x01030113, 0x02040113, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 3, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{}
+	issuePeerTicket(t, store, "item-owner-delayed", 0x54545454, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-owner-delayed", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed delayed zero-HP item-use owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  7,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 25,
+			Message:    "consume:27002:+25",
+		},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-use/practice-mob runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000470, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for delayed zero-HP item-use denial: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before delayed zero-HP item-use denial, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-owner-delayed", 0x54545454)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected item-use/practice-mob owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before delayed zero-HP item-use denial: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before delayed zero-HP item-use denial, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before delayed zero-HP item-use denial: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected delayed retaliation setup attack to emit 2 frames before delayed zero-HP item-use denial, got %d", len(attackOut))
+	}
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 3 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before delayed zero-HP item-use denial, got %d", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change before delayed zero-HP item-use denial: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before delayed zero-HP item-use denial, got %+v", pointChange)
+	}
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected slash item-use error after delayed retaliation reached owner HP floor: %v", err)
+	}
+	if len(useOut) != 0 {
+		t.Fatalf("expected /use_item to fail closed once delayed retaliation reached owner HP floor, got %d frames", len(useOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected delayed zero-HP item-use denial not to queue frames, got %d", len(queued))
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after delayed zero-HP item-use denial")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != 1001 || inventorySnapshot.Inventory[0].Vnum != 27002 || inventorySnapshot.Inventory[0].Count != 3 || inventorySnapshot.Inventory[0].Slot != 5 {
+		t.Fatalf("expected delayed zero-HP item-use denial to keep runtime inventory unchanged, got %#v", inventorySnapshot.Inventory)
+	}
+	persisted, err := accounts.Load("item-owner-delayed")
+	if err != nil {
+		t.Fatalf("load persisted delayed zero-HP item-use owner account: %v", err)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected persisted delayed zero-HP item-use owner points to stay at 0, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 3, Slot: 5}}) {
+		t.Fatalf("expected persisted delayed zero-HP item-use owner inventory to stay unchanged, got %#v", persisted.Characters[0].Inventory)
+	}
+}
+
 func TestGameSessionFlowPracticeMobImmediateRetaliationSendsSelfDeadBeforeTargetClearAtOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

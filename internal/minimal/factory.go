@@ -1532,7 +1532,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						if slot, ok := slashUseItemCommand(packet.Message); ok {
 							selectedPlayer, ok := currentSelectedPlayer()
-							if !ok {
+							if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 								return gameflow.ChatResult{Accepted: false}
 							}
 							previousSelected := selectedPlayer.LiveCharacter()
