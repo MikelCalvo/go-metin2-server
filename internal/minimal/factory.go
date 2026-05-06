@@ -1599,7 +1599,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					if selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 						switch packet.Type {
-						case chatproto.ChatTypeTalking, chatproto.ChatTypeParty, chatproto.ChatTypeGuild, chatproto.ChatTypeShout:
+						case chatproto.ChatTypeTalking, chatproto.ChatTypeParty, chatproto.ChatTypeGuild, chatproto.ChatTypeShout, chatproto.ChatTypeInfo:
 							return gameflow.ChatResult{Accepted: false}
 						}
 					}

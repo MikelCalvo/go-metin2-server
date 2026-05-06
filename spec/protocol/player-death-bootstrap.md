@@ -35,7 +35,7 @@ This contract does **not** yet claim:
 - peer-visible player death fanout
 - corpse state, knockdown animations, or corpse interaction
 - player respawn, revive menus, town return, or map transfer on death
-- broader self-only `CHAT_TYPE_INFO` or full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy rejection, slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, and peer-facing `CHAT` / `WHISPER` rejection at `0` HP
+- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy rejection, slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, and self-only `CHAT_TYPE_INFO` rejection at `0` HP
 - PvP death semantics or non-combat causes of player death
 
 ## Current implementation status
@@ -52,6 +52,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side slash `/inventory_move` attempts also fail closed with no item-set success burst and no runtime or persisted carried-slot mutation
 - once this floor is reached, later owner-side slash `/equip_item` and `/unequip_item` attempts also fail closed with no item-delete / item-set / point-change / character-update success burst and no runtime or persisted inventory / equipment / point mutation
 - once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name lookup can run
+- once this floor is reached, later owner-side self-only `CHAT` requests with `type = INFO` also fail closed before local `GC_CHAT` delivery can run
 - the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, while the already-owned `/shop_buy`, `/use_item`, `/inventory_move`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
 
 ## Why freeze this separately
@@ -144,7 +145,7 @@ The current bootstrap player-death contract now also owns one narrow authored-in
 
 This keeps the next post-floor expansion small and honest too:
 - `INTERACT` is the next dangerous client-origin packet after relocation because it can still mutate runtime position through warp or open follow-up merchant context even after the owner has already died in the current bootstrap retaliation loop
-- the repo still does **not** yet claim broader chat, whisper, or revive policy at `0` HP
+- the repo still does **not** yet claim revive policy at `0` HP or a broader general post-death action-lock contract
 
 ## First owned post-floor merchant-buy denial
 
@@ -158,7 +159,7 @@ The current bootstrap player-death contract now also owns one narrow post-previe
 
 This keeps the next post-floor expansion small and honest:
 - after static-actor `INTERACT` denial, merchant buy is the next dangerous already-open gameplay context because it can still mutate runtime and persisted inventory / currency even if the owner has already died in the current bootstrap retaliation loop
-- the repo still does **not** yet claim broader chat, whisper, or revive policy at `0` HP
+- the repo still does **not** yet claim revive policy at `0` HP or a broader general post-death action-lock contract
 
 ## First owned post-floor slash item-use denial
 
@@ -169,7 +170,7 @@ The current bootstrap player-death contract now also owns one narrow post-floor 
 
 This keeps the next post-floor expansion small and honest too:
 - after merchant-buy denial, slash item use is the next dangerous already-open gameplay context because it can still mutate runtime and persisted inventory or restore points even if the owner has already died in the current bootstrap retaliation loop
-- the repo still does **not** yet claim broader chat, whisper, non-slash item packet, or revive policy at `0` HP
+- the repo still does **not** yet claim non-slash item packet handling, revive policy, or a broader general post-death action-lock contract at `0` HP
 
 ## First owned post-floor peer-facing chat / whisper denial
 
@@ -179,11 +180,23 @@ The current bootstrap player-death contract now also owns one narrow peer-facing
 - those denials happen before sender echo, queued peer fanout, or exact-name target lookup can run
 - the denial stays intentionally quiet in this slice: no self `GC_CHAT` echo, no queued peer chat delivery, no queued target whisper delivery, and no synthetic `WHISPER_TYPE_NOT_EXIST` fallback
 - existing slash-command seams stay separate: `/quit`, `/logout`, `/phase_select`, and the already-owned `/shop_buy` / `/use_item` paths keep their current independent behavior instead of being widened by this follow-up implicitly
-- broader client-origin `CHAT_TYPE_INFO`, revive, mute/block, or general full action-lock policy still remain out of scope until a later slice writes those contracts down explicitly
+- broader revive, mute/block, or general full action-lock policy still remain out of scope until a later slice writes those contracts down explicitly
 
 Why this is the current owned boundary:
 - after combat, relocation, interaction, merchant-buy, and slash item-use denial were already owned at the same `0`-HP floor, peer-facing chat and whisper were the next dangerous already-open player-origin surfaces because they could still fan out to other live sessions from a dead owner
 - keeping slash commands separate preserves the smallest honest rule instead of widening the whole chat seam into a blanket post-floor command lock
+
+## First owned post-floor self-only info-chat denial
+
+The current bootstrap player-death contract now also owns one narrow self-only communication rule for that same selected live owner session:
+- once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later owner-side `CHAT` requests with `type = CHAT_TYPE_INFO` fail closed
+- that denial happens before self `GC_CHAT` info delivery can run
+- the denial stays intentionally quiet in this slice: no self info echo, no fallback death/revive companion, and no peer-facing packet side effect are claimed
+- existing slash-command seams still stay separate: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior instead of being widened by this follow-up implicitly
+
+Why this is the current owned boundary:
+- after peer-facing chat / whisper denial, self-only `CHAT_TYPE_INFO` is the next remaining already-open chat ingress that could still create visible post-floor client output from a dead owner
+- keeping slash commands separate still preserves the smallest honest rule instead of widening the entire chat seam into a blanket post-floor command lock
 
 ## Explicit non-goals
 
@@ -191,7 +204,7 @@ This slice does **not** yet freeze:
 - peer-visible `GC DEAD(owner_vid)` fanout
 - a player respawn timer or revive request packet
 - self-bootstrap or transfer choreography after death
-- broader self-only `CHAT_TYPE_INFO` or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, slash item-use, and peer-facing chat / whisper rejection seams above
+- broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, slash item-use, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
 ## Success definition
@@ -206,4 +219,5 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later owner-side merchant-buy attempts also fail closed before runtime/persisted inventory or gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
 - once that same floor is reached, later owner-side slash `/use_item` attempts also fail closed before runtime/persisted inventory consumption or point restoration can run
 - once that same floor is reached, later owner-side peer-facing `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, peer delivery, or exact-name lookup can run
-- peer-visible player death, corpse state, respawn, broader self-only `CHAT_TYPE_INFO`, and general post-death gameplay remain deliberately out of scope
+- once that same floor is reached, later owner-side self-only `CHAT` requests with type `INFO` also fail closed before self info delivery can run
+- peer-visible player death, corpse state, respawn, and broader general post-death gameplay remain deliberately out of scope

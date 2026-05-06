@@ -4,6 +4,7 @@ This document freezes the current bootstrap behavior for `CHAT_TYPE_INFO` and th
 
 These chat types commonly behave as server-originated system messages in the compatibility target.
 The current bootstrap runtime keeps `CHAT_TYPE_INFO` exposed through the existing `CHAT` request path for deterministic testing, while client-originated `CHAT_TYPE_NOTICE` remains rejected.
+The later zero-HP owner rules in `player-death-bootstrap.md` now narrow that `INFO` acceptance further: once practice-mob retaliation has already driven the engaged owner's live bootstrap HP to `0`, client-originated `CHAT_TYPE_INFO` also fails closed there.
 The actual server-originated notice path now lives in `server-notice-broadcast.md`.
 
 ## Covered packets
@@ -16,7 +17,7 @@ The actual server-originated notice path now lives in `server-notice-broadcast.m
 
 ### `CHAT_TYPE_INFO`
 
-Current runtime behavior:
+Current runtime behavior outside that later zero-HP death-floor carve-out:
 
 1. player A is connected in `GAME`
 2. player A sends `CHAT` with `type = CHAT_TYPE_INFO`
@@ -27,7 +28,9 @@ Current runtime behavior:
    - `message = original message`
 4. no peer fanout occurs
 
-This freezes `CHAT_TYPE_INFO` as a bootstrap system/self channel.
+If the same selected owner session has already reached the practice-mob retaliation `0`-HP floor documented in `player-death-bootstrap.md`, that same client-originated `CHAT_TYPE_INFO` request now fails closed instead with no self `GC_CHAT` delivery.
+
+This freezes `CHAT_TYPE_INFO` as a bootstrap system/self channel until a later zero-HP owner rule narrows it.
 
 ### `CHAT_TYPE_NOTICE`
 
@@ -50,7 +53,7 @@ It matches the current bootstrap goal of exercising system-message rendering pat
 ## Current scope
 
 This slice freezes:
-- `CHAT_TYPE_INFO` acceptance in `GAME`
+- `CHAT_TYPE_INFO` acceptance in `GAME` while the selected owner has not already been driven to the practice-mob retaliation `0`-HP floor documented later in `player-death-bootstrap.md`
 - client-originated `CHAT_TYPE_NOTICE` rejection in `GAME`
 - `vid = 0` for bootstrap `INFO` system-message delivery
 - raw message passthrough with no `Name : ` prefix
