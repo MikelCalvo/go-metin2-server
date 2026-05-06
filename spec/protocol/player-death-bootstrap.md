@@ -165,13 +165,27 @@ This keeps the next post-floor expansion small and honest too:
 - after merchant-buy denial, slash item use is the next dangerous already-open gameplay context because it can still mutate runtime and persisted inventory or restore points even if the owner has already died in the current bootstrap retaliation loop
 - the repo still does **not** yet claim broader chat, whisper, non-slash item packet, or revive policy at `0` HP
 
+## Next frozen post-floor peer-facing chat denial contract
+
+The next bootstrap player-death follow-up is now frozen narrowly, but it is **not** implemented in the current repo state yet:
+- once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later owner-side `CHAT` requests with `type = CHAT_TYPE_TALKING`, `CHAT_TYPE_PARTY`, `CHAT_TYPE_GUILD`, or `CHAT_TYPE_SHOUT` should fail closed
+- once that same floor has been reached, later owner-side `WHISPER` requests should fail closed too
+- those denials should happen before sender echo, queued peer fanout, or exact-name target lookup can run
+- the denial should stay intentionally quiet in this slice: no self `GC_CHAT` echo, no queued peer chat delivery, no queued target whisper delivery, and no synthetic `WHISPER_TYPE_NOT_EXIST` fallback
+- existing slash-command seams stay separate: `/quit`, `/logout`, `/phase_select`, and the already-owned `/shop_buy` / `/use_item` failure paths should keep their current independent behavior instead of being widened by this follow-up implicitly
+- broader client-origin `CHAT_TYPE_INFO`, revive, mute/block, or general full action-lock policy should still remain out of scope until a later slice writes those contracts down explicitly
+
+Why this is the next honest follow-up:
+- after combat, relocation, interaction, merchant-buy, and slash item-use denial are already owned at the same `0`-HP floor, peer-facing chat and whisper are the next dangerous already-open player-origin surfaces because they can still fan out to other live sessions from a dead owner
+- freezing the rule first keeps the implementation slice honest about audience, ordering, and the lack of synthetic whisper-not-found replies
+
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
 - peer-visible `GC DEAD(owner_vid)` fanout
 - a player respawn timer or revive request packet
 - self-bootstrap or transfer choreography after death
-- chat denial or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, and slash item-use rejection seams
+- chat denial or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, and slash item-use rejection seams plus the next frozen peer-facing chat / whisper follow-up above
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
 ## Success definition
