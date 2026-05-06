@@ -1665,6 +1665,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ownsLiveSharedWorldSession() {
 						return gameflow.InteractionResult{Accepted: false}
 					}
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						return gameflow.InteractionResult{Accepted: false}
+					}
 					if interactionOnCooldown(packet.TargetVID) {
 						return gameflow.InteractionResult{Accepted: true}
 					}
