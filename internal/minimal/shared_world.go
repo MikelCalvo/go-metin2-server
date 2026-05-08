@@ -317,6 +317,19 @@ func (r *sharedWorldRegistry) StaticActorCombatEngagedBySubject(entityID uint64,
 	return r.staticActorCombatEngagedBy[entityID] == subjectID
 }
 
+func (r *sharedWorldRegistry) ClearStaticActorCombatEngagement(entityID uint64, subjectID uint64) bool {
+	if r == nil || entityID == 0 || subjectID == 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.staticActorCombatEngagedBy[entityID] != subjectID {
+		return false
+	}
+	delete(r.staticActorCombatEngagedBy, entityID)
+	return true
+}
+
 func (r *sharedWorldRegistry) clearStaticActorCombatEngagementsBySubjectLocked(subjectID uint64) {
 	if r == nil || subjectID == 0 || len(r.staticActorCombatEngagedBy) == 0 {
 		return

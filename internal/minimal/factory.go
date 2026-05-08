@@ -1160,6 +1160,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			var stablePeerFrames [][]byte
 			if clearTarget {
 				clearActiveCombatTarget()
+				sharedWorld.ClearStaticActorCombatEngagement(resolution.Actor.EntityID, sharedWorldID)
 				deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID})
 				frames = append(frames, deadRaw)
 				frames = append(frames, combatproto.EncodeServerClearTarget())
@@ -1827,6 +1828,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					var stablePeerFrames [][]byte
 					if clearTarget {
 						clearActiveCombatTarget()
+						sharedWorld.ClearStaticActorCombatEngagement(resolution.Actor.EntityID, sharedWorldID)
 						deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID})
 						frames = append(frames, deadRaw)
 						frames = append(frames, combatproto.EncodeServerClearTarget())
