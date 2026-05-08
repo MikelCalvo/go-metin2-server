@@ -375,6 +375,13 @@ func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
 	sortEquipmentItems(r.liveEquipment)
 }
 
+func (r *Runtime) SetPersistedSnapshot(persisted loginticket.Character) {
+	if r == nil {
+		return
+	}
+	r.persisted = normalizeCharacter(persisted)
+}
+
 func (r *Runtime) SessionLink() SessionLink {
 	if r == nil {
 		return SessionLink{}

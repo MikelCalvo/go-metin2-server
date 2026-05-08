@@ -10181,6 +10181,261 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPointLossStaysRuntimeOnlyAc
 	}
 }
 
+func TestGameSessionFlowPracticeMobRetaliationPointLossStaysRuntimeOnlyAcrossPersistedMove(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 3
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed owner account before persisted-move retaliation test: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000460, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	factory := runtime.SessionFactory()
+	flow, enterOut := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before persisted-move retaliation test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before persisted-move retaliation test, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before persisted-move retaliation test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before persisted-move retaliation test, got %d frames", len(attackOut))
+	}
+	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before persisted-move retaliation test: %v", err)
+	}
+	if immediatePointChange.Value != 2 {
+		t.Fatalf("expected immediate retaliation to drop live owner points to 2 before persisted move, got %+v", immediatePointChange)
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1110, Y: 2110, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move error after immediate retaliation: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move-ack frame after persisted move, got %d", len(moveOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep the live owner at runtime-only points after persisted move, got %d queued frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change after persisted move: %v", err)
+	}
+	if delayedPointChange.Value != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points at runtime-only value 1 after persisted move, got %+v", delayedPointChange)
+	}
+
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account after persisted-move retaliation test: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted owner after persisted-move retaliation test, got %+v", persisted)
+	}
+	if persisted.Characters[0].X != 1110 || persisted.Characters[0].Y != 2110 {
+		t.Fatalf("expected persisted move to save updated coordinates (1110,2110), got %+v", persisted.Characters[0])
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected persisted move to keep pre-retaliation points[%d] value %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	closeSessionFlow(t, flow)
+	issuePeerTicket(t, store, "peer-one", 0x22222222, owner)
+	reconnectFlow, reconnectEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x22222222)
+	defer closeSessionFlow(t, reconnectFlow)
+	if len(reconnectEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames after persisted move reconnect, got %d", len(reconnectEnter))
+	}
+	reconnectPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reconnectEnter[4]))
+	if err != nil {
+		t.Fatalf("decode reconnect bootstrap point-change after persisted move: %v", err)
+	}
+	if reconnectPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected reconnect bootstrap after persisted move to rebuild pre-retaliation points[%d] value %d, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	}
+}
+
+func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnlyAcrossTransferRebootstrap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed owner account before transfer rebootstrap retaliation test: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000470, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	factory := runtime.SessionFactory()
+	flow, enterOut := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before transfer rebootstrap retaliation test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before transfer rebootstrap retaliation test, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before transfer rebootstrap retaliation test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before transfer rebootstrap retaliation test, got %d frames", len(attackOut))
+	}
+	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before transfer rebootstrap retaliation test: %v", err)
+	}
+	if immediatePointChange.Value != 1 {
+		t.Fatalf("expected immediate retaliation to drop live owner points to 1 before transfer rebootstrap, got %+v", immediatePointChange)
+	}
+
+	transferOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222326})))
+	if err != nil {
+		t.Fatalf("unexpected transfer move error after immediate retaliation: %v", err)
+	}
+	if len(transferOut) == 0 {
+		t.Fatal("expected transfer rebootstrap frames after immediate retaliation")
+	}
+	foundTransferPointChange := false
+	for _, raw := range transferOut {
+		decoded, decodeErr := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw))
+		if decodeErr != nil {
+			continue
+		}
+		if decoded.VID != owner.VID {
+			continue
+		}
+		foundTransferPointChange = true
+		if decoded.Value != 1 {
+			t.Fatalf("expected transfer rebootstrap self point-change to keep live owner points at runtime-only value 1, got %+v", decoded)
+		}
+		break
+	}
+	if !foundTransferPointChange {
+		t.Fatal("expected transfer rebootstrap to include a self bootstrap point-change frame for the owner")
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected transfer rebootstrap to clear delayed retaliation cadence after immediate retaliation, got %d queued frames", len(queued))
+	}
+
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account after transfer rebootstrap retaliation test: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted owner after transfer rebootstrap retaliation test, got %+v", persisted)
+	}
+	if persisted.Characters[0].MapIndex != 42 || persisted.Characters[0].X != 1700 || persisted.Characters[0].Y != 2800 {
+		t.Fatalf("expected transfer rebootstrap to persist destination coordinates, got %+v", persisted.Characters[0])
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected transfer rebootstrap to keep pre-retaliation points[%d] value %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	closeSessionFlow(t, flow)
+	issuePeerTicket(t, store, "peer-one", 0x22222222, owner)
+	reconnectFlow, reconnectEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x22222222)
+	defer closeSessionFlow(t, reconnectFlow)
+	if len(reconnectEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames after transfer rebootstrap reconnect on destination map, got %d", len(reconnectEnter))
+	}
+	reconnectPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reconnectEnter[4]))
+	if err != nil {
+		t.Fatalf("decode reconnect bootstrap point-change after transfer rebootstrap: %v", err)
+	}
+	if reconnectPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected reconnect bootstrap after transfer rebootstrap to rebuild pre-retaliation points[%d] value %d, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	}
+}
+
 func TestGameSessionFlowPracticeMobAttackFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

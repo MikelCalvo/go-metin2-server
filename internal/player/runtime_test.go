@@ -74,6 +74,44 @@ func TestRuntimeCanRefreshPersistedAndLiveSnapshotTogether(t *testing.T) {
 	}
 }
 
+func TestRuntimeCanRefreshPersistedSnapshotWithoutClobberingLiveState(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:       0x01030102,
+		VID:      0x02040102,
+		Name:     "PeerTwo",
+		MapIndex: 1,
+		X:        1300,
+		Y:        2300,
+		Empire:   2,
+		GuildID:  15,
+		Points: [255]int32{
+			1: 700,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	runtime.SetLivePosition(42, 1700, 2800)
+	if _, ok := runtime.ApplyPointDelta(1, 1, -50); !ok {
+		t.Fatal("expected live point delta to succeed before persisted-only refresh")
+	}
+
+	updated := persisted
+	updated.MapIndex = 43
+	updated.X = 1900
+	updated.Y = 3100
+	runtime.SetPersistedSnapshot(updated)
+
+	if gotPersisted := runtime.PersistedSnapshot(); gotPersisted.MapIndex != 43 || gotPersisted.X != 1900 || gotPersisted.Y != 3100 {
+		t.Fatalf("expected persisted snapshot to refresh without clobbering live state, got %+v", gotPersisted)
+	}
+	gotLive := runtime.LiveCharacter()
+	if gotLive.MapIndex != 42 || gotLive.X != 1700 || gotLive.Y != 2800 {
+		t.Fatalf("expected live position to stay unchanged after persisted-only refresh, got %+v", gotLive)
+	}
+	if gotLive.Points[1] != 650 {
+		t.Fatalf("expected live points[1] to stay at 650 after persisted-only refresh, got %d", gotLive.Points[1])
+	}
+}
+
 func TestNilRuntimeReturnsZeroLiveCharacter(t *testing.T) {
 	var runtime *Runtime
 	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, loginticket.Character{}) {

@@ -977,25 +977,29 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			selected := selectedPlayer.PersistedSnapshot()
 			selectedLink := selectedPlayer.SessionLink()
-			buildUpdatedSelection := func(updated loginticket.Character) ([]loginticket.Character, loginticket.Character, bool) {
-				current := selectedPlayer.LiveCharacter()
-				if current.ID == 0 {
-					return nil, loginticket.Character{}, false
+			buildUpdatedSelection := func(updated loginticket.Character) ([]loginticket.Character, loginticket.Character, loginticket.Character, bool) {
+				updatedPersisted := selectedPlayer.PersistedSnapshot()
+				updatedLive := selectedPlayer.LiveCharacter()
+				if updatedPersisted.ID == 0 || updatedLive.ID == 0 {
+					return nil, loginticket.Character{}, loginticket.Character{}, false
 				}
-				current.MapIndex = updated.MapIndex
-				current.X = updated.X
-				current.Y = updated.Y
-				updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedLink.CharacterIndex, current)
+				updatedPersisted.MapIndex = updated.MapIndex
+				updatedPersisted.X = updated.X
+				updatedPersisted.Y = updated.Y
+				updatedLive.MapIndex = updated.MapIndex
+				updatedLive.X = updated.X
+				updatedLive.Y = updated.Y
+				updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedLink.CharacterIndex, updatedPersisted)
 				if !ok {
-					return nil, loginticket.Character{}, false
+					return nil, loginticket.Character{}, loginticket.Character{}, false
 				}
-				return updatedCharacters, current, true
+				return updatedCharacters, updatedPersisted, updatedLive, true
 			}
 			var transferResult RelocationPreview
 			var transferFrames [][]byte
 			transferFlow := warp.NewFlow(warp.Config{
 				Persist: func(updated loginticket.Character) bool {
-					updatedCharacters, _, ok := buildUpdatedSelection(updated)
+					updatedCharacters, _, _, ok := buildUpdatedSelection(updated)
 					if !ok {
 						return false
 					}
@@ -1005,30 +1009,31 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					return saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
 				},
 				Commit: func(updated loginticket.Character) (warp.Result, bool) {
-					updatedCharacters, updatedSelected, ok := buildUpdatedSelection(updated)
+					updatedCharacters, updatedPersisted, updatedLive, ok := buildUpdatedSelection(updated)
 					if !ok {
 						return warp.Result{}, false
 					}
 					if rebootstrap {
-						bootstrapFrames, err := worldentry.BuildBootstrapFrames(updatedSelected)
+						bootstrapFrames, err := worldentry.BuildBootstrapFrames(updatedLive)
 						if err != nil {
 							return warp.Result{}, false
 						}
-						transferPreview, originFrames, ok := sharedWorld.TransferWithOriginFrames(sharedWorldID, updatedSelected)
+						transferPreview, originFrames, ok := sharedWorld.TransferWithOriginFrames(sharedWorldID, updatedLive)
 						if !ok {
 							return warp.Result{}, false
 						}
 						transferResult = transferPreview
 						transferFrames = append(append([][]byte(nil), bootstrapFrames...), originFrames...)
 					} else {
-						transferPreview, ok := sharedWorld.Transfer(sharedWorldID, updatedSelected)
+						transferPreview, ok := sharedWorld.Transfer(sharedWorldID, updatedLive)
 						if !ok {
 							return warp.Result{}, false
 						}
 						transferResult = transferPreview
 					}
 					sessionTicket.Characters = updatedCharacters
-					selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
+					selectedPlayer.SetPersistedSnapshot(updatedPersisted)
+					selectedPlayer.SetLivePosition(updatedLive.MapIndex, updatedLive.X, updatedLive.Y)
 					return warp.Result{Applied: true, Updated: selectedPlayer.LiveCharacter()}, true
 				},
 			})
@@ -1050,18 +1055,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				selectedPlayer.SetLivePosition(selected.MapIndex, x, y)
 				return selectedPlayer.LiveCharacter(), true
 			}
-			updatedSelected := selectedPlayer.LiveCharacter()
-			if updatedSelected.ID == 0 {
+			updatedPersisted := selectedPlayer.PersistedSnapshot()
+			updatedLive := selectedPlayer.LiveCharacter()
+			if updatedPersisted.ID == 0 || updatedLive.ID == 0 {
 				return loginticket.Character{}, false
 			}
-			updatedSelected.X = x
-			updatedSelected.Y = y
-			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updatedSelected)
+			updatedPersisted.X = x
+			updatedPersisted.Y = y
+			updatedLive.X = x
+			updatedLive.Y = y
+			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updatedPersisted)
 			if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
 				return loginticket.Character{}, false
 			}
 			sessionTicket.Characters = updatedCharacters
-			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
+			selectedPlayer.SetPersistedSnapshot(updatedPersisted)
+			selectedPlayer.SetLivePosition(updatedLive.MapIndex, x, y)
 			return selectedPlayer.LiveCharacter(), true
 		}
 		commitSelectedItemMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
