@@ -10,6 +10,7 @@ It sits on top of:
 Those documents already freeze:
 - the selected player's current self-only `GC PLAYER_POINT_CHANGE` carrier
 - the first hostile content-loaded practice-mob retaliation loop, including immediate hit-triggered point loss and the delayed server-origin cadence
+- that same retaliation point-loss is currently live-runtime only for the engaged selected session, so it does not yet persist across fresh `/phase_select` re-entry or reconnect
 - fail-closed owner-side `TARGET` / `ATTACK` rejection once that retaliation floor has already reached `0` HP
 - fail-closed owner-side `MOVE` / `SYNC_POSITION` rejection at that same retaliation floor before relocation or transfer-trigger rebootstrap can run
 - fail-closed owner-side static-actor `INTERACT` rejection at that same retaliation floor before talk/info, merchant preview, or warp-side effects can run
@@ -44,6 +45,7 @@ The repository now implements this narrow bootstrap contract:
 - if an immediate retaliation tick reaches the engaged owner's live HP floor at `0`, the accepted attack frames now append one self-only `GC DEAD(owner_vid)` before the existing self-only `GC TARGET(0, 0)` clear
 - if a delayed server-origin retaliation beat reaches that same `0`-HP floor, the queued pending server frames now append the same self-only `GC DEAD(owner_vid)` before the same self-only clear-target companion
 - when either of those retaliation beats reaches that same `0`-HP floor, currently visible peer sessions now also receive one queued `GC DEAD(owner_vid)` using the existing shared-world visibility rules
+- those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session: they do **not** write the persisted account snapshot, so a fresh `/phase_select` re-entry or reconnect still rebuilds from the pre-retaliation point value until broader player-death persistence or respawn semantics are owned
 - once this floor is reached, the existing delayed retaliation cadence stops and later owner-side combat `TARGET` / `ATTACK` attempts still fail closed as already frozen elsewhere
 - once this floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed with no self ack, no shared-world relocation update, and no transfer-trigger rebootstrap burst
 - once this floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed with no self chat/info delivery, no merchant preview open, and no warp transfer / rebootstrap burst
@@ -238,6 +240,7 @@ After this document lands, the repository should be able to say:
 - owner-side retaliation-driven `0` HP is no longer only an implicit point floor; the repo now owns one visible zero-HP death signal family for that edge
 - the current bootstrap player-death packet is `GC DEAD(owner_vid)` with header `0x0217`
 - that owner death signal is emitted on both immediate and delayed retaliation beats when they drive the engaged owner to `0` HP
+- those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session today, so fresh `/phase_select` re-entry or reconnect still rebuild from the pre-retaliation persisted point value until broader player-death persistence / respawn semantics are owned
 - the current ordered owner-side floor transition is `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`
 - once that same floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed before self ack, shared-world relocation mutation, or transfer-trigger rebootstrap work can run
 - once that same floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed before talk/info delivery, merchant preview open, or warp transfer / rebootstrap work can run

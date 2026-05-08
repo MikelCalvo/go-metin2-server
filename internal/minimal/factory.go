@@ -1087,6 +1087,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return frames, true
 		}
+		commitSelectedRuntimeOnlyMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
+			if selectedPlayer == nil {
+				return nil, false
+			}
+			updatedSelected := selectedPlayer.LiveCharacter()
+			if updatedSelected.ID == 0 {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			refreshLiveCharacterRegistration()
+			if ownsLiveSharedWorldSession() {
+				sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previousSelected, updatedSelected, stablePeerFrames)
+			}
+			return frames, true
+		}
 		commitSelectedItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
 			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 			if !ok {
@@ -1149,7 +1165,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				frames = append(frames, combatproto.EncodeServerClearTarget())
 				stablePeerFrames = [][]byte{deadRaw}
 			}
-			frames, ok = commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+			frames, ok = commitSelectedRuntimeOnlyMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 			if !ok {
 				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
@@ -1816,7 +1832,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						frames = append(frames, combatproto.EncodeServerClearTarget())
 						stablePeerFrames = [][]byte{deadRaw}
 					}
-					persistedFrames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+					persistedFrames, ok := commitSelectedRuntimeOnlyMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 					if !ok {
 						return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 					}
