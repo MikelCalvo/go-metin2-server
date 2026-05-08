@@ -182,12 +182,24 @@ Failure behavior in this bootstrap contract:
 - the runtime must preserve the pre-request selected-character state
 - insufficient-gold and no-valid-placement failures now emit one self-only placeholder `CHAT_TYPE_INFO` delivery (`"Not enough gold."` / `"Inventory full."`) on the owned bootstrap buy path while richer `GC::SHOP` failure choreography remains unfrozen
 
+### Next frozen packet-path merchant error seam
+
+Before the next runtime RED/GREEN begins, the narrowest honest merchant-window failure contract is now frozen too:
+- packet `SHOP BUY` insufficient-gold failure should answer with one bare `GC::SHOP NOT_ENOUGH_MONEY`
+- packet `SHOP BUY` no-valid-placement failure should answer with one bare `GC::SHOP INVENTORY_FULL`
+- both merchant error frames should use only the common `SHOP (0x0810)` envelope plus the selected error subheader, with no extra payload bytes
+
+This freeze is intentionally narrower than the whole failure surface:
+- it applies only to packet `SHOP BUY` while an active merchant session still exists
+- it does not yet freeze `INVALID_POS`, `SOLDOUT`, `NOT_ENOUGH_MONEY_EX`, or any success-side `OK` choreography
+- it does not yet require the local `/shop_buy <slot>` debug harness to stop using the current placeholder info-chat failure messages
+
 Compatibility-oriented server `SHOP` failure subheaders are now acknowledged as likely relevant, especially:
 - `NOT_ENOUGH_MONEY`
 - `INVENTORY_FULL`
 - `INVALID_POS`
 
-However, the exact mapping between server-side failure causes and final client-visible `GC::SHOP` responses remains capture-gated.
+After the freeze above, the exact mapping between other server-side failure causes and final client-visible `GC::SHOP` responses still remains capture-gated.
 
 The first repository-owned carried placement contract now lives beside this document in `item-stack-bootstrap.md`:
 - validate merchant grants against template `stackable` / `max_count`
@@ -203,7 +215,7 @@ The following are still intentionally unknown and must be captured or pinned by 
 - the final semantic meaning of the first trailing byte in client `SHOP BUY`
 - the exact payload layout of the planned `GC::SHOP START` open response
 - whether later compatibility work must switch from the currently planned `GC::SHOP START` path to `GC::SHOP START_EX`
-- the exact minimal `GC::SHOP` success/failure sequence the client expects to keep its merchant UI stable
+- the exact minimal `GC::SHOP` success sequence the client expects to keep its merchant UI stable once the two frozen bare packet-path error frames are in place
 - whether successful purchase requires additional merchant-side item/update frames beyond the authoritative state mutation
 - whether explicit `GC::SHOP END` is mandatory on every close path while the socket remains alive in `GAME`
 - whether multi-tab addressing changes the future meaning of `catalog_slot`
