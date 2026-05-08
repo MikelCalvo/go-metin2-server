@@ -69,18 +69,20 @@ This document freezes one smaller visible step first:
 - add one self-only `GC DEAD(owner_vid)` to mark the zero-HP edge
 - keep broader player death / respawn semantics out of scope until later slices can own them honestly
 
-## First owned owner-side zero-HP death signal
+## First owned zero-HP death signal family
 
 The first owned player-death signal is now frozen as:
 - packet family: server -> client `DEAD`
 - header: `0x0217`
 - payload: little-endian `uint32 vid`
-- audience: self-only, limited to the engaged owner session whose retaliation beat reached `0` HP
+- audience:
+  - self-only for the engaged owner session whose retaliation beat reached `0` HP
+  - visibility-gated queued peers for the same owner `vid` when that same retaliation beat reaches `0` HP
 
 The current bootstrap meaning is intentionally narrow:
 - the selected player's live bootstrap HP has just reached `0`
 - this is the owner's own death edge inside the currently owned practice-mob retaliation loop
-- the repo still does **not** yet claim peer-visible player death, corpse gameplay, or respawn choreography from this packet alone
+- the repo still does **not** yet claim corpse gameplay, respawn choreography, or broader player-death lifecycle ownership from this packet family alone
 
 ## Ordered frame rule at the floor
 
@@ -95,20 +97,19 @@ That ordering applies in both current bootstrap owners:
 
 The target-clear companion remains important even after `GC DEAD(owner_vid)` because the current slice still wants the stale engaged practice-mob target removed deterministically on the same edge.
 
-## Why self-only only
+## Why this stays narrow
 
-The smallest honest slice stops at self-only death visibility.
+The current slice widens visibility only as far as the same retaliation-owned death edge needs.
 
 The project does **not** yet own enough player-death runtime to claim all of these together:
-- peer-visible player death
 - player corpse lifetime
 - player respawn or revive
 - broader chat / interaction / merchant / input policy beyond the now-owned combat and relocation rejection seams at `0` HP
 
-So this first owner-side death signal stays narrow:
+So this first death signal family stays narrow:
 - the engaged owner learns about the zero-HP edge immediately
 - the stale target is cleared immediately
-- peers still do not receive a new player-death fanout yet
+- currently visible peers receive only one queued `GC DEAD(owner_vid)` and no broader teardown/rebuild choreography
 - later slices may widen audience and lifecycle only after those contracts are written down explicitly
 
 ## Relationship to the existing retaliation floor gate
@@ -214,7 +215,6 @@ Why this is the current owned boundary:
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- peer-visible `GC DEAD(owner_vid)` fanout
 - a player respawn timer or revive request packet
 - self-bootstrap or transfer choreography after death
 - broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, slash item-use, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
@@ -223,9 +223,9 @@ This slice does **not** yet freeze:
 ## Success definition
 
 After this document lands, the repository should be able to say:
-- owner-side retaliation-driven `0` HP is no longer only an implicit point floor; the repo now owns one visible self-only zero-HP death signal for that edge
+- owner-side retaliation-driven `0` HP is no longer only an implicit point floor; the repo now owns one visible zero-HP death signal family for that edge
 - the current bootstrap player-death packet is `GC DEAD(owner_vid)` with header `0x0217`
-- that self-only owner death signal is emitted on both immediate and delayed retaliation beats when they drive the engaged owner to `0` HP
+- that owner death signal is emitted on both immediate and delayed retaliation beats when they drive the engaged owner to `0` HP
 - the current ordered owner-side floor transition is `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`
 - once that same floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed before self ack, shared-world relocation mutation, or transfer-trigger rebootstrap work can run
 - once that same floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed before talk/info delivery, merchant preview open, or warp transfer / rebootstrap work can run
