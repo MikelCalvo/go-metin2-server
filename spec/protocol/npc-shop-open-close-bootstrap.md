@@ -149,27 +149,27 @@ The first owned close response is the smallest possible server merchant frame:
 
 No trailing bytes are currently owned after the server `END` subheader.
 
-### Next frozen packet-path failure companions
+### Packet-path failure companions
 
-The next merchant-window slice is now frozen narrowly before runtime work begins.
+The live merchant-window runtime now owns one narrow failure-ack seam too.
 
-When a live packet `SHOP BUY` request fails for one of the already-owned authoritative causes below, the packet-path response should move from the current placeholder info-chat delivery to one bare merchant-family error frame:
+When a live packet `SHOP BUY` request fails for one of the already-owned authoritative causes below, the packet-path response now uses one bare merchant-family error frame:
 - insufficient gold -> `GC::SHOP NOT_ENOUGH_MONEY`
 - no valid carried placement -> `GC::SHOP INVENTORY_FULL`
 
-The intended bootstrap wire shape for both error companions is intentionally tiny:
+The bootstrap wire shape for both error companions is intentionally tiny:
 - header: `0x0810`
 - total length: `5`
 - payload bytes:
   - `subheader = NOT_ENOUGH_MONEY` or `INVENTORY_FULL`
 
-No trailing payload bytes are owned for those two error frames in the next slice.
+No trailing payload bytes are owned for those two error frames in the current slice.
 
 This freeze is intentionally narrower than full merchant-window choreography:
 - it applies only to packet `SHOP BUY` on a still-open merchant session
 - it does not yet freeze a success-side `GC::SHOP OK`
 - it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `INVALID_POS`, `SOLDOUT`, or `START_EX`
-- the local `/shop_buy <catalog_slot>` debug harness may continue to use the current placeholder info-chat failure surface until a later cleanup slice says otherwise
+- the local `/shop_buy <catalog_slot>` debug harness still continues to use the current placeholder info-chat failure surface until a later cleanup slice says otherwise
 
 ## Open rule
 
@@ -266,7 +266,7 @@ The exact mandatory role of:
 
 is still capture-gated before the repository claims full merchant-window choreography ownership.
 
-The next slice now narrows only one packet-path error seam in advance:
+The current live runtime now narrows only one packet-path error seam:
 - `NOT_ENOUGH_MONEY` is the frozen merchant-family failure companion for packet `SHOP BUY` when the selected character lacks enough gold
 - `INVENTORY_FULL` is the frozen merchant-family failure companion for packet `SHOP BUY` when no valid carried placement exists
 - broader merchant-window success/failure/update choreography still remains unfrozen beyond those two bare error frames

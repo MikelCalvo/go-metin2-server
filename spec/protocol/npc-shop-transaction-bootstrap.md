@@ -180,14 +180,16 @@ Failure behavior in this bootstrap contract:
 - no gold may be debited on failure
 - no item may be granted on failure
 - the runtime must preserve the pre-request selected-character state
-- insufficient-gold and no-valid-placement failures now emit one self-only placeholder `CHAT_TYPE_INFO` delivery (`"Not enough gold."` / `"Inventory full."`) on the owned bootstrap buy path while richer `GC::SHOP` failure choreography remains unfrozen
+- packet `SHOP BUY` insufficient-gold failure now emits one bare self-only `GC::SHOP NOT_ENOUGH_MONEY`
+- packet `SHOP BUY` no-valid-placement failure now emits one bare self-only `GC::SHOP INVENTORY_FULL`
+- the local `/shop_buy <slot>` debug harness still emits one self-only placeholder `CHAT_TYPE_INFO` delivery (`"Not enough gold."` / `"Inventory full."`) on those same failure causes while the cleanup to one shared visible failure surface remains deferred
 
-### Next frozen packet-path merchant error seam
+### Frozen packet-path merchant error seam
 
-Before the next runtime RED/GREEN begins, the narrowest honest merchant-window failure contract is now frozen too:
-- packet `SHOP BUY` insufficient-gold failure should answer with one bare `GC::SHOP NOT_ENOUGH_MONEY`
-- packet `SHOP BUY` no-valid-placement failure should answer with one bare `GC::SHOP INVENTORY_FULL`
-- both merchant error frames should use only the common `SHOP (0x0810)` envelope plus the selected error subheader, with no extra payload bytes
+The narrowest honest merchant-window failure contract is now live too:
+- packet `SHOP BUY` insufficient-gold failure answers with one bare `GC::SHOP NOT_ENOUGH_MONEY`
+- packet `SHOP BUY` no-valid-placement failure answers with one bare `GC::SHOP INVENTORY_FULL`
+- both merchant error frames use only the common `SHOP (0x0810)` envelope plus the selected error subheader, with no extra payload bytes
 
 This freeze is intentionally narrower than the whole failure surface:
 - it applies only to packet `SHOP BUY` while an active merchant session still exists

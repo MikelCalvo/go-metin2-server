@@ -8022,7 +8022,7 @@ func TestGameSessionFlowShopBuyPacketFansOutAcrossSeveralExistingCompatibleStack
 	}
 }
 
-func TestGameSessionFlowShopBuyPacketReturnsInfoDeliveryOnInsufficientCurrency(t *testing.T) {
+func TestGameSessionFlowShopBuyPacketReturnsMerchantNotEnoughMoneyOnInsufficientCurrency(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacketPoor", 0x01040107, 0x02050107, 25, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet-poor", 0x77777777, buyer)
 	defer closeSessionFlow(t, flow)
@@ -8033,14 +8033,10 @@ func TestGameSessionFlowShopBuyPacketReturnsInfoDeliveryOnInsufficientCurrency(t
 		t.Fatalf("unexpected packet insufficient-currency shop buy error: %v", err)
 	}
 	if len(buyOut) != 1 {
-		t.Fatalf("expected insufficient-currency packet shop buy to emit 1 info frame, got %d", len(buyOut))
+		t.Fatalf("expected insufficient-currency packet shop buy to emit 1 merchant error frame, got %d", len(buyOut))
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[0]))
-	if err != nil {
-		t.Fatalf("decode insufficient-currency packet merchant buy delivery: %v", err)
-	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != "Not enough gold." {
-		t.Fatalf("unexpected insufficient-currency packet merchant buy delivery: %+v", delivery)
+	if err := shopproto.DecodeServerNotEnoughMoney(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode insufficient-currency packet merchant buy error frame: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
@@ -8065,7 +8061,7 @@ func TestGameSessionFlowShopBuyPacketReturnsInfoDeliveryOnInsufficientCurrency(t
 	}
 }
 
-func TestGameSessionFlowShopBuyPacketReturnsInfoDeliveryOnNoValidPlacement(t *testing.T) {
+func TestGameSessionFlowShopBuyPacketReturnsMerchantInventoryFullOnNoValidPlacement(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacketPacked", 0x01040108, 0x02050108, 1000, merchantBuyerFullInventory())
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet-packed", 0x88888888, buyer)
 	defer closeSessionFlow(t, flow)
@@ -8076,14 +8072,10 @@ func TestGameSessionFlowShopBuyPacketReturnsInfoDeliveryOnNoValidPlacement(t *te
 		t.Fatalf("unexpected packet no-valid-placement shop buy error: %v", err)
 	}
 	if len(buyOut) != 1 {
-		t.Fatalf("expected no-valid-placement packet shop buy to emit 1 info frame, got %d", len(buyOut))
+		t.Fatalf("expected no-valid-placement packet shop buy to emit 1 merchant error frame, got %d", len(buyOut))
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[0]))
-	if err != nil {
-		t.Fatalf("decode no-valid-placement packet merchant buy delivery: %v", err)
-	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != "Inventory full." {
-		t.Fatalf("unexpected no-valid-placement packet merchant buy delivery: %+v", delivery)
+	if err := shopproto.DecodeServerInventoryFull(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode no-valid-placement packet merchant buy error frame: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {

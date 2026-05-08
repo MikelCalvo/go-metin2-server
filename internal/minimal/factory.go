@@ -1237,7 +1237,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				scheduleFirstPracticeMobServerOriginRetaliation(targetVID, snapshotVersion)
 			}
 		}
-		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16) ([][]byte, bool) {
+		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16, packetFailureFrames bool) ([][]byte, bool) {
 			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
 				return nil, false
 			}
@@ -1250,11 +1250,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			if failure := selectedPlayer.ValidateMerchantBuy(template, entry.Count, entry.Price); failure != "" {
-				delivery := merchantBuyFailureDelivery(failure)
-				if delivery == nil {
+				frames, ok := merchantBuyFailureFrames(failure, packetFailureFrames)
+				if !ok {
 					return nil, false
 				}
-				return [][]byte{chatproto.EncodeChatDelivery(*delivery)}, true
+				return frames, true
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
 			buyResult, ok := selectedPlayer.BuyMerchantItem(template, entry.Count, entry.Price)
@@ -1652,7 +1652,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							if !ok {
 								return gameflow.ChatResult{Accepted: false}
 							}
-							frames, ok := executeActiveMerchantBuy(selectedPlayer, catalogSlot)
+							frames, ok := executeActiveMerchantBuy(selectedPlayer, catalogSlot, false)
 							if !ok {
 								return gameflow.ChatResult{Accepted: false}
 							}
@@ -1945,7 +1945,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok {
 						return gameflow.ShopResult{Accepted: false}
 					}
-					frames, ok := executeActiveMerchantBuy(selectedPlayer, uint16(packet.CatalogSlot))
+					frames, ok := executeActiveMerchantBuy(selectedPlayer, uint16(packet.CatalogSlot), true)
 					if !ok {
 						return gameflow.ShopResult{Accepted: false}
 					}
@@ -2667,6 +2667,22 @@ func merchantBuyResultFrames(result player.MerchantBuyResult) ([][]byte, error) 
 	}
 	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Merchant purchase complete."}))
 	return frames, nil
+}
+
+func merchantBuyFailureFrames(failure player.MerchantBuyFailure, packetFailureFrames bool) ([][]byte, bool) {
+	if packetFailureFrames {
+		switch failure {
+		case player.MerchantBuyFailureInsufficientGold:
+			return [][]byte{shopproto.EncodeServerNotEnoughMoney()}, true
+		case player.MerchantBuyFailureNoValidPlacement:
+			return [][]byte{shopproto.EncodeServerInventoryFull()}, true
+		}
+	}
+	delivery := merchantBuyFailureDelivery(failure)
+	if delivery == nil {
+		return nil, false
+	}
+	return [][]byte{chatproto.EncodeChatDelivery(*delivery)}, true
 }
 
 func merchantBuyFailureDelivery(failure player.MerchantBuyFailure) *chatproto.ChatDeliveryPacket {

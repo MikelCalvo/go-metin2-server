@@ -15,8 +15,11 @@ const (
 	ClientSubheaderEnd uint8 = 0
 	ClientSubheaderBuy uint8 = 1
 
-	ServerSubheaderStart uint8 = 0
-	ServerSubheaderEnd   uint8 = 1
+	ServerSubheaderStart          uint8 = 0
+	ServerSubheaderEnd            uint8 = 1
+	ServerSubheaderOK             uint8 = 4
+	ServerSubheaderNotEnoughMoney uint8 = 5
+	ServerSubheaderInventoryFull  uint8 = 7
 
 	ShopHostItemMax = 40
 
@@ -127,13 +130,33 @@ func EncodeServerEnd() []byte {
 }
 
 func DecodeServerEnd(f frame.Frame) error {
+	return decodeServerBareSubheader(f, ServerSubheaderEnd)
+}
+
+func EncodeServerNotEnoughMoney() []byte {
+	return frame.Encode(HeaderServerShop, []byte{ServerSubheaderNotEnoughMoney})
+}
+
+func DecodeServerNotEnoughMoney(f frame.Frame) error {
+	return decodeServerBareSubheader(f, ServerSubheaderNotEnoughMoney)
+}
+
+func EncodeServerInventoryFull() []byte {
+	return frame.Encode(HeaderServerShop, []byte{ServerSubheaderInventoryFull})
+}
+
+func DecodeServerInventoryFull(f frame.Frame) error {
+	return decodeServerBareSubheader(f, ServerSubheaderInventoryFull)
+}
+
+func decodeServerBareSubheader(f frame.Frame, subheader uint8) error {
 	if f.Header != HeaderServerShop {
 		return ErrUnexpectedHeader
 	}
 	if len(f.Payload) != serverEndPayloadSize {
 		return ErrInvalidPayload
 	}
-	if f.Payload[0] != ServerSubheaderEnd {
+	if f.Payload[0] != subheader {
 		return ErrUnexpectedSubheader
 	}
 	return nil
