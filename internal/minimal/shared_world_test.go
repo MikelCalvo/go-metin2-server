@@ -12580,6 +12580,131 @@ func TestGameSessionFlowPracticeMobInventoryMoveFailsClosedAfterDelayedRetaliati
 	}
 }
 
+func TestGameSessionFlowPracticeMobInventoryMoveKeepsRetaliationPointLossRuntimeOnlyWhilePersistingInventory(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("InventoryMoveRuntimeOnly", 0x01030118, 0x02040118, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 3
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 1, Slot: 5}, {ID: 1002, Vnum: 27003, Count: 1, Slot: 6}}
+	issuePeerTicket(t, store, "inventory-move-runtime-only", 0x59595959, owner)
+	if err := accounts.Save(accountstore.Account{Login: "inventory-move-runtime-only", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed runtime-only inventory-move owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected inventory-move/practice-mob runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000502, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for runtime-only inventory-move persistence: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before runtime-only inventory-move persistence, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	factory := runtime.SessionFactory()
+	flow, enterOut := enterGameWithLoginTicket(t, factory, "inventory-move-runtime-only", 0x59595959)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected runtime-only inventory-move owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before runtime-only inventory-move persistence: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before runtime-only inventory-move persistence, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before runtime-only inventory-move persistence: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate retaliation attack to emit 2 frames before runtime-only inventory-move persistence, got %d", len(attackOut))
+	}
+	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before runtime-only inventory-move persistence: %v", err)
+	}
+	if immediatePointChange.Value != 2 {
+		t.Fatalf("expected immediate retaliation to drop live owner points to 2 before inventory move persistence, got %+v", immediatePointChange)
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/inventory_move 5 9"})))
+	if err != nil {
+		t.Fatalf("unexpected inventory-move slash error before runtime-only inventory persistence: %v", err)
+	}
+	if len(moveOut) != 2 {
+		t.Fatalf("expected runtime inventory move to emit 2 self-only item frames, got %d", len(moveOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points runtime-only after inventory move, got %d queued frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change after runtime-only inventory move persistence: %v", err)
+	}
+	if delayedPointChange.Value != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points at runtime-only value 1 after inventory move, got %+v", delayedPointChange)
+	}
+
+	runtimeInventory, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after runtime-only inventory move persistence")
+	}
+	if len(runtimeInventory.Inventory) != 2 || runtimeInventory.Inventory[0].Slot != 6 || runtimeInventory.Inventory[1].Slot != 9 {
+		t.Fatalf("expected runtime inventory move to leave occupied slots at 6 and 9, got %+v", runtimeInventory.Inventory)
+	}
+
+	persisted, err := accounts.Load("inventory-move-runtime-only")
+	if err != nil {
+		t.Fatalf("load persisted runtime-only inventory-move owner account: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly one persisted owner after runtime-only inventory-move persistence, got %+v", persisted)
+	}
+	if len(persisted.Characters[0].Inventory) != 2 || persisted.Characters[0].Inventory[0].Slot != 6 || persisted.Characters[0].Inventory[1].Slot != 9 {
+		t.Fatalf("expected persisted inventory move to save occupied slots at 6 and 9, got %+v", persisted.Characters[0].Inventory)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected inventory move persistence to keep pre-retaliation points[%d] value %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	closeSessionFlow(t, flow)
+	issuePeerTicket(t, store, "inventory-move-runtime-only", 0x69696969, owner)
+	reconnectFlow, reconnectEnter := enterGameWithLoginTicket(t, factory, "inventory-move-runtime-only", 0x69696969)
+	defer closeSessionFlow(t, reconnectFlow)
+	if len(reconnectEnter) < 8 {
+		t.Fatalf("expected runtime-only inventory-move reconnect bootstrap to emit at least 8 frames, got %d", len(reconnectEnter))
+	}
+	reconnectPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reconnectEnter[4]))
+	if err != nil {
+		t.Fatalf("decode reconnect bootstrap point-change after runtime-only inventory move persistence: %v", err)
+	}
+	if reconnectPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected reconnect bootstrap after inventory move to rebuild pre-retaliation points[%d] value %d, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	}
+}
+
 func TestGameSessionFlowPracticeMobPeerChatFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
