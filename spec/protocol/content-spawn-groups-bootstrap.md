@@ -203,7 +203,8 @@ The first owned hostile post-hit reaction is intentionally tiny:
 - once that retaliation floor has already reached `0`, later owner-side slash `/inventory_move` attempts also fail closed before carried-slot mutation can run
 - once that retaliation floor has already reached `0`, later owner-side slash `/equip_item` and `/unequip_item` attempts also fail closed before carried/equipped item movement, self appearance refresh, or template-backed point mutation can run
 - the runtime currently keeps at most one pending delayed follow-up beat at a time for that engaged owner/target pair, so accepted hits while one is already pending do not stack, accelerate, or reset the current cadence timer yet
-- if the owning live session disappears, clears or replaces target intent, or the engaged actor dies / rebuilds before that delay expires, the queued follow-up beat fails closed and the current cadence stops instead of leaving the mob orphan-locked forever
+- if the owning live session disappears, clears or replaces target intent, or the engaged actor dies / rebuilds before that delay expires, the queued follow-up beat fails closed and current cadence stops instead of leaving the mob orphan-locked forever
+- a same-socket `/logout` counts as that live-session disappearance boundary immediately in the current bootstrap slice: it removes the owner from shared-world visibility, cancels any pending delayed follow-up beat, and releases the current aggro-lite target gate before the outer socket close finishes
 - that first gate still does **not** imply movement, pathing, pack AI, or a broader aggro system beyond this fixed-delay owner-only cadence
 
 ## Success definition
