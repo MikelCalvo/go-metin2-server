@@ -180,9 +180,14 @@ An active merchant session may close in only these owned ways:
 - the live session leaves `GAME`
 - the session disconnects or is closed
 - the session transfers or otherwise loses the merchant interaction context
+- the selected live owner reaches the current practice-mob retaliation floor at `0` HP while a merchant window is still open
 - the bound merchant actor/catalog becomes invalid before a later `BUY`
 
 When the socket is still live and still in a state where merchant-specific frames can be delivered, the runtime should treat `GC::SHOP END` as the close companion for the currently open merchant window.
+
+The current bootstrap runtime now owns one explicit post-floor teardown case too:
+- if an already-open merchant window belongs to the same selected live owner session whose immediate or delayed practice-mob retaliation beat just reached `0` HP, the owner still receives the ordinary retaliation floor transition first (`GC PLAYER_POINT_CHANGE`, `GC DEAD`, `GC TARGET(0, 0)`) and then one self-only `GC::SHOP END`
+- that same floor transition also clears the active merchant context immediately, so a later client `SHOP END` request on the same dead owner session now fails closed until a future slice owns broader revive / reopen behavior
 
 This document does **not** yet claim that every teardown path must always emit a visible merchant close frame before other phase or disconnect behavior takes over.
 
@@ -227,6 +232,7 @@ The merchant family is now expected to own the open/close session boundary, but 
 The repository can now say this much honestly:
 - a valid merchant interaction now opens through `GC::SHOP START` on the live bootstrap runtime
 - explicit merchant close now uses client `SHOP END` plus server `GC::SHOP END` while the session still holds an active merchant context in `GAME`
+- if that same selected live owner reaches the current practice-mob retaliation floor at `0` HP while a merchant window is open, the runtime now also tears that merchant window down with one self-only `GC::SHOP END` after the owned death + target-clear transition
 - the owned `SHOP BUY` packet shape is frozen, but the live bootstrap buy mutation path is still temporarily exercised through `/shop_buy <catalog_slot>` until the next runtime slice binds real `SHOP BUY` ingress
 - successful or failed buys may still require a minimal compatibility-facing `GC::SHOP` acknowledgement sequence in addition to the already-owned self-only `ITEM_SET` / `ITEM_DEL` / `PLAYER_POINT_CHANGE` refresh families
 

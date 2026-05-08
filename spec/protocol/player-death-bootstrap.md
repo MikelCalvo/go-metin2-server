@@ -162,6 +162,18 @@ This keeps the next post-floor expansion small and honest:
 - after static-actor `INTERACT` denial, merchant buy is the next dangerous already-open gameplay context because it can still mutate runtime and persisted inventory / currency even if the owner has already died in the current bootstrap retaliation loop
 - the repo still does **not** yet claim revive policy at `0` HP or a broader general post-death action-lock contract
 
+## First owned merchant-window close at the retaliation floor
+
+The current bootstrap player-death contract now also owns one narrow merchant teardown rule for that same selected live owner session:
+- if that session already opened a merchant preview before immediate or delayed practice-mob retaliation reached `0` HP, the same owned floor transition now appends one self-only `GC::SHOP END`
+- that close companion arrives only after the already-owned owner-side floor ordering completes first: `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`
+- the same floor transition clears the active merchant context immediately, so a later client `SHOP END` request on that same dead owner session now fails closed until broader revive / reopen semantics are owned separately
+- the slice stays self-only: no peer-facing merchant packet companion is added, and no broader merchant reset choreography beyond that one close frame is claimed
+
+Why this is the current owned boundary:
+- once post-floor merchant buys already failed closed, an already-open merchant window became the next smallest stale UI/runtime context still surviving the same retaliation-owned death edge
+- reusing the existing `GC::SHOP END` close companion keeps the teardown honest without inventing a second death-specific merchant packet family
+
 ## First owned post-floor slash item-use denial
 
 The current bootstrap player-death contract now also owns one narrow post-floor item-use rule for that same selected live owner session:
@@ -230,6 +242,7 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed before self ack, shared-world relocation mutation, or transfer-trigger rebootstrap work can run
 - once that same floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed before talk/info delivery, merchant preview open, or warp transfer / rebootstrap work can run
 - once that same floor is reached, later owner-side merchant-buy attempts also fail closed before runtime/persisted inventory or gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
+- if that same floor is reached while the owner already had a merchant preview open, the same floor transition now also appends one self-only `GC::SHOP END` after self `GC DEAD(owner_vid)` plus self `GC TARGET(0, 0)` and clears the active merchant context so later client `SHOP END` fails closed too
 - once that same floor is reached, later owner-side slash `/use_item` attempts also fail closed before runtime/persisted inventory consumption or point restoration can run
 - once that same floor is reached, later owner-side peer-facing `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, peer delivery, or exact-name lookup can run
 - once that same floor is reached, later owner-side self-only `CHAT` requests with type `INFO` also fail closed before self info delivery can run

@@ -10695,8 +10695,11 @@ func TestGameSessionFlowPracticeMobPacketShopBuyFailsClosedAfterImmediateRetalia
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP merchant packet-buy denial: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before zero-HP merchant packet-buy denial, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames including merchant close before zero-HP merchant packet-buy denial, got %d", len(attackOut))
+	}
+	if !reflect.DeepEqual(attackOut[4], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected immediate retaliation floor attack to append merchant close before zero-HP merchant packet-buy denial, got %#v", attackOut[4])
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -10824,8 +10827,8 @@ func TestGameSessionFlowPracticeMobSlashShopBuyFailsClosedAfterDelayedRetaliatio
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP merchant slash-buy denial, got %d", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and merchant close frames before zero-HP merchant slash-buy denial, got %d", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -10833,6 +10836,9 @@ func TestGameSessionFlowPracticeMobSlashShopBuyFailsClosedAfterDelayedRetaliatio
 	}
 	if pointChange.Value != 0 {
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP merchant slash-buy denial, got %+v", pointChange)
+	}
+	if !reflect.DeepEqual(queued[3], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected delayed retaliation floor to append merchant close before zero-HP merchant slash-buy denial, got %#v", queued[3])
 	}
 
 	slashBuyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/shop_buy 0"})))
@@ -10865,6 +10871,226 @@ func TestGameSessionFlowPracticeMobSlashShopBuyFailsClosedAfterDelayedRetaliatio
 	}
 	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
 		t.Fatalf("expected persisted delayed zero-HP merchant owner account to stay unchanged, got %#v", account.Characters[0])
+	}
+}
+
+func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	buyer := merchantBuyerCharacter("MerchantOwnerCloseImmediate", 0x01030111, 0x02040111, 125, nil)
+	buyer.Points[bootstrapPlayerPointValueIndex] = 1
+	issuePeerTicket(t, store, "merchant-owner-close-immediate", 0x5A5A5A5A, buyer)
+	if err := accounts.Save(accountstore.Account{Login: "merchant-owner-close-immediate", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed immediate zero-HP merchant close owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected merchant/practice-mob runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000520, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:            "Merchant",
+			MapIndex:        bootstrapMapIndex,
+			X:               1250,
+			Y:               2250,
+			RaceNum:         20300,
+			InteractionKind: interactionstore.KindShopPreview,
+			InteractionRef:  "npc:merchant",
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.mob_alpha",
+			Name:          "PracticeMobAlpha",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		}},
+		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+	}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content merchant/practice-mob bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 2 {
+		t.Fatalf("expected merchant and practice-mob actors before zero-HP merchant close, got %d", len(actors))
+	}
+	merchantEntityID := uint64(0)
+	practiceMobTargetVID := uint32(0)
+	for _, actor := range actors {
+		if actor.SpawnGroupRef == "practice.mob_alpha" {
+			practiceMobTargetVID = uint32(actor.EntityID)
+			continue
+		}
+		if actor.InteractionKind == interactionstore.KindShopPreview && actor.InteractionRef == "npc:merchant" {
+			merchantEntityID = actor.EntityID
+		}
+	}
+	if merchantEntityID == 0 || practiceMobTargetVID == 0 {
+		t.Fatalf("expected to find merchant and content-loaded practice mob before zero-HP merchant close, got %#v", actors)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "merchant-owner-close-immediate", 0x5A5A5A5A)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 11 {
+		t.Fatalf("expected merchant/practice-mob owner bootstrap to emit 11 frames, got %d", len(enterOut))
+	}
+
+	interactWithMerchantForBuy(t, flow, merchantEntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before immediate zero-HP merchant close: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP merchant close, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  practiceMobTargetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before immediate zero-HP merchant close: %v", err)
+	}
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames including merchant close, got %d", len(attackOut))
+	}
+	if !reflect.DeepEqual(attackOut[4], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected immediate retaliation floor attack to append merchant close, got %#v", attackOut[4])
+	}
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no delayed retaliation frames after immediate zero-HP merchant close, got %d", len(queued))
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected client SHOP END error after immediate zero-HP merchant close: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected client SHOP END to fail closed after immediate zero-HP merchant close already cleared context, got %d frames", len(closeOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected immediate zero-HP merchant close not to queue follow-up frames, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	buyer := merchantBuyerCharacter("MerchantOwnerCloseDelayed", 0x01030111, 0x02040111, 125, nil)
+	buyer.Points[bootstrapPlayerPointValueIndex] = 2
+	issuePeerTicket(t, store, "merchant-owner-close-delayed", 0x5B5B5B5B, buyer)
+	if err := accounts.Save(accountstore.Account{Login: "merchant-owner-close-delayed", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed delayed zero-HP merchant close owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected merchant/practice-mob runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000530, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:            "Merchant",
+			MapIndex:        bootstrapMapIndex,
+			X:               1250,
+			Y:               2250,
+			RaceNum:         20300,
+			InteractionKind: interactionstore.KindShopPreview,
+			InteractionRef:  "npc:merchant",
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.mob_alpha",
+			Name:          "PracticeMobAlpha",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		}},
+		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+	}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content merchant/practice-mob bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 2 {
+		t.Fatalf("expected merchant and practice-mob actors before delayed zero-HP merchant close, got %d", len(actors))
+	}
+	merchantEntityID := uint64(0)
+	practiceMobTargetVID := uint32(0)
+	for _, actor := range actors {
+		if actor.SpawnGroupRef == "practice.mob_alpha" {
+			practiceMobTargetVID = uint32(actor.EntityID)
+			continue
+		}
+		if actor.InteractionKind == interactionstore.KindShopPreview && actor.InteractionRef == "npc:merchant" {
+			merchantEntityID = actor.EntityID
+		}
+	}
+	if merchantEntityID == 0 || practiceMobTargetVID == 0 {
+		t.Fatalf("expected to find merchant and content-loaded practice mob before delayed zero-HP merchant close, got %#v", actors)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "merchant-owner-close-delayed", 0x5B5B5B5B)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 11 {
+		t.Fatalf("expected merchant/practice-mob owner bootstrap to emit 11 frames, got %d", len(enterOut))
+	}
+
+	interactWithMerchantForBuy(t, flow, merchantEntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before delayed zero-HP merchant close: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before delayed zero-HP merchant close, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  practiceMobTargetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before delayed zero-HP merchant close: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected delayed retaliation setup attack to emit 2 frames before delayed zero-HP merchant close, got %d", len(attackOut))
+	}
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation floor to emit point-loss, self dead, clear-target, and merchant close frames, got %d", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change before zero-HP merchant close: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP merchant close, got %+v", pointChange)
+	}
+	if !reflect.DeepEqual(queued[3], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected delayed retaliation floor to append merchant close, got %#v", queued[3])
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected client SHOP END error after delayed zero-HP merchant close: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected client SHOP END to fail closed after delayed zero-HP merchant close already cleared context, got %d frames", len(closeOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected delayed zero-HP merchant close not to queue follow-up frames, got %d", len(queued))
 	}
 }
 

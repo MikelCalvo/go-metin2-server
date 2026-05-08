@@ -817,6 +817,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			activeMerchantBuy = merchantBuyContext{}
 			hasActiveMerchantBuy = false
 		}
+		appendPostFloorMerchantCloseFrame := func(frames [][]byte, clearTarget bool) [][]byte {
+			if !clearTarget || !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
+				return frames
+			}
+			clearActiveMerchantBuy()
+			return append(frames, shopproto.EncodeServerEnd())
+		}
 		clearActiveCombatTarget := func() {
 			activeCombatTargetVID = 0
 			activeCombatTargetSnapshotVersion = 0
@@ -1143,7 +1150,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				stablePeerFrames = [][]byte{deadRaw}
 			}
 			frames, ok = commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
-			if !ok || pending == nil {
+			if !ok {
+				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
+				return
+			}
+			frames = appendPostFloorMerchantCloseFrame(frames, clearTarget)
+			if pending == nil {
 				issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 				return
 			}
@@ -1808,6 +1820,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok {
 						return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 					}
+					persistedFrames = appendPostFloorMerchantCloseFrame(persistedFrames, clearTarget)
 					if !resolution.ClearActiveTarget && !clearTarget {
 						scheduleFirstPracticeMobServerOriginRetaliation(resolution.ActiveTargetVID, resolution.ActiveTargetSnapshotVersion)
 					}
