@@ -1265,7 +1265,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ownsLiveSharedWorldSession() {
 				return frames, true
 			}
-			return commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			return commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 		}
 
 		inner := boot.NewFlow(boot.Config{
