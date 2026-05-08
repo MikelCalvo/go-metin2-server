@@ -166,7 +166,7 @@ The open rule must fail closed when:
 - the referenced merchant definition cannot be resolved
 - the resolved catalog is malformed or cannot be rendered against the current item-template store
 
-The current browse-only `shop_preview` contract still matters here:
+The current structured `shop_preview` contract still matters here:
 - authored merchant identity still comes from the same structured catalog model
 - the open contract does not introduce a second merchant-definition source of truth
 - the preview-style resolution path remains the authoritative way to decide which merchant the player is opening
@@ -211,7 +211,7 @@ What this document adds is the session choreography around that state mutation:
 - `BUY` is now explicitly the client-side action that follows a successful merchant open
 - `BUY` is invalid before `GC::SHOP START` opens a merchant window context
 - `BUY` remains buy-only and catalog-slot-addressed
-- the live bootstrap runtime still keeps the buy mutation itself behind the temporary `/shop_buy <catalog_slot>` harness until the next slice binds `SHOP BUY` directly
+- the live bootstrap runtime now accepts real client `SHOP BUY` ingress directly, while the temporary `/shop_buy <catalog_slot>` harness remains only as a local debug seam that reuses the same state contract
 
 The currently frozen addressing fact still applies unchanged:
 - in client `SHOP BUY`, the second trailing byte after the common `SHOP` envelope selects the zero-based authored `catalog_slot`
@@ -233,7 +233,7 @@ The repository can now say this much honestly:
 - a valid merchant interaction now opens through `GC::SHOP START` on the live bootstrap runtime
 - explicit merchant close now uses client `SHOP END` plus server `GC::SHOP END` while the session still holds an active merchant context in `GAME`
 - if that same selected live owner reaches the current practice-mob retaliation floor at `0` HP while a merchant window is open, the runtime now also tears that merchant window down with one self-only `GC::SHOP END` after the owned death + target-clear transition
-- the owned `SHOP BUY` packet shape is frozen, but the live bootstrap buy mutation path is still temporarily exercised through `/shop_buy <catalog_slot>` until the next runtime slice binds real `SHOP BUY` ingress
+- the owned `SHOP BUY` packet shape is now also the primary live bootstrap merchant-buy ingress, while `/shop_buy <catalog_slot>` remains only a local debug harness for the same state contract
 - successful or failed buys may still require a minimal compatibility-facing `GC::SHOP` acknowledgement sequence in addition to the already-owned self-only `ITEM_SET` / `ITEM_DEL` / `PLAYER_POINT_CHANGE` refresh families
 
 The exact mandatory role of:
@@ -275,5 +275,5 @@ After this slice, the repository should be able to say:
 - merchant open still starts from the already-owned `INTERACT` ingress and structured merchant resolution path
 - `GC::SHOP START` is now the live merchant open response on the bootstrap runtime
 - client `SHOP END` plus server `GC::SHOP END` are now the live explicit close pair for an active bootstrap merchant session
-- client `SHOP BUY` is now an owned codec shape, but the bootstrap buy mutation path still remains temporarily behind `/shop_buy <catalog_slot>` until the next runtime slice binds real `SHOP BUY`
+- client `SHOP BUY` is now both an owned codec shape and the live bootstrap merchant-buy ingress, while `/shop_buy <catalog_slot>` remains only a local debug harness for QA/recovery
 - the project still does not pretend that the final wire payloads or the full success/failure response choreography are already capture-confirmed

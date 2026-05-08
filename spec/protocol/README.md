@@ -38,7 +38,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `transfer-rebootstrap-burst.md` — first owned self-session rebootstrap burst for bootstrap map transfer on the game socket
 - `runtime-reconnect-cleanup.md` — first owned close/disconnect/reconnect cleanup contract for bootstrap shared-world runtime ownership
 - `non-player-entity-bootstrap.md` — first owned non-player runtime contract for identity and map presence before packet/content behavior exists
-- `static-actor-interaction-bootstrap.md` — first interaction-ready metadata seam for bootstrap static actors and the next self-only info/talk vertical to implement
+- `static-actor-interaction-bootstrap.md` — first interaction-ready metadata seam for bootstrap static actors, now powering self-only `info` / `talk`, `warp`, and merchant-facing `shop_preview`
 - `static-actor-interaction-request.md` — first owned client-originated `GAME`-phase interaction request for a visible bootstrap static actor target by `VID`
 - `npc-service-interactions-bootstrap.md` — first frozen service-style NPC gameplay contract built on top of bootstrap static actors and the existing `INTERACT` ingress
 - `combat-training-dummy-bootstrap.md` — first frozen combat-preparation target contract around one visible `training_dummy` actor
@@ -46,9 +46,9 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `non-player-death-respawn-bootstrap.md` — first owned zero-HP death, target clear, dead-state rejection, and respawn-reset contract for bootstrap non-player combatants
 - `player-death-bootstrap.md` — first owned retaliation-driven player-death edge for engaged owners, including self `DEAD` + clear, one visibility-gated peer `DEAD(owner_vid)` fanout, merchant-window close on that floor, and the first post-floor `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy, client/slash item-use, slash item-inventory/equipment, peer-facing `CHAT` / `WHISPER`, and self-only `CHAT_TYPE_INFO` denial seams
 - `content-spawn-groups-bootstrap.md` — first authored `spawn_groups` content contract for loading stationary attackable non-player spawns through `combat_profile` + map placement
-- `npc-shop-preview-bootstrap.md` — browse-only merchant preview contract built on top of the existing `INTERACT` ingress and deterministic interaction-definition authoring
+- `npc-shop-preview-bootstrap.md` — structured merchant preview/identity contract built on top of the existing `INTERACT` ingress and deterministic interaction-definition authoring
 - `npc-shop-catalog-bootstrap.md` — structured merchant catalog contract behind `shop_preview`, with stable catalog slots and template-backed entries
-- `npc-shop-open-close-bootstrap.md` — first client-visible merchant window contract, keeping merchant open anchored to `INTERACT` while freezing planned `SHOP START` / `BUY` / `END` roles
+- `npc-shop-open-close-bootstrap.md` — first client-visible merchant window contract, keeping merchant open anchored to `INTERACT` while freezing the current bootstrap `SHOP START` / `BUY` / `END` behavior
 - `npc-shop-transaction-bootstrap.md` — first buy-only merchant transaction gate built on structured `shop_preview` catalogs while keeping full shop-window choreography capture-gated
 - `static-actor-interaction-authoring.md` — first loopback-only authoring, QA visibility, and deterministic bundle surface for bootstrap static actors plus interaction definitions
 - `exact-position-bootstrap-transfer-trigger.md` — first gameplay-side exact-position trigger that can invoke the bootstrap transfer commit path from `MOVE` / `SYNC_POSITION`

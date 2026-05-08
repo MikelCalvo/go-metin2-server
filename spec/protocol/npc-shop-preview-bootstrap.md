@@ -1,6 +1,6 @@
 # NPC Shop Preview Bootstrap
 
-This document freezes the browse-only merchant-style NPC contract for `go-metin2-server`.
+This document freezes the structured merchant preview / identity contract for `go-metin2-server`.
 
 Its authored payload is now paired with the structured catalog contract in:
 - `npc-shop-catalog-bootstrap.md`
@@ -19,7 +19,7 @@ This contract currently applies only to:
   - `kind = "shop_preview"`
   - stable `ref`
   - the structured merchant payload frozen in `npc-shop-catalog-bootstrap.md`
-- a self-only browse-only response with no inventory or currency mutation
+- the structured merchant identity and preview surface that now also feeds the current bootstrap merchant-window open / buy / close flow
 
 ## Authored definition shape
 
@@ -34,25 +34,20 @@ That follow-up doc owns:
 - stable per-entry `item_vnum`
 - deterministic preview rendering from template-backed merchant entries
 
-Transition note:
-- the current implementation still serves the old text-backed `shop_preview` payload until the next slice widens store/bundle/runtime wiring
-- this slice freezes the long-term preview contract first so the next RED/GREEN implementation can stay small
+The structured merchant catalog is now live across interaction CRUD, bundle import/export, interaction-visibility, and merchant-window runtime wiring.
 
 ## Runtime behavior
 
 When a player interacts with a visible static actor whose metadata resolves to a valid `shop_preview` definition:
 - the runtime keeps the existing visibility and distance checks
 - the runtime keeps the existing per-session per-target `1s` cooldown
-- the player receives exactly one self-only `GC_CHAT` delivery
-- that delivery uses:
-  - `CHAT_TYPE_INFO`
-  - `VID = 0`
-  - `Empire = 0`
-  - `Message = deterministic structured merchant preview render`
+- the live session currently receives exactly one self-only `GC::SHOP START` merchant-window open response built from that structured catalog
+- the same definition still owns the deterministic compact preview render frozen in `npc-shop-catalog-bootstrap.md` for QA/debug and lower-level resolution surfaces
 - no peer-visible frames are emitted
-- no transfer, inventory mutation, purchase, sell-back, or persistent merchant state is created
+- no transfer is triggered by `shop_preview`
+- later merchant state mutation still remains limited to the separately frozen bootstrap buy-only merchant path
 
-The exact preview-string shape is now frozen in `npc-shop-catalog-bootstrap.md`.
+The exact preview-string shape is now frozen in `npc-shop-catalog-bootstrap.md`, and the current merchant-window open / buy / close behavior is frozen separately in `npc-shop-open-close-bootstrap.md` and `npc-shop-transaction-bootstrap.md`.
 
 ## Operator authoring and QA visibility
 
@@ -68,15 +63,13 @@ Current loopback QA/debugging surface:
 
 For `shop_preview`, interaction-visibility returns the actor together with the compact resolved preview string instead of an unsupported-kind marker.
 
-At the time this contract is frozen, the loopback authoring and bundle surfaces still expose the existing text-backed payload; the next slice is expected to adopt the structured merchant catalog shape there.
+The loopback authoring and bundle surfaces now also expose that same structured merchant catalog payload directly.
 
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- real shop buy/sell packets
-- inventory or gold checks
-- item grant/removal
-- price tables or stock depletion
+- sell-back
+- merchant stock depletion or refresh
 - merchant dialog windows
 - option selection state
 - quest acceptance or script execution
@@ -84,8 +77,8 @@ This slice does **not** yet freeze:
 ## Success definition
 
 After this slice, the repository should be able to say:
-- `shop_preview` remains a valid browse-only authored interaction kind
-- the player-facing browse response is still frozen as self-only and deterministic
-- the structured merchant payload that will replace raw merchant text is now frozen in project-owned docs
+- `shop_preview` remains a valid structured merchant authored interaction kind
+- the player-facing merchant identity and compact preview render are still frozen as deterministic outputs of the structured catalog
+- the structured merchant payload has replaced raw merchant text across the current authoring, bundle, and merchant-window runtime surfaces
 - visible static actors still resolve `shop_preview` through the existing `INTERACT` ingress
-- the project still does not pretend that a real shop transaction system exists
+- the project now also owns the first bootstrap merchant-window open / buy / close flow on top of that same ingress, while still avoiding broader sell/stock/window semantics

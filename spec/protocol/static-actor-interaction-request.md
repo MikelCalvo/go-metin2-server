@@ -67,7 +67,7 @@ At this stage the repository owns a narrow but real first response vertical:
 - delete requests now fail closed while a bootstrap static actor still references the targeted definition
 - when that definition resolves to `interaction_kind = "info"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored definition text
 - when that definition resolves to `interaction_kind = "talk"`, the interacting player now receives one self-only chat-backed delivery using a deterministic speaker-prefixed multi-line payload
-- when that definition resolves to `interaction_kind = "shop_preview"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored browse-only preview text
+- when that definition resolves to `interaction_kind = "shop_preview"`, the live session flow now opens the current bootstrap merchant window with one self-only `GC::SHOP START` response built from the authored structured catalog, while lower-level resolution and QA/debug surfaces still keep a deterministic compact preview render of that same catalog
 - known bootstrap interaction failures now also resolve to one deterministic self-only `GC_CHAT` delivery instead of silently disappearing on the socket
 - the current service-style NPC gameplay families on top of this same ingress now include `warp` and `shop_preview`
 - malformed payloads are rejected at the codec/flow boundary
@@ -84,7 +84,8 @@ The first owned operator surface for interaction content is loopback-only:
 
 The current contract is intentionally narrow:
 - request/response bodies always use `kind` and `ref`
-- `info` / `talk` / `shop_preview` use authored `text`
+- `info` / `talk` use authored `text`
+- `shop_preview` uses authored `title + catalog[]`
 - `warp` uses authored `map_index`, `x`, `y`, with optional `text`
 - `PATCH` / `PUT` are full-identity upserts, not partial nested edits
 - the body `kind` + `ref` must match the path exactly on update
@@ -117,7 +118,7 @@ The current owned failure boundary is now explicit and split in two layers:
 - those known runtime rejection reasons now return exactly one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and a deterministic bootstrap message
 - accepted `info` interaction currently produces exactly one self-only `GC_CHAT` delivery with `CHAT_TYPE_INFO`
 - accepted `talk` interaction currently produces exactly one self-only chat-backed delivery whose payload is speaker-prefixed and multi-line
-- accepted `shop_preview` interaction currently produces exactly one self-only `GC_CHAT` delivery with `CHAT_TYPE_INFO` carrying the authored preview text
+- accepted `shop_preview` interaction currently produces exactly one self-only `GC::SHOP START` open response on the live game socket, built from the authored structured merchant catalog; that same catalog also keeps a deterministic compact preview render for loopback QA/debug and lower-level resolution surfaces
 - accepted `warp` interaction currently reuses the existing self-session transfer rebootstrap path; if authored `text` is present, one self-only `CHAT_TYPE_INFO` delivery is emitted before those transfer frames
 - repeated requests against the same target `VID` inside the current fixed `1s` per-session cooldown are consumed as a deliberate no-op with no outgoing frames
 
@@ -131,5 +132,5 @@ After this slice, the repository should be able to say:
 - the game flow can dispatch that request to a dedicated interaction handler
 - `internal/worldruntime` can resolve a visible bootstrap static actor by that `VID` under the active topology/AOI rules
 - `internal/minimal/shared_world` can now turn that subject/target pair into a structured validated interaction attempt before later content resolution exists
-- `gamed` can now resolve authored `info`, `talk`, and `shop_preview` definitions behind visible static actors and answer the interacting player with one self-only chat-backed delivery carrying the authored text
-- the same ingress and target-lookup contract now also powers the current service-style NPC families (`warp` and `shop_preview`) without inventing a new client request packet first
+- `gamed` can now resolve authored `info`, `talk`, and structured `shop_preview` definitions behind visible static actors, answer `info` / `talk` with one self-only chat-backed delivery carrying the authored text, and open the current bootstrap merchant window for `shop_preview`
+- the same ingress and target-lookup contract now also powers the current service-style NPC families (`warp` and merchant `shop_preview`) without inventing a new client request packet first

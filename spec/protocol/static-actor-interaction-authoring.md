@@ -33,16 +33,12 @@ The first owned catalog surface is:
 Current rules:
 - bodies always use JSON `kind` and `ref`
 - `info` / `talk` currently use authored `text`
+- `shop_preview` currently uses authored `title + catalog[]`
 - `warp` currently uses authored `map_index`, `x`, `y`, with optional `text`
 - updates are full-identity upserts, not partial nested edits
 - update body `kind + ref` must match the path exactly
 - delete fails closed while any bootstrap static actor still references that definition
 - the backing catalog remains deterministic and file-backed under `internal/interactionstore`
-
-`shop_preview` transition note:
-- the long-term contract for merchant previews is now frozen in `npc-shop-catalog-bootstrap.md`
-- that contract replaces raw merchant preview text with structured `title + catalog[]` data referencing `internal/itemstore` by stable `item_vnum`
-- the current loopback CRUD implementation still exposes the old text-backed `shop_preview` payload until the next slice widens the store/runtime surfaces
 
 ## Interaction-focused QA visibility
 
@@ -69,17 +65,16 @@ Current rules:
 - export returns one deterministic JSON artifact containing:
   - `static_actors`
   - `interaction_definitions`
-- exported interaction definitions preserve the current per-kind payload fields, and the next structured `shop_preview` export shape is the `title + catalog[]` merchant contract frozen in `npc-shop-catalog-bootstrap.md`
+- exported interaction definitions preserve the current per-kind payload fields, including the structured `shop_preview` `title + catalog[]` merchant contract frozen in `npc-shop-catalog-bootstrap.md`
 - exported static actors are **portable authored content**, not runtime entities, so the bundle omits runtime-only `entity_id`
 - import is full-replace for the authored bootstrap content currently loaded by `gamed`
 - import validates that every referenced interaction definition exists before mutating runtime state
-- import also rejects malformed per-kind definition payloads, including invalid `warp` destinations and, once the structured merchant shape is wired, invalid `shop_preview` catalogs
+- import also rejects malformed per-kind definition payloads, including invalid `warp` destinations and invalid `shop_preview` catalogs
 - import updates the live bootstrap runtime so the resulting static-actor content becomes the current authored state, not only the on-disk store contents
 
 ## Success definition
 
 After this slice, the repository should be able to say:
-- minimal `info`, `talk`, and `warp` definitions are authorable through loopback HTTP today
-- the structured merchant-catalog contract that will replace raw `shop_preview` text is now frozen in project-owned docs before the next implementation slice
+- minimal `info`, `talk`, and `warp` definitions plus the structured `shop_preview` merchant catalog are authorable through loopback HTTP today
 - visible interactables can still be inspected live with compact resolved previews for the currently previewable kinds and fail-closed markers otherwise
-- bootstrap static actors and their interaction definitions can be exported/imported as one deterministic authored-content bundle, with the structured merchant export/import shape now defined ahead of wiring
+- bootstrap static actors and their interaction definitions can be exported/imported as one deterministic authored-content bundle, with the structured merchant export/import shape already wired through that bundle surface

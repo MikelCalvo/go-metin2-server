@@ -47,7 +47,7 @@ This rule applies consistently in:
 
 ## Current owned behavior
 
-At this stage, the repository owns metadata plus the first narrow self-only behavior:
+At this stage, the repository owns metadata plus the first narrow interaction-ready behavior:
 - static actors can preserve `interaction_kind` / `interaction_ref` in runtime state
 - `/local/static-actors` create/update responses can surface that metadata
 - runtime snapshot/introspection surfaces can report that metadata
@@ -60,20 +60,22 @@ At this stage, the repository owns metadata plus the first narrow self-only beha
 - runtime static-actor create/update with interaction metadata now also fail closed when the referenced definition does not exist in the loaded interaction-definition catalog
 - visible static actors whose metadata resolves to `interaction_kind = "info"` now answer with a self-only informational chat-backed delivery
 - visible static actors whose metadata resolves to `interaction_kind = "talk"` now answer with a self-only speaker-prefixed multi-line chat-backed delivery
+- visible static actors whose metadata resolves to `interaction_kind = "shop_preview"` now carry the structured merchant catalog authoring seam that powers the current bootstrap merchant window open / buy / close flow
 
 ## Owned interaction families
 
 The first owned interaction families stay intentionally narrow:
 - self-only `info` / `talk`
 - service-style `warp`
-- browse-only `shop_preview`
+- merchant-style `shop_preview`
 
 The currently implemented bootstrap interaction families remain conservative:
 - the actor must already be visible to the player
 - the runtime resolves `interaction_kind` + `interaction_ref`
-- the response is self-facing for `info`, `talk`, and `shop_preview`
-- `warp` reuses the existing self-session transfer / rebootstrap path instead of inventing a separate dialog or shop protocol
-- no shared state, shop inventory, quest progression, barter, or combat side effects are required
+- `info` and `talk` remain self-facing chat-backed responses
+- `warp` reuses the existing self-session transfer / rebootstrap path instead of inventing a separate dialog or warp packet family
+- `shop_preview` reuses the structured merchant catalog plus the current bootstrap merchant window open / buy / close contract instead of inventing a second merchant-definition seam
+- no quest progression, barter, or combat side effects are required
 
 Current owned meanings:
 - `interaction_kind = "info"`
@@ -83,18 +85,18 @@ Current owned meanings:
 - `interaction_kind = "warp"`
   - resolve a teleporter-style service interaction using the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime rather than a dedicated dialog or warp packet family
 - `interaction_kind = "shop_preview"`
-  - return a browse-only merchant-style preview with no item, price, or inventory mutation yet
+  - resolve a merchant-style interaction using the same structured catalog authoring seam now frozen by the merchant preview / open-close / transaction docs
 
 ## Explicit non-goals
 
 This slice does not yet freeze:
 - click packet handling
 - NPC dialog trees
-- shops or item purchase flows beyond read-only preview
+- sell-back, stock depletion, or richer merchant-window choreography beyond the current bootstrap open / buy / close seam
 - quests, mission flags, or script runtimes
 - actor targeting/combat semantics
 - animation/emote/state-machine behavior
-- real shop buy/sell semantics, inventory mutation, or persistent merchant state
+- persistent merchant stock state
 
 ## Success definition
 
@@ -106,5 +108,5 @@ After this slice, the repository should be able to say:
 - `gamed` now loads that catalog before boot-restoring persisted static actors and before accepting new interaction metadata on static-actor create/update paths
 - loopback-only CRUD endpoints now author that catalog while preserving stable `kind + ref` identity on update and rejecting deletes for referenced definitions
 - static actors that point at missing interaction definitions are now rejected fail closed at boot and on runtime create/update
-- visible actors can now answer the interacting player with tiny self-only `info`, `talk`, or `shop_preview` interactions without redesigning the actor model first
+- visible actors can now answer the interacting player with self-only `info` / `talk`, can reuse the same metadata seam for the current merchant-window `shop_preview` flow, and can still power QA/debug preview rendering without redesigning the actor model first
 - the same metadata seam now also powers the current service-style NPC `warp` interaction family

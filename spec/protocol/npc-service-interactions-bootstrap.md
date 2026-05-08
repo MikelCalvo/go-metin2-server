@@ -29,7 +29,7 @@ This contract applies only to:
 
 This document now freezes the contract and also records the two landed service-style verticals:
 - `warp` is now implemented on top of the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime
-- `shop_preview` is now implemented as a browse-only self-only preview path on top of the same ingress
+- `shop_preview` now opens the bootstrap merchant window and buy-only merchant flow on top of the same ingress and the same structured merchant catalog seam
 
 ## Why service-style NPCs first
 
@@ -40,12 +40,11 @@ The current repository already owns enough runtime to support a narrow but real 
 - gameplay-triggered transfer / rebootstrap already exists
 
 At the same time, several larger systems are still intentionally missing:
-- inventory and equipment
-- currency and item mutation
+- sell-back and richer merchant-window acknowledgement choreography
 - quest flags / script runtime
-- client-owned dialog-window or option-selection contract
+- broader client-owned dialog-window or option-selection contracts beyond the current merchant window family
 
-Because of those constraints, the next honest NPC gameplay vertical is **service-style interaction**, not branching dialogs, quest trees, or real shop purchase flows.
+Because of those constraints, the next honest NPC gameplay vertical is **service-style interaction**, not branching dialogs, quest trees, or broader merchant/dialog semantics first.
 
 ## First owned service-style families
 
@@ -75,15 +74,16 @@ Current owned interaction cooldown semantics:
 This is now the first implemented **real NPC gameplay loop** because it reuses already-owned transfer behavior instead of requiring speculative new subsystems.
 
 ### 2. `shop_preview`
-A visible static actor can act as a merchant-style browse-only NPC.
+A visible static actor can act as a merchant-style NPC anchored to the structured merchant catalog seam.
 
 Frozen target behavior:
 - the player sends the existing `INTERACT (0x0501)` request
 - the runtime resolves a deterministic authored `shop_preview` definition behind that actor
-- the player receives exactly one self-only `CHAT_TYPE_INFO` delivery carrying the authored preview text that describes the available catalog
-- no inventory, item grant, price deduction, purchase, or sell-back path is implied
+- the live session receives the current bootstrap merchant-window open response (`GC::SHOP START`) built from that structured catalog
+- later `SHOP BUY` / `SHOP END` requests reuse the same active merchant context and the same authored catalog identity frozen by the merchant docs
+- the same catalog still owns a deterministic compact preview render for QA/debug and lower-level resolution surfaces
 
-This is intentionally a preview-only merchant seam until inventory/currency/item mutation exists.
+This remains intentionally narrow even now that the first buy-only merchant path exists: sell-back, stock depletion, and richer merchant-window choreography still remain separate later work.
 
 ## Routing rule
 
@@ -101,26 +101,25 @@ No new client-originated packet family is frozen in this stage.
 The current owned response families stay intentionally conservative:
 - `info` and `talk` remain self-only chat-backed authored responses
 - `warp` now reuses the already-owned transfer / rebootstrap contract rather than inventing a separate NPC warp packet; if authored `text` is present, the interacting player first receives one self-only informational chat delivery and then the transfer rebootstrap frames
-- `shop_preview` now returns one self-only `CHAT_TYPE_INFO` delivery carrying the authored browse-only preview text and should remain deterministic until a real shop transaction system exists
+- `shop_preview` now reuses the current bootstrap merchant window open / buy / close contract, while preserving the deterministic preview render for QA/debug and lower-level resolution surfaces
 
-## Ordered implementation intent
+## Ordered implementation status
 
-The next NPC gameplay sequence should be implemented in this order:
-1. make interaction failure reasons player-visible instead of silently fail-closed
-2. add an explicit interaction distance gate, separate from mere visibility ownership
-3. add authored `warp` definitions and execute them through the existing transfer path
-4. add a read-only `shop_preview` family only after `warp` works
+The originally planned sequence is now landed in this order:
+1. interaction failure reasons became player-visible instead of silently fail-closed
+2. an explicit interaction distance gate landed, separate from mere visibility ownership
+3. authored `warp` definitions were added and now execute through the existing transfer path
+4. the same ingress and authoring seam then widened into the first bootstrap merchant window open / buy / close flow
 
-This order keeps the first real gameplay payoff as small and honest as possible.
+That order kept the first real NPC gameplay payoff small and honest before merchant-window work widened further.
 
 ## Explicit non-goals
 
 This stage still does **not** freeze:
-- client dialog-window packets
+- client dialog-window packets outside the currently owned merchant window family
 - branching NPC dialogs or option trees
 - quest acceptance, progression, rewards, or script execution
-- real shop buy/sell flows
-- inventory or currency mutation
+- sell-back or richer merchant stock/update semantics
 - combat, buffs, healing, aggro, or AI behavior
 - persistent NPC conversation state
 - click-to-move choreography beyond the current direct `INTERACT` request
@@ -128,8 +127,8 @@ This stage still does **not** freeze:
 ## Success definition
 
 After the currently landed and later follow-up slices, the repository should be able to say:
-- bootstrap static actors already support self-only `info` / `talk` plus browse-only `shop_preview`
-- the current owned service-style NPC gameplay families are `warp` and `shop_preview`
+- bootstrap static actors already support self-only `info` / `talk` plus merchant-style `shop_preview`
+- the current owned service-style NPC gameplay families are `warp` and merchant `shop_preview`
 - `warp` is the first real NPC gameplay action and already reuses the existing transfer / rebootstrap runtime through `INTERACT`
-- `shop_preview` is already implemented as a browse-only preview until inventory/currency/item mutation exists
-- the project still avoids speculative dialog-window, quest, and real shop semantics until the underlying systems exist
+- `shop_preview` now already resolves through `INTERACT` into the bootstrap merchant window open / buy / close flow built on the same structured catalog seam
+- the project still avoids speculative dialog-window, quest, sell-back, and broader merchant semantics until the underlying systems exist

@@ -10,8 +10,8 @@ It sits on top of:
 The goal is intentionally narrow:
 - stop treating merchant previews as arbitrary authored text
 - give `shop_preview` a deterministic catalog payload that refers to owned item templates by stable ID
-- keep the current player-facing behavior browse-only and self-only
-- make the next implementation slice small enough to wire authored-content stores, preview rendering, and QA surfaces without reopening the contract
+- keep the current merchant identity, preview render, and bootstrap open/buy flow anchored to one deterministic catalog source of truth
+- keep the owned surface small enough that later merchant-window acknowledgement or sell-flow slices do not need to reopen the authored catalog contract
 
 ## Scope
 
@@ -22,8 +22,7 @@ This contract currently applies only to:
 - a structured merchant catalog whose entries refer to owned item templates through stable `vnum`
 - a deterministic self-only preview render with no inventory, gold, or persistence mutation
 
-This slice does **not** yet implement the catalog in runtime code.
-It freezes the contract first so the next slice can add RED tests and wiring safely.
+This contract is now implemented across the structured interaction-definition store, loopback authoring/bundle surfaces, interaction-visibility previews, merchant-window open responses, and the first buy-only merchant transaction gate.
 
 ## Structured authored definition shape
 
@@ -82,8 +81,8 @@ The structured merchant contract must validate all of the following:
 
 ## Deterministic preview rendering
 
-The structured merchant catalog still remains **preview only** in this slice.
-It does not open a real merchant UI or a buy/sell packet family.
+The structured merchant catalog still owns a deterministic **preview render** in this slice.
+That render now lives beside the already-landed merchant-window open / buy flow rather than replacing it.
 
 When a visible static actor resolves to a valid structured `shop_preview` catalog, the deterministic preview string is built like this:
 - sort entries by `slot` ascending
@@ -99,35 +98,30 @@ Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g
 ```
 
 This exact compact render is the frozen preview string for:
-- the one self-only `GC_CHAT` browse response after `INTERACT`
 - the compact preview string shown by `GET /local/interaction-visibility`
+- lower-level runtime resolution / QA-debug surfaces that still need a deterministic merchant summary without opening the live merchant window
 
 ## Runtime behavior contract
 
-Once the structured merchant catalog is wired, interaction behavior stays narrow:
+With the structured merchant catalog wired, runtime behavior now stays narrow in two coordinated surfaces:
 - the runtime keeps the existing visibility and distance checks
 - the runtime keeps the existing per-session per-target `1s` cooldown
-- the player receives exactly one self-only `GC_CHAT` delivery
-- that delivery uses:
-  - `CHAT_TYPE_INFO`
-  - `VID = 0`
-  - `Empire = 0`
-  - `Message = deterministic structured merchant preview render`
+- live session handling of `INTERACT` now opens the current bootstrap merchant window through `GC::SHOP START`, built from that structured catalog
+- the same deterministic preview render remains available for QA/debug and lower-level resolution surfaces without opening the live merchant window
+- later `SHOP BUY` / `SHOP END` handling continues to reuse the same active merchant context and the same authored catalog identity
 - no peer-visible frames are emitted
-- no gold is debited
-- no inventory slots are checked or mutated
-- no items are granted
-- no merchant stock state is created or persisted
+- no merchant stock depletion or persistent merchant stock state is created
 
-## Transition note for the next slice
+## Current implemented scope
 
-At the time this contract is frozen:
-- the current runtime still serves `shop_preview` from the existing text-backed interaction definition shape
-- loopback interaction CRUD and content-bundle export/import still only know the current text-backed `shop_preview` payload
-- the next implementation slice is expected to widen those authored-content surfaces from raw text to the structured `title + catalog[]` merchant shape defined here
+The structured merchant catalog now already drives:
+- loopback interaction CRUD payloads
+- content-bundle export/import
+- interaction-visibility previews
+- the merchant-window `GC::SHOP START` open response
+- the first buy-only `SHOP BUY` transaction gate
 
-This transition is intentional.
-The contract is now frozen before the store/bundle/runtime wiring changes.
+The next merchant slices are now about richer compatibility-facing `GC::SHOP` acknowledgement choreography and broader merchant semantics, not about replacing text-backed payloads anymore.
 
 ## Explicit non-goals
 
@@ -145,8 +139,8 @@ This slice does **not** yet freeze:
 ## Success definition
 
 After this slice, the repository should be able to say:
-- `shop_preview` no longer has to stay conceptually tied to arbitrary merchant text forever
-- the first structured merchant catalog shape is frozen in project-owned docs
+- `shop_preview` no longer has to stay conceptually tied to arbitrary merchant text
+- the first structured merchant catalog shape is frozen in project-owned docs and already wired through the current runtime surfaces
 - merchant entries now refer to owned item templates by stable `vnum`
-- the future preview string format is deterministic enough to drive RED tests in the next slice
-- the project still does not pretend that real merchant transactions already exist
+- the preview string format remains deterministic for QA/debug even though live session handling now opens the merchant window instead of sending only chat preview text
+- the project still does not pretend that sell-back, stock semantics, or final merchant-window choreography already exist

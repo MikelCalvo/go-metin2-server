@@ -113,7 +113,7 @@ The exact wire layout is now frozen by `internal/proto/item` golden tests.
 ## First live mutation refresh boundary
 
 After the bootstrap burst, the owned mutation surface remains intentionally bootstrap-scoped:
-- ingress is still server-owned slash-command seams rather than the final legacy drag/drop / item-use packet families
+- ingress is still server-owned slash-command seams for inventory move/equip/unequip rather than the final legacy drag/drop packet families; the first carried-slot client-originated `ITEM_USE` ingress now lives separately in `item-use-bootstrap.md`
 - the current supported seams are:
   - `/inventory_move <from> <to>` for carried-slot move/swap
   - `/equip_item <from> <equip_slot>` for carried -> worn transitions
@@ -176,8 +176,7 @@ This slice does **not** yet freeze:
 - drag-to-ground / drop-on-map behavior
 - trade or exchange windows
 - crafting or refining flows
-- real merchant buy/sell transactions
-- sell-back
+- merchant sell-back or richer shop-window acknowledgement choreography
 - currency packet families
 - broader equipment bonus formulas or combat-side stat recomputation beyond the first narrow template-backed equip/unequip point delta
 
