@@ -57,6 +57,19 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side self-only `CHAT` requests with `type = INFO` also fail closed before local `GC_CHAT` delivery can run
 - the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, while the already-owned `/shop_buy`, `/use_item`, `/inventory_move`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
 
+## First owned same-socket `/phase_select` recovery boundary
+
+The repo now also owns one narrow recovery seam for that same retaliation-driven `0`-HP floor:
+- after the owner has already received the current self-only `GC DEAD(owner_vid)` plus self-only `GC TARGET(0, 0)` clear, `/phase_select` may still transition that same socket back to character select
+- if the player then re-selects the same persisted character and sends a fresh `ENTERGAME` on that same socket, the self bootstrap rebuilds from the persisted account snapshot rather than carrying the runtime-only retaliation loss forward
+- that rebuild is intentionally asymmetric with the engaged practice mob: if the mob stayed alive, its HP remains runtime-owned at the last live value instead of resetting just because the owner used `/phase_select`
+- the owner still has to send a fresh `TARGET` after re-entry before `ATTACK` can resume; the earlier engaged-target/session intent does not survive the phase transition
+
+This keeps the first recovery boundary honest:
+- the selected live player points remain session/runtime-owned during the retaliation loop until a later slice owns broader player-death persistence or revive policy
+- the practice-mob HP and engagement loop remain shared-world/runtime-owned until the mob's own death/respawn reset seam runs
+- `/phase_select` is therefore only a bootstrap re-entry boundary, not a full corpse / revive / respawn system
+
 ## Why freeze this separately
 
 The repository already owned enough of the owner-side retaliation loop to make `0` HP observable:

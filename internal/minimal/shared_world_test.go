@@ -9930,6 +9930,155 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnly
 	}
 }
 
+func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsPersistedPointsAndKeepsLiveMobHP(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed owner account before delayed retaliation /phase_select recovery test: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000450, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before delayed retaliation /phase_select recovery test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before delayed retaliation /phase_select recovery test, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before delayed retaliation /phase_select recovery test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before delayed retaliation /phase_select recovery test, got %d frames", len(attackOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 3 {
+		t.Fatalf("expected delayed retaliation beat plus self dead and clear-target frames before /phase_select recovery test, got %d queued frames", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change before /phase_select recovery test: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before /phase_select recovery test, got %+v", pointChange)
+	}
+
+	phaseSelectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/phase_select"})))
+	if err != nil {
+		t.Fatalf("unexpected /phase_select error after delayed retaliation floor: %v", err)
+	}
+	if len(phaseSelectOut) != 1 {
+		t.Fatalf("expected 1 /phase_select frame after delayed retaliation floor, got %d", len(phaseSelectOut))
+	}
+
+	selectPhaseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0})))
+	if err != nil {
+		t.Fatalf("unexpected character select error after delayed retaliation /phase_select recovery: %v", err)
+	}
+	if len(selectPhaseOut) != 3 {
+		t.Fatalf("expected 3 character-select frames after delayed retaliation /phase_select recovery, got %d", len(selectPhaseOut))
+	}
+
+	reenterOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected enter-game error after delayed retaliation /phase_select recovery: %v", err)
+	}
+	if len(reenterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames after delayed retaliation /phase_select recovery, got %d", len(reenterOut))
+	}
+	reenterPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reenterOut[4]))
+	if err != nil {
+		t.Fatalf("decode bootstrap point-change after delayed retaliation /phase_select recovery: %v", err)
+	}
+	if reenterPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected /phase_select re-entry bootstrap to rebuild persisted points[%d] value %d after delayed retaliation floor, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reenterPointChange)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames immediately after delayed retaliation /phase_select re-entry, got %d", len(queued))
+	}
+
+	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error after delayed retaliation /phase_select recovery: %v", err)
+	}
+	if len(reselectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame after delayed retaliation /phase_select recovery, got %d", len(reselectOut))
+	}
+	reselectedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode target ack after delayed retaliation /phase_select recovery: %v", err)
+	}
+	if reselectedTarget.TargetVID != targetVID || reselectedTarget.HPPercent != 90 {
+		t.Fatalf("expected /phase_select recovery to keep the same live practice mob at runtime-owned HP 90, got %+v", reselectedTarget)
+	}
+
+	attackAfterRecovery, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error after delayed retaliation /phase_select recovery: %v", err)
+	}
+	if len(attackAfterRecovery) != 2 {
+		t.Fatalf("expected target-refresh plus self-only retaliation point-loss after delayed retaliation /phase_select recovery, got %d frames", len(attackAfterRecovery))
+	}
+	recoveryTargetRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackAfterRecovery[0]))
+	if err != nil {
+		t.Fatalf("decode target-refresh after delayed retaliation /phase_select recovery: %v", err)
+	}
+	if recoveryTargetRefresh.TargetVID != targetVID || recoveryTargetRefresh.HPPercent != 80 {
+		t.Fatalf("expected first accepted attack after delayed retaliation /phase_select recovery to keep stepping live mob HP to 80, got %+v", recoveryTargetRefresh)
+	}
+	recoveryPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackAfterRecovery[1]))
+	if err != nil {
+		t.Fatalf("decode retaliation point-change after delayed retaliation /phase_select recovery: %v", err)
+	}
+	if recoveryPointChange.VID != owner.VID || recoveryPointChange.Type != bootstrapPlayerPointType || recoveryPointChange.Amount != -1 || recoveryPointChange.Value != 1 {
+		t.Fatalf("unexpected self-only retaliation point-loss after delayed retaliation /phase_select recovery: %+v", recoveryPointChange)
+	}
+}
+
 func TestGameSessionFlowPracticeMobDelayedRetaliationPointLossStaysRuntimeOnlyAcrossReconnect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
