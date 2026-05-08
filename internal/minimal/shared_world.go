@@ -330,6 +330,15 @@ func (r *sharedWorldRegistry) ClearStaticActorCombatEngagement(entityID uint64, 
 	return true
 }
 
+func (r *sharedWorldRegistry) ClearStaticActorCombatEngagementsBySubject(subjectID uint64) {
+	if r == nil || subjectID == 0 {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.clearStaticActorCombatEngagementsBySubjectLocked(subjectID)
+}
+
 func (r *sharedWorldRegistry) clearStaticActorCombatEngagementsBySubjectLocked(subjectID uint64) {
 	if r == nil || subjectID == 0 || len(r.staticActorCombatEngagedBy) == 0 {
 		return

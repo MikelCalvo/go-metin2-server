@@ -835,6 +835,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			issuedPracticeMobServerOriginRetaliationSnapshotVersion = 0
 			if sharedWorld != nil && sharedWorldID != 0 {
 				sharedWorld.ClearSessionCombatTarget(sharedWorldID)
+				sharedWorld.ClearStaticActorCombatEngagementsBySubject(sharedWorldID)
 			}
 		}
 		clearPendingPracticeMobServerOriginRetaliation := func() {
@@ -1783,6 +1784,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if activeCombatTargetVID != resolution.Packet.TargetVID || activeCombatTargetSnapshotVersion != resolution.SnapshotVersion {
 						resetPracticeMobServerOriginRetaliationState()
 						nextAllowedNormalAttackAt = time.Time{}
+						if activeCombatTargetVID != 0 && sharedWorld != nil && sharedWorldID != 0 {
+							sharedWorld.ClearStaticActorCombatEngagementsBySubject(sharedWorldID)
+						}
 					}
 					activeCombatTargetVID = resolution.Packet.TargetVID
 					activeCombatTargetSnapshotVersion = resolution.SnapshotVersion

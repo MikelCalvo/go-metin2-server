@@ -13683,6 +13683,221 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterSyncP
 	}
 }
 
+func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before movement-clear aggro release test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before movement-clear aggro release test, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before movement-clear aggro release test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before movement-clear aggro release test, got %d frames", len(attackOut))
+	}
+
+	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error while owner still holds practice-mob aggro-lite gate: %v", err)
+	}
+	if len(blockedTargetOut) != 0 {
+		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
+	}
+
+	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1900, Y: 3100, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move error before movement-clear aggro release test: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 immediate self move ack frame after moving out of target range, got %d frames", len(moveOut))
+	}
+	queuedClear := flushServerFrames(t, ownerFlow)
+	if len(queuedClear) != 1 {
+		t.Fatalf("expected 1 queued self target-clear frame after moving out of target range, got %d frames", len(queuedClear))
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queuedClear[0]))
+	if err != nil {
+		t.Fatalf("decode movement-clear target frame before aggro release: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected movement-driven target clear packet before aggro release, got %+v", clearTarget)
+	}
+
+	releasedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error after movement cleared owner target intent: %v", err)
+	}
+	if len(releasedTargetOut) != 1 {
+		t.Fatalf("expected watcher target-selection to succeed after movement cleared owner target intent, got %d frames", len(releasedTargetOut))
+	}
+	releasedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, releasedTargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode watcher target-selection frame after movement-clear aggro release: %v", err)
+	}
+	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
+		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after movement cleared owner target intent, got %+v", releasedTarget)
+	}
+}
+
+func TestGameSessionFlowPracticeMobRetargetReleasesPreviousAggro(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}, {
+		Ref:           "practice.mob_beta",
+		Name:          "PracticeMobBeta",
+		MapIndex:      bootstrapMapIndex,
+		X:             1250,
+		Y:             2250,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 2 {
+		t.Fatalf("expected 2 runtime practice-mob actors after import, got %#v", actors)
+	}
+	firstTargetVID := uint32(actors[0].EntityID)
+	secondTargetVID := uint32(actors[1].EntityID)
+	if firstTargetVID == secondTargetVID {
+		t.Fatalf("expected distinct runtime practice-mob VIDs for retarget release test, got %d", firstTargetVID)
+	}
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for owner with two visible content practice mobs, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 14 {
+		t.Fatalf("expected 14 bootstrap frames for watcher with visible owner and two content practice mobs, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	firstSelectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected first target-selection error before retarget aggro release test: %v", err)
+	}
+	if len(firstSelectOut) != 1 {
+		t.Fatalf("expected 1 self-only first target frame before retarget aggro release test, got %d", len(firstSelectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  firstTargetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before retarget aggro release test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before retarget aggro release test, got %d frames", len(attackOut))
+	}
+
+	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error while owner still holds first practice-mob aggro-lite gate: %v", err)
+	}
+	if len(blockedTargetOut) != 0 {
+		t.Fatalf("expected watcher target-selection to fail closed while owner still holds first practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
+	}
+
+	secondSelectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: secondTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected second target-selection error when owner replaces target intent: %v", err)
+	}
+	if len(secondSelectOut) != 1 {
+		t.Fatalf("expected 1 self-only second target frame when owner replaces target intent, got %d", len(secondSelectOut))
+	}
+
+	releasedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error after owner replaced first practice-mob target intent: %v", err)
+	}
+	if len(releasedTargetOut) != 1 {
+		t.Fatalf("expected watcher target-selection to succeed after owner replaced first practice-mob target intent, got %d frames", len(releasedTargetOut))
+	}
+	releasedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, releasedTargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode watcher target-selection frame after owner retarget release: %v", err)
+	}
+	if releasedTarget.TargetVID != firstTargetVID || releasedTarget.HPPercent != 90 {
+		t.Fatalf("expected watcher to reacquire first live practice mob at its current runtime-owned HP after owner retarget released aggro-lite gate, got %+v", releasedTarget)
+	}
+}
+
 func TestGameSessionFlowPracticeMobSlashLogoutStopsPendingRetaliationAndReleasesAggro(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
