@@ -1172,13 +1172,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return gameflow.ChatResult{Accepted: true, Frames: frames}
 		}
-		commitSelectedPointBearingItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
-			frames, ok := commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
-			if !ok {
-				return gameflow.ChatResult{Accepted: false}
-			}
-			return gameflow.ChatResult{Accepted: true, Frames: frames}
-		}
 		flushPendingPracticeMobServerOriginRetaliation = func(pending *pendingServerFrames) {
 			if !pendingPracticeMobServerOriginRetaliation {
 				return
@@ -1278,6 +1271,39 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return frames, true
 			}
 			return commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+		}
+		executeSelectedItemUse := func(position itemproto.Position) gameflow.ItemUseResult {
+			selectedPlayer, ok := currentSelectedPlayer()
+			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+				return gameflow.ItemUseResult{Accepted: false}
+			}
+			if position.WindowType != itemproto.WindowInventory || position.Cell >= itemproto.InventoryMaxCell {
+				return gameflow.ItemUseResult{Accepted: false}
+			}
+			slot := inventory.SlotIndex(position.Cell)
+			previousSelected := selectedPlayer.LiveCharacter()
+			template, ok := runtime.resolveRuntimeUseTemplate(selectedPlayer, slot)
+			if !ok {
+				return gameflow.ItemUseResult{Accepted: false}
+			}
+			useResult, ok := selectedPlayer.UseItem(slot, template)
+			if !ok {
+				return gameflow.ItemUseResult{Accepted: false}
+			}
+			frames, err := itemUseResultFrames(selectedPlayer.LiveCharacter(), useResult)
+			if err != nil {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return gameflow.ItemUseResult{Accepted: false}
+			}
+			if !ownsLiveSharedWorldSession() {
+				return gameflow.ItemUseResult{Accepted: true, Frames: frames}
+			}
+			frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			if !ok {
+				return gameflow.ItemUseResult{Accepted: false}
+			}
+			return gameflow.ItemUseResult{Accepted: true, Frames: frames}
 		}
 
 		inner := boot.NewFlow(boot.Config{
@@ -1633,29 +1659,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						if slot, ok := slashUseItemCommand(packet.Message); ok {
-							selectedPlayer, ok := currentSelectedPlayer()
-							if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+							result := executeSelectedItemUse(itemproto.Position{WindowType: itemproto.WindowInventory, Cell: uint16(slot)})
+							if !result.Accepted {
 								return gameflow.ChatResult{Accepted: false}
 							}
-							previousSelected := selectedPlayer.LiveCharacter()
-							template, ok := runtime.resolveRuntimeUseTemplate(selectedPlayer, slot)
-							if !ok {
-								return gameflow.ChatResult{Accepted: false}
-							}
-							useResult, ok := selectedPlayer.UseItem(slot, template)
-							if !ok {
-								return gameflow.ChatResult{Accepted: false}
-							}
-							frames, err := itemUseResultFrames(selectedPlayer.LiveCharacter(), useResult)
-							if err != nil {
-								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-								refreshLiveCharacterRegistration()
-								return gameflow.ChatResult{Accepted: false}
-							}
-							if !ownsLiveSharedWorldSession() {
-								return gameflow.ChatResult{Accepted: true, Frames: frames}
-							}
-							return commitSelectedPointBearingItemMutation(selectedPlayer, previousSelected, frames)
+							return gameflow.ChatResult{Accepted: true, Frames: result.Frames}
 						}
 					}
 
@@ -1746,6 +1754,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					default:
 						return gameflow.ChatResult{Accepted: false}
 					}
+				},
+				HandleItemUse: func(packet itemproto.ClientUsePacket) gameflow.ItemUseResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					return executeSelectedItemUse(packet.Position)
 				},
 				HandleWhisper: func(packet chatproto.ClientWhisperPacket) gameflow.WhisperResult {
 					stateMu.Lock()

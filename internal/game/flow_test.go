@@ -10,6 +10,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
@@ -154,6 +155,32 @@ func TestHandleClientFrameAcceptsChatInGameAndReturnsDelivery(t *testing.T) {
 	}
 	if delivery.Type != chatproto.ChatTypeTalking || delivery.VID != 0x02040102 || delivery.Message != "PeerTwo : hola" {
 		t.Fatalf("unexpected chat delivery: %+v", delivery)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsItemUseInGameAndReturnsFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleItemUse: func(packet itemproto.ClientUsePacket) ItemUseResult {
+			if packet.Position != (itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 5}) {
+				t.Fatalf("unexpected item-use packet: %+v", packet)
+			}
+			return ItemUseResult{Accepted: true, Frames: [][]byte{[]byte("item-used")}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 5}})))
+	if err != nil {
+		t.Fatalf("unexpected item-use error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	if !bytes.Equal(out[0], []byte("item-used")) {
+		t.Fatalf("unexpected item-use frames: %q", out[0])
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())

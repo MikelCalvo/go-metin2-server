@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	HeaderDel uint16 = 0x0510
-	HeaderSet uint16 = 0x0511
+	HeaderClientUse uint16 = 0x0502
+	HeaderDel       uint16 = 0x0510
+	HeaderSet       uint16 = 0x0511
 
 	WindowReserved            uint8  = 0
 	WindowInventory           uint8  = 1
@@ -24,10 +25,11 @@ const (
 	ItemSocketCount                  = 3
 	ItemAttributeCount               = 7
 
-	positionSize   = 3
-	attributeSize  = 3
-	delPayloadSize = positionSize
-	setPayloadSize = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	positionSize         = 3
+	attributeSize        = 3
+	clientUsePayloadSize = positionSize
+	delPayloadSize       = positionSize
+	setPayloadSize       = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 )
 
 var (
@@ -62,6 +64,10 @@ type DelPacket struct {
 	Position Position
 }
 
+type ClientUsePacket struct {
+	Position Position
+}
+
 func InventoryPosition(cell uint16) Position {
 	return Position{WindowType: WindowInventory, Cell: cell}
 }
@@ -78,6 +84,22 @@ func EquipmentPosition(wearCell uint16) (Position, error) {
 		return Position{}, ErrEquipmentWearCellRange
 	}
 	return InventoryPosition(InventoryMaxCell + wearCell), nil
+}
+
+func EncodeClientUse(packet ClientUsePacket) []byte {
+	payload := make([]byte, clientUsePayloadSize)
+	encodePosition(payload, packet.Position)
+	return frame.Encode(HeaderClientUse, payload)
+}
+
+func DecodeClientUse(f frame.Frame) (ClientUsePacket, error) {
+	if f.Header != HeaderClientUse {
+		return ClientUsePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientUsePayloadSize {
+		return ClientUsePacket{}, ErrInvalidPayload
+	}
+	return ClientUsePacket{Position: decodePosition(f.Payload)}, nil
 }
 
 func EncodeSet(packet SetPacket) []byte {

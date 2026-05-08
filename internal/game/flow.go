@@ -8,6 +8,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/control"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
@@ -32,6 +33,8 @@ type HandleTargetFunc func(combatproto.ClientTargetPacket) TargetResult
 
 type HandleAttackFunc func(combatproto.ClientAttackPacket) AttackResult
 
+type HandleItemUseFunc func(itemproto.ClientUsePacket) ItemUseResult
+
 type HandleShopBuyFunc func(shopproto.ClientBuyPacket) ShopResult
 
 type HandleShopCloseFunc func() ShopResult
@@ -44,6 +47,7 @@ type Config struct {
 	HandleInteraction  HandleInteractionFunc
 	HandleTarget       HandleTargetFunc
 	HandleAttack       HandleAttackFunc
+	HandleItemUse      HandleItemUseFunc
 	HandleShopBuy      HandleShopBuyFunc
 	HandleShopClose    HandleShopCloseFunc
 }
@@ -87,6 +91,11 @@ type AttackResult struct {
 	Frames   [][]byte
 }
 
+type ItemUseResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type ShopResult struct {
 	Accepted bool
 	Frames   [][]byte
@@ -101,6 +110,7 @@ type Flow struct {
 	handleInteraction  HandleInteractionFunc
 	handleTarget       HandleTargetFunc
 	handleAttack       HandleAttackFunc
+	handleItemUse      HandleItemUseFunc
 	handleShopBuy      HandleShopBuyFunc
 	handleShopClose    HandleShopCloseFunc
 }
@@ -134,6 +144,10 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if attackHandler == nil {
 		attackHandler = func(combatproto.ClientAttackPacket) AttackResult { return AttackResult{Accepted: false} }
 	}
+	itemUseHandler := cfg.HandleItemUse
+	if itemUseHandler == nil {
+		itemUseHandler = func(itemproto.ClientUsePacket) ItemUseResult { return ItemUseResult{Accepted: false} }
+	}
 	shopBuyHandler := cfg.HandleShopBuy
 	if shopBuyHandler == nil {
 		shopBuyHandler = func(shopproto.ClientBuyPacket) ShopResult { return ShopResult{Accepted: false} }
@@ -151,6 +165,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleInteraction:  interactionHandler,
 		handleTarget:       targetHandler,
 		handleAttack:       attackHandler,
+		handleItemUse:      itemUseHandler,
 		handleShopBuy:      shopBuyHandler,
 		handleShopClose:    shopCloseHandler,
 	}
@@ -256,6 +271,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, err
 		}
 		result := f.handleAttack(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case itemproto.HeaderClientUse:
+		packet, err := itemproto.DecodeClientUse(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleItemUse(packet)
 		if !result.Accepted {
 			return nil, nil
 		}

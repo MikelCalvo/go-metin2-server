@@ -23,6 +23,8 @@ The first authored `spawn_groups` seam is now live too: content-bundle import/ex
 
 If that same owner already had a merchant preview window open when retaliation reaches `0` HP, the owned floor transition now also tears that window down with one self-only `GC::SHOP END` after the existing self `DEAD` + target-clear transition.
 
+The first consumable item-use vertical is now no longer slash-only: the bootstrap runtime also owns one tiny carried-slot `ITEM_USE` client packet ingress that reuses the same template-backed self-only point/item/info response path as `/use_item <slot>`.
+
 The README stays intentionally high-level. If you want the deeper technical view, start here:
 - [Project assessment](docs/roadmaps/2026-04-18-global-project-assessment.md)
 - [Protocol index](spec/protocol/README.md)

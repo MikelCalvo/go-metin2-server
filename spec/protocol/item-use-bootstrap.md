@@ -4,7 +4,7 @@ This document freezes the first owned item-use contract for `go-metin2-server`.
 
 The goal is intentionally narrow:
 - define exactly one consumable-only vertical before broader gameplay scripting exists
-- keep ingress self-owned by the server runtime instead of pretending the final legacy item-use packet family is already frozen
+- freeze one tiny client-originated item-use ingress without pretending the full legacy item-use family is already frozen
 - make the first point-changing item path explicit enough that RED tests can pin it down and the minimal runtime can implement it without widening scope
 
 It does **not** yet define the full legacy item-use surface.
@@ -22,13 +22,18 @@ It does **not** yet apply to peers, world drops, merchants, or quest-scripted it
 
 ## First owned ingress seam
 
-The first owned item-use ingress remains bootstrap-scoped and deliberately server-owned:
-- the client-facing bootstrap seam is `/use_item <slot>` through the existing `CHAT(TALKING)` command path
-- there is no owned legacy `ITEM_USE` request packet yet in this slice
-- only carried inventory slots are valid inputs
-- equipped items are out of scope
+The first owned item-use ingress remains bootstrap-scoped and deliberately narrow:
+- the older bootstrap slash seam `/use_item <slot>` through the existing `CHAT(TALKING)` command path still remains valid
+- the first owned client-originated item-use request packet is now `ITEM_USE` with framed header `0x0502`
+- `ITEM_USE` currently carries only one packed `TItemPos` payload: `window_type:uint8`, `cell:uint16` (little-endian)
+- only carried inventory slots are valid live runtime inputs
+- equipped items remain out of scope even though equipment still uses the legacy combined inventory/equipment cell namespace elsewhere in the bootstrap item family
 
-This keeps the first vertical small while still freezing deterministic behavior.
+For the first owned packet ingress, the runtime only accepts:
+- `window_type = INVENTORY`
+- `cell < 90`
+
+Any other `TItemPos` currently fails closed.
 
 ## First consumable prototype
 
@@ -50,7 +55,7 @@ That companion document owns merge/new-slot/fail-closed placement semantics for 
 
 ## Success path
 
-When `/use_item <slot>` targets a carried inventory slot whose item resolves to a valid template-backed `use_effect` with `count >= 1`:
+When `/use_item <slot>` or `ITEM_USE(TItemPos{window = INVENTORY, cell = slot})` targets a carried inventory slot whose item resolves to a valid template-backed `use_effect` with `count >= 1`:
 
 1. the runtime decrements the stack by exactly `1` while preserving the carried-stack bounds frozen in `item-stack-bootstrap.md`
 2. the selected character's live `Points[point_index]` increases by exactly `point_delta`
@@ -92,6 +97,7 @@ The first consumable path must fail closed when any of these are true:
 - the slot is empty
 - the slot's `vnum` does not resolve to a valid item template with a valid `use_effect`
 - the item is not in carried inventory
+- the request uses any `TItemPos` outside the current carried-inventory-only subset
 - frame construction fails
 - snapshot persistence fails
 
@@ -112,7 +118,7 @@ This slice still does **not** introduce separate buff-state stores, quest-state 
 ## Stale post-reclaim isolation
 
 If a socket already lost live shared-world ownership because another session reclaimed the same selected character:
-- `/use_item <slot>` may still return the same self-local point/item/info burst to that stale socket
+- `/use_item <slot>` or `ITEM_USE` may still return the same self-local point/item/info burst to that stale socket
 - that stale mutation must not persist updated `points` or `inventory`
 - that stale mutation must not replace the replacement live owner's exact-name loopback inventory snapshot
 - if that stale socket later closes, a fresh reconnect/bootstrap must still reload the authoritative persisted `points`/`inventory` state rather than the stale socket's local divergence
@@ -131,13 +137,13 @@ This first item-use bootstrap contract does **not** yet freeze:
 - area effects or peer-visible FX
 - general-purpose multi-effect template execution beyond the first point-change shape
 - heal-over-time, poison, or buff stacking rules
-- a final legacy client-originated item-use packet family
+- broader legacy item-use packet subfamilies beyond this first carried-slot request
 
 ## Success definition
 
 With the first implementation slice landed, the repository can now say:
 - the first owned item-use vertical is no longer undefined
 - exactly one template-backed consumable shape is frozen and implemented before broader gameplay scripting begins
-- `/use_item <slot>` now mutates the first carried template-backed consumable in the bootstrap minimal runtime
+- `/use_item <slot>` and the first owned client-originated `ITEM_USE` packet now both mutate the first carried template-backed consumable in the bootstrap minimal runtime
 - the self-only outputs are explicit and exercised: `PLAYER_POINT_CHANGE`, `ITEM_SET`/`ITEM_DEL`, and one `CHAT_TYPE_INFO` placeholder effect
 - the selected-character writeback still preserves the existing atomic persistence and rollback boundary

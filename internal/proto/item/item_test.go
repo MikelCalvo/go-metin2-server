@@ -99,6 +99,28 @@ func TestItemUseCarriedInventoryPositionRejectsOutOfRangeCell(t *testing.T) {
 	}
 }
 
+func TestEncodeClientUseBuildsAFrame(t *testing.T) {
+	position, err := CarriedInventoryPosition(5)
+	if err != nil {
+		t.Fatalf("unexpected carried inventory position error: %v", err)
+	}
+	want := frame.Encode(HeaderClientUse, []byte{WindowInventory, 5, 0})
+	got := EncodeClientUse(ClientUsePacket{Position: position})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected item use frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientUseReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientUse(decodeSingleFrame(t, frame.Encode(HeaderClientUse, []byte{WindowInventory, 5, 0})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientUsePacket{Position: Position{WindowType: WindowInventory, Cell: 5}}) {
+		t.Fatalf("unexpected item-use packet: %+v", packet)
+	}
+}
+
 func TestEncodeDelBuildsAFrame(t *testing.T) {
 	want := loadHexFixture(t, "item-del-frame.hex")
 	got := EncodeDel(sampleDelPacket())
@@ -140,6 +162,20 @@ func TestDecodeDelRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeDelRejectsInvalidPayload(t *testing.T) {
 	_, err := DecodeDel(frame.Frame{Header: HeaderDel, Length: 6, Payload: make([]byte, delPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeClientUseRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientUse(frame.Frame{Header: HeaderClientUse + 1, Length: 7, Payload: make([]byte, clientUsePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientUseRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeClientUse(frame.Frame{Header: HeaderClientUse, Length: 6, Payload: make([]byte, clientUsePayloadSize-1)})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}
