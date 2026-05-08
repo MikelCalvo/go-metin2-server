@@ -27,10 +27,12 @@ They are **not** echoed back as `CHAT_TYPE_TALKING`.
 
 ### `/quit`
 - accepted only while the session is in `GAME`
+- the session first leaves the current bootstrap shared-world registration
+- the selected runtime pointer plus active merchant/combat/live-registration state are cleared immediately, so the socket stops owning live world gameplay state before the client disconnects
 - returns one self-facing `CHAT_TYPE_COMMAND` delivery with message:
   - `quit`
 - the server remains in `GAME`
-- the bootstrap contract relies on the client to act on that command and terminate/leave on its side
+- the bootstrap contract still relies on the client to act on that command and terminate/leave on its side; this slice only adds the earlier server-side teardown boundary before that client disconnect finishes
 
 ### `/logout`
 - accepted only while the session is in `GAME`

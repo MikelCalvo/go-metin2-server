@@ -1600,6 +1600,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						switch command {
 						case "quit":
+							leaveSharedWorld()
+							hasSelected = false
+							selectedPlayer = nil
+							clearActiveMerchantBuy()
+							clearActiveCombatTarget()
+							clearLiveCharacterRegistration()
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "quit"}
 							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
 						case "logout":
