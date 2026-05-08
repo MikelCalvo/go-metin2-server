@@ -688,7 +688,7 @@ Expected result:
 
 - [ ] Import or preload one authored `spawn_groups` entry that materializes a visible stationary practice mob using `combat_profile = training_dummy`
 - [ ] Confirm the mob appears at the authored position with the authored display name and can be targeted in the same way as the earlier bootstrap dummy slices
-- [ ] With two visible clients, let client one land the first accepted hit and verify client two's fresh `TARGET` attempt on the already-engaged mob fails closed until the existing death / respawn reset boundary
+- [ ] With two visible clients, let client one land the first accepted hit and verify client two's fresh `TARGET` attempt on the already-engaged mob fails closed while client one still owns that live engagement
 - [ ] On the owning client, confirm each accepted live hit now returns both the usual target-refresh and one immediate self-only HP `POINT_CHANGE` decrement while the mob remains alive
 - [ ] If you can control timing precisely, send one repeated normal `ATTACK` against that same live selected mob before the owned `250ms` cadence window expires and confirm it fails closed with no target refresh, no extra immediate retaliation tick, and no delayed-cadence reset
 - [ ] Wait at least the owned `250ms` cadence window and confirm the next same-target normal `ATTACK` is accepted again
@@ -713,6 +713,7 @@ Expected result:
 - [ ] After retaliation has already driven the owning character to `0` HP, send one peer-facing `CHAT` with each owned type (`TALKING`, `PARTY`, `GUILD`, `SHOUT`) and confirm every request fails closed with no self `GC_CHAT` echo and no queued peer delivery
 - [ ] If you have a packet harness or test-client path that can still send client-originated `CHAT_TYPE_INFO`, try one after retaliation has already driven the owning character to `0` HP and confirm it fails closed with no self `GC_CHAT` info delivery
 - [ ] With a second visible player online, drive the owning character to `0` HP through either the immediate retaliation tick or the delayed follow-up beat and confirm that peer receives exactly one queued `GC DEAD(owner_vid)` while the owner still receives the existing self-only `GC DEAD(owner_vid)` plus self-only `GC TARGET(0, 0)` clear
+- [ ] While that same practice mob still remains alive after the owner's retaliation-driven `0`-HP death, have the second visible player send a fresh `TARGET` against it and confirm the ack now succeeds at the mob's current runtime-owned HP instead of staying orphan-locked behind the dead owner
 - [ ] After retaliation has already driven the owning character to `0` HP, send one `WHISPER` to a live visible peer and one to a missing exact-name target; confirm both fail closed with no queued target delivery and no self `WHISPER_TYPE_NOT_EXIST` fallback
 - [ ] Replace the selected practice-mob target before the next owned `1s` delay expires and confirm the queued delayed follow-up beat fails closed instead of firing for the old engagement
 - [ ] Move or sync far enough to force a self `TARGET(0, 0)` clear before the next owned `1s` delay expires and confirm that same queued delayed follow-up beat also fails closed after target invalidation
@@ -722,7 +723,7 @@ Expected result:
 Expected result:
 - the first attackable content-loaded mob now comes from the authored `spawn_groups` seam instead of ad hoc runtime-only bootstrap registration
 - its runtime combat loop still reuses the owned `training_dummy` profile semantics for HP, death, timed respawn, and the first fixed same-target `250ms` normal-attack cadence gate
-- after the first accepted hit, the mob now owns one tiny aggro-lite gate: fresh third-party `TARGET` attempts fail closed until death / respawn resets the current engagement
+- after the first accepted hit, the mob now owns one tiny aggro-lite gate: fresh third-party `TARGET` attempts fail closed while the engaged owner still lives, but that same still-live mob becomes targetable again if retaliation kills the current owner before mob death / respawn resets it
 - while alive, each accepted owner-side hit also applies one deterministic immediate self-only HP decrement back to that engaged session, and the first accepted live hit now starts a delayed self-only follow-up cadence that keeps firing one beat at a time after each owned `1s` server timer while the same engagement remains live
 - that owner-side retaliation point-loss now clamps at `0` HP too; once the floor is reached the current slice emits self-only `DEAD(owner_vid)` plus self-only `TARGET(0, 0)`, tears down any already-open merchant preview with one self-only `GC::SHOP END` after that same floor transition, and later same-owner combat `TARGET` / `ATTACK` attempts fail closed too, without yet claiming broader player-death behavior
 - that retaliation point-loss is currently runtime-only for the engaged selected session, so a fresh `/phase_select` or reconnect bootstrap still rebuilds the owner's points from persisted state rather than carrying the just-finished retaliation loss across sessions, while a still-live practice mob keeps its current runtime-owned HP and still requires a fresh post-recovery `TARGET`

@@ -243,7 +243,7 @@ Why this is the current owned boundary:
 
 This slice does **not** yet freeze:
 - a player respawn timer or revive request packet
-- self-bootstrap or transfer choreography after death
+- broader self-bootstrap or transfer choreography after death beyond the currently owned persisted `/phase_select` re-entry / reconnect rebuild semantics
 - broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, slash item-use, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
@@ -262,5 +262,6 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later owner-side slash `/use_item` attempts also fail closed before runtime/persisted inventory consumption or point restoration can run
 - once that same floor is reached, later owner-side peer-facing `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, peer delivery, or exact-name lookup can run
 - once that same floor is reached, later owner-side self-only `CHAT` requests with type `INFO` also fail closed before self info delivery can run
+- if that same floor is reached while the dead owner still held the aggro-lite gate for a live content-loaded practice mob, that same floor transition now also releases the mob's engagement so another visible live session may reacquire it with a fresh `TARGET` without waiting for owner disconnect or mob death / respawn
 - once either retaliation beat reaches that same floor, currently visible peer sessions also receive one queued `GC DEAD(owner_vid)` while corpse state, respawn, and broader player-death choreography remain deliberately out of scope
 - peer-visible player death beyond that one visible `GC DEAD(owner_vid)` fanout, corpse state, respawn, and broader general post-death gameplay remain deliberately out of scope
