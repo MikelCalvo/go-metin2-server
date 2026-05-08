@@ -15696,6 +15696,272 @@ func TestQueuedSessionFlowCloseReturnsTheSameInnerErrorOnRepeatedCalls(t *testin
 	}
 }
 
+func TestGameSessionFlowPracticeMobEquipKeepsRetaliationPointLossRuntimeOnlyWhilePersistingEquipEffect(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("EquipOwnerRuntimeOnly", 0x01030189, 0x02040189, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 3
+	owner.Inventory = []inventory.ItemInstance{{ID: 1002, Vnum: 12200, Count: 1, Slot: 8}}
+	owner.Equipment = []inventory.ItemInstance{}
+	issuePeerTicket(t, store, "equip-owner-runtime-only", 0x89898989, owner)
+	if err := accounts.Save(accountstore.Account{Login: "equip-owner-runtime-only", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed runtime-only equip owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, defaultBootstrapItemTemplateSnapshot().Templates)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected practice-mob equip runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000610, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for runtime-only equip persistence: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before runtime-only equip persistence, got %d", len(actors))
+	}
+	practiceMobTargetVID := uint32(actors[0].EntityID)
+
+	factory := runtime.SessionFactory()
+	flow, enterOut := enterGameWithLoginTicket(t, factory, "equip-owner-runtime-only", 0x89898989)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected runtime-only equip owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before runtime-only equip persistence: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before runtime-only equip persistence, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before runtime-only equip persistence: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate retaliation setup attack to emit 2 frames before runtime-only equip persistence, got %d", len(attackOut))
+	}
+	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before runtime-only equip persistence: %v", err)
+	}
+	if immediatePointChange.Value != 2 {
+		t.Fatalf("expected immediate retaliation to drop live owner points to 2 before runtime-only equip persistence, got %+v", immediatePointChange)
+	}
+
+	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 weapon"})))
+	if err != nil {
+		t.Fatalf("unexpected slash equip error before runtime-only equip persistence: %v", err)
+	}
+	if len(equipOut) == 0 {
+		t.Fatalf("expected runtime-only equip to emit frames")
+	}
+	foundEquipPointChange := false
+	for _, raw := range equipOut {
+		pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw))
+		if err != nil {
+			continue
+		}
+		if pointChange.Value != 12 {
+			t.Fatalf("expected slash equip to raise live owner points to 12 while keeping retaliation runtime-only, got %+v", pointChange)
+		}
+		foundEquipPointChange = true
+		break
+	}
+	if !foundEquipPointChange {
+		t.Fatalf("expected slash equip frames to include a point change after runtime-only retaliation")
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points runtime-only after equip, got %d queued frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change after runtime-only equip persistence: %v", err)
+	}
+	if delayedPointChange.Value != 11 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points at runtime-only value 11 after equip, got %+v", delayedPointChange)
+	}
+
+	account, err := accounts.Load("equip-owner-runtime-only")
+	if err != nil {
+		t.Fatalf("load persisted runtime-only equip owner account: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 13 {
+		t.Fatalf("expected persisted equip owner points[%d] to keep pre-retaliation value plus equip delta 13, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted inventory to be empty after runtime-only equip persistence, got %#v", account.Characters[0].Inventory)
+	}
+	if len(account.Characters[0].Equipment) != 1 || account.Characters[0].Equipment[0].Vnum != 12200 || !account.Characters[0].Equipment[0].Equipped || account.Characters[0].Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon {
+		t.Fatalf("unexpected persisted equipment after runtime-only equip persistence: %#v", account.Characters[0].Equipment)
+	}
+
+	closeSessionFlow(t, flow)
+	issuePeerTicket(t, store, "equip-owner-runtime-only", 0x99999999, owner)
+	reconnectFlow, reconnectEnter := enterGameWithLoginTicket(t, factory, "equip-owner-runtime-only", 0x99999999)
+	defer closeSessionFlow(t, reconnectFlow)
+	if len(reconnectEnter) < 8 {
+		t.Fatalf("expected runtime-only equip reconnect bootstrap to emit at least 8 frames, got %d", len(reconnectEnter))
+	}
+	reconnectPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reconnectEnter[4]))
+	if err != nil {
+		t.Fatalf("decode reconnect bootstrap point-change after runtime-only equip persistence: %v", err)
+	}
+	if reconnectPointChange.Value != 13 {
+		t.Fatalf("expected reconnect bootstrap after equip to rebuild persisted points[%d] value 13 without retaliation loss, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
+	}
+}
+
+func TestGameSessionFlowPracticeMobUnequipKeepsRetaliationPointLossRuntimeOnlyWhilePersistingEquipRemoval(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UnequipOwnerRuntimeOnly", 0x0103018a, 0x0204018a, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 13
+	owner.Inventory = []inventory.ItemInstance{}
+	owner.Equipment = []inventory.ItemInstance{{ID: 2002, Vnum: 12200, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	issuePeerTicket(t, store, "unequip-owner-runtime-only", 0x8a8a8a8a, owner)
+	if err := accounts.Save(accountstore.Account{Login: "unequip-owner-runtime-only", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed runtime-only unequip owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, defaultBootstrapItemTemplateSnapshot().Templates)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected practice-mob unequip runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000620, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for runtime-only unequip persistence: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before runtime-only unequip persistence, got %d", len(actors))
+	}
+	practiceMobTargetVID := uint32(actors[0].EntityID)
+
+	factory := runtime.SessionFactory()
+	flow, enterOut := enterGameWithLoginTicket(t, factory, "unequip-owner-runtime-only", 0x8a8a8a8a)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected runtime-only unequip owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before runtime-only unequip persistence: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before runtime-only unequip persistence, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before runtime-only unequip persistence: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate retaliation setup attack to emit 2 frames before runtime-only unequip persistence, got %d", len(attackOut))
+	}
+	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before runtime-only unequip persistence: %v", err)
+	}
+	if immediatePointChange.Value != 12 {
+		t.Fatalf("expected immediate retaliation to drop live owner points to 12 before runtime-only unequip persistence, got %+v", immediatePointChange)
+	}
+
+	unequipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item weapon 4"})))
+	if err != nil {
+		t.Fatalf("unexpected slash unequip error before runtime-only unequip persistence: %v", err)
+	}
+	if len(unequipOut) == 0 {
+		t.Fatalf("expected runtime-only unequip to emit frames")
+	}
+	foundUnequipPointChange := false
+	for _, raw := range unequipOut {
+		pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw))
+		if err != nil {
+			continue
+		}
+		if pointChange.Value != 2 {
+			t.Fatalf("expected slash unequip to lower live owner points to 2 while keeping retaliation runtime-only, got %+v", pointChange)
+		}
+		foundUnequipPointChange = true
+		break
+	}
+	if !foundUnequipPointChange {
+		t.Fatalf("expected slash unequip frames to include a point change after runtime-only retaliation")
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points runtime-only after unequip, got %d queued frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change after runtime-only unequip persistence: %v", err)
+	}
+	if delayedPointChange.Value != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points at runtime-only value 1 after unequip, got %+v", delayedPointChange)
+	}
+
+	account, err := accounts.Load("unequip-owner-runtime-only")
+	if err != nil {
+		t.Fatalf("load persisted runtime-only unequip owner account: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 3 {
+		t.Fatalf("expected persisted unequip owner points[%d] to keep pre-retaliation value after equip removal, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if len(account.Characters[0].Equipment) != 0 {
+		t.Fatalf("expected persisted equipment to be empty after runtime-only unequip persistence, got %#v", account.Characters[0].Equipment)
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 12200 || account.Characters[0].Inventory[0].Slot != 4 || account.Characters[0].Inventory[0].Equipped {
+		t.Fatalf("unexpected persisted inventory after runtime-only unequip persistence: %#v", account.Characters[0].Inventory)
+	}
+
+	closeSessionFlow(t, flow)
+	issuePeerTicket(t, store, "unequip-owner-runtime-only", 0x9a9a9a9a, owner)
+	reconnectFlow, reconnectEnter := enterGameWithLoginTicket(t, factory, "unequip-owner-runtime-only", 0x9a9a9a9a)
+	defer closeSessionFlow(t, reconnectFlow)
+	if len(reconnectEnter) < 8 {
+		t.Fatalf("expected runtime-only unequip reconnect bootstrap to emit at least 8 frames, got %d", len(reconnectEnter))
+	}
+	reconnectPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reconnectEnter[4]))
+	if err != nil {
+		t.Fatalf("decode reconnect bootstrap point-change after runtime-only unequip persistence: %v", err)
+	}
+	if reconnectPointChange.Value != 3 {
+		t.Fatalf("expected reconnect bootstrap after unequip to rebuild persisted points[%d] value 3 without retaliation loss, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
+	}
+}
+
 func TestGameSessionFlowPracticeMobUseItemKeepsRetaliationPointLossRuntimeOnlyWhilePersistingUseEffect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

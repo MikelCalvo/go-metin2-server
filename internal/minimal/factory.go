@@ -1073,30 +1073,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			selectedPlayer.SetLivePosition(updatedLive.MapIndex, x, y)
 			return selectedPlayer.LiveCharacter(), true
 		}
-		commitSelectedItemMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
-			if selectedPlayer == nil {
-				return nil, false
-			}
-			updatedSelected := selectedPlayer.LiveCharacter()
-			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, updatedSelected)
-			if !ok {
-				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-				refreshLiveCharacterRegistration()
-				return nil, false
-			}
-			if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
-				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-				refreshLiveCharacterRegistration()
-				return nil, false
-			}
-			sessionTicket.Characters = updatedCharacters
-			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
-			refreshLiveCharacterRegistration()
-			if ownsLiveSharedWorldSession() {
-				sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previousSelected, updatedSelected, stablePeerFrames)
-			}
-			return frames, true
-		}
 		commitSelectedNonPointItemMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
 			if selectedPlayer == nil {
 				return nil, false
@@ -1198,13 +1174,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		}
 		commitSelectedPointBearingItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
 			frames, ok := commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
-			if !ok {
-				return gameflow.ChatResult{Accepted: false}
-			}
-			return gameflow.ChatResult{Accepted: true, Frames: frames}
-		}
-		commitSelectedItemMutationWithStablePeerFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) gameflow.ChatResult {
-			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 			if !ok {
 				return gameflow.ChatResult{Accepted: false}
 			}
@@ -1606,7 +1575,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot)
-						return commitSelectedItemMutationWithStablePeerFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						return gameflow.ChatResult{Accepted: true, Frames: frames}
 					}
 
 					if equipSlot, toSlot, ok := slashUnequipItemCommand(packet.Message); ok {
@@ -1640,7 +1613,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot)
-						return commitSelectedItemMutationWithStablePeerFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						return gameflow.ChatResult{Accepted: true, Frames: frames}
 					}
 
 					if packet.Type == chatproto.ChatTypeTalking {
