@@ -15696,6 +15696,135 @@ func TestQueuedSessionFlowCloseReturnsTheSameInnerErrorOnRepeatedCalls(t *testin
 	}
 }
 
+func TestGameSessionFlowPracticeMobUseItemKeepsRetaliationPointLossRuntimeOnlyWhilePersistingUseEffect(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseOwnerRuntimeOnly", 0x01030188, 0x02040188, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 3
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{}
+	issuePeerTicket(t, store, "use-owner-runtime-only", 0x88888888, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-owner-runtime-only", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed runtime-only use-item owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := newItemTemplateStore(t, defaultBootstrapItemTemplateSnapshot().Templates)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected practice-mob item-use runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000600, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for runtime-only item-use persistence: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before runtime-only item-use persistence, got %d", len(actors))
+	}
+	practiceMobTargetVID := uint32(actors[0].EntityID)
+
+	factory := runtime.SessionFactory()
+	flow, enterOut := enterGameWithLoginTicket(t, factory, "use-owner-runtime-only", 0x88888888)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected runtime-only item-use owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before runtime-only item-use persistence: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before runtime-only item-use persistence, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: practiceMobTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before runtime-only item-use persistence: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate retaliation setup attack to emit 2 frames before runtime-only item-use persistence, got %d", len(attackOut))
+	}
+	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before runtime-only item-use persistence: %v", err)
+	}
+	if immediatePointChange.Value != 2 {
+		t.Fatalf("expected immediate retaliation to drop live owner points to 2 before runtime-only item-use persistence, got %+v", immediatePointChange)
+	}
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected slash item-use error before runtime-only item-use persistence: %v", err)
+	}
+	if len(useOut) != 3 {
+		t.Fatalf("expected runtime-only item use to emit 3 frames, got %d", len(useOut))
+	}
+	usePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
+	if err != nil {
+		t.Fatalf("decode slash item-use point change during runtime-only item-use persistence: %v", err)
+	}
+	if usePointChange.Value != 52 {
+		t.Fatalf("expected slash item use to raise live owner points to 52 while keeping retaliation runtime-only, got %+v", usePointChange)
+	}
+	useSetPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useOut[1]))
+	if err != nil {
+		t.Fatalf("decode slash item-use set during runtime-only item-use persistence: %v", err)
+	}
+	if useSetPacket.Position.WindowType != itemproto.WindowInventory || useSetPacket.Position.Cell != 5 || useSetPacket.Vnum != 27001 || useSetPacket.Count != 2 {
+		t.Fatalf("unexpected slash item-use set packet during runtime-only item-use persistence: %+v", useSetPacket)
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points runtime-only after item use, got %d queued frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change after runtime-only item-use persistence: %v", err)
+	}
+	if delayedPointChange.Value != 51 {
+		t.Fatalf("expected delayed retaliation cadence to keep live owner points at runtime-only value 51 after item use, got %+v", delayedPointChange)
+	}
+
+	account, err := accounts.Load("use-owner-runtime-only")
+	if err != nil {
+		t.Fatalf("load persisted runtime-only item-use owner account: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 53 {
+		t.Fatalf("expected persisted item-use owner points[%d] to keep pre-retaliation value plus use-effect delta 53, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 2, Slot: 5}}) {
+		t.Fatalf("unexpected persisted inventory after runtime-only item-use persistence: %#v", account.Characters[0].Inventory)
+	}
+
+	closeSessionFlow(t, flow)
+	issuePeerTicket(t, store, "use-owner-runtime-only", 0x98989898, owner)
+	reconnectFlow, reconnectEnter := enterGameWithLoginTicket(t, factory, "use-owner-runtime-only", 0x98989898)
+	defer closeSessionFlow(t, reconnectFlow)
+	if len(reconnectEnter) < 8 {
+		t.Fatalf("expected runtime-only item-use reconnect bootstrap to emit at least 8 frames, got %d", len(reconnectEnter))
+	}
+	reconnectPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, reconnectEnter[4]))
+	if err != nil {
+		t.Fatalf("decode reconnect bootstrap point-change after runtime-only item-use persistence: %v", err)
+	}
+	if reconnectPointChange.Value != 53 {
+		t.Fatalf("expected reconnect bootstrap after item use to rebuild persisted points[%d] value 53 without retaliation loss, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
+	}
+}
+
 func TestGameRuntimeItemUseResolvesPointEffectFromItemTemplateStore(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

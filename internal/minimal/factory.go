@@ -1130,6 +1130,49 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return frames, true
 		}
+		commitSelectedPointBearingItemMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
+			if selectedPlayer == nil {
+				return nil, false
+			}
+			persistedSelected := selectedPlayer.PersistedSnapshot()
+			updatedSelected := selectedPlayer.LiveCharacter()
+			if persistedSelected.ID == 0 || updatedSelected.ID == 0 || previousSelected.ID == 0 {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			persistedSelected.Gold = updatedSelected.Gold
+			persistedSelected.Inventory = updatedSelected.Inventory
+			persistedSelected.Equipment = updatedSelected.Equipment
+			for pointIndex := range persistedSelected.Points {
+				pointDelta := int64(updatedSelected.Points[pointIndex]) - int64(previousSelected.Points[pointIndex])
+				pointValue := int64(persistedSelected.Points[pointIndex]) + pointDelta
+				if pointValue < math.MinInt32 || pointValue > math.MaxInt32 {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
+				persistedSelected.Points[pointIndex] = int32(pointValue)
+			}
+			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
+			if !ok {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			if !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			sessionTicket.Characters = updatedCharacters
+			selectedPlayer.SetPersistedSnapshot(persistedSelected)
+			refreshLiveCharacterRegistration()
+			if ownsLiveSharedWorldSession() {
+				sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previousSelected, updatedSelected, stablePeerFrames)
+			}
+			return frames, true
+		}
 		commitSelectedRuntimeOnlyMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
 			if selectedPlayer == nil {
 				return nil, false
@@ -1146,15 +1189,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return frames, true
 		}
-		commitSelectedItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
-			frames, ok := commitSelectedItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+		commitSelectedNonPointItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
+			frames, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 			if !ok {
 				return gameflow.ChatResult{Accepted: false}
 			}
 			return gameflow.ChatResult{Accepted: true, Frames: frames}
 		}
-		commitSelectedNonPointItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
-			frames, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+		commitSelectedPointBearingItemMutation := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte) gameflow.ChatResult {
+			frames, ok := commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 			if !ok {
 				return gameflow.ChatResult{Accepted: false}
 			}
@@ -1635,7 +1678,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							if !ownsLiveSharedWorldSession() {
 								return gameflow.ChatResult{Accepted: true, Frames: frames}
 							}
-							return commitSelectedItemMutation(selectedPlayer, previousSelected, frames)
+							return commitSelectedPointBearingItemMutation(selectedPlayer, previousSelected, frames)
 						}
 					}
 
