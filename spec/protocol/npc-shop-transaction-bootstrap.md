@@ -88,6 +88,7 @@ The gate is:
 - that actor must resolve to a valid structured `shop_preview` definition
 - the runtime must bind the resulting catalog snapshot to the interacting session as the current buyable merchant context
 - only then may a later merchant `BUY` request be interpreted against that catalog
+- while the session still owns live shared-world state, each later `BUY` must re-resolve that same merchant target and current `shop_preview` definition before mutating inventory or gold
 
 The gate must fail closed when:
 - no current merchant context exists for the session

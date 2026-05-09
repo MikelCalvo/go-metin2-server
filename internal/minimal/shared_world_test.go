@@ -8076,6 +8076,97 @@ func TestGameSessionFlowShopBuyPacketReturnsMerchantInventoryFullOnNoValidPlacem
 	}
 }
 
+func TestGameSessionFlowShopBuyPacketFailsClosedWhenMerchantActorLosesInteractionContext(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerPacketLostActorContext", 0x01040112, 0x02050112, 125, nil)
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-p-lctx", 0x12121212, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	if _, ok := runtime.UpdateStaticActor(actorID, "Merchant", bootstrapMapIndex, 1200, 2200, 20300); !ok {
+		t.Fatal("expected merchant actor interaction-context removal to succeed")
+	}
+	_ = flushServerFrames(t, flow)
+
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy error after merchant actor lost interaction context: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected packet shop buy to fail closed once merchant actor lost interaction context, got %d frames", len(buyOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after merchant actor lost interaction-context packet buy failure, got %d", len(queued))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after merchant actor lost interaction-context packet buy attempt")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected gold to stay at 125 after merchant actor lost interaction-context packet buy attempt, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after merchant actor lost interaction-context packet buy attempt")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected inventory to stay empty after merchant actor lost interaction-context packet buy attempt, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted merchant actor lost interaction-context packet buyer account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("unexpected persisted state after merchant actor lost interaction-context packet buy attempt: %+v", account.Characters[0])
+	}
+}
+
+func TestGameSessionFlowShopBuyPacketFailsClosedWhenBoundCatalogSnapshotBecomesStale(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerPacketStaleCatalog", 0x01040113, 0x02050113, 1000, nil)
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-p-stale", 0x13131313, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	updated, err := runtime.UpsertInteractionDefinition(merchantCatalogDefinitionWithPotionCount(4, 200))
+	if err != nil {
+		t.Fatalf("update merchant interaction definition after window open: %v", err)
+	}
+	if updated.Catalog[2].Count != 4 || updated.Catalog[2].Price != 200 {
+		t.Fatalf("unexpected updated merchant interaction definition after window open: %+v", updated)
+	}
+
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 2})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy error after merchant catalog changed: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected packet shop buy to fail closed once bound merchant catalog snapshot became stale, got %d frames", len(buyOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after stale merchant catalog packet buy failure, got %d", len(queued))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after stale merchant catalog packet buy attempt")
+	}
+	if currencySnapshot.Gold != 1000 {
+		t.Fatalf("expected gold to stay at 1000 after stale merchant catalog packet buy attempt, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after stale merchant catalog packet buy attempt")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected inventory to stay empty after stale merchant catalog packet buy attempt, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted stale merchant catalog packet buyer account: %v", err)
+	}
+	if account.Characters[0].Gold != 1000 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("unexpected persisted state after stale merchant catalog packet buy attempt: %+v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyInteractionDebitsCurrencyAndAddsItem(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerSuccess", 0x01040101, 0x02050101, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-success", 0x11111111, buyer)

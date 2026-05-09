@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -1237,8 +1238,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				scheduleFirstPracticeMobServerOriginRetaliation(targetVID, snapshotVersion)
 			}
 		}
+		activeMerchantBuyContextStillValid := func() bool {
+			if !ownsLiveSharedWorldSession() || runtime == nil {
+				return true
+			}
+			resolution := runtime.resolveStaticActorInteraction(sharedWorldID, activeMerchantBuy.TargetVID)
+			if !resolution.Accepted || resolution.Definition.Kind != interactionstore.KindShopPreview || !reflect.DeepEqual(activeMerchantBuy.Definition, resolution.Definition) {
+				clearActiveMerchantBuy()
+				return false
+			}
+			return true
+		}
 		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16, packetShopFrames bool) ([][]byte, bool) {
 			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
+				return nil, false
+			}
+			if !activeMerchantBuyContextStillValid() {
 				return nil, false
 			}
 			entry, ok := merchantCatalogEntryBySlot(activeMerchantBuy.Definition, catalogSlot)
