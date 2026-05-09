@@ -154,6 +154,18 @@ When validation succeeds:
 This slice freezes the success path primarily at the **state** level.
 It does **not** yet claim the final client-visible merchant-window choreography.
 
+### Next packet-path success seam frozen for the next RED
+
+The next narrow merchant-window success step is now frozen explicitly before code changes:
+- successful packet `SHOP BUY` should keep the existing self-only `ITEM_SET` refreshes for every changed carried slot in carried-slot order
+- that packet-path success should then append one bare self-only `GC::SHOP OK`
+- the packet-path success should no longer end on the current placeholder `CHAT_TYPE_INFO("Merchant purchase complete.")`
+
+That next seam remains intentionally small:
+- it applies only to successful packet `SHOP BUY` while the merchant session is still active
+- it does not yet freeze any extra merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` choreography
+- the temporary local `/shop_buy <slot>` debug harness may keep the current placeholder success info chat until a later cleanup slice says otherwise
+
 ### Stale post-reclaim isolation
 
 If a socket already lost live shared-world ownership because another session reclaimed the same selected character:
@@ -217,8 +229,7 @@ The following are still intentionally unknown and must be captured or pinned by 
 - the final semantic meaning of the first trailing byte in client `SHOP BUY`
 - the exact payload layout of the planned `GC::SHOP START` open response
 - whether later compatibility work must switch from the currently planned `GC::SHOP START` path to `GC::SHOP START_EX`
-- the exact minimal `GC::SHOP` success sequence the client expects to keep its merchant UI stable once the two frozen bare packet-path error frames are in place
-- whether successful purchase requires additional merchant-side item/update frames beyond the authoritative state mutation
+- whether later compatibility work must widen the newly frozen packet-path success burst (`ITEM_SET` refreshes + bare `GC::SHOP OK`) with additional merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` frames to keep the client UI fully stable
 - whether explicit `GC::SHOP END` is mandatory on every close path while the socket remains alive in `GAME`
 - whether multi-tab addressing changes the future meaning of `catalog_slot`
 

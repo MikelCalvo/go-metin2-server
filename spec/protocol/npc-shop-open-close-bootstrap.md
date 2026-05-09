@@ -167,9 +167,30 @@ No trailing payload bytes are owned for those two error frames in the current sl
 
 This freeze is intentionally narrower than full merchant-window choreography:
 - it applies only to packet `SHOP BUY` on a still-open merchant session
-- it does not yet freeze a success-side `GC::SHOP OK`
 - it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `INVALID_POS`, `SOLDOUT`, or `START_EX`
 - the local `/shop_buy <catalog_slot>` debug harness still continues to use the current placeholder info-chat failure surface until a later cleanup slice says otherwise
+
+### Next success-side companion frozen for the next RED
+
+The next merchant-window slice now freezes the narrowest honest packet-path success companion without claiming broader update choreography yet.
+
+What the next GREEN should implement for successful packet `SHOP BUY` on a still-open merchant session:
+- keep the existing self-only authoritative carried-slot refreshes (`ITEM_SET` per changed carried slot in carried-slot order)
+- stop using the current placeholder packet-path success chat as the terminal success signal for that packet flow
+- append one bare merchant-family `GC::SHOP OK` after those carried-slot refreshes
+
+The frozen wire shape for that next success companion is intentionally tiny:
+- header: `0x0810`
+- total length: `5`
+- payload bytes:
+  - `subheader = OK`
+
+No trailing payload bytes are frozen for `GC::SHOP OK` in that next slice.
+
+This next freeze is still narrower than full merchant-window choreography:
+- it applies only to successful packet `SHOP BUY` while an active merchant session still exists
+- it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `INVALID_POS`, `SOLDOUT`, or `START_EX`
+- it does not yet require the temporary local `/shop_buy <catalog_slot>` debug harness to stop using the current placeholder success info chat
 
 ## Open rule
 
