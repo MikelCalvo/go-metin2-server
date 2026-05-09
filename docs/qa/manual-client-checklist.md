@@ -259,7 +259,7 @@ If the lab currently has no such content, either:
 - [ ] Approach a visible authored QA NPC with `info`, `talk`, or merchant `shop_preview`
 - [ ] For `info` / `talk`, interact once and wait for the self-only response
 - [ ] For a merchant actor, interact once and confirm a merchant window opens instead of only a chat preview
-- [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one buy from the open window
+- [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one buy from the open window and confirm the success path ends on the merchant-family `GC::SHOP OK` instead of the older placeholder info chat
 - [ ] If the bought item is stackable and the character already carries the same `vnum`, confirm the count can increase on that existing stack instead of always creating a new slot
 - [ ] If the QA setup allows it, fill the carried inventory, leave two compatible carried stacks nearly full, buy a stackable merchant entry whose count exactly matches their combined remaining room, and confirm both existing stacks fill without needing any fresh slot
 - [ ] If the QA setup allows it, leave one compatible carried stack nearly full, buy a stackable merchant entry whose count overflows that stack, and confirm the existing stack fills first while the remainder lands in a fresh carried slot
@@ -271,7 +271,7 @@ If the lab currently has no such content, either:
 Expected result:
 - `info` and `talk` still return deterministic self-only text
 - merchant interaction opens a stable bootstrap `GC::SHOP START` window
-- a bootstrap `SHOP BUY` request can debit gold and grant the authored item without disconnecting the client
+- a bootstrap `SHOP BUY` request can debit gold and grant the authored item without disconnecting the client, and successful packet buys now end on self-only `ITEM_SET` refreshes plus merchant-family `GC::SHOP OK`
 - when the authored item is stackable and a compatible carried stack already exists, the buy can refresh that same slot with the increased count
 - when several compatible carried stacks together can absorb the full authored count, the buy can fill those existing stacks in carried-slot order without needing a fresh slot
 - when several compatible carried stacks together cannot absorb the full authored count but one free carried slot exists, the buy can fill those existing stacks first and place only the final remainder into one fresh carried slot
@@ -280,7 +280,7 @@ Expected result:
 
 Important note:
 - this smoke step validates only the current bootstrap open / buy / close merchant slice
-- broader merchant success/update choreography, sell flow, stock semantics, and richer NPC UI are still ahead
+- broader merchant update choreography, sell flow, stock semantics, and richer NPC UI are still ahead
 
 #### 5.4.2 Warp interaction
 
@@ -540,7 +540,7 @@ Expected result:
 
 - [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
 - [ ] On the stale old socket, keep a merchant window/context open and send one real `SHOP BUY` for slot `0` (or the local `/shop_buy 0` harness where appropriate)
-- [ ] Confirm the stale socket may still receive only its self-local merchant success burst (`ITEM_SET`/`CHAT_TYPE_INFO` in the current slice)
+- [ ] Confirm the stale socket may still receive only its self-local merchant success burst (`ITEM_SET` + `GC::SHOP OK` on packet `SHOP BUY`, or `ITEM_SET`/`CHAT_TYPE_INFO` on the local debug harness in the current slice)
 - [ ] Confirm the authoritative live replacement session and any visible watcher do **not** gain gold/items or otherwise change because of that stale mutation
 - [ ] Confirm loopback-only `/local/inventory/{name}` (and currency introspection if available) still report the replacement live owner's authoritative state, not the stale socket's local divergence
 
@@ -566,7 +566,7 @@ Expected result:
 ### 6.17 Reconnect after stale merchant-buy close rebuilds authoritative state (debug-harness optional)
 
 - [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
-- [ ] On the stale old socket, keep the merchant gate active and issue `SHOP BUY` (or `/shop_buy <slot>` in the local harness) so only the stale socket sees the local success burst
+- [ ] On the stale old socket, keep the merchant gate active and issue `SHOP BUY` (or `/shop_buy <slot>` in the local harness) so only the stale socket sees the local success burst (`ITEM_SET` + `GC::SHOP OK` on packet `SHOP BUY`, or `ITEM_SET`/`CHAT_TYPE_INFO` on the current debug harness)
 - [ ] Close the authoritative replacement session first, then close the stale old socket
 - [ ] Reconnect fresh on the same character
 - [ ] Confirm the new bootstrap/reconnect state keeps the authoritative persisted `gold` and empty/unchanged carried inventory from before the stale local-only buy, not the stale socket's local grant

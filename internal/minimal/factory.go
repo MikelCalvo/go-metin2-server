@@ -1237,7 +1237,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				scheduleFirstPracticeMobServerOriginRetaliation(targetVID, snapshotVersion)
 			}
 		}
-		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16, packetFailureFrames bool) ([][]byte, bool) {
+		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16, packetShopFrames bool) ([][]byte, bool) {
 			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
 				return nil, false
 			}
@@ -1250,7 +1250,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			if failure := selectedPlayer.ValidateMerchantBuy(template, entry.Count, entry.Price); failure != "" {
-				frames, ok := merchantBuyFailureFrames(failure, packetFailureFrames)
+				frames, ok := merchantBuyFailureFrames(failure, packetShopFrames)
 				if !ok {
 					return nil, false
 				}
@@ -1261,7 +1261,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
-			frames, err := merchantBuyResultFrames(buyResult)
+			frames, err := merchantBuyResultFrames(buyResult, packetShopFrames)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -2656,7 +2656,7 @@ func encodePlayerPointChangeFrame(vid uint32, result player.PointChangeResult) [
 	})
 }
 
-func merchantBuyResultFrames(result player.MerchantBuyResult) ([][]byte, error) {
+func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames bool) ([][]byte, error) {
 	frames := make([][]byte, 0, len(result.Items)+1)
 	for _, item := range result.Items {
 		setFrame, err := encodeBootstrapInventoryItemFrame(item)
@@ -2664,6 +2664,10 @@ func merchantBuyResultFrames(result player.MerchantBuyResult) ([][]byte, error) 
 			return nil, err
 		}
 		frames = append(frames, setFrame)
+	}
+	if packetShopFrames {
+		frames = append(frames, shopproto.EncodeServerOK())
+		return frames, nil
 	}
 	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Merchant purchase complete."}))
 	return frames, nil

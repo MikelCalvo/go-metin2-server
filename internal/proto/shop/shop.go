@@ -133,6 +133,14 @@ func DecodeServerEnd(f frame.Frame) error {
 	return decodeServerBareSubheader(f, ServerSubheaderEnd)
 }
 
+func EncodeServerOK() []byte {
+	return frame.Encode(HeaderServerShop, []byte{ServerSubheaderOK})
+}
+
+func DecodeServerOK(f frame.Frame) error {
+	return decodeServerBareSubheader(f, ServerSubheaderOK)
+}
+
 func EncodeServerNotEnoughMoney() []byte {
 	return frame.Encode(HeaderServerShop, []byte{ServerSubheaderNotEnoughMoney})
 }

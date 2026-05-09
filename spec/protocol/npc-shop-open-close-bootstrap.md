@@ -68,14 +68,20 @@ The owned Go surface for that slice now lives in `internal/proto/shop` through:
 - `EncodeClientEnd` / `DecodeClientEnd`
 - `EncodeServerStart` / `DecodeServerStart`
 - `EncodeServerEnd` / `DecodeServerEnd`
+- `EncodeServerOK` / `DecodeServerOK`
+- `EncodeServerNotEnoughMoney` / `DecodeServerNotEnoughMoney`
+- `EncodeServerInventoryFull` / `DecodeServerInventoryFull`
 
 These shapes are intentionally small and buy-only:
 - client `SHOP END`
 - client `SHOP BUY`
 - server `GC::SHOP START`
 - server `GC::SHOP END`
+- server `GC::SHOP OK`
+- server `GC::SHOP NOT_ENOUGH_MONEY`
+- server `GC::SHOP INVENTORY_FULL`
 
-They are enough to own the next packet-codec slice without pretending that richer merchant-window choreography is already final.
+They are enough to own the current bootstrap merchant-window packet family without pretending that richer merchant-window choreography is already final.
 
 ### Common envelope
 
@@ -170,27 +176,27 @@ This freeze is intentionally narrower than full merchant-window choreography:
 - it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `INVALID_POS`, `SOLDOUT`, or `START_EX`
 - the local `/shop_buy <catalog_slot>` debug harness still continues to use the current placeholder info-chat failure surface until a later cleanup slice says otherwise
 
-### Next success-side companion frozen for the next RED
+### Packet-path success companion
 
-The next merchant-window slice now freezes the narrowest honest packet-path success companion without claiming broader update choreography yet.
+The live merchant-window runtime now owns the narrowest honest packet-path success companion without claiming broader update choreography yet.
 
-What the next GREEN should implement for successful packet `SHOP BUY` on a still-open merchant session:
-- keep the existing self-only authoritative carried-slot refreshes (`ITEM_SET` per changed carried slot in carried-slot order)
-- stop using the current placeholder packet-path success chat as the terminal success signal for that packet flow
-- append one bare merchant-family `GC::SHOP OK` after those carried-slot refreshes
+When a live packet `SHOP BUY` request succeeds on a still-open merchant session, the packet-path response now:
+- keeps the existing self-only authoritative carried-slot refreshes (`ITEM_SET` per changed carried slot in carried-slot order)
+- stops using the older placeholder packet-path success chat as the terminal success signal for that packet flow
+- appends one bare merchant-family `GC::SHOP OK` after those carried-slot refreshes
 
-The frozen wire shape for that next success companion is intentionally tiny:
+The bootstrap wire shape for that success companion is intentionally tiny:
 - header: `0x0810`
 - total length: `5`
 - payload bytes:
   - `subheader = OK`
 
-No trailing payload bytes are frozen for `GC::SHOP OK` in that next slice.
+No trailing payload bytes are owned for `GC::SHOP OK` in the current slice.
 
-This next freeze is still narrower than full merchant-window choreography:
+This success freeze is still narrower than full merchant-window choreography:
 - it applies only to successful packet `SHOP BUY` while an active merchant session still exists
 - it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `INVALID_POS`, `SOLDOUT`, or `START_EX`
-- it does not yet require the temporary local `/shop_buy <catalog_slot>` debug harness to stop using the current placeholder success info chat
+- the temporary local `/shop_buy <catalog_slot>` debug harness may keep the current placeholder success info chat until a later cleanup slice says otherwise
 
 ## Open rule
 
@@ -277,20 +283,20 @@ The repository can now say this much honestly:
 - explicit merchant close now uses client `SHOP END` plus server `GC::SHOP END` while the session still holds an active merchant context in `GAME`
 - if that same selected live owner reaches the current practice-mob retaliation floor at `0` HP while a merchant window is open, the runtime now also tears that merchant window down with one self-only `GC::SHOP END` after the owned death + target-clear transition
 - the owned `SHOP BUY` packet shape is now also the primary live bootstrap merchant-buy ingress, while `/shop_buy <catalog_slot>` remains only a local debug harness for the same state contract
-- successful or failed buys may still require a minimal compatibility-facing `GC::SHOP` acknowledgement sequence in addition to the already-owned self-only `ITEM_SET` / `ITEM_DEL` / `PLAYER_POINT_CHANGE` refresh families
+- successful packet buys now also end on one bare merchant-family `GC::SHOP OK` after the already-owned self-only `ITEM_SET` refreshes for changed carried slots
 
 The exact mandatory role of:
-- `OK`
 - `INVALID_POS`
 - `UPDATE_ITEM`
 - `UPDATE_PRICE`
 
 is still capture-gated before the repository claims full merchant-window choreography ownership.
 
-The current live runtime now narrows only one packet-path error seam:
+The current live runtime now narrows one packet-path success seam and two error seams:
+- `OK` is the frozen merchant-family success companion for packet `SHOP BUY` after self-only `ITEM_SET` refreshes on successful authoritative mutation
 - `NOT_ENOUGH_MONEY` is the frozen merchant-family failure companion for packet `SHOP BUY` when the selected character lacks enough gold
 - `INVENTORY_FULL` is the frozen merchant-family failure companion for packet `SHOP BUY` when no valid carried placement exists
-- broader merchant-window success/failure/update choreography still remains unfrozen beyond those two bare error frames
+- broader merchant-window update choreography still remains unfrozen beyond those three bare packet companions
 
 ## Explicit remaining unknowns after the first runtime GREEN
 

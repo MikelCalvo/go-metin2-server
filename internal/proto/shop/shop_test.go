@@ -88,6 +88,20 @@ func TestEncodeServerEndBuildsAFrame(t *testing.T) {
 	}
 }
 
+func TestEncodeServerOKBuildsAFrame(t *testing.T) {
+	want := loadHexFixture(t, "server-ok-frame.hex")
+	got := EncodeServerOK()
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server shop ok frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeServerOKAcceptsTheExpectedSubheader(t *testing.T) {
+	if err := DecodeServerOK(decodeSingleFrame(t, loadHexFixture(t, "server-ok-frame.hex"))); err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+}
+
 func TestEncodeServerNotEnoughMoneyBuildsAFrame(t *testing.T) {
 	want := loadHexFixture(t, "server-not-enough-money-frame.hex")
 	got := EncodeServerNotEnoughMoney()

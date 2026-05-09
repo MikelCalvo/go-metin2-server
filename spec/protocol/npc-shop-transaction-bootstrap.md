@@ -154,14 +154,14 @@ When validation succeeds:
 This slice freezes the success path primarily at the **state** level.
 It does **not** yet claim the final client-visible merchant-window choreography.
 
-### Next packet-path success seam frozen for the next RED
+### Packet-path success companion
 
-The next narrow merchant-window success step is now frozen explicitly before code changes:
-- successful packet `SHOP BUY` should keep the existing self-only `ITEM_SET` refreshes for every changed carried slot in carried-slot order
-- that packet-path success should then append one bare self-only `GC::SHOP OK`
-- the packet-path success should no longer end on the current placeholder `CHAT_TYPE_INFO("Merchant purchase complete.")`
+The live merchant-window success step is now owned explicitly:
+- successful packet `SHOP BUY` keeps the existing self-only `ITEM_SET` refreshes for every changed carried slot in carried-slot order
+- that packet-path success then appends one bare self-only `GC::SHOP OK`
+- the packet-path success no longer ends on the older placeholder `CHAT_TYPE_INFO("Merchant purchase complete.")`
 
-That next seam remains intentionally small:
+That owned seam remains intentionally small:
 - it applies only to successful packet `SHOP BUY` while the merchant session is still active
 - it does not yet freeze any extra merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` choreography
 - the temporary local `/shop_buy <slot>` debug harness may keep the current placeholder success info chat until a later cleanup slice says otherwise
@@ -169,7 +169,8 @@ That next seam remains intentionally small:
 ### Stale post-reclaim isolation
 
 If a socket already lost live shared-world ownership because another session reclaimed the same selected character:
-- merchant `SHOP BUY` and the local `/shop_buy <slot>` debug harness may still return the same self-local inventory/info success burst to that stale socket
+- packet `SHOP BUY` may still return the same self-local packet success burst (`ITEM_SET` refreshes + bare `GC::SHOP OK`) to that stale socket
+- the local `/shop_buy <slot>` debug harness may still return the same self-local inventory/info success burst to that stale socket
 - that stale buy mutation must not persist updated `gold` or `inventory`
 - that stale buy mutation must not replace the replacement live owner's exact-name loopback inventory/currency snapshots
 - if that stale socket later closes, a fresh reconnect/bootstrap must still reload the authoritative persisted `gold`/inventory state rather than the stale socket's local divergence
@@ -205,7 +206,7 @@ The narrowest honest merchant-window failure contract is now live too:
 
 This freeze is intentionally narrower than the whole failure surface:
 - it applies only to packet `SHOP BUY` while an active merchant session still exists
-- it does not yet freeze `INVALID_POS`, `SOLDOUT`, `NOT_ENOUGH_MONEY_EX`, or any success-side `OK` choreography
+- it does not yet freeze `INVALID_POS`, `SOLDOUT`, or `NOT_ENOUGH_MONEY_EX`
 - it does not yet require the local `/shop_buy <slot>` debug harness to stop using the current placeholder info-chat failure messages
 
 Compatibility-oriented server `SHOP` failure subheaders are now acknowledged as likely relevant, especially:
@@ -229,7 +230,7 @@ The following are still intentionally unknown and must be captured or pinned by 
 - the final semantic meaning of the first trailing byte in client `SHOP BUY`
 - the exact payload layout of the planned `GC::SHOP START` open response
 - whether later compatibility work must switch from the currently planned `GC::SHOP START` path to `GC::SHOP START_EX`
-- whether later compatibility work must widen the newly frozen packet-path success burst (`ITEM_SET` refreshes + bare `GC::SHOP OK`) with additional merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` frames to keep the client UI fully stable
+- whether later compatibility work must widen the current owned packet-path success burst (`ITEM_SET` refreshes + bare `GC::SHOP OK`) with additional merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` frames to keep the client UI fully stable
 - whether explicit `GC::SHOP END` is mandatory on every close path while the socket remains alive in `GAME`
 - whether multi-tab addressing changes the future meaning of `catalog_slot`
 
