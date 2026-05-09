@@ -20,6 +20,7 @@ const (
 	ServerSubheaderOK             uint8 = 4
 	ServerSubheaderNotEnoughMoney uint8 = 5
 	ServerSubheaderInventoryFull  uint8 = 7
+	ServerSubheaderInvalidPos     uint8 = 8
 
 	ShopHostItemMax = 40
 
@@ -155,6 +156,14 @@ func EncodeServerInventoryFull() []byte {
 
 func DecodeServerInventoryFull(f frame.Frame) error {
 	return decodeServerBareSubheader(f, ServerSubheaderInventoryFull)
+}
+
+func EncodeServerInvalidPos() []byte {
+	return frame.Encode(HeaderServerShop, []byte{ServerSubheaderInvalidPos})
+}
+
+func DecodeServerInvalidPos(f frame.Frame) error {
+	return decodeServerBareSubheader(f, ServerSubheaderInvalidPos)
 }
 
 func decodeServerBareSubheader(f frame.Frame, subheader uint8) error {

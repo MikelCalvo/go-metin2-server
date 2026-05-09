@@ -1258,7 +1258,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			entry, ok := merchantCatalogEntryBySlot(activeMerchantBuy.Definition, catalogSlot)
 			if !ok {
-				return nil, false
+				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
+				if !ok {
+					return nil, false
+				}
+				return frames, true
 			}
 			template, ok := runtime.itemTemplates[entry.ItemVnum]
 			if !ok {
@@ -2691,6 +2695,8 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 func merchantBuyFailureFrames(failure player.MerchantBuyFailure, packetFailureFrames bool) ([][]byte, bool) {
 	if packetFailureFrames {
 		switch failure {
+		case player.MerchantBuyFailureInvalid:
+			return [][]byte{shopproto.EncodeServerInvalidPos()}, true
 		case player.MerchantBuyFailureInsufficientGold:
 			return [][]byte{shopproto.EncodeServerNotEnoughMoney()}, true
 		case player.MerchantBuyFailureNoValidPlacement:

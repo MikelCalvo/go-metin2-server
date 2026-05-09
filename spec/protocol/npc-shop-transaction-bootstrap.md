@@ -196,24 +196,27 @@ Failure behavior in this bootstrap contract:
 - the runtime must preserve the pre-request selected-character state
 - packet `SHOP BUY` insufficient-gold failure now emits one bare self-only `GC::SHOP NOT_ENOUGH_MONEY`
 - packet `SHOP BUY` no-valid-placement failure now emits one bare self-only `GC::SHOP INVENTORY_FULL`
-- the local `/shop_buy <slot>` debug harness still emits one self-only placeholder `CHAT_TYPE_INFO` delivery (`"Not enough gold."` / `"Inventory full."`) on those same failure causes while the cleanup to one shared visible failure surface remains deferred
+- packet `SHOP BUY` unknown-slot failure now emits one bare self-only `GC::SHOP INVALID_POS`
+- the local `/shop_buy <slot>` debug harness still emits one self-only placeholder `CHAT_TYPE_INFO` delivery (`"Not enough gold."` / `"Inventory full."`) on those same insufficient-gold / no-valid-placement causes while the cleanup to one shared visible failure surface remains deferred, and slash unknown-slot attempts stay fail-closed for now instead of widening into a merchant-family packet/error companion in the same slice
 
 ### Frozen packet-path merchant error seam
 
 The narrowest honest merchant-window failure contract is now live too:
 - packet `SHOP BUY` insufficient-gold failure answers with one bare `GC::SHOP NOT_ENOUGH_MONEY`
 - packet `SHOP BUY` no-valid-placement failure answers with one bare `GC::SHOP INVENTORY_FULL`
-- both merchant error frames use only the common `SHOP (0x0810)` envelope plus the selected error subheader, with no extra payload bytes
+- packet `SHOP BUY` unknown-slot failure answers with one bare `GC::SHOP INVALID_POS`
+- all three merchant error frames use only the common `SHOP (0x0810)` envelope plus the selected error subheader, with no extra payload bytes
 
 This freeze is intentionally narrower than the whole failure surface:
 - it applies only to packet `SHOP BUY` while an active merchant session still exists
-- it does not yet freeze `INVALID_POS`, `SOLDOUT`, or `NOT_ENOUGH_MONEY_EX`
-- it does not yet require the local `/shop_buy <slot>` debug harness to stop using the current placeholder info-chat failure messages
+- it does not yet freeze `SOLDOUT` or `NOT_ENOUGH_MONEY_EX`
+- it does not yet require the local `/shop_buy <slot>` debug harness to stop using the current placeholder info-chat failure messages or silent unknown-slot failure
 
-Compatibility-oriented server `SHOP` failure subheaders are now acknowledged as likely relevant, especially:
+Compatibility-oriented server `SHOP` failure subheaders are still acknowledged as likely relevant, especially:
 - `NOT_ENOUGH_MONEY`
 - `INVENTORY_FULL`
-- `INVALID_POS`
+- `SOLDOUT`
+- `NOT_ENOUGH_MONEY_EX`
 
 After the freeze above, the exact mapping between other server-side failure causes and final client-visible `GC::SHOP` responses still remains capture-gated.
 

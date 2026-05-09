@@ -8076,6 +8076,84 @@ func TestGameSessionFlowShopBuyPacketReturnsMerchantInventoryFullOnNoValidPlacem
 	}
 }
 
+func TestGameSessionFlowShopBuyPacketReturnsMerchantInvalidPosOnUnknownCatalogSlot(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerPacketInvalidPos", 0x01040114, 0x02050114, 1000, nil)
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-p-invalid-pos", 0x14141414, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 9})))
+	if err != nil {
+		t.Fatalf("unexpected packet unknown-slot shop buy error: %v", err)
+	}
+	if len(buyOut) != 1 {
+		t.Fatalf("expected unknown-slot packet shop buy to emit 1 merchant error frame, got %d", len(buyOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode unknown-slot packet merchant buy error frame: %v", err)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after unknown-slot packet buy attempt")
+	}
+	if currencySnapshot.Gold != 1000 {
+		t.Fatalf("expected gold to stay at 1000 after unknown-slot packet buy attempt, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after unknown-slot packet buy attempt")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected inventory to stay empty after unknown-slot packet buy attempt, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted unknown-slot packet merchant buyer account: %v", err)
+	}
+	if account.Characters[0].Gold != 1000 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("unexpected persisted state after unknown-slot packet buy attempt: %+v", account.Characters[0])
+	}
+}
+
+func TestGameSessionFlowShopBuySlashUnknownCatalogSlotStillFailsClosed(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerSlashUnknownSlot", 0x01040115, 0x02050115, 1000, nil)
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-slash-unknown-slot", 0x15151515, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/shop_buy 9"})))
+	if err != nil {
+		t.Fatalf("unexpected slash unknown-slot shop buy error: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected slash unknown-slot merchant buy to stay fail-closed while packet INVALID_POS remains packet-only, got %d frames", len(buyOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after slash unknown-slot merchant buy failure, got %d", len(queued))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after slash unknown-slot merchant buy attempt")
+	}
+	if currencySnapshot.Gold != 1000 {
+		t.Fatalf("expected gold to stay at 1000 after slash unknown-slot merchant buy attempt, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after slash unknown-slot merchant buy attempt")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected inventory to stay empty after slash unknown-slot merchant buy attempt, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted slash unknown-slot merchant buyer account: %v", err)
+	}
+	if account.Characters[0].Gold != 1000 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("unexpected persisted state after slash unknown-slot merchant buy attempt: %+v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyPacketFailsClosedWhenMerchantActorLosesInteractionContext(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacketLostActorContext", 0x01040112, 0x02050112, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-p-lctx", 0x12121212, buyer)

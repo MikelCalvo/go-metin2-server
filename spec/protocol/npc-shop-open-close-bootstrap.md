@@ -162,19 +162,20 @@ The live merchant-window runtime now owns one narrow failure-ack seam too.
 When a live packet `SHOP BUY` request fails for one of the already-owned authoritative causes below, the packet-path response now uses one bare merchant-family error frame:
 - insufficient gold -> `GC::SHOP NOT_ENOUGH_MONEY`
 - no valid carried placement -> `GC::SHOP INVENTORY_FULL`
+- unknown authored `catalog_slot` inside the still-bound merchant snapshot -> `GC::SHOP INVALID_POS`
 
-The bootstrap wire shape for both error companions is intentionally tiny:
+The bootstrap wire shape for those three error companions is intentionally tiny:
 - header: `0x0810`
 - total length: `5`
 - payload bytes:
-  - `subheader = NOT_ENOUGH_MONEY` or `INVENTORY_FULL`
+  - `subheader = NOT_ENOUGH_MONEY`, `INVENTORY_FULL`, or `INVALID_POS`
 
-No trailing payload bytes are owned for those two error frames in the current slice.
+No trailing payload bytes are owned for those three error frames in the current slice.
 
 This freeze is intentionally narrower than full merchant-window choreography:
 - it applies only to packet `SHOP BUY` on a still-open merchant session
-- it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `INVALID_POS`, `SOLDOUT`, or `START_EX`
-- the local `/shop_buy <catalog_slot>` debug harness still continues to use the current placeholder info-chat failure surface until a later cleanup slice says otherwise
+- it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `SOLDOUT`, or `START_EX`
+- the local `/shop_buy <catalog_slot>` debug harness still continues to use the current placeholder info-chat failure surface for insufficient-gold / no-valid-placement and keeps silent unknown-slot failure until a later cleanup slice says otherwise
 
 ### Packet-path success companion
 
@@ -195,7 +196,7 @@ No trailing payload bytes are owned for `GC::SHOP OK` in the current slice.
 
 This success freeze is still narrower than full merchant-window choreography:
 - it applies only to successful packet `SHOP BUY` while an active merchant session still exists
-- it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `INVALID_POS`, `SOLDOUT`, or `START_EX`
+- it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `SOLDOUT`, or `START_EX`
 - the temporary local `/shop_buy <catalog_slot>` debug harness may keep the current placeholder success info chat until a later cleanup slice says otherwise
 
 ## Open rule

@@ -130,6 +130,20 @@ func TestDecodeServerInventoryFullAcceptsTheExpectedSubheader(t *testing.T) {
 	}
 }
 
+func TestEncodeServerInvalidPosBuildsAFrame(t *testing.T) {
+	want := loadHexFixture(t, "server-invalid-pos-frame.hex")
+	got := EncodeServerInvalidPos()
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server shop invalid-pos frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeServerInvalidPosAcceptsTheExpectedSubheader(t *testing.T) {
+	if err := DecodeServerInvalidPos(decodeSingleFrame(t, loadHexFixture(t, "server-invalid-pos-frame.hex"))); err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+}
+
 func TestDecodeServerEndAcceptsTheExpectedSubheader(t *testing.T) {
 	if err := DecodeServerEnd(decodeSingleFrame(t, loadHexFixture(t, "server-end-frame.hex"))); err != nil {
 		t.Fatalf("unexpected decode error: %v", err)
