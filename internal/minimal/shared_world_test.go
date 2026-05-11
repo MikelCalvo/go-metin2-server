@@ -7827,6 +7827,144 @@ func TestGameSessionFlowTransferTriggerClosesOpenMerchantWindowBeforeRebootstrap
 	}
 }
 
+func TestGameSessionFlowMoveClosesMerchantWindowWhenMerchantLeavesInteractionRange(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerMoveClose", 0x01040120, 0x02050120, 125, nil)
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-move-close", 0xA1A1A1A1, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1600, Y: 2600, Time: 0x21222328})))
+	if err != nil {
+		t.Fatalf("unexpected move error with open merchant window: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected move away from merchant to keep only the immediate self move ack, got %d frames", len(moveOut))
+	}
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode move ack before merchant movement close: %v", err)
+	}
+	if moveAck.VID != buyer.VID || moveAck.X != 1600 || moveAck.Y != 2600 {
+		t.Fatalf("unexpected move ack before merchant movement close: %+v", moveAck)
+	}
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected queued merchant close after move left interaction range, got %d frames", len(queued))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, queued[0])); err != nil {
+		t.Fatalf("decode queued merchant shop end after move close: %v", err)
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected explicit SHOP END error after move-triggered merchant close: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected move-triggered merchant close to clear merchant session before later explicit close, got %d frames", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy error after move-triggered merchant close: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected move-triggered merchant close to reject later packet buy frames, got %d", len(buyOut))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after move-triggered merchant close")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected move-triggered merchant close to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after move-triggered merchant close")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected move-triggered merchant close to keep inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted move-triggered merchant close account: %v", err)
+	}
+	if account.Characters[0].X != 1600 || account.Characters[0].Y != 2600 {
+		t.Fatalf("expected move-triggered merchant close to persist the moved position, got %#v", account.Characters[0])
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted move-triggered merchant close account to keep merchant state unchanged, got %#v", account.Characters[0])
+	}
+}
+
+func TestGameSessionFlowSyncPositionClosesMerchantWindowWhenMerchantLeavesInteractionRange(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerSyncClose", 0x01040121, 0x02050121, 125, nil)
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sync-close", 0xB1B1B1B1, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+
+	syncOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: buyer.VID, X: 1600, Y: 2600}}})))
+	if err != nil {
+		t.Fatalf("unexpected sync-position error with open merchant window: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected sync-position away from merchant to keep only the immediate self ack, got %d frames", len(syncOut))
+	}
+	syncAck, err := movep.DecodeSyncPositionAck(decodeSingleFrame(t, syncOut[0]))
+	if err != nil {
+		t.Fatalf("decode sync-position ack before merchant movement close: %v", err)
+	}
+	if len(syncAck.Elements) != 1 || syncAck.Elements[0].VID != buyer.VID || syncAck.Elements[0].X != 1600 || syncAck.Elements[0].Y != 2600 {
+		t.Fatalf("unexpected sync-position ack before merchant movement close: %+v", syncAck)
+	}
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected queued merchant close after sync-position left interaction range, got %d frames", len(queued))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, queued[0])); err != nil {
+		t.Fatalf("decode queued merchant shop end after sync-position close: %v", err)
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected explicit SHOP END error after sync-position-triggered merchant close: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected sync-position-triggered merchant close to clear merchant session before later explicit close, got %d frames", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy error after sync-position-triggered merchant close: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected sync-position-triggered merchant close to reject later packet buy frames, got %d", len(buyOut))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after sync-position-triggered merchant close")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected sync-position-triggered merchant close to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after sync-position-triggered merchant close")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected sync-position-triggered merchant close to keep inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted sync-position-triggered merchant close account: %v", err)
+	}
+	if account.Characters[0].X != 1600 || account.Characters[0].Y != 2600 {
+		t.Fatalf("expected sync-position-triggered merchant close to persist the moved position, got %#v", account.Characters[0])
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted sync-position-triggered merchant close account to keep merchant state unchanged, got %#v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowPhaseSelectClosesMerchantWindowContext(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPhaseSelectClose", 0x01040117, 0x02050117, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-phase-select-close", 0x71717171, buyer)

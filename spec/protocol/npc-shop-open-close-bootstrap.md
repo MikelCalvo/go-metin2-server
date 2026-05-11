@@ -301,6 +301,7 @@ The repository can now say this much honestly:
 - explicit merchant close now uses client `SHOP END` plus server `GC::SHOP END` while the session still holds an active merchant context in `GAME`
 - if a still-open merchant window becomes stale because the live actor or authored `shop_preview` snapshot changed underneath it, the next packet `SHOP BUY` now auto-closes that stale window with one self-only `GC::SHOP END`
 - if a successful warp interaction or exact-position transfer trigger relocates that same still-live selected owner while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the self transfer rebootstrap burst and clears the active merchant context immediately
+- if that same still-live selected owner sends a position-only `MOVE` or `SYNC_POSITION` that leaves the bound merchant actor outside the current interaction/visibility gate while a merchant window is open, the runtime now queues one self-only `GC::SHOP END` after the normal self movement acknowledgement and clears the active merchant context immediately
 - if that same still-live selected owner sends `/phase_select` while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the outgoing select-phase transition frame and clears the active merchant context immediately
 - if that same selected live owner reaches the current practice-mob retaliation floor at `0` HP while a merchant window is open, the runtime now also tears that merchant window down with one self-only `GC::SHOP END` after the owned death + target-clear transition
 - the owned `SHOP BUY` packet shape is now also the primary live bootstrap merchant-buy ingress, while `/shop_buy <catalog_slot>` remains only a local debug harness for the same state contract
@@ -325,7 +326,7 @@ The following remain intentionally unfrozen for the next merchant packet/runtime
 - whether later compatibility work will force `START_EX` instead of the currently owned `START` open path
 - the final gameplay semantic meaning of the opaque leading buy-specific byte in client `SHOP BUY`
 - the exact minimal success-side `GC::SHOP` sequence needed to keep the TMP4 merchant UI stable after a `BUY` once the two frozen bare packet-path error frames are no longer the only owned merchant-window buy companions
-- whether teardown paths beyond explicit `SHOP END`, stale-window auto-close, transfer-triggered rebootstrap close, same-socket `/phase_select` close, and the current retaliation-floor close also need a visible `GC::SHOP END` before phase/disconnect behavior takes over
+- whether teardown paths beyond explicit `SHOP END`, stale-window auto-close, transfer-triggered rebootstrap close, position-only `MOVE` / `SYNC_POSITION` visibility/range close, same-socket `/phase_select` close, and the current retaliation-floor close also need a visible `GC::SHOP END` before phase/disconnect behavior takes over
 - whether any merchant-side refresh frames must accompany a successful `BUY` beyond the already-owned self-facing state refresh packets
 
 These unknowns are the gate for the next merchant buy runtime slice.
@@ -348,5 +349,6 @@ After this slice, the repository should be able to say:
 - merchant open still starts from the already-owned `INTERACT` ingress and structured merchant resolution path
 - `GC::SHOP START` is now the live merchant open response on the bootstrap runtime
 - client `SHOP END` plus server `GC::SHOP END` are now the live explicit close pair for an active bootstrap merchant session
+- a position-only `MOVE` or `SYNC_POSITION` that leaves the bound merchant actor outside the current interaction/visibility gate now queues one self-only `GC::SHOP END` after the normal self movement acknowledgement and clears the active merchant context
 - client `SHOP BUY` is now both an owned codec shape and the live bootstrap merchant-buy ingress, while `/shop_buy <catalog_slot>` remains only a local debug harness for QA/recovery
 - the project still does not pretend that the final wire payloads or the full success/failure response choreography are already capture-confirmed

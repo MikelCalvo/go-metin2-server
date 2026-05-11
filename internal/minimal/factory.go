@@ -888,6 +888,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			clearActiveCombatTarget()
 			enqueueCombatTargetClear()
 		}
+		clearInvalidActiveMerchantBuyAfterMovement := func() {
+			if !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 || runtime == nil || !joinedSharedWorld || sharedWorldID == 0 || sharedWorld == nil || !sharedWorld.HasLiveSession(sharedWorldID) {
+				return
+			}
+			resolution := runtime.resolveStaticActorInteraction(sharedWorldID, activeMerchantBuy.TargetVID)
+			if resolution.Accepted && resolution.Definition.Kind == interactionstore.KindShopPreview && reflect.DeepEqual(activeMerchantBuy.Definition, resolution.Definition) {
+				return
+			}
+			clearActiveMerchantBuy()
+			pending.Enqueue([][]byte{shopproto.EncodeServerEnd()})
+		}
 		clearLiveCharacterRegistration := func() {
 			if liveCharacterRegistrationID == 0 {
 				return
@@ -1540,6 +1551,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if liveSharedWorld {
 						sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previous, selected, [][]byte{movep.EncodeMoveAck(ack)})
 						clearInvalidActiveCombatTargetAfterMovement()
+						clearInvalidActiveMerchantBuyAfterMovement()
 					}
 					return gameflow.Result{Accepted: true, Replication: ack}
 				},
@@ -1578,6 +1590,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if liveSharedWorld {
 							sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previous, selected, [][]byte{movep.EncodeSyncPositionAck(ack)})
 							clearInvalidActiveCombatTargetAfterMovement()
+							clearInvalidActiveMerchantBuyAfterMovement()
 						}
 						return gameflow.SyncPositionResult{Accepted: true, Synchronization: ack}
 					}
