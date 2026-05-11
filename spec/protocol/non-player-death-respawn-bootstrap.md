@@ -45,6 +45,7 @@ The repository now implements this full bootstrap contract for the authored/runt
 - post-death `TARGET` / `ATTACK` requests fail closed while the dummy remains dead
 - the first server-driven dead timer is now live as one fixed `2s` bootstrap delay
 - once that timer expires, currently visible sessions receive the respawn rebuild burst: `CHARACTER_DEL` + `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE`
+- if a still-connected visible player had already reached the current retaliation-owned `0`-HP floor, that zero-HP recipient is skipped from later dummy `GC DEAD(vid)` fanout and from that later respawn rebuild burst while other live viewers still receive the ordinary lifecycle frames
 - the rebuilt dummy returns at bootstrap HP as a fresh live combat snapshot that requires fresh target acquisition before later attacks succeed again
 
 ## Why freeze death / respawn separately
@@ -161,6 +162,7 @@ The first death / respawn contract should respect the current visible-world rule
 - `GC DEAD(vid)` goes only to sessions that can currently see that dummy
 - `GC TARGET(0, 0)` goes only to sessions whose active combat target is that dummy
 - respawn `CHARACTER_DEL` / add-burst packets go only to sessions that should currently see the dummy after the respawn reset
+- the current bootstrap recipient-side player-death rule also applies: if a still-connected visible player already sits at the retaliation-owned `0`-HP floor, later dummy `GC DEAD(vid)` fanout and later respawn rebuild frames skip that zero-HP recipient silently until broader player-death recipient policy is owned
 
 This document does not open any global broadcast rule for combat lifecycle.
 
@@ -185,4 +187,5 @@ After this document lands, the repository should be able to say:
 - respawn is server-driven and timer-based, not client-requested
 - the first owned respawn reset reuses visible actor teardown + rebuild (`CHARACTER_DEL` + normal add/info/update burst) instead of inventing a dedicated revive packet
 - the respawned dummy is a new live combat snapshot that requires fresh target acquisition even if the visible `VID` is reused
+- later dummy death / respawn lifecycle fanout now also respects the current bootstrap player-death recipient gate, so an already-dead still-connected owner does not keep receiving those later non-player lifecycle frames
 - loot, EXP, corpse gameplay, and AI remain deliberately out of scope
