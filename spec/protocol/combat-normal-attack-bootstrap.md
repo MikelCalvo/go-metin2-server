@@ -120,19 +120,19 @@ So the first owned target-state surface is now intentionally tiny but expressive
 ## Relationship to later HP / death work
 
 This document freezes the first deterministic bootstrap HP mutation and the preferred visible HP-refresh carrier.
-The first owned death / respawn wire contract is now documented separately in `non-player-death-respawn-bootstrap.md`, but the live implementation still has not landed that zero-HP transition yet.
+The first owned death / respawn wire contract is now documented separately in `non-player-death-respawn-bootstrap.md`, and the live implementation now uses that contract for the visible zero-HP edge plus the timed respawn rebuild.
 
 The current owned bootstrap combat state is intentionally tiny:
 - visible `training_dummy` combat state is runtime-owned and starts at `10` HP
-- each accepted bootstrap normal attack decrements the dummy by `1` HP
-- the visible refresh stays on server `TARGET(target_vid, hp_percent)` using the current runtime HP converted to percent in `10`-point steps (`100`, `90`, `80`, ...)
-- until the death / respawn implementation slice lands, the currently shipped loop may still stop at the pre-death floor instead of claiming live zero-HP behavior too early
+- each accepted bootstrap normal attack decrements the dummy by `1` HP until the zero-HP edge is reached
+- accepted non-lethal hits keep the visible refresh on server `TARGET(target_vid, hp_percent)` using the current runtime HP converted to percent in `10`-point steps (`100`, `90`, `80`, ...)
+- the final accepted hit now switches surfaces at `0` HP: visible sessions receive `GC DEAD(vid)`, selected sessions clear the stale target on `GC TARGET(0, 0)`, and the dummy stays dead until the owned timed respawn rebuild runs
 
 What this still freezes about the **visible state carrier** for later slices:
 - accepted later attack-driven HP refreshes should continue preferring server `TARGET` with the same selected `target_vid` plus the updated `hp_percent`
 - target loss, invalidation, death cleanup, reconnect cleanup, transfer cleanup, or reclaim cleanup should prefer the zero-target `TARGET(0, 0)` companion before introducing a new clear-target family
 - when subject movement or sync updates make the selected dummy leave current visibility or the bootstrap combat band, the runtime should proactively clear the active target with one self-only `TARGET(0, 0)` companion
-- when the later zero-HP death transition lands, it should keep death-triggered target clear on the same `TARGET(0, 0)` surface while `GC DEAD(vid)` and respawn rebuild stay owned by `non-player-death-respawn-bootstrap.md`
+- when the zero-HP death transition is reached, it keeps death-triggered target clear on the same `TARGET(0, 0)` surface while `GC DEAD(vid)` and respawn rebuild stay owned by `non-player-death-respawn-bootstrap.md`
 
 If future captures or tests prove this carrier insufficient, the repository may add a richer combat packet family later.
 But the next slices should begin from this smaller contract first.
@@ -205,7 +205,7 @@ The first owned delayed server-origin retaliation cadence is still narrow, but i
 - each queued beat is server-origin only: it arrives through the pending server-frame path instead of piggybacking only on a fresh client attack frame
 - it reuses the same bootstrap player-point carrier and `-1` HP decrement already used by the immediate owner-side retaliation piggyback
 - that owner-side retaliation point-loss now clamps at the current bootstrap HP floor instead of driving the owner's visible HP negative; once the owner's live HP reaches `0`, later immediate or delayed retaliation point-loss beats fail closed until broader player-death semantics are owned separately
-- those immediate and delayed owner-side retaliation point-loss beats currently mutate only the engaged selected-session live runtime; they do **not** write the persisted account snapshot, and later successful slash `/use_item`, `/equip_item`, and `/unequip_item` saves now keep their authored use/equip-effect point delta plus consumed or carried/equipped item state without overwriting that pre-retaliation point value, so a fresh `/phase_select` re-entry or reconnect still rebuilds from the pre-retaliation point value plus any later owned use/equip delta until broader player-death persistence or respawn semantics are owned
+- those immediate and delayed owner-side retaliation point-loss beats currently mutate only the engaged selected-session live runtime; they do **not** write the persisted account snapshot, and later successful slash `/use_item`, carried-slot `ITEM_USE`, `/equip_item`, and `/unequip_item` saves now keep their authored use/equip-effect point delta plus consumed or carried/equipped item state without overwriting that pre-retaliation point value, so a fresh `/phase_select` re-entry or reconnect still rebuilds from the pre-retaliation point value plus any later owned use/equip delta until broader player-death persistence or respawn semantics are owned
 - when an immediate or delayed retaliation beat reaches that owner-side `0`-HP floor, the current slice now emits one self-only `GC DEAD(owner_vid)` before also clearing the live combat target with one self-only `GC TARGET(0, 0)` instead of leaving the stale engagement selected while broader player-death choreography stays out of scope
 - once that engaged owner's live HP is already `0` because an earlier immediate or delayed retaliation beat reached the current bootstrap floor, later combat `TARGET` and normal `ATTACK` attempts from that same owner against engaged practice mobs also fail closed instead of continuing the combat loop while broader player-death semantics remain out of scope
 - once that same owner-side floor has already been reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed before live-position mutation, peer relocation fanout, or transfer-trigger rebootstrap work can run
@@ -216,12 +216,12 @@ The first owned delayed server-origin retaliation cadence is still narrow, but i
 - same-socket `/quit` and `/logout` now both count as immediate live-ownership loss boundaries for that cadence: each command removes the owner from shared-world visibility, cancels any pending delayed beat, and releases the current practice-mob engagement right away, while `/quit` still remains in `GAME` just long enough to return its self `CHAT_TYPE_COMMAND quit` delivery
 - this is still a tiny deterministic cadence, not broader AI: it remains owner-only, fixed-delay, and bound to the current engaged live target instead of widening into movement, chase, or mob packet families yet
 
-## Explicit unknowns still left for the next RED
+## Explicit unknowns still left beyond the current bootstrap contract
 
-The next flow/gameplay slices still need to prove or freeze:
+Later flow/gameplay slices still need to prove or freeze:
 - whether the runtime should validate or currently only preserve the two trailing raw CRC bytes
 - whether later attack-speed ownership should stay target-relative or widen into a broader session-wide/global policy across target swaps
-- the exact bootstrap respawn delay constant and scheduler shape for the first server-driven dummy respawn reset
+- how and when the current runtime-only owner retaliation loss should eventually hand off into broader persisted player-death / revive state instead of staying session-local
 - whether later hostile retaliation should widen beyond the current fixed-delay owner-only cadence into broader AI or richer mob-origin packet surfaces
 
 Those unknowns are deliberate.
@@ -234,7 +234,7 @@ This slice does **not** yet freeze:
 - final damage formulas beyond the current bootstrap `1` HP decrement
 - broader session-wide attack-speed rules beyond the first fixed same-target `250ms` cadence window
 - miss/crit/block results
-- the server-driven respawn timer, delete/re-add reset burst, and full post-death rebuild that the separate death / respawn doc already freezes for the next slice
+- the broader server-driven respawn/delete-readd choreography details beyond the already-owned fixed timed rebuild that the separate death / respawn doc now freezes
 - broader hostile retaliation beyond the current owner-side self-only point-loss surfaces: one immediate piggyback on accepted practice-mob hits plus one sustained fixed-delay delayed server-origin follow-up cadence at a time
 - broader player-death / respawn semantics or broader non-combat gameplay gating for zero-HP owners after that floor is reached beyond the self-only `GC DEAD(owner_vid)` signal frozen in `player-death-bootstrap.md`
 - player-vs-player attack semantics
@@ -255,14 +255,14 @@ After this document lands, the repository should be able to say:
 - duplicate-live reclaim now inherits the same shared-world hardening model as movement, whisper, item use, and merchant seams: stale `TARGET` / `ATTACK` packets fail closed and cannot mutate runtime dummy HP or the replacement owner's target state
 - accepted target ownership now also carries the current runtime snapshot behind the selected dummy `VID`, so later `ATTACK` requests fail closed if that dummy is replaced before the session reselects it
 - the zero-HP transition is now live: the final accepted hit drives the dummy from `1` to `0`, emits `GC DEAD(vid)` to visible sessions, and clears any selected session's combat target on the existing self-only `GC TARGET(0, 0)` surface
-- a dead dummy is no longer targetable or attackable through the current bootstrap `TARGET` / `ATTACK` loop until the separate respawn-reset slice lands
+- a dead dummy is no longer targetable or attackable through the current bootstrap `TARGET` / `ATTACK` loop until the owned timed respawn-reset rebuild completes
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes stay on the same `GC TARGET(target_vid, hp_percent)` carrier until the zero-HP death edge, after which the repo switches to `GC DEAD(vid)` + target clear rather than inventing richer combat-result packets early
-- the first death / respawn wire contract is now frozen separately in `non-player-death-respawn-bootstrap.md`, and this attack slice now implements the death side of that contract while leaving server-driven respawn reset for the next runtime slice
+- the first death / respawn wire contract is now frozen separately in `non-player-death-respawn-bootstrap.md`, and this attack slice now interoperates with that already-owned timed server-driven respawn reset instead of inventing a second rebuild path here
 - content-loaded `spawn_groups` practice mobs now own the first aggro-lite post-hit target gate too: once the first authoritative hit is accepted, fresh third-party `TARGET` attempts fail closed until the existing death / respawn reset boundary, unless that engaged owner's retaliation-driven `0`-HP death clears the current engagement first, without claiming broader mob hostility yet
 - repeated same-target normal `ATTACK` attempts are now also rate-owned in one narrow bootstrap shape: after an accepted hit, the same live selected target snapshot rejects further normal attacks for `250ms`, then accepts again once that fixed server-owned window expires
 - that same first hostility seam is now slightly richer but still deterministic: while the engaged content-loaded practice mob stays alive, each accepted owner-side normal hit still appends one immediate self-only `GC POINT_CHANGE` HP decrement to the attack success frames, and the first accepted live hit now starts a delayed self-only `GC POINT_CHANGE` follow-up cadence that keeps firing every `1s` while the same engagement remains live
-- those immediate and delayed owner-side retaliation point-loss beats stay runtime-only for the engaged selected session today: they do **not** write the persisted account snapshot, and later position-only persistence helpers (`MOVE`, `SYNC_POSITION`, or transfer rebootstrap saves), successful slash `/use_item`, `/equip_item`, and `/unequip_item` saves, plus non-point-bearing slash `/inventory_move` and merchant-buy saves now keep their coordinate, authored use/equip-effect point delta + consumed or carried/equipped item state, carried-slot, or purchase state without overwriting that pre-retaliation point value, so a fresh `/phase_select` re-entry or reconnect still rebuilds from the pre-retaliation point value plus any later owned use/equip delta until broader player-death persistence or respawn semantics are owned
+- those immediate and delayed owner-side retaliation point-loss beats stay runtime-only for the engaged selected session today: they do **not** write the persisted account snapshot, and later position-only persistence helpers (`MOVE`, `SYNC_POSITION`, or transfer rebootstrap saves), successful slash `/use_item`, carried-slot `ITEM_USE`, `/equip_item`, and `/unequip_item` saves, plus non-point-bearing slash `/inventory_move` and merchant-buy saves now keep their coordinate, authored use/equip-effect point delta + consumed or carried/equipped item state, carried-slot, or purchase state without overwriting that pre-retaliation point value, so a fresh `/phase_select` re-entry or reconnect still rebuilds from the pre-retaliation point value plus any later owned use/equip delta until broader player-death persistence or respawn semantics are owned
 - those owner-side retaliation point-loss beats now stop at the bootstrap HP floor too: neither the immediate hit-triggered tick nor the delayed server-origin cadence can drive the owner's visible HP below `0`, and once `0` is reached the current slice simply stops further point-loss without yet claiming broader player-death choreography
 - when either the immediate retaliation tick or a delayed follow-up beat reaches that owner-side `0`-HP floor, the current slice now emits one self-only `GC DEAD(owner_vid)` and one self-only `GC TARGET(0, 0)` clear so the stale engaged mob is no longer kept as the active combat target
 - when that same owner-side `0`-HP floor is reached while a content-loaded practice mob still remains alive, the dead owner also stops holding that mob's aggro-lite engagement gate: a different visible live session may reacquire the same still-live mob with a fresh `TARGET` without waiting for the mob to die / respawn or for the dead owner to disconnect first
