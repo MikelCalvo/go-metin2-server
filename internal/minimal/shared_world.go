@@ -981,6 +981,9 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 	frames := encodeStaticActorVisibilityFrames(registered)
 	if len(frames) > 0 {
 		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(registered) {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
 			r.enqueueToEntityLocked(target.Entity.ID, frames)
 		}
 	}
@@ -1038,18 +1041,27 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 	refreshFrames := buildStaticActorRefreshFrames(previous, actor)
 	if len(refreshFrames) > 0 {
 		for _, target := range targetDiff.RetainedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
 			r.enqueueToEntityLocked(target.Entity.ID, refreshFrames)
 		}
 	}
 	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(previous)
 	if deleteEncodable {
 		for _, target := range targetDiff.RemovedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
 			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
 		}
 	}
 	addFrames := encodeStaticActorVisibilityFrames(actor)
 	if len(addFrames) > 0 {
 		for _, target := range targetDiff.AddedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
 			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
@@ -1297,6 +1309,9 @@ func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSna
 	deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
 	if encodable {
 		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
 			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
 		}
 	}

@@ -37,6 +37,7 @@ This contract currently applies only to:
 - one recipient-side server-notice gate for later server-originated `CHAT_TYPE_NOTICE` broadcasts aimed at that same still-connected zero-HP owner through the current bootstrap global notice path
 - one recipient-side peer-visibility gate for later fresh visible peer joins whose queued `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` burst would otherwise be delivered to that same still-connected zero-HP owner through the current shared-world join path
 - one recipient-side non-player combat-lifecycle gate for later visible practice-mob `GC DEAD(...)` fanout plus its later timed respawn rebuild burst aimed at that same still-connected zero-HP owner
+- one recipient-side non-player visibility gate for later live static-actor register / update / remove delivery aimed at that same still-connected zero-HP owner through the current shared-world static-actor visibility paths
 
 This contract does **not** yet claim:
 - corpse state, knockdown animations, or corpse interaction
@@ -69,6 +70,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later `MOVE`, `SYNC_POSITION`, or transfer-driven visibility-entry rebuilds that newly bring another live session into visibility of that same still-connected dead owner also append one queued `GC DEAD(owner_vid)` for the entering live peer right after the ordinary peer-entry burst for that owner, so those later visibility rebuilds do not silently re-present an already-dead visible player as live either
 - once this floor is reached, later visibility-gated queued peer `GC DEAD(other_vid)` fanout from another visible player's retaliation-owned death edge also skips that same still-connected zero-HP owner recipient entirely
 - once this floor is reached, later visible practice-mob `GC DEAD(mob_vid)` fanout plus that mob's later timed respawn rebuild burst (`CHARACTER_DEL` + `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE`) also skip that same still-connected zero-HP owner recipient entirely while other live viewers still receive the ordinary non-player lifecycle frames
+- once this floor is reached, later live static-actor register / update / remove visibility delivery also keeps queuing the ordinary non-player add / refresh / delete frames for other live viewers, but those same queued static-actor visibility frames skip that still-connected zero-HP owner recipient entirely
 - once this floor is reached, later owner-side self-only `CHAT` requests with `type = INFO` also fail closed before local `GC_CHAT` delivery can run
 - the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, while the already-owned `/shop_buy`, `/use_item`, `ITEM_USE`, `/inventory_move`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
 
@@ -273,13 +275,26 @@ Why this is the current owned boundary:
 - once that join seam was owned, the next honest widening stayed on the same packet family and reused the existing AOI visibility rebuild path for `MOVE` / `SYNC_POSITION` and the already-owned transfer visibility rebuild instead of jumping straight to broader corpse-state teardown or full post-death observer rules
 - keeping the rule scoped to the existing join plus movement/sync/transfer visibility-entry seams preserves a tiny honest contract without claiming full corpse-state visibility teardown or a broader post-death observer model yet
 
+## First owned post-floor static-actor visibility recipient skips
+
+The current bootstrap player-death contract now also owns one narrow non-player visibility-recipient rule for that same still-connected zero-HP owner session:
+- once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later live static-actor registration no longer queues the ordinary `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` burst to that zero-HP owner recipient
+- other connected live recipients still receive the ordinary static-actor registration burst when they share visible world with that actor
+- once that same owner is already sitting at that zero-HP floor, later in-place static-actor updates also skip that zero-HP owner recipient for both same-visible-set refresh delivery (`CHARACTER_DEL` + `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE`) and add/remove visibility deltas across map or AOI changes
+- once that same owner is already sitting at that zero-HP floor, later static-actor removals also skip that zero-HP owner recipient for the ordinary `CHARACTER_DEL`
+- this slice stays recipient-only: it does not yet claim broader dead-owner observer rules for every later non-player packet family, and it does not widen past the current shared-world static-actor register / update / remove visibility seams
+
+Why this is the current owned boundary:
+- after peer chat/notice/peer-entry recipient skips plus later practice-mob death/respawn lifecycle recipient skips were already owned, live static-actor visibility delivery became the next smallest remaining queued non-player surface that could still deliver ordinary world-presence output to a still-connected zero-HP owner
+- reusing the existing static-actor register / update / remove fanout paths keeps the widening honest without pretending corpse teardown, revive policy, or a broader dead-observer visibility model already exist
+
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
 - a player respawn timer or revive request packet
 - broader self-bootstrap or transfer choreography after death beyond the currently owned persisted `/phase_select` re-entry / reconnect rebuild semantics
 - broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, client/slash item-use, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
-- broader recipient-side communication policy beyond the now-owned exact-name whisper denial, queued `CHAT_TYPE_TALKING` / `PARTY` / `GUILD` / `SHOUT` recipient skips, queued peer-entry visibility recipient skips on join plus movement/sync/transfer visibility rebuilds, and server-origin `CHAT_TYPE_NOTICE` recipient skip for connected zero-HP owners
+- broader recipient-side communication or world-visibility policy beyond the now-owned exact-name whisper denial, queued `CHAT_TYPE_TALKING` / `PARTY` / `GUILD` / `SHOUT` recipient skips, queued peer-entry visibility recipient skips on join plus movement/sync/transfer visibility rebuilds, queued static-actor visibility recipient skips on register/update/remove, queued practice-mob death/respawn lifecycle recipient skips, and server-origin `CHAT_TYPE_NOTICE` recipient skip for connected zero-HP owners
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
 ## Success definition
@@ -302,6 +317,7 @@ After this document lands, the repository should be able to say:
 - once retaliation has already driven the owning character to `0` HP, later movement- or `SYNC_POSITION`-driven peer visibility re-entry bursts also keep queuing their ordinary `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` burst for the live mover/syncing origin, but that same queued peer-entry burst skips the still-connected zero-HP owner recipient under the current shared-world AOI rebuild path
 - once retaliation has already driven the owning character to `0` HP, later transfer-driven peer visibility re-entry bursts also keep queuing their ordinary `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` burst for the live transferred origin, but that same queued peer-entry burst skips the still-connected zero-HP owner recipient under the current shared-world transfer rebuild path
 - once retaliation has already driven the owning character to `0` HP, later visible practice-mob `GC DEAD(mob_vid)` fanout and that mob's later timed respawn rebuild burst also keep queuing their ordinary non-player death / respawn lifecycle frames for other live viewers, but those same queued frames skip the still-connected zero-HP owner recipient entirely
+- once retaliation has already driven the owning character to `0` HP, later live static-actor register / update / remove visibility delivery also keeps queuing the ordinary non-player add / refresh / delete frames for other live viewers, but those same queued static-actor visibility frames skip the still-connected zero-HP owner recipient entirely
 - once retaliation has already driven the owning character to `0` HP, later owner-side self-only `CHAT` requests with type `INFO` also fail closed before self info delivery can run
 - if that same floor is reached while the dead owner still held the aggro-lite gate for a live content-loaded practice mob, that same floor transition now also releases the mob's engagement so another visible live session may reacquire it with a fresh `TARGET` without waiting for owner disconnect or mob death / respawn
 - once either retaliation beat reaches that same floor, currently visible live peer sessions also receive one queued `GC DEAD(owner_vid)` while already-dead connected recipients are skipped and corpse state, respawn, and broader player-death choreography remain deliberately out of scope

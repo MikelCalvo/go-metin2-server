@@ -3053,6 +3053,217 @@ func TestGameSessionFlowPracticeMobRespawnRebuildSkipsZeroHPOwnerRecipientAfterI
 	}
 }
 
+func setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t *testing.T) (*gameRuntime, service.SessionFlow, service.SessionFlow, uint32, loginticket.Character, func(time.Duration)) {
+	t.Helper()
+
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000474, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	advance := func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	}
+	return runtime, ownerFlow, watcherFlow, targetVID, owner, advance
+}
+
+func drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t *testing.T, ownerFlow service.SessionFlow, watcherFlow service.SessionFlow, targetVID uint32, ownerVID uint32, advance func(time.Duration)) {
+	t.Helper()
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before zero-HP static-actor visibility recipient test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before zero-HP static-actor visibility recipient test, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before zero-HP static-actor visibility recipient test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP static-actor visibility recipient test, got %d frames", len(attackOut))
+	}
+
+	advance(time.Second)
+	queued := flushServerFrames(t, ownerFlow)
+	if len(queued) != 3 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP static-actor visibility recipient test, got %d frames", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change before zero-HP static-actor visibility recipient test: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP static-actor visibility recipient test, got %+v", pointChange)
+	}
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP static-actor visibility recipient test, got %d", len(watcherQueued))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode visible-peer dead frame before zero-HP static-actor visibility recipient test: %v", err)
+	}
+	if dead.VID != ownerVID {
+		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP static-actor visibility recipient test, got %+v", dead)
+	}
+}
+
+func TestGameRuntimeRegisterStaticActorSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 1250, 2250, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed after owner reaches zero HP")
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued static-actor bootstrap frames after later registration, got %d", len(queued))
+	}
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 3 {
+		t.Fatalf("expected live watcher to receive 3 queued static-actor bootstrap frames after later registration, got %d", len(watcherQueued))
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode watcher static-actor add after zero-HP owner registration skip: %v", err)
+	}
+	if added.VID != uint32(actor.EntityID) || added.X != actor.X || added.Y != actor.Y {
+		t.Fatalf("unexpected watcher static-actor add after zero-HP owner registration skip: %+v", added)
+	}
+}
+
+func TestGameRuntimeUpdateStaticActorRefreshSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 1250, 2250, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed before zero-HP owner update recipient test")
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected live owner to receive 3 queued static-actor bootstrap frames before zero-HP owner update recipient test, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 3 {
+		t.Fatalf("expected live watcher to receive 3 queued static-actor bootstrap frames before zero-HP owner update recipient test, got %d", len(queued))
+	}
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	updated, ok := runtime.UpdateStaticActor(actor.EntityID, "VillageGuardCaptain", bootstrapMapIndex, 1260, 2260, actor.RaceNum)
+	if !ok {
+		t.Fatal("expected static actor update to succeed after owner reaches zero HP")
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued static-actor refresh frames after later update, got %d", len(queued))
+	}
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 4 {
+		t.Fatalf("expected live watcher to receive delete plus add/info/update static-actor refresh after later update, got %d frames", len(watcherQueued))
+	}
+	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode watcher static-actor delete after zero-HP owner update skip: %v", err)
+	}
+	if deleted.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected watcher static-actor delete after zero-HP owner update skip: %+v", deleted)
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, watcherQueued[1]))
+	if err != nil {
+		t.Fatalf("decode watcher static-actor add after zero-HP owner update skip: %v", err)
+	}
+	if added.VID != uint32(updated.EntityID) || added.X != updated.X || added.Y != updated.Y {
+		t.Fatalf("unexpected watcher static-actor add after zero-HP owner update skip: %+v", added)
+	}
+}
+
+func TestGameRuntimeRemoveStaticActorSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", bootstrapMapIndex, 1250, 2250, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed before zero-HP owner remove recipient test")
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected live owner to receive 3 queued static-actor bootstrap frames before zero-HP owner remove recipient test, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 3 {
+		t.Fatalf("expected live watcher to receive 3 queued static-actor bootstrap frames before zero-HP owner remove recipient test, got %d", len(queued))
+	}
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	removed, ok := runtime.RemoveStaticActor(actor.EntityID)
+	if !ok {
+		t.Fatal("expected static actor removal to succeed after owner reaches zero HP")
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued static-actor delete frame after later removal, got %d", len(queued))
+	}
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected live watcher to receive 1 queued static-actor delete frame after later removal, got %d", len(watcherQueued))
+	}
+	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode watcher static-actor delete after zero-HP owner remove skip: %v", err)
+	}
+	if deleted.VID != uint32(removed.EntityID) {
+		t.Fatalf("unexpected watcher static-actor delete after zero-HP owner remove skip: %+v", deleted)
+	}
+}
+
 func TestGameSessionFlowPracticeMobPeerJoinSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
