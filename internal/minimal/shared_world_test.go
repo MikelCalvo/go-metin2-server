@@ -11031,6 +11031,139 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnly
 	}
 }
 
+func TestGameSessionFlowPracticeMobTransferRebootstrapStopsPendingRetaliationAndReleasesAggro(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed owner account before transfer retaliation teardown test: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "peer-two", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed watcher account before transfer retaliation teardown test: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000450, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before transfer retaliation teardown test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before transfer retaliation teardown test, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before transfer retaliation teardown test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before transfer, got %d frames", len(attackOut))
+	}
+
+	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error while owner still holds practice-mob aggro-lite gate before transfer: %v", err)
+	}
+	if len(blockedTargetOut) != 0 {
+		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate before transfer, got %d frames", len(blockedTargetOut))
+	}
+
+	transferOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222326})))
+	if err != nil {
+		t.Fatalf("unexpected transfer move error after delayed retaliation was armed: %v", err)
+	}
+	if len(transferOut) == 0 {
+		t.Fatal("expected transfer rebootstrap frames after pending retaliation was armed")
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected watcher to receive exactly 1 queued peer-delete frame when owner transfers mid-engagement, got %d", len(watcherQueued))
+	}
+	peerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode watcher peer-delete frame after owner transfer: %v", err)
+	}
+	if peerDelete.VID != owner.VID {
+		t.Fatalf("expected watcher peer-delete for owner VID after owner transfer, got %+v", peerDelete)
+	}
+
+	releasedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error after owner transfer should release practice-mob aggro-lite gate: %v", err)
+	}
+	if len(releasedTargetOut) != 1 {
+		t.Fatalf("expected watcher target-selection to succeed after owner transfer released practice-mob aggro-lite gate, got %d frames", len(releasedTargetOut))
+	}
+	releasedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, releasedTargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode watcher target-selection frame after owner transfer: %v", err)
+	}
+	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
+		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after owner transfer released aggro-lite gate, got %+v", releasedTarget)
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected pending delayed retaliation cadence to stop after owner transfer, got %d queued frames", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected no extra watcher frames after owner transfer cancelled pending retaliation, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowPracticeMobAttackFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
