@@ -8551,7 +8551,7 @@ func TestGameSessionFlowShopBuyPacketReturnsMerchantInvalidPosOnUnknownCatalogSl
 	}
 }
 
-func TestGameSessionFlowShopBuySlashUnknownCatalogSlotStillFailsClosed(t *testing.T) {
+func TestGameSessionFlowShopBuySlashUnknownCatalogSlotUsesMerchantInvalidPosFrame(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerSlashUnknownSlot", 0x01040115, 0x02050115, 1000, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-slash-unknown-slot", 0x15151515, buyer)
 	defer closeSessionFlow(t, flow)
@@ -8561,8 +8561,11 @@ func TestGameSessionFlowShopBuySlashUnknownCatalogSlotStillFailsClosed(t *testin
 	if err != nil {
 		t.Fatalf("unexpected slash unknown-slot shop buy error: %v", err)
 	}
-	if len(buyOut) != 0 {
-		t.Fatalf("expected slash unknown-slot merchant buy to stay fail-closed while packet INVALID_POS remains packet-only, got %d frames", len(buyOut))
+	if len(buyOut) != 1 {
+		t.Fatalf("expected slash unknown-slot merchant buy to emit 1 SHOP INVALID_POS frame, got %d frames", len(buyOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode slash unknown-slot merchant buy SHOP INVALID_POS: %v", err)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames after slash unknown-slot merchant buy failure, got %d", len(queued))

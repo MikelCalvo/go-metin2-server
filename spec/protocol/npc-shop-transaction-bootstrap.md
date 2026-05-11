@@ -199,7 +199,7 @@ Failure behavior in this bootstrap contract:
 - packet `SHOP BUY` unknown-slot failure now emits one bare self-only `GC::SHOP INVALID_POS`
 - packet `SHOP BUY` against a still-open merchant window whose live actor/context or bound catalog snapshot has gone stale now emits one self-only `GC::SHOP END`, clears the active merchant context immediately, and still leaves gold/inventory unchanged
 - a successful warp interaction or exact-position transfer trigger while that merchant window is still open now prepends one self-only `GC::SHOP END` before the self transfer rebootstrap burst and clears the active merchant context immediately, so later `SHOP BUY` requests on the destination side fail closed until the player opens a fresh merchant window again
-- the local `/shop_buy <slot>` debug harness now reuses those same merchant-family insufficient-gold / no-valid-placement visible failures (`GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL`) while slash unknown-slot attempts still stay fail-closed for now instead of widening into a merchant-family invalid-position companion in the same slice
+- the local `/shop_buy <slot>` debug harness now reuses those same merchant-family insufficient-gold / no-valid-placement / unknown-slot visible failures (`GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL` / `GC::SHOP INVALID_POS`) instead of keeping a second placeholder or silent unknown-slot surface
 
 ### Frozen packet-path merchant error seam
 
@@ -214,7 +214,7 @@ This freeze is intentionally narrower than the whole failure surface:
 - it applies only to packet `SHOP BUY` while an active merchant session still exists
 - the stale-window `GC::SHOP END` path is a close-path companion, not an additional merchant error-subheader claim
 - it does not yet freeze `SOLDOUT` or `NOT_ENOUGH_MONEY_EX`
-- slash unknown-slot `/shop_buy <slot>` still stays fail-closed for now instead of widening into a merchant-family invalid-position companion
+- local `/shop_buy <slot>` now mirrors the same `GC::SHOP INVALID_POS` unknown-slot companion as the packet path for this first bootstrap merchant-buy surface
 
 Compatibility-oriented server `SHOP` failure subheaders are still acknowledged as likely relevant, especially:
 - `NOT_ENOUGH_MONEY`

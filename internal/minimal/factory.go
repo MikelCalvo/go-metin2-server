@@ -2727,9 +2727,7 @@ func merchantBuyFailureFrames(failure player.MerchantBuyFailure, packetFailureFr
 	case player.MerchantBuyFailureNoValidPlacement:
 		return [][]byte{shopproto.EncodeServerInventoryFull()}, true
 	case player.MerchantBuyFailureInvalid:
-		if packetFailureFrames {
-			return [][]byte{shopproto.EncodeServerInvalidPos()}, true
-		}
+		return [][]byte{shopproto.EncodeServerInvalidPos()}, true
 	}
 	return nil, false
 }
