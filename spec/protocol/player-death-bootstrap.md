@@ -253,16 +253,19 @@ Why this is the current owned boundary:
 - once the owner-side death signal and the first post-floor input denials were already owned, peer-visible `GC DEAD(owner_vid)` became the next smallest missing visible consequence for the same retaliation-owned death edge
 - reusing the current shared-world visibility fanout keeps the slice honest without pretending corpse state, respawn, or broader player-death choreography already exists
 
-## First owned post-floor peer-join visibility skip
+## First owned post-floor peer-entry visibility recipient skips
 
 The current bootstrap player-death contract now also owns one narrow visibility-recipient rule for that same still-connected zero-HP owner session:
 - once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later fresh visible peer joins no longer queue their ordinary `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` burst to that zero-HP owner recipient
 - other connected live recipients still receive the ordinary peer-entry burst for that newcomer
-- this slice stays recipient-only: it does not yet claim that fresh joiners stop seeing the dead owner, and it does not yet widen to every future visibility rebuild path beyond the current shared-world join seam
+- once that same owner is already sitting at that zero-HP floor, later movement- or `SYNC_POSITION`-driven peer visibility re-entry bursts also skip that zero-HP owner recipient when another player crosses into visibility
+- the moving or syncing live peer still receives the ordinary origin-side peer-entry burst for the already-dead owner under the current bootstrap visibility model
+- this slice stays recipient-only: it does not yet claim that fresh joiners or movers stop seeing the dead owner, and it does not yet widen to transfer or every future visibility rebuild path beyond the current shared-world join / move / `SYNC_POSITION` seams
 
 Why this is the current owned boundary:
 - after whisper/chat/notice/peer-`DEAD` recipient skips were already owned, fresh peer-entry bursts on later joins became the next smallest remaining queued recipient surface that could still deliver ordinary world-visibility output to a still-connected zero-HP owner
-- keeping the rule scoped to the existing join path preserves a tiny honest contract without claiming full corpse-state visibility teardown or a broader post-death observer model yet
+- once that join seam was owned, the next honest widening stayed on the same packet family and reused the existing AOI visibility rebuild path for `MOVE` / `SYNC_POSITION` instead of jumping straight to broader corpse-state teardown or full post-death observer rules
+- keeping the rule scoped to the existing join plus movement/sync visibility-entry seams preserves a tiny honest contract without claiming full corpse-state visibility teardown or a broader post-death observer model yet
 
 ## Explicit non-goals
 
@@ -270,7 +273,7 @@ This slice does **not** yet freeze:
 - a player respawn timer or revive request packet
 - broader self-bootstrap or transfer choreography after death beyond the currently owned persisted `/phase_select` re-entry / reconnect rebuild semantics
 - broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, client/slash item-use, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
-- broader recipient-side communication policy beyond the now-owned exact-name whisper denial, queued `CHAT_TYPE_TALKING` / `PARTY` / `GUILD` / `SHOUT` recipient skips, queued peer-join visibility-entry skip, and server-origin `CHAT_TYPE_NOTICE` recipient skip for connected zero-HP owners
+- broader recipient-side communication policy beyond the now-owned exact-name whisper denial, queued `CHAT_TYPE_TALKING` / `PARTY` / `GUILD` / `SHOUT` recipient skips, queued peer-entry visibility recipient skips on join plus movement/sync visibility rebuilds, and server-origin `CHAT_TYPE_NOTICE` recipient skip for connected zero-HP owners
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
 ## Success definition
@@ -290,6 +293,7 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later peer-originated `WHISPER` requests aimed at that same exact connected owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once retaliation has already driven the owning character to `0` HP, later peer-originated `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` continue to return the live sender's ordinary self echo, but queued peer delivery skips that same zero-HP owner recipient under the current bootstrap routing rules
 - once retaliation has already driven the owning character to `0` HP, later fresh visible peer joins also keep queuing their ordinary `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` burst for other live recipients, but that same queued peer-entry burst skips the still-connected zero-HP owner recipient under the current shared-world join path
+- once retaliation has already driven the owning character to `0` HP, later movement- or `SYNC_POSITION`-driven peer visibility re-entry bursts also keep queuing their ordinary `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` burst for the live mover/syncing origin, but that same queued peer-entry burst skips the still-connected zero-HP owner recipient under the current shared-world AOI rebuild path
 - once retaliation has already driven the owning character to `0` HP, later owner-side self-only `CHAT` requests with type `INFO` also fail closed before self info delivery can run
 - if that same floor is reached while the dead owner still held the aggro-lite gate for a live content-loaded practice mob, that same floor transition now also releases the mob's engagement so another visible live session may reacquire it with a fresh `TARGET` without waiting for owner disconnect or mob death / respawn
 - once either retaliation beat reaches that same floor, currently visible live peer sessions also receive one queued `GC DEAD(owner_vid)` while already-dead connected recipients are skipped and corpse state, respawn, and broader player-death choreography remain deliberately out of scope

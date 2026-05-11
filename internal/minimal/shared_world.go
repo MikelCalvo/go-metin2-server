@@ -781,6 +781,9 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 		}
 	}
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
+		if characterAtBootstrapHPFloor(peerCharacter) {
+			continue
+		}
 		r.enqueueToCharacterLocked(peerCharacter, addedRaw)
 	}
 
