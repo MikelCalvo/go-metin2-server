@@ -8711,8 +8711,18 @@ func TestGameSessionFlowShopBuyInteractionDebitsCurrencyAndAddsItem(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected shop buy attempt error: %v", err)
 	}
-	if len(buyOut) == 0 {
-		t.Fatalf("expected merchant buy success path to emit at least one frame")
+	if len(buyOut) != 2 {
+		t.Fatalf("expected slash merchant buy success to emit 2 frames (1 item refresh + SHOP OK), got %d", len(buyOut))
+	}
+	itemUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
+	if err != nil {
+		t.Fatalf("decode slash merchant buy success item refresh: %v", err)
+	}
+	if itemUpdate.Position != itemproto.InventoryPosition(0) || itemUpdate.Vnum != 27001 || itemUpdate.Count != 1 {
+		t.Fatalf("unexpected slash merchant buy success item refresh: %+v", itemUpdate)
+	}
+	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, buyOut[1])); err != nil {
+		t.Fatalf("decode slash merchant buy success SHOP OK: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
@@ -8778,12 +8788,9 @@ func TestGameSessionFlowShopBuyInteractionFansOutAcrossSeveralExistingCompatible
 	if thirdUpdate.Position != itemproto.InventoryPosition(7) || thirdUpdate.Vnum != 27001 || thirdUpdate.Count != 200 {
 		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy third item: %+v", thirdUpdate)
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[3]))
-	if err != nil {
-		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy delivery: %v", err)
-	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != "Merchant purchase complete." {
-		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy delivery: %+v", delivery)
+	deliveryFrame := decodeSingleFrame(t, buyOut[3])
+	if err := shopproto.DecodeServerOK(deliveryFrame); err != nil {
+		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy SHOP OK: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
@@ -8808,7 +8815,7 @@ func TestGameSessionFlowShopBuyInteractionFansOutAcrossSeveralExistingCompatible
 	}
 }
 
-func TestGameSessionFlowShopBuyInteractionReturnsInfoDeliveryOnInsufficientCurrency(t *testing.T) {
+func TestGameSessionFlowShopBuyInteractionUsesMerchantNotEnoughMoneyFrameOnInsufficientCurrency(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPoor", 0x01040102, 0x02050102, 25, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-poor", 0x22222222, buyer)
 	defer closeSessionFlow(t, flow)
@@ -8819,14 +8826,10 @@ func TestGameSessionFlowShopBuyInteractionReturnsInfoDeliveryOnInsufficientCurre
 		t.Fatalf("unexpected insufficient-currency shop buy attempt error: %v", err)
 	}
 	if len(buyOut) != 1 {
-		t.Fatalf("expected insufficient-currency shop buy to emit 1 info frame, got %d", len(buyOut))
+		t.Fatalf("expected insufficient-currency slash merchant buy to emit 1 SHOP NOT_ENOUGH_MONEY frame, got %d", len(buyOut))
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[0]))
-	if err != nil {
-		t.Fatalf("decode insufficient-currency shop buy delivery: %v", err)
-	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != "Not enough gold." {
-		t.Fatalf("unexpected insufficient-currency shop buy delivery: %+v", delivery)
+	if err := shopproto.DecodeServerNotEnoughMoney(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode insufficient-currency slash merchant buy SHOP NOT_ENOUGH_MONEY: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
@@ -8851,7 +8854,7 @@ func TestGameSessionFlowShopBuyInteractionReturnsInfoDeliveryOnInsufficientCurre
 	}
 }
 
-func TestGameSessionFlowShopBuyInteractionReturnsInfoDeliveryOnNoValidPlacement(t *testing.T) {
+func TestGameSessionFlowShopBuyInteractionUsesMerchantInventoryFullFrameOnNoValidPlacement(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacked", 0x01040103, 0x02050103, 1000, merchantBuyerFullInventory())
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packed", 0x33333333, buyer)
 	defer closeSessionFlow(t, flow)
@@ -8862,14 +8865,10 @@ func TestGameSessionFlowShopBuyInteractionReturnsInfoDeliveryOnNoValidPlacement(
 		t.Fatalf("unexpected no-free-slot shop buy attempt error: %v", err)
 	}
 	if len(buyOut) != 1 {
-		t.Fatalf("expected no-valid-placement shop buy to emit 1 info frame, got %d", len(buyOut))
+		t.Fatalf("expected no-valid-placement slash merchant buy to emit 1 SHOP INVENTORY_FULL frame, got %d", len(buyOut))
 	}
-	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[0]))
-	if err != nil {
-		t.Fatalf("decode no-valid-placement shop buy delivery: %v", err)
-	}
-	if delivery.Type != chatproto.ChatTypeInfo || delivery.Message != "Inventory full." {
-		t.Fatalf("unexpected no-valid-placement shop buy delivery: %+v", delivery)
+	if err := shopproto.DecodeServerInventoryFull(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode no-valid-placement slash merchant buy SHOP INVENTORY_FULL: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {

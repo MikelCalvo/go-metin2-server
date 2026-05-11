@@ -294,6 +294,7 @@ Expected result:
 Important note:
 - this smoke step validates only the current bootstrap open / buy / close merchant slice
 - broader merchant update choreography, sell flow, stock semantics, and richer NPC UI are still ahead
+- local fallback QA through `/shop_buy <slot>` now mirrors the same merchant-family `GC::SHOP OK` / `GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL` surfaces as the owned packet path for those same authoritative results, while slash unknown-slot attempts still stay fail-closed
 
 #### 5.4.2 Warp interaction
 

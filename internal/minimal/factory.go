@@ -2716,43 +2716,22 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 		}
 		frames = append(frames, setFrame)
 	}
-	if packetShopFrames {
-		frames = append(frames, shopproto.EncodeServerOK())
-		return frames, nil
-	}
-	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Merchant purchase complete."}))
+	frames = append(frames, shopproto.EncodeServerOK())
 	return frames, nil
 }
 
 func merchantBuyFailureFrames(failure player.MerchantBuyFailure, packetFailureFrames bool) ([][]byte, bool) {
-	if packetFailureFrames {
-		switch failure {
-		case player.MerchantBuyFailureInvalid:
-			return [][]byte{shopproto.EncodeServerInvalidPos()}, true
-		case player.MerchantBuyFailureInsufficientGold:
-			return [][]byte{shopproto.EncodeServerNotEnoughMoney()}, true
-		case player.MerchantBuyFailureNoValidPlacement:
-			return [][]byte{shopproto.EncodeServerInventoryFull()}, true
-		}
-	}
-	delivery := merchantBuyFailureDelivery(failure)
-	if delivery == nil {
-		return nil, false
-	}
-	return [][]byte{chatproto.EncodeChatDelivery(*delivery)}, true
-}
-
-func merchantBuyFailureDelivery(failure player.MerchantBuyFailure) *chatproto.ChatDeliveryPacket {
 	switch failure {
 	case player.MerchantBuyFailureInsufficientGold:
-		delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Not enough gold."}
-		return &delivery
+		return [][]byte{shopproto.EncodeServerNotEnoughMoney()}, true
 	case player.MerchantBuyFailureNoValidPlacement:
-		delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: "Inventory full."}
-		return &delivery
-	default:
-		return nil
+		return [][]byte{shopproto.EncodeServerInventoryFull()}, true
+	case player.MerchantBuyFailureInvalid:
+		if packetFailureFrames {
+			return [][]byte{shopproto.EncodeServerInvalidPos()}, true
+		}
 	}
+	return nil, false
 }
 
 func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition) (shopproto.ServerStartPacket, bool) {

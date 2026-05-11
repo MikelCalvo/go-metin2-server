@@ -163,15 +163,15 @@ The live merchant-window success step is now owned explicitly:
 - the packet-path success no longer ends on the older placeholder `CHAT_TYPE_INFO("Merchant purchase complete.")`
 
 That owned seam remains intentionally small:
-- it applies only to successful packet `SHOP BUY` while the merchant session is still active
+- it applies to successful packet `SHOP BUY` while the merchant session is still active
+- the temporary local `/shop_buy <slot>` debug harness now reuses that same success surface (`ITEM_SET` refreshes + bare `GC::SHOP OK`) for the same authoritative success state change while still remaining only a local QA/debug ingress
 - it does not yet freeze any extra merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` choreography
-- the temporary local `/shop_buy <slot>` debug harness may keep the current placeholder success info chat until a later cleanup slice says otherwise
 
 ### Stale post-reclaim isolation
 
 If a socket already lost live shared-world ownership because another session reclaimed the same selected character:
 - packet `SHOP BUY` may still return the same self-local packet success burst (`ITEM_SET` refreshes + bare `GC::SHOP OK`) to that stale socket
-- the local `/shop_buy <slot>` debug harness may still return the same self-local inventory/info success burst to that stale socket
+- the local `/shop_buy <slot>` debug harness may still return that same self-local success burst (`ITEM_SET` refreshes + bare `GC::SHOP OK`) to that stale socket
 - that stale buy mutation must not persist updated `gold` or `inventory`
 - that stale buy mutation must not replace the replacement live owner's exact-name loopback inventory/currency snapshots
 - if that stale socket later closes, a fresh reconnect/bootstrap must still reload the authoritative persisted `gold`/inventory state rather than the stale socket's local divergence
@@ -199,7 +199,7 @@ Failure behavior in this bootstrap contract:
 - packet `SHOP BUY` unknown-slot failure now emits one bare self-only `GC::SHOP INVALID_POS`
 - packet `SHOP BUY` against a still-open merchant window whose live actor/context or bound catalog snapshot has gone stale now emits one self-only `GC::SHOP END`, clears the active merchant context immediately, and still leaves gold/inventory unchanged
 - a successful warp interaction or exact-position transfer trigger while that merchant window is still open now prepends one self-only `GC::SHOP END` before the self transfer rebootstrap burst and clears the active merchant context immediately, so later `SHOP BUY` requests on the destination side fail closed until the player opens a fresh merchant window again
-- the local `/shop_buy <slot>` debug harness still emits one self-only placeholder `CHAT_TYPE_INFO` delivery (`"Not enough gold."` / `"Inventory full."`) on those same insufficient-gold / no-valid-placement causes while the cleanup to one shared visible failure surface remains deferred, and slash unknown-slot attempts stay fail-closed for now instead of widening into a merchant-family packet/error companion in the same slice
+- the local `/shop_buy <slot>` debug harness now reuses those same merchant-family insufficient-gold / no-valid-placement visible failures (`GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL`) while slash unknown-slot attempts still stay fail-closed for now instead of widening into a merchant-family invalid-position companion in the same slice
 
 ### Frozen packet-path merchant error seam
 
@@ -214,7 +214,7 @@ This freeze is intentionally narrower than the whole failure surface:
 - it applies only to packet `SHOP BUY` while an active merchant session still exists
 - the stale-window `GC::SHOP END` path is a close-path companion, not an additional merchant error-subheader claim
 - it does not yet freeze `SOLDOUT` or `NOT_ENOUGH_MONEY_EX`
-- it does not yet require the local `/shop_buy <slot>` debug harness to stop using the current placeholder info-chat failure messages or silent unknown-slot failure
+- slash unknown-slot `/shop_buy <slot>` still stays fail-closed for now instead of widening into a merchant-family invalid-position companion
 
 Compatibility-oriented server `SHOP` failure subheaders are still acknowledged as likely relevant, especially:
 - `NOT_ENOUGH_MONEY`
