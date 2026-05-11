@@ -773,6 +773,9 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 		stablePeerVIDs[peerCharacter.VID] = struct{}{}
 	}
 	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+		if characterAtBootstrapHPFloor(peerCharacter) {
+			continue
+		}
 		r.enqueueToCharacterLocked(peerCharacter, [][]byte{removedRaw})
 	}
 	for _, peerCharacter := range visibilityDiff.TargetVisiblePeers {

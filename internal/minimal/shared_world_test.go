@@ -3154,6 +3154,66 @@ func drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t *testing.T, ownerFlo
 	}
 }
 
+func setupPracticeMobRadiusAOIZeroHPOwnerRecipientTest(t *testing.T) (*gameRuntime, service.SessionFlow, service.SessionFlow, uint32, loginticket.Character, func(time.Duration)) {
+	t.Helper()
+
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected radius-AOI game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000472, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import radius-AOI content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after radius-AOI import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner before radius-AOI zero-HP recipient test, got %d", len(ownerEnter))
+	}
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher before radius-AOI zero-HP recipient test, got %d", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected owner to receive 3 queued peer-entry frames before radius-AOI zero-HP recipient test, got %d", len(queued))
+	}
+
+	advance := func(d time.Duration) {
+		currentTime = currentTime.Add(d)
+	}
+	return runtime, ownerFlow, watcherFlow, targetVID, owner, advance
+}
+
 func TestGameRuntimeRegisterStaticActorSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
 	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
 	defer closeSessionFlow(t, ownerFlow)
@@ -3299,6 +3359,68 @@ func TestGameRuntimeRelocateCharacterSkipsZeroHPOwnerRecipientAfterDelayedRetali
 	}
 	if deleted.VID != owner.VID {
 		t.Fatalf("unexpected relocated watcher owner delete after zero-HP owner transfer-delete skip: %+v", deleted)
+	}
+}
+
+func TestGameSessionFlowPracticeMobRadiusAOIPeerMoveOutOfRangeSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobRadiusAOIZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	moveOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1900, Y: 3100, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move error after owner reached zero HP: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame after owner reached zero HP, got %d", len(moveOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued peer delete frame after later move out of AOI, got %d", len(queued))
+	}
+	originExit := flushServerFrames(t, watcherFlow)
+	if len(originExit) != 2 {
+		t.Fatalf("expected mover to receive 2 queued origin deletes for the dead owner plus the old visible practice mob after leaving AOI, got %d", len(originExit))
+	}
+	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, originExit[0]))
+	if err != nil {
+		t.Fatalf("decode mover origin delete after zero-HP owner AOI move-out delete skip: %v", err)
+	}
+	if deleted.VID != owner.VID {
+		t.Fatalf("unexpected mover origin owner delete after zero-HP owner AOI move-out delete skip: %+v", deleted)
+	}
+}
+
+func TestGameSessionFlowPracticeMobRadiusAOIPeerSyncOutOfRangeSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobRadiusAOIZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	syncOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: 0x02040102, X: 1900, Y: 3100}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error after owner reached zero HP: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected 1 self sync_position ack frame after owner reached zero HP, got %d", len(syncOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued peer delete frame after later sync_position out of AOI, got %d", len(queued))
+	}
+	originExit := flushServerFrames(t, watcherFlow)
+	if len(originExit) != 2 {
+		t.Fatalf("expected syncing peer to receive 2 queued origin deletes for the dead owner plus the old visible practice mob after leaving AOI, got %d", len(originExit))
+	}
+	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, originExit[0]))
+	if err != nil {
+		t.Fatalf("decode syncing peer origin delete after zero-HP owner AOI sync-out delete skip: %v", err)
+	}
+	if deleted.VID != owner.VID {
+		t.Fatalf("unexpected syncing peer origin owner delete after zero-HP owner AOI sync-out delete skip: %+v", deleted)
 	}
 }
 
