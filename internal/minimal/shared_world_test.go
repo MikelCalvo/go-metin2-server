@@ -2666,6 +2666,118 @@ func TestGameRuntimeBroadcastNoticeSkipsZeroHPOwnerAfterDelayedRetaliationReache
 	}
 }
 
+func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	watcher.Points[bootstrapPlayerPointValueIndex] = 2
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000471, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	watcherSelectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error before zero-HP peer-DEAD recipient skip test: %v", err)
+	}
+	if len(watcherSelectOut) != 1 {
+		t.Fatalf("expected 1 watcher target-selection frame before zero-HP peer-DEAD recipient skip test, got %d", len(watcherSelectOut))
+	}
+	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected watcher attack error before zero-HP peer-DEAD recipient skip test: %v", err)
+	}
+	if len(watcherAttackOut) != 2 {
+		t.Fatalf("expected watcher target refresh plus first point-loss retaliation before zero-HP peer-DEAD recipient skip test, got %d frames", len(watcherAttackOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 3 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP peer-DEAD recipient skip test, got %d frames", len(watcherQueued))
+	}
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 1 {
+		t.Fatalf("expected watcher death to queue 1 visible-peer DEAD frame before zero-HP peer-DEAD recipient skip test, got %d", len(ownerQueued))
+	}
+	deadWatcher, err := worldproto.DecodeDead(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode watcher visible-peer dead frame before zero-HP peer-DEAD recipient skip test: %v", err)
+	}
+	if deadWatcher.VID != watcher.VID {
+		t.Fatalf("expected watcher death to queue DEAD(watcher_vid) before zero-HP peer-DEAD recipient skip test, got %+v", deadWatcher)
+	}
+
+	ownerSelectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target-selection error before zero-HP peer-DEAD recipient skip test: %v", err)
+	}
+	if len(ownerSelectOut) != 1 {
+		t.Fatalf("expected 1 owner target-selection frame before zero-HP peer-DEAD recipient skip test, got %d", len(ownerSelectOut))
+	}
+	ownerAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner attack error before zero-HP peer-DEAD recipient skip test: %v", err)
+	}
+	if len(ownerAttackOut) != 2 {
+		t.Fatalf("expected owner target refresh plus first point-loss retaliation before zero-HP peer-DEAD recipient skip test, got %d frames", len(ownerAttackOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	ownerQueued = flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames for owner before zero-HP peer-DEAD recipient skip test, got %d frames", len(ownerQueued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP watcher to receive no queued visible-peer DEAD frame when owner dies later, got %d", len(queued))
+	}
+}
+
 func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

@@ -770,6 +770,9 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 		if _, added := stablePeerVIDs[peerCharacter.VID]; added {
 			continue
 		}
+		if characterAtBootstrapHPFloor(peerCharacter) {
+			continue
+		}
 		if len(stableFrames) > 0 {
 			r.enqueueToCharacterLocked(peerCharacter, stableFrames)
 		}

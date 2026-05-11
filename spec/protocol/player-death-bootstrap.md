@@ -48,6 +48,7 @@ The repository now implements this narrow bootstrap contract:
 - if an immediate retaliation tick reaches the engaged owner's live HP floor at `0`, the accepted attack frames now append one self-only `GC DEAD(owner_vid)` before the existing self-only `GC TARGET(0, 0)` clear
 - if a delayed server-origin retaliation beat reaches that same `0`-HP floor, the queued pending server frames now append the same self-only `GC DEAD(owner_vid)` before the same self-only clear-target companion
 - when either of those retaliation beats reaches that same `0`-HP floor, currently visible peer sessions now also receive one queued `GC DEAD(owner_vid)` using the existing shared-world visibility rules
+- that same queued peer-visible death fanout now skips recipients whose own live bootstrap HP is already at the current `0`-HP floor, so a still-connected dead owner does not keep receiving later peer-death `GC DEAD(...)` frames from other sessions
 - those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session: they do **not** write the persisted account snapshot, so a fresh `/phase_select` re-entry or reconnect still rebuilds from the pre-retaliation point value until broader player-death persistence or respawn semantics are owned
 - once this floor is reached, the existing delayed retaliation cadence stops and later owner-side combat `TARGET` / `ATTACK` attempts still fail closed as already frozen elsewhere
 - once this floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed with no self ack, no shared-world relocation update, and no transfer-trigger rebootstrap burst
@@ -61,6 +62,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later peer-originated local `CHAT` requests with `type = TALKING` from still-visible sessions continue to return the live sender's ordinary self echo, but queued peer delivery skips that zero-HP owner recipient entirely
 - once this floor is reached, later peer-originated `CHAT` requests with `type = PARTY`, `GUILD`, or `SHOUT` also continue to return the live sender's ordinary self echo, but queued peer delivery skips that same zero-HP owner recipient under the current bootstrap party/global guild/empire shout routing rules
 - once this floor is reached, later server-originated `CHAT_TYPE_NOTICE` broadcasts still queue normally for other connected live sessions, but queued notice delivery skips that same still-connected zero-HP owner recipient entirely under the current bootstrap global notice path
+- once this floor is reached, later visibility-gated queued peer `GC DEAD(other_vid)` fanout from another visible player's retaliation-owned death edge also skips that same still-connected zero-HP owner recipient entirely
 - once this floor is reached, later owner-side self-only `CHAT` requests with `type = INFO` also fail closed before local `GC_CHAT` delivery can run
 - the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, while the already-owned `/shop_buy`, `/use_item`, `ITEM_USE`, `/inventory_move`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
 
@@ -131,7 +133,8 @@ The project does **not** yet own enough player-death runtime to claim all of the
 So this first death signal family stays narrow:
 - the engaged owner learns about the zero-HP edge immediately
 - the stale target is cleared immediately
-- currently visible peers receive only one queued `GC DEAD(owner_vid)` and no broader teardown/rebuild choreography
+- currently visible live peers receive only one queued `GC DEAD(owner_vid)` and no broader teardown/rebuild choreography
+- already-dead connected recipients are skipped from that queued peer-visible death fanout instead of learning about later peer deaths through extra `GC DEAD(...)` frames
 - later slices may widen audience and lifecycle only after those contracts are written down explicitly
 
 ## Relationship to the existing retaliation floor gate
@@ -239,6 +242,7 @@ Why this is the current owned boundary:
 The current bootstrap player-death contract now also owns one narrow visible-peer death rule for that same selected live owner session:
 - once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, currently visible peer sessions receive one queued `GC DEAD(owner_vid)`
 - that fanout is visibility-gated through the existing shared-world rules: only sessions that can currently see the owner receive it
+- recipients whose own live bootstrap HP is already at that same `0`-HP floor are skipped from that queued fanout even if they still remain connected and visible in shared world
 - the owner-side transition stays unchanged and still uses the existing self-only `GC DEAD(owner_vid)` plus self-only `GC TARGET(0, 0)` clear ordering
 - this slice does **not** yet add a peer-facing target clear companion because the current owned combat-target model still belongs to bootstrap non-player targets, not player-vs-player selection
 - this slice also does **not** yet delete, respawn, or otherwise rebuild the dead player actor for peers
@@ -274,5 +278,5 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later peer-originated `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` continue to return the live sender's ordinary self echo, but queued peer delivery skips that same zero-HP owner recipient under the current bootstrap routing rules
 - once that same floor is reached, later owner-side self-only `CHAT` requests with type `INFO` also fail closed before self info delivery can run
 - if that same floor is reached while the dead owner still held the aggro-lite gate for a live content-loaded practice mob, that same floor transition now also releases the mob's engagement so another visible live session may reacquire it with a fresh `TARGET` without waiting for owner disconnect or mob death / respawn
-- once either retaliation beat reaches that same floor, currently visible peer sessions also receive one queued `GC DEAD(owner_vid)` while corpse state, respawn, and broader player-death choreography remain deliberately out of scope
+- once either retaliation beat reaches that same floor, currently visible live peer sessions also receive one queued `GC DEAD(owner_vid)` while already-dead connected recipients are skipped and corpse state, respawn, and broader player-death choreography remain deliberately out of scope
 - peer-visible player death beyond that one visible `GC DEAD(owner_vid)` fanout, corpse state, respawn, and broader general post-death gameplay remain deliberately out of scope
