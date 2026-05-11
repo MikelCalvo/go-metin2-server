@@ -7726,6 +7726,107 @@ func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowTransferTriggerClosesOpenMerchantWindowBeforeRebootstrap(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	buyer := merchantBuyerCharacter("MerchantBuyerTransferClose", 0x01040116, 0x02050116, 125, nil)
+	issuePeerTicket(t, store, "merchant-transfer-close", 0x61616161, buyer)
+	if err := accounts.Save(accountstore.Account{Login: "merchant-transfer-close", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed merchant transfer-close buyer account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, interactionStore, itemStore, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected merchant transfer-close runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed for transfer close")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "merchant-transfer-close", 0x61616161)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected merchant transfer-close bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222327})))
+	if err != nil {
+		t.Fatalf("unexpected transfer-trigger move error with open merchant window: %v", err)
+	}
+	if len(moveOut) != 6 {
+		t.Fatalf("expected transfer-triggered merchant close to prepend 1 SHOP END before 5 transfer/static-actor frames, got %d", len(moveOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, moveOut[0])); err != nil {
+		t.Fatalf("decode merchant shop end before transfer rebootstrap: %v", err)
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[1]))
+	if err != nil {
+		t.Fatalf("decode self transfer add after merchant close: %v", err)
+	}
+	if selfAdd.VID != buyer.VID || selfAdd.X != 1700 || selfAdd.Y != 2800 {
+		t.Fatalf("unexpected self transfer add after merchant close: %+v", selfAdd)
+	}
+	removedActor, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, moveOut[5]))
+	if err != nil {
+		t.Fatalf("decode source merchant delete after transfer close: %v", err)
+	}
+	if removedActor.VID != uint32(actor.EntityID) {
+		t.Fatalf("expected source merchant delete for entity %d after transfer close, got %+v", actor.EntityID, removedActor)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after transfer-triggered merchant close, got %d", len(queued))
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected explicit SHOP END error after transfer-triggered merchant close: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected transfer-triggered merchant close to clear merchant session before later explicit close, got %d frames", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy error after transfer-triggered merchant close: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected transfer-triggered merchant close to reject later packet buy frames, got %d", len(buyOut))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after transfer-triggered merchant close")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected transfer-triggered merchant close to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after transfer-triggered merchant close")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected transfer-triggered merchant close to keep inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load("merchant-transfer-close")
+	if err != nil {
+		t.Fatalf("load persisted merchant transfer-close account: %v", err)
+	}
+	if account.Characters[0].MapIndex != 42 || account.Characters[0].X != 1700 || account.Characters[0].Y != 2800 {
+		t.Fatalf("expected persisted merchant transfer-close account to save the transfer destination, got %#v", account.Characters[0])
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted merchant transfer-close account to keep merchant state unchanged, got %#v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacket", 0x01040105, 0x02050105, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet", 0x55555555, buyer)

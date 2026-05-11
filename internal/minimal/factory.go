@@ -825,6 +825,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			clearActiveMerchantBuy()
 			return append(frames, shopproto.EncodeServerEnd())
 		}
+		prependTransferMerchantCloseFrame := func(frames [][]byte, rebootstrap bool) [][]byte {
+			if !rebootstrap || !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
+				return frames
+			}
+			clearActiveMerchantBuy()
+			return append([][]byte{shopproto.EncodeServerEnd()}, frames...)
+		}
 		clearActiveCombatTarget := func() {
 			activeCombatTargetVID = 0
 			activeCombatTargetSnapshotVersion = 0
@@ -1041,6 +1048,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if _, ok := transferFlow.Apply(selected, warp.Target{MapIndex: mapIndex, X: x, Y: y}); !ok {
 				return RelocationPreview{}, nil, false
 			}
+			transferFrames = prependTransferMerchantCloseFrame(transferFrames, rebootstrap)
 			clearActiveCombatTarget()
 			return transferResult, transferFrames, true
 		}
@@ -1838,7 +1846,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)}}
 					}
 					if resolution.Definition.Kind == interactionstore.KindWarp {
-						clearActiveMerchantBuy()
 						_, transferFrames, ok := applySelectedCharacterTransfer(resolution.Definition.MapIndex, resolution.Definition.X, resolution.Definition.Y, true)
 						if !ok {
 							failureDelivery := staticActorInteractionFailureDelivery(staticActorInteractionFailureWarpNotApplied)
