@@ -872,6 +872,9 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 		r.enqueueToCharacterLocked(peerCharacter, [][]byte{movedDelete})
 	}
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
+		if characterAtBootstrapHPFloor(peerCharacter) {
+			continue
+		}
 		r.enqueueToCharacterLocked(peerCharacter, movedFrames)
 	}
 

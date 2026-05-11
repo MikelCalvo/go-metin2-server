@@ -3105,6 +3105,115 @@ func TestGameSessionFlowPracticeMobPeerSyncPositionIntoRangeSkipsZeroHPOwnerReci
 	}
 }
 
+func TestGameSessionFlowPracticeMobPeerTransferIntoVisibilitySkipsZeroHPOwnerRecipientAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	transferred := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1700, 2900, 2, 102, 202)
+	transferred.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, transferred)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+		{Login: "peer-two", Empire: transferred.Empire, Characters: []loginticket.Character{transferred}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q before zero-HP owner transfer-visibility skip test: %v", account.Login, err)
+		}
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return time.Unix(1700000476, 0) }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	transferredFlow, transferredEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(transferredEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for transferred peer on another map, got %d", len(transferredEnter))
+	}
+	defer closeSessionFlow(t, transferredFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames across maps before zero-HP owner transfer-visibility skip test, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, transferredFlow); len(queued) != 0 {
+		t.Fatalf("expected no initial queued transfer-origin frames across maps before zero-HP owner transfer-visibility skip test, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before zero-HP owner transfer-visibility skip test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before zero-HP owner transfer-visibility skip test, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before zero-HP owner transfer-visibility skip test: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before zero-HP owner transfer-visibility skip test, got %d frames", len(attackOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before zero-HP owner transfer-visibility skip test: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected immediate retaliation to reach owner HP floor before zero-HP owner transfer-visibility skip test, got %+v", pointChange)
+	}
+
+	result, ok := runtime.TransferCharacter("PeerTwo", bootstrapMapIndex, 1300, 2300)
+	if !ok {
+		t.Fatal("expected transfer into dead owner visibility to succeed")
+	}
+	if !result.Applied || result.Target.MapIndex != bootstrapMapIndex || result.Target.X != 1300 || result.Target.Y != 2300 {
+		t.Fatalf("unexpected transfer result into dead owner visibility: %+v", result)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued peer-entry frames when a later peer transfers into visibility, got %d", len(queued))
+	}
+	transferredQueued := flushServerFrames(t, transferredFlow)
+	if len(transferredQueued) != 6 {
+		t.Fatalf("expected transferred live peer to receive 6 queued origin visibility-rebuild frames (dead owner plus visible static actor), got %d", len(transferredQueued))
+	}
+	originAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, transferredQueued[0]))
+	if err != nil {
+		t.Fatalf("decode origin queued owner add after zero-HP owner transfer-visibility skip: %v", err)
+	}
+	if originAdd.VID != owner.VID || originAdd.X != owner.X || originAdd.Y != owner.Y {
+		t.Fatalf("unexpected origin queued owner add after zero-HP owner transfer-visibility skip: %+v", originAdd)
+	}
+}
+
 func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
