@@ -37,6 +37,8 @@ When a fresh `ENTERGAME` bootstrap later brings a newcomer into visibility of th
 
 The same dead-state replay now also applies to later `MOVE`, `SYNC_POSITION`, and transfer visibility-entry rebuilds: the entering live peer still gets the ordinary peer-entry burst for that already-dead owner first, then one trailing `GC DEAD(owner_vid)` so those later visibility rebuilds do not silently re-present that owner as live either.
 
+That same zero-HP recipient rule now also applies to later peer-visibility teardown on disconnect and relocate-away transfer: the leaving or transferred live peer still gets its ordinary cleanup, but the still-connected dead owner is skipped from those later queued peer `CHARACTER_DEL` frames entirely.
+
 That same retaliation-driven `0`-HP recipient rule now also applies to later visible practice-mob death / respawn lifecycle fanout: other live viewers still receive the ordinary `GC DEAD(mob_vid)` plus timed respawn rebuild burst, but an already-dead still-connected owner is skipped from those later non-player lifecycle frames entirely.
 
 That same zero-HP recipient rule now also applies to later live static-actor visibility delivery: later static-actor register / update / remove fanout still reaches other live viewers through the ordinary add / refresh / delete paths, but the still-connected dead owner is skipped from those queued visibility frames entirely.

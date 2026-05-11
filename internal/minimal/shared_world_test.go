@@ -3264,6 +3264,44 @@ func TestGameRuntimeRemoveStaticActorSkipsZeroHPOwnerRecipientAfterDelayedRetali
 	}
 }
 
+func TestGameSessionFlowPracticeMobPeerLeaveSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued peer delete frame after later peer leave, got %d", len(queued))
+	}
+}
+
+func TestGameRuntimeRelocateCharacterSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	if !runtime.RelocateCharacter("PeerTwo", 42, 1700, 2800) {
+		t.Fatal("expected relocate to succeed after owner reaches zero HP")
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued peer delete frame after later relocate-away transfer, got %d", len(queued))
+	}
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected relocated live watcher to receive 2 queued delete frames for the dead owner plus the old-map practice mob, got %d", len(watcherQueued))
+	}
+	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode relocated watcher delete after zero-HP owner transfer-delete skip: %v", err)
+	}
+	if deleted.VID != owner.VID {
+		t.Fatalf("unexpected relocated watcher owner delete after zero-HP owner transfer-delete skip: %+v", deleted)
+	}
+}
+
 func TestGameSessionFlowPracticeMobPeerJoinSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

@@ -733,6 +733,9 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
 	removeRaw := encodeCharacterDeleteFrame(currentCharacter)
 	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+		if characterAtBootstrapHPFloor(peerCharacter) {
+			continue
+		}
 		r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 	}
 }
@@ -872,6 +875,9 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	movedDelete := encodeCharacterDeleteFrame(previous)
 	movedFrames := encodePeerVisibilityFrames(character)
 	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+		if characterAtBootstrapHPFloor(peerCharacter) {
+			continue
+		}
 		r.enqueueToCharacterLocked(peerCharacter, [][]byte{movedDelete})
 	}
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
