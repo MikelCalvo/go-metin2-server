@@ -1350,6 +1350,9 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpireOnMap(originID uint6
 	defer r.mu.Unlock()
 
 	for _, target := range r.scopesLocked().LocalTalkTargets(originID, origin) {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }

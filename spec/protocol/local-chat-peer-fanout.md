@@ -6,6 +6,7 @@ The goal of this slice is narrow:
 - accept one minimal `CHAT` client packet in `GAME`
 - keep the sender path deterministic by echoing one `GC_CHAT` delivery back to the sender
 - queue the same `GC_CHAT` delivery to already-visible peers
+- keep still-connected zero-HP post-floor player-death owners out of that queued local-chat recipient set
 - avoid broadening the slice into party chat, guild chat, whisper, shout, moderation, or command handling
 
 ## Covered packets
@@ -25,13 +26,15 @@ The current bootstrap runtime behavior is:
    - `empire = 0`
    - `message = "PlayerName : original message"`
 4. player B receives that `GC_CHAT` delivery directly as the sender echo
-5. if player A is on the same bootstrap `MapIndex` and in the same empire, player A receives the same `GC_CHAT` delivery through the queued server-frame path
+5. if player A is on the same bootstrap `MapIndex`, in the same empire, and is still local-chat-deliverable, player A receives the same `GC_CHAT` delivery through the queued server-frame path
+6. if player A is still connected but has already reached the currently owned retaliation-driven `0`-HP floor, queued peer local-chat delivery is skipped instead while player B still keeps the normal self echo
 
 ## Current scope
 
 This slice freezes:
 - local talking chat only
 - sender echo plus queued peer fanout to already-visible peers on the same bootstrap `MapIndex` and in the same empire
+- still-connected zero-HP post-floor player-death owners are temporarily excluded from that queued recipient set
 - reuse of the same `GC_CHAT` payload for sender and already-visible peers
 - `Name : message` formatting in the payload text
 
