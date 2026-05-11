@@ -1225,6 +1225,9 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 			if target.Entity.ID == subjectID {
 				continue
 			}
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
 			frames := [][]byte{deadRaw}
 			if _, ok := targetedSessionIDs[target.Entity.ID]; ok {
 				frames = append(frames, clearRaw)
