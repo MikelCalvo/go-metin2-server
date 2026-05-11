@@ -1511,7 +1511,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return worldentry.EnterGameResult{Rejected: true}
 						}
 						for _, peer := range existingPeers {
-							trailingFrames = append(trailingFrames, encodePeerVisibilityFrames(peer)...)
+							trailingFrames = append(trailingFrames, encodePeerVisibilityBootstrapFrames(peer)...)
 						}
 					}
 					trailingFrames = append(trailingFrames, sharedWorld.VisibleStaticActorFrames(selected)...)

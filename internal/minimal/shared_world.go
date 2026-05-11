@@ -1699,3 +1699,11 @@ func encodePeerVisibilityFrames(character loginticket.Character) [][]byte {
 		worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacket(character)),
 	}
 }
+
+func encodePeerVisibilityBootstrapFrames(character loginticket.Character) [][]byte {
+	frames := encodePeerVisibilityFrames(character)
+	if !characterAtBootstrapHPFloor(character) {
+		return frames
+	}
+	return append(frames, worldproto.EncodeDead(worldproto.DeadPacket{VID: character.VID}))
+}
