@@ -216,7 +216,8 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		if !result.Accepted {
 			return nil, nil
 		}
-		out := make([][]byte, 0, 1+len(result.Frames))
+		out := make([][]byte, 0, len(result.Frames)+1)
+		out = append(out, result.Frames...)
 		if result.NextPhase != "" {
 			phaseRaw, err := control.EncodePhase(result.NextPhase)
 			if err != nil {
@@ -227,7 +228,6 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			}
 			out = append(out, phaseRaw)
 		}
-		out = append(out, result.Frames...)
 		if result.Delivery != nil {
 			out = append(out, chatproto.EncodeChatDelivery(*result.Delivery))
 		}

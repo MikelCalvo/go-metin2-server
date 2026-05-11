@@ -7827,6 +7827,85 @@ func TestGameSessionFlowTransferTriggerClosesOpenMerchantWindowBeforeRebootstrap
 	}
 }
 
+func TestGameSessionFlowPhaseSelectClosesMerchantWindowContext(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerPhaseSelectClose", 0x01040117, 0x02050117, 125, nil)
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-phase-select-close", 0x71717171, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+
+	phaseSelectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/phase_select"})))
+	if err != nil {
+		t.Fatalf("unexpected /phase_select merchant close error: %v", err)
+	}
+	if len(phaseSelectOut) != 2 {
+		t.Fatalf("expected merchant /phase_select to prepend 1 SHOP END before the select-phase frame, got %d", len(phaseSelectOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, phaseSelectOut[0])); err != nil {
+		t.Fatalf("decode merchant SHOP END before /phase_select transition: %v", err)
+	}
+	phase, err := control.DecodePhase(decodeSingleFrame(t, phaseSelectOut[1]))
+	if err != nil {
+		t.Fatalf("decode phase-select frame after merchant close: %v", err)
+	}
+	if phase.Phase != session.PhaseSelect {
+		t.Fatalf("expected phase %q after merchant /phase_select, got %q", session.PhaseSelect, phase.Phase)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after merchant /phase_select close, got %d", len(queued))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0})))
+	if err != nil {
+		t.Fatalf("unexpected character-select error after merchant /phase_select close: %v", err)
+	}
+	if len(selectOut) != 3 {
+		t.Fatalf("expected 3 select frames after merchant /phase_select close, got %d", len(selectOut))
+	}
+	enterOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected enter-game error after merchant /phase_select close: %v", err)
+	}
+	if len(enterOut) < 8 {
+		t.Fatalf("expected merchant actor bootstrap after merchant /phase_select close re-entry, got %d frames", len(enterOut))
+	}
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected explicit SHOP END error after merchant /phase_select close re-entry: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected merchant /phase_select close to clear merchant session before re-entry explicit close, got %d frames", len(closeOut))
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy error after merchant /phase_select close re-entry: %v", err)
+	}
+	if len(buyOut) != 0 {
+		t.Fatalf("expected merchant /phase_select close to reject re-entry packet buy frames until reopen, got %d", len(buyOut))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after merchant /phase_select close")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected merchant /phase_select close to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after merchant /phase_select close")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected merchant /phase_select close to keep inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted merchant /phase_select close account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted merchant /phase_select close account to keep merchant state unchanged, got %#v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacket", 0x01040105, 0x02050105, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet", 0x55555555, buyer)

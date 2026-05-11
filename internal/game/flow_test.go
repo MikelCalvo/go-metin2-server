@@ -217,6 +217,39 @@ func TestHandleClientFrameChatCanTransitionBackToSelect(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameChatPrependsCustomFramesBeforePhaseTransition(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleChat: func(packet chatproto.ClientChatPacket) ChatResult {
+			if packet.Type != chatproto.ChatTypeTalking || packet.Message != "/phase_select" {
+				t.Fatalf("unexpected chat packet: %+v", packet)
+			}
+			return ChatResult{Accepted: true, Frames: [][]byte{[]byte("merchant-end")}, NextPhase: session.PhaseSelect}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/phase_select"})))
+	if err != nil {
+		t.Fatalf("unexpected chat command error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected custom frame plus phase-select frame, got %d", len(out))
+	}
+	if !bytes.Equal(out[0], []byte("merchant-end")) {
+		t.Fatalf("expected custom chat frame before phase transition, got %q", out[0])
+	}
+	phase, err := control.DecodePhase(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode phase-select frame after custom chat frame: %v", err)
+	}
+	if phase.Phase != session.PhaseSelect {
+		t.Fatalf("expected phase %q, got %q", session.PhaseSelect, phase.Phase)
+	}
+	if machine.Current() != session.PhaseSelect {
+		t.Fatalf("expected machine phase %q after chat command, got %q", session.PhaseSelect, machine.Current())
+	}
+}
+
 func TestHandleClientFrameChatCanTransitionToClose(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{

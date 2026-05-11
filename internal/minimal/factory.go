@@ -825,12 +825,18 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			clearActiveMerchantBuy()
 			return append(frames, shopproto.EncodeServerEnd())
 		}
-		prependTransferMerchantCloseFrame := func(frames [][]byte, rebootstrap bool) [][]byte {
-			if !rebootstrap || !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
+		prependMerchantCloseFrame := func(frames [][]byte) [][]byte {
+			if !hasActiveMerchantBuy || activeMerchantBuy.TargetVID == 0 {
 				return frames
 			}
 			clearActiveMerchantBuy()
 			return append([][]byte{shopproto.EncodeServerEnd()}, frames...)
+		}
+		prependTransferMerchantCloseFrame := func(frames [][]byte, rebootstrap bool) [][]byte {
+			if !rebootstrap {
+				return frames
+			}
+			return prependMerchantCloseFrame(frames)
 		}
 		clearActiveCombatTarget := func() {
 			activeCombatTargetVID = 0
@@ -1731,10 +1737,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
-							clearActiveMerchantBuy()
+							phaseSelectFrames := prependMerchantCloseFrame(nil)
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
-							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseSelect}
+							return gameflow.ChatResult{Accepted: true, Frames: phaseSelectFrames, NextPhase: session.PhaseSelect}
 						}
 					}
 
