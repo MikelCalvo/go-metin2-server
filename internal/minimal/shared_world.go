@@ -498,6 +498,9 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 	frames = append(frames, deleteRaw)
 	frames = append(frames, addFrames...)
 	for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }
