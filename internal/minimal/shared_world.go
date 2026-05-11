@@ -1417,6 +1417,9 @@ func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
 
 	delivered := 0
 	for _, target := range r.scopesLocked().ConnectedTargets() {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
 		if r.enqueueToEntityLocked(target.Entity.ID, [][]byte{noticeRaw}) {
 			delivered++
 		}

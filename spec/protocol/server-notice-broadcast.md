@@ -15,13 +15,14 @@ The goal of this slice is narrow:
 
 1. one or more players are connected in `GAME`
 2. an on-box operator issues `POST /local/notice` against the `gamed` ops server, or another local runtime caller triggers the same broadcast primitive directly
-3. each connected session receives one queued `GC_CHAT` packet with:
+3. each connected session whose live bootstrap HP has not already been driven to the current retaliation-owned `0`-HP floor receives one queued `GC_CHAT` packet with:
    - `type = CHAT_TYPE_NOTICE`
    - `vid = 0`
    - `empire = 0`
    - `message = original notice text`
 4. the payload is raw system text, not the actor-formatted `Name : message` shape
 5. empty notice text is ignored and queues nothing
+6. still-connected zero-HP owners reached through the current practice-mob retaliation loop are skipped silently; the notice remains server-originated but no queued `GC_CHAT` notice is delivered to that dead-owner recipient until broader player-death recipient policy is owned separately
 
 ## Local-only endpoint contract
 
@@ -59,12 +60,13 @@ The project does not yet freeze broader operator/admin surfaces such as:
 ## Current scope
 
 This slice freezes:
-- server-originated `CHAT_TYPE_NOTICE` fanout to connected `GAME` sessions
+- server-originated `CHAT_TYPE_NOTICE` fanout to connected `GAME` sessions whose live bootstrap HP has not already reached the current retaliation-owned `0`-HP floor
 - the `gamed` loopback-only `POST /local/notice` trigger surface
 - system-message payload shape with `vid = 0`
 - raw notice text with no `Name : ` prefix
 - client-originated `CHAT_TYPE_NOTICE` remaining rejected
 - runtime-owned connected-target selection through `internal/worldruntime.Scopes.ConnectedTargets()`, while keeping the current bootstrap-global notice policy unchanged
+- one narrow dead-owner carve-out for that same global notice policy: still-connected zero-HP owners reached through the current practice-mob retaliation loop are skipped as recipients
 
 It does not yet freeze:
 - GM/operator notice tooling beyond the local-only ops endpoint

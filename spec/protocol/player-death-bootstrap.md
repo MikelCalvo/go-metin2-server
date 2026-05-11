@@ -34,11 +34,12 @@ This contract currently applies only to:
 - the first visible-peer `GC DEAD(owner_vid)` fanout to sessions that can currently see that owner through the shared-world visibility rules
 - one silent recipient-side whisper-delivery gate for later peer-originated exact-name whispers aimed at that same still-connected zero-HP owner
 - recipient-side queued chat-recipient gates for later peer-originated `CHAT_TYPE_TALKING`, `CHAT_TYPE_PARTY`, `CHAT_TYPE_GUILD`, and `CHAT_TYPE_SHOUT` fanout aimed at that same still-connected zero-HP owner through the current bootstrap chat-routing paths
+- one recipient-side server-notice gate for later server-originated `CHAT_TYPE_NOTICE` broadcasts aimed at that same still-connected zero-HP owner through the current bootstrap global notice path
 
 This contract does **not** yet claim:
 - corpse state, knockdown animations, or corpse interaction
 - player respawn, revive menus, town return, or map transfer on death
-- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy rejection, client/slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, and self-only `CHAT_TYPE_INFO` rejection at `0` HP
+- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy rejection, client/slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
 - PvP death semantics or non-combat causes of player death
 
 ## Current implementation status
@@ -59,6 +60,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later peer-originated `WHISPER` requests targeting that same exact owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once this floor is reached, later peer-originated local `CHAT` requests with `type = TALKING` from still-visible sessions continue to return the live sender's ordinary self echo, but queued peer delivery skips that zero-HP owner recipient entirely
 - once this floor is reached, later peer-originated `CHAT` requests with `type = PARTY`, `GUILD`, or `SHOUT` also continue to return the live sender's ordinary self echo, but queued peer delivery skips that same zero-HP owner recipient under the current bootstrap party/global guild/empire shout routing rules
+- once this floor is reached, later server-originated `CHAT_TYPE_NOTICE` broadcasts still queue normally for other connected live sessions, but queued notice delivery skips that same still-connected zero-HP owner recipient entirely under the current bootstrap global notice path
 - once this floor is reached, later owner-side self-only `CHAT` requests with `type = INFO` also fail closed before local `GC_CHAT` delivery can run
 - the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, while the already-owned `/shop_buy`, `/use_item`, `ITEM_USE`, `/inventory_move`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
 
@@ -251,7 +253,7 @@ This slice does **not** yet freeze:
 - a player respawn timer or revive request packet
 - broader self-bootstrap or transfer choreography after death beyond the currently owned persisted `/phase_select` re-entry / reconnect rebuild semantics
 - broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, client/slash item-use, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
-- broader recipient-side communication policy beyond the now-owned exact-name whisper denial and queued `CHAT_TYPE_TALKING` / `PARTY` / `GUILD` / `SHOUT` recipient skips for connected zero-HP owners
+- broader recipient-side communication policy beyond the now-owned exact-name whisper denial, queued `CHAT_TYPE_TALKING` / `PARTY` / `GUILD` / `SHOUT` recipient skips, and server-origin `CHAT_TYPE_NOTICE` recipient skip for connected zero-HP owners
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
 ## Success definition
