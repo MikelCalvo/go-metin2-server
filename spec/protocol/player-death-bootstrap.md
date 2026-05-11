@@ -32,6 +32,7 @@ This contract currently applies only to:
 - the edge where either of those retaliation point-loss beats drives the engaged owner's live bootstrap HP from a positive value to `0`
 - one self-only `GC DEAD(owner_vid)` signal paired with the existing self-only combat-target clear companion
 - the first visible-peer `GC DEAD(owner_vid)` fanout to sessions that can currently see that owner through the shared-world visibility rules
+- one silent recipient-side whisper-delivery gate for later peer-originated exact-name whispers aimed at that same still-connected zero-HP owner
 
 This contract does **not** yet claim:
 - corpse state, knockdown animations, or corpse interaction
@@ -53,7 +54,8 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side client/slash item-use attempts also fail closed with no point-change / item-set success burst and no runtime or persisted inventory / point mutation
 - once this floor is reached, later owner-side slash `/inventory_move` attempts also fail closed with no item-set success burst and no runtime or persisted carried-slot mutation
 - once this floor is reached, later owner-side slash `/equip_item` and `/unequip_item` attempts also fail closed with no item-delete / item-set / point-change / character-update success burst and no runtime or persisted inventory / equipment / point mutation
-- once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name lookup can run
+- once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name target lookup can run
+- once this floor is reached, later peer-originated `WHISPER` requests targeting that same exact owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once this floor is reached, later owner-side self-only `CHAT` requests with `type = INFO` also fail closed before local `GC_CHAT` delivery can run
 - the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, while the already-owned `/shop_buy`, `/use_item`, `ITEM_USE`, `/inventory_move`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
 
@@ -246,6 +248,7 @@ This slice does **not** yet freeze:
 - a player respawn timer or revive request packet
 - broader self-bootstrap or transfer choreography after death beyond the currently owned persisted `/phase_select` re-entry / reconnect rebuild semantics
 - broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, client/slash item-use, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
+- broader recipient-side communication policy beyond the now-owned exact-name whisper delivery denial for connected zero-HP owners
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
 ## Success definition
@@ -262,6 +265,7 @@ After this document lands, the repository should be able to say:
 - if that same floor is reached while the owner already had a merchant preview open, the same floor transition now also appends one self-only `GC::SHOP END` after self `GC DEAD(owner_vid)` plus self `GC TARGET(0, 0)` and clears the active merchant context so later client `SHOP END` fails closed too
 - once that same floor is reached, later owner-side slash `/use_item` and carried-slot `ITEM_USE` attempts also fail closed before runtime/persisted inventory consumption or point restoration can run
 - once that same floor is reached, later owner-side peer-facing `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, peer delivery, or exact-name lookup can run
+- once that same floor is reached, later peer-originated `WHISPER` requests aimed at that same exact connected owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once that same floor is reached, later owner-side self-only `CHAT` requests with type `INFO` also fail closed before self info delivery can run
 - if that same floor is reached while the dead owner still held the aggro-lite gate for a live content-loaded practice mob, that same floor transition now also releases the mob's engagement so another visible live session may reacquire it with a fresh `TARGET` without waiting for owner disconnect or mob death / respawn
 - once either retaliation beat reaches that same floor, currently visible peer sessions also receive one queued `GC DEAD(owner_vid)` while corpse state, respawn, and broader player-death choreography remain deliberately out of scope

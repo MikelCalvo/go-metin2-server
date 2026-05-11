@@ -1367,9 +1367,9 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInGuild(originID uint64, ori
 	}
 }
 
-func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byte) bool {
+func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byte) (bool, bool) {
 	if r == nil || name == "" || len(frames) == 0 {
-		return false
+		return false, false
 	}
 
 	r.mu.Lock()
@@ -1377,9 +1377,15 @@ func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byt
 
 	playerEntity, ok := r.scopesLocked().PlayerByExactName(name)
 	if !ok {
-		return false
+		return false, true
 	}
-	return r.enqueueToEntityLocked(playerEntity.Entity.ID, frames)
+	if characterAtBootstrapHPFloor(playerEntity.Character) {
+		return false, false
+	}
+	if !r.enqueueToEntityLocked(playerEntity.Entity.ID, frames) {
+		return false, false
+	}
+	return true, false
 }
 
 func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
@@ -1447,6 +1453,10 @@ func (r *sharedWorldRegistry) playerCharacterByName(name string) (loginticket.Ch
 		return loginticket.Character{}, false
 	}
 	return playerEntity.Character, true
+}
+
+func characterAtBootstrapHPFloor(character loginticket.Character) bool {
+	return character.Points[bootstrapPlayerPointValueIndex] <= 0
 }
 
 func connectedCharacterSnapshot(topology worldruntime.BootstrapTopology, character loginticket.Character) ConnectedCharacterSnapshot {

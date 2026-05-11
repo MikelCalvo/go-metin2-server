@@ -7,6 +7,7 @@ The goal of this slice is narrow:
 - route the whisper by exact target character name among currently connected bootstrap sessions
 - deliver one `GC_WHISPER` packet only to the target on success
 - return one `WHISPER_TYPE_NOT_EXIST` packet to the sender when the target is not connected
+- keep connected zero-HP post-floor player-death targets fail-closed instead of fabricating a missing-target response
 - avoid broadening the slice into block lists, cross-channel relay, empire filtering, GM/system whisper variants, or moderation
 
 ## Covered packets
@@ -30,13 +31,17 @@ The current bootstrap runtime behavior is:
    - `type = WHISPER_TYPE_NOT_EXIST`
    - `from_name = requested target name`
    - empty message payload
+7. if the exact-name target is still connected but that selected live session has already reached the currently owned retaliation-driven `0`-HP floor, the whisper now fails closed instead:
+   - no queued target `GC_WHISPER` delivery is appended
+   - player B receives no synthetic `WHISPER_TYPE_NOT_EXIST` fallback
 
 ## Current scope
 
 This slice freezes:
 - exact-name whisper routing among currently connected `GAME` sessions
 - successful direct delivery only to the target
-- `WHISPER_TYPE_NOT_EXIST` sender feedback for unknown targets
+- `WHISPER_TYPE_NOT_EXIST` sender feedback for unknown targets only
+- silent fail-closed delivery denial for still-connected zero-HP post-floor targets already owned by `player-death-bootstrap.md`
 - no sender echo on successful whisper delivery
 
 It does not yet freeze:

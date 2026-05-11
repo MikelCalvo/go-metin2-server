@@ -1835,8 +1835,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.WhisperResult{Accepted: true}
 					}
 					delivery := ticketWhisperDeliveryPacket(selected, packet)
-					if sharedWorld.EnqueueToCharacterName(packet.Target, [][]byte{chatproto.EncodeServerWhisper(delivery)}) {
+					delivered, missing := sharedWorld.EnqueueToCharacterName(packet.Target, [][]byte{chatproto.EncodeServerWhisper(delivery)})
+					if delivered {
 						return gameflow.WhisperResult{Accepted: true}
+					}
+					if !missing {
+						return gameflow.WhisperResult{Accepted: false}
 					}
 					notFound := ticketWhisperNotExistPacket(packet.Target)
 					return gameflow.WhisperResult{Accepted: true, Delivery: &notFound}
