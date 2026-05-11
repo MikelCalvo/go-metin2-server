@@ -8154,7 +8154,7 @@ func TestGameSessionFlowShopBuySlashUnknownCatalogSlotStillFailsClosed(t *testin
 	}
 }
 
-func TestGameSessionFlowShopBuyPacketFailsClosedWhenMerchantActorLosesInteractionContext(t *testing.T) {
+func TestGameSessionFlowShopBuyPacketClosesMerchantWindowWhenMerchantActorLosesInteractionContext(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacketLostActorContext", 0x01040112, 0x02050112, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-p-lctx", 0x12121212, buyer)
 	defer closeSessionFlow(t, flow)
@@ -8169,11 +8169,21 @@ func TestGameSessionFlowShopBuyPacketFailsClosedWhenMerchantActorLosesInteractio
 	if err != nil {
 		t.Fatalf("unexpected packet shop buy error after merchant actor lost interaction context: %v", err)
 	}
-	if len(buyOut) != 0 {
-		t.Fatalf("expected packet shop buy to fail closed once merchant actor lost interaction context, got %d frames", len(buyOut))
+	if len(buyOut) != 1 {
+		t.Fatalf("expected packet shop buy to auto-close the stale merchant window once merchant actor lost interaction context, got %d frames", len(buyOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode merchant shop end after actor lost interaction context: %v", err)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames after merchant actor lost interaction-context packet buy failure, got %d", len(queued))
+	}
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected client SHOP END error after stale actor-context auto-close: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected stale actor-context auto-close to clear merchant session before a later explicit close, got %d frames", len(closeOut))
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
@@ -8198,7 +8208,7 @@ func TestGameSessionFlowShopBuyPacketFailsClosedWhenMerchantActorLosesInteractio
 	}
 }
 
-func TestGameSessionFlowShopBuyPacketFailsClosedWhenBoundCatalogSnapshotBecomesStale(t *testing.T) {
+func TestGameSessionFlowShopBuyPacketClosesMerchantWindowWhenBoundCatalogSnapshotBecomesStale(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacketStaleCatalog", 0x01040113, 0x02050113, 1000, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "m-buy-p-stale", 0x13131313, buyer)
 	defer closeSessionFlow(t, flow)
@@ -8216,11 +8226,21 @@ func TestGameSessionFlowShopBuyPacketFailsClosedWhenBoundCatalogSnapshotBecomesS
 	if err != nil {
 		t.Fatalf("unexpected packet shop buy error after merchant catalog changed: %v", err)
 	}
-	if len(buyOut) != 0 {
-		t.Fatalf("expected packet shop buy to fail closed once bound merchant catalog snapshot became stale, got %d frames", len(buyOut))
+	if len(buyOut) != 1 {
+		t.Fatalf("expected packet shop buy to auto-close the stale merchant window once bound merchant catalog snapshot became stale, got %d frames", len(buyOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode merchant shop end after bound catalog snapshot became stale: %v", err)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames after stale merchant catalog packet buy failure, got %d", len(queued))
+	}
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected client SHOP END error after stale catalog auto-close: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected stale catalog auto-close to clear merchant session before a later explicit close, got %d frames", len(closeOut))
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {

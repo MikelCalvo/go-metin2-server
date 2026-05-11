@@ -1238,22 +1238,28 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				scheduleFirstPracticeMobServerOriginRetaliation(targetVID, snapshotVersion)
 			}
 		}
-		activeMerchantBuyContextStillValid := func() bool {
+		activeMerchantBuyContextStillValid := func(packetShopFrames bool) (bool, [][]byte) {
 			if !ownsLiveSharedWorldSession() || runtime == nil {
-				return true
+				return true, nil
 			}
 			resolution := runtime.resolveStaticActorInteraction(sharedWorldID, activeMerchantBuy.TargetVID)
 			if !resolution.Accepted || resolution.Definition.Kind != interactionstore.KindShopPreview || !reflect.DeepEqual(activeMerchantBuy.Definition, resolution.Definition) {
 				clearActiveMerchantBuy()
-				return false
+				if packetShopFrames {
+					return false, [][]byte{shopproto.EncodeServerEnd()}
+				}
+				return false, nil
 			}
-			return true
+			return true, nil
 		}
 		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16, packetShopFrames bool) ([][]byte, bool) {
 			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
 				return nil, false
 			}
-			if !activeMerchantBuyContextStillValid() {
+			if ok, frames := activeMerchantBuyContextStillValid(packetShopFrames); !ok {
+				if len(frames) != 0 {
+					return frames, true
+				}
 				return nil, false
 			}
 			entry, ok := merchantCatalogEntryBySlot(activeMerchantBuy.Definition, catalogSlot)
