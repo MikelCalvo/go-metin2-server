@@ -3096,8 +3096,8 @@ func TestGameSessionFlowPracticeMobPeerMoveIntoRangeSkipsZeroHPOwnerRecipientAft
 		t.Fatalf("expected zero-HP owner to receive no queued peer-entry frames when a later peer moves into visibility, got %d", len(queued))
 	}
 	originQueued := flushServerFrames(t, moverFlow)
-	if len(originQueued) != 6 {
-		t.Fatalf("expected live mover to receive 6 queued origin visibility-rebuild frames (dead owner plus visible static actor) when crossing into visibility of a zero-HP owner, got %d", len(originQueued))
+	if len(originQueued) != 7 {
+		t.Fatalf("expected live mover to receive 7 queued origin visibility-rebuild frames (dead owner burst, dead replay, plus visible static actor) when crossing into visibility of a zero-HP owner, got %d", len(originQueued))
 	}
 	originAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originQueued[0]))
 	if err != nil {
@@ -3105,6 +3105,13 @@ func TestGameSessionFlowPracticeMobPeerMoveIntoRangeSkipsZeroHPOwnerRecipientAft
 	}
 	if originAdd.VID != owner.VID || originAdd.X != owner.X || originAdd.Y != owner.Y {
 		t.Fatalf("unexpected origin queued owner add after zero-HP owner move-into-range skip: %+v", originAdd)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, originQueued[3]))
+	if err != nil {
+		t.Fatalf("decode origin queued DEAD(owner_vid) after zero-HP owner move-into-range skip: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected mover visibility rebuild to append DEAD(owner_vid) for already-dead visible owner, got %+v", dead)
 	}
 }
 
@@ -3200,8 +3207,8 @@ func TestGameSessionFlowPracticeMobPeerSyncPositionIntoRangeSkipsZeroHPOwnerReci
 		t.Fatalf("expected zero-HP owner to receive no queued peer-entry frames when a later peer syncs into visibility, got %d", len(queued))
 	}
 	originQueued := flushServerFrames(t, syncerFlow)
-	if len(originQueued) != 6 {
-		t.Fatalf("expected live syncer to receive 6 queued origin visibility-rebuild frames (dead owner plus visible static actor) when syncing into visibility of a zero-HP owner, got %d", len(originQueued))
+	if len(originQueued) != 7 {
+		t.Fatalf("expected live syncer to receive 7 queued origin visibility-rebuild frames (dead owner burst, dead replay, plus visible static actor) when syncing into visibility of a zero-HP owner, got %d", len(originQueued))
 	}
 	originAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originQueued[0]))
 	if err != nil {
@@ -3209,6 +3216,13 @@ func TestGameSessionFlowPracticeMobPeerSyncPositionIntoRangeSkipsZeroHPOwnerReci
 	}
 	if originAdd.VID != owner.VID || originAdd.X != owner.X || originAdd.Y != owner.Y {
 		t.Fatalf("unexpected origin queued owner add after zero-HP owner sync-into-range skip: %+v", originAdd)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, originQueued[3]))
+	if err != nil {
+		t.Fatalf("decode origin queued DEAD(owner_vid) after zero-HP owner sync-into-range skip: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected sync visibility rebuild to append DEAD(owner_vid) for already-dead visible owner, got %+v", dead)
 	}
 }
 
@@ -3309,8 +3323,8 @@ func TestGameSessionFlowPracticeMobPeerTransferIntoVisibilitySkipsZeroHPOwnerRec
 		t.Fatalf("expected zero-HP owner to receive no queued peer-entry frames when a later peer transfers into visibility, got %d", len(queued))
 	}
 	transferredQueued := flushServerFrames(t, transferredFlow)
-	if len(transferredQueued) != 6 {
-		t.Fatalf("expected transferred live peer to receive 6 queued origin visibility-rebuild frames (dead owner plus visible static actor), got %d", len(transferredQueued))
+	if len(transferredQueued) != 7 {
+		t.Fatalf("expected transferred live peer to receive 7 queued origin visibility-rebuild frames (dead owner burst, dead replay, plus visible static actor), got %d", len(transferredQueued))
 	}
 	originAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, transferredQueued[0]))
 	if err != nil {
@@ -3318,6 +3332,13 @@ func TestGameSessionFlowPracticeMobPeerTransferIntoVisibilitySkipsZeroHPOwnerRec
 	}
 	if originAdd.VID != owner.VID || originAdd.X != owner.X || originAdd.Y != owner.Y {
 		t.Fatalf("unexpected origin queued owner add after zero-HP owner transfer-visibility skip: %+v", originAdd)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, transferredQueued[3]))
+	if err != nil {
+		t.Fatalf("decode origin queued DEAD(owner_vid) after zero-HP owner transfer-visibility skip: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected transfer visibility rebuild to append DEAD(owner_vid) for already-dead visible owner, got %+v", dead)
 	}
 }
 

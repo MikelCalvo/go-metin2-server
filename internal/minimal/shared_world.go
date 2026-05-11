@@ -1547,12 +1547,12 @@ func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapsh
 }
 
 func buildTransferOriginFrames(removed []loginticket.Character, added []loginticket.Character) [][]byte {
-	frames := make([][]byte, 0, len(removed)+len(added)*3)
+	frames := make([][]byte, 0, len(removed)+len(added)*4)
 	for _, peerCharacter := range removed {
 		frames = append(frames, encodeCharacterDeleteFrame(peerCharacter))
 	}
 	for _, peerCharacter := range added {
-		frames = append(frames, encodePeerVisibilityFrames(peerCharacter)...)
+		frames = append(frames, encodePeerVisibilityBootstrapFrames(peerCharacter)...)
 	}
 	return frames
 }
