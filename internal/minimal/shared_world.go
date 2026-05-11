@@ -696,6 +696,9 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 
 	peerFrames := encodePeerVisibilityFrames(character)
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
+		if characterAtBootstrapHPFloor(peerCharacter) {
+			continue
+		}
 		r.enqueueToCharacterLocked(peerCharacter, peerFrames)
 	}
 	return id, visibilityDiff.TargetVisiblePeers
