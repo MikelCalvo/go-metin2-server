@@ -247,6 +247,11 @@ The current bootstrap runtime now owns one explicit same-socket select-phase clo
 - if that same still-live selected owner sends `/phase_select` while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the outgoing select-phase transition frame on that same socket
 - that select-phase close clears the active merchant context immediately, so later merchant requests stay fail-closed until a future character is selected and opens a fresh merchant window again
 
+The current bootstrap runtime now owns one explicit same-socket slash-command teardown pair too:
+- if that same still-live selected owner sends `/quit` while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the existing self `CHAT_TYPE_COMMAND quit` delivery on that same socket
+- if that same still-live selected owner sends `/logout` while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the outgoing close-phase transition frame on that same socket
+- both slash-command closes clear the active merchant context immediately, so later merchant requests stay fail-closed until a future selected session opens a fresh merchant window again
+
 The current bootstrap runtime now owns one explicit post-floor teardown case too:
 - if an already-open merchant window belongs to the same selected live owner session whose immediate or delayed practice-mob retaliation beat just reached `0` HP, the owner still receives the ordinary retaliation floor transition first (`GC PLAYER_POINT_CHANGE`, `GC DEAD`, `GC TARGET(0, 0)`) and then one self-only `GC::SHOP END`
 - that same floor transition also clears the active merchant context immediately, so a later client `SHOP END` request on the same dead owner session now fails closed until a future slice owns broader revive / reopen behavior

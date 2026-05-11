@@ -270,6 +270,8 @@ If the lab currently has no such content, either:
 - [ ] If the QA setup allows it, use the loopback static-actor or interaction-definition update endpoints to invalidate the currently open merchant actor/catalog and confirm the next packet `SHOP BUY` auto-closes that stale merchant window with one merchant-family `GC::SHOP END` without changing gold or inventory
 - [ ] If the QA setup allows it, keep a merchant window open, trigger one successful warp or exact-position transfer, and confirm the client first receives one merchant-family `GC::SHOP END` before the normal self transfer rebootstrap burst; then confirm a later `SHOP END` or `SHOP BUY` on the destination side fails closed until the merchant is opened again
 - [ ] If the QA setup allows it, keep a merchant window open, send `/phase_select`, and confirm the client first receives one merchant-family `GC::SHOP END` before the select-phase transition frame; then confirm the next selected character starts without any stale merchant context until the merchant is opened again
+- [ ] If the QA setup allows it, keep a merchant window open, send `/quit`, and confirm the client first receives one merchant-family `GC::SHOP END` before the existing self command-chat `quit` delivery; then confirm the session has no usable stale merchant context while it waits for disconnect
+- [ ] If the QA setup allows it, keep a merchant window open, send `/logout`, and confirm the client first receives one merchant-family `GC::SHOP END` before the close-phase transition frame; then confirm the socket leaves the shared world without any stale merchant context surviving
 - [ ] Re-interact immediately once to confirm repeated spam is suppressed or remains stable within the current cooldown contract
 
 Expected result:

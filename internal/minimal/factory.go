@@ -1720,19 +1720,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
-							clearActiveMerchantBuy()
+							quitFrames := prependMerchantCloseFrame(nil)
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeCommand, Message: "quit"}
-							return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							return gameflow.ChatResult{Accepted: true, Frames: quitFrames, Delivery: &delivery}
 						case "logout":
 							leaveSharedWorld()
 							hasSelected = false
 							selectedPlayer = nil
-							clearActiveMerchantBuy()
+							logoutFrames := prependMerchantCloseFrame(nil)
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
-							return gameflow.ChatResult{Accepted: true, NextPhase: session.PhaseClose}
+							return gameflow.ChatResult{Accepted: true, Frames: logoutFrames, NextPhase: session.PhaseClose}
 						case "phase_select":
 							leaveSharedWorld()
 							hasSelected = false
