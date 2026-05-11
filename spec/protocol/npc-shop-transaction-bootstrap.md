@@ -198,6 +198,7 @@ Failure behavior in this bootstrap contract:
 - packet `SHOP BUY` no-valid-placement failure now emits one bare self-only `GC::SHOP INVENTORY_FULL`
 - packet `SHOP BUY` unknown-slot failure now emits one bare self-only `GC::SHOP INVALID_POS`
 - packet `SHOP BUY` against a still-open merchant window whose live actor/context or bound catalog snapshot has gone stale now emits one self-only `GC::SHOP END`, clears the active merchant context immediately, and still leaves gold/inventory unchanged
+- a successful warp interaction or exact-position transfer trigger while that merchant window is still open now prepends one self-only `GC::SHOP END` before the self transfer rebootstrap burst and clears the active merchant context immediately, so later `SHOP BUY` requests on the destination side fail closed until the player opens a fresh merchant window again
 - the local `/shop_buy <slot>` debug harness still emits one self-only placeholder `CHAT_TYPE_INFO` delivery (`"Not enough gold."` / `"Inventory full."`) on those same insufficient-gold / no-valid-placement causes while the cleanup to one shared visible failure surface remains deferred, and slash unknown-slot attempts stay fail-closed for now instead of widening into a merchant-family packet/error companion in the same slice
 
 ### Frozen packet-path merchant error seam
