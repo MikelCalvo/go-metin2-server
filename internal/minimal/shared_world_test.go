@@ -14284,6 +14284,133 @@ func TestGameSessionFlowPracticeMobLocalChatSkipsZeroHPOwnerRecipientAfterDelaye
 	}
 }
 
+func TestGameSessionFlowPracticeMobPeerChatRecipientSkipsZeroHPOwnerAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	owner.GuildID = 77
+	owner.GuildName = "G77"
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	watcher.GuildID = owner.GuildID
+	watcher.GuildName = owner.GuildName
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000465, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before zero-HP owner recipient broadcast-chat skip after delayed retaliation: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before zero-HP owner recipient broadcast-chat skip after delayed retaliation: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %d frames", len(attackOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, ownerFlow)
+	if len(queued) != 3 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %d frames", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation point-change before zero-HP owner recipient broadcast-chat skip after delayed retaliation: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %+v", pointChange)
+	}
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner recipient broadcast-chat skip, got %d", len(watcherQueued))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode visible-peer dead frame before zero-HP owner recipient broadcast-chat skip after delayed retaliation: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %+v", dead)
+	}
+
+	chatCases := []struct {
+		name     string
+		chatType uint8
+		message  string
+	}{
+		{name: "party", chatType: chatproto.ChatTypeParty, message: "hola party despues del piso"},
+		{name: "guild", chatType: chatproto.ChatTypeGuild, message: "hola guild despues del piso"},
+		{name: "shout", chatType: chatproto.ChatTypeShout, message: "hola shout despues del piso"},
+	}
+	for _, tc := range chatCases {
+		t.Run(tc.name, func(t *testing.T) {
+			chatOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: tc.chatType, Message: tc.message})))
+			if err != nil {
+				t.Fatalf("unexpected %s-to-zero-HP-owner error after delayed retaliation reached owner HP floor: %v", tc.name, err)
+			}
+			if len(chatOut) != 1 {
+				t.Fatalf("expected %s chat sender to keep self echo after delayed retaliation reached owner HP floor, got %d frames", tc.name, len(chatOut))
+			}
+			selfChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, chatOut[0]))
+			if err != nil {
+				t.Fatalf("decode %s sender echo after delayed retaliation reached owner HP floor: %v", tc.name, err)
+			}
+			if selfChat.Type != tc.chatType || selfChat.VID != watcher.VID || selfChat.Message != "PeerTwo : "+tc.message {
+				t.Fatalf("unexpected %s sender echo after delayed retaliation reached owner HP floor: %+v", tc.name, selfChat)
+			}
+			if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+				t.Fatalf("expected zero-HP owner recipient %s skip after delayed retaliation not to queue delivery, got %d", tc.name, len(queued))
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowPracticeMobQuitSlashCommandStillWorksAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

@@ -7,6 +7,7 @@ The goal of this slice is narrow:
 - accept `CHAT_TYPE_SHOUT` in `GAME`
 - echo one deterministic `GC_CHAT` shout delivery back to the sender
 - queue the same `GC_CHAT` shout delivery to the other connected bootstrap sessions in the same empire
+- keep still-connected zero-HP post-floor player-death owners out of that queued shout recipient set
 - avoid broadening the slice into real map/channel/range shout semantics yet
 
 ## Covered packets
@@ -26,8 +27,9 @@ The current bootstrap runtime behavior is:
    - `empire = 0`
    - `message = "PlayerName : original message"`
 4. player B receives that `GC_CHAT` delivery directly as the sender echo
-5. player A receives the same `GC_CHAT` delivery through the queued server-frame path
-6. peers in other empires do not receive that delivery
+5. if player A is still connected, belongs to the same empire, and is still shout-deliverable, player A receives the same `GC_CHAT` delivery through the queued server-frame path
+6. if player A is still connected and still belongs to the same empire but has already reached the currently owned retaliation-driven `0`-HP floor, queued shout delivery is skipped instead while player B still keeps the normal self echo
+7. peers in other empires do not receive that delivery
 
 ## Bootstrap simplification
 
@@ -41,6 +43,7 @@ It is not yet a claim that real channel, map, or range-based shout semantics alr
 This slice freezes:
 - `CHAT_TYPE_SHOUT` acceptance in `GAME`
 - sender echo plus queued fanout to other connected bootstrap sessions in the same empire
+- still-connected zero-HP post-floor player-death owners are temporarily excluded from that queued recipient set
 - no queued fanout to peers in other empires
 - reuse of the same `GC_CHAT` payload shape already used for local chat
 - `Name : message` formatting in the payload text

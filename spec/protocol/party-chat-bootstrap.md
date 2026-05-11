@@ -7,6 +7,7 @@ The goal of this slice is narrow:
 - accept `CHAT_TYPE_PARTY` in `GAME`
 - echo one deterministic `GC_CHAT` party delivery back to the sender
 - queue the same `GC_CHAT` party delivery to the other connected bootstrap sessions
+- keep still-connected zero-HP post-floor player-death owners out of that queued party recipient set
 - avoid broadening the slice into real party invite/add/remove/link/update semantics yet
 
 ## Covered packets
@@ -26,7 +27,8 @@ The current bootstrap runtime behavior is:
    - `empire = 0`
    - `message = "PlayerName : original message"`
 4. player B receives that `GC_CHAT` delivery directly as the sender echo
-5. player A receives the same `GC_CHAT` delivery through the queued server-frame path
+5. if player A is still connected and is still party-chat-deliverable, player A receives the same `GC_CHAT` delivery through the queued server-frame path
+6. if player A is still connected but has already reached the currently owned retaliation-driven `0`-HP floor, queued party delivery is skipped instead while player B still keeps the normal self echo
 
 ## Bootstrap simplification
 
@@ -40,6 +42,7 @@ It is not a claim that real party membership/invite/link semantics already exist
 This slice freezes:
 - `CHAT_TYPE_PARTY` acceptance in `GAME`
 - sender echo plus queued fanout to the other connected bootstrap sessions
+- still-connected zero-HP post-floor player-death owners are temporarily excluded from that queued recipient set
 - reuse of the same `GC_CHAT` payload shape already used for local chat
 - `Name : message` formatting in the payload text
 - runtime-owned target selection through `internal/worldruntime.Scopes.PartyTargets(...)`, while keeping the current bootstrap-global policy unchanged

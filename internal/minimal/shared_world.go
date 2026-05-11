@@ -1311,6 +1311,9 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][
 	defer r.mu.Unlock()
 
 	for _, target := range r.scopesLocked().PartyTargets(originID) {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }
@@ -1337,6 +1340,9 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInEmpire(originID uint64, or
 	defer r.mu.Unlock()
 
 	for _, target := range r.scopesLocked().ShoutTargets(originID, origin) {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }
@@ -1366,6 +1372,9 @@ func (r *sharedWorldRegistry) EnqueueToOtherSessionsInGuild(originID uint64, ori
 	defer r.mu.Unlock()
 
 	for _, target := range r.scopesLocked().GuildTargets(originID, origin) {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }

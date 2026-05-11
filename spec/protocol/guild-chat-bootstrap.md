@@ -7,6 +7,7 @@ The goal of this slice is narrow:
 - accept `CHAT_TYPE_GUILD` in `GAME`
 - echo one deterministic `GC_CHAT` guild delivery back to the sender
 - queue the same `GC_CHAT` guild delivery to the other connected bootstrap sessions with the same non-zero `GuildID`
+- keep still-connected zero-HP post-floor player-death owners out of that queued guild recipient set
 - avoid broadening the slice into real guild create/join/leave/member/rank/state semantics yet
 
 ## Covered packets
@@ -26,8 +27,9 @@ The current bootstrap runtime behavior is:
    - `empire = 0`
    - `message = "PlayerName : original message"`
 4. player B receives that `GC_CHAT` delivery directly as the sender echo
-5. player A receives the same `GC_CHAT` delivery through the queued server-frame path
-6. peers in other guilds do not receive that delivery
+5. if player A is still connected, shares the same non-zero `GuildID`, and is still guild-chat-deliverable, player A receives the same `GC_CHAT` delivery through the queued server-frame path
+6. if player A is still connected and still shares that same non-zero `GuildID` but has already reached the currently owned retaliation-driven `0`-HP floor, queued guild delivery is skipped instead while player B still keeps the normal self echo
+7. peers in other guilds do not receive that delivery
 
 ## Bootstrap simplification
 
@@ -41,6 +43,7 @@ It is not yet a claim that real guild create/join/leave/member/state semantics a
 This slice freezes:
 - `CHAT_TYPE_GUILD` acceptance in `GAME`
 - sender echo plus queued fanout to the other connected bootstrap sessions with the same non-zero `GuildID`
+- still-connected zero-HP post-floor player-death owners are temporarily excluded from that queued recipient set
 - no queued fanout to peers in other guilds
 - reuse of the same `GC_CHAT` payload shape already used for local chat
 - `Name : message` formatting in the payload text
