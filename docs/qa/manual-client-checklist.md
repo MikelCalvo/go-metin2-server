@@ -269,6 +269,7 @@ If the lab currently has no such content, either:
 - [ ] While the same merchant window stays open, send one packet `SHOP BUY` for an authored slot that does not exist in that bound catalog snapshot and confirm the client receives one merchant-family invalid-position response without any gold or inventory mutation
 - [ ] If the QA setup allows it, use the loopback static-actor or interaction-definition update endpoints to invalidate the currently open merchant actor/catalog and confirm the next packet `SHOP BUY` auto-closes that stale merchant window with one merchant-family `GC::SHOP END` without changing gold or inventory
 - [ ] If the QA setup allows it, keep a merchant window open, trigger one successful warp or exact-position transfer, and confirm the client first receives one merchant-family `GC::SHOP END` before the normal self transfer rebootstrap burst; then confirm a later `SHOP END` or `SHOP BUY` on the destination side fails closed until the merchant is opened again
+- [ ] If the QA setup allows it, keep a merchant window open, send `/phase_select`, and confirm the client first receives one merchant-family `GC::SHOP END` before the select-phase transition frame; then confirm the next selected character starts without any stale merchant context until the merchant is opened again
 - [ ] Re-interact immediately once to confirm repeated spam is suppressed or remains stable within the current cooldown contract
 
 Expected result:
@@ -281,6 +282,7 @@ Expected result:
 - insufficient-gold, no-placement, and unknown-slot merchant failures preserve state and now surface the merchant-family error path from the open window instead of silently failing or falling back to the older placeholder info chat on packet `SHOP BUY`
 - if a still-open merchant window becomes stale because the live actor or authored `shop_preview` definition changed underneath it, the next packet `SHOP BUY` auto-closes that stale merchant window with self-only `GC::SHOP END`, clears the active merchant context, and still does not mutate gold or inventory
 - if a successful warp or exact-position transfer begins while that merchant window is still open, the client now sees one self-only `GC::SHOP END` before the normal transfer rebootstrap burst, and the destination-side merchant context stays cleared until the player opens a fresh merchant window again
+- if same-socket `/phase_select` begins while that merchant window is still open, the client now sees one self-only `GC::SHOP END` before the select-phase transition frame, and the next selected character starts without any stale merchant context until the merchant is opened again
 - repeated interaction does not disconnect the client
 
 Important note:

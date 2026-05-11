@@ -243,6 +243,10 @@ The current bootstrap runtime now owns one explicit transfer-triggered close too
 - if a successful warp interaction or exact-position transfer trigger relocates the still-live selected owner while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the self transfer rebootstrap burst on that same socket
 - that transfer-triggered close clears the active merchant context immediately, so later `SHOP END` / `SHOP BUY` on the destination side fail closed until the player opens a fresh merchant window again
 
+The current bootstrap runtime now owns one explicit same-socket select-phase close too:
+- if that same still-live selected owner sends `/phase_select` while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the outgoing select-phase transition frame on that same socket
+- that select-phase close clears the active merchant context immediately, so later merchant requests stay fail-closed until a future character is selected and opens a fresh merchant window again
+
 The current bootstrap runtime now owns one explicit post-floor teardown case too:
 - if an already-open merchant window belongs to the same selected live owner session whose immediate or delayed practice-mob retaliation beat just reached `0` HP, the owner still receives the ordinary retaliation floor transition first (`GC PLAYER_POINT_CHANGE`, `GC DEAD`, `GC TARGET(0, 0)`) and then one self-only `GC::SHOP END`
 - that same floor transition also clears the active merchant context immediately, so a later client `SHOP END` request on the same dead owner session now fails closed until a future slice owns broader revive / reopen behavior
@@ -292,6 +296,7 @@ The repository can now say this much honestly:
 - explicit merchant close now uses client `SHOP END` plus server `GC::SHOP END` while the session still holds an active merchant context in `GAME`
 - if a still-open merchant window becomes stale because the live actor or authored `shop_preview` snapshot changed underneath it, the next packet `SHOP BUY` now auto-closes that stale window with one self-only `GC::SHOP END`
 - if a successful warp interaction or exact-position transfer trigger relocates that same still-live selected owner while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the self transfer rebootstrap burst and clears the active merchant context immediately
+- if that same still-live selected owner sends `/phase_select` while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the outgoing select-phase transition frame and clears the active merchant context immediately
 - if that same selected live owner reaches the current practice-mob retaliation floor at `0` HP while a merchant window is open, the runtime now also tears that merchant window down with one self-only `GC::SHOP END` after the owned death + target-clear transition
 - the owned `SHOP BUY` packet shape is now also the primary live bootstrap merchant-buy ingress, while `/shop_buy <catalog_slot>` remains only a local debug harness for the same state contract
 - successful packet buys now also end on one bare merchant-family `GC::SHOP OK` after the already-owned self-only `ITEM_SET` refreshes for changed carried slots
@@ -315,7 +320,7 @@ The following remain intentionally unfrozen for the next merchant packet/runtime
 - whether later compatibility work will force `START_EX` instead of the currently owned `START` open path
 - the final gameplay semantic meaning of the opaque leading buy-specific byte in client `SHOP BUY`
 - the exact minimal success-side `GC::SHOP` sequence needed to keep the TMP4 merchant UI stable after a `BUY` once the two frozen bare packet-path error frames are no longer the only owned merchant-window buy companions
-- whether teardown paths beyond explicit `SHOP END`, stale-window auto-close, transfer-triggered rebootstrap close, and the current retaliation-floor close also need a visible `GC::SHOP END` before phase/disconnect behavior takes over
+- whether teardown paths beyond explicit `SHOP END`, stale-window auto-close, transfer-triggered rebootstrap close, same-socket `/phase_select` close, and the current retaliation-floor close also need a visible `GC::SHOP END` before phase/disconnect behavior takes over
 - whether any merchant-side refresh frames must accompany a successful `BUY` beyond the already-owned self-facing state refresh packets
 
 These unknowns are the gate for the next merchant buy runtime slice.
