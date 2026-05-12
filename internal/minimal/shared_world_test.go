@@ -4264,6 +4264,270 @@ func TestGameSessionFlowPracticeMobPeerSyncPositionIntoRangeSkipsZeroHPOwnerReci
 	}
 }
 
+func TestGameSessionFlowPracticeMobPeerMoveWithinVisibleSetSkipsZeroHPOwnerRecipientAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	mover := peerVisibilityCharacter("PeerTwo", 0x01030112, 0x02040112, 1200, 2200, 2, 102, 202)
+	watcher := peerVisibilityCharacter("PeerThree", 0x01030113, 0x02040113, 1300, 2300, 4, 103, 203)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, mover)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return time.Unix(1700000487, 0) }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1150,
+		Y:             2150,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	moverFlow, moverEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(moverEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for mover with one visible peer and one visible content practice mob, got %d", len(moverEnter))
+	}
+	defer closeSessionFlow(t, moverFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for owner after mover enters before zero-HP owner stable-move skip test, got %d", len(queued))
+	}
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-three", 0x33333333)
+	if len(watcherEnter) != 14 {
+		t.Fatalf("expected 14 bootstrap frames for watcher with two visible peers and one visible content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for owner after watcher enters before zero-HP owner stable-move skip test, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, moverFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for mover after watcher enters before zero-HP owner stable-move skip test, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before zero-HP owner stable-move skip test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before zero-HP owner stable-move skip test, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before zero-HP owner stable-move skip test: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before zero-HP owner stable-move skip test, got %d frames", len(attackOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before zero-HP owner stable-move skip test: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected immediate retaliation to reach owner HP floor before zero-HP owner stable-move skip test, got %+v", pointChange)
+	}
+	moverQueued := flushServerFrames(t, moverFlow)
+	if len(moverQueued) != 1 {
+		t.Fatalf("expected mover to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner stable-move skip test, got %d", len(moverQueued))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, moverQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued DEAD(owner_vid) for mover before zero-HP owner stable-move skip test: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected mover queued death fanout to target owner VID before zero-HP owner stable-move skip test, got %+v", dead)
+	}
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected watcher to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner stable-move skip test, got %d", len(watcherQueued))
+	}
+	dead, err = worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued DEAD(owner_vid) for watcher before zero-HP owner stable-move skip test: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected watcher queued death fanout to target owner VID before zero-HP owner stable-move skip test, got %+v", dead)
+	}
+
+	moveOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1250, Y: 2250, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move error after zero-HP owner floor: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame after zero-HP owner floor, got %d", len(moveOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued peer MOVE_ACK frames when a later peer moves within the same visible set, got %d", len(queued))
+	}
+	watcherQueued = flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected live watcher to receive 1 queued peer MOVE_ACK frame after zero-HP owner stable-move skip test, got %d", len(watcherQueued))
+	}
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer MOVE_ACK after zero-HP owner stable-move skip test: %v", err)
+	}
+	if moveAck.VID != mover.VID || moveAck.X != 1250 || moveAck.Y != 2250 || moveAck.Time != 0x11121314 {
+		t.Fatalf("unexpected queued peer MOVE_ACK after zero-HP owner stable-move skip test: %+v", moveAck)
+	}
+}
+
+func TestGameSessionFlowPracticeMobPeerSyncPositionWithinVisibleSetSkipsZeroHPOwnerRecipientAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	syncer := peerVisibilityCharacter("PeerTwo", 0x01030122, 0x02040122, 1200, 2200, 2, 102, 202)
+	watcher := peerVisibilityCharacter("PeerThree", 0x01030123, 0x02040123, 1300, 2300, 4, 103, 203)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, syncer)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return time.Unix(1700000488, 0) }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1150,
+		Y:             2150,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	syncerFlow, syncerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(syncerEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for syncer with one visible peer and one visible content practice mob, got %d", len(syncerEnter))
+	}
+	defer closeSessionFlow(t, syncerFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for owner after syncer enters before zero-HP owner stable-sync skip test, got %d", len(queued))
+	}
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-three", 0x33333333)
+	if len(watcherEnter) != 14 {
+		t.Fatalf("expected 14 bootstrap frames for watcher with two visible peers and one visible content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for owner after watcher enters before zero-HP owner stable-sync skip test, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, syncerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for syncer after watcher enters before zero-HP owner stable-sync skip test, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before zero-HP owner stable-sync skip test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before zero-HP owner stable-sync skip test, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before zero-HP owner stable-sync skip test: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before zero-HP owner stable-sync skip test, got %d frames", len(attackOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before zero-HP owner stable-sync skip test: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected immediate retaliation to reach owner HP floor before zero-HP owner stable-sync skip test, got %+v", pointChange)
+	}
+	syncerQueued := flushServerFrames(t, syncerFlow)
+	if len(syncerQueued) != 1 {
+		t.Fatalf("expected syncer to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner stable-sync skip test, got %d", len(syncerQueued))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, syncerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued DEAD(owner_vid) for syncer before zero-HP owner stable-sync skip test: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected syncer queued death fanout to target owner VID before zero-HP owner stable-sync skip test, got %+v", dead)
+	}
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected watcher to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner stable-sync skip test, got %d", len(watcherQueued))
+	}
+	dead, err = worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued DEAD(owner_vid) for watcher before zero-HP owner stable-sync skip test: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected watcher queued death fanout to target owner VID before zero-HP owner stable-sync skip test, got %+v", dead)
+	}
+
+	syncOut, err := syncerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
+		Elements: []movep.SyncPositionElement{{VID: syncer.VID, X: 1250, Y: 2250}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected sync_position error after zero-HP owner floor: %v", err)
+	}
+	if len(syncOut) != 1 {
+		t.Fatalf("expected 1 self sync_position ack frame after zero-HP owner floor, got %d", len(syncOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner to receive no queued peer SYNC_POSITION_ACK frames when a later peer syncs within the same visible set, got %d", len(queued))
+	}
+	watcherQueued = flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected live watcher to receive 1 queued peer SYNC_POSITION_ACK frame after zero-HP owner stable-sync skip test, got %d", len(watcherQueued))
+	}
+	syncAck, err := movep.DecodeSyncPositionAck(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer SYNC_POSITION_ACK after zero-HP owner stable-sync skip test: %v", err)
+	}
+	if len(syncAck.Elements) != 1 || syncAck.Elements[0].VID != syncer.VID || syncAck.Elements[0].X != 1250 || syncAck.Elements[0].Y != 2250 {
+		t.Fatalf("unexpected queued peer SYNC_POSITION_ACK after zero-HP owner stable-sync skip test: %+v", syncAck)
+	}
+}
+
 func TestGameSessionFlowPracticeMobPeerTransferIntoVisibilitySkipsZeroHPOwnerRecipientAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

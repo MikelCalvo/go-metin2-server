@@ -39,6 +39,8 @@ The same dead-state replay now also applies to later `MOVE`, `SYNC_POSITION`, an
 
 If that already-dead owner itself is later relocated through the current loopback `/local/transfer` path into another live peer’s visible world or into visibility of another static actor, live peers still get the ordinary dead-owner replay described above, but the dead owner now skips both queued destination peer-entry bursts and destination static-actor bootstrap bursts and keeps only any old-world cleanup frames still needed locally.
 
+That same zero-HP recipient rule now also applies to later same-visible-set peer movement replication: live movers and syncers still keep their ordinary self `MOVE_ACK` / `SYNC_POSITION_ACK`, other live viewers still get the ordinary queued peer `MOVE_ACK` / `SYNC_POSITION_ACK`, but the still-connected dead owner is skipped from those later queued stable peer movement frames entirely.
+
 That same zero-HP recipient rule now also applies to later peer-visibility teardown on disconnect, stale-ownership reclaim cleanup, relocate-away transfer, and AOI move/sync exit: the leaving, reclaimed, moving, syncing, or transferred live peer still gets its ordinary cleanup or replacement re-entry behavior, but the still-connected dead owner is skipped from those later queued peer `CHARACTER_DEL` frames entirely.
 
 That same retaliation-driven `0`-HP recipient rule now also applies to later visible practice-mob death / respawn lifecycle fanout: other live viewers still receive the ordinary `GC DEAD(mob_vid)` plus timed respawn rebuild burst, but an already-dead still-connected owner is skipped from those later non-player lifecycle frames entirely.
