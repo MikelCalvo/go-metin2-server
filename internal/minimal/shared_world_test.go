@@ -2931,6 +2931,133 @@ func TestSharedWorldRegistryEnqueueToVisibleSessionsSkipsZeroHPOwnerRecipient(t 
 	}
 }
 
+func TestGameRuntimePeerAppearanceUpdateSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("Owner", 0x01030120, 0x02040120, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	watcher := peerVisibilityCharacter("Watcher", 0x01030121, 0x02040121, 1200, 2200, 0, 102, 202)
+	watcher.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 11500, Count: 1, Slot: 8}}
+	observer := peerVisibilityCharacter("Observer", 0x01030122, 0x02040122, 1300, 2300, 0, 103, 203)
+	issuePeerTicket(t, store, "owner", 0x11111111, owner)
+	issuePeerTicket(t, store, "watcher", 0x22222222, watcher)
+	issuePeerTicket(t, store, "observer", 0x33333333, observer)
+	for _, account := range []accountstore.Account{
+		{Login: "owner", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "observer", Empire: observer.Empire, Characters: []loginticket.Character{observer}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000472, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "owner", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "watcher", 0x22222222)
+	if len(watcherEnter) != 12 {
+		t.Fatalf("expected 12 bootstrap frames for watcher with one carried item, visible owner, and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+	observerFlow, observerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "observer", 0x33333333)
+	if len(observerEnter) != 14 {
+		t.Fatalf("expected 14 bootstrap frames for observer with two visible peers and content practice mob, got %d", len(observerEnter))
+	}
+	defer closeSessionFlow(t, observerFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after observer joins, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for watcher after observer joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target-selection error before zero-HP peer-appearance recipient skip test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 owner target-selection frame before zero-HP peer-appearance recipient skip test, got %d", len(selectOut))
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner attack error before zero-HP peer-appearance recipient skip test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected owner target refresh plus first point-loss retaliation before zero-HP peer-appearance recipient skip test, got %d frames", len(attackOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP peer-appearance recipient skip test, got %d frames", len(ownerQueued))
+	}
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected owner death to queue 1 visible-peer DEAD frame to watcher before zero-HP peer-appearance recipient skip test, got %d", len(watcherQueued))
+	}
+	observerQueued := flushServerFrames(t, observerFlow)
+	if len(observerQueued) != 1 {
+		t.Fatalf("expected owner death to queue 1 visible-peer DEAD frame to observer before zero-HP peer-appearance recipient skip test, got %d", len(observerQueued))
+	}
+
+	equipOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	if err != nil {
+		t.Fatalf("unexpected watcher equip error after owner reached zero HP: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected watcher self equip frames after owner reached zero HP, got %d", len(equipOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner recipient skip for later peer appearance update, got %d queued frames", len(queued))
+	}
+	observerAppearance := flushServerFrames(t, observerFlow)
+	if len(observerAppearance) != 1 {
+		t.Fatalf("expected live observer to receive 1 queued peer appearance update after watcher equip, got %d", len(observerAppearance))
+	}
+	update, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, observerAppearance[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer appearance update for live observer after owner reached zero HP: %v", err)
+	}
+	if update.VID != watcher.VID || update.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 202} {
+		t.Fatalf("unexpected queued peer appearance update for live observer after owner reached zero HP: %+v", update)
+	}
+}
+
 func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
