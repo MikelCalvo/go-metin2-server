@@ -41,7 +41,7 @@ That same zero-HP recipient rule now also applies to later peer-visibility teard
 
 That same retaliation-driven `0`-HP recipient rule now also applies to later visible practice-mob death / respawn lifecycle fanout: other live viewers still receive the ordinary `GC DEAD(mob_vid)` plus timed respawn rebuild burst, but an already-dead still-connected owner is skipped from those later non-player lifecycle frames entirely.
 
-If a fresh live session first bootstraps or re-enters visibility of a still-dead practice mob before its fixed respawn delay expires, the client now receives the ordinary actor add/info/update burst immediately followed by one replayed `GC DEAD(mob_vid)` so that late visibility does not resurrect the mob visually.
+If a client is shown a still-dead practice mob again before its fixed respawn delay expires — via fresh bootstrap, later visibility re-entry, or a retained delete-plus-rebootstrap refresh — it now receives the ordinary actor add/info/update burst immediately followed by one replayed `GC DEAD(mob_vid)` so that the mob does not resurrect visually.
 
 That same zero-HP recipient rule now also applies to later live static-actor visibility delivery: later static-actor register / update / remove fanout still reaches other live viewers through the ordinary add / refresh / delete paths, but the still-connected dead owner is skipped from those queued visibility frames entirely.
 

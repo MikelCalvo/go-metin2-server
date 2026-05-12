@@ -1034,6 +1034,12 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 	if !ok {
 		return StaticActorSnapshot{}, false
 	}
+	if combatKind == "" {
+		combatKind = previous.CombatKind
+	}
+	if spawnGroupRef == "" {
+		spawnGroupRef = previous.SpawnGroupRef
+	}
 	targetActor := worldruntime.StaticEntity{
 		Entity:          worldruntime.Entity{ID: entityID, Name: name},
 		Position:        position,
@@ -1050,7 +1056,7 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 	}
 	r.syncStaticActorCombatStateLocked(actor)
 
-	refreshFrames := buildStaticActorRefreshFrames(previous, actor)
+	refreshFrames := r.buildStaticActorRefreshFramesLocked(previous, actor)
 	if len(refreshFrames) > 0 {
 		for _, target := range targetDiff.RetainedVisibleTargets {
 			if characterAtBootstrapHPFloor(target.Character) {
@@ -1665,12 +1671,12 @@ func (r *sharedWorldRegistry) buildStaticActorVisibilityTransitionFramesLocked(r
 	return frames
 }
 
-func buildStaticActorRefreshFrames(previous worldruntime.StaticEntity, updated worldruntime.StaticEntity) [][]byte {
+func (r *sharedWorldRegistry) buildStaticActorRefreshFramesLocked(previous worldruntime.StaticEntity, updated worldruntime.StaticEntity) [][]byte {
 	deleteRaw, ok := encodeStaticActorDeleteFrame(previous)
 	if !ok {
 		return nil
 	}
-	addFrames := encodeStaticActorVisibilityFrames(updated)
+	addFrames := r.encodeStaticActorVisibilityStateFramesLocked(updated)
 	if len(addFrames) == 0 {
 		return nil
 	}

@@ -686,6 +686,7 @@ Expected result:
 
 - [ ] Starting from the zero-HP death state in 6.23, keep the dead dummy visible to at least one session and, if possible, to a second watcher that had it selected before death
 - [ ] Before the owned `2s` dead timer expires, bring in one fresh live session (or move/re-enter one back into visibility) and confirm it receives the ordinary dummy `CHARACTER_ADD` -> `CHAR_ADDITIONAL_INFO` -> `CHARACTER_UPDATE` burst immediately followed by one `GC DEAD(vid)` replay instead of a silently live-looking mob
+- [ ] If you have operator static-actor edit access, refresh or retarget that still-dead visible dummy without letting the respawn timer expire and confirm any retained delete-plus-rebootstrap refresh likewise ends with one trailing `GC DEAD(vid)`
 - [ ] Confirm that no respawn rebuild packets arrive before the first owned `2s` dead timer expires
 - [ ] Once the timer expires, confirm each currently visible session receives the respawn rebuild burst in this order: `CHARACTER_DEL(vid)` -> `CHARACTER_ADD` -> `CHAR_ADDITIONAL_INFO` -> `CHARACTER_UPDATE`
 - [ ] Confirm the rebuilt actor returns at the authored/bootstrap position and uses the same visible `VID`
@@ -694,7 +695,7 @@ Expected result:
 
 Expected result:
 - the first respawn is purely server-driven and waits for the owned fixed `2s` dead interval
-- late visibility before respawn replays dead state explicitly: fresh bootstrap or visibility re-entry gets the ordinary actor add/info/update burst plus one trailing `GC DEAD(vid)`
+- late or refreshed visibility before respawn replays dead state explicitly: any later add-style actor presentation gets the ordinary actor add/info/update burst plus one trailing `GC DEAD(vid)`
 - respawn reuses normal visibility teardown + rebuild packet families instead of inventing a dedicated revive packet
 - the rebuilt dummy is a fresh live combat snapshot even if the visible `VID` is reused
 - stale pre-death target ownership does not survive the respawn boundary; post-respawn attacks fail closed until the session reselects target intent with a new accepted `TARGET`

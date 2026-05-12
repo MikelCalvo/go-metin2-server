@@ -44,7 +44,7 @@ The repository now implements this full bootstrap contract for the authored/runt
 - sessions that still had that dummy selected receive the existing self-only `GC TARGET(0, 0)` clear companion in the same transition window
 - post-death `TARGET` / `ATTACK` requests fail closed while the dummy remains dead
 - the first server-driven dead timer is now live as one fixed `2s` bootstrap delay
-- if a fresh live session first bootstraps or re-enters visibility of that same still-dead dummy before the timer expires, it first receives the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` burst and then one `GC DEAD(vid)` replay so the actor does not silently look alive again
+- if a live session is shown that same still-dead dummy again before the timer expires through any later add-style visibility presentation — fresh bootstrap, visibility re-entry, or a retained delete-plus-rebootstrap refresh — it first receives the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` burst and then one `GC DEAD(vid)` replay so the actor does not silently look alive again
 - once that timer expires, currently visible sessions receive the respawn rebuild burst: `CHARACTER_DEL` + `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE`
 - if a still-connected visible player had already reached the current retaliation-owned `0`-HP floor, that zero-HP recipient is skipped from later dummy `GC DEAD(vid)` fanout and from that later respawn rebuild burst while other live viewers still receive the ordinary lifecycle frames
 - the rebuilt dummy returns at bootstrap HP as a fresh live combat snapshot that requires fresh target acquisition before later attacks succeed again
@@ -118,7 +118,7 @@ That dead state freezes these rules:
 - a stale pre-death selected target does not bypass the dead gate
 - dead state remains runtime-owned only; it is not character/account persistence
 - the dead dummy may remain visible to nearby sessions as a dead actor after `GC DEAD(vid)`
-- any later fresh visibility bootstrap or visibility re-entry before respawn should replay that same dead state with one trailing `GC DEAD(vid)` after the ordinary actor add/info/update burst
+- any later add-style visibility presentation before respawn should replay that same dead state with one trailing `GC DEAD(vid)` after the ordinary actor add/info/update burst
 
 What is intentionally **not** frozen here:
 - corpse interaction affordances
@@ -163,7 +163,7 @@ Any pre-death target binding is gone and later attacks must reselect normally.
 The first death / respawn contract should respect the current visible-world rules already owned elsewhere:
 - `GC DEAD(vid)` goes only to sessions that can currently see that dummy
 - `GC TARGET(0, 0)` goes only to sessions whose active combat target is that dummy
-- if a session first instantiates an already-dead dummy through fresh bootstrap or later visibility re-entry before respawn, the ordinary actor add/info/update burst still goes only to sessions that should currently see that dummy and is immediately followed by one `GC DEAD(vid)` replay for that same audience
+- if a session is shown an already-dead dummy again before respawn through fresh bootstrap, later visibility re-entry, or a retained delete-plus-rebootstrap refresh, the ordinary actor add/info/update burst still goes only to sessions that should currently see that dummy and is immediately followed by one `GC DEAD(vid)` replay for that same audience
 - respawn `CHARACTER_DEL` / add-burst packets go only to sessions that should currently see the dummy after the respawn reset
 - the current bootstrap recipient-side player-death rule also applies: if a still-connected visible player already sits at the retaliation-owned `0`-HP floor, later dummy `GC DEAD(vid)` fanout and later respawn rebuild frames skip that zero-HP recipient silently until broader player-death recipient policy is owned
 
@@ -187,7 +187,7 @@ After this document lands, the repository should be able to say:
 - the first owned visible death signal for a bootstrap non-player combatant is `GC DEAD(vid)` with header `0x0217`
 - death-triggered target clear stays on the already-owned self-only `GC TARGET(0, 0)` surface
 - a dead dummy is explicitly non-targetable and non-attackable until respawn
-- late viewers no longer have to infer dead state: fresh bootstrap or visibility re-entry before respawn now replays one trailing `GC DEAD(vid)` after the ordinary actor add/info/update burst
+- late or refreshed viewers no longer have to infer dead state: any later add-style visibility presentation before respawn now replays one trailing `GC DEAD(vid)` after the ordinary actor add/info/update burst
 - respawn is server-driven and timer-based, not client-requested
 - the first owned respawn reset reuses visible actor teardown + rebuild (`CHARACTER_DEL` + normal add/info/update burst) instead of inventing a dedicated revive packet
 - the respawned dummy is a new live combat snapshot that requires fresh target acquisition even if the visible `VID` is reused
