@@ -1323,6 +1323,7 @@ func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSna
 	if !ok {
 		return StaticActorSnapshot{}, false
 	}
+	removedSnapshot := r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor))
 	r.clearStaticActorCombatStateLocked(entityID)
 	deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
 	if encodable {
@@ -1333,7 +1334,7 @@ func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSna
 			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
 		}
 	}
-	return staticActorSnapshot(r.topology, actor), true
+	return removedSnapshot, true
 }
 
 func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x int32, y int32) (RelocationPreview, bool) {

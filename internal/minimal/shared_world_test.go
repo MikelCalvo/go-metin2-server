@@ -8697,6 +8697,61 @@ func TestGameRuntimeRemoveStaticActorUpdatesSnapshot(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeRemoveStaticActorReturnsDeadTrainingDummySnapshot(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "killer", 0x11111111, killer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000307, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "killer", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before delete snapshot death check: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before delete snapshot death check, got %d", len(selectOut))
+	}
+	for attackIndex := 0; attackIndex < 10; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on delete snapshot death hit %d: %v", attackIndex+1, err)
+		}
+		wantFrames := 1
+		if attackIndex == 9 {
+			wantFrames = 2
+		}
+		if len(attackOut) != wantFrames {
+			t.Fatalf("expected %d attack frames on delete snapshot death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
+		}
+	}
+
+	removed, ok := runtime.RemoveStaticActor(actor.EntityID)
+	if !ok || removed.EntityID != actor.EntityID || !removed.Dead {
+		t.Fatalf("expected dead training-dummy removal to preserve dead snapshot state, got actor=%+v ok=%v", removed, ok)
+	}
+	if actors := runtime.StaticActors(); len(actors) != 0 {
+		t.Fatalf("expected no static actors after removing dead training dummy, got %+v", actors)
+	}
+}
+
 func TestGameRuntimeRemoveStaticActorQueuesDeleteForVisibleOnlinePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

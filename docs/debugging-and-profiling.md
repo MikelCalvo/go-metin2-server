@@ -192,7 +192,7 @@ Create/update bodies currently use:
 - optional paired `interaction_kind` and `interaction_ref`
 
 If one interaction field is present, the other must also be present.
-Returned static-actor snapshots now also expose `dead: true` while a runtime-owned practice mob is still in its server-owned dead interval.
+Returned static-actor snapshots now also expose `dead: true` while a runtime-owned practice mob is still in its server-owned dead interval, including `DELETE /local/static-actors/{entity_id}` responses when a dead dummy is removed before respawn.
 
 ### `GET` / `POST /local/interactions` and `PATCH` / `PUT` / `DELETE /local/interactions/{kind}/{ref}`
 
