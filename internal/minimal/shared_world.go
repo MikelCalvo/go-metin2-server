@@ -800,7 +800,7 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 	}
 
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
-	originFrames = append(originFrames, buildStaticActorVisibilityTransitionFrames(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
+	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
 	if len(originFrames) == 0 {
 		return
 	}
@@ -869,7 +869,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	result := scopes.BuildRelocationPreview(previous, character, true)
 
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
-	originFrames = append(originFrames, buildStaticActorVisibilityTransitionFrames(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
+	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
 	originEntry, _ := r.sessionEntryLocked(id)
 	if enqueueOrigin && originEntry.FrameSink != nil && len(originFrames) > 0 {
 		originEntry.FrameSink.Enqueue(originFrames)
@@ -1068,7 +1068,7 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
 		}
 	}
-	addFrames := encodeStaticActorVisibilityFrames(actor)
+	addFrames := r.encodeStaticActorVisibilityStateFramesLocked(actor)
 	if len(addFrames) > 0 {
 		for _, target := range targetDiff.AddedVisibleTargets {
 			if characterAtBootstrapHPFloor(target.Character) {
@@ -1650,8 +1650,8 @@ func (r *sharedWorldRegistry) encodeStaticActorVisibilityStateFramesLocked(actor
 	return append(frames, worldproto.EncodeDead(worldproto.DeadPacket{VID: vid}))
 }
 
-func buildStaticActorVisibilityTransitionFrames(removed []worldruntime.StaticEntity, added []worldruntime.StaticEntity) [][]byte {
-	frames := make([][]byte, 0, len(removed)+len(added)*3)
+func (r *sharedWorldRegistry) buildStaticActorVisibilityTransitionFramesLocked(removed []worldruntime.StaticEntity, added []worldruntime.StaticEntity) [][]byte {
+	frames := make([][]byte, 0, len(removed)+len(added)*4)
 	for _, actor := range removed {
 		deleteRaw, ok := encodeStaticActorDeleteFrame(actor)
 		if !ok {
@@ -1660,7 +1660,7 @@ func buildStaticActorVisibilityTransitionFrames(removed []worldruntime.StaticEnt
 		frames = append(frames, deleteRaw)
 	}
 	for _, actor := range added {
-		frames = append(frames, encodeStaticActorVisibilityFrames(actor)...)
+		frames = append(frames, r.encodeStaticActorVisibilityStateFramesLocked(actor)...)
 	}
 	return frames
 }

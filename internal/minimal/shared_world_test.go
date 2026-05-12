@@ -887,6 +887,107 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeBootstrapsStaticActorVisibil
 	}
 }
 
+func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeReplaysDeadTrainingDummyVisibility(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	mover := peerVisibilityCharacter("Mover", 0x01030102, 0x02040102, 1700, 2900, 2, 102, 202)
+	issuePeerTicket(t, store, "killer", 0x11111111, killer)
+	issuePeerTicket(t, store, "mover", 0x22222222, mover)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000295, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "killer", 0x11111111)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for killer with visible training dummy, got %d", len(killerEnter))
+	}
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before dummy death: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before dummy death, got %d", len(selectOut))
+	}
+	for attackIndex := 0; attackIndex < 10; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on dummy death hit %d: %v", attackIndex+1, err)
+		}
+		wantFrames := 1
+		if attackIndex == 9 {
+			wantFrames = 2
+		}
+		if len(attackOut) != wantFrames {
+			t.Fatalf("expected %d attack frames on dummy death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
+		}
+	}
+	closeSessionFlow(t, killerFlow)
+
+	moverFlow, moverEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "mover", 0x22222222)
+	defer closeSessionFlow(t, moverFlow)
+	if len(moverEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for mover outside dead-dummy AOI, got %d", len(moverEnter))
+	}
+
+	moveOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1200, Y: 2200, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected move error while re-entering dead dummy visibility: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected 1 self move ack frame while re-entering dead dummy visibility, got %d", len(moveOut))
+	}
+
+	originEntry := flushServerFrames(t, moverFlow)
+	if len(originEntry) != 4 {
+		t.Fatalf("expected add/info/update/dead replay for dead dummy visibility re-entry, got %d frames", len(originEntry))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, originEntry[0]))
+	if err != nil {
+		t.Fatalf("decode dead dummy add after move into AOI: %v", err)
+	}
+	if staticAdd.VID != targetVID || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20350 {
+		t.Fatalf("unexpected dead dummy add after move into AOI: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, originEntry[1]))
+	if err != nil {
+		t.Fatalf("decode dead dummy additional info after move into AOI: %v", err)
+	}
+	if staticInfo.VID != targetVID || staticInfo.Name != "TrainingDummy" {
+		t.Fatalf("unexpected dead dummy additional info after move into AOI: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, originEntry[2]))
+	if err != nil {
+		t.Fatalf("decode dead dummy update after move into AOI: %v", err)
+	}
+	if staticUpdate.VID != targetVID {
+		t.Fatalf("unexpected dead dummy update after move into AOI: %+v", staticUpdate)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, originEntry[3]))
+	if err != nil {
+		t.Fatalf("decode dead dummy replay after move into AOI: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("unexpected dead dummy replay after move into AOI: %+v", dead)
+	}
+}
+
 func TestNewGameSessionFactoryRadiusAOIMoveOutOfRangeRemovesStaticActorVisibility(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -1718,6 +1819,114 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStati
 	}
 	if queued := flushServerFrames(t, flowTwo); len(queued) != 0 {
 		t.Fatalf("expected no queued mover frames after immediate transfer rebootstrap with static actors, got %d", len(queued))
+	}
+}
+
+func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStillDeadTrainingDummyReplay(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1700, 2800, 0, 101, 201)
+	killer.MapIndex = 42
+	mover := peerVisibilityCharacter("Mover", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "killer", 0x11111111, killer)
+	issuePeerTicket(t, store, "mover", 0x22222222, mover)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000297, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", 42, 1700, 2800, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected target-map training-dummy registration to succeed")
+	}
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "killer", 0x11111111)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for killer on target map, got %d", len(killerEnter))
+	}
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before target-map dummy death: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before target-map dummy death, got %d", len(selectOut))
+	}
+	for attackIndex := 0; attackIndex < 10; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on target-map dummy death hit %d: %v", attackIndex+1, err)
+		}
+		wantFrames := 1
+		if attackIndex == 9 {
+			wantFrames = 2
+		}
+		if len(attackOut) != wantFrames {
+			t.Fatalf("expected %d attack frames on target-map dummy death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
+		}
+	}
+	closeSessionFlow(t, killerFlow)
+
+	moverFlow, moverEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "mover", 0x22222222)
+	defer closeSessionFlow(t, moverFlow)
+	if len(moverEnter) != 5 {
+		t.Fatalf("expected 5 source-map bootstrap frames for mover before transfer, got %d", len(moverEnter))
+	}
+
+	moveOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
+	if err != nil {
+		t.Fatalf("unexpected move error while transferring into dead dummy visibility: %v", err)
+	}
+	if len(moveOut) != 8 {
+		t.Fatalf("expected self transfer burst plus dead dummy replay after transfer, got %d frames", len(moveOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode self transfer add into dead dummy visibility: %v", err)
+	}
+	if selfAdd.VID != mover.VID || selfAdd.X != 1700 || selfAdd.Y != 2800 {
+		t.Fatalf("unexpected self transfer add into dead dummy visibility: %+v", selfAdd)
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[4]))
+	if err != nil {
+		t.Fatalf("decode dead dummy transfer add: %v", err)
+	}
+	if staticAdd.VID != targetVID || staticAdd.Type != 1 || staticAdd.X != 1700 || staticAdd.Y != 2800 || staticAdd.RaceNum != 20350 {
+		t.Fatalf("unexpected dead dummy transfer add: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[5]))
+	if err != nil {
+		t.Fatalf("decode dead dummy transfer additional info: %v", err)
+	}
+	if staticInfo.VID != targetVID || staticInfo.Name != "TrainingDummy" {
+		t.Fatalf("unexpected dead dummy transfer additional info: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, moveOut[6]))
+	if err != nil {
+		t.Fatalf("decode dead dummy transfer update: %v", err)
+	}
+	if staticUpdate.VID != targetVID {
+		t.Fatalf("unexpected dead dummy transfer update: %+v", staticUpdate)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, moveOut[7]))
+	if err != nil {
+		t.Fatalf("decode dead dummy transfer dead replay: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("unexpected dead dummy transfer dead replay: %+v", dead)
+	}
+	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued mover frames after immediate transfer into dead dummy visibility, got %d", len(queued))
 	}
 }
 
