@@ -1385,6 +1385,9 @@ func (r *sharedWorldRegistry) EnqueueToVisibleSessions(originID uint64, origin l
 	defer r.mu.Unlock()
 
 	for _, target := range r.scopesLocked().VisibleTargets(originID, origin) {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 }

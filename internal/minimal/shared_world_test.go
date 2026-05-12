@@ -2875,6 +2875,62 @@ func TestGameRuntimeBroadcastNoticeSkipsZeroHPOwnerAfterDelayedRetaliationReache
 	}
 }
 
+func TestSharedWorldRegistryEnqueueToVisibleSessionsSkipsZeroHPOwnerRecipient(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	origin := peerVisibilityCharacter("Origin", 0x01030110, 0x02040110, 1100, 2100, 0, 101, 201)
+	deadRecipient := peerVisibilityCharacter("DeadRecipient", 0x01030111, 0x02040111, 1200, 2200, 0, 102, 202)
+	liveRecipient := peerVisibilityCharacter("LiveRecipient", 0x01030112, 0x02040112, 1300, 2300, 0, 103, 203)
+
+	originPending := newPendingServerFrames()
+	originID, _ := registry.Join(origin, originPending, nil)
+	if originID == 0 {
+		t.Fatal("expected origin join to succeed")
+	}
+	deadPending := newPendingServerFrames()
+	deadID, _ := registry.Join(deadRecipient, deadPending, nil)
+	if deadID == 0 {
+		t.Fatal("expected dead-recipient join to succeed")
+	}
+	livePending := newPendingServerFrames()
+	liveID, _ := registry.Join(liveRecipient, livePending, nil)
+	if liveID == 0 {
+		t.Fatal("expected live-recipient join to succeed")
+	}
+
+	_ = originPending.flush()
+	_ = deadPending.flush()
+	_ = livePending.flush()
+
+	deadRecipient.Points[bootstrapPlayerPointValueIndex] = 0
+	registry.UpdateCharacter(deadID, deadRecipient)
+
+	frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+		Type:    chatproto.ChatTypeTalking,
+		VID:     origin.VID,
+		Empire:  origin.Empire,
+		Message: "visible helper delivery",
+	})}
+	registry.EnqueueToVisibleSessions(originID, origin, frames)
+
+	if queued := originPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected generic visible-session fanout not to echo back to origin, got %d queued frames", len(queued))
+	}
+	if queued := deadPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected generic visible-session fanout to skip zero-HP recipient, got %d queued frames", len(queued))
+	}
+	liveQueued := livePending.flush()
+	if len(liveQueued) != 1 {
+		t.Fatalf("expected generic visible-session fanout to keep live recipient delivery, got %d queued frames", len(liveQueued))
+	}
+	chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, liveQueued[0]))
+	if err != nil {
+		t.Fatalf("decode live generic visible-session fanout delivery: %v", err)
+	}
+	if chat.Type != chatproto.ChatTypeTalking || chat.VID != origin.VID || chat.Message != "visible helper delivery" {
+		t.Fatalf("unexpected live generic visible-session fanout delivery: %+v", chat)
+	}
+}
+
 func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
