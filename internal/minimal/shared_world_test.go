@@ -6934,6 +6934,101 @@ func TestSharedWorldRegistryJoinReclaimsStaleVisiblePeerSkipsZeroHPOwnerRecipien
 	_ = replacementPending
 }
 
+func TestSharedWorldRegistryJoinQueuesDeadReplayForAlreadyDeadVisiblePeer(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	watcher := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	deadPeer := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	deadPeer.Points[bootstrapPlayerPointValueIndex] = 0
+	watcherPending := newPendingServerFrames()
+
+	watcherID, visiblePeers := registry.Join(watcher, watcherPending, nil)
+	if watcherID == 0 {
+		t.Fatal("expected live watcher join to register a shared-world entity")
+	}
+	if len(visiblePeers) != 0 {
+		t.Fatalf("expected first watcher join to have no visible peers, got %+v", visiblePeers)
+	}
+
+	deadPeerID, visiblePeers := registry.Join(deadPeer, newPendingServerFrames(), nil)
+	if deadPeerID == 0 {
+		t.Fatal("expected already-dead visible peer join to register a shared-world entity")
+	}
+	if len(visiblePeers) != 1 || visiblePeers[0].VID != watcher.VID {
+		t.Fatalf("expected dead visible peer join to see the live watcher, got %+v", visiblePeers)
+	}
+
+	queued := watcherPending.flush()
+	if len(queued) != 4 {
+		t.Fatalf("expected already-dead visible peer join to queue add/info/update plus DEAD replay for the live watcher, got %d frames", len(queued))
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode already-dead visible peer add on join: %v", err)
+	}
+	if added.VID != deadPeer.VID {
+		t.Fatalf("expected join add for already-dead visible peer VID %#08x, got %#08x", deadPeer.VID, added.VID)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[3]))
+	if err != nil {
+		t.Fatalf("decode already-dead visible peer DEAD replay on join: %v", err)
+	}
+	if dead.VID != deadPeer.VID {
+		t.Fatalf("expected join DEAD replay for already-dead visible peer VID %#08x, got %#08x", deadPeer.VID, dead.VID)
+	}
+}
+
+func TestSharedWorldRegistryVisibilityTransitionQueuesDeadReplayWhenDeadPeerEntersVisibility(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	watcher := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	deadPeer := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 2200, 3200, 2, 102, 202)
+	deadPeer.Points[bootstrapPlayerPointValueIndex] = 0
+	watcherPending := newPendingServerFrames()
+
+	watcherID, visiblePeers := registry.Join(watcher, watcherPending, nil)
+	if watcherID == 0 {
+		t.Fatal("expected live watcher join to register a shared-world entity")
+	}
+	if len(visiblePeers) != 0 {
+		t.Fatalf("expected first watcher join to have no visible peers, got %+v", visiblePeers)
+	}
+	deadPeerID, visiblePeers := registry.Join(deadPeer, newPendingServerFrames(), nil)
+	if deadPeerID == 0 {
+		t.Fatal("expected dead peer out-of-range join to register a shared-world entity")
+	}
+	if len(visiblePeers) != 0 {
+		t.Fatalf("expected out-of-range dead peer join to have no visible peers, got %+v", visiblePeers)
+	}
+	if queued := watcherPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected out-of-range dead peer join to queue no frames for watcher before visibility entry, got %d", len(queued))
+	}
+
+	previous := deadPeer
+	current := deadPeer
+	current.X = 1200
+	current.Y = 2200
+	registry.UpdateCharacterWithVisibilityTransition(deadPeerID, previous, current, nil)
+
+	queued := watcherPending.flush()
+	if len(queued) != 4 {
+		t.Fatalf("expected dead peer visibility entry to queue add/info/update plus DEAD replay for watcher, got %d frames", len(queued))
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode dead peer visibility-entry add: %v", err)
+	}
+	if added.VID != deadPeer.VID {
+		t.Fatalf("expected visibility-entry add for dead peer VID %#08x, got %#08x", deadPeer.VID, added.VID)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[3]))
+	if err != nil {
+		t.Fatalf("decode dead peer visibility-entry DEAD replay: %v", err)
+	}
+	if dead.VID != deadPeer.VID {
+		t.Fatalf("expected visibility-entry DEAD replay for dead peer VID %#08x, got %#08x", deadPeer.VID, dead.VID)
+	}
+}
+
 func TestSharedWorldRegistryTransferUsesSessionDirectoryFrameSink(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

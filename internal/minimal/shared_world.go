@@ -703,7 +703,7 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 		return 0, nil
 	}
 
-	peerFrames := encodePeerVisibilityFrames(character)
+	peerFrames := encodePeerVisibilityBootstrapFrames(character)
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
 		if characterAtBootstrapHPFloor(peerCharacter) {
 			continue
@@ -773,7 +773,7 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 	r.lastKnownCharacters[id] = current
 
 	removedRaw := encodeCharacterDeleteFrame(previous)
-	addedRaw := encodePeerVisibilityFrames(current)
+	addedRaw := encodePeerVisibilityBootstrapFrames(current)
 	stablePeerVIDs := make(map[uint32]struct{}, len(visibilityDiff.AddedVisiblePeers))
 	for _, peerCharacter := range visibilityDiff.AddedVisiblePeers {
 		stablePeerVIDs[peerCharacter.VID] = struct{}{}
