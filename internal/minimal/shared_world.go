@@ -47,17 +47,20 @@ type sharedWorldRegistry struct {
 
 const (
 	StaticActorInteractionFailureSubjectNotFound        = "subject_not_found"
+	StaticActorInteractionFailureSubjectDead            = "subject_dead"
 	StaticActorInteractionFailureTargetNotVisible       = "target_not_visible"
 	StaticActorInteractionFailureTargetOutOfRange       = "target_out_of_range"
 	StaticActorInteractionFailureTargetHasNoInteraction = "target_has_no_interaction"
 
 	StaticActorCombatTargetFailureSubjectNotFound     = "subject_not_found"
+	StaticActorCombatTargetFailureSubjectDead         = "subject_dead"
 	StaticActorCombatTargetFailureTargetNotVisible    = "target_not_visible"
 	StaticActorCombatTargetFailureTargetOutOfRange    = "target_out_of_range"
 	StaticActorCombatTargetFailureTargetNotTargetable = "target_not_targetable"
 	StaticActorCombatTargetFailureTargetDead          = "target_dead"
 
 	StaticActorCombatAttackFailureSubjectNotFound        = "subject_not_found"
+	StaticActorCombatAttackFailureSubjectDead            = "subject_dead"
 	StaticActorCombatAttackFailureNoActiveTarget         = "no_active_target"
 	StaticActorCombatAttackFailureTargetMismatch         = "target_mismatch"
 	StaticActorCombatAttackFailureTargetNotVisible       = "target_not_visible"
@@ -1132,6 +1135,10 @@ func (r *sharedWorldRegistry) AttemptStaticActorInteraction(subjectID uint64, ta
 		attempt.Failure = StaticActorInteractionFailureSubjectNotFound
 		return attempt
 	}
+	if characterAtBootstrapHPFloor(subject) {
+		attempt.Failure = StaticActorInteractionFailureSubjectDead
+		return attempt
+	}
 	actor, ok := r.scopesLocked().VisibleStaticActorByVID(subject, targetVID)
 	if !ok {
 		attempt.Failure = StaticActorInteractionFailureTargetNotVisible
@@ -1198,6 +1205,8 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 		switch targetAttempt.Failure {
 		case StaticActorCombatTargetFailureSubjectNotFound:
 			attempt.Failure = StaticActorCombatAttackFailureSubjectNotFound
+		case StaticActorCombatTargetFailureSubjectDead:
+			attempt.Failure = StaticActorCombatAttackFailureSubjectDead
 		case StaticActorCombatTargetFailureTargetNotVisible:
 			attempt.Failure = StaticActorCombatAttackFailureTargetNotVisible
 		case StaticActorCombatTargetFailureTargetOutOfRange:
@@ -1280,6 +1289,10 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 
 func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subjectID uint64, subject loginticket.Character, targetVID uint32) StaticActorCombatTargetAttempt {
 	attempt := StaticActorCombatTargetAttempt{TargetVID: targetVID}
+	if characterAtBootstrapHPFloor(subject) {
+		attempt.Failure = StaticActorCombatTargetFailureSubjectDead
+		return attempt
+	}
 	actor, ok := r.scopesLocked().VisibleStaticActorByVID(subject, targetVID)
 	if !ok {
 		attempt.Failure = StaticActorCombatTargetFailureTargetNotVisible

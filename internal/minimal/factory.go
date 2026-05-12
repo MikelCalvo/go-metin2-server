@@ -3700,7 +3700,7 @@ func staticActorInteractionFailureDelivery(failure string) *chatproto.ChatDelive
 
 func staticActorInteractionFailureMessage(failure string) (string, bool) {
 	switch failure {
-	case StaticActorInteractionFailureSubjectNotFound:
+	case StaticActorInteractionFailureSubjectNotFound, StaticActorInteractionFailureSubjectDead:
 		return "Interaction unavailable right now.", true
 	case StaticActorInteractionFailureTargetNotVisible:
 		return "You cannot interact with that target right now.", true

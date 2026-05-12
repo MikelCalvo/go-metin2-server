@@ -10412,6 +10412,32 @@ func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsUnknownSubject(t
 	}
 }
 
+func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsDeadSubject(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subject.Points[1] = 0
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected dead subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithInteraction(0, "VillageGuard", bootstrapMapIndex, 1200, 2200, 20300, "talk", "npc:village_guard")
+	if !ok {
+		t.Fatal("expected interactable static actor registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorInteraction(subjectID, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected dead-subject interaction attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorInteractionFailureSubjectDead {
+		t.Fatalf("expected dead-subject failure %q, got %+v", StaticActorInteractionFailureSubjectDead, attempt)
+	}
+	if attempt.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected dead-subject interaction attempt to keep actor snapshot empty, got %+v", attempt)
+	}
+}
+
 func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisibleTrainingDummy(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
@@ -10620,6 +10646,65 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsUnknownSubject(
 	}
 	if attempt.Actor != (StaticActorSnapshot{}) {
 		t.Fatalf("expected unknown-subject combat-target attempt to keep actor snapshot empty, got %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsDeadSubject(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subject.Points[1] = 0
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected dead subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected dead-subject combat-target attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorCombatTargetFailureSubjectDead {
+		t.Fatalf("expected dead-subject combat-target failure %q, got %+v", StaticActorCombatTargetFailureSubjectDead, attempt)
+	}
+	if attempt.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected dead-subject combat-target attempt to keep actor snapshot empty, got %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptSelectedStaticActorAttackRejectsDeadSubject(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subject.Points[1] = 0
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected dead subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+
+	registry.mu.Lock()
+	snapshotVersion := registry.staticActorCombatSnapshotLocked(actor.EntityID)
+	registry.mu.Unlock()
+	if snapshotVersion == 0 {
+		t.Fatal("expected visible training-dummy registration to allocate a combat snapshot version")
+	}
+
+	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, uint32(actor.EntityID), snapshotVersion, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected dead-subject selected attack attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorCombatAttackFailureSubjectDead {
+		t.Fatalf("expected dead-subject selected-attack failure %q, got %+v", StaticActorCombatAttackFailureSubjectDead, attempt)
+	}
+	if attempt.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected dead-subject selected attack attempt to keep actor snapshot empty, got %+v", attempt)
 	}
 }
 
