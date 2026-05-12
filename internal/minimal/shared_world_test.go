@@ -4311,6 +4311,118 @@ func TestGameSessionFlowDeadOwnerTransferIntoVisibilityReplaysDeathStateForLiveP
 	}
 }
 
+func TestGameSessionFlowDeadOwnerTransferSkipsDestinationPeerVisibilityForSelf(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1700, 2900, 2, 102, 202)
+	watcher.MapIndex = 2
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+	for _, account := range []accountstore.Account{
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+		{Login: "peer-two", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q before dead-owner transfer self-replay test: %v", account.Login, err)
+		}
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return time.Unix(1700000476, 0) }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher on another map before dead-owner transfer self-replay test, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames across maps before dead-owner transfer self-replay test, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected no initial queued peer-entry frames across maps before dead-owner transfer self-replay test, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before dead-owner transfer self-replay test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before dead-owner transfer self-replay test, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before dead-owner transfer self-replay test: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before dead-owner transfer self-replay test, got %d frames", len(attackOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before dead-owner transfer self-replay test: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected immediate retaliation to reach owner HP floor before dead-owner transfer self-replay test, got %+v", pointChange)
+	}
+
+	result, ok := runtime.TransferCharacter("PeerOne", watcher.MapIndex, 1800, 3000)
+	if !ok {
+		t.Fatal("expected dead-owner transfer into live watcher visibility to succeed")
+	}
+	if !result.Applied || result.Target.MapIndex != watcher.MapIndex || result.Target.X != 1800 || result.Target.Y != 3000 {
+		t.Fatalf("unexpected dead-owner transfer result: %+v", result)
+	}
+
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 1 {
+		t.Fatalf("expected dead-owner operator transfer to queue only 1 self cleanup frame (source static-actor delete), got %d", len(ownerQueued))
+	}
+	deleteNotice, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode dead-owner source static-actor delete after transfer: %v", err)
+	}
+	if deleteNotice.VID != targetVID {
+		t.Fatalf("expected dead-owner transfer cleanup to delete source practice-mob VID %#08x, got %#08x", targetVID, deleteNotice.VID)
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 4 {
+		t.Fatalf("expected live watcher to receive 4 queued dead-owner peer-entry frames (burst plus DEAD replay) after dead-owner transfer, got %d", len(watcherQueued))
+	}
+}
+
 func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
