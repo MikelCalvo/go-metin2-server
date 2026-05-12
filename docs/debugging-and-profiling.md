@@ -96,7 +96,15 @@ Returns JSON describing the active bootstrap runtime selection, including the cu
   - `target_visible_peers`
   - `removed_visible_peers`
   - `added_visible_peers`
+  - `current_visible_static_actors`
+  - `target_visible_static_actors`
+  - `removed_visible_static_actors`
+  - `added_visible_static_actors`
+  - `before_map_occupancy`
+  - `after_map_occupancy`
   - `map_occupancy_changes`
+
+Visible static-actor entries in this preview now also expose `dead: true` while a runtime-owned practice mob remains in its owned dead interval before respawn.
 
 ### `POST /local/transfer`
 
@@ -109,6 +117,7 @@ Returns JSON describing the active bootstrap runtime selection, including the cu
 
 - commits the minimal structured bootstrap map-transfer contract
 - returns the same JSON shape as preview, but with `applied = true`
+- the same static-actor `dead: true` flag is preserved in transfer results while a runtime-owned practice mob remains dead before respawn
 
 ### `GET /local/players`
 
@@ -135,6 +144,8 @@ Each entry includes the same effective runtime location fields exposed by `/loca
 - `visible_peers`
 - `visible_static_actors`
 
+Visible static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still in its server-owned dead interval.
+
 ### `GET /local/maps`
 
 Returns a JSON snapshot of current effective `MapIndex` occupancy in the bootstrap runtime, sorted by `map_index`.
@@ -147,6 +158,7 @@ Each entry includes:
 
 The `characters` array is sorted by name and each character uses the same effective runtime location fields exposed by `/local/players`.
 Static actors are surfaced in the owned map snapshots as the current runtime expands beyond player-only visibility.
+Those static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still dead before respawn.
 
 ### `GET /local/interaction-visibility`
 
@@ -180,6 +192,7 @@ Create/update bodies currently use:
 - optional paired `interaction_kind` and `interaction_ref`
 
 If one interaction field is present, the other must also be present.
+Returned static-actor snapshots now also expose `dead: true` while a runtime-owned practice mob is still in its server-owned dead interval.
 
 ### `GET` / `POST /local/interactions` and `PATCH` / `PUT` / `DELETE /local/interactions/{kind}/{ref}`
 
@@ -211,11 +224,11 @@ Use the current local-only runtime endpoints together when combat target ownersh
 1. `GET /local/players`
    - confirm the authoritative live owner is the expected selected character instance after reconnect/reclaim
 2. `GET /local/visibility`
-   - confirm whether the dummy is still visible to that live owner before assuming a combat bug
+   - confirm whether the dummy is still visible to that live owner before assuming a combat bug, and check `dead: true` before treating a no-target/no-attack result as unexpected
 3. `POST /local/relocate-preview`
-   - simulate range/visibility-loss moves before mutating runtime state, then compare with the real `MOVE` / `SYNC_POSITION` path
+   - simulate range/visibility-loss moves before mutating runtime state, then compare with the real `MOVE` / `SYNC_POSITION` path; dead practice mobs now stay marked `dead: true` in the previewed static-actor arrays
 4. `POST /local/transfer`
-   - reproduce transfer rebootstrap cleanup explicitly when checking whether stale target ownership survives across a fresh bootstrap
+   - reproduce transfer rebootstrap cleanup explicitly when checking whether stale target ownership survives across a fresh bootstrap; dead practice mobs now stay marked `dead: true` in the applied structured result too
 5. `GET` / `PATCH` / `PUT /local/static-actors/{entity_id}`
    - inspect or replace the current dummy snapshot in place when reproducing replaced-target fail-closed behavior
 

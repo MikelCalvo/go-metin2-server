@@ -47,6 +47,7 @@ The repository now implements this full bootstrap contract for the authored/runt
 - if a live session is shown that same still-dead dummy again before the timer expires through any later add-style visibility presentation — fresh bootstrap, visibility re-entry, or a retained delete-plus-rebootstrap refresh — it first receives the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` burst and then one `GC DEAD(vid)` replay so the actor does not silently look alive again
 - once that timer expires, currently visible sessions receive the respawn rebuild burst: `CHARACTER_DEL` + `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE`
 - if a still-connected visible player had already reached the current retaliation-owned `0`-HP floor, that zero-HP recipient is skipped from later dummy `GC DEAD(vid)` fanout and from that later respawn rebuild burst while other live viewers still receive the ordinary lifecycle frames
+- the same runtime-owned dead interval is now surfaced through loopback runtime/operator snapshots too: static-actor entries returned by `/local/static-actors`, `/local/visibility`, `/local/maps`, `/local/relocate-preview`, and `/local/transfer` carry `dead: true` until the dummy respawns
 - the rebuilt dummy returns at bootstrap HP as a fresh live combat snapshot that requires fresh target acquisition before later attacks succeed again
 
 ## Why freeze death / respawn separately
@@ -119,6 +120,7 @@ That dead state freezes these rules:
 - dead state remains runtime-owned only; it is not character/account persistence
 - the dead dummy may remain visible to nearby sessions as a dead actor after `GC DEAD(vid)`
 - any later add-style visibility presentation before respawn should replay that same dead state with one trailing `GC DEAD(vid)` after the ordinary actor add/info/update burst
+- local runtime/operator snapshot surfaces should preserve that same dead interval explicitly with `dead: true` on the visible static-actor entries they return during preview, transfer, visibility, and static-actor inspection
 
 What is intentionally **not** frozen here:
 - corpse interaction affordances

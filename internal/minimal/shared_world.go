@@ -866,7 +866,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	scopes := r.scopesLocked()
 	visibilityDiff := scopes.RelocateVisibilityDiff(previous, character)
 	staticActorVisibilityDiff := scopes.RelocateStaticActorVisibilityDiff(previous, character)
-	result := scopes.BuildRelocationPreview(previous, character, true)
+	result := r.markRelocationPreviewStaticActorStateLocked(scopes.BuildRelocationPreview(previous, character, true))
 
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
 	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
@@ -913,7 +913,7 @@ func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapsho
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.scopesLocked().CharacterVisibilitySnapshots()
+	return r.markCharacterVisibilityStaticActorStateLocked(r.scopesLocked().CharacterVisibilitySnapshots())
 }
 
 func (r *sharedWorldRegistry) InteractionVisibility() []worldruntime.CharacterInteractionVisibilitySnapshot {
@@ -999,7 +999,7 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 			r.enqueueToEntityLocked(target.Entity.ID, frames)
 		}
 	}
-	return staticActorSnapshot(r.topology, registered), true
+	return r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, registered)), true
 }
 
 func (r *sharedWorldRegistry) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
@@ -1083,7 +1083,7 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
-	return staticActorSnapshot(r.topology, actor), true
+	return r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)), true
 }
 
 func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
@@ -1093,7 +1093,7 @@ func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.scopesLocked().StaticActorSnapshots()
+	return r.markStaticActorSnapshotsStateLocked(r.scopesLocked().StaticActorSnapshots())
 }
 
 func (r *sharedWorldRegistry) VisibleStaticActorFrames(subject loginticket.Character) [][]byte {
@@ -1131,7 +1131,7 @@ func (r *sharedWorldRegistry) AttemptStaticActorInteraction(subjectID uint64, ta
 		attempt.Failure = StaticActorInteractionFailureTargetNotVisible
 		return attempt
 	}
-	attempt.Actor = staticActorSnapshot(r.topology, actor)
+	attempt.Actor = r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor))
 	if !worldruntime.StaticActorWithinInteractionRange(subject, actor, staticActorInteractionMaxDistance) {
 		attempt.Failure = StaticActorInteractionFailureTargetOutOfRange
 		return attempt
@@ -1211,7 +1211,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 		attempt.Failure = StaticActorCombatAttackFailureTargetNotVisible
 		return attempt
 	}
-	attempt.Actor = staticActorSnapshot(r.topology, actor)
+	attempt.Actor = r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor))
 	currentSnapshotVersion := r.staticActorCombatSnapshotLocked(actor.Entity.ID)
 	if currentSnapshotVersion == 0 || currentSnapshotVersion != activeTargetSnapshotVersion {
 		attempt.Accepted = false
@@ -1279,7 +1279,7 @@ func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subjectID uin
 		attempt.Failure = StaticActorCombatTargetFailureTargetNotVisible
 		return attempt
 	}
-	attempt.Actor = staticActorSnapshot(r.topology, actor)
+	attempt.Actor = r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor))
 	if !worldruntime.StaticActorWithinInteractionRange(subject, actor, staticActorCombatTargetMaxDistance) {
 		attempt.Failure = StaticActorCombatTargetFailureTargetOutOfRange
 		return attempt
@@ -1350,7 +1350,7 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 	target.X = x
 	target.Y = y
 
-	return r.scopesLocked().BuildRelocationPreview(current, target, false), true
+	return r.markRelocationPreviewStaticActorStateLocked(r.scopesLocked().BuildRelocationPreview(current, target, false)), true
 }
 
 func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][]byte) {
@@ -1582,7 +1582,51 @@ func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapsh
 	if r == nil || r.entities == nil {
 		return nil
 	}
-	return r.scopesLocked().MapOccupancySnapshots()
+	return r.markMapOccupancyStaticActorStateLocked(r.scopesLocked().MapOccupancySnapshots())
+}
+
+func (r *sharedWorldRegistry) staticActorDeadLocked(entityID uint64) bool {
+	if r == nil || entityID == 0 || r.staticActorCombatHP == nil {
+		return false
+	}
+	currentHP, ok := r.staticActorCombatHP[entityID]
+	return ok && currentHP == 0
+}
+
+func (r *sharedWorldRegistry) markStaticActorSnapshotStateLocked(snapshot StaticActorSnapshot) StaticActorSnapshot {
+	snapshot.Dead = r.staticActorDeadLocked(snapshot.EntityID)
+	return snapshot
+}
+
+func (r *sharedWorldRegistry) markStaticActorSnapshotsStateLocked(snapshots []StaticActorSnapshot) []StaticActorSnapshot {
+	for i := range snapshots {
+		snapshots[i] = r.markStaticActorSnapshotStateLocked(snapshots[i])
+	}
+	return snapshots
+}
+
+func (r *sharedWorldRegistry) markCharacterVisibilityStaticActorStateLocked(snapshots []CharacterVisibilitySnapshot) []CharacterVisibilitySnapshot {
+	for i := range snapshots {
+		snapshots[i].VisibleStaticActors = r.markStaticActorSnapshotsStateLocked(snapshots[i].VisibleStaticActors)
+	}
+	return snapshots
+}
+
+func (r *sharedWorldRegistry) markMapOccupancyStaticActorStateLocked(snapshots []MapOccupancySnapshot) []MapOccupancySnapshot {
+	for i := range snapshots {
+		snapshots[i].StaticActors = r.markStaticActorSnapshotsStateLocked(snapshots[i].StaticActors)
+	}
+	return snapshots
+}
+
+func (r *sharedWorldRegistry) markRelocationPreviewStaticActorStateLocked(preview RelocationPreview) RelocationPreview {
+	preview.CurrentVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.CurrentVisibleStaticActors)
+	preview.TargetVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.TargetVisibleStaticActors)
+	preview.RemovedVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.RemovedVisibleStaticActors)
+	preview.AddedVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.AddedVisibleStaticActors)
+	preview.BeforeMapOccupancy = r.markMapOccupancyStaticActorStateLocked(preview.BeforeMapOccupancy)
+	preview.AfterMapOccupancy = r.markMapOccupancyStaticActorStateLocked(preview.AfterMapOccupancy)
+	return preview
 }
 
 func buildTransferOriginFrames(removed []loginticket.Character, added []loginticket.Character) [][]byte {

@@ -54,6 +54,7 @@ type StaticActorSnapshot struct {
 	X               int32  `json:"x"`
 	Y               int32  `json:"y"`
 	RaceNum         uint32 `json:"race_num"`
+	Dead            bool   `json:"dead,omitempty"`
 	CombatProfile   string `json:"combat_profile,omitempty"`
 	InteractionKind string `json:"interaction_kind,omitempty"`
 	InteractionRef  string `json:"interaction_ref,omitempty"`

@@ -4902,6 +4902,154 @@ func TestGameRuntimeTransferCharacterReturnsStructuredResult(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeStaticActorSnapshotsMarkDeadTrainingDummy(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "killer", 0x11111111, killer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000305, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "killer", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before snapshot death check: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before snapshot death check, got %d", len(selectOut))
+	}
+	for attackIndex := 0; attackIndex < 10; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on snapshot death hit %d: %v", attackIndex+1, err)
+		}
+		wantFrames := 1
+		if attackIndex == 9 {
+			wantFrames = 2
+		}
+		if len(attackOut) != wantFrames {
+			t.Fatalf("expected %d attack frames on snapshot death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
+		}
+	}
+
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].EntityID != actor.EntityID || !actors[0].Dead {
+		t.Fatalf("expected runtime static-actor snapshot to mark dead training dummy, got %+v", actors)
+	}
+	visibility := runtime.CharacterVisibility()
+	if len(visibility) != 1 || len(visibility[0].VisibleStaticActors) != 1 || visibility[0].VisibleStaticActors[0].EntityID != actor.EntityID || !visibility[0].VisibleStaticActors[0].Dead {
+		t.Fatalf("expected character visibility snapshot to mark dead training dummy, got %+v", visibility)
+	}
+	occupancy := runtime.MapOccupancy()
+	if len(occupancy) != 1 || occupancy[0].MapIndex != bootstrapMapIndex || len(occupancy[0].StaticActors) != 1 || occupancy[0].StaticActors[0].EntityID != actor.EntityID || !occupancy[0].StaticActors[0].Dead {
+		t.Fatalf("expected map occupancy snapshot to mark dead training dummy, got %+v", occupancy)
+	}
+}
+
+func TestGameRuntimeTransferCharacterStructuredSnapshotsMarkDeadTrainingDummy(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1700, 2800, 0, 101, 201)
+	killer.MapIndex = 42
+	mover := peerVisibilityCharacter("Mover", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "killer", 0x11111111, killer)
+	issuePeerTicket(t, store, "mover", 0x22222222, mover)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000306, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", 42, 1700, 2800, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected target-map training-dummy registration to succeed")
+	}
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "killer", 0x11111111)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for killer on target map, got %d", len(killerEnter))
+	}
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before structured-result death check: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before structured-result death check, got %d", len(selectOut))
+	}
+	for attackIndex := 0; attackIndex < 10; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on structured-result death hit %d: %v", attackIndex+1, err)
+		}
+		wantFrames := 1
+		if attackIndex == 9 {
+			wantFrames = 2
+		}
+		if len(attackOut) != wantFrames {
+			t.Fatalf("expected %d attack frames on structured-result death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
+		}
+	}
+	closeSessionFlow(t, killerFlow)
+
+	moverFlow, moverEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "mover", 0x22222222)
+	defer closeSessionFlow(t, moverFlow)
+	if len(moverEnter) != 5 {
+		t.Fatalf("expected 5 source-map bootstrap frames for mover before transfer, got %d", len(moverEnter))
+	}
+
+	preview, ok := runtime.PreviewRelocation("Mover", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected relocation preview into dead training-dummy visibility to succeed")
+	}
+	if len(preview.TargetVisibleStaticActors) != 1 || preview.TargetVisibleStaticActors[0].EntityID != actor.EntityID || !preview.TargetVisibleStaticActors[0].Dead {
+		t.Fatalf("expected relocation preview target-visible static actor to stay dead, got %+v", preview.TargetVisibleStaticActors)
+	}
+	if len(preview.AddedVisibleStaticActors) != 1 || preview.AddedVisibleStaticActors[0].EntityID != actor.EntityID || !preview.AddedVisibleStaticActors[0].Dead {
+		t.Fatalf("expected relocation preview added static actor to stay dead, got %+v", preview.AddedVisibleStaticActors)
+	}
+	previewTargetOccupancy := preview.AfterMapOccupancy[0]
+	if previewTargetOccupancy.MapIndex != 42 || len(previewTargetOccupancy.StaticActors) != 1 || previewTargetOccupancy.StaticActors[0].EntityID != actor.EntityID || !previewTargetOccupancy.StaticActors[0].Dead {
+		t.Fatalf("expected relocation preview after-map occupancy to keep dead training dummy state, got %+v", preview.AfterMapOccupancy)
+	}
+
+	result, ok := runtime.TransferCharacter("Mover", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected transfer into dead training-dummy visibility to succeed")
+	}
+	if !result.Applied {
+		t.Fatal("expected transfer result to be marked applied")
+	}
+	if len(result.TargetVisibleStaticActors) != 1 || result.TargetVisibleStaticActors[0].EntityID != actor.EntityID || !result.TargetVisibleStaticActors[0].Dead {
+		t.Fatalf("expected transfer target-visible static actor to stay dead, got %+v", result.TargetVisibleStaticActors)
+	}
+	if len(result.AddedVisibleStaticActors) != 1 || result.AddedVisibleStaticActors[0].EntityID != actor.EntityID || !result.AddedVisibleStaticActors[0].Dead {
+		t.Fatalf("expected transfer added static actor to stay dead, got %+v", result.AddedVisibleStaticActors)
+	}
+	resultTargetOccupancy := result.AfterMapOccupancy[0]
+	if resultTargetOccupancy.MapIndex != 42 || len(resultTargetOccupancy.StaticActors) != 1 || resultTargetOccupancy.StaticActors[0].EntityID != actor.EntityID || !resultTargetOccupancy.StaticActors[0].Dead {
+		t.Fatalf("expected transfer after-map occupancy to keep dead training dummy state, got %+v", result.AfterMapOccupancy)
+	}
+}
+
 func TestGameRuntimeTransferCharacterRejectsUnknownTarget(t *testing.T) {
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
 	if err != nil {
