@@ -41,6 +41,8 @@ If that already-dead owner itself is later relocated through the current loopbac
 
 That same zero-HP recipient rule now also applies to later same-visible-set peer movement replication: live movers and syncers still keep their ordinary self `MOVE_ACK` / `SYNC_POSITION_ACK`, other live viewers still get the ordinary queued peer `MOVE_ACK` / `SYNC_POSITION_ACK`, but the still-connected dead owner is skipped from those later queued stable peer movement frames entirely.
 
+That same queued peer-death rule also stays in force after the first owner floor: if another still-visible live player later reaches that same retaliation-owned `0`-HP floor, other live viewers still receive the ordinary queued `GC DEAD(other_vid)` fanout while the already-dead connected owner is skipped from that later peer-visible death frame entirely.
+
 That same zero-HP recipient rule now also applies to later peer-visibility teardown on disconnect, stale-ownership reclaim cleanup, relocate-away transfer, and AOI move/sync exit: the leaving, reclaimed, moving, syncing, or transferred live peer still gets its ordinary cleanup or replacement re-entry behavior, but the still-connected dead owner is skipped from those later queued peer `CHARACTER_DEL` frames entirely.
 
 That same retaliation-driven `0`-HP recipient rule now also applies to later visible practice-mob death / respawn lifecycle fanout: other live viewers still receive the ordinary `GC DEAD(mob_vid)` plus timed respawn rebuild burst, but an already-dead still-connected owner is skipped from those later non-player lifecycle frames entirely.
