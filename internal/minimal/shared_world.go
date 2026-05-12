@@ -665,6 +665,9 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 		visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
 		removeRaw := encodeCharacterDeleteFrame(currentCharacter)
 		for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
+			if characterAtBootstrapHPFloor(peerCharacter) {
+				continue
+			}
 			r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 		}
 	}
