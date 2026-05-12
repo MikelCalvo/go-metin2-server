@@ -258,6 +258,7 @@ After this document lands, the repository should be able to say:
 - accepted target ownership now also carries the current runtime snapshot behind the selected dummy `VID`, so later `ATTACK` requests fail closed if that dummy is replaced before the session reselects it
 - the zero-HP transition is now live: the final accepted hit drives the dummy from `1` to `0`, emits `GC DEAD(vid)` to visible sessions, and clears any selected session's combat target on the existing self-only `GC TARGET(0, 0)` surface
 - a dead dummy is no longer targetable or attackable through the current bootstrap `TARGET` / `ATTACK` loop until the owned timed respawn-reset rebuild completes
+- if a fresh live session later bootstraps or re-enters visibility of that same still-dead dummy before respawn, the repo now reuses the ordinary actor add/info/update burst and immediately replays one trailing `GC DEAD(vid)` so the dummy does not silently look alive again
 - the first owned clear-target representation is now `GC TARGET(0, 0)`
 - later HP refreshes stay on the same `GC TARGET(target_vid, hp_percent)` carrier until the zero-HP death edge, after which the repo switches to `GC DEAD(vid)` + target clear rather than inventing richer combat-result packets early
 - the first death / respawn wire contract is now frozen separately in `non-player-death-respawn-bootstrap.md`, and this attack slice now interoperates with that already-owned timed server-driven respawn reset instead of inventing a second rebuild path here

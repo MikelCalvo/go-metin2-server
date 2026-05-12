@@ -11153,6 +11153,92 @@ func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndR
 	}
 }
 
+func TestNewGameSessionFactoryBootstrapsStillDeadTrainingDummyWithTrailingDeadReplay(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	lateViewer := peerVisibilityCharacter("LateViewer", 0x01030102, 0x02040102, 1100, 2100, 2, 102, 202)
+	issuePeerTicket(t, store, "killer", 0x11111111, killer)
+	issuePeerTicket(t, store, "late-viewer", 0x22222222, lateViewer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000290, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	killerFlow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "killer", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for killer with visible training dummy, got %d", len(enterOut))
+	}
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before death transition: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame before death transition, got %d", len(selectOut))
+	}
+	for attackIndex := 0; attackIndex < 10; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on death hit %d: %v", attackIndex+1, err)
+		}
+		wantFrames := 1
+		if attackIndex == 9 {
+			wantFrames = 2
+		}
+		if len(attackOut) != wantFrames {
+			t.Fatalf("expected %d attack frames on death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
+		}
+	}
+	closeSessionFlow(t, killerFlow)
+
+	lateFlow, lateEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "late-viewer", 0x22222222)
+	defer closeSessionFlow(t, lateFlow)
+	if len(lateEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for late viewer with still-dead training dummy, got %d", len(lateEnter))
+	}
+	staticAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, lateEnter[5]))
+	if err != nil {
+		t.Fatalf("decode dead-dummy bootstrap add: %v", err)
+	}
+	if staticAdd.VID != targetVID || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20350 {
+		t.Fatalf("unexpected dead-dummy bootstrap add: %+v", staticAdd)
+	}
+	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, lateEnter[6]))
+	if err != nil {
+		t.Fatalf("decode dead-dummy bootstrap additional info: %v", err)
+	}
+	if staticInfo.VID != targetVID || staticInfo.Name != "TrainingDummy" {
+		t.Fatalf("unexpected dead-dummy bootstrap additional info: %+v", staticInfo)
+	}
+	staticUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, lateEnter[7]))
+	if err != nil {
+		t.Fatalf("decode dead-dummy bootstrap update: %v", err)
+	}
+	if staticUpdate.VID != targetVID {
+		t.Fatalf("unexpected dead-dummy bootstrap update: %+v", staticUpdate)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, lateEnter[8]))
+	if err != nil {
+		t.Fatalf("decode dead-dummy bootstrap dead replay: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("unexpected dead-dummy bootstrap dead replay: %+v", dead)
+	}
+}
+
 func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

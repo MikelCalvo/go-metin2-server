@@ -1098,9 +1098,9 @@ func (r *sharedWorldRegistry) VisibleStaticActorFrames(subject loginticket.Chara
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	actors := r.scopesLocked().VisibleStaticActors(subject)
-	frames := make([][]byte, 0, len(actors)*3)
+	frames := make([][]byte, 0, len(actors)*4)
 	for _, actor := range actors {
-		frames = append(frames, encodeStaticActorVisibilityFrames(actor)...)
+		frames = append(frames, r.encodeStaticActorVisibilityStateFramesLocked(actor)...)
 	}
 	return frames
 }
@@ -1632,6 +1632,22 @@ func encodeStaticActorVisibilityFrames(actor worldruntime.StaticEntity) [][]byte
 		infoRaw,
 		worldproto.EncodeCharacterUpdate(staticActorCharacterUpdatePacket(actor, vid)),
 	}
+}
+
+func (r *sharedWorldRegistry) encodeStaticActorVisibilityStateFramesLocked(actor worldruntime.StaticEntity) [][]byte {
+	frames := encodeStaticActorVisibilityFrames(actor)
+	if r == nil || len(frames) == 0 {
+		return frames
+	}
+	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok || currentHP > 0 {
+		return frames
+	}
+	vid, encodable := staticActorVisibilityVID(actor)
+	if !encodable {
+		return frames
+	}
+	return append(frames, worldproto.EncodeDead(worldproto.DeadPacket{VID: vid}))
 }
 
 func buildStaticActorVisibilityTransitionFrames(removed []worldruntime.StaticEntity, added []worldruntime.StaticEntity) [][]byte {
