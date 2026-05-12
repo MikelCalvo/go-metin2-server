@@ -4423,6 +4423,116 @@ func TestGameSessionFlowDeadOwnerTransferSkipsDestinationPeerVisibilityForSelf(t
 	}
 }
 
+func TestGameSessionFlowDeadOwnerTransferSkipsDestinationStaticActorVisibilityForSelf(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}}); err != nil {
+		t.Fatalf("save preloaded account before dead-owner transfer static-actor skip test: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return time.Unix(1700000477, 0) }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{
+			Ref:           "practice.mob_alpha",
+			Name:          "PracticeMobAlpha",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		},
+		{
+			Ref:           "practice.mob_beta",
+			Name:          "PracticeMobBeta",
+			MapIndex:      2,
+			X:             1800,
+			Y:             3000,
+			RaceNum:       102,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		},
+	}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 2 {
+		t.Fatalf("expected 2 runtime practice-mob actors after import, got %#v", actors)
+	}
+	var sourceTargetVID uint32
+	for _, actor := range actors {
+		if actor.MapIndex == bootstrapMapIndex {
+			sourceTargetVID = uint32(actor.EntityID)
+		}
+	}
+	if sourceTargetVID == 0 {
+		t.Fatal("expected one source-map practice mob for dead-owner transfer static-actor skip test")
+	}
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible source practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no initial queued frames before dead-owner transfer static-actor skip test, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: sourceTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before dead-owner transfer static-actor skip test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before dead-owner transfer static-actor skip test, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  sourceTargetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before dead-owner transfer static-actor skip test: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before dead-owner transfer static-actor skip test, got %d frames", len(attackOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode immediate retaliation point-change before dead-owner transfer static-actor skip test: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected immediate retaliation to reach owner HP floor before dead-owner transfer static-actor skip test, got %+v", pointChange)
+	}
+
+	result, ok := runtime.TransferCharacter("PeerOne", 2, 1800, 3000)
+	if !ok {
+		t.Fatal("expected dead-owner transfer into visible destination static actor to succeed")
+	}
+	if !result.Applied || result.Target.MapIndex != 2 || result.Target.X != 1800 || result.Target.Y != 3000 {
+		t.Fatalf("unexpected dead-owner transfer result: %+v", result)
+	}
+
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 1 {
+		t.Fatalf("expected dead-owner operator transfer to queue only 1 self cleanup frame (source static-actor delete) even with a visible destination actor, got %d", len(ownerQueued))
+	}
+	deleteNotice, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode dead-owner source static-actor delete after transfer with destination actor: %v", err)
+	}
+	if deleteNotice.VID != sourceTargetVID {
+		t.Fatalf("expected dead-owner transfer cleanup to delete source practice-mob VID %#08x, got %#08x", sourceTargetVID, deleteNotice.VID)
+	}
+}
+
 func TestNewGameSessionFactoryReturnsWhisperNotExistForUnknownTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

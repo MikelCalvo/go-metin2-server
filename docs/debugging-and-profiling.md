@@ -120,7 +120,7 @@ Player snapshots in the same preview now also expose `dead: true` while a still-
 - returns the same JSON shape as preview, but with `applied = true`
 - the same static-actor `dead: true` flag is preserved in transfer results while a runtime-owned practice mob remains dead before respawn
 - the same player `dead: true` flag is preserved in transfer results while a still-connected owner remains at that retaliation-owned `0`-HP floor
-- if that same dead owner is moved into another live peer's visible world through this loopback path, the live peer still receives the ordinary queued peer-entry burst plus trailing `GC DEAD(owner_vid)`, while the dead owner itself now skips the queued destination peer-entry burst and keeps only any old-world cleanup frames still needed locally
+- if that same dead owner is moved into another live peer's visible world or into visibility of another static actor through this loopback path, live peers still receive the ordinary queued peer-entry burst plus trailing `GC DEAD(owner_vid)` for that owner, while the dead owner itself now skips both the queued destination peer-entry burst and any queued destination static-actor bootstrap burst and keeps only any old-world cleanup frames still needed locally
 
 ### `GET /local/players`
 

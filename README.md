@@ -37,7 +37,7 @@ When a fresh `ENTERGAME` bootstrap later brings a newcomer into visibility of th
 
 The same dead-state replay now also applies to later `MOVE`, `SYNC_POSITION`, and transfer visibility-entry rebuilds: whichever live peer is newly paired with that already-dead owner still gets the ordinary peer-entry burst first, then one trailing `GC DEAD(owner_vid)` so neither later AOI re-entry nor operator/runtime transfer relocation silently re-presents that owner as live.
 
-If that already-dead owner itself is later relocated through the current loopback `/local/transfer` path into another live peer’s visible world, the live peer still gets that ordinary peer-entry burst plus trailing `GC DEAD(owner_vid)`, but the dead owner now skips the queued destination peer-entry burst for that newly paired live peer and keeps only any old-world cleanup frames still needed locally.
+If that already-dead owner itself is later relocated through the current loopback `/local/transfer` path into another live peer’s visible world or into visibility of another static actor, live peers still get the ordinary dead-owner replay described above, but the dead owner now skips both queued destination peer-entry bursts and destination static-actor bootstrap bursts and keeps only any old-world cleanup frames still needed locally.
 
 That same zero-HP recipient rule now also applies to later peer-visibility teardown on disconnect, stale-ownership reclaim cleanup, relocate-away transfer, and AOI move/sync exit: the leaving, reclaimed, moving, syncing, or transferred live peer still gets its ordinary cleanup or replacement re-entry behavior, but the still-connected dead owner is skipped from those later queued peer `CHARACTER_DEL` frames entirely.
 

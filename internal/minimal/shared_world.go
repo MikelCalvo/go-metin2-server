@@ -869,11 +869,13 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	result := r.markRelocationPreviewStaticActorStateLocked(scopes.BuildRelocationPreview(previous, character, true))
 
 	originAddedVisiblePeers := visibilityDiff.AddedVisiblePeers
+	originAddedVisibleStaticActors := staticActorVisibilityDiff.AddedVisibleActors
 	if characterAtBootstrapHPFloor(character) {
 		originAddedVisiblePeers = nil
+		originAddedVisibleStaticActors = nil
 	}
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers)
-	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
+	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, originAddedVisibleStaticActors)...)
 	originEntry, _ := r.sessionEntryLocked(id)
 	if enqueueOrigin && originEntry.FrameSink != nil && len(originFrames) > 0 {
 		originEntry.FrameSink.Enqueue(originFrames)
