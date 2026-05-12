@@ -105,6 +105,7 @@ Returns JSON describing the active bootstrap runtime selection, including the cu
   - `map_occupancy_changes`
 
 Visible static-actor entries in this preview now also expose `dead: true` while a runtime-owned practice mob remains in its owned dead interval before respawn.
+Player snapshots in the same preview now also expose `dead: true` while a still-connected engaged owner remains at the current retaliation-owned `0`-HP floor, whether that owner appears as `character`, `target`, or a visible peer.
 
 ### `POST /local/transfer`
 
@@ -118,6 +119,7 @@ Visible static-actor entries in this preview now also expose `dead: true` while 
 - commits the minimal structured bootstrap map-transfer contract
 - returns the same JSON shape as preview, but with `applied = true`
 - the same static-actor `dead: true` flag is preserved in transfer results while a runtime-owned practice mob remains dead before respawn
+- the same player `dead: true` flag is preserved in transfer results while a still-connected owner remains at that retaliation-owned `0`-HP floor
 
 ### `GET /local/players`
 
@@ -132,6 +134,7 @@ Current fields:
 - `y`
 - `empire`
 - `guild_id`
+- `dead`
 
 The `map_index` field reflects the effective runtime map boundary currently used by the shared-world bootstrap.
 
@@ -144,6 +147,7 @@ Each entry includes the same effective runtime location fields exposed by `/loca
 - `visible_peers`
 - `visible_static_actors`
 
+Connected-character and visible-peer player entries now also expose `dead: true` while a still-connected owner remains at the retaliation-owned `0`-HP floor.
 Visible static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still in its server-owned dead interval.
 
 ### `GET /local/maps`
@@ -156,7 +160,7 @@ Each entry includes:
 - `character_count`
 - `characters`
 
-The `characters` array is sorted by name and each character uses the same effective runtime location fields exposed by `/local/players`.
+The `characters` array is sorted by name and each character uses the same effective runtime location fields exposed by `/local/players`, including the current `dead` flag.
 Static actors are surfaced in the owned map snapshots as the current runtime expands beyond player-only visibility.
 Those static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still dead before respawn.
 
@@ -172,6 +176,7 @@ Each visible interactable entry includes:
 - `resolution_failure`
 
 Current previews cover self-only `info` / `talk`, structured merchant `shop_preview` catalog summaries, and compact `warp` destination summaries.
+The per-character subject snapshot in this endpoint also reuses the same player `dead: true` flag exposed by `/local/players` while a still-connected owner remains at the retaliation-owned `0`-HP floor.
 
 ### `GET /local/inventory/{name}`, `GET /local/equipment/{name}`, `GET /local/currency/{name}`
 
@@ -222,13 +227,13 @@ Deletes fail closed while a bootstrap static actor still references the definiti
 Use the current local-only runtime endpoints together when combat target ownership looks wrong:
 
 1. `GET /local/players`
-   - confirm the authoritative live owner is the expected selected character instance after reconnect/reclaim
+   - confirm the authoritative live owner is the expected selected character instance after reconnect/reclaim, and check `dead: true` before assuming later silent owner-side rejection is a targeting bug
 2. `GET /local/visibility`
-   - confirm whether the dummy is still visible to that live owner before assuming a combat bug, and check `dead: true` before treating a no-target/no-attack result as unexpected
+   - confirm whether the dummy is still visible to that live owner before assuming a combat bug, and check `dead: true` on both visible practice mobs and still-connected player owners before treating a no-target/no-attack result as unexpected
 3. `POST /local/relocate-preview`
-   - simulate range/visibility-loss moves before mutating runtime state, then compare with the real `MOVE` / `SYNC_POSITION` path; dead practice mobs now stay marked `dead: true` in the previewed static-actor arrays
+   - simulate range/visibility-loss moves before mutating runtime state, then compare with the real `MOVE` / `SYNC_POSITION` path; dead practice mobs now stay marked `dead: true` in the previewed static-actor arrays, and dead player subjects / peers now keep the same flag there too
 4. `POST /local/transfer`
-   - reproduce transfer rebootstrap cleanup explicitly when checking whether stale target ownership survives across a fresh bootstrap; dead practice mobs now stay marked `dead: true` in the applied structured result too
+   - reproduce transfer rebootstrap cleanup explicitly when checking whether stale target ownership survives across a fresh bootstrap; dead practice mobs now stay marked `dead: true` in the applied structured result, and dead player subjects / peers do too
 5. `GET` / `PATCH` / `PUT /local/static-actors/{entity_id}`
    - inspect or replace the current dummy snapshot in place when reproducing replaced-target fail-closed behavior
 

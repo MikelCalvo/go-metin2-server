@@ -4962,6 +4962,154 @@ func TestGameRuntimeStaticActorSnapshotsMarkDeadTrainingDummy(t *testing.T) {
 	}
 }
 
+func TestGameRuntimePlayerSnapshotsMarkDeadOwner(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	watcher := peerVisibilityCharacter("Watcher", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "owner", 0x11111111, owner)
+	issuePeerTicket(t, store, "watcher", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "owner", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "watcher", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before dead-owner player snapshot check: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before dead-owner player snapshot check, got %d", len(selectOut))
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before dead-owner player snapshot check: %v", err)
+	}
+	if len(attackOut) == 0 {
+		t.Fatal("expected accepted attack frames before dead-owner player snapshot check")
+	}
+
+	connected := runtime.ConnectedCharacters()
+	if len(connected) != 2 {
+		t.Fatalf("expected 2 connected character snapshots after owner reaches HP floor, got %+v", connected)
+	}
+	var connectedOwner, connectedWatcher *ConnectedCharacterSnapshot
+	for i := range connected {
+		switch connected[i].Name {
+		case "Owner":
+			connectedOwner = &connected[i]
+		case "Watcher":
+			connectedWatcher = &connected[i]
+		}
+	}
+	if connectedOwner == nil || !connectedOwner.Dead {
+		t.Fatalf("expected connected owner snapshot to be marked dead after retaliation HP floor, got %+v", connected)
+	}
+	if connectedWatcher == nil || connectedWatcher.Dead {
+		t.Fatalf("expected watcher connected snapshot to remain live after owner retaliation HP floor, got %+v", connected)
+	}
+
+	visibility := runtime.CharacterVisibility()
+	if len(visibility) != 2 {
+		t.Fatalf("expected 2 character visibility snapshots after owner reaches HP floor, got %+v", visibility)
+	}
+	var ownerVisibility, watcherVisibility *CharacterVisibilitySnapshot
+	for i := range visibility {
+		switch visibility[i].Name {
+		case "Owner":
+			ownerVisibility = &visibility[i]
+		case "Watcher":
+			watcherVisibility = &visibility[i]
+		}
+	}
+	if ownerVisibility == nil || !ownerVisibility.Dead {
+		t.Fatalf("expected owner visibility snapshot to be marked dead after retaliation HP floor, got %+v", visibility)
+	}
+	if watcherVisibility == nil || watcherVisibility.Dead {
+		t.Fatalf("expected watcher visibility snapshot to remain live after owner retaliation HP floor, got %+v", visibility)
+	}
+	if len(watcherVisibility.VisiblePeers) != 1 || watcherVisibility.VisiblePeers[0].Name != "Owner" || !watcherVisibility.VisiblePeers[0].Dead {
+		t.Fatalf("expected watcher visible-peer snapshot to preserve dead owner state, got %+v", watcherVisibility.VisiblePeers)
+	}
+
+	interactionVisibility := runtime.InteractionVisibility()
+	if len(interactionVisibility) != 2 {
+		t.Fatalf("expected 2 interaction-visibility snapshots after owner reaches HP floor, got %+v", interactionVisibility)
+	}
+	var interactionOwner, interactionWatcher *CharacterInteractionVisibilitySnapshot
+	for i := range interactionVisibility {
+		switch interactionVisibility[i].Name {
+		case "Owner":
+			interactionOwner = &interactionVisibility[i]
+		case "Watcher":
+			interactionWatcher = &interactionVisibility[i]
+		}
+	}
+	if interactionOwner == nil || !interactionOwner.Dead {
+		t.Fatalf("expected interaction-visibility owner snapshot to be marked dead after retaliation HP floor, got %+v", interactionVisibility)
+	}
+	if interactionWatcher == nil || interactionWatcher.Dead {
+		t.Fatalf("expected interaction-visibility watcher snapshot to remain live after owner retaliation HP floor, got %+v", interactionVisibility)
+	}
+
+	occupancy := runtime.MapOccupancy()
+	if len(occupancy) != 1 || occupancy[0].MapIndex != bootstrapMapIndex || len(occupancy[0].Characters) != 2 {
+		t.Fatalf("expected one map-occupancy snapshot with both characters after owner reaches HP floor, got %+v", occupancy)
+	}
+	var occupancyOwner, occupancyWatcher *ConnectedCharacterSnapshot
+	for i := range occupancy[0].Characters {
+		switch occupancy[0].Characters[i].Name {
+		case "Owner":
+			occupancyOwner = &occupancy[0].Characters[i]
+		case "Watcher":
+			occupancyWatcher = &occupancy[0].Characters[i]
+		}
+	}
+	if occupancyOwner == nil || !occupancyOwner.Dead {
+		t.Fatalf("expected map-occupancy owner snapshot to be marked dead after retaliation HP floor, got %+v", occupancy)
+	}
+	if occupancyWatcher == nil || occupancyWatcher.Dead {
+		t.Fatalf("expected map-occupancy watcher snapshot to remain live after owner retaliation HP floor, got %+v", occupancy)
+	}
+}
+
 func TestGameRuntimeTransferCharacterStructuredSnapshotsMarkDeadTrainingDummy(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1700, 2800, 0, 101, 201)
@@ -5047,6 +5195,140 @@ func TestGameRuntimeTransferCharacterStructuredSnapshotsMarkDeadTrainingDummy(t 
 	resultTargetOccupancy := result.AfterMapOccupancy[0]
 	if resultTargetOccupancy.MapIndex != 42 || len(resultTargetOccupancy.StaticActors) != 1 || resultTargetOccupancy.StaticActors[0].EntityID != actor.EntityID || !resultTargetOccupancy.StaticActors[0].Dead {
 		t.Fatalf("expected transfer after-map occupancy to keep dead training dummy state, got %+v", result.AfterMapOccupancy)
+	}
+}
+
+func TestGameRuntimeTransferCharacterStructuredPlayerSnapshotsMarkDeadOwner(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	watcher := peerVisibilityCharacter("Watcher", 0x01030102, 0x02040102, 1700, 2800, 2, 102, 202)
+	watcher.MapIndex = 42
+	issuePeerTicket(t, store, "owner", 0x11111111, owner)
+	issuePeerTicket(t, store, "watcher", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "owner", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "watcher", 0x22222222)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher on target map before transfer, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before dead-owner transfer snapshot check: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before dead-owner transfer snapshot check, got %d", len(selectOut))
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before dead-owner transfer snapshot check: %v", err)
+	}
+	if len(attackOut) == 0 {
+		t.Fatal("expected accepted attack frames before dead-owner transfer snapshot check")
+	}
+
+	preview, ok := runtime.PreviewRelocation("Owner", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected relocation preview for dead owner to succeed")
+	}
+	if !preview.Character.Dead || preview.Character.Name != "Owner" {
+		t.Fatalf("expected relocation preview source character to stay dead, got %+v", preview.Character)
+	}
+	if !preview.Target.Dead || preview.Target.Name != "Owner" || preview.Target.MapIndex != 42 || preview.Target.X != 1700 || preview.Target.Y != 2800 {
+		t.Fatalf("expected relocation preview target character to stay dead, got %+v", preview.Target)
+	}
+	if len(preview.TargetVisiblePeers) != 1 || preview.TargetVisiblePeers[0].Name != "Watcher" || preview.TargetVisiblePeers[0].Dead {
+		t.Fatalf("expected relocation preview target-visible watcher to remain live, got %+v", preview.TargetVisiblePeers)
+	}
+	previewTargetOccupancyIndex := -1
+	for i := range preview.AfterMapOccupancy {
+		if preview.AfterMapOccupancy[i].MapIndex == 42 {
+			previewTargetOccupancyIndex = i
+			break
+		}
+	}
+	if previewTargetOccupancyIndex < 0 {
+		t.Fatalf("expected relocation preview after-map occupancy to include target map, got %+v", preview.AfterMapOccupancy)
+	}
+	var previewTargetOwner *ConnectedCharacterSnapshot
+	for i := range preview.AfterMapOccupancy[previewTargetOccupancyIndex].Characters {
+		if preview.AfterMapOccupancy[previewTargetOccupancyIndex].Characters[i].Name == "Owner" {
+			previewTargetOwner = &preview.AfterMapOccupancy[previewTargetOccupancyIndex].Characters[i]
+			break
+		}
+	}
+	if previewTargetOwner == nil || !previewTargetOwner.Dead {
+		t.Fatalf("expected relocation preview after-map occupancy to preserve dead owner state, got %+v", preview.AfterMapOccupancy)
+	}
+
+	result, ok := runtime.TransferCharacter("Owner", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected transfer for dead owner to succeed")
+	}
+	if !result.Applied {
+		t.Fatal("expected transfer result for dead owner to be marked applied")
+	}
+	if !result.Character.Dead || result.Character.Name != "Owner" {
+		t.Fatalf("expected transfer source character to stay dead, got %+v", result.Character)
+	}
+	if !result.Target.Dead || result.Target.Name != "Owner" || result.Target.MapIndex != 42 || result.Target.X != 1700 || result.Target.Y != 2800 {
+		t.Fatalf("expected transfer target character to stay dead, got %+v", result.Target)
+	}
+	if len(result.TargetVisiblePeers) != 1 || result.TargetVisiblePeers[0].Name != "Watcher" || result.TargetVisiblePeers[0].Dead {
+		t.Fatalf("expected transfer target-visible watcher to remain live, got %+v", result.TargetVisiblePeers)
+	}
+	resultTargetOccupancyIndex := -1
+	for i := range result.AfterMapOccupancy {
+		if result.AfterMapOccupancy[i].MapIndex == 42 {
+			resultTargetOccupancyIndex = i
+			break
+		}
+	}
+	if resultTargetOccupancyIndex < 0 {
+		t.Fatalf("expected transfer after-map occupancy to include target map, got %+v", result.AfterMapOccupancy)
+	}
+	var resultTargetOwner *ConnectedCharacterSnapshot
+	for i := range result.AfterMapOccupancy[resultTargetOccupancyIndex].Characters {
+		if result.AfterMapOccupancy[resultTargetOccupancyIndex].Characters[i].Name == "Owner" {
+			resultTargetOwner = &result.AfterMapOccupancy[resultTargetOccupancyIndex].Characters[i]
+			break
+		}
+	}
+	if resultTargetOwner == nil || !resultTargetOwner.Dead {
+		t.Fatalf("expected transfer after-map occupancy to preserve dead owner state, got %+v", result.AfterMapOccupancy)
 	}
 }
 

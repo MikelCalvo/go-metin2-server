@@ -6,6 +6,8 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
 
+const bootstrapPlayerPointValueIndex = 1
+
 type VisibilitySnapshot struct {
 	Subject      PlayerEntity
 	VisiblePeers []PlayerEntity
@@ -34,6 +36,7 @@ type ConnectedCharacterSnapshot struct {
 	Y        int32  `json:"y"`
 	Empire   uint8  `json:"empire"`
 	GuildID  uint32 `json:"guild_id"`
+	Dead     bool   `json:"dead,omitempty"`
 }
 
 type CharacterVisibilitySnapshot struct {
@@ -367,7 +370,12 @@ func connectedCharacterSnapshot(topology BootstrapTopology, character loginticke
 		Y:        character.Y,
 		Empire:   character.Empire,
 		GuildID:  character.GuildID,
+		Dead:     bootstrapPlayerSnapshotDead(character),
 	}
+}
+
+func bootstrapPlayerSnapshotDead(character loginticket.Character) bool {
+	return character.Points[bootstrapPlayerPointValueIndex] == 0
 }
 
 func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticActorSnapshot {
