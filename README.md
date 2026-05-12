@@ -35,7 +35,7 @@ That same retaliation-driven `0`-HP floor now also removes the still-connected d
 
 When a fresh `ENTERGAME` bootstrap later brings a newcomer into visibility of that same still-connected dead owner, the newcomer now also receives one trailing `GC DEAD(owner_vid)` right after the ordinary peer-entry burst for the already-dead owner so that late visibility bootstrap does not silently present that owner as live.
 
-The same dead-state replay now also applies to later `MOVE`, `SYNC_POSITION`, and transfer visibility-entry rebuilds: the entering live peer still gets the ordinary peer-entry burst for that already-dead owner first, then one trailing `GC DEAD(owner_vid)` so those later visibility rebuilds do not silently re-present that owner as live either.
+The same dead-state replay now also applies to later `MOVE`, `SYNC_POSITION`, and transfer visibility-entry rebuilds: whichever live peer is newly paired with that already-dead owner still gets the ordinary peer-entry burst first, then one trailing `GC DEAD(owner_vid)` so neither later AOI re-entry nor operator/runtime transfer relocation silently re-presents that owner as live.
 
 That same zero-HP recipient rule now also applies to later peer-visibility teardown on disconnect, stale-ownership reclaim cleanup, relocate-away transfer, and AOI move/sync exit: the leaving, reclaimed, moving, syncing, or transferred live peer still gets its ordinary cleanup or replacement re-entry behavior, but the still-connected dead owner is skipped from those later queued peer `CHARACTER_DEL` frames entirely.
 

@@ -879,7 +879,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	r.lastKnownCharacters[id] = character
 
 	movedDelete := encodeCharacterDeleteFrame(previous)
-	movedFrames := encodePeerVisibilityFrames(character)
+	movedFrames := encodePeerVisibilityBootstrapFrames(character)
 	for _, peerCharacter := range visibilityDiff.RemovedVisiblePeers {
 		if characterAtBootstrapHPFloor(peerCharacter) {
 			continue
