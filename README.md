@@ -23,6 +23,8 @@ The first authored `spawn_groups` seam is now live too: content-bundle import/ex
 
 If that same owner already had a merchant preview window open when retaliation reaches `0` HP, the owned floor transition now also tears that window down with one self-only `GC::SHOP END` after the existing self `DEAD` + target-clear transition.
 
+That same retaliation-driven `0`-HP floor now also owns one same-socket `/restart_here` recovery seam: while the session stays in `GAME`, the dead owner can rebuild in place from the persisted account snapshot, visible live peers see one delete-plus-rebootstrap refresh for that owner, the old selected practice-mob target still stays cleared until a fresh `TARGET`, and the still-live practice mob keeps its current runtime-owned HP instead of resetting because of the owner's recovery.
+
 That same retaliation-driven `0`-HP floor now also makes the still-connected owner temporarily unavailable as a whisper recipient: peer-originated exact-name whispers fail closed with no queued target delivery and no synthetic `WHISPER_TYPE_NOT_EXIST` fallback until broader recipient-side player-death policy is owned.
 
 The same floor now also removes that still-connected owner from later peer-originated `CHAT_TYPE_TALKING`, `CHAT_TYPE_PARTY`, `CHAT_TYPE_GUILD`, and `CHAT_TYPE_SHOUT` recipient fanout: the live sender still keeps the ordinary self echo, but the zero-HP owner receives no queued peer-chat delivery.

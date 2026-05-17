@@ -1,6 +1,6 @@
 # Player Restart-Here Bootstrap
 
-This document freezes the next intended connected-player recovery seam after the retaliation-owned zero-HP floor in `player-death-bootstrap.md`.
+This document freezes the first connected-player recovery seam after the retaliation-owned zero-HP floor in `player-death-bootstrap.md`.
 
 It sits on top of:
 - `game-slash-command-bootstrap.md`
@@ -16,7 +16,7 @@ Those documents already freeze:
 
 **What is the smallest honest same-socket recovery path the repo can own after a retaliation-driven player death without pretending that real revive menus, town return, or full corpse gameplay already exist?**
 
-## Intended scope
+## Scope
 
 This contract is intentionally narrow.
 
@@ -34,25 +34,25 @@ It does **not** yet claim:
 - persistence of retaliation-owned HP loss across `/restart_here`
 - broader player-death persistence policy
 
-## Intended acceptance rule
+## Acceptance rule
 
-`/restart_here` should be accepted only when all of these are true:
+`/restart_here` is accepted only when all of these are true:
 - the session still owns a live shared-world player entry
 - the selected live player runtime is already at the retaliation-owned `0`-HP floor
 - the session is still in `GAME`
 
-Otherwise it should fail closed.
+Otherwise it fails closed.
 
 The nearest explicitly deferred neighbor stays out of scope:
 - `/restart_town` remains unsupported for now
 
-## Intended owner-side result
+## Owner-side result
 
-When accepted, `/restart_here` should:
-1. keep the session in `GAME`
-2. rebuild the selected player's live runtime from the persisted account snapshot
-3. preserve the current in-world position for this first slice
-4. return the ordinary selected-character bootstrap burst on the same socket:
+When accepted, `/restart_here` now:
+1. keeps the session in `GAME`
+2. rebuilds the selected player's live runtime from the persisted account snapshot
+3. preserves the current in-world position for this first slice
+4. returns the ordinary selected-character bootstrap burst on the same socket:
    - `CHARACTER_ADD`
    - `CHAR_ADDITIONAL_INFO`
    - `CHARACTER_UPDATE`
@@ -63,9 +63,9 @@ For this bootstrap slice, the self recovery rebuild is intentionally asymmetric 
 - the player rebuilds from persisted player state
 - a still-live practice mob keeps its current runtime-owned HP and engagement reset rules
 
-## Intended peer-visible result
+## Peer-visible result
 
-When accepted, currently visible live peers should receive one queued refresh for that revived owner in this order:
+When accepted, currently visible live peers now receive one queued refresh for that revived owner in this order:
 1. `CHARACTER_DEL(owner_vid)`
 2. `CHARACTER_ADD(owner_vid, ...)`
 3. `CHAR_ADDITIONAL_INFO(owner_vid, ...)`
@@ -78,16 +78,16 @@ This keeps the first alive-again surface honest:
 
 Recipients that are themselves already at the current zero-HP floor remain out of audience as already frozen in `player-death-bootstrap.md`.
 
-## Intended persistence rule
+## Persistence rule
 
-For this first slice, `/restart_here` should not invent new persistence semantics.
+For this first slice, `/restart_here` does not invent new persistence semantics.
 
 The narrow bootstrap rule is:
 - retaliation-owned HP loss is still runtime-only
 - `/restart_here` rebuilds from the persisted account snapshot for points/inventory/equipment
 - therefore `/restart_here` implicitly clears the runtime-only retaliation loss instead of persisting it
 
-## Intended post-restart combat rule
+## Post-restart combat rule
 
 After accepted `/restart_here`:
 - later owner-side `TARGET` may succeed again under the ordinary live combat rules

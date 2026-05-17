@@ -1754,6 +1754,44 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							clearActiveCombatTarget()
 							clearLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: true, Frames: phaseSelectFrames, NextPhase: session.PhaseSelect}
+						case "restart_here":
+							selectedPlayer, ok := currentSelectedPlayer()
+							if !ok || !ownsLiveSharedWorldSession() || !selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							previousSelected := selectedPlayer.LiveCharacter()
+							if previousSelected.ID == 0 {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							restartedSelected := selectedPlayer.PersistedSnapshot()
+							if restartedSelected.ID == 0 {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							restartedSelected.MapIndex = previousSelected.MapIndex
+							restartedSelected.X = previousSelected.X
+							restartedSelected.Y = previousSelected.Y
+							restartedSelected.Z = previousSelected.Z
+							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, restartedSelected)
+							if !ok {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							bootstrapFrames, err := worldentry.BuildBootstrapFrames(restartedSelected)
+							if err != nil {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							peerRefreshFrames := encodePeerVisibilityFrames(restartedSelected)
+							if len(peerRefreshFrames) == 0 {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							sessionTicket.Characters = updatedCharacters
+							selectedPlayer.ApplyPersistedSnapshot(restartedSelected)
+							refreshLiveCharacterRegistration()
+							restartedLive := selectedPlayer.LiveCharacter()
+							sharedWorld.UpdateCharacter(sharedWorldID, restartedLive)
+							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, restartedLive, [][]byte{encodeCharacterDeleteFrame(previousSelected)})
+							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, restartedLive, peerRefreshFrames)
+							clearActiveCombatTarget()
+							return gameflow.ChatResult{Accepted: true, Frames: bootstrapFrames}
 						}
 					}
 
@@ -2310,7 +2348,7 @@ func slashGameCommand(message string) (string, bool) {
 		return "", false
 	}
 	switch fields[0] {
-	case "quit", "logout", "phase_select":
+	case "quit", "logout", "phase_select", "restart_here":
 		return fields[0], true
 	default:
 		return "", false

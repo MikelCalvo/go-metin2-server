@@ -48,7 +48,7 @@ This contract currently applies only to:
 
 This contract does **not** yet claim:
 - corpse state, knockdown animations, or corpse interaction
-- player respawn, revive menus, town return, or map transfer on death
+- broader player respawn, revive menus, town return, or map transfer on death beyond the currently owned same-socket `/restart_here` bootstrap recovery seam
 - broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy rejection, client/slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
 - PvP death semantics or non-combat causes of player death
 
@@ -59,7 +59,7 @@ The repository now implements this narrow bootstrap contract:
 - if a delayed server-origin retaliation beat reaches that same `0`-HP floor, the queued pending server frames now append the same self-only `GC DEAD(owner_vid)` before the same self-only clear-target companion
 - when either of those retaliation beats reaches that same `0`-HP floor, currently visible peer sessions now also receive one queued `GC DEAD(owner_vid)` using the existing shared-world visibility rules
 - that same queued peer-visible death fanout now skips recipients whose own live bootstrap HP is already at the current `0`-HP floor, so a still-connected dead owner does not keep receiving later peer-death `GC DEAD(...)` frames from other sessions
-- those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session: they do **not** write the persisted account snapshot, so a fresh `/phase_select` re-entry or reconnect still rebuilds from the pre-retaliation point value until broader player-death persistence or respawn semantics are owned
+- those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session: they do **not** write the persisted account snapshot, so fresh `/phase_select` re-entry, reconnect, and the owned same-socket `/restart_here` recovery seam all still rebuild from the pre-retaliation point value until broader player-death persistence or respawn semantics are owned
 - once this floor is reached, the existing delayed retaliation cadence stops and later owner-side combat `TARGET` / `ATTACK` attempts still fail closed as already frozen elsewhere
 - once this floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed with no self ack, no shared-world relocation update, and no transfer-trigger rebootstrap burst
 - once this floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed with no self chat/info delivery, no merchant preview open, and no warp transfer / rebootstrap burst
@@ -86,7 +86,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, direct shared-world static-actor `INTERACT`, combat `TARGET`, and selected combat `ATTACK` attempt seams also fail closed with `subject_dead` before target resolution can run, so alternate runtime callers cannot bypass the zero-HP owner floor by skipping the current session-layer guards
 - once this floor is reached, the same loopback runtime/operator player snapshots now surface `dead: true` for that still-connected zero-HP owner whether it appears as the main `character` / `target`, as a visible peer, or inside map-occupancy / connected-player arrays
 - once this floor is reached, later owner-side self-only `CHAT` requests with `type = INFO` also fail closed before local `GC_CHAT` delivery can run
-- the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, while the already-owned `/shop_buy`, `/use_item`, `ITEM_USE`, `/inventory_move`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
+- the earlier slash-command seams stay separate here: `/quit`, `/logout`, and `/phase_select` keep their current independent behavior, the owned same-socket `/restart_here` recovery seam is frozen separately in `player-restart-here-bootstrap.md`, and the already-owned `/shop_buy`, `/use_item`, `ITEM_USE`, `/inventory_move`, `/equip_item`, and `/unequip_item` denial paths keep their existing post-floor rules
 
 ## First owned same-socket `/phase_select` recovery boundary
 
@@ -100,6 +100,16 @@ This keeps the first recovery boundary honest:
 - the selected live player points remain session/runtime-owned during the retaliation loop until a later slice owns broader player-death persistence or revive policy
 - the practice-mob HP and engagement loop remain shared-world/runtime-owned until the mob's own death/respawn reset seam runs
 - `/phase_select` is therefore only a bootstrap re-entry boundary, not a full corpse / revive / respawn system
+
+## First owned same-socket `/restart_here` recovery boundary
+
+The repo now also owns one narrower connected recovery seam on that same retaliation-driven `0`-HP floor:
+- after the owner has already received the current self-only `GC DEAD(owner_vid)` plus self-only `GC TARGET(0, 0)` clear, same-socket `/restart_here` may rebuild that same selected session in place while keeping the socket in `GAME`
+- the owner receives the existing selected-character bootstrap burst on the same socket (`CHARACTER_ADD` -> `CHAR_ADDITIONAL_INFO` -> `CHARACTER_UPDATE` -> `PLAYER_POINT_CHANGE`) rebuilt from the persisted account snapshot while keeping the current in-world position for this first slice
+- currently visible live peers receive one queued alive-again refresh for that owner as `CHARACTER_DEL` -> `CHARACTER_ADD` -> `CHAR_ADDITIONAL_INFO` -> `CHARACTER_UPDATE`
+- the owner still has to send a fresh `TARGET` after `/restart_here` before `ATTACK` can resume; the earlier selected practice-mob target does not survive that recovery seam
+- the already-live practice mob stays asymmetric here too: if it survived, it keeps its current runtime-owned HP and current engagement-reset rules instead of resetting because the owner used `/restart_here`
+- `/restart_here` stays narrow and honest in this slice: it fails closed while the owner is still alive, it keeps reusing existing bootstrap / visibility packet families instead of inventing a dedicated revive opcode, and `/restart_town` still remains out of scope
 
 ## Why freeze this separately
 

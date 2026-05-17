@@ -3546,6 +3546,93 @@ func drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t *testing.T, ownerFlo
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartHereRebuildsDeadOwnerOnSameSocket(t *testing.T) {
+	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here error after retaliation-owned death: %v", err)
+	}
+	if len(restartOut) != 4 {
+		t.Fatalf("expected 4 self bootstrap frames from /restart_here recovery, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after /restart_here: %v", err)
+	}
+	if selfAdd.VID != owner.VID {
+		t.Fatalf("expected /restart_here self bootstrap to rebuild owner vid %d, got %+v", owner.VID, selfAdd)
+	}
+	selfPoints, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, restartOut[3]))
+	if err != nil {
+		t.Fatalf("decode self point change after /restart_here: %v", err)
+	}
+	if selfPoints.Value != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected /restart_here to rebuild persisted owner HP %d, got %+v", owner.Points[bootstrapPlayerPointValueIndex], selfPoints)
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 4 {
+		t.Fatalf("expected 4 queued peer refresh frames after /restart_here recovery, got %d", len(watcherQueued))
+	}
+	peerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode peer delete after /restart_here: %v", err)
+	}
+	if peerDelete.VID != owner.VID {
+		t.Fatalf("expected /restart_here peer delete for owner vid %d, got %+v", owner.VID, peerDelete)
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, watcherQueued[1]))
+	if err != nil {
+		t.Fatalf("decode peer add after /restart_here: %v", err)
+	}
+	if peerAdd.VID != owner.VID {
+		t.Fatalf("expected /restart_here peer re-add for owner vid %d, got %+v", owner.VID, peerAdd)
+	}
+
+	staleAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected stale attack error after /restart_here: %v", err)
+	}
+	if len(staleAttackOut) != 0 {
+		t.Fatalf("expected stale attack without fresh target to fail closed after /restart_here, got %d frames", len(staleAttackOut))
+	}
+	retargetOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected fresh target-selection error after /restart_here: %v", err)
+	}
+	if len(retargetOut) != 1 {
+		t.Fatalf("expected fresh target-selection to succeed after /restart_here, got %d frames", len(retargetOut))
+	}
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 2 {
+		t.Fatalf("expected restart-here recovery to keep both sessions connected in shared world, got %+v", snapshots)
+	}
+}
+
+func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhileAlive(t *testing.T) {
+	_, ownerFlow, watcherFlow, _, _, _ := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected alive /restart_here error: %v", err)
+	}
+	if len(restartOut) != 0 {
+		t.Fatalf("expected alive /restart_here to fail closed with no self frames, got %d", len(restartOut))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected alive /restart_here to avoid peer fanout, got %d queued frames", len(queued))
+	}
+}
+
 func setupPracticeMobRadiusAOIZeroHPOwnerRecipientTest(t *testing.T) (*gameRuntime, service.SessionFlow, service.SessionFlow, uint32, loginticket.Character, func(time.Duration)) {
 	t.Helper()
 
