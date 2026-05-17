@@ -10134,6 +10134,80 @@ func TestSharedWorldRegistryRemoveStaticActorClearsSelectedCombatTargetOwnership
 	}
 }
 
+func TestSharedWorldRegistryUpdateStaticActorClearsSelectedCombatTargetOwnership(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	ownerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	targetVID := uint32(actor.EntityID)
+	targetAttempt := registry.AttemptStaticActorCombatTarget(ownerID, targetVID)
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected combat target attempt to accept visible training dummy before update, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, targetAttempt.TargetVID) {
+		t.Fatal("expected selected combat target ownership to be recorded before update")
+	}
+	ownerPending.flush()
+
+	updated, ok := registry.UpdateStaticActor(actor.EntityID, "TrainingDummyMoved", bootstrapMapIndex, 1250, 2250, 20351)
+	if !ok || updated.EntityID != actor.EntityID {
+		t.Fatalf("expected static actor update to return actor snapshot, got actor=%+v ok=%v", updated, ok)
+	}
+
+	queued := ownerPending.flush()
+	if len(queued) != 5 {
+		t.Fatalf("expected selected training-dummy update to queue refresh plus clear-target frames, got %d", len(queued))
+	}
+	actorDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode queued static actor delete after selected update: %v", err)
+	}
+	if actorDelete.VID != targetVID {
+		t.Fatalf("unexpected queued static actor delete after selected update: %+v", actorDelete)
+	}
+	actorAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode queued static actor add after selected update: %v", err)
+	}
+	if actorAdd.VID != targetVID || actorAdd.Type != 1 || actorAdd.X != 1250 || actorAdd.Y != 2250 || actorAdd.RaceNum != 20351 {
+		t.Fatalf("unexpected queued static actor add after selected update: %+v", actorAdd)
+	}
+	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2]))
+	if err != nil {
+		t.Fatalf("decode queued static actor additional info after selected update: %v", err)
+	}
+	if actorInfo.VID != targetVID || actorInfo.Name != "TrainingDummyMoved" {
+		t.Fatalf("unexpected queued static actor additional info after selected update: %+v", actorInfo)
+	}
+	actorUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3]))
+	if err != nil {
+		t.Fatalf("decode queued static actor update after selected update: %v", err)
+	}
+	if actorUpdate.VID != targetVID {
+		t.Fatalf("unexpected queued static actor update after selected update: %+v", actorUpdate)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[4]))
+	if err != nil {
+		t.Fatalf("decode queued clear-target frame after selected update: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected queued clear-target frame after selected update to be TARGET(0, 0), got %+v", clearTarget)
+	}
+
+	staleAttack := registry.AttemptSelectedStaticActorAttack(ownerID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetVID)
+	if staleAttack.Accepted || staleAttack.Failure != StaticActorCombatAttackFailureNoActiveTarget {
+		t.Fatalf("expected selected training-dummy update to clear authoritative target ownership before later attacks, got %+v", staleAttack)
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorRefreshesVisibleActorForOnlinePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

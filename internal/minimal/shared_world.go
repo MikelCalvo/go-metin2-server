@@ -1133,6 +1133,9 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 			r.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
+	if targetVID, ok := worldruntime.StaticActorVisibilityVID(previous); ok {
+		r.clearSelectedCombatTargetsLocked(targetVID, 0)
+	}
 	return r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)), true
 }
 
