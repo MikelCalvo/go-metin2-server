@@ -191,6 +191,7 @@ This slice does **not** yet freeze:
 
 The first owned hostile post-hit reaction is intentionally tiny:
 - once a visible content-loaded practice mob from `spawn_groups` accepts its first authoritative hit, fresh third-party `TARGET` attempts now fail closed until the existing death / respawn reset boundary unless the engaged owner's retaliation-driven `0`-HP death clears that engagement first
+- that same first authoritative hit also clears any other session's already-selected shared-world combat-target ownership for that same mob, so a third party who preselected it before the owner hit cannot keep a stale target-selection bypass alive and later land `ATTACK` until the owned release boundary is reached
 - repeated normal `ATTACK` attempts against that same live selected target snapshot now also obey one fixed server-owned `250ms` cadence window; denied attempts inside the window stay silent and do not mutate HP or retaliation state
 - while that practice mob stays alive, each accepted owner-side normal hit now also appends one immediate self-only `GC POINT_CHANGE` HP decrement to the engaged player's outgoing success frames
 - the first accepted live owner hit also arms one delayed self-only `GC POINT_CHANGE` follow-up beat after `1s`; it arrives through the pending server-frame path even if the owner sends no second `ATTACK`

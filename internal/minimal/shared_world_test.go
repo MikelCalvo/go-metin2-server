@@ -10650,6 +10650,9 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisib
 	if !targetAttempt.Accepted {
 		t.Fatalf("expected target selection before selected attack to succeed, got %+v", targetAttempt)
 	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target selection to be recorded in shared-world ownership before selected attack")
+	}
 
 	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
 	if !attempt.Accepted {
@@ -10663,6 +10666,69 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisib
 	}
 	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "TrainingDummy" {
 		t.Fatalf("unexpected resolved training-dummy selected-attack attempt: %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryFirstPracticeMobHitClearsOtherPreselectedTargetOwnership(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	thirdParty := peerVisibilityCharacter("ThirdParty", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	thirdPartyID, _ := registry.Join(thirdParty, newPendingServerFrames(), nil)
+	if thirdPartyID == 0 {
+		t.Fatal("expected third-party join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.mob_alpha")
+	if !ok {
+		t.Fatal("expected visible spawn-group training-dummy registration to succeed")
+	}
+	ownerTarget := registry.AttemptStaticActorCombatTarget(ownerID, uint32(actor.EntityID))
+	if !ownerTarget.Accepted {
+		t.Fatalf("expected owner target selection before engagement to succeed, got %+v", ownerTarget)
+	}
+	thirdPartyTarget := registry.AttemptStaticActorCombatTarget(thirdPartyID, uint32(actor.EntityID))
+	if !thirdPartyTarget.Accepted {
+		t.Fatalf("expected third-party preselection before engagement to succeed, got %+v", thirdPartyTarget)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, ownerTarget.TargetVID) {
+		t.Fatal("expected owner shared-world target ownership to be recorded")
+	}
+	if !registry.SetSessionCombatTarget(thirdPartyID, thirdPartyTarget.TargetVID) {
+		t.Fatal("expected third-party shared-world target ownership to be recorded")
+	}
+
+	ownerAttack := registry.AttemptSelectedStaticActorAttack(ownerID, ownerTarget.TargetVID, ownerTarget.SnapshotVersion, uint32(actor.EntityID))
+	if !ownerAttack.Accepted {
+		t.Fatalf("expected first owner attack to establish engagement, got %+v", ownerAttack)
+	}
+
+	thirdPartyAttack := registry.AttemptSelectedStaticActorAttack(thirdPartyID, thirdPartyTarget.TargetVID, thirdPartyTarget.SnapshotVersion, uint32(actor.EntityID))
+	if thirdPartyAttack.Accepted {
+		t.Fatalf("expected preselected third-party attack to fail once owner engagement is live, got %+v", thirdPartyAttack)
+	}
+	if thirdPartyAttack.Failure != StaticActorCombatAttackFailureNoActiveTarget {
+		t.Fatalf("expected cleared preselected third-party attack to fail as %q, got %+v", StaticActorCombatAttackFailureNoActiveTarget, thirdPartyAttack)
+	}
+	if thirdPartyAttack.Actor != (StaticActorSnapshot{}) {
+		t.Fatalf("expected cleared preselected third-party attack to keep actor snapshot empty, got %+v", thirdPartyAttack)
+	}
+	thirdPartyRetarget := registry.AttemptStaticActorCombatTarget(thirdPartyID, uint32(actor.EntityID))
+	if thirdPartyRetarget.Accepted {
+		t.Fatalf("expected fresh third-party retarget after owner engagement to fail closed, got %+v", thirdPartyRetarget)
+	}
+	if thirdPartyRetarget.Failure != StaticActorCombatTargetFailureTargetNotTargetable {
+		t.Fatalf("expected fresh third-party retarget to fail as %q, got %+v", StaticActorCombatTargetFailureTargetNotTargetable, thirdPartyRetarget)
+	}
+	ownerRefresh := registry.AttemptStaticActorCombatTarget(ownerID, uint32(actor.EntityID))
+	if !ownerRefresh.Accepted {
+		t.Fatalf("expected owner to keep live target ownership after clearing stale third-party selection, got %+v", ownerRefresh)
+	}
+	if ownerRefresh.HPPercent != 90 {
+		t.Fatalf("expected stale third-party selection to leave mob HP at 90 after one owner hit, got %+v", ownerRefresh)
 	}
 }
 
@@ -19065,6 +19131,113 @@ func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
 	}
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after movement cleared owner target intent, got %+v", releasedTarget)
+	}
+}
+
+func TestGameSessionFlowPracticeMobOwnerHitInvalidatesPreselectedThirdPartyAttack(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	ownerSelectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target-selection error before stale-third-party invalidation test: %v", err)
+	}
+	if len(ownerSelectOut) != 1 {
+		t.Fatalf("expected 1 self-only owner target frame before stale-third-party invalidation test, got %d", len(ownerSelectOut))
+	}
+	watcherSelectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher preselection error before stale-third-party invalidation test: %v", err)
+	}
+	if len(watcherSelectOut) != 1 {
+		t.Fatalf("expected 1 self-only watcher target frame before stale-third-party invalidation test, got %d", len(watcherSelectOut))
+	}
+
+	ownerAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected owner attack error before stale-third-party invalidation test: %v", err)
+	}
+	if len(ownerAttackOut) != 2 {
+		t.Fatalf("expected owner attack to return target-refresh plus self-only retaliation, got %d frames", len(ownerAttackOut))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected no proactive clear-target frames for watcher when owner first engages mob, got %d queued frames", len(queued))
+	}
+
+	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected watcher attack error after owner engagement invalidated stale preselection: %v", err)
+	}
+	if len(watcherAttackOut) != 0 {
+		t.Fatalf("expected stale preselected watcher attack to fail closed after owner engagement, got %d frames", len(watcherAttackOut))
+	}
+	watcherRetargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher retarget error after owner engagement invalidated stale preselection: %v", err)
+	}
+	if len(watcherRetargetOut) != 0 {
+		t.Fatalf("expected watcher retarget to keep failing closed while owner still holds engagement, got %d frames", len(watcherRetargetOut))
+	}
+	ownerRefreshOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner refresh target-selection error after stale-third-party invalidation: %v", err)
+	}
+	if len(ownerRefreshOut) != 1 {
+		t.Fatalf("expected owner to keep target refresh access after invalidating stale third-party selection, got %d frames", len(ownerRefreshOut))
+	}
+	ownerRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerRefreshOut[0]))
+	if err != nil {
+		t.Fatalf("decode owner target-refresh frame after stale-third-party invalidation: %v", err)
+	}
+	if ownerRefresh.TargetVID != targetVID || ownerRefresh.HPPercent != 90 {
+		t.Fatalf("expected owner refresh to preserve current runtime-owned HP after stale third-party invalidation, got %+v", ownerRefresh)
 	}
 }
 
