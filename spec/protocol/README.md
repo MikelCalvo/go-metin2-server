@@ -27,7 +27,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `shout-chat-bootstrap.md` — minimal bootstrap `CHAT_TYPE_SHOUT` fanout across connected `GAME` sessions
 - `info-notice-bootstrap.md` — minimal bootstrap system-chat handling for `CHAT_TYPE_INFO` and `CHAT_TYPE_NOTICE`
 - `server-notice-broadcast.md` — first programmatic server-originated `CHAT_TYPE_NOTICE` broadcast contract
-- `game-slash-command-bootstrap.md` — first owned `/quit`, `/logout`, and `/phase_select` behavior while already in `GAME`
+- `game-slash-command-bootstrap.md` — first owned `/quit`, `/logout`, `/phase_select`, `/restart_here`, and `/restart_town` slash-command behavior while already in `GAME`
 - `chat-scope-first-hardening.md` — first non-global scoping pass for talking/guild/shout using currently available runtime data
 - `map-index-world-scope-hardening.md` — first map-index-backed visible-world scoping pass for visibility, movement, sync, and local talking chat
 - `world-topology-bootstrap.md` — first explicit local-channel and map-scope topology model for the bootstrap runtime
@@ -47,6 +47,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `player-death-bootstrap.md` — first owned retaliation-driven player-death edge for engaged owners, including self `DEAD` + clear, one visibility-gated peer `DEAD(owner_vid)` fanout, merchant-window close on that floor, the first recipient-side exact-name whisper denial for still-connected zero-HP owners, and the first post-floor `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy, client/slash item-use, slash item-inventory/equipment, peer-facing `CHAT` / `WHISPER`, and self-only `CHAT_TYPE_INFO` denial seams
 - `player-restart-here-bootstrap.md` — same-socket `/restart_here` recovery contract for a retaliation-owned zero-HP player, reusing self bootstrap and peer visibility rebuild packet families for in-place recovery
 - `player-restart-town-bootstrap.md` — same-socket `/restart_town` recovery contract for a retaliation-owned zero-HP player, reusing the existing transfer rebootstrap burst plus legacy empire town-return targets without claiming full revive menus yet
+- `player-restart-request-bootstrap.md` — planned dedicated client-originated restart ingress that will later reuse the existing `/restart_here` and `/restart_town` recovery results once the real wire contract is capture-backed
 - `content-spawn-groups-bootstrap.md` — first authored `spawn_groups` content contract for loading stationary attackable non-player spawns through `combat_profile` + map placement
 - `npc-shop-preview-bootstrap.md` — structured merchant preview/identity contract built on top of the existing `INTERACT` ingress and deterministic interaction-definition authoring
 - `npc-shop-catalog-bootstrap.md` — structured merchant catalog contract behind `shop_preview`, with stable catalog slots and template-backed entries
