@@ -10081,6 +10081,59 @@ func TestGameRuntimeRemoveStaticActorQueuesDeleteForVisibleOnlinePlayers(t *test
 	}
 }
 
+func TestSharedWorldRegistryRemoveStaticActorClearsSelectedCombatTargetOwnership(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	ownerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	targetVID := uint32(actor.EntityID)
+	targetAttempt := registry.AttemptStaticActorCombatTarget(ownerID, targetVID)
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected combat target attempt to accept visible training dummy before removal, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, targetAttempt.TargetVID) {
+		t.Fatal("expected selected combat target ownership to be recorded before removal")
+	}
+	ownerPending.flush()
+
+	removed, ok := registry.RemoveStaticActor(actor.EntityID)
+	if !ok || removed.EntityID != actor.EntityID {
+		t.Fatalf("expected static actor removal to return actor snapshot, got actor=%+v ok=%v", removed, ok)
+	}
+
+	queued := ownerPending.flush()
+	if len(queued) != 2 {
+		t.Fatalf("expected selected training-dummy removal to queue delete plus clear-target frames, got %d", len(queued))
+	}
+	actorDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode queued static actor delete after selected removal: %v", err)
+	}
+	if actorDelete.VID != targetVID {
+		t.Fatalf("unexpected queued static actor delete after selected removal: %+v", actorDelete)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode queued clear-target frame after selected removal: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected queued clear-target frame after selected removal to be TARGET(0, 0), got %+v", clearTarget)
+	}
+
+	staleAttack := registry.AttemptSelectedStaticActorAttack(ownerID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetVID)
+	if staleAttack.Accepted || staleAttack.Failure != StaticActorCombatAttackFailureNoActiveTarget {
+		t.Fatalf("expected selected training-dummy removal to clear authoritative target ownership before later attacks, got %+v", staleAttack)
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorRefreshesVisibleActorForOnlinePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -20315,6 +20368,70 @@ func TestGameSessionFlowStaticActorCombatTargetAndAttackRejectDeadTrainingDummy(
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames for dead training-dummy rejection, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyIsRemoved(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before selected-dummy removal: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame before selected-dummy removal, got %d", len(selectOut))
+	}
+
+	removed, ok := runtime.RemoveStaticActor(actor.EntityID)
+	if !ok || removed.EntityID != actor.EntityID {
+		t.Fatalf("expected selected training-dummy removal to return actor snapshot, got actor=%+v ok=%v", removed, ok)
+	}
+
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 2 {
+		t.Fatalf("expected selected training-dummy removal to queue delete plus clear-target frames, got %d", len(queued))
+	}
+	actorDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode queued static actor delete after selected-dummy removal: %v", err)
+	}
+	if actorDelete.VID != targetVID {
+		t.Fatalf("unexpected queued static actor delete after selected-dummy removal: %+v", actorDelete)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode queued clear-target frame after selected-dummy removal: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected queued clear-target frame after selected-dummy removal to be TARGET(0, 0), got %+v", clearTarget)
+	}
+
+	staleAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected combat attack error after selected-dummy removal: %v", err)
+	}
+	if len(staleAttackOut) != 0 {
+		t.Fatalf("expected selected-dummy removal to make later stale attack fail closed, got %d frames", len(staleAttackOut))
 	}
 }
 

@@ -191,6 +191,7 @@ The first owned attack-intent contract must inherit the existing shared-world ow
 - stale reclaimed sockets must not authoritatively damage runtime-owned dummy HP, clear or replace the live owner's selected combat target, or queue combat-visible refresh frames to the replacement owner
 - accepted target ownership now binds both the current dummy `target_vid` and the current runtime snapshot behind that `VID`; later attacks fail closed if the dummy was replaced before the session reselects it
 - transfer rebootstrap, same-socket fresh bootstrap re-entry, and reconnect now clear session-local active combat target ownership before later attacks can proceed again
+- operator/runtime removal of the currently selected dummy now also counts as an immediate combat-reset boundary: visible sessions first receive the normal actor `CHARACTER_DEL` teardown, and any still-selected live session also receives one queued self-only `GC TARGET(0, 0)` so later stale `ATTACK` attempts fail closed without retaining authoritative target ownership
 - non-player HP/dead state belongs to runtime world ownership, not to character persistence
 
 Only some lifecycle edges are owned so far.

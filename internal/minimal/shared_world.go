@@ -540,13 +540,13 @@ func (r *sharedWorldRegistry) sessionCombatTargetLocked(entityID uint64) (uint32
 	return targetVID, true
 }
 
-func (r *sharedWorldRegistry) clearOtherSessionCombatTargetsLocked(ownerID uint64, targetVID uint32) {
-	if r == nil || ownerID == 0 || targetVID == 0 || len(r.sessionCombatTargets) == 0 {
+func (r *sharedWorldRegistry) clearSelectedCombatTargetsLocked(targetVID uint32, excludeEntityID uint64) {
+	if r == nil || targetVID == 0 || len(r.sessionCombatTargets) == 0 {
 		return
 	}
 	clearTargetRaw := combatproto.EncodeServerClearTarget()
 	for entityID, selectedTargetVID := range r.sessionCombatTargets {
-		if entityID == ownerID || selectedTargetVID != targetVID {
+		if selectedTargetVID != targetVID || (excludeEntityID != 0 && entityID == excludeEntityID) {
 			continue
 		}
 		delete(r.sessionCombatTargets, entityID)
@@ -554,6 +554,13 @@ func (r *sharedWorldRegistry) clearOtherSessionCombatTargetsLocked(ownerID uint6
 			r.enqueueToEntityLocked(entityID, [][]byte{clearTargetRaw})
 		}
 	}
+}
+
+func (r *sharedWorldRegistry) clearOtherSessionCombatTargetsLocked(ownerID uint64, targetVID uint32) {
+	if ownerID == 0 {
+		return
+	}
+	r.clearSelectedCombatTargetsLocked(targetVID, ownerID)
 }
 
 func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjectID uint64, actor worldruntime.StaticEntity, targetVID uint32) bool {
@@ -1398,6 +1405,9 @@ func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSna
 			}
 			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
 		}
+	}
+	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
+		r.clearSelectedCombatTargetsLocked(targetVID, 0)
 	}
 	return removedSnapshot, true
 }

@@ -657,11 +657,13 @@ Expected result:
 - [ ] Using a debug harness/admin seam, replace that same dummy's runtime snapshot in place (for example by moving/updating the actor while keeping it visible and in range) without sending a fresh `TARGET`
 - [ ] Immediately send one normal `ATTACK` against the still-visible dummy `VID`
 - [ ] Re-select the dummy and confirm the next normal `ATTACK` works again with the usual self-only `GC TARGET(target_vid, hp_percent)` refresh
+- [ ] Remove that same still-selected dummy outright through an operator/debug seam and confirm the session first receives the ordinary actor `CHARACTER_DEL` and then one self-only `GC TARGET(0, 0)` clear before any later stale `ATTACK` fails closed
 - [ ] Repeat with a harness-injected dead state (`current HP = 0`) and confirm both a fresh `TARGET` and a later `ATTACK` against the old selected dummy fail closed
 
 Expected result:
 - accepted combat ownership is bound to the selected dummy snapshot, not only the visible `VID`
 - if that snapshot is replaced before reselection, stale `ATTACK` intent fails closed until the client reacquires target ownership with a new accepted `TARGET`
+- outright runtime removal of a still-selected dummy tears down both the visible actor and the selected combat-target ownership immediately: the client sees the ordinary `CHARACTER_DEL` plus one self-only `GC TARGET(0, 0)` companion before later stale attacks stay denied
 - a dead (`0` HP) dummy is no longer eligible for accepted bootstrap target selection or attack refreshes
 - these rejections stay silent in the current slice: no peer fanout, no compensating chat spam, and no accidental HP mutation
 
