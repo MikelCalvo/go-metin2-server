@@ -10208,6 +10208,56 @@ func TestSharedWorldRegistryUpdateStaticActorClearsSelectedCombatTargetOwnership
 	}
 }
 
+func TestSharedWorldRegistryUpdateStaticActorReleasesPracticeMobEngagement(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("Watcher", 0x01030112, 0x02040112, 1200, 2200, 0, 102, 202)
+	ownerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	watcherPending := newPendingServerFrames()
+	watcherID, _ := registry.Join(watcher, watcherPending, nil)
+	if watcherID == 0 {
+		t.Fatal("expected watcher join to return a live shared-world entity ID")
+	}
+	ownerPending.flush()
+	watcherPending.flush()
+	actor, ok := registry.registerStaticActor(0, "PracticeMobAlpha", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.mob_alpha")
+	if !ok {
+		t.Fatal("expected visible practice-mob registration to succeed")
+	}
+	targetVID := uint32(actor.EntityID)
+	ownerTarget := registry.AttemptStaticActorCombatTarget(ownerID, targetVID)
+	if !ownerTarget.Accepted {
+		t.Fatalf("expected owner target-selection to accept visible practice mob before update, got %+v", ownerTarget)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, ownerTarget.TargetVID) {
+		t.Fatal("expected owner selected combat target ownership to be recorded before update")
+	}
+	ownerPending.flush()
+
+	ownerAttack := registry.AttemptSelectedStaticActorAttack(ownerID, ownerTarget.TargetVID, ownerTarget.SnapshotVersion, targetVID)
+	if !ownerAttack.Accepted {
+		t.Fatalf("expected owner attack to accept visible practice mob before update, got %+v", ownerAttack)
+	}
+	if thirdTarget := registry.AttemptStaticActorCombatTarget(watcherID, targetVID); thirdTarget.Accepted {
+		t.Fatalf("expected fresh third-party target attempt to stay aggro-gated before update, got %+v", thirdTarget)
+	}
+
+	updated, ok := registry.UpdateStaticActor(actor.EntityID, "PracticeMobAlphaMoved", bootstrapMapIndex, 1250, 2250, 20351)
+	if !ok || updated.EntityID != actor.EntityID {
+		t.Fatalf("expected practice-mob update to return actor snapshot, got actor=%+v ok=%v", updated, ok)
+	}
+
+	afterUpdate := registry.AttemptStaticActorCombatTarget(watcherID, targetVID)
+	if !afterUpdate.Accepted {
+		t.Fatalf("expected practice-mob update to release old aggro-lite ownership for fresh target attempts, got %+v", afterUpdate)
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorRefreshesVisibleActorForOnlinePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
