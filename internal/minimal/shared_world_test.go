@@ -19700,6 +19700,154 @@ func TestGameSessionFlowPracticeMobCloseStopsPendingRetaliationAndReleasesAggro(
 	}
 }
 
+func setupPracticeMobPendingRetaliationWithBlockedWatcher(t *testing.T) (*gameRuntime, *time.Time, service.SessionFlow, service.SessionFlow, uint64, uint32) {
+	t.Helper()
+
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000450, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before partial-ownership-loss retaliation test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before partial-ownership-loss retaliation test, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before partial-ownership-loss retaliation test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before partial ownership loss, got %d frames", len(attackOut))
+	}
+
+	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error while owner still holds practice-mob aggro-lite gate: %v", err)
+	}
+	if len(blockedTargetOut) != 0 {
+		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
+	}
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
+	if !ok {
+		t.Fatal("expected live player entity for engaged owner before partial ownership-loss test")
+	}
+
+	return runtime, &currentTime, ownerFlow, watcherFlow, ownerEntity.Entity.ID, targetVID
+}
+
+func TestGameSessionFlowPracticeMobSessionDirectoryLossStopsPendingRetaliationAndReleasesAggro(t *testing.T) {
+	runtime, currentTime, ownerFlow, watcherFlow, ownerEntityID, targetVID := setupPracticeMobPendingRetaliationWithBlockedWatcher(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntityID); !ok {
+		t.Fatal("expected engaged owner session-directory entry removal to succeed")
+	}
+
+	releasedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error after engaged owner lost session-directory ownership: %v", err)
+	}
+	if len(releasedTargetOut) != 1 {
+		t.Fatalf("expected watcher target-selection to succeed after engaged owner lost session-directory ownership, got %d frames", len(releasedTargetOut))
+	}
+	releasedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, releasedTargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode watcher target-selection frame after engaged owner lost session-directory ownership: %v", err)
+	}
+	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
+		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after session-directory ownership loss, got %+v", releasedTarget)
+	}
+
+	*currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected pending delayed retaliation cadence to stop after engaged owner lost session-directory ownership, got %d queued frames", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected no extra watcher frames after session-directory ownership loss cancelled pending retaliation, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowPracticeMobEntityLossStopsPendingRetaliationAndReleasesAggro(t *testing.T) {
+	runtime, currentTime, ownerFlow, watcherFlow, ownerEntityID, targetVID := setupPracticeMobPendingRetaliationWithBlockedWatcher(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	if _, ok := runtime.sharedWorld.entities.Remove(ownerEntityID); !ok {
+		t.Fatal("expected engaged owner entity removal to succeed")
+	}
+
+	releasedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error after engaged owner lost entity ownership: %v", err)
+	}
+	if len(releasedTargetOut) != 1 {
+		t.Fatalf("expected watcher target-selection to succeed after engaged owner lost entity ownership, got %d frames", len(releasedTargetOut))
+	}
+	releasedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, releasedTargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode watcher target-selection frame after engaged owner lost entity ownership: %v", err)
+	}
+	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
+		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after entity ownership loss, got %+v", releasedTarget)
+	}
+
+	*currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected pending delayed retaliation cadence to stop after engaged owner lost entity ownership, got %d queued frames", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected no extra watcher frames after entity ownership loss cancelled pending retaliation, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowStaticActorDummyRespawnRebuildsForOtherVisibleSessionsAndRequiresFreshReselect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

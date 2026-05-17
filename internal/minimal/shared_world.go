@@ -540,6 +540,16 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjec
 	if !ok || engagedBy == 0 || engagedBy == subjectID {
 		return false
 	}
+	if _, ok := r.sessionEntryLocked(engagedBy); !ok {
+		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+		r.clearSessionCombatTargetLocked(engagedBy)
+		return false
+	}
+	if _, ok := r.playerCharacter(engagedBy); !ok {
+		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+		r.clearSessionCombatTargetLocked(engagedBy)
+		return false
+	}
 	if r.sessionCombatTargets != nil && r.sessionCombatTargets[subjectID] == targetVID {
 		return false
 	}
