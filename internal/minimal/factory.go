@@ -1792,6 +1792,44 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, restartedLive, peerRefreshFrames)
 							clearActiveCombatTarget()
 							return gameflow.ChatResult{Accepted: true, Frames: bootstrapFrames}
+						case "restart_town":
+							selectedPlayer, ok := currentSelectedPlayer()
+							if !ok || !ownsLiveSharedWorldSession() || !selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							restartedSelected := selectedPlayer.PersistedSnapshot()
+							if restartedSelected.ID == 0 {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							restartEmpire := restartedSelected.Empire
+							if restartEmpire == 0 {
+								restartEmpire = ticketEmpire(sessionTicket)
+							}
+							restartedSelected.MapIndex, restartedSelected.X, restartedSelected.Y = legacyCreatePositionForEmpire(restartEmpire)
+							restartedSelected.Z = 0
+							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, restartedSelected)
+							if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							rollbackPersistedTownRestart := func() {
+								_ = saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, sessionTicket.Characters)
+							}
+							bootstrapFrames, err := worldentry.BuildBootstrapFrames(restartedSelected)
+							if err != nil {
+								rollbackPersistedTownRestart()
+								return gameflow.ChatResult{Accepted: false}
+							}
+							_, transferFrames, ok := sharedWorld.TransferWithOriginFrames(sharedWorldID, restartedSelected)
+							if !ok {
+								rollbackPersistedTownRestart()
+								return gameflow.ChatResult{Accepted: false}
+							}
+							sessionTicket.Characters = updatedCharacters
+							selectedPlayer.ApplyPersistedSnapshot(restartedSelected)
+							refreshLiveCharacterRegistration()
+							clearActiveCombatTarget()
+							frames := append(append([][]byte(nil), bootstrapFrames...), transferFrames...)
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 					}
 
@@ -2348,7 +2386,7 @@ func slashGameCommand(message string) (string, bool) {
 		return "", false
 	}
 	switch fields[0] {
-	case "quit", "logout", "phase_select", "restart_here":
+	case "quit", "logout", "phase_select", "restart_here", "restart_town":
 		return fields[0], true
 	default:
 		return "", false

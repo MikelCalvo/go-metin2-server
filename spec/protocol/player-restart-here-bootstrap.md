@@ -43,8 +43,8 @@ It does **not** yet claim:
 
 Otherwise it fails closed.
 
-The nearest explicitly deferred neighbor stays out of scope:
-- `/restart_town` remains unsupported for now
+The nearest explicitly deferred neighbor from this slice is now tracked separately:
+- `/restart_town` is frozen in `player-restart-town-bootstrap.md`
 
 ## Owner-side result
 
@@ -103,4 +103,4 @@ The repo already owns:
 - an existing self bootstrap burst and existing peer visibility rebuild packet families
 
 So the smallest connected recovery seam is not a brand-new packet family.
-It is reusing those already-owned bootstrap/rebuild surfaces for one same-socket in-place `/restart_here` recovery while explicitly deferring town return and broader revive gameplay.
+It is reusing those already-owned bootstrap/rebuild surfaces for one same-socket in-place `/restart_here` recovery while explicitly deferring town return to the separate `/restart_town` slice in `player-restart-town-bootstrap.md`.
