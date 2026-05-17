@@ -10674,11 +10674,13 @@ func TestSharedWorldRegistryFirstPracticeMobHitClearsOtherPreselectedTargetOwner
 	registry := newSharedWorldRegistryWithTopology(topology)
 	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	thirdParty := peerVisibilityCharacter("ThirdParty", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
-	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	ownerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
 	if ownerID == 0 {
 		t.Fatal("expected owner join to return a live shared-world entity ID")
 	}
-	thirdPartyID, _ := registry.Join(thirdParty, newPendingServerFrames(), nil)
+	thirdPartyPending := newPendingServerFrames()
+	thirdPartyID, _ := registry.Join(thirdParty, thirdPartyPending, nil)
 	if thirdPartyID == 0 {
 		t.Fatal("expected third-party join to return a live shared-world entity ID")
 	}
@@ -10700,10 +10702,26 @@ func TestSharedWorldRegistryFirstPracticeMobHitClearsOtherPreselectedTargetOwner
 	if !registry.SetSessionCombatTarget(thirdPartyID, thirdPartyTarget.TargetVID) {
 		t.Fatal("expected third-party shared-world target ownership to be recorded")
 	}
+	ownerPending.flush()
+	thirdPartyPending.flush()
 
 	ownerAttack := registry.AttemptSelectedStaticActorAttack(ownerID, ownerTarget.TargetVID, ownerTarget.SnapshotVersion, uint32(actor.EntityID))
 	if !ownerAttack.Accepted {
 		t.Fatalf("expected first owner attack to establish engagement, got %+v", ownerAttack)
+	}
+	if queued := ownerPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected owner engagement not to queue self clear-target frames, got %d", len(queued))
+	}
+	queuedClear := thirdPartyPending.flush()
+	if len(queuedClear) != 1 {
+		t.Fatalf("expected first owner hit to queue 1 self-only stale-target clear for third party, got %d", len(queuedClear))
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queuedClear[0]))
+	if err != nil {
+		t.Fatalf("decode queued stale-target clear after first owner hit: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected queued stale-target clear after first owner hit to be TARGET(0, 0), got %+v", clearTarget)
 	}
 
 	thirdPartyAttack := registry.AttemptSelectedStaticActorAttack(thirdPartyID, thirdPartyTarget.TargetVID, thirdPartyTarget.SnapshotVersion, uint32(actor.EntityID))
@@ -19134,7 +19152,7 @@ func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
 	}
 }
 
-func TestGameSessionFlowPracticeMobOwnerHitInvalidatesPreselectedThirdPartyAttack(t *testing.T) {
+func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
@@ -19199,13 +19217,21 @@ func TestGameSessionFlowPracticeMobOwnerHitInvalidatesPreselectedThirdPartyAttac
 		TargetVID:  targetVID,
 	})))
 	if err != nil {
-		t.Fatalf("unexpected owner attack error before stale-third-party invalidation test: %v", err)
+		t.Fatalf("unexpected owner attack error before stale-third-party clear test: %v", err)
 	}
 	if len(ownerAttackOut) != 2 {
 		t.Fatalf("expected owner attack to return target-refresh plus self-only retaliation, got %d frames", len(ownerAttackOut))
 	}
-	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
-		t.Fatalf("expected no proactive clear-target frames for watcher when owner first engages mob, got %d queued frames", len(queued))
+	queuedClear := flushServerFrames(t, watcherFlow)
+	if len(queuedClear) != 1 {
+		t.Fatalf("expected 1 queued self-only stale-target clear for watcher when owner first engages mob, got %d queued frames", len(queuedClear))
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queuedClear[0]))
+	if err != nil {
+		t.Fatalf("decode watcher stale-target clear after owner engagement: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected queued watcher stale-target clear after owner engagement to be TARGET(0, 0), got %+v", clearTarget)
 	}
 
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{

@@ -544,11 +544,15 @@ func (r *sharedWorldRegistry) clearOtherSessionCombatTargetsLocked(ownerID uint6
 	if r == nil || ownerID == 0 || targetVID == 0 || len(r.sessionCombatTargets) == 0 {
 		return
 	}
+	clearTargetRaw := combatproto.EncodeServerClearTarget()
 	for entityID, selectedTargetVID := range r.sessionCombatTargets {
 		if entityID == ownerID || selectedTargetVID != targetVID {
 			continue
 		}
 		delete(r.sessionCombatTargets, entityID)
+		if clearTargetRaw != nil {
+			r.enqueueToEntityLocked(entityID, [][]byte{clearTargetRaw})
+		}
 	}
 }
 
