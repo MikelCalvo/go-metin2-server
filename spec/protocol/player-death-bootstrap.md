@@ -278,6 +278,7 @@ Why this is the current owned boundary:
 The current bootstrap player-death contract now also owns one narrow visibility-recipient rule for that same still-connected zero-HP owner session:
 - once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later fresh visible peer joins no longer queue their ordinary `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` burst to that zero-HP owner recipient
 - other connected live recipients still receive the ordinary peer-entry burst for that newcomer
+- when stale shared-world ownership cleanup later forces that same visible peer to delete and re-enter through the current join path, live watchers still receive the stale `CHARACTER_DEL`, then the ordinary peer-entry burst again, and—if the reclaimed peer is already at that same `0`-HP floor—one trailing `GC DEAD(peer_vid)` right after the re-entry burst instead of silently reviving the peer
 - once that same owner is already sitting at that zero-HP floor, later movement- or `SYNC_POSITION`-driven peer visibility re-entry bursts also skip that zero-HP owner recipient when another player crosses into visibility
 - the moving or syncing live peer still receives the ordinary origin-side peer-entry burst for the already-dead owner under the current bootstrap visibility model
 - once that same owner is already sitting at that zero-HP floor, later transfer-driven peer visibility re-entry bursts also skip that zero-HP owner recipient when another live player is relocated into visibility

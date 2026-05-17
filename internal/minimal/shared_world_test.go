@@ -6889,6 +6889,79 @@ func TestSharedWorldRegistryJoinReclaimsStaleVisiblePeerWithDeleteThenReentry(t 
 	_ = replacementPending
 }
 
+func TestSharedWorldRegistryJoinReclaimsStaleAlreadyDeadVisiblePeerWithDeleteThenReentryAndDeadReplay(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	watcher := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	deadPeer := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	deadPeer.Points[bootstrapPlayerPointValueIndex] = 0
+	watcherPending := newPendingServerFrames()
+
+	watcherID, visiblePeers := registry.Join(watcher, watcherPending, nil)
+	if watcherID == 0 {
+		t.Fatal("expected first join to register a live watcher entity")
+	}
+	if len(visiblePeers) != 0 {
+		t.Fatalf("expected first live watcher join to have no visible peers, got %+v", visiblePeers)
+	}
+
+	staleID, visiblePeers := registry.Join(deadPeer, newPendingServerFrames(), nil)
+	if staleID == 0 {
+		t.Fatal("expected already-dead visible peer join to register a stale shared-world entity")
+	}
+	if len(visiblePeers) != 1 || visiblePeers[0].VID != watcher.VID {
+		t.Fatalf("expected stale already-dead visible peer join to see the live watcher, got %+v", visiblePeers)
+	}
+	initial := watcherPending.flush()
+	if len(initial) != 4 {
+		t.Fatalf("expected initial already-dead visible peer join to queue add/info/update plus DEAD replay for the live watcher, got %d frames", len(initial))
+	}
+
+	if _, ok := registry.sessionDirectory.Remove(staleID); !ok {
+		t.Fatal("expected stale session-directory entry removal to succeed for already-dead visible peer")
+	}
+
+	replacementPending := newPendingServerFrames()
+	replacementID, visiblePeers := registry.Join(deadPeer, replacementPending, nil)
+	if replacementID == 0 {
+		t.Fatal("expected reclaimed join to register a replacement entity for already-dead visible peer")
+	}
+	if len(visiblePeers) != 1 || visiblePeers[0].VID != watcher.VID {
+		t.Fatalf("expected reclaimed already-dead visible peer join to still see the live watcher, got %+v", visiblePeers)
+	}
+
+	queued := watcherPending.flush()
+	if len(queued) != 5 {
+		t.Fatalf("expected stale delete plus fresh add/info/update and DEAD replay for already-dead visible peer, got %d frames", len(queued))
+	}
+	removed, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode reclaimed stale delete for already-dead visible peer: %v", err)
+	}
+	if removed.VID != deadPeer.VID {
+		t.Fatalf("expected stale delete for already-dead visible peer VID %#08x, got %#08x", deadPeer.VID, removed.VID)
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode reclaimed add for already-dead visible peer: %v", err)
+	}
+	if added.VID != deadPeer.VID {
+		t.Fatalf("expected reclaimed add for already-dead visible peer VID %#08x, got %#08x", deadPeer.VID, added.VID)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[4]))
+	if err != nil {
+		t.Fatalf("decode reclaimed DEAD replay for already-dead visible peer: %v", err)
+	}
+	if dead.VID != deadPeer.VID {
+		t.Fatalf("expected reclaimed DEAD replay for already-dead visible peer VID %#08x, got %#08x", deadPeer.VID, dead.VID)
+	}
+	if _, ok := registry.sessionDirectory.Lookup(replacementID); !ok {
+		t.Fatal("expected replacement session-directory entry after reclaimed already-dead visible peer reentry")
+	}
+	if queued := replacementPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected no queued frames for the rejoined already-dead visible peer itself, got %d", len(queued))
+	}
+}
+
 func TestSharedWorldRegistryJoinReclaimsStaleVisiblePeerSkipsZeroHPOwnerRecipient(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	deadOwner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
