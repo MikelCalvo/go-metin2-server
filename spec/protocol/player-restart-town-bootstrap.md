@@ -31,7 +31,7 @@ It applies only to:
 - one transfer-style visibility rebuild at the old and new positions
 
 It does **not** yet claim:
-- a real client-originated revive packet; that next ingress is frozen separately in `player-restart-request-bootstrap.md`
+- a separate non-chat client-originated revive packet; the follow-up note in `player-restart-request-bootstrap.md` keeps that ingress question explicitly unproven/capture-gated for now
 - arbitrary respawn points, corpse timers, or revive menus
 - broader player-death persistence policy
 - persistence of retaliation-owned HP loss across the restart
@@ -47,7 +47,7 @@ It does **not** yet claim:
 Otherwise it fails closed.
 
 The nearest explicitly deferred neighbor stays out of scope:
-- a dedicated client respawn / revive ingress remains unsupported for now and is frozen separately in `player-restart-request-bootstrap.md`
+- any separate non-chat client respawn / revive ingress remains unsupported for now and is tracked as an open capture-backed follow-up in `player-restart-request-bootstrap.md`
 
 ## Town target rule
 

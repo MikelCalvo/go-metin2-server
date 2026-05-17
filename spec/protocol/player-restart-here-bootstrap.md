@@ -28,7 +28,7 @@ It applies only to:
 - one peer-visible delete-plus-rebootstrap refresh for the revived owner
 
 It does **not** yet claim:
-- a real client-originated revive packet; that next ingress is frozen separately in `player-restart-request-bootstrap.md`
+- a separate non-chat client-originated revive packet; the follow-up note in `player-restart-request-bootstrap.md` keeps that ingress question explicitly unproven/capture-gated for now
 - restart-at-town or map-transfer recovery
 - corpse timers, corpse interaction, or knockdown choreography
 - persistence of retaliation-owned HP loss across `/restart_here`
@@ -45,7 +45,7 @@ Otherwise it fails closed.
 
 The nearest explicitly deferred neighbors from this slice are now tracked separately:
 - `/restart_town` is frozen in `player-restart-town-bootstrap.md`
-- the later dedicated client restart ingress is frozen in `player-restart-request-bootstrap.md`
+- any later non-chat restart ingress remains an open capture-backed follow-up in `player-restart-request-bootstrap.md`
 
 ## Owner-side result
 

@@ -76,7 +76,7 @@ This slice does **not** yet claim:
 - support for arbitrary slash commands
 - GM/admin command parsing
 - a complete legacy `interpret_command(...)` clone
-- a real client-originated revive packet or revive-menu flow; the planned dedicated ingress is frozen separately in `player-restart-request-bootstrap.md` and remains unimplemented here
+- any separate non-chat revive packet or revive-menu flow; the restart-ingress follow-up note in `player-restart-request-bootstrap.md` now keeps that path explicitly unproven/capture-gated, and no additional ingress is owned here yet
 - a complete legacy death/respawn system beyond the currently owned `/restart_here` and `/restart_town` bootstrap recovery seams
 - any claim that `PHASE(SELECT)` rebootstrap is compatibility-complete beyond the current client path we own and test
 

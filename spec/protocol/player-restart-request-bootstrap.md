@@ -1,6 +1,8 @@
-# Player Restart-Request Bootstrap
+# Player Restart Ingress Follow-up
 
-This document freezes the next legacy-parity gap after the current slash-command-backed `/restart_here` and `/restart_town` recovery seams.
+This document keeps the post-death restart-ingress question explicit after the current slash-command-backed `/restart_here` and `/restart_town` recovery seams landed.
+
+The filename stays the same for continuity, but the contract is now narrower and more honest than a planned `RESTART` packet placeholder.
 
 It sits on top of:
 - `game-slash-command-bootstrap.md`
@@ -8,77 +10,58 @@ It sits on top of:
 - `player-restart-town-bootstrap.md`
 
 Those documents already freeze:
-- the current temporary in-game slash-command harness for connected recovery while the session is already in `GAME`
+- the current in-game slash-command ingress for connected recovery while the session is already in `GAME`
 - the exact current owner-side and peer-visible results for in-place `/restart_here`
 - the exact current owner-side and peer-visible results for town-return `/restart_town`
 
 ## Question
 
-**What is the smallest honest dedicated client-originated restart ingress the repo can own next without widening the already-owned recovery results into a broader revive / corpse system?**
+**Does the target TMP4-era client actually require any separate non-chat restart packet beyond the current slash-command recovery seams, or are `/restart_here` and `/restart_town` already the real ingress we should keep owning?**
 
-## Scope
+## Current owned behavior
 
-This next seam is intentionally narrow.
+Today the repository owns exactly this restart ingress surface:
+- restart intent is entered through chat slash commands while the session is already in `GAME`
+- `/restart_here` and `/restart_town` reuse the already-documented recovery results from their dedicated protocol notes
+- denied restart attempts fail closed with no self chat echo, no compensating failure packet, and no peer-visible side effects
 
-It applies only to:
-- one selected live player session that is already in `GAME`
-- the same retaliation-owned `0`-HP floor already frozen in `player-death-bootstrap.md`
-- one dedicated client-originated restart request family
-- two recovery intents that map directly onto already-owned behavior:
-  - `restart_here`
-  - `restart_town`
+## What this follow-up does **not** claim
 
-It does **not** yet claim:
-- a revive menu UI contract
-- corpse timers, corpse interaction, or knockdown choreography
-- broader player-death persistence policy
-- new owner-side or peer-visible result packets beyond the already-owned `/restart_here` and `/restart_town` surfaces
+This note intentionally does **not** freeze any separate packet family yet.
 
-## Current owned behavior that this ingress must reuse
+It does **not** currently claim:
+- packet family name `RESTART`
+- a dedicated client -> server restart header
+- a dedicated restart payload layout or mode byte
+- a revive-menu UI contract
+- corpse timers, corpse interaction, or broader player-death persistence policy
+- any new owner-side or peer-visible result packets beyond the already-owned `/restart_here` and `/restart_town` surfaces
 
-When this request family lands, it must reuse existing recovery outcomes instead of inventing a second behavior stack:
-- the `restart_here` intent must produce the same accepted result currently frozen in `player-restart-here-bootstrap.md`
-- the `restart_town` intent must produce the same accepted result currently frozen in `player-restart-town-bootstrap.md`
-- denied requests must keep the same fail-closed rule the current slash-command harness already uses: no self chat echo, no compensating failure packet, and no peer-visible side effects
+## Why the contract changed
 
-## Acceptance rule
-
-The dedicated restart request is accepted only when all of these are true:
-- the session still owns a live shared-world player entry
-- the selected live player runtime is already at the retaliation-owned `0`-HP floor
-- the session is still in `GAME`
-- the request selects one currently owned restart intent (`restart_here` or `restart_town`)
-
-Otherwise it fails closed.
-
-## Wire contract status
-
-The next parity gap is the ingress, not the recovery result.
-
-So this document freezes the semantic contract first while leaving the exact wire details capture-gated for the next RED:
-- packet family name: `RESTART`
-- direction: client -> server
-- phase: `GAME`
-- exact header: `TBD`
-- exact payload layout / mode encoding: `TBD`
-
-That is intentional for this slice:
-- the repo already owns what `restart_here` and `restart_town` do
-- the repo does **not** yet own a capture-backed packet header or mode layout for the real client restart request
-- the next honest RED should therefore fail for missing codec / dispatch ownership, not for ambiguous recovery behavior
-
-## Why freeze this now
-
-The bootstrap runtime has already crossed the bigger behavior boundary:
+The repo already crossed the larger behavior boundary:
 - retaliation-driven owner death is visible
 - connected same-socket recovery exists for both in-place and town-return cases
 - visible peers already observe those recoveries through existing packet families
 
-The next compatibility gap is smaller:
-- the current implementation still depends on typed slash commands as a temporary harness
-- legacy-parity progress now needs a dedicated client-originated restart ingress that reuses those same owned results
+What remains uncertain is no longer the recovery result — it is whether a separate non-chat ingress exists at all for the target client/runtime combination we are chasing.
 
-This keeps the next implementation slice honest:
-- add codec ownership for the restart request family
-- route it through the existing recovery helpers/results
-- avoid widening into broader revive UI or corpse gameplay in the same change
+So the honest follow-up is now:
+- keep `/restart_here` and `/restart_town` as the only owned ingress
+- treat any additional dedicated restart packet as unproven/capture-gated
+- avoid implementing a guessed codec or packet-matrix row just because broader respawn behavior exists elsewhere in legacy discussions
+
+## If later captures prove a separate ingress
+
+Any later non-chat restart ingress must still stay narrow and reuse existing recovery outcomes instead of inventing a second behavior stack:
+- the `restart_here` intent must produce the same accepted result frozen in `player-restart-here-bootstrap.md`
+- the `restart_town` intent must produce the same accepted result frozen in `player-restart-town-bootstrap.md`
+- denied requests must keep the same fail-closed rule the current slash-command harness already uses
+
+## Next honest step
+
+The next honest slice here is not implementation-first.
+
+It is capture/fixture work that proves one of two things:
+1. the current slash-command ingress is already the correct legacy-compatible path for restart, in which case no extra packet family is needed, or
+2. a separate dedicated restart packet really exists for the target client, in which case the repo can open a RED for the exact codec/dispatch seam without guessing the wire contract first
