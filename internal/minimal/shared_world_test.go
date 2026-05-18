@@ -3996,6 +3996,103 @@ func TestGameSessionFlowPracticeMobRestartTownUsesOwnedEmpireCreatePositionTable
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartTownFreshTargetKeepsRuntimeOwnedMobHP(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	sourceWatcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, sourceWatcher)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed owner account before /restart_town target-continuity test: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "peer-two", Empire: sourceWatcher.Empire, Characters: cloneCharacters([]loginticket.Character{sourceWatcher})}); err != nil {
+		t.Fatalf("seed source watcher account before /restart_town target-continuity test: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000476, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle for /restart_town target-continuity test: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import for /restart_town target-continuity test, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner before /restart_town target-continuity test, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	sourceWatcherFlow, sourceWatcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(sourceWatcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for source watcher before /restart_town target-continuity test, got %d", len(sourceWatcherEnter))
+	}
+	defer closeSessionFlow(t, sourceWatcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after source watcher joins before /restart_town target-continuity test, got %d", len(queued))
+	}
+
+	advance := func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	}
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, sourceWatcherFlow, targetVID, owner.VID, advance)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town error before fresh-target continuity check: %v", err)
+	}
+	if len(restartOut) != 6 {
+		t.Fatalf("expected 6 self frames from /restart_town recovery before fresh-target continuity check, got %d", len(restartOut))
+	}
+	if queued := flushServerFrames(t, sourceWatcherFlow); len(queued) != 1 {
+		t.Fatalf("expected source watcher to receive 1 queued owner delete after /restart_town before fresh-target continuity check, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no extra owner queued frames before /restart_town fresh-target continuity check, got %d", len(queued))
+	}
+
+	staleAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected stale attack error after /restart_town before fresh-target continuity check: %v", err)
+	}
+	if len(staleAttackOut) != 0 {
+		t.Fatalf("expected stale attack without fresh target to fail closed after /restart_town, got %d frames", len(staleAttackOut))
+	}
+
+	retargetOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected fresh target-selection error after /restart_town: %v", err)
+	}
+	if len(retargetOut) != 0 {
+		t.Fatalf("expected fresh target-selection after /restart_town to fail closed because the source practice mob is no longer visible, got %d frames", len(retargetOut))
+	}
+	if queued := flushServerFrames(t, sourceWatcherFlow); len(queued) != 0 {
+		t.Fatalf("expected /restart_town retarget continuity check to avoid extra source-watcher fanout, got %d queued frames", len(queued))
+	}
+}
+
 func TestGameSessionFlowPracticeMobLateDestinationPeerJoinAfterRestartTownSeesRecoveredOwnerAlive(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
