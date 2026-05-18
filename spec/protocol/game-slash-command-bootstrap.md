@@ -69,6 +69,8 @@ They are **not** echoed back as `CHAT_TYPE_TALKING`.
 - persists that town-return position before runtime commit, then reuses the existing transfer rebootstrap burst plus ordinary visibility deltas on the same socket
 - requires a fresh later `TARGET` before combat can resume
 
+For the current compatibility track, `/restart_here` and `/restart_town` are not temporary placeholders waiting for a guessed dedicated packet. They are the owned restart ingress unless later captures or owned fixtures prove an additional non-chat request family.
+
 ## Non-goals
 
 This slice does **not** yet claim:
@@ -76,7 +78,7 @@ This slice does **not** yet claim:
 - support for arbitrary slash commands
 - GM/admin command parsing
 - a complete legacy `interpret_command(...)` clone
-- any separate non-chat revive packet or revive-menu flow; the restart-ingress follow-up note in `player-restart-request-bootstrap.md` now keeps that path explicitly unproven/capture-gated, and no additional ingress is owned here yet
+- any separate non-chat revive packet or revive-menu flow; the restart-ingress follow-up note in `player-restart-request-bootstrap.md` now keeps that path unowned unless later captures or owned fixtures prove it with exact bytes
 - a complete legacy death/respawn system beyond the currently owned `/restart_here` and `/restart_town` bootstrap recovery seams
 - any claim that `PHASE(SELECT)` rebootstrap is compatibility-complete beyond the current client path we own and test
 

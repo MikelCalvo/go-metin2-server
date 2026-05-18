@@ -18,6 +18,13 @@ Those documents already freeze:
 
 **Does the target TMP4-era client actually require any separate non-chat restart packet beyond the current slash-command recovery seams, or are `/restart_here` and `/restart_town` already the real ingress we should keep owning?**
 
+## Current conclusion
+
+For the target compatibility track of this repository, the current owned answer is:
+- keep `/restart_here` and `/restart_town` as the restart ingress we actively support
+- treat any separate non-chat restart packet as unowned unless future captures or owned fixtures prove one with exact bytes
+- reuse the existing recovery outcomes if that later contrary evidence ever appears
+
 ## Current owned behavior
 
 Today the repository owns exactly this restart ingress surface:

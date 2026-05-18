@@ -27,7 +27,7 @@ That same retaliation-driven `0`-HP floor now also owns one same-socket `/restar
 
 That same zero-HP floor now also owns one same-socket `/restart_town` recovery seam: while the session stays in `GAME`, the dead owner can rebuild from the persisted account snapshot at the owned legacy empire town-return position, persist that town-return coordinate through the existing transfer ordering, reuse the ordinary self transfer rebootstrap burst plus transfer visibility deltas on the same socket, and still leave the old selected practice-mob target cleared until a fresh `TARGET`.
 
-Those two recovery seams remain slash-command-backed today. A separate dedicated restart packet is not yet owned: the current follow-up note in [spec/protocol/player-restart-request-bootstrap.md](spec/protocol/player-restart-request-bootstrap.md) now treats any non-chat restart ingress as unproven/capture-gated rather than as the next assumed implementation step.
+Those two recovery seams remain slash-command-backed today. Current public evidence now supports keeping `/restart_here` and `/restart_town` as the owned restart ingress for this compatibility track; a separate dedicated restart packet stays unowned unless later captures or owned fixtures prove one with exact bytes.
 
 That same retaliation-driven `0`-HP floor now also makes the still-connected owner temporarily unavailable as a whisper recipient: peer-originated exact-name whispers fail closed with no queued target delivery and no synthetic `WHISPER_TYPE_NOT_EXIST` fallback until broader recipient-side player-death policy is owned.
 
