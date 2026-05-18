@@ -25,6 +25,9 @@ Today the repository owns exactly this restart ingress surface:
 - `/restart_here` and `/restart_town` reuse the already-documented recovery results from their dedicated protocol notes
 - denied restart attempts fail closed with no self chat echo, no compensating failure packet, and no peer-visible side effects
 
+The first public evidence note for that owned surface now lives here:
+- [`../../docs/evidence/2026-05-18-player-restart-ingress-slash-command.md`](../../docs/evidence/2026-05-18-player-restart-ingress-slash-command.md)
+
 ## What this follow-up does **not** claim
 
 This note intentionally does **not** freeze any separate packet family yet.
@@ -60,8 +63,8 @@ Any later non-chat restart ingress must still stay narrow and reuse existing rec
 
 ## Next honest step
 
-The next honest slice here is not implementation-first.
+The first honest next step here was evidence work rather than implementation-first guessing.
 
-It is capture/fixture work that proves one of two things:
-1. the current slash-command ingress is already the correct legacy-compatible path for restart, in which case no extra packet family is needed, or
-2. a separate dedicated restart packet really exists for the target client, in which case the repo can open a RED for the exact codec/dispatch seam without guessing the wire contract first
+That initial evidence artifact now supports the repo's current slash-command-backed ingress strongly enough that the default path is:
+1. keep `/restart_here` and `/restart_town` as the only owned restart ingress for the target compatibility track, and
+2. open packet work only if later captures or owned fixtures prove an additional dedicated non-chat restart request with exact bytes
