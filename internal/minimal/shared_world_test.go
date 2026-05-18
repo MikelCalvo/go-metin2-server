@@ -3633,6 +3633,43 @@ func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhileAlive(t *testing.T
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartHereFreshTargetKeepsRuntimeOwnedMobHP(t *testing.T) {
+	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here error before fresh-target continuity check: %v", err)
+	}
+	if len(restartOut) != 4 {
+		t.Fatalf("expected 4 self bootstrap frames from /restart_here before fresh-target continuity check, got %d", len(restartOut))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 4 {
+		t.Fatalf("expected /restart_here recovery to queue 4 peer refresh frames before fresh-target continuity check, got %d", len(queued))
+	}
+
+	retargetOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected fresh target-selection error after /restart_here: %v", err)
+	}
+	if len(retargetOut) != 1 {
+		t.Fatalf("expected fresh target-selection to succeed after /restart_here, got %d frames", len(retargetOut))
+	}
+	retarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, retargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode fresh target-selection after /restart_here: %v", err)
+	}
+	if retarget.TargetVID != targetVID || retarget.HPPercent != 90 {
+		t.Fatalf("expected fresh target-selection after /restart_here to preserve the still-live practice mob at 90%% HP, got %+v", retarget)
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected /restart_here retarget continuity check to avoid extra watcher fanout, got %d queued frames", len(queued))
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartTownTransfersDeadOwnerToEmpireCreatePositionOnSameSocket(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
