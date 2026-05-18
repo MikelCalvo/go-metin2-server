@@ -3818,6 +3818,147 @@ func TestGameSessionFlowPracticeMobRestartTownTransfersDeadOwnerToEmpireCreatePo
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartTownUsesOwnedEmpireCreatePositionTableOnSameSocket(t *testing.T) {
+	testCases := []struct {
+		name            string
+		characterEmpire uint8
+		ticketEmpire    uint8
+		wantMapIndex    uint32
+		wantX           int32
+		wantY           int32
+	}{
+		{name: "empire_one", characterEmpire: 1, ticketEmpire: 1, wantMapIndex: bootstrapMapIndex, wantX: 459800, wantY: 953900},
+		{name: "empire_two", characterEmpire: 2, ticketEmpire: 2, wantMapIndex: 21, wantX: 52070, wantY: 166600},
+		{name: "empire_three", characterEmpire: 3, ticketEmpire: 3, wantMapIndex: 41, wantX: 957300, wantY: 255200},
+		{name: "ticket_empire_fallback", characterEmpire: 0, ticketEmpire: 3, wantMapIndex: 41, wantX: 957300, wantY: 255200},
+		{name: "default_fallback", characterEmpire: 0, ticketEmpire: 0, wantMapIndex: bootstrapMapIndex, wantX: 459800, wantY: 953900},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+			owner.Empire = tc.characterEmpire
+			owner.Points[bootstrapPlayerPointValueIndex] = 2
+			sourceWatcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+			if err := store.Issue(loginticket.Ticket{Login: "peer-one", LoginKey: 0x11111111, Empire: tc.ticketEmpire, Characters: []loginticket.Character{owner}}); err != nil {
+				t.Fatalf("issue owner ticket before /restart_town table test: %v", err)
+			}
+			issuePeerTicket(t, store, "peer-two", 0x22222222, sourceWatcher)
+			if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: tc.ticketEmpire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed owner account before /restart_town table test: %v", err)
+			}
+			if err := accounts.Save(accountstore.Account{Login: "peer-two", Empire: sourceWatcher.Empire, Characters: cloneCharacters([]loginticket.Character{sourceWatcher})}); err != nil {
+				t.Fatalf("seed source watcher account before /restart_town table test: %v", err)
+			}
+
+			staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+			interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+			runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{
+				LegacyAddr:           ":13000",
+				PublicAddr:           "127.0.0.1",
+				VisibilityMode:       "radius",
+				VisibilityRadius:     400,
+				VisibilitySectorSize: 200,
+			}, store, accounts, staticActorStore, interactionStore)
+			if err != nil {
+				t.Fatalf("unexpected radius-AOI game runtime error for /restart_town table test: %v", err)
+			}
+			currentTime := time.Unix(1700000476, 0)
+			runtime.now = func() time.Time { return currentTime }
+			bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+				Ref:           "practice.mob_alpha",
+				Name:          "PracticeMobAlpha",
+				MapIndex:      bootstrapMapIndex,
+				X:             1200,
+				Y:             2200,
+				RaceNum:       101,
+				CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+			}}}
+			if _, err := runtime.ImportContentBundle(bundle); err != nil {
+				t.Fatalf("import content spawn-group bundle for /restart_town table test: %v", err)
+			}
+			actors := runtime.StaticActors()
+			if len(actors) != 1 {
+				t.Fatalf("expected 1 runtime practice-mob actor after import for /restart_town table test, got %#v", actors)
+			}
+			targetVID := uint32(actors[0].EntityID)
+
+			ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+			if len(ownerEnter) != 8 {
+				t.Fatalf("expected 8 bootstrap frames for owner in /restart_town table test, got %d", len(ownerEnter))
+			}
+			defer closeSessionFlow(t, ownerFlow)
+			sourceWatcherFlow, sourceWatcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+			if len(sourceWatcherEnter) != 11 {
+				t.Fatalf("expected 11 bootstrap frames for source watcher in /restart_town table test, got %d", len(sourceWatcherEnter))
+			}
+			defer closeSessionFlow(t, sourceWatcherFlow)
+			if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+				t.Fatalf("expected 3 queued peer-visibility frames for owner after source watcher joins in /restart_town table test, got %d", len(queued))
+			}
+
+			advance := func(duration time.Duration) {
+				currentTime = currentTime.Add(duration)
+			}
+			drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, sourceWatcherFlow, targetVID, owner.VID, advance)
+
+			restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
+			if err != nil {
+				t.Fatalf("unexpected /restart_town error in table test: %v", err)
+			}
+			if len(restartOut) != 6 {
+				t.Fatalf("expected 6 self frames from /restart_town table test (self bootstrap plus source visibility deletes), got %d", len(restartOut))
+			}
+			selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+			if err != nil {
+				t.Fatalf("decode self character add after /restart_town table test: %v", err)
+			}
+			if selfAdd.VID != owner.VID || selfAdd.X != tc.wantX || selfAdd.Y != tc.wantY {
+				t.Fatalf("expected /restart_town self bootstrap at owned empire town position map=%d x=%d y=%d, got %+v", tc.wantMapIndex, tc.wantX, tc.wantY, selfAdd)
+			}
+			originPeerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, restartOut[4]))
+			if err != nil {
+				t.Fatalf("decode origin peer delete after /restart_town table test: %v", err)
+			}
+			if originPeerDelete.VID != sourceWatcher.VID {
+				t.Fatalf("expected /restart_town table test origin visibility delta to delete source watcher vid %d, got %+v", sourceWatcher.VID, originPeerDelete)
+			}
+			sourcePracticeMobDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, restartOut[5]))
+			if err != nil {
+				t.Fatalf("decode source practice-mob delete after /restart_town table test: %v", err)
+			}
+			if sourcePracticeMobDelete.VID != targetVID {
+				t.Fatalf("expected /restart_town table test to append source practice-mob delete for vid %d, got %+v", targetVID, sourcePracticeMobDelete)
+			}
+
+			sourceQueued := flushServerFrames(t, sourceWatcherFlow)
+			if len(sourceQueued) != 1 {
+				t.Fatalf("expected source watcher to receive 1 queued owner delete after /restart_town table test, got %d", len(sourceQueued))
+			}
+			deletedOwner, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, sourceQueued[0]))
+			if err != nil {
+				t.Fatalf("decode source watcher owner delete after /restart_town table test: %v", err)
+			}
+			if deletedOwner.VID != owner.VID {
+				t.Fatalf("expected source watcher delete for owner vid %d after /restart_town table test, got %+v", owner.VID, deletedOwner)
+			}
+
+			persisted, err := accounts.Load("peer-one")
+			if err != nil {
+				t.Fatalf("load persisted owner account after /restart_town table test: %v", err)
+			}
+			if len(persisted.Characters) != 1 {
+				t.Fatalf("expected exactly 1 persisted owner after /restart_town table test, got %+v", persisted)
+			}
+			if persisted.Characters[0].MapIndex != tc.wantMapIndex || persisted.Characters[0].X != tc.wantX || persisted.Characters[0].Y != tc.wantY {
+				t.Fatalf("expected /restart_town to persist owned empire town position map=%d x=%d y=%d, got %+v", tc.wantMapIndex, tc.wantX, tc.wantY, persisted.Characters[0])
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartTownFailsClosedWhileAlive(t *testing.T) {
 	_, ownerFlow, watcherFlow, _, _, _ := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
 	defer closeSessionFlow(t, ownerFlow)

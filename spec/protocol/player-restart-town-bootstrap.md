@@ -56,6 +56,10 @@ For this first slice, `/restart_town` reuses the already-owned legacy empire cre
 - empire `2` -> `map_index 21`, `x 52070`, `y 166600`
 - empire `3` -> `map_index 41`, `x 957300`, `y 255200`
 
+The current bootstrap fallback rule is also explicit now:
+- if the persisted selected character snapshot has `empire = 0`, `/restart_town` falls back to the current session-ticket empire
+- if that fallback empire is also `0` or otherwise outside the owned table, the current legacy create-position helper falls back to the empire-`1` coordinates above
+
 This keeps the slice honest:
 - the repo already owns those positions as deterministic create positions
 - the repo does **not** yet claim that these are final compatibility-grade death respawn points for every map or content case
