@@ -91,6 +91,7 @@ When accepted, currently visible live peers continue to learn about the moved/re
 - old visible peers receive `CHARACTER_DEL(owner_vid)`
 - newly visible destination peers receive `CHARACTER_ADD(owner_vid, ...)`, `CHAR_ADDITIONAL_INFO(owner_vid, ...)`, and `CHARACTER_UPDATE(owner_vid, ...)`
 - already-dead connected recipients remain out of audience as already frozen in `player-death-bootstrap.md`
+- later peers that enter visibility after the accepted town restart treat that owner as live again; they do **not** receive a replayed `DEAD(owner_vid)` from the earlier pre-restart death window
 
 No dedicated revive packet is invented yet.
 
