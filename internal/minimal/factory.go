@@ -1322,6 +1322,36 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 		}
+		executeActiveMerchantSell := func(selectedPlayer *player.Runtime, slot inventory.SlotIndex, count uint16, packetShopFrames bool) ([][]byte, bool) {
+			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
+				return nil, false
+			}
+			if ok, frames := activeMerchantBuyContextStillValid(packetShopFrames); !ok {
+				if len(frames) != 0 {
+					return frames, true
+				}
+				return nil, false
+			}
+			previousSelected := selectedPlayer.LiveCharacter()
+			sellResult, ok := selectedPlayer.SellMerchantItem(slot, count, 1)
+			if !ok {
+				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
+				if !ok {
+					return nil, false
+				}
+				return frames, true
+			}
+			frames, err := merchantSellResultFrames(sellResult)
+			if err != nil {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			if !ownsLiveSharedWorldSession() {
+				return frames, true
+			}
+			return commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+		}
 		executeSelectedItemUse := func(position itemproto.Position) gameflow.ItemUseResult {
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
@@ -2082,6 +2112,34 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					return gameflow.ShopResult{Accepted: true, Frames: frames}
 				},
+				HandleShopSell: func(packet shopproto.ClientSellPacket) gameflow.ShopResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					frames, ok := executeActiveMerchantSell(selectedPlayer, inventory.SlotIndex(packet.Slot), 0, true)
+					if !ok {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					return gameflow.ShopResult{Accepted: true, Frames: frames}
+				},
+				HandleShopSell2: func(packet shopproto.ClientSell2Packet) gameflow.ShopResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					frames, ok := executeActiveMerchantSell(selectedPlayer, inventory.SlotIndex(packet.Slot), uint16(packet.Count), true)
+					if !ok {
+						return gameflow.ShopResult{Accepted: false}
+					}
+					return gameflow.ShopResult{Accepted: true, Frames: frames}
+				},
 				HandleShopClose: func() gameflow.ShopResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()
@@ -2791,6 +2849,25 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 	frames := make([][]byte, 0, len(result.Items)+1)
 	for _, item := range result.Items {
 		setFrame, err := encodeBootstrapInventoryItemFrame(item)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, setFrame)
+	}
+	frames = append(frames, shopproto.EncodeServerOK())
+	return frames, nil
+}
+
+func merchantSellResultFrames(result player.MerchantSellResult) ([][]byte, error) {
+	position, err := itemproto.CarriedInventoryPosition(uint16(result.Slot))
+	if err != nil {
+		return nil, err
+	}
+	frames := make([][]byte, 0, 2)
+	if result.ItemRemoved {
+		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
+	} else {
+		setFrame, err := encodeBootstrapItemFrame(position, result.Item)
 		if err != nil {
 			return nil, err
 		}

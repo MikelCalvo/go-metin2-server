@@ -12725,6 +12725,101 @@ func TestGameSessionFlowPracticeMobRetaliationFloorClosesOpenMerchantWindow(t *t
 	}
 }
 
+func TestGameSessionFlowShopSellPacketRemovesWholeStackAndCreditsCurrency(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacket", 0x01040120, 0x02050120, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-packet", 0x20202020, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 5})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop sell error: %v", err)
+	}
+	if len(sellOut) != 2 {
+		t.Fatalf("expected packet shop sell whole-stack success to emit 2 frames, got %d", len(sellOut))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, sellOut[0]))
+	if err != nil {
+		t.Fatalf("decode packet shop-sell del frame: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected packet shop-sell delete frame: %+v", del)
+	}
+	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, sellOut[1])); err != nil {
+		t.Fatalf("decode packet shop-sell ok frame: %v", err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for packet shop sell, got %d", len(queued))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after packet shop sell")
+	}
+	if currencySnapshot.Gold != 128 {
+		t.Fatalf("expected packet shop sell to credit gold to 128, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after packet shop sell")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected packet shop sell to remove sold stack, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted packet merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 128 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("unexpected persisted packet merchant seller state: %+v", account.Characters[0])
+	}
+}
+
+func TestGameSessionFlowShopSell2PacketDecrementsPartialStackAndCreditsCurrency(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacketPartial", 0x01040121, 0x02050121, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell2-packet", 0x21212121, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 2 {
+		t.Fatalf("expected packet shop sell2 partial success to emit 2 frames, got %d", len(sellOut))
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, sellOut[0]))
+	if err != nil {
+		t.Fatalf("decode packet shop-sell2 set frame: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(5) || set.Vnum != 27001 || set.Count != 1 {
+		t.Fatalf("unexpected packet shop-sell2 item refresh: %+v", set)
+	}
+	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, sellOut[1])); err != nil {
+		t.Fatalf("decode packet shop-sell2 ok frame: %v", err)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after packet shop sell2")
+	}
+	if currencySnapshot.Gold != 127 {
+		t.Fatalf("expected packet shop sell2 to credit gold to 127, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after packet shop sell2")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != 77 || inventorySnapshot.Inventory[0].Slot != 5 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 {
+		t.Fatalf("unexpected runtime packet merchant seller inventory: %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted packet merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 127 || !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 1, Slot: 5}}) {
+		t.Fatalf("unexpected persisted packet merchant seller inventory: %+v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacket", 0x01040105, 0x02050105, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet", 0x55555555, buyer)

@@ -604,7 +604,21 @@ Expected result:
 - compatible existing stacks fill first in slot order, then the remainder lands in the lowest free carried slot
 - no harness-only placement drift appears in persisted or live runtime state
 
-### 6.19 Training-dummy combat target selection (packet-harness optional)
+### 6.19 Packet merchant sell-back smoke (packet-harness optional)
+
+- [ ] Open a structured merchant `shop_preview` window while the QA character has at least one carried inventory stack
+- [ ] Send one real client `SHOP SELL` request for a carried slot containing a stack
+- [ ] Confirm whole-stack sell removes the carried slot and answers with `ITEM_DEL` followed by `GC::SHOP OK`
+- [ ] Repeat with `SHOP SELL2` and a count lower than the stack size
+- [ ] Confirm partial sell refreshes the carried slot with the remaining count and answers with `GC::SHOP OK`
+- [ ] Confirm loopback inventory/currency snapshots or reconnect state show the credited bootstrap gold and updated carried inventory
+
+Expected result:
+- packet `SELL` / `SELL2` mutate the selected character's carried inventory and gold while the merchant context is active
+- the current bootstrap sell price is intentionally only `1` gold per sold item; compatibility-grade sell-price rules remain a later slice
+- no peer-facing packet fanout is emitted from sell-back alone
+
+### 6.20 Training-dummy combat target selection (packet-harness optional)
 
 - [ ] Seed or confirm one visible authored/runtime-marked `training_dummy` actor exists near the QA character
 - [ ] Using the first live client path or a packet harness that can emit `TARGET`, send one target-selection request while the character stands within the current bootstrap `300`-unit band

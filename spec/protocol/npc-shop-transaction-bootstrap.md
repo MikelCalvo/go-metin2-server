@@ -244,31 +244,35 @@ The following are still intentionally unknown and must be captured or pinned by 
 These unknowns are the implementation gate.
 The repository should not pretend they are solved before tests or captures prove them.
 
-## Explicit fail-closed sell ingress seam
+## Bootstrap sell-back packet/runtime seam
 
-The client-originated sell packet layouts are now owned only as ingress and dispatch seams:
-- `SELL(slot)` is decoded in `GAME` and routed to a dedicated shop-sell handler when one is configured.
-- `SELL2(slot,count)` is decoded in `GAME` and routed to a dedicated shop-sell2 handler when one is configured.
-- The default handlers reject both requests silently with no response and no phase change.
-- The current shipped runtime does not configure sell handlers, so live sell-back still fails closed.
+The client-originated sell packet layouts are now owned as packet ingress plus the first live merchant-window runtime path:
+- `SELL(slot)` is decoded in `GAME` and routed to the shop-sell handler when one is configured.
+- `SELL2(slot,count)` is decoded in `GAME` and routed to the shop-sell2 handler when one is configured.
+- The generic game-flow default handlers still reject both requests silently with no response and no phase change.
+- The shipped bootstrap `gamed` runtime now configures both handlers while a structured merchant `shop_preview` window is active.
 
-This seam exists so a later sell-back slice can attach runtime semantics without reworking the packet dispatcher.
-It does not define sale pricing or merchant-window response choreography yet.
-
-The first sell-back implementation step is deliberately state-level only, behind `internal/player` tests rather than live game-socket routing:
+The first live sell-back contract remains intentionally narrow:
 - sell requests target carried inventory slots only
-- a requested count of `0`, or a count larger than the current stack, means the full current stack
-- accepted sells remove the whole stack or decrement the stack count and credit `unit_price * sold_count` to the live runtime gold total
+- `SELL(slot)` uses count `0`, meaning the full current stack
+- `SELL2(slot,count)` sells the requested count, with count `0` or a count larger than the current stack meaning the full current stack
+- accepted sells remove the whole stack or decrement the stack count and credit `unit_price * sold_count` to the selected character's live gold total
+- the updated selected-character snapshot is persisted before the live shared-world registration is refreshed
+- whole-stack success emits self-only `ITEM_DEL(slot)` followed by bare self-only `GC::SHOP OK`
+- partial-stack success emits self-only `ITEM_SET(slot, remaining_count)` followed by bare self-only `GC::SHOP OK`
 - invalid slots, equipped items, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
-- sell mutations remain live-runtime-only until the later packet/runtime slice wires persistence and visible response frames
+- an invalid packet/runtime sell while an active merchant window exists returns bare self-only `GC::SHOP INVALID_POS`
+- stale active merchant context still returns `GC::SHOP END`, clears the active context, and leaves inventory/currency unchanged
 
-The current bootstrap unit price is an explicit caller-supplied test seam. The legacy oracle computes sell value from item shop-buy price, stack count, flags such as count-per-gold, and tax before `POINT_GOLD`; this repo has not yet loaded that pricing data into `itemstore.Template`, so no 1:1 sell-price claim is made here.
+The current bootstrap unit price is fixed at `1` gold per sold item in the packet/runtime path. This is not a 1:1 pricing claim. The legacy oracle computes sell value from item shop-buy price, stack count, flags such as count-per-gold, and tax before `POINT_GOLD`; this repo has not yet loaded that pricing data into `itemstore.Template`, so compatibility-grade sell-price rules remain a later slice.
+
+This slice owns the state mutation and smallest visible merchant-window companion only. It still does not freeze richer sell-result packets, merchant stock updates, tax formulas, or final client UI refresh choreography.
 
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- live `SELL` / `SELL2` game-socket success behavior
 - compatibility-grade sell-price rules or vendor trash flow
+- final client-visible sell-result choreography beyond `ITEM_DEL`/`ITEM_SET` + `GC::SHOP OK`
 - personal-shop (`MYSHOP`) behavior
 - merchant stock depletion
 - merchant refresh timers
