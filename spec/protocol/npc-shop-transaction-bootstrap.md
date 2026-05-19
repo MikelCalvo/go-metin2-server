@@ -253,13 +253,22 @@ The client-originated sell packet layouts are now owned only as ingress and disp
 - The current shipped runtime does not configure sell handlers, so live sell-back still fails closed.
 
 This seam exists so a later sell-back slice can attach runtime semantics without reworking the packet dispatcher.
-It does not define sale pricing, item removal, gold crediting, or merchant-window response choreography yet.
+It does not define sale pricing or merchant-window response choreography yet.
+
+The first sell-back implementation step is deliberately state-level only, behind `internal/player` tests rather than live game-socket routing:
+- sell requests target carried inventory slots only
+- a requested count of `0`, or a count larger than the current stack, means the full current stack
+- accepted sells remove the whole stack or decrement the stack count and credit `unit_price * sold_count` to the live runtime gold total
+- invalid slots, equipped items, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
+- sell mutations remain live-runtime-only until the later packet/runtime slice wires persistence and visible response frames
+
+The current bootstrap unit price is an explicit caller-supplied test seam. The legacy oracle computes sell value from item shop-buy price, stack count, flags such as count-per-gold, and tax before `POINT_GOLD`; this repo has not yet loaded that pricing data into `itemstore.Template`, so no 1:1 sell-price claim is made here.
 
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- live `SELL` / `SELL2` runtime success behavior
-- sell-price rules or vendor trash flow
+- live `SELL` / `SELL2` game-socket success behavior
+- compatibility-grade sell-price rules or vendor trash flow
 - personal-shop (`MYSHOP`) behavior
 - merchant stock depletion
 - merchant refresh timers

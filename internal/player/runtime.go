@@ -45,6 +45,13 @@ type MerchantBuyResult struct {
 	Gold  uint64
 }
 
+type MerchantSellResult struct {
+	Slot        inventory.SlotIndex
+	ItemRemoved bool
+	Item        inventory.ItemInstance
+	Gold        uint64
+}
+
 type MerchantBuyFailure string
 
 const (
@@ -359,6 +366,48 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 	r.liveGold -= price
 	r.liveInventory = inventoryItems
 	return MerchantBuyResult{Items: changedItems, Gold: r.liveGold}, true
+}
+
+func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitPrice uint64) (MerchantSellResult, bool) {
+	if r == nil || unitPrice == 0 {
+		return MerchantSellResult{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return MerchantSellResult{}, false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Count == 0 {
+		return MerchantSellResult{}, false
+	}
+	soldCount := count
+	if soldCount == 0 || soldCount > item.Count {
+		soldCount = item.Count
+	}
+	if soldCount == 0 || unitPrice > (^uint64(0))/uint64(soldCount) {
+		return MerchantSellResult{}, false
+	}
+	credit := unitPrice * uint64(soldCount)
+	if r.liveGold > (^uint64(0))-credit {
+		return MerchantSellResult{}, false
+	}
+	result := MerchantSellResult{Slot: slot, Gold: r.liveGold + credit}
+	inventoryItems := cloneItemInstances(r.liveInventory)
+	if soldCount == item.Count {
+		inventoryItems = removeInventoryIndex(inventoryItems, index)
+		result.ItemRemoved = true
+	} else {
+		item.Count -= soldCount
+		if err := item.Validate(); err != nil {
+			return MerchantSellResult{}, false
+		}
+		inventoryItems[index] = item
+		result.Item = item
+	}
+	sortInventoryItems(inventoryItems)
+	r.liveGold = result.Gold
+	r.liveInventory = inventoryItems
+	return result, true
 }
 
 func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {

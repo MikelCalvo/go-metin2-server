@@ -429,6 +429,64 @@ func TestRuntimeValidateMerchantBuyRejectsDistributedRemainderWithoutFreshSlot(t
 	}
 }
 
+func TestRuntimeSellMerchantItemRemovesWholeStackAndCreditsGold(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.SellMerchantItem(5, 0, 10)
+	if !ok {
+		t.Fatal("expected whole-stack merchant sell to succeed")
+	}
+	if !result.ItemRemoved || result.Slot != 5 || result.Gold != 125030 {
+		t.Fatalf("unexpected whole-stack sell result: %+v", result)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after whole-stack sell: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) || runtime.PersistedSnapshot().Gold != persisted.Gold {
+		t.Fatalf("expected persisted state to stay unchanged after merchant sell, got %+v", runtime.PersistedSnapshot())
+	}
+}
+
+func TestRuntimeSellMerchantItemDecrementsPartialStackAndCreditsGold(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.SellMerchantItem(5, 2, 10)
+	if !ok {
+		t.Fatal("expected partial-stack merchant sell to succeed")
+	}
+	if result.ItemRemoved || result.Slot != 5 || result.Item.ID != 11 || result.Item.Count != 1 || result.Gold != 125020 {
+		t.Fatalf("unexpected partial-stack sell result: %+v", result)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after partial-stack sell: %#v", runtime.LiveInventory())
+	}
+}
+
+func TestRuntimeSellMerchantItemRejectsInvalidInputWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.SellMerchantItem(42, 1, 10); ok {
+		t.Fatal("expected absent-slot merchant sell to fail")
+	}
+	if _, ok := runtime.SellMerchantItem(5, 1, 0); ok {
+		t.Fatal("expected zero unit-price merchant sell to fail")
+	}
+	if got := runtime.LiveGold(); got != persisted.Gold {
+		t.Fatalf("expected live gold to stay unchanged after invalid sell attempts, got %d", got)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected live inventory to stay unchanged after invalid sell attempts, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	}
+}
+
 func TestNilRuntimeInventoryEquipmentAndCurrencyHelpersAreSafe(t *testing.T) {
 	var runtime *Runtime
 
