@@ -14799,6 +14799,120 @@ func TestGameSessionFlowPracticeMobQueuesDelayedServerOriginRetaliationBeatAfter
 	}
 }
 
+func TestGameSessionFlowPracticeMobDeniedAttackInsideCadenceWindowDoesNotRetaliateOrResetDelayedBeat(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 5
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000452, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before cadence-window denial test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before cadence-window denial test, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before cadence-window denial test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected first attack target-refresh plus self-only point-loss retaliation, got %d frames", len(attackOut))
+	}
+	firstTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode first attack target refresh before cadence-window denial test: %v", err)
+	}
+	if firstTarget.TargetVID != targetVID || firstTarget.HPPercent != 90 {
+		t.Fatalf("unexpected first attack target refresh before cadence-window denial test: %+v", firstTarget)
+	}
+
+	deniedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected denied in-window attack error: %v", err)
+	}
+	if len(deniedOut) != 0 {
+		t.Fatalf("expected in-window attack to fail closed with no frames, got %d", len(deniedOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected the original delayed retaliation beat only once after in-window denial, got %d queued frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode delayed retaliation after in-window denial: %v", err)
+	}
+	if delayedPointChange.VID != owner.VID || delayedPointChange.Type != bootstrapPlayerPointType || delayedPointChange.Amount != -1 || delayedPointChange.Value != 3 {
+		t.Fatalf("unexpected delayed retaliation after in-window denial: %+v", delayedPointChange)
+	}
+
+	lateAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-window attack error: %v", err)
+	}
+	if len(lateAttackOut) != 2 {
+		t.Fatalf("expected post-window attack to be accepted with target refresh plus retaliation, got %d frames", len(lateAttackOut))
+	}
+	lateTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, lateAttackOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-window attack target refresh: %v", err)
+	}
+	if lateTarget.TargetVID != targetVID || lateTarget.HPPercent != 80 {
+		t.Fatalf("unexpected post-window attack target refresh: %+v", lateTarget)
+	}
+	latePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, lateAttackOut[1]))
+	if err != nil {
+		t.Fatalf("decode post-window immediate retaliation: %v", err)
+	}
+	if latePointChange.VID != owner.VID || latePointChange.Type != bootstrapPlayerPointType || latePointChange.Amount != -1 || latePointChange.Value != 2 {
+		t.Fatalf("unexpected post-window immediate retaliation: %+v", latePointChange)
+	}
+}
+
 func TestGameSessionFlowPracticeMobSustainsDelayedServerOriginRetaliationCadenceWithoutFurtherAttacks(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
