@@ -14994,6 +14994,127 @@ func TestGameSessionFlowPracticeMobSustainsDelayedServerOriginRetaliationCadence
 	}
 }
 
+func TestGameSessionFlowPracticeMobAcceptedHitWhileDelayedRetaliationPendingDoesNotStackOrResetBeat(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 5
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000453, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before pending-retaliation stacking test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before pending-retaliation stacking test, got %d", len(selectOut))
+	}
+
+	firstAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before pending-retaliation stacking test: %v", err)
+	}
+	if len(firstAttackOut) != 2 {
+		t.Fatalf("expected first attack target-refresh plus self-only retaliation, got %d frames", len(firstAttackOut))
+	}
+	firstPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, firstAttackOut[1]))
+	if err != nil {
+		t.Fatalf("decode first immediate retaliation before pending-retaliation stacking test: %v", err)
+	}
+	if firstPointChange.Value != 4 {
+		t.Fatalf("expected first immediate retaliation to set owner HP to 4, got %+v", firstPointChange)
+	}
+
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	secondAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected second accepted attack error before pending-retaliation stacking test: %v", err)
+	}
+	if len(secondAttackOut) != 2 {
+		t.Fatalf("expected second accepted attack to keep ordinary target-refresh plus immediate retaliation while delayed beat is pending, got %d frames", len(secondAttackOut))
+	}
+	secondTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, secondAttackOut[0]))
+	if err != nil {
+		t.Fatalf("decode second accepted attack target refresh before pending-retaliation stacking test: %v", err)
+	}
+	if secondTarget.TargetVID != targetVID || secondTarget.HPPercent != 80 {
+		t.Fatalf("expected second accepted attack to step mob HP to 80, got %+v", secondTarget)
+	}
+	secondPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, secondAttackOut[1]))
+	if err != nil {
+		t.Fatalf("decode second immediate retaliation before pending-retaliation stacking test: %v", err)
+	}
+	if secondPointChange.Value != 3 {
+		t.Fatalf("expected second immediate retaliation to set owner HP to 3, got %+v", secondPointChange)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay - bootstrapNormalAttackCadenceWindow)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected original delayed retaliation beat to fire once at the original deadline instead of stacking or resetting, got %d frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode original delayed retaliation beat after pending-retaliation stacking test: %v", err)
+	}
+	if delayedPointChange.VID != owner.VID || delayedPointChange.Type != bootstrapPlayerPointType || delayedPointChange.Amount != -1 || delayedPointChange.Value != 2 {
+		t.Fatalf("unexpected original delayed retaliation beat after pending-retaliation stacking test: %+v", delayedPointChange)
+	}
+
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no stacked delayed retaliation beat immediately after original deadline, got %d queued frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	nextQueued := flushServerFrames(t, flow)
+	if len(nextQueued) != 1 {
+		t.Fatalf("expected sustained delayed cadence to re-arm exactly one later beat after the original beat fires, got %d frames", len(nextQueued))
+	}
+	nextDelayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, nextQueued[0]))
+	if err != nil {
+		t.Fatalf("decode sustained delayed retaliation beat after pending-retaliation stacking test: %v", err)
+	}
+	if nextDelayedPointChange.VID != owner.VID || nextDelayedPointChange.Type != bootstrapPlayerPointType || nextDelayedPointChange.Amount != -1 || nextDelayedPointChange.Value != 1 {
+		t.Fatalf("unexpected sustained delayed retaliation beat after pending-retaliation stacking test: %+v", nextDelayedPointChange)
+	}
+}
+
 func TestGameSessionFlowPracticeMobRetaliationStopsAtOwnerHPFloorAfterImmediateBeat(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
