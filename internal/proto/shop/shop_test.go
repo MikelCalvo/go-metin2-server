@@ -62,6 +62,42 @@ func TestDecodeClientEndAcceptsTheExpectedSubheader(t *testing.T) {
 	}
 }
 
+func TestEncodeClientSellBuildsAFrame(t *testing.T) {
+	want := loadHexFixture(t, "client-sell-frame.hex")
+	got := EncodeClientSell(sampleClientSellPacket())
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected client shop sell frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientSellReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientSell(decodeSingleFrame(t, loadHexFixture(t, "client-sell-frame.hex")))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != sampleClientSellPacket() {
+		t.Fatalf("unexpected client shop sell packet: %+v", packet)
+	}
+}
+
+func TestEncodeClientSell2BuildsAFrame(t *testing.T) {
+	want := loadHexFixture(t, "client-sell2-frame.hex")
+	got := EncodeClientSell2(sampleClientSell2Packet())
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected client shop sell2 frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientSell2ReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientSell2(decodeSingleFrame(t, loadHexFixture(t, "client-sell2-frame.hex")))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != sampleClientSell2Packet() {
+		t.Fatalf("unexpected client shop sell2 packet: %+v", packet)
+	}
+}
+
 func TestEncodeServerStartBuildsAFrameFromTheSelectedBootstrapShape(t *testing.T) {
 	want := loadHexFixture(t, "server-start-frame.hex")
 	got := EncodeServerStart(sampleServerStartPacket())
@@ -171,6 +207,48 @@ func TestDecodeClientBuyRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestDecodeClientSellRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientSell(frame.Frame{Header: HeaderClientShop + 1, Length: 6, Payload: []byte{ClientSubheaderSell, 0}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientSellRejectsUnexpectedSubheader(t *testing.T) {
+	_, err := DecodeClientSell(frame.Frame{Header: HeaderClientShop, Length: 6, Payload: []byte{ClientSubheaderSell2, 0}})
+	if !errors.Is(err, ErrUnexpectedSubheader) {
+		t.Fatalf("expected ErrUnexpectedSubheader, got %v", err)
+	}
+}
+
+func TestDecodeClientSellRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeClientSell(frame.Frame{Header: HeaderClientShop, Length: 5, Payload: []byte{ClientSubheaderSell}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeClientSell2RejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientSell2(frame.Frame{Header: HeaderClientShop + 1, Length: 7, Payload: []byte{ClientSubheaderSell2, 0, 1}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientSell2RejectsUnexpectedSubheader(t *testing.T) {
+	_, err := DecodeClientSell2(frame.Frame{Header: HeaderClientShop, Length: 7, Payload: []byte{ClientSubheaderSell, 0, 1}})
+	if !errors.Is(err, ErrUnexpectedSubheader) {
+		t.Fatalf("expected ErrUnexpectedSubheader, got %v", err)
+	}
+}
+
+func TestDecodeClientSell2RejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeClientSell2(frame.Frame{Header: HeaderClientShop, Length: 6, Payload: []byte{ClientSubheaderSell2, 0}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestDecodeServerStartRejectsUnexpectedHeader(t *testing.T) {
 	_, err := DecodeServerStart(frame.Frame{Header: HeaderServerShop + 1, Length: 1729, Payload: make([]byte, serverStartPayloadSize)})
 	if !errors.Is(err, ErrUnexpectedHeader) {
@@ -198,6 +276,14 @@ func TestDecodeServerStartRejectsInvalidPayload(t *testing.T) {
 
 func sampleClientBuyPacket() ClientBuyPacket {
 	return ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 1}
+}
+
+func sampleClientSellPacket() ClientSellPacket {
+	return ClientSellPacket{Slot: 0}
+}
+
+func sampleClientSell2Packet() ClientSell2Packet {
+	return ClientSell2Packet{Slot: 5, Count: 3}
 }
 
 func sampleServerStartPacket() ServerStartPacket {

@@ -12,8 +12,10 @@ const (
 	HeaderClientShop uint16 = 0x0801
 	HeaderServerShop uint16 = 0x0810
 
-	ClientSubheaderEnd uint8 = 0
-	ClientSubheaderBuy uint8 = 1
+	ClientSubheaderEnd   uint8 = 0
+	ClientSubheaderBuy   uint8 = 1
+	ClientSubheaderSell  uint8 = 2
+	ClientSubheaderSell2 uint8 = 3
 
 	ServerSubheaderStart          uint8 = 0
 	ServerSubheaderEnd            uint8 = 1
@@ -28,6 +30,8 @@ const (
 	itemEntrySize          = 4 + 4 + 1 + 1 + (itemproto.ItemSocketCount * 4) + (itemproto.ItemAttributeCount * attributeSize)
 	clientBuyPayloadSize   = 3
 	clientEndPayloadSize   = 1
+	clientSellPayloadSize  = 2
+	clientSell2PayloadSize = 3
 	serverStartPayloadSize = 1 + 4 + (ShopHostItemMax * itemEntrySize)
 	serverEndPayloadSize   = 1
 	serverStartOwnerOffset = 1
@@ -45,6 +49,15 @@ var (
 type ClientBuyPacket struct {
 	RawLeadingByte uint8
 	CatalogSlot    uint8
+}
+
+type ClientSellPacket struct {
+	Slot uint8
+}
+
+type ClientSell2Packet struct {
+	Slot  uint8
+	Count uint8
 }
 
 type ItemEntry struct {
@@ -93,6 +106,40 @@ func DecodeClientEnd(f frame.Frame) error {
 		return ErrUnexpectedSubheader
 	}
 	return nil
+}
+
+func EncodeClientSell(packet ClientSellPacket) []byte {
+	return frame.Encode(HeaderClientShop, []byte{ClientSubheaderSell, packet.Slot})
+}
+
+func DecodeClientSell(f frame.Frame) (ClientSellPacket, error) {
+	if f.Header != HeaderClientShop {
+		return ClientSellPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientSellPayloadSize {
+		return ClientSellPacket{}, ErrInvalidPayload
+	}
+	if f.Payload[0] != ClientSubheaderSell {
+		return ClientSellPacket{}, ErrUnexpectedSubheader
+	}
+	return ClientSellPacket{Slot: f.Payload[1]}, nil
+}
+
+func EncodeClientSell2(packet ClientSell2Packet) []byte {
+	return frame.Encode(HeaderClientShop, []byte{ClientSubheaderSell2, packet.Slot, packet.Count})
+}
+
+func DecodeClientSell2(f frame.Frame) (ClientSell2Packet, error) {
+	if f.Header != HeaderClientShop {
+		return ClientSell2Packet{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientSell2PayloadSize {
+		return ClientSell2Packet{}, ErrInvalidPayload
+	}
+	if f.Payload[0] != ClientSubheaderSell2 {
+		return ClientSell2Packet{}, ErrUnexpectedSubheader
+	}
+	return ClientSell2Packet{Slot: f.Payload[1], Count: f.Payload[2]}, nil
 }
 
 func EncodeServerStart(packet ServerStartPacket) []byte {

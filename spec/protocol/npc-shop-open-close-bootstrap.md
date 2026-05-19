@@ -25,8 +25,7 @@ This contract currently applies only to:
 - explicit merchant-window close through `SHOP END`
 
 This contract does **not** yet apply to:
-- sell-back
-- `SELL2`
+- runtime sell-back via `SELL` / `SELL2`
 - personal shops / `MYSHOP`
 - basket or multi-buy quantity UI
 - safebox / mall / storage surfaces
@@ -117,6 +116,32 @@ The current clean-room contract now distinguishes two facts clearly:
 - the first buy-specific byte is preserved as an opaque raw byte in the owned codec surface for now
 
 That means the repository now owns the exact byte layout of the first `BUY` frame without overstating the final gameplay meaning of that leading buy-specific byte.
+
+### Client `SHOP SELL` / `SELL2` ingress codecs
+
+The repository now freezes the client-originated sell-back ingress bytes as codecs only.
+This is intentionally **not** a runtime sell-back implementation yet.
+
+The legacy/client oracle exposes:
+- `SELL` as one byte after the common `SHOP` packet body: `slot:uint8`
+- `SELL2` as two bytes after the common `SHOP` packet body: `slot:uint8`, then `count:uint8`
+
+The project-owned codec surface is:
+- `EncodeClientSell` / `DecodeClientSell`
+- `EncodeClientSell2` / `DecodeClientSell2`
+
+Current exact shapes:
+- client `SHOP SELL`
+  - header: `0x0801`
+  - total length: `6`
+  - payload bytes: `subheader = SELL`, `slot:uint8`
+- client `SHOP SELL2`
+  - header: `0x0801`
+  - total length: `7`
+  - payload bytes: `subheader = SELL2`, `slot:uint8`, `count:uint8`
+
+Runtime semantics remain fail-closed for now because the bootstrap merchant runtime is still buy-only.
+A later slice must separately own inventory sell pricing, gold mutation, item deletion/count decrement, overflow handling, and visible success/failure companions before claiming live sell-back support.
 
 ### Server `GC::SHOP START`
 
@@ -334,8 +359,7 @@ These unknowns are the gate for the next merchant buy runtime slice.
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- `SELL`
-- `SELL2`
+- runtime sell-back behavior for the now-owned `SELL` / `SELL2` ingress codecs
 - `START_EX`
 - multi-tab merchant indexing
 - cash/coin shop semantics
