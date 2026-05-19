@@ -224,7 +224,8 @@ This keeps the next post-floor expansion small and honest:
 The current bootstrap player-death contract now also owns one narrow merchant teardown rule for that same selected live owner session:
 - if that session already opened a merchant preview before immediate or delayed practice-mob retaliation reached `0` HP, the same owned floor transition now appends one self-only `GC::SHOP END`
 - that close companion arrives only after the already-owned owner-side floor ordering completes first: `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`
-- the same floor transition clears the active merchant context immediately, so a later client `SHOP END` request on that same dead owner session now fails closed until broader revive / reopen semantics are owned separately
+- the same floor transition clears the active merchant context immediately, so a later client `SHOP BUY` or `SHOP END` request on that same dead owner session now fails closed until broader revive / reopen semantics are owned separately
+- the slice is covered on the delayed server-origin retaliation path with a content-loaded practice mob and an authored merchant, not only the immediate hit-piggyback path
 - the slice stays self-only: no peer-facing merchant packet companion is added, and no broader merchant reset choreography beyond that one close frame is claimed
 
 Why this is the current owned boundary:

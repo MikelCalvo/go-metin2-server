@@ -12576,6 +12576,155 @@ func TestGameSessionFlowLogoutClosesMerchantWindowContext(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowPracticeMobRetaliationFloorClosesOpenMerchantWindow(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerFloorClose", 0x01040123, 0x02050123, 125, nil)
+	buyer.Points[bootstrapPlayerPointValueIndex] = 2
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	login := "merchant-floor-close"
+	loginKey := uint32(0x23232323)
+	issuePeerTicket(t, ticketStore, login, loginKey, buyer)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed merchant floor-close buyer account: %v", err)
+	}
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionPath := t.TempDir() + "/interaction-definitions.json"
+	interactionStore := interactionstore.NewFileStore(interactionPath)
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()}}); err != nil {
+		t.Fatalf("seed merchant floor-close interaction store: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected merchant floor-close runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000480, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:            "Merchant",
+			MapIndex:        bootstrapMapIndex,
+			X:               1200,
+			Y:               2200,
+			RaceNum:         20300,
+			InteractionKind: interactionstore.KindShopPreview,
+			InteractionRef:  "npc:merchant",
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.mob_floor_close",
+			Name:          "PracticeMobFloorClose",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		}},
+		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+	}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content bundle for merchant floor-close test: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(enterOut) < 11 {
+		t.Fatalf("expected merchant floor-close bootstrap to emit at least 11 frames, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+	actors := runtime.StaticActors()
+	var targetVID uint32
+	for _, actor := range actors {
+		if actor.Name == "PracticeMobFloorClose" {
+			targetVID = uint32(actor.EntityID)
+			break
+		}
+	}
+	var merchantVID uint32
+	for _, actor := range actors {
+		if actor.Name == "Merchant" {
+			merchantVID = uint32(actor.EntityID)
+			break
+		}
+	}
+	if targetVID == 0 {
+		t.Fatalf("expected practice mob actor after import, got %+v", actors)
+	}
+	if merchantVID == 0 {
+		t.Fatalf("expected merchant actor after import, got %+v", actors)
+	}
+
+	interactWithMerchantForBuy(t, flow, uint64(merchantVID))
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before merchant floor-close test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before merchant floor-close test, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before merchant floor-close test: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected target refresh plus first point-loss retaliation before merchant floor-close test, got %d frames", len(attackOut))
+	}
+
+	currentTime = currentTime.Add(time.Second)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and merchant close frames, got %d", len(queued))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode merchant floor-close point-change: %v", err)
+	}
+	if pointChange.Value != 0 {
+		t.Fatalf("expected delayed retaliation floor to drop owner HP to 0, got %+v", pointChange)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode merchant floor-close self dead: %v", err)
+	}
+	if dead.VID != buyer.VID {
+		t.Fatalf("expected merchant floor-close DEAD for owner VID %d, got %+v", buyer.VID, dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
+	if err != nil {
+		t.Fatalf("decode merchant floor-close clear target: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected merchant floor-close clear target, got %+v", clear)
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, queued[3])); err != nil {
+		t.Fatalf("decode merchant floor-close shop end: %v", err)
+	}
+
+	packetBuyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop-buy error after merchant floor close: %v", err)
+	}
+	if len(packetBuyOut) != 0 {
+		t.Fatalf("expected merchant floor close to clear packet-buy context, got %d frames", len(packetBuyOut))
+	}
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected shop-end error after merchant floor close: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected merchant floor close to consume active shop context before later SHOP END, got %d frames", len(closeOut))
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted merchant floor-close account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected merchant floor close to keep merchant state unchanged, got %#v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacket", 0x01040105, 0x02050105, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet", 0x55555555, buyer)
