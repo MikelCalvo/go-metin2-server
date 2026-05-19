@@ -309,6 +309,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 				return nil, nil
 			}
 			return result.Frames, nil
+		case shopproto.ClientSubheaderSell:
+			if _, err := shopproto.DecodeClientSell(in); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		case shopproto.ClientSubheaderSell2:
+			if _, err := shopproto.DecodeClientSell2(in); err != nil {
+				return nil, err
+			}
+			return nil, nil
 		default:
 			return nil, shopproto.ErrUnexpectedSubheader
 		}

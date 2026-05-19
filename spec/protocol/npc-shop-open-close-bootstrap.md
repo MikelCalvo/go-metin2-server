@@ -141,6 +141,7 @@ Current exact shapes:
   - payload bytes: `subheader = SELL2`, `slot:uint8`, `count:uint8`
 
 Runtime semantics remain fail-closed for now because the bootstrap merchant runtime is still buy-only.
+The `GAME` flow decodes both sell request shapes and treats them as accepted-no-op inputs with no outgoing frames, so known client sell ingress does not become a fatal unknown subheader while sell-back economics are still unowned.
 A later slice must separately own inventory sell pricing, gold mutation, item deletion/count decrement, overflow handling, and visible success/failure companions before claiming live sell-back support.
 
 ### Server `GC::SHOP START`

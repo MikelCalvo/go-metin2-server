@@ -672,6 +672,36 @@ func TestHandleClientFrameShopBuyWithoutHandlerIsNoOp(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameShopSellIsDecodedAndFailsClosed(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 4})))
+	if err != nil {
+		t.Fatalf("unexpected shop sell error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing shop-sell frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameShopSell2IsDecodedAndFailsClosed(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 4, Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected shop sell2 error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing shop-sell2 frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameRejectsMalformedInteractionInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
