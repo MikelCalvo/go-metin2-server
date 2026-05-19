@@ -39,6 +39,10 @@ type HandleShopBuyFunc func(shopproto.ClientBuyPacket) ShopResult
 
 type HandleShopCloseFunc func() ShopResult
 
+type HandleShopSellFunc func(shopproto.ClientSellPacket) ShopResult
+
+type HandleShopSell2Func func(shopproto.ClientSell2Packet) ShopResult
+
 type Config struct {
 	HandleMove         HandleMoveFunc
 	HandleSyncPosition HandleSyncPositionFunc
@@ -50,6 +54,8 @@ type Config struct {
 	HandleItemUse      HandleItemUseFunc
 	HandleShopBuy      HandleShopBuyFunc
 	HandleShopClose    HandleShopCloseFunc
+	HandleShopSell     HandleShopSellFunc
+	HandleShopSell2    HandleShopSell2Func
 }
 
 type Result struct {
@@ -113,6 +119,8 @@ type Flow struct {
 	handleItemUse      HandleItemUseFunc
 	handleShopBuy      HandleShopBuyFunc
 	handleShopClose    HandleShopCloseFunc
+	handleShopSell     HandleShopSellFunc
+	handleShopSell2    HandleShopSell2Func
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -156,6 +164,14 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if shopCloseHandler == nil {
 		shopCloseHandler = func() ShopResult { return ShopResult{Accepted: false} }
 	}
+	shopSellHandler := cfg.HandleShopSell
+	if shopSellHandler == nil {
+		shopSellHandler = func(shopproto.ClientSellPacket) ShopResult { return ShopResult{Accepted: false} }
+	}
+	shopSell2Handler := cfg.HandleShopSell2
+	if shopSell2Handler == nil {
+		shopSell2Handler = func(shopproto.ClientSell2Packet) ShopResult { return ShopResult{Accepted: false} }
+	}
 	return &Flow{
 		machine:            machine,
 		handleMove:         handler,
@@ -168,6 +184,8 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleItemUse:      itemUseHandler,
 		handleShopBuy:      shopBuyHandler,
 		handleShopClose:    shopCloseHandler,
+		handleShopSell:     shopSellHandler,
+		handleShopSell2:    shopSell2Handler,
 	}
 }
 
@@ -310,15 +328,25 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			}
 			return result.Frames, nil
 		case shopproto.ClientSubheaderSell:
-			if _, err := shopproto.DecodeClientSell(in); err != nil {
+			packet, err := shopproto.DecodeClientSell(in)
+			if err != nil {
 				return nil, err
 			}
-			return nil, nil
+			result := f.handleShopSell(packet)
+			if !result.Accepted {
+				return nil, nil
+			}
+			return result.Frames, nil
 		case shopproto.ClientSubheaderSell2:
-			if _, err := shopproto.DecodeClientSell2(in); err != nil {
+			packet, err := shopproto.DecodeClientSell2(in)
+			if err != nil {
 				return nil, err
 			}
-			return nil, nil
+			result := f.handleShopSell2(packet)
+			if !result.Accepted {
+				return nil, nil
+			}
+			return result.Frames, nil
 		default:
 			return nil, shopproto.ErrUnexpectedSubheader
 		}

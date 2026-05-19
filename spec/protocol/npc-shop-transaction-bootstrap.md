@@ -6,7 +6,7 @@ The goal is intentionally narrow:
 - move from read-only structured `shop_preview` catalogs toward one real purchase path
 - record the buy request contract inside the now-frozen minimal merchant packet family without pretending the project already owns the full final merchant-window choreography
 - make the buy-only implementation gate explicit enough that the next RED tests can stay small and honest
-- keep sell-back, storage, and richer merchant UI semantics out of scope
+- keep sell-back, storage, and richer merchant UI semantics out of scope, while still decoding the client sell ingress through a dedicated fail-closed game-flow seam
 
 It sits on top of:
 - `npc-shop-open-close-bootstrap.md`
@@ -244,11 +244,21 @@ The following are still intentionally unknown and must be captured or pinned by 
 These unknowns are the implementation gate.
 The repository should not pretend they are solved before tests or captures prove them.
 
+## Explicit fail-closed sell ingress seam
+
+The client-originated sell packet layouts are now owned only as ingress and dispatch seams:
+- `SELL(slot)` is decoded in `GAME` and routed to a dedicated shop-sell handler when one is configured.
+- `SELL2(slot,count)` is decoded in `GAME` and routed to a dedicated shop-sell2 handler when one is configured.
+- The default handlers reject both requests silently with no response and no phase change.
+- The current shipped runtime does not configure sell handlers, so live sell-back still fails closed.
+
+This seam exists so a later sell-back slice can attach runtime semantics without reworking the packet dispatcher.
+It does not define sale pricing, item removal, gold crediting, or merchant-window response choreography yet.
+
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- `SELL`
-- `SELL2`
+- live `SELL` / `SELL2` runtime success behavior
 - sell-price rules or vendor trash flow
 - personal-shop (`MYSHOP`) behavior
 - merchant stock depletion

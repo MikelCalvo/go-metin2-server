@@ -672,30 +672,108 @@ func TestHandleClientFrameShopBuyWithoutHandlerIsNoOp(t *testing.T) {
 	}
 }
 
-func TestHandleClientFrameShopSellIsDecodedAndFailsClosed(t *testing.T) {
+func TestHandleClientFrameAcceptsShopSellInGameAndReturnsFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
-	flow := NewFlow(machine, Config{})
+	expected := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
+	invoked := false
+	flow := NewFlow(machine, Config{
+		HandleShopSell: func(packet shopproto.ClientSellPacket) ShopResult {
+			invoked = true
+			if packet.Slot != 4 {
+				t.Fatalf("unexpected shop sell packet: %+v", packet)
+			}
+			return ShopResult{Accepted: true, Frames: [][]byte{expected}}
+		},
+	})
+
 	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 4})))
 	if err != nil {
 		t.Fatalf("unexpected shop sell error: %v", err)
 	}
-	if len(out) != 0 {
-		t.Fatalf("expected no outgoing shop-sell frames, got %d", len(out))
+	if !invoked {
+		t.Fatal("expected shop sell handler to be invoked")
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing shop-sell frame, got %d", len(out))
+	}
+	if !bytes.Equal(out[0], expected) {
+		t.Fatalf("unexpected shop-sell frames: got %x want %x", out[0], expected)
+	}
+	ping, err := control.DecodePing(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode shop-sell ping frame: %v", err)
+	}
+	if ping.ServerTime != 0x01020304 {
+		t.Fatalf("unexpected shop-sell ping payload: %+v", ping)
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
 	}
 }
 
-func TestHandleClientFrameShopSell2IsDecodedAndFailsClosed(t *testing.T) {
+func TestHandleClientFrameShopSellWithoutHandlerIsNoOp(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 4})))
+	if err != nil {
+		t.Fatalf("unexpected shop sell error without handler: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected no outgoing shop-sell frames without handler, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsShopSell2InGameAndReturnsFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	expected := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
+	invoked := false
+	flow := NewFlow(machine, Config{
+		HandleShopSell2: func(packet shopproto.ClientSell2Packet) ShopResult {
+			invoked = true
+			if packet.Slot != 4 || packet.Count != 3 {
+				t.Fatalf("unexpected shop sell2 packet: %+v", packet)
+			}
+			return ShopResult{Accepted: true, Frames: [][]byte{expected}}
+		},
+	})
+
 	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 4, Count: 3})))
 	if err != nil {
 		t.Fatalf("unexpected shop sell2 error: %v", err)
 	}
+	if !invoked {
+		t.Fatal("expected shop sell2 handler to be invoked")
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing shop-sell2 frame, got %d", len(out))
+	}
+	if !bytes.Equal(out[0], expected) {
+		t.Fatalf("unexpected shop-sell2 frames: got %x want %x", out[0], expected)
+	}
+	ping, err := control.DecodePing(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode shop-sell2 ping frame: %v", err)
+	}
+	if ping.ServerTime != 0x01020304 {
+		t.Fatalf("unexpected shop-sell2 ping payload: %+v", ping)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameShopSell2WithoutHandlerIsNoOp(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 4, Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected shop sell2 error without handler: %v", err)
+	}
 	if len(out) != 0 {
-		t.Fatalf("expected no outgoing shop-sell2 frames, got %d", len(out))
+		t.Fatalf("expected no outgoing shop-sell2 frames without handler, got %d", len(out))
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
