@@ -9243,6 +9243,63 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleItemUseMutationNonAuthoritative(t 
 	closeSessionFlow(t, flowOwnerNew)
 }
 
+func TestGameSessionFlowMerchantSellRejectsEquippedCarriedSlot(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerEquipped", 0x01040124, 0x02050124, 125, nil)
+	buyer.Equipment = []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-equipped", 0x24242424, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	beforePersisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted account before equipped-slot sell: %v", err)
+	}
+	beforeCurrency, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot before equipped-slot sell")
+	}
+	beforeInventory, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot before equipped-slot sell")
+	}
+
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 5})))
+	if err != nil {
+		t.Fatalf("unexpected equipped-slot sell error: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected one invalid-pos frame for equipped carried-slot sell, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode equipped-slot sell invalid-pos frame: %v", err)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted account after equipped-slot sell: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly one persisted seller after equipped-slot sell, got %+v", persisted)
+	}
+	if persisted.Characters[0].Gold != beforePersisted.Characters[0].Gold || !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) || !reflect.DeepEqual(persisted.Characters[0].Equipment, beforePersisted.Characters[0].Equipment) {
+		t.Fatalf("expected equipped-slot sell to leave persisted state unchanged, before=%+v after=%+v", beforePersisted.Characters[0], persisted.Characters[0])
+	}
+	afterCurrency, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after equipped-slot sell")
+	}
+	if afterCurrency != beforeCurrency {
+		t.Fatalf("expected equipped-slot sell to leave live currency unchanged, before=%+v after=%+v", beforeCurrency, afterCurrency)
+	}
+	afterInventory, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after equipped-slot sell")
+	}
+	if !reflect.DeepEqual(afterInventory, beforeInventory) {
+		t.Fatalf("expected equipped-slot sell to leave live inventory unchanged, before=%+v after=%+v", beforeInventory, afterInventory)
+	}
+}
+
 func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantBuyMutationNonAuthoritative(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
