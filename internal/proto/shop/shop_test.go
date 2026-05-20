@@ -124,6 +124,24 @@ func TestEncodeServerUpdateItemBuildsAFrame(t *testing.T) {
 	}
 }
 
+func TestEncodeServerUpdatePriceBuildsAFrame(t *testing.T) {
+	want := loadHexFixture(t, "server-update-price-frame.hex")
+	got := EncodeServerUpdatePrice(ServerUpdatePricePacket{ElkAmount: -12345})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server shop update-price frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeServerUpdatePriceReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeServerUpdatePrice(decodeSingleFrame(t, loadHexFixture(t, "server-update-price-frame.hex")))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ServerUpdatePricePacket{ElkAmount: -12345}) {
+		t.Fatalf("unexpected server shop update-price packet: %+v", packet)
+	}
+}
+
 func TestDecodeServerUpdateItemReturnsExpectedFields(t *testing.T) {
 	packet, err := DecodeServerUpdateItem(decodeSingleFrame(t, loadHexFixture(t, "server-update-item-frame.hex")))
 	if err != nil {
@@ -312,6 +330,27 @@ func TestDecodeServerUpdateItemRejectsInvalidPayload(t *testing.T) {
 	payload := make([]byte, serverUpdateItemPayloadSize-1)
 	payload[0] = ServerSubheaderUpdateItem
 	_, err := DecodeServerUpdateItem(frame.Frame{Header: HeaderServerShop, Length: 70, Payload: payload})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeServerUpdatePriceRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerUpdatePrice(frame.Frame{Header: HeaderServerShop + 1, Length: 9, Payload: []byte{ServerSubheaderUpdatePrice, 0, 0, 0, 0}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerUpdatePriceRejectsUnexpectedSubheader(t *testing.T) {
+	_, err := DecodeServerUpdatePrice(frame.Frame{Header: HeaderServerShop, Length: 9, Payload: []byte{ServerSubheaderUpdateItem, 0, 0, 0, 0}})
+	if !errors.Is(err, ErrUnexpectedSubheader) {
+		t.Fatalf("expected ErrUnexpectedSubheader, got %v", err)
+	}
+}
+
+func TestDecodeServerUpdatePriceRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeServerUpdatePrice(frame.Frame{Header: HeaderServerShop, Length: 8, Payload: []byte{ServerSubheaderUpdatePrice, 0, 0, 0}})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}

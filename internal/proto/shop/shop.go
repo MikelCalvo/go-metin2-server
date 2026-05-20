@@ -20,6 +20,7 @@ const (
 	ServerSubheaderStart          uint8 = 0
 	ServerSubheaderEnd            uint8 = 1
 	ServerSubheaderUpdateItem     uint8 = 2
+	ServerSubheaderUpdatePrice    uint8 = 3
 	ServerSubheaderOK             uint8 = 4
 	ServerSubheaderNotEnoughMoney uint8 = 5
 	ServerSubheaderInventoryFull  uint8 = 7
@@ -27,19 +28,20 @@ const (
 
 	ShopHostItemMax = 40
 
-	attributeSize               = 3
-	itemEntrySize               = 4 + 4 + 1 + 1 + (itemproto.ItemSocketCount * 4) + (itemproto.ItemAttributeCount * attributeSize)
-	clientBuyPayloadSize        = 3
-	clientEndPayloadSize        = 1
-	clientSellPayloadSize       = 2
-	clientSell2PayloadSize      = 3
-	serverStartPayloadSize      = 1 + 4 + (ShopHostItemMax * itemEntrySize)
-	serverUpdateItemPayloadSize = 1 + 1 + itemEntrySize
-	serverEndPayloadSize        = 1
-	serverStartOwnerOffset      = 1
-	serverStartItemsOffset      = 5
-	itemEntrySocketsOffset      = 10
-	itemEntryAttrsOffset        = itemEntrySocketsOffset + (itemproto.ItemSocketCount * 4)
+	attributeSize                = 3
+	itemEntrySize                = 4 + 4 + 1 + 1 + (itemproto.ItemSocketCount * 4) + (itemproto.ItemAttributeCount * attributeSize)
+	clientBuyPayloadSize         = 3
+	clientEndPayloadSize         = 1
+	clientSellPayloadSize        = 2
+	clientSell2PayloadSize       = 3
+	serverStartPayloadSize       = 1 + 4 + (ShopHostItemMax * itemEntrySize)
+	serverUpdateItemPayloadSize  = 1 + 1 + itemEntrySize
+	serverUpdatePricePayloadSize = 1 + 4
+	serverEndPayloadSize         = 1
+	serverStartOwnerOffset       = 1
+	serverStartItemsOffset       = 5
+	itemEntrySocketsOffset       = 10
+	itemEntryAttrsOffset         = itemEntrySocketsOffset + (itemproto.ItemSocketCount * 4)
 )
 
 var (
@@ -79,6 +81,10 @@ type ServerStartPacket struct {
 type ServerUpdateItemPacket struct {
 	Position uint8
 	Item     ItemEntry
+}
+
+type ServerUpdatePricePacket struct {
+	ElkAmount int32
 }
 
 func EncodeClientBuy(packet ClientBuyPacket) []byte {
@@ -199,6 +205,26 @@ func DecodeServerUpdateItem(f frame.Frame) (ServerUpdateItemPacket, error) {
 		return ServerUpdateItemPacket{}, ErrUnexpectedSubheader
 	}
 	return ServerUpdateItemPacket{Position: f.Payload[1], Item: decodeItemEntry(f.Payload[2:])}, nil
+}
+
+func EncodeServerUpdatePrice(packet ServerUpdatePricePacket) []byte {
+	payload := make([]byte, serverUpdatePricePayloadSize)
+	payload[0] = ServerSubheaderUpdatePrice
+	binary.LittleEndian.PutUint32(payload[1:], uint32(packet.ElkAmount))
+	return frame.Encode(HeaderServerShop, payload)
+}
+
+func DecodeServerUpdatePrice(f frame.Frame) (ServerUpdatePricePacket, error) {
+	if f.Header != HeaderServerShop {
+		return ServerUpdatePricePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverUpdatePricePayloadSize {
+		return ServerUpdatePricePacket{}, ErrInvalidPayload
+	}
+	if f.Payload[0] != ServerSubheaderUpdatePrice {
+		return ServerUpdatePricePacket{}, ErrUnexpectedSubheader
+	}
+	return ServerUpdatePricePacket{ElkAmount: int32(binary.LittleEndian.Uint32(f.Payload[1:]))}, nil
 }
 
 func EncodeServerEnd() []byte {

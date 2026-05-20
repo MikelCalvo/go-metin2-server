@@ -235,7 +235,16 @@ The repository now owns that packet shape at the codec level:
 
 This is a codec-only compatibility seam for later stock/sold-out/player-shop refresh work.
 The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus bare `GC::SHOP OK` / error companions; they do not emit `UPDATE_ITEM` yet.
-`UPDATE_PRICE` remains capture-gated.
+
+### Frozen `GC::SHOP UPDATE_PRICE` codec seam
+
+The legacy client packet headers define `GC::SHOP UPDATE_PRICE` as a merchant-window price refresh with one signed Elk amount:
+- server family: `SHOP`, header `0x0810`
+- subheader: `UPDATE_PRICE = 3`
+- payload after the subheader: `iElkAmount int32 LE`
+
+The repository now owns that packet shape at the codec level only.
+The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still do not emit `UPDATE_PRICE`; runtime use remains capture-/slice-gated.
 
 The first repository-owned carried placement contract now lives beside this document in `item-stack-bootstrap.md`:
 - validate merchant grants against template `stackable` / `max_count`
