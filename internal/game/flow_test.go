@@ -828,6 +828,30 @@ func TestHandleClientFrameRejectsMalformedShopEndInGame(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameRejectsMalformedShopSellInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	_, err := flow.HandleClientFrame(frame.Frame{Header: shopproto.HeaderClientShop, Length: 5, Payload: []byte{shopproto.ClientSubheaderSell}})
+	if !errors.Is(err, shopproto.ErrInvalidPayload) {
+		t.Fatalf("expected shopproto.ErrInvalidPayload, got %v", err)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsMalformedShopSell2InGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{})
+	_, err := flow.HandleClientFrame(frame.Frame{Header: shopproto.HeaderClientShop, Length: 6, Payload: []byte{shopproto.ClientSubheaderSell2, 0x04}})
+	if !errors.Is(err, shopproto.ErrInvalidPayload) {
+		t.Fatalf("expected shopproto.ErrInvalidPayload, got %v", err)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameRejectsUnexpectedPacketsInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
