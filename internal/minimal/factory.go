@@ -56,6 +56,7 @@ const (
 
 const bootstrapPlayerPointType uint8 = 1
 const bootstrapPlayerPointValueIndex = 1
+const bootstrapGoldPointType uint8 = 11
 const bootstrapPracticeMobRetaliationPointDelta int32 = -1
 const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
 const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
@@ -1357,7 +1358,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				}
 				return frames, true
 			}
-			frames, err := merchantSellResultFrames(sellResult)
+			frames, err := merchantSellResultFrames(selectedPlayer.LiveCharacter(), sellResult)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -2893,12 +2894,12 @@ func merchantSellCreditForSlot(templates map[uint32]itemcatalog.Template, select
 	return 0, false
 }
 
-func merchantSellResultFrames(result player.MerchantSellResult) ([][]byte, error) {
+func merchantSellResultFrames(character loginticket.Character, result player.MerchantSellResult) ([][]byte, error) {
 	position, err := itemproto.CarriedInventoryPosition(uint16(result.Slot))
 	if err != nil {
 		return nil, err
 	}
-	frames := make([][]byte, 0, 2)
+	frames := make([][]byte, 0, 3)
 	if result.ItemRemoved {
 		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
 	} else {
@@ -2908,6 +2909,15 @@ func merchantSellResultFrames(result player.MerchantSellResult) ([][]byte, error
 		}
 		frames = append(frames, setFrame)
 	}
+	if result.Gold < result.GoldBefore || result.Gold > uint64(math.MaxInt32) || result.Gold-result.GoldBefore > uint64(math.MaxInt32) {
+		return nil, fmt.Errorf("merchant sell gold point-change out of range")
+	}
+	frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+		VID:    character.VID,
+		Type:   bootstrapGoldPointType,
+		Amount: int32(result.Gold - result.GoldBefore),
+		Value:  int32(result.Gold),
+	}))
 	frames = append(frames, shopproto.EncodeServerOK())
 	return frames, nil
 }

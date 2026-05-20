@@ -330,8 +330,8 @@ The first live sell-back contract remains intentionally narrow:
 - templates flagged `anti_sell` fail closed before credit calculation, return bare self-only `GC::SHOP INVALID_POS` on the packet sell path while a merchant window is active, and leave live plus persisted inventory/currency unchanged
 - the updated selected-character snapshot is persisted before the live shared-world registration is refreshed
 - if persistence/writeback fails, the runtime rolls the selected character's live gold and carried inventory back to the pre-sell snapshot, emits no success frames, and leaves the persisted account snapshot unchanged
-- whole-stack success emits self-only `ITEM_DEL(slot)` followed by bare self-only `GC::SHOP OK`
-- partial-stack success emits self-only `ITEM_SET(slot, remaining_count)` followed by bare self-only `GC::SHOP OK`
+- whole-stack success emits self-only `ITEM_DEL(slot)`, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`, then bare self-only `GC::SHOP OK`
+- partial-stack success emits self-only `ITEM_SET(slot, remaining_count)`, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`, then bare self-only `GC::SHOP OK`
 - invalid slots, equipped items, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
 - an invalid packet/runtime sell while an active merchant window exists returns bare self-only `GC::SHOP INVALID_POS`
 - stale active merchant context still returns `GC::SHOP END`, clears the active context, and leaves inventory/currency unchanged

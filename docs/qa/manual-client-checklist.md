@@ -361,7 +361,23 @@ Expected result:
 - the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then `CHAT_TYPE_INFO`
 - the selected-character snapshot persists atomically through the current save/rollback boundary
 
-### 5.7 Training dummy repeated-hit smoke
+### 5.7 Merchant sell-back gold refresh
+
+Run this only when the target build has a visible authored `shop_preview` merchant and a disposable carried item stack with a sellable item template.
+
+- [ ] Open the merchant window through the visible shop actor
+- [ ] Sell one whole carried stack through the client merchant `SELL` path
+- [ ] Confirm the carried slot clears and the selected character's displayed gold increases without requiring reconnect
+- [ ] Repeat with a multi-count carried stack through the `SELL2` path for a partial count
+- [ ] Confirm the carried slot remains with the reduced count and the selected character's displayed gold increases immediately
+- [ ] Reconnect and confirm the updated carried inventory and gold persisted
+
+Expected result:
+- accepted merchant sell-back responses are ordered as `ITEM_DEL` or `ITEM_SET`, then self-only `PLAYER_POINT_CHANGE(POINT_GOLD)`, then bare `GC::SHOP OK`
+- invalid, anti-sell, equipped, or runtime-locked items fail closed and leave both live and persisted inventory/gold unchanged
+- richer `GC::SHOP UPDATE_ITEM` / `UPDATE_PRICE` UI choreography remains out of scope for this bootstrap sell-back smoke
+
+### 5.8 Training dummy repeated-hit smoke
 
 Run this only when the target build has a visible authored `training_dummy` nearby.
 

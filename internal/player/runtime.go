@@ -49,6 +49,7 @@ type MerchantSellResult struct {
 	Slot        inventory.SlotIndex
 	ItemRemoved bool
 	Item        inventory.ItemInstance
+	GoldBefore  uint64
 	Gold        uint64
 }
 
@@ -423,7 +424,7 @@ func (r *Runtime) SellMerchantItemForCredit(slot inventory.SlotIndex, count uint
 	if r.liveGold > (^uint64(0))-credit {
 		return MerchantSellResult{}, false
 	}
-	result := MerchantSellResult{Slot: slot, Gold: r.liveGold + credit}
+	result := MerchantSellResult{Slot: slot, GoldBefore: r.liveGold, Gold: r.liveGold + credit}
 	inventoryItems := cloneItemInstances(r.liveInventory)
 	if soldCount == item.Count {
 		inventoryItems = removeInventoryIndex(inventoryItems, index)
