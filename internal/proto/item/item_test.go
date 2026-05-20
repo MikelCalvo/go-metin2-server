@@ -139,6 +139,24 @@ func TestDecodeDelReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeUpdateBuildsACountRefreshFrame(t *testing.T) {
+	want := frame.Encode(HeaderUpdate, []byte{WindowInventory, 5, 0, 9, 4, 3, 2, 1, 254, 255, 255, 255, 13, 12, 11, 10, 1, 52, 18, 2, 254, 255, 3, 0, 0, 4, 1, 0, 5, 0, 128, 6, 255, 127, 7, 46, 251})
+	got := EncodeUpdate(sampleUpdatePacket())
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected item update frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeUpdateReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeUpdate(decodeSingleFrame(t, EncodeUpdate(sampleUpdatePacket())))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != sampleUpdatePacket() {
+		t.Fatalf("unexpected item update packet: %+v", packet)
+	}
+}
+
 func TestDecodeSetRejectsUnexpectedHeader(t *testing.T) {
 	_, err := DecodeSet(frame.Frame{Header: HeaderSet + 1, Length: 54, Payload: make([]byte, setPayloadSize)})
 	if !errors.Is(err, ErrUnexpectedHeader) {
@@ -162,6 +180,20 @@ func TestDecodeDelRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeDelRejectsInvalidPayload(t *testing.T) {
 	_, err := DecodeDel(frame.Frame{Header: HeaderDel, Length: 6, Payload: make([]byte, delPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeUpdateRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeUpdate(frame.Frame{Header: HeaderUpdate + 1, Length: 41, Payload: make([]byte, updatePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeUpdateRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeUpdate(frame.Frame{Header: HeaderUpdate, Length: 40, Payload: make([]byte, updatePayloadSize-1)})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}
@@ -225,6 +257,23 @@ func sampleEquipmentSetPacket() SetPacket {
 
 func sampleDelPacket() DelPacket {
 	return DelPacket{Position: Position{WindowType: WindowInventory, Cell: 94}}
+}
+
+func sampleUpdatePacket() UpdatePacket {
+	return UpdatePacket{
+		Position: Position{WindowType: WindowInventory, Cell: 5},
+		Count:    9,
+		Sockets:  [ItemSocketCount]int32{0x01020304, -2, 0x0A0B0C0D},
+		Attributes: [ItemAttributeCount]Attribute{
+			{Type: 1, Value: 0x1234},
+			{Type: 2, Value: -2},
+			{Type: 3, Value: 0},
+			{Type: 4, Value: 1},
+			{Type: 5, Value: -32768},
+			{Type: 6, Value: 32767},
+			{Type: 7, Value: -1234},
+		},
+	}
 }
 
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {

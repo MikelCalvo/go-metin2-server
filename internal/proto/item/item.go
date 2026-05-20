@@ -11,6 +11,7 @@ const (
 	HeaderClientUse uint16 = 0x0502
 	HeaderDel       uint16 = 0x0510
 	HeaderSet       uint16 = 0x0511
+	HeaderUpdate    uint16 = 0x0514
 
 	WindowReserved            uint8  = 0
 	WindowInventory           uint8  = 1
@@ -30,6 +31,7 @@ const (
 	clientUsePayloadSize = positionSize
 	delPayloadSize       = positionSize
 	setPayloadSize       = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	updatePayloadSize    = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 )
 
 var (
@@ -62,6 +64,13 @@ type SetPacket struct {
 
 type DelPacket struct {
 	Position Position
+}
+
+type UpdatePacket struct {
+	Position   Position
+	Count      uint8
+	Sockets    [ItemSocketCount]int32
+	Attributes [ItemAttributeCount]Attribute
 }
 
 type ClientUsePacket struct {
@@ -175,6 +184,49 @@ func DecodeDel(f frame.Frame) (DelPacket, error) {
 		return DelPacket{}, ErrInvalidPayload
 	}
 	return DelPacket{Position: decodePosition(f.Payload)}, nil
+}
+
+func EncodeUpdate(packet UpdatePacket) []byte {
+	payload := make([]byte, updatePayloadSize)
+	encodePosition(payload[:positionSize], packet.Position)
+	offset := positionSize
+	payload[offset] = packet.Count
+	offset++
+	for _, socket := range packet.Sockets {
+		binary.LittleEndian.PutUint32(payload[offset:], uint32(socket))
+		offset += 4
+	}
+	for _, attribute := range packet.Attributes {
+		payload[offset] = attribute.Type
+		offset++
+		binary.LittleEndian.PutUint16(payload[offset:], uint16(attribute.Value))
+		offset += 2
+	}
+	return frame.Encode(HeaderUpdate, payload)
+}
+
+func DecodeUpdate(f frame.Frame) (UpdatePacket, error) {
+	if f.Header != HeaderUpdate {
+		return UpdatePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != updatePayloadSize {
+		return UpdatePacket{}, ErrInvalidPayload
+	}
+	packet := UpdatePacket{Position: decodePosition(f.Payload[:positionSize])}
+	offset := positionSize
+	packet.Count = f.Payload[offset]
+	offset++
+	for i := range packet.Sockets {
+		packet.Sockets[i] = int32(binary.LittleEndian.Uint32(f.Payload[offset:]))
+		offset += 4
+	}
+	for i := range packet.Attributes {
+		packet.Attributes[i].Type = f.Payload[offset]
+		offset++
+		packet.Attributes[i].Value = int16(binary.LittleEndian.Uint16(f.Payload[offset:]))
+		offset += 2
+	}
+	return packet, nil
 }
 
 func encodePosition(dst []byte, position Position) {

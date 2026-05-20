@@ -267,6 +267,17 @@ This is a codec-only compatibility seam for later stock/sold-out/player-shop ref
 The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus their separately frozen merchant companions: packet `SHOP BUY` success is item-refresh-only, sell success still appends bare `GC::SHOP OK`, and error paths use the owned bare merchant error frames.
 They do not emit `UPDATE_ITEM` yet.
 
+### Frozen `GC::ITEM_UPDATE` codec seam
+
+The legacy client handles `GC::ITEM_UPDATE` as a count/socket/attribute refresh for an already-known item cell.
+The repository now owns that packet shape at the codec level:
+- server family: item update, header `0x0514`
+- payload: `TItemPos` (`window_type uint8`, `cell uint16 LE`) + `count uint8` + three little-endian `int32` sockets + seven `(type uint8, value int16 LE)` attributes
+- unlike `GC::ITEM_SET`, this packet does not carry `vnum`, flags, anti-flags, or highlight
+
+This is a codec-only ownership step for later lighter-weight inventory refresh slices.
+The current bootstrap merchant buy/sell runtime still emits `ITEM_SET` for changed non-empty stacks and `ITEM_DEL` for removed stacks; it does not emit `ITEM_UPDATE` yet.
+
 ### Runtime-locked item sell guard
 
 The bootstrap item instance model now carries a runtime `locked` flag so merchant sell validation can preserve a narrow legacy-style guard for items that should remain visible in carried inventory but temporarily cannot be sold.
