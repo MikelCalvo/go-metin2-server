@@ -3,10 +3,10 @@
 This document freezes the first real merchant-transaction gate for `go-metin2-server`.
 
 The goal is intentionally narrow:
-- move from read-only structured `shop_preview` catalogs toward one real purchase path
+- move from read-only structured `shop_preview` catalogs toward real bootstrap merchant transactions
 - record the buy request contract inside the now-frozen minimal merchant packet family without pretending the project already owns the full final merchant-window choreography
-- make the buy-only implementation gate explicit enough that the next RED tests can stay small and honest
-- keep sell-back, storage, and richer merchant UI semantics out of scope, while still decoding the client sell ingress through a dedicated fail-closed game-flow seam
+- record the first live sell-back seam only after it has its own focused packet/runtime coverage
+- keep personal shops, storage, and richer merchant UI semantics out of scope, while routing owned `BUY`, `SELL`, and `SELL2` ingress through dedicated game-flow seams
 
 It sits on top of:
 - `npc-shop-open-close-bootstrap.md`
@@ -21,12 +21,12 @@ It sits on top of:
 This first transaction contract applies only to:
 - a connected selected character already in `GAME`
 - a visible bootstrap static actor whose interaction resolves to a valid structured `shop_preview` catalog
-- one buy-only merchant path that debits gold and grants exactly one authored catalog entry per request
+- one merchant buy path that debits gold and grants exactly one authored catalog entry per request
+- one merchant sell-back path that targets carried inventory slots while an active merchant window exists
 - self-only state mutation for currency and carried inventory
 - deterministic validation against the already-owned item-template catalog
 
 This slice does **not** yet apply to:
-- sell-back
 - personal shops / `MYSHOP`
 - safebox / mall / storage
 - multi-tab or drag-drop basket semantics
@@ -76,7 +76,7 @@ Current compatibility references also indicate these subheader families:
   - `START_EX`
   - `NOT_ENOUGH_MONEY_EX`
 
-This document freezes only the first buy-only path.
+This document freezes the first packet/runtime `BUY` path and the later focused bootstrap `SELL` / `SELL2` sell-back seam.
 It does **not** claim that every listed subheader is already capture-confirmed or implemented by this repository.
 
 ## First owned transaction gate
@@ -101,7 +101,7 @@ This keeps the first real buy path tied to the existing authored merchant surfac
 
 ## First BUY request contract
 
-The first buy-only merchant request freezes only the minimum the repository can state honestly today:
+The first merchant buy request freezes only the minimum the repository can state honestly today:
 - packet family: client -> server `SHOP`
 - header: `0x0801`
 - required subheader: `BUY`
@@ -135,11 +135,11 @@ When a gated `BUY` request arrives, the runtime must validate all of the followi
 - the selected character has a valid carried-inventory placement for that template/count under `item-stack-bootstrap.md`
 - persistence/writeback can succeed before the new live state is committed
 
-The first buy-only contract intentionally remains single-entry and immediate:
+The first buy contract intentionally remains single-entry and immediate:
 - one request buys one catalog entry
 - no basket
 - no multi-buy quantity chooser
-- no sell-side inventory input
+- no sell-side inventory input on `BUY` itself; sell-back is frozen separately below through `SELL` / `SELL2`
 - no shared merchant stock decrement
 
 ## Success and failure semantics
@@ -181,7 +181,7 @@ This keeps the first merchant transaction seam consistent with the current recon
 
 ### Failure path
 
-The first buy-only path must fail closed when any of these are true:
+The first buy path must fail closed when any of these are true:
 - no active merchant transaction gate exists
 - the requested slot is unknown or stale
 - the catalog/template resolution fails
