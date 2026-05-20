@@ -2870,7 +2870,9 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 		}
 		frames = append(frames, setFrame)
 	}
-	frames = append(frames, shopproto.EncodeServerOK())
+	if !packetShopFrames {
+		frames = append(frames, shopproto.EncodeServerOK())
+	}
 	return frames, nil
 }
 

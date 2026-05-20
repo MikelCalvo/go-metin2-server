@@ -9359,8 +9359,8 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantBuyMutationNonAuthoritativ
 	if err != nil {
 		t.Fatalf("unexpected stale merchant packet buy error: %v", err)
 	}
-	if len(buyOut) != 2 {
-		t.Fatalf("expected stale merchant packet buy to remain self-local with 2 frames, got %d", len(buyOut))
+	if len(buyOut) != 1 {
+		t.Fatalf("expected stale merchant packet buy to remain self-local with only the item refresh frame, got %d", len(buyOut))
 	}
 	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
@@ -9368,9 +9368,6 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantBuyMutationNonAuthoritativ
 	}
 	if setPacket.Position != itemproto.InventoryPosition(0) || setPacket.Vnum != 27001 || setPacket.Count != 1 {
 		t.Fatalf("unexpected stale merchant buy item frame: %+v", setPacket)
-	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, buyOut[1])); err != nil {
-		t.Fatalf("decode stale merchant buy ok frame: %v", err)
 	}
 	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
 		t.Fatalf("expected replacement merchant owner to receive no queued frames from stale merchant buy, got %d", len(queued))
@@ -9829,8 +9826,8 @@ func TestGameRuntimeReconnectAfterStaleMerchantBuyCloseRebuildsAuthoritativeStat
 	if err != nil {
 		t.Fatalf("unexpected stale merchant-buy error before reconnect rebuild: %v", err)
 	}
-	if len(buyOut) != 2 {
-		t.Fatalf("expected stale merchant buy to remain self-local with 2 frames before reconnect rebuild, got %d", len(buyOut))
+	if len(buyOut) != 1 {
+		t.Fatalf("expected stale merchant packet buy to remain self-local with 1 item-refresh frame before reconnect rebuild, got %d", len(buyOut))
 	}
 	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
 		t.Fatalf("expected replacement merchant buyer to receive no queued frames from stale merchant buy before reconnect rebuild, got %d", len(queued))
@@ -13119,8 +13116,8 @@ func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected packet shop buy attempt error: %v", err)
 	}
-	if len(buyOut) != 2 {
-		t.Fatalf("expected packet shop buy success path to emit 2 frames, got %d", len(buyOut))
+	if len(buyOut) != 1 {
+		t.Fatalf("expected packet shop buy success path to emit only the item refresh frame, got %d", len(buyOut))
 	}
 	set, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
@@ -13128,9 +13125,6 @@ func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
 	}
 	if set.Position != itemproto.InventoryPosition(0) || set.Vnum != 27001 || set.Count != 1 {
 		t.Fatalf("unexpected packet shop-buy item frame: %+v", set)
-	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, buyOut[1])); err != nil {
-		t.Fatalf("decode packet shop-buy ok frame: %v", err)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for packet shop buy, got %d", len(queued))
@@ -13175,8 +13169,8 @@ func TestGameSessionFlowShopBuyPacketMergesIntoExistingCompatibleCarriedStack(t 
 	if err != nil {
 		t.Fatalf("unexpected merchant packet buy merge error: %v", err)
 	}
-	if len(buyOut) != 2 {
-		t.Fatalf("expected 2 frames for merged merchant packet buy, got %d", len(buyOut))
+	if len(buyOut) != 1 {
+		t.Fatalf("expected 1 frame for merged merchant packet buy, got %d", len(buyOut))
 	}
 	updatedItem, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
@@ -13185,9 +13179,7 @@ func TestGameSessionFlowShopBuyPacketMergesIntoExistingCompatibleCarriedStack(t 
 	if updatedItem.Position != itemproto.InventoryPosition(5) || updatedItem.Vnum != 27001 || updatedItem.Count != 4 {
 		t.Fatalf("unexpected merged merchant packet buy item: %+v", updatedItem)
 	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, buyOut[1])); err != nil {
-		t.Fatalf("decode merged merchant packet buy ok frame: %v", err)
-	}
+
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
 		t.Fatal("expected currency snapshot after merged merchant packet buy")
@@ -13221,8 +13213,8 @@ func TestGameSessionFlowShopBuyPacketPartiallyMergesIntoExistingCompatibleStackT
 	if err != nil {
 		t.Fatalf("unexpected merchant packet buy partial-merge error: %v", err)
 	}
-	if len(buyOut) != 3 {
-		t.Fatalf("expected 3 frames for partial-merge merchant packet buy, got %d", len(buyOut))
+	if len(buyOut) != 2 {
+		t.Fatalf("expected 2 frames for partial-merge merchant packet buy, got %d", len(buyOut))
 	}
 	firstUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
@@ -13238,9 +13230,7 @@ func TestGameSessionFlowShopBuyPacketPartiallyMergesIntoExistingCompatibleStackT
 	if secondUpdate.Position != itemproto.InventoryPosition(5) || secondUpdate.Vnum != 27001 || secondUpdate.Count != 200 {
 		t.Fatalf("unexpected partial-merge merchant packet buy second item: %+v", secondUpdate)
 	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, buyOut[2])); err != nil {
-		t.Fatalf("decode partial-merge merchant packet buy ok frame: %v", err)
-	}
+
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
 		t.Fatal("expected currency snapshot after partial-merge merchant packet buy")
@@ -13278,8 +13268,8 @@ func TestGameSessionFlowShopBuyPacketFansOutAcrossSeveralExistingCompatibleStack
 	if err != nil {
 		t.Fatalf("unexpected merchant packet buy distributed-merge error: %v", err)
 	}
-	if len(buyOut) != 3 {
-		t.Fatalf("expected 3 frames for distributed-merge merchant packet buy, got %d", len(buyOut))
+	if len(buyOut) != 2 {
+		t.Fatalf("expected 2 frames for distributed-merge merchant packet buy, got %d", len(buyOut))
 	}
 	firstUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
@@ -13295,9 +13285,7 @@ func TestGameSessionFlowShopBuyPacketFansOutAcrossSeveralExistingCompatibleStack
 	if secondUpdate.Position != itemproto.InventoryPosition(7) || secondUpdate.Vnum != 27001 || secondUpdate.Count != 200 {
 		t.Fatalf("unexpected distributed-merge merchant packet buy second item: %+v", secondUpdate)
 	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, buyOut[2])); err != nil {
-		t.Fatalf("decode distributed-merge merchant packet buy ok frame: %v", err)
-	}
+
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
 		t.Fatal("expected currency snapshot after distributed-merge merchant packet buy")
@@ -13331,8 +13319,8 @@ func TestGameSessionFlowShopBuyPacketFansOutAcrossSeveralExistingCompatibleStack
 	if err != nil {
 		t.Fatalf("unexpected merchant packet buy distributed-merge-plus-slot error: %v", err)
 	}
-	if len(buyOut) != 4 {
-		t.Fatalf("expected 4 frames for distributed-merge-plus-slot merchant packet buy, got %d", len(buyOut))
+	if len(buyOut) != 3 {
+		t.Fatalf("expected 3 frames for distributed-merge-plus-slot merchant packet buy, got %d", len(buyOut))
 	}
 	firstUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
@@ -13355,9 +13343,7 @@ func TestGameSessionFlowShopBuyPacketFansOutAcrossSeveralExistingCompatibleStack
 	if thirdUpdate.Position != itemproto.InventoryPosition(7) || thirdUpdate.Vnum != 27001 || thirdUpdate.Count != 200 {
 		t.Fatalf("unexpected distributed-merge-plus-slot merchant packet buy third item: %+v", thirdUpdate)
 	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, buyOut[3])); err != nil {
-		t.Fatalf("decode distributed-merge-plus-slot merchant packet buy ok frame: %v", err)
-	}
+
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
 		t.Fatal("expected currency snapshot after distributed-merge-plus-slot merchant packet buy")
