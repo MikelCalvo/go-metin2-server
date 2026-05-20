@@ -502,6 +502,13 @@ func TestMerchantSellCreditForCountPerGoldTemplateUsesLegacyCountDivision(t *tes
 	}
 }
 
+func TestMerchantSellCreditRejectsAntiSellTemplate(t *testing.T) {
+	_, ok := MerchantSellCredit(itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiSell: true}, 3)
+	if ok {
+		t.Fatal("expected anti-sell template to reject merchant sell credit")
+	}
+}
+
 func TestRuntimeSellMerchantItemRejectsInvalidInputWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

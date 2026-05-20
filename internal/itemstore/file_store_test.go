@@ -13,7 +13,7 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(path)
 	want := Snapshot{Templates: []Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
-		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, SellCountPerGold: true},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, SellCountPerGold: true, AntiSell: true},
 	}}
 
 	if err := store.Save(want); err != nil {

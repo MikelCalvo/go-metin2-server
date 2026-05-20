@@ -12856,6 +12856,49 @@ func TestGameSessionFlowShopSellCountPerGoldCreditsLegacyCountDivision(t *testin
 	}
 }
 
+func TestGameSessionFlowShopSellRejectsAntiSellTemplateWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacketAntiSell", 0x01040123, 0x02050123, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-anti-sell", 0x23232323, buyer)
+	defer closeSessionFlow(t, flow)
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiSell: true}
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected anti-sell packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected anti-sell packet shop sell2 to emit 1 invalid-pos frame, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode anti-sell packet shop sell2 invalid-pos frame: %v", err)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after anti-sell packet shop sell2")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected anti-sell packet shop sell2 to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after anti-sell packet shop sell2")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != 77 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 3 || inventorySnapshot.Inventory[0].Slot != 5 {
+		t.Fatalf("expected anti-sell packet shop sell2 to keep live inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted anti-sell merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 {
+		t.Fatalf("expected anti-sell merchant seller gold to stay 125, got %+v", account.Characters[0])
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].ID != 77 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 3 || account.Characters[0].Inventory[0].Slot != 5 || account.Characters[0].Inventory[0].Equipped || account.Characters[0].Inventory[0].EquipSlot != inventory.EquipmentSlotNone {
+		t.Fatalf("expected anti-sell packet shop sell2 to keep persisted inventory unchanged, got %+v", account.Characters[0].Inventory)
+	}
+}
+
 func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacket", 0x01040105, 0x02050105, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet", 0x55555555, buyer)

@@ -21,6 +21,7 @@ type Template struct {
 	MaxCount         uint16       `json:"max_count"`
 	ShopBuyPrice     uint64       `json:"shop_buy_price,omitempty"`
 	SellCountPerGold bool         `json:"sell_count_per_gold,omitempty"`
+	AntiSell         bool         `json:"anti_sell,omitempty"`
 	EquipSlot        string       `json:"equip_slot,omitempty"`
 	UseEffect        *UseEffect   `json:"use_effect,omitempty"`
 	EquipEffect      *PointEffect `json:"equip_effect,omitempty"`
