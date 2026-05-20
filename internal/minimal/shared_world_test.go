@@ -13016,6 +13016,60 @@ func TestGameSessionFlowShopSellCountPerGoldCreditsLegacyCountDivision(t *testin
 	}
 }
 
+func TestGameSessionFlowShopSellSaveFailureRollsBackLiveMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerSaveFailure", 0x01040125, 0x02050125, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	login := "merchant-sell-save-failure"
+	loginKey := uint32(0x25252525)
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	issuePeerTicket(t, ticketStore, login, loginKey, buyer)
+	accounts := newPreloadedFailingAccountStore(accountstore.Account{Login: login, Empire: buyer.Empire, Characters: []loginticket.Character{buyer}})
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	itemStore := newItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected merchant sell save-failure runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected merchant sell save-failure session bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 5})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop sell save-failure error: %v", err)
+	}
+	if len(sellOut) != 0 {
+		t.Fatalf("expected save-failed packet shop sell to fail closed with no frames, got %d", len(sellOut))
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after save-failed packet shop sell")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected save-failed packet shop sell to roll live gold back to 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after save-failed packet shop sell")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0] != (InventoryItemSnapshot{ID: 77, Vnum: 27001, Count: 3, Slot: 5}) {
+		t.Fatalf("expected save-failed packet shop sell to roll live inventory back, got %#v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after save-failed packet shop sell: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0] != (inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 3, Slot: 5}) {
+		t.Fatalf("expected save-failed packet shop sell persisted account to remain unchanged, got %#v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopSellRejectsAntiSellTemplateWithoutMutation(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantSellerPacketAntiSell", 0x01040123, 0x02050123, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-anti-sell", 0x23232323, buyer)

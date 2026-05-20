@@ -304,6 +304,7 @@ The first live sell-back contract remains intentionally narrow:
 - templates flagged `sell_count_per_gold` follow the legacy count-per-gold branch first: use `floor(sold_count / shop_buy_price)` when `shop_buy_price > 0`, or `sold_count` when it is zero, then apply the same `/5` and 3% tax floor; if the resulting credit is zero, the bootstrap runtime fails closed
 - templates flagged `anti_sell` fail closed before credit calculation, return bare self-only `GC::SHOP INVALID_POS` on the packet sell path while a merchant window is active, and leave live plus persisted inventory/currency unchanged
 - the updated selected-character snapshot is persisted before the live shared-world registration is refreshed
+- if persistence/writeback fails, the runtime rolls the selected character's live gold and carried inventory back to the pre-sell snapshot, emits no success frames, and leaves the persisted account snapshot unchanged
 - whole-stack success emits self-only `ITEM_DEL(slot)` followed by bare self-only `GC::SHOP OK`
 - partial-stack success emits self-only `ITEM_SET(slot, remaining_count)` followed by bare self-only `GC::SHOP OK`
 - invalid slots, equipped items, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
