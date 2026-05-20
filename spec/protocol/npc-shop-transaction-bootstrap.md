@@ -227,7 +227,21 @@ Each currently freezes only the common server `SHOP` envelope (`0x0810`) plus th
 This is a codec-only ownership step for later stock, extended-shop, and player-shop slices:
 - the bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still do not emit `SOLDOUT`, `SOLD_OUT`, or `NOT_ENOUGH_MONEY_EX`
 - the exact mapping between future merchant failure causes and these result subheaders remains capture-/slice-gated
-- `START_EX` remains acknowledged from the same server subheader ordering, but its extended payload/choreography is not yet frozen by this document
+
+### Frozen `GC::SHOP START_EX` codec seam
+
+The legacy-compatible extended shop open packet is now frozen at the codec level:
+- server family: `SHOP`, header `0x0810`
+- subheader: `START_EX = 10`
+- fixed fields after the subheader: `owner_vid uint32 LE`, `shop_tab_count uint8`
+- the fixed fields are followed by exactly `shop_tab_count` tab records
+- each tab record is `name[32]`, `coin_type uint8`, and `40` normal shop item entries
+- each item entry uses the same layout as the existing `START` and `UPDATE_ITEM` item entries
+
+This is still runtime-gated:
+- the bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths do not emit `START_EX`
+- multi-tab and secondary-coin shop behavior remains a later dedicated slice
+- this slice only gives later extended-shop work an exact encoded/decoded packet shape to build on
 
 ### Frozen `GC::SHOP UPDATE_ITEM` codec seam
 

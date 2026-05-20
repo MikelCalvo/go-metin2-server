@@ -31,19 +31,24 @@ const (
 	ServerSubheaderNotEnoughMoneyEx uint8 = 11
 
 	ShopHostItemMax = 40
+	ShopTabNameMax  = 32
 
 	attributeSize                = 3
 	itemEntrySize                = 4 + 4 + 1 + 1 + (itemproto.ItemSocketCount * 4) + (itemproto.ItemAttributeCount * attributeSize)
+	shopTabSize                  = ShopTabNameMax + 1 + (ShopHostItemMax * itemEntrySize)
 	clientBuyPayloadSize         = 3
 	clientEndPayloadSize         = 1
 	clientSellPayloadSize        = 2
 	clientSell2PayloadSize       = 3
 	serverStartPayloadSize       = 1 + 4 + (ShopHostItemMax * itemEntrySize)
+	serverStartExFixedSize       = 1 + 4 + 1
 	serverUpdateItemPayloadSize  = 1 + 1 + itemEntrySize
 	serverUpdatePricePayloadSize = 1 + 4
 	serverEndPayloadSize         = 1
 	serverStartOwnerOffset       = 1
 	serverStartItemsOffset       = 5
+	serverStartExTabCountOffset  = 5
+	serverStartExTabsOffset      = 6
 	itemEntrySocketsOffset       = 10
 	itemEntryAttrsOffset         = itemEntrySocketsOffset + (itemproto.ItemSocketCount * 4)
 )
@@ -80,6 +85,17 @@ type ItemEntry struct {
 type ServerStartPacket struct {
 	OwnerVID uint32
 	Items    [ShopHostItemMax]ItemEntry
+}
+
+type ShopTab struct {
+	Name     string
+	CoinType uint8
+	Items    [ShopHostItemMax]ItemEntry
+}
+
+type ServerStartExPacket struct {
+	OwnerVID uint32
+	Tabs     []ShopTab
 }
 
 type ServerUpdateItemPacket struct {
@@ -186,6 +202,45 @@ func DecodeServerStart(f frame.Frame) (ServerStartPacket, error) {
 	for i := range packet.Items {
 		packet.Items[i] = decodeItemEntry(f.Payload[offset : offset+itemEntrySize])
 		offset += itemEntrySize
+	}
+	return packet, nil
+}
+
+func EncodeServerStartEx(packet ServerStartExPacket) []byte {
+	payload := make([]byte, serverStartExFixedSize+(len(packet.Tabs)*shopTabSize))
+	payload[0] = ServerSubheaderStartEx
+	binary.LittleEndian.PutUint32(payload[serverStartOwnerOffset:], packet.OwnerVID)
+	payload[serverStartExTabCountOffset] = uint8(len(packet.Tabs))
+	offset := serverStartExTabsOffset
+	for _, tab := range packet.Tabs {
+		encodeShopTab(payload[offset:offset+shopTabSize], tab)
+		offset += shopTabSize
+	}
+	return frame.Encode(HeaderServerShop, payload)
+}
+
+func DecodeServerStartEx(f frame.Frame) (ServerStartExPacket, error) {
+	if f.Header != HeaderServerShop {
+		return ServerStartExPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) < serverStartExFixedSize {
+		return ServerStartExPacket{}, ErrInvalidPayload
+	}
+	if f.Payload[0] != ServerSubheaderStartEx {
+		return ServerStartExPacket{}, ErrUnexpectedSubheader
+	}
+	tabCount := int(f.Payload[serverStartExTabCountOffset])
+	if len(f.Payload) != serverStartExFixedSize+(tabCount*shopTabSize) {
+		return ServerStartExPacket{}, ErrInvalidPayload
+	}
+	packet := ServerStartExPacket{
+		OwnerVID: binary.LittleEndian.Uint32(f.Payload[serverStartOwnerOffset:]),
+		Tabs:     make([]ShopTab, tabCount),
+	}
+	offset := serverStartExTabsOffset
+	for i := range packet.Tabs {
+		packet.Tabs[i] = decodeShopTab(f.Payload[offset : offset+shopTabSize])
+		offset += shopTabSize
 	}
 	return packet, nil
 }
@@ -308,6 +363,29 @@ func decodeServerBareSubheader(f frame.Frame, subheader uint8) error {
 	return nil
 }
 
+func encodeShopTab(dst []byte, tab ShopTab) {
+	copy(dst[:ShopTabNameMax], []byte(tab.Name))
+	dst[ShopTabNameMax] = tab.CoinType
+	offset := ShopTabNameMax + 1
+	for _, item := range tab.Items {
+		encodeItemEntry(dst[offset:offset+itemEntrySize], item)
+		offset += itemEntrySize
+	}
+}
+
+func decodeShopTab(src []byte) ShopTab {
+	tab := ShopTab{
+		Name:     fixedString(src[:ShopTabNameMax]),
+		CoinType: src[ShopTabNameMax],
+	}
+	offset := ShopTabNameMax + 1
+	for i := range tab.Items {
+		tab.Items[i] = decodeItemEntry(src[offset : offset+itemEntrySize])
+		offset += itemEntrySize
+	}
+	return tab
+}
+
 func encodeItemEntry(dst []byte, item ItemEntry) {
 	binary.LittleEndian.PutUint32(dst[0:], item.Vnum)
 	binary.LittleEndian.PutUint32(dst[4:], item.Price)
@@ -325,6 +403,15 @@ func encodeItemEntry(dst []byte, item ItemEntry) {
 		binary.LittleEndian.PutUint16(dst[offset:], uint16(attribute.Value))
 		offset += 2
 	}
+}
+
+func fixedString(src []byte) string {
+	for i, b := range src {
+		if b == 0 {
+			return string(src[:i])
+		}
+	}
+	return string(src)
 }
 
 func decodeItemEntry(src []byte) ItemEntry {

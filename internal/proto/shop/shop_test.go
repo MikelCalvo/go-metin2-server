@@ -116,6 +116,33 @@ func TestDecodeServerStartReturnsExpectedFieldsFromTheSelectedBootstrapShape(t *
 	}
 }
 
+func TestEncodeServerStartExBuildsAFrameWithTwoTabs(t *testing.T) {
+	want := loadHexFixture(t, "server-start-ex-frame.hex")
+	got := EncodeServerStartEx(sampleServerStartExPacket())
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server shop start-ex frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeServerStartExReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeServerStartEx(decodeSingleFrame(t, loadHexFixture(t, "server-start-ex-frame.hex")))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	want := sampleServerStartExPacket()
+	if packet.OwnerVID != want.OwnerVID {
+		t.Fatalf("unexpected owner vid: got %#x want %#x", packet.OwnerVID, want.OwnerVID)
+	}
+	if len(packet.Tabs) != len(want.Tabs) {
+		t.Fatalf("unexpected tab count: got %d want %d", len(packet.Tabs), len(want.Tabs))
+	}
+	for i := range packet.Tabs {
+		if packet.Tabs[i] != want.Tabs[i] {
+			t.Fatalf("unexpected tab %d: got %+v want %+v", i, packet.Tabs[i], want.Tabs[i])
+		}
+	}
+}
+
 func TestEncodeServerUpdateItemBuildsAFrame(t *testing.T) {
 	want := loadHexFixture(t, "server-update-item-frame.hex")
 	got := EncodeServerUpdateItem(sampleServerUpdateItemPacket())
@@ -352,6 +379,27 @@ func TestDecodeServerStartRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestDecodeServerStartExRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerStartEx(frame.Frame{Header: HeaderServerShop + 1, Length: 13, Payload: []byte{ServerSubheaderStartEx, 0, 0, 0, 0, 0}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerStartExRejectsUnexpectedSubheader(t *testing.T) {
+	_, err := DecodeServerStartEx(frame.Frame{Header: HeaderServerShop, Length: 13, Payload: []byte{ServerSubheaderStart, 0, 0, 0, 0, 0}})
+	if !errors.Is(err, ErrUnexpectedSubheader) {
+		t.Fatalf("expected ErrUnexpectedSubheader, got %v", err)
+	}
+}
+
+func TestDecodeServerStartExRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeServerStartEx(frame.Frame{Header: HeaderServerShop, Length: 13, Payload: []byte{ServerSubheaderStartEx, 0, 0, 0, 0, 1}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestDecodeServerUpdateItemRejectsUnexpectedHeader(t *testing.T) {
 	_, err := DecodeServerUpdateItem(frame.Frame{Header: HeaderServerShop + 1, Length: 71, Payload: make([]byte, serverUpdateItemPayloadSize)})
 	if !errors.Is(err, ErrUnexpectedHeader) {
@@ -445,6 +493,41 @@ func sampleServerStartPacket() ServerStartPacket {
 		},
 	}
 	return ServerStartPacket{OwnerVID: 0x02040107, Items: items}
+}
+
+func sampleServerStartExPacket() ServerStartExPacket {
+	firstTab := ShopTab{Name: "Weapons", CoinType: 1}
+	firstTab.Items[0] = ItemEntry{
+		Vnum:       0x11223344,
+		Price:      2,
+		Count:      3,
+		DisplayPos: 0,
+		Sockets:    [itemproto.ItemSocketCount]int32{0x01020304, -1, 0},
+		Attributes: [itemproto.ItemAttributeCount]itemproto.Attribute{
+			{Type: 5, Value: 300},
+			{Type: 0, Value: -2},
+		},
+	}
+
+	secondTab := ShopTab{Name: "TabTwo", CoinType: 2}
+	secondTab.Items[0] = ItemEntry{
+		Vnum:       0xDEADBEEF,
+		Price:      99,
+		Count:      1,
+		DisplayPos: 1,
+		Sockets:    [itemproto.ItemSocketCount]int32{1, 2, 3},
+		Attributes: [itemproto.ItemAttributeCount]itemproto.Attribute{
+			{Type: 10, Value: 1},
+			{Type: 11, Value: 2},
+			{Type: 12, Value: 3},
+			{Type: 13, Value: 4},
+			{Type: 14, Value: 5},
+			{Type: 15, Value: 6},
+			{Type: 16, Value: 7},
+		},
+	}
+
+	return ServerStartExPacket{OwnerVID: 0x55667788, Tabs: []ShopTab{firstTab, secondTab}}
 }
 
 func sampleServerUpdateItemPacket() ServerUpdateItemPacket {
