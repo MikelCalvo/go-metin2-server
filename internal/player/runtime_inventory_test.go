@@ -527,6 +527,28 @@ func TestRuntimeSellMerchantItemRejectsInvalidInputWithoutMutatingState(t *testi
 	}
 }
 
+func TestRuntimeSellMerchantItemRejectsCarriedSlotMarkedEquippedWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{{ID: 31, Vnum: 27001, Count: 3, Slot: 5, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.SellMerchantItem(5, 1, 10); ok {
+		t.Fatal("expected carried-slot item marked equipped to fail merchant sell")
+	}
+	if _, ok := runtime.MerchantSellCount(5, 1); ok {
+		t.Fatal("expected carried-slot item marked equipped to fail merchant sell count resolution")
+	}
+	if got := runtime.LiveGold(); got != persisted.Gold {
+		t.Fatalf("expected live gold to stay unchanged after equipped carried-slot sell attempt, got %d", got)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected live inventory to stay unchanged after equipped carried-slot sell attempt, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) || runtime.PersistedSnapshot().Gold != persisted.Gold {
+		t.Fatalf("expected persisted state to stay unchanged after equipped carried-slot sell attempt, got %+v", runtime.PersistedSnapshot())
+	}
+}
+
 func TestNilRuntimeInventoryEquipmentAndCurrencyHelpersAreSafe(t *testing.T) {
 	var runtime *Runtime
 
