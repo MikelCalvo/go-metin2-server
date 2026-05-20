@@ -188,6 +188,20 @@ func TestDecodeServerNotEnoughMoneyAcceptsTheExpectedSubheader(t *testing.T) {
 	}
 }
 
+func TestEncodeServerSoldoutBuildsAFrame(t *testing.T) {
+	want := loadHexFixture(t, "server-soldout-frame.hex")
+	got := EncodeServerSoldout()
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server shop soldout frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeServerSoldoutAcceptsTheExpectedSubheader(t *testing.T) {
+	if err := DecodeServerSoldout(decodeSingleFrame(t, loadHexFixture(t, "server-soldout-frame.hex"))); err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+}
+
 func TestEncodeServerInventoryFullBuildsAFrame(t *testing.T) {
 	want := loadHexFixture(t, "server-inventory-full-frame.hex")
 	got := EncodeServerInventoryFull()
@@ -212,6 +226,34 @@ func TestEncodeServerInvalidPosBuildsAFrame(t *testing.T) {
 
 func TestDecodeServerInvalidPosAcceptsTheExpectedSubheader(t *testing.T) {
 	if err := DecodeServerInvalidPos(decodeSingleFrame(t, loadHexFixture(t, "server-invalid-pos-frame.hex"))); err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+}
+
+func TestEncodeServerSoldOutBuildsAFrame(t *testing.T) {
+	want := loadHexFixture(t, "server-sold-out-frame.hex")
+	got := EncodeServerSoldOut()
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server shop sold-out frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeServerSoldOutAcceptsTheExpectedSubheader(t *testing.T) {
+	if err := DecodeServerSoldOut(decodeSingleFrame(t, loadHexFixture(t, "server-sold-out-frame.hex"))); err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+}
+
+func TestEncodeServerNotEnoughMoneyExBuildsAFrame(t *testing.T) {
+	want := loadHexFixture(t, "server-not-enough-money-ex-frame.hex")
+	got := EncodeServerNotEnoughMoneyEx()
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server shop not-enough-money-ex frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeServerNotEnoughMoneyExAcceptsTheExpectedSubheader(t *testing.T) {
+	if err := DecodeServerNotEnoughMoneyEx(decodeSingleFrame(t, loadHexFixture(t, "server-not-enough-money-ex-frame.hex"))); err != nil {
 		t.Fatalf("unexpected decode error: %v", err)
 	}
 }

@@ -213,16 +213,21 @@ The narrowest honest merchant-window failure contract is now live too:
 This freeze is intentionally narrower than the whole failure surface:
 - it applies only to packet `SHOP BUY` while an active merchant session still exists
 - the stale-window `GC::SHOP END` path is a close-path companion, not an additional merchant error-subheader claim
-- it does not yet freeze `SOLDOUT` or `NOT_ENOUGH_MONEY_EX`
 - local `/shop_buy <slot>` now mirrors the same `GC::SHOP INVALID_POS` unknown-slot companion as the packet path for this first bootstrap merchant-buy surface
 
-Compatibility-oriented server `SHOP` failure subheaders are still acknowledged as likely relevant, especially:
-- `NOT_ENOUGH_MONEY`
-- `INVENTORY_FULL`
-- `SOLDOUT`
-- `NOT_ENOUGH_MONEY_EX`
+### Frozen bare server shop result codecs
 
-After the freeze above, the exact mapping between other server-side failure causes and final client-visible `GC::SHOP` responses still remains capture-gated.
+The repository also owns the exact bare-frame codec shape for the remaining compatibility-oriented no-payload shop result subheaders in the current `ShopSub::GC` ordering:
+- `SOLDOUT = 6`
+- `SOLD_OUT = 9`
+- `NOT_ENOUGH_MONEY_EX = 11`
+
+Each currently freezes only the common server `SHOP` envelope (`0x0810`) plus the one-byte subheader payload, with no trailing fields.
+
+This is a codec-only ownership step for later stock, extended-shop, and player-shop slices:
+- the bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still do not emit `SOLDOUT`, `SOLD_OUT`, or `NOT_ENOUGH_MONEY_EX`
+- the exact mapping between future merchant failure causes and these result subheaders remains capture-/slice-gated
+- `START_EX` remains acknowledged from the same server subheader ordering, but its extended payload/choreography is not yet frozen by this document
 
 ### Frozen `GC::SHOP UPDATE_ITEM` codec seam
 

@@ -17,14 +17,18 @@ const (
 	ClientSubheaderSell  uint8 = 2
 	ClientSubheaderSell2 uint8 = 3
 
-	ServerSubheaderStart          uint8 = 0
-	ServerSubheaderEnd            uint8 = 1
-	ServerSubheaderUpdateItem     uint8 = 2
-	ServerSubheaderUpdatePrice    uint8 = 3
-	ServerSubheaderOK             uint8 = 4
-	ServerSubheaderNotEnoughMoney uint8 = 5
-	ServerSubheaderInventoryFull  uint8 = 7
-	ServerSubheaderInvalidPos     uint8 = 8
+	ServerSubheaderStart            uint8 = 0
+	ServerSubheaderEnd              uint8 = 1
+	ServerSubheaderUpdateItem       uint8 = 2
+	ServerSubheaderUpdatePrice      uint8 = 3
+	ServerSubheaderOK               uint8 = 4
+	ServerSubheaderNotEnoughMoney   uint8 = 5
+	ServerSubheaderSoldout          uint8 = 6
+	ServerSubheaderInventoryFull    uint8 = 7
+	ServerSubheaderInvalidPos       uint8 = 8
+	ServerSubheaderSoldOut          uint8 = 9
+	ServerSubheaderStartEx          uint8 = 10
+	ServerSubheaderNotEnoughMoneyEx uint8 = 11
 
 	ShopHostItemMax = 40
 
@@ -251,6 +255,14 @@ func DecodeServerNotEnoughMoney(f frame.Frame) error {
 	return decodeServerBareSubheader(f, ServerSubheaderNotEnoughMoney)
 }
 
+func EncodeServerSoldout() []byte {
+	return frame.Encode(HeaderServerShop, []byte{ServerSubheaderSoldout})
+}
+
+func DecodeServerSoldout(f frame.Frame) error {
+	return decodeServerBareSubheader(f, ServerSubheaderSoldout)
+}
+
 func EncodeServerInventoryFull() []byte {
 	return frame.Encode(HeaderServerShop, []byte{ServerSubheaderInventoryFull})
 }
@@ -265,6 +277,22 @@ func EncodeServerInvalidPos() []byte {
 
 func DecodeServerInvalidPos(f frame.Frame) error {
 	return decodeServerBareSubheader(f, ServerSubheaderInvalidPos)
+}
+
+func EncodeServerSoldOut() []byte {
+	return frame.Encode(HeaderServerShop, []byte{ServerSubheaderSoldOut})
+}
+
+func DecodeServerSoldOut(f frame.Frame) error {
+	return decodeServerBareSubheader(f, ServerSubheaderSoldOut)
+}
+
+func EncodeServerNotEnoughMoneyEx() []byte {
+	return frame.Encode(HeaderServerShop, []byte{ServerSubheaderNotEnoughMoneyEx})
+}
+
+func DecodeServerNotEnoughMoneyEx(f frame.Frame) error {
+	return decodeServerBareSubheader(f, ServerSubheaderNotEnoughMoneyEx)
 }
 
 func decodeServerBareSubheader(f frame.Frame, subheader uint8) error {
