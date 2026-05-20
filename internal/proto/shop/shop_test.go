@@ -116,6 +116,24 @@ func TestDecodeServerStartReturnsExpectedFieldsFromTheSelectedBootstrapShape(t *
 	}
 }
 
+func TestEncodeServerUpdateItemBuildsAFrame(t *testing.T) {
+	want := loadHexFixture(t, "server-update-item-frame.hex")
+	got := EncodeServerUpdateItem(sampleServerUpdateItemPacket())
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected server shop update-item frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeServerUpdateItemReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeServerUpdateItem(decodeSingleFrame(t, loadHexFixture(t, "server-update-item-frame.hex")))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != sampleServerUpdateItemPacket() {
+		t.Fatalf("unexpected server shop update-item packet: %+v", packet)
+	}
+}
+
 func TestEncodeServerEndBuildsAFrame(t *testing.T) {
 	want := loadHexFixture(t, "server-end-frame.hex")
 	got := EncodeServerEnd()
@@ -274,6 +292,31 @@ func TestDecodeServerStartRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestDecodeServerUpdateItemRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerUpdateItem(frame.Frame{Header: HeaderServerShop + 1, Length: 71, Payload: make([]byte, serverUpdateItemPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeServerUpdateItemRejectsUnexpectedSubheader(t *testing.T) {
+	payload := make([]byte, serverUpdateItemPayloadSize)
+	payload[0] = ServerSubheaderEnd
+	_, err := DecodeServerUpdateItem(frame.Frame{Header: HeaderServerShop, Length: 71, Payload: payload})
+	if !errors.Is(err, ErrUnexpectedSubheader) {
+		t.Fatalf("expected ErrUnexpectedSubheader, got %v", err)
+	}
+}
+
+func TestDecodeServerUpdateItemRejectsInvalidPayload(t *testing.T) {
+	payload := make([]byte, serverUpdateItemPayloadSize-1)
+	payload[0] = ServerSubheaderUpdateItem
+	_, err := DecodeServerUpdateItem(frame.Frame{Header: HeaderServerShop, Length: 70, Payload: payload})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func sampleClientBuyPacket() ClientBuyPacket {
 	return ClientBuyPacket{RawLeadingByte: 1, CatalogSlot: 1}
 }
@@ -321,6 +364,28 @@ func sampleServerStartPacket() ServerStartPacket {
 		},
 	}
 	return ServerStartPacket{OwnerVID: 0x02040107, Items: items}
+}
+
+func sampleServerUpdateItemPacket() ServerUpdateItemPacket {
+	return ServerUpdateItemPacket{
+		Position: 12,
+		Item: ItemEntry{
+			Vnum:       0x11223344,
+			Price:      1000,
+			Count:      5,
+			DisplayPos: 12,
+			Sockets:    [itemproto.ItemSocketCount]int32{1, 2, 3},
+			Attributes: [itemproto.ItemAttributeCount]itemproto.Attribute{
+				{Type: 1, Value: 10},
+				{Type: 2, Value: 11},
+				{Type: 3, Value: 12},
+				{Type: 4, Value: 13},
+				{Type: 5, Value: 14},
+				{Type: 6, Value: 15},
+				{Type: 7, Value: 16},
+			},
+		},
+	}
 }
 
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {

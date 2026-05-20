@@ -19,6 +19,7 @@ const (
 
 	ServerSubheaderStart          uint8 = 0
 	ServerSubheaderEnd            uint8 = 1
+	ServerSubheaderUpdateItem     uint8 = 2
 	ServerSubheaderOK             uint8 = 4
 	ServerSubheaderNotEnoughMoney uint8 = 5
 	ServerSubheaderInventoryFull  uint8 = 7
@@ -26,18 +27,19 @@ const (
 
 	ShopHostItemMax = 40
 
-	attributeSize          = 3
-	itemEntrySize          = 4 + 4 + 1 + 1 + (itemproto.ItemSocketCount * 4) + (itemproto.ItemAttributeCount * attributeSize)
-	clientBuyPayloadSize   = 3
-	clientEndPayloadSize   = 1
-	clientSellPayloadSize  = 2
-	clientSell2PayloadSize = 3
-	serverStartPayloadSize = 1 + 4 + (ShopHostItemMax * itemEntrySize)
-	serverEndPayloadSize   = 1
-	serverStartOwnerOffset = 1
-	serverStartItemsOffset = 5
-	itemEntrySocketsOffset = 10
-	itemEntryAttrsOffset   = itemEntrySocketsOffset + (itemproto.ItemSocketCount * 4)
+	attributeSize               = 3
+	itemEntrySize               = 4 + 4 + 1 + 1 + (itemproto.ItemSocketCount * 4) + (itemproto.ItemAttributeCount * attributeSize)
+	clientBuyPayloadSize        = 3
+	clientEndPayloadSize        = 1
+	clientSellPayloadSize       = 2
+	clientSell2PayloadSize      = 3
+	serverStartPayloadSize      = 1 + 4 + (ShopHostItemMax * itemEntrySize)
+	serverUpdateItemPayloadSize = 1 + 1 + itemEntrySize
+	serverEndPayloadSize        = 1
+	serverStartOwnerOffset      = 1
+	serverStartItemsOffset      = 5
+	itemEntrySocketsOffset      = 10
+	itemEntryAttrsOffset        = itemEntrySocketsOffset + (itemproto.ItemSocketCount * 4)
 )
 
 var (
@@ -72,6 +74,11 @@ type ItemEntry struct {
 type ServerStartPacket struct {
 	OwnerVID uint32
 	Items    [ShopHostItemMax]ItemEntry
+}
+
+type ServerUpdateItemPacket struct {
+	Position uint8
+	Item     ItemEntry
 }
 
 func EncodeClientBuy(packet ClientBuyPacket) []byte {
@@ -171,6 +178,27 @@ func DecodeServerStart(f frame.Frame) (ServerStartPacket, error) {
 		offset += itemEntrySize
 	}
 	return packet, nil
+}
+
+func EncodeServerUpdateItem(packet ServerUpdateItemPacket) []byte {
+	payload := make([]byte, serverUpdateItemPayloadSize)
+	payload[0] = ServerSubheaderUpdateItem
+	payload[1] = packet.Position
+	encodeItemEntry(payload[2:], packet.Item)
+	return frame.Encode(HeaderServerShop, payload)
+}
+
+func DecodeServerUpdateItem(f frame.Frame) (ServerUpdateItemPacket, error) {
+	if f.Header != HeaderServerShop {
+		return ServerUpdateItemPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverUpdateItemPayloadSize {
+		return ServerUpdateItemPacket{}, ErrInvalidPayload
+	}
+	if f.Payload[0] != ServerSubheaderUpdateItem {
+		return ServerUpdateItemPacket{}, ErrUnexpectedSubheader
+	}
+	return ServerUpdateItemPacket{Position: f.Payload[1], Item: decodeItemEntry(f.Payload[2:])}, nil
 }
 
 func EncodeServerEnd() []byte {

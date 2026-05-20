@@ -76,7 +76,7 @@ Current compatibility references also indicate these subheader families:
   - `START_EX`
   - `NOT_ENOUGH_MONEY_EX`
 
-This document freezes the first packet/runtime `BUY` path and the later focused bootstrap `SELL` / `SELL2` sell-back seam.
+This document freezes the first packet/runtime `BUY` path, the later focused bootstrap `SELL` / `SELL2` sell-back seam, and the reusable `GC::SHOP UPDATE_ITEM` codec shape used by legacy shop-slot refreshes.
 It does **not** claim that every listed subheader is already capture-confirmed or implemented by this repository.
 
 ## First owned transaction gate
@@ -165,7 +165,7 @@ The live merchant-window success step is now owned explicitly:
 That owned seam remains intentionally small:
 - it applies to successful packet `SHOP BUY` while the merchant session is still active
 - the temporary local `/shop_buy <slot>` debug harness now reuses that same success surface (`ITEM_SET` refreshes + bare `GC::SHOP OK`) for the same authoritative success state change while still remaining only a local QA/debug ingress
-- it does not yet freeze any extra merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` choreography
+- it does not yet emit any extra merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` choreography
 
 ### Stale post-reclaim isolation
 
@@ -224,6 +224,19 @@ Compatibility-oriented server `SHOP` failure subheaders are still acknowledged a
 
 After the freeze above, the exact mapping between other server-side failure causes and final client-visible `GC::SHOP` responses still remains capture-gated.
 
+### Frozen `GC::SHOP UPDATE_ITEM` codec seam
+
+The legacy client handles `GC::SHOP UPDATE_ITEM` as a merchant-slot refresh: it reads one `pos` byte plus one `packet_shop_item` payload and refreshes the shop window for that slot.
+The repository now owns that packet shape at the codec level:
+- server family: `SHOP`, header `0x0810`
+- subheader: `UPDATE_ITEM = 2`
+- payload after the subheader: `pos uint8` + one normal shop catalog item entry
+- item entry layout matches the currently frozen `START` catalog entry layout: `vnum uint32 LE`, `price uint32 LE`, `count uint8`, `display_pos uint8`, three little-endian `int32` sockets, and seven `(type uint8, value int16 LE)` attributes
+
+This is a codec-only compatibility seam for later stock/sold-out/player-shop refresh work.
+The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus bare `GC::SHOP OK` / error companions; they do not emit `UPDATE_ITEM` yet.
+`UPDATE_PRICE` remains capture-gated.
+
 The first repository-owned carried placement contract now lives beside this document in `item-stack-bootstrap.md`:
 - validate merchant grants against template `stackable` / `max_count`
 - prefer one deterministic full merge into an existing compatible carried stack
@@ -237,7 +250,7 @@ The first repository-owned carried placement contract now lives beside this docu
 The following are still intentionally unknown and must be captured or pinned by RED tests before broader implementation claims:
 - the final semantic meaning of the first trailing byte in client `SHOP BUY`
 - whether later compatibility work must switch from the currently planned `GC::SHOP START` path to `GC::SHOP START_EX`
-- whether later compatibility work must widen the current owned packet-path success burst (`ITEM_SET` refreshes + bare `GC::SHOP OK`) with additional merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` frames to keep the client UI fully stable
+- whether later compatibility work must widen the current owned packet-path success burst (`ITEM_SET` refreshes + bare `GC::SHOP OK`) by emitting the now-owned `UPDATE_ITEM` codec, `UPDATE_PRICE`, or both to keep the client UI fully stable
 - whether explicit `GC::SHOP END` is mandatory on every close path while the socket remains alive in `GAME`
 - whether multi-tab addressing changes the future meaning of `catalog_slot`
 
