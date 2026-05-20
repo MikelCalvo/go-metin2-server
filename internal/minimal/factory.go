@@ -1332,8 +1332,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				}
 				return nil, false
 			}
+			unitPrice, ok := merchantSellUnitPriceForSlot(runtime.itemTemplates, selectedPlayer, slot)
+			if !ok {
+				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
+				if !ok {
+					return nil, false
+				}
+				return frames, true
+			}
 			previousSelected := selectedPlayer.LiveCharacter()
-			sellResult, ok := selectedPlayer.SellMerchantItem(slot, count, 1)
+			sellResult, ok := selectedPlayer.SellMerchantItem(slot, count, unitPrice)
 			if !ok {
 				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
 				if !ok {
@@ -2858,6 +2866,23 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 	return frames, nil
 }
 
+func merchantSellUnitPriceForSlot(templates map[uint32]itemcatalog.Template, selectedPlayer *player.Runtime, slot inventory.SlotIndex) (uint64, bool) {
+	if selectedPlayer == nil {
+		return 0, false
+	}
+	for _, item := range selectedPlayer.LiveInventory() {
+		if item.Equipped || item.Slot != slot {
+			continue
+		}
+		template, ok := templates[item.Vnum]
+		if !ok {
+			return 0, false
+		}
+		return player.MerchantSellUnitPrice(template)
+	}
+	return 0, false
+}
+
 func merchantSellResultFrames(result player.MerchantSellResult) ([][]byte, error) {
 	position, err := itemproto.CarriedInventoryPosition(uint16(result.Slot))
 	if err != nil {
@@ -3429,11 +3454,12 @@ func defaultBootstrapItemTemplateSnapshot() itemcatalog.Snapshot {
 			},
 		},
 		{
-			Vnum:      27001,
-			Name:      "Small Red Potion",
-			Stackable: true,
-			MaxCount:  200,
-			UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+			Vnum:         27001,
+			Name:         "Small Red Potion",
+			Stackable:    true,
+			MaxCount:     200,
+			ShopBuyPrice: 5,
+			UseEffect:    &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
 		},
 	}}
 }

@@ -469,6 +469,16 @@ func TestRuntimeSellMerchantItemDecrementsPartialStackAndCreditsGold(t *testing.
 	}
 }
 
+func TestMerchantSellUnitPriceFromTemplateUsesLegacyFloorAfterTax(t *testing.T) {
+	price, ok := MerchantSellUnitPrice(itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500})
+	if !ok {
+		t.Fatal("expected sell unit price to resolve from item template shop-buy price")
+	}
+	if price != 97 {
+		t.Fatalf("expected legacy-compatible unit sell price 97 for shop-buy price 500, got %d", price)
+	}
+}
+
 func TestRuntimeSellMerchantItemRejectsInvalidInputWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

@@ -410,6 +410,19 @@ func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitP
 	return result, true
 }
 
+func MerchantSellUnitPrice(template itemcatalog.Template) (uint64, bool) {
+	if !itemcatalog.ValidTemplate(template) || template.ShopBuyPrice == 0 {
+		return 0, false
+	}
+	price := template.ShopBuyPrice / 5
+	tax := price * 3 / 100
+	price -= tax
+	if price == 0 {
+		return 0, false
+	}
+	return price, true
+}
+
 func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
 	if r == nil {
 		return

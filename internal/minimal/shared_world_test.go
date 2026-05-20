@@ -23014,11 +23014,12 @@ func defaultMerchantItemTemplates() []itemcatalog.Template {
 	return []itemcatalog.Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
 		{
-			Vnum:      27001,
-			Name:      "Small Red Potion",
-			Stackable: true,
-			MaxCount:  200,
-			UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+			Vnum:         27001,
+			Name:         "Small Red Potion",
+			Stackable:    true,
+			MaxCount:     200,
+			ShopBuyPrice: 5,
+			UseEffect:    &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
 		},
 	}
 }
