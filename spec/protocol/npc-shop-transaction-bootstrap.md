@@ -266,6 +266,10 @@ The first live sell-back contract remains intentionally narrow:
 - invalid slots, equipped items, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
 - an invalid packet/runtime sell while an active merchant window exists returns bare self-only `GC::SHOP INVALID_POS`
 - stale active merchant context still returns `GC::SHOP END`, clears the active context, and leaves inventory/currency unchanged
+- if a socket already lost live shared-world ownership because another session reclaimed the same selected character, packet `SHOP SELL` / `SHOP SELL2` may still return the same self-local sell success burst (`ITEM_DEL` or `ITEM_SET` plus bare `GC::SHOP OK`) to that stale socket
+- that stale sell mutation must not persist updated `gold` or `inventory`
+- that stale sell mutation must not replace the replacement live owner's exact-name loopback inventory/currency snapshots
+- no peer-facing packets are emitted from that stale socket for this bootstrap merchant-sell path
 
 The packet/runtime path now loads the item shop-buy price, count-per-gold flag, and first anti-sell policy through `itemstore.Template.shop_buy_price`, `itemstore.Template.sell_count_per_gold`, and `itemstore.Template.anti_sell`, then applies the legacy-compatible count/price branch before the shared `/5` and 3% tax floors. This still is not a full 1:1 pricing claim: locked/bound instance policy, locale-specific tax variants, and final UI/result choreography remain later slices.
 
