@@ -331,7 +331,7 @@ The repository can now say this much honestly:
 - if that same still-live selected owner sends `/phase_select` while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the outgoing select-phase transition frame and clears the active merchant context immediately
 - if that same selected live owner reaches the current practice-mob retaliation floor at `0` HP while a merchant window is open, the runtime now also tears that merchant window down with one self-only `GC::SHOP END` after the owned death + target-clear transition
 - the owned `SHOP BUY` packet shape is now also the primary live bootstrap merchant-buy ingress, while `/shop_buy <catalog_slot>` remains only a local debug harness for the same state contract
-- successful packet buys now also end on one bare merchant-family `GC::SHOP OK` after the already-owned self-only `ITEM_SET` refreshes for changed carried slots
+- successful packet buys now return the already-owned self-only `ITEM_SET` refreshes for changed carried slots without appending an extra bare merchant-family `GC::SHOP OK`; sell-back and the local debug buy harness keep their separately documented success companions
 
 The exact mandatory role of:
 - `INVALID_POS`

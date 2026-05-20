@@ -279,7 +279,7 @@ The first repository-owned carried placement contract now lives beside this docu
 The following are still intentionally unknown and must be captured or pinned by RED tests before broader implementation claims:
 - the final semantic meaning of the first trailing byte in client `SHOP BUY`
 - whether later compatibility work must switch from the currently planned `GC::SHOP START` path to `GC::SHOP START_EX`
-- whether later compatibility work must widen the current owned packet-path success burst (`ITEM_SET` refreshes + bare `GC::SHOP OK`) by emitting the now-owned `UPDATE_ITEM` codec, `UPDATE_PRICE`, or both to keep the client UI fully stable
+- whether later compatibility work must widen the current owned packet-path success burst (`ITEM_SET` refreshes only, with no extra bare `GC::SHOP OK`) by emitting the now-owned `UPDATE_ITEM` codec, `UPDATE_PRICE`, or both to keep the client UI fully stable
 - whether explicit `GC::SHOP END` is mandatory on every close path while the socket remains alive in `GAME`
 - whether multi-tab addressing changes the future meaning of `catalog_slot`
 
