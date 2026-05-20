@@ -25,7 +25,6 @@ This contract currently applies only to:
 - explicit merchant-window close through `SHOP END`
 
 This contract does **not** yet apply to:
-- runtime sell-back via `SELL` / `SELL2`
 - personal shops / `MYSHOP`
 - basket or multi-buy quantity UI
 - safebox / mall / storage surfaces
@@ -117,10 +116,9 @@ The current clean-room contract now distinguishes two facts clearly:
 
 That means the repository now owns the exact byte layout of the first `BUY` frame without overstating the final gameplay meaning of that leading buy-specific byte.
 
-### Client `SHOP SELL` / `SELL2` ingress codecs
+### Client `SHOP SELL` / `SELL2` ingress and first runtime sell-back
 
-The repository now freezes the client-originated sell-back ingress bytes as codecs only.
-This is intentionally **not** a runtime sell-back implementation yet.
+The repository now freezes the client-originated sell-back ingress bytes and the first narrow live merchant-window runtime sell-back path.
 
 The legacy/client oracle exposes:
 - `SELL` as one byte after the common `SHOP` packet body: `slot:uint8`
@@ -140,9 +138,14 @@ Current exact shapes:
   - total length: `7`
   - payload bytes: `subheader = SELL2`, `slot:uint8`, `count:uint8`
 
-Runtime semantics remain fail-closed for now because the bootstrap merchant runtime is still buy-only.
-The `GAME` flow decodes both sell request shapes and treats them as accepted-no-op inputs with no outgoing frames, so known client sell ingress does not become a fatal unknown subheader while sell-back economics are still unowned.
-A later slice must separately own inventory sell pricing, gold mutation, item deletion/count decrement, overflow handling, and visible success/failure companions before claiming live sell-back support.
+Runtime semantics are now intentionally small and still merchant-window gated:
+- `SELL` requests a whole-stack sell for the selected carried slot
+- `SELL2` requests a counted sell for the selected carried slot
+- successful whole-stack sell emits self-only `ITEM_DEL(slot)` followed by bare self-only `GC::SHOP OK`
+- successful partial-stack sell emits self-only `ITEM_SET(slot, remaining_count)` followed by bare self-only `GC::SHOP OK`
+- invalid slot, equipped item, `anti_sell`, zero-price, arithmetic overflow, or stale merchant context fail closed through the merchant error/close companions documented in `npc-shop-transaction-bootstrap.md`
+
+This remains narrower than full compatibility-grade sell policy; locked/bound item semantics, locale-specific taxes, personal shops, and richer sell-result choreography stay outside this open/close contract.
 
 ### Server `GC::SHOP START`
 
@@ -354,7 +357,7 @@ These unknowns are the gate for the next merchant buy runtime slice.
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- runtime sell-back behavior for the now-owned `SELL` / `SELL2` ingress codecs
+- full compatibility-grade sell-back behavior beyond the current merchant-window-gated `SELL` / `SELL2` bootstrap path
 - `START_EX`
 - multi-tab merchant indexing
 - cash/coin shop semantics
