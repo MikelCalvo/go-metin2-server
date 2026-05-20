@@ -117,6 +117,7 @@ It must be present for compatibility, but its final meaning remains capture-gate
 The purchased slot must address the same stable merchant entry identity already frozen in `npc-shop-catalog-bootstrap.md`:
 - `catalog[].slot`
 - dense zero-based ordering
+- one-page bootstrap catalog size capped at the currently owned `SHOP_HOST_ITEM_MAX = 40` normal shop entries
 - template-backed `item_vnum`
 - authored `price`
 - authored `count`

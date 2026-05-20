@@ -121,7 +121,7 @@ func validDefinition(definition Definition) bool {
 }
 
 func validMerchantCatalog(catalog []MerchantCatalogEntry) bool {
-	if len(catalog) == 0 {
+	if len(catalog) == 0 || len(catalog) > 40 {
 		return false
 	}
 	for i, entry := range catalog {

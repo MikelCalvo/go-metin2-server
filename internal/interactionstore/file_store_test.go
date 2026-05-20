@@ -161,6 +161,37 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(shopPreviewSparseSlots); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for sparse shop preview slots, got %v", err)
 	}
+	oversizedShopPreviewCatalog := Snapshot{Definitions: []Definition{{
+		Kind:  KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Village Merchant",
+		Catalog: []MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}, {Slot: 1, ItemVnum: 27002, Price: 50, Count: 1},
+			{Slot: 2, ItemVnum: 27003, Price: 50, Count: 1}, {Slot: 3, ItemVnum: 27004, Price: 50, Count: 1},
+			{Slot: 4, ItemVnum: 27005, Price: 50, Count: 1}, {Slot: 5, ItemVnum: 27006, Price: 50, Count: 1},
+			{Slot: 6, ItemVnum: 27007, Price: 50, Count: 1}, {Slot: 7, ItemVnum: 27008, Price: 50, Count: 1},
+			{Slot: 8, ItemVnum: 27009, Price: 50, Count: 1}, {Slot: 9, ItemVnum: 27010, Price: 50, Count: 1},
+			{Slot: 10, ItemVnum: 27011, Price: 50, Count: 1}, {Slot: 11, ItemVnum: 27012, Price: 50, Count: 1},
+			{Slot: 12, ItemVnum: 27013, Price: 50, Count: 1}, {Slot: 13, ItemVnum: 27014, Price: 50, Count: 1},
+			{Slot: 14, ItemVnum: 27015, Price: 50, Count: 1}, {Slot: 15, ItemVnum: 27016, Price: 50, Count: 1},
+			{Slot: 16, ItemVnum: 27017, Price: 50, Count: 1}, {Slot: 17, ItemVnum: 27018, Price: 50, Count: 1},
+			{Slot: 18, ItemVnum: 27019, Price: 50, Count: 1}, {Slot: 19, ItemVnum: 27020, Price: 50, Count: 1},
+			{Slot: 20, ItemVnum: 27021, Price: 50, Count: 1}, {Slot: 21, ItemVnum: 27022, Price: 50, Count: 1},
+			{Slot: 22, ItemVnum: 27023, Price: 50, Count: 1}, {Slot: 23, ItemVnum: 27024, Price: 50, Count: 1},
+			{Slot: 24, ItemVnum: 27025, Price: 50, Count: 1}, {Slot: 25, ItemVnum: 27026, Price: 50, Count: 1},
+			{Slot: 26, ItemVnum: 27027, Price: 50, Count: 1}, {Slot: 27, ItemVnum: 27028, Price: 50, Count: 1},
+			{Slot: 28, ItemVnum: 27029, Price: 50, Count: 1}, {Slot: 29, ItemVnum: 27030, Price: 50, Count: 1},
+			{Slot: 30, ItemVnum: 27031, Price: 50, Count: 1}, {Slot: 31, ItemVnum: 27032, Price: 50, Count: 1},
+			{Slot: 32, ItemVnum: 27033, Price: 50, Count: 1}, {Slot: 33, ItemVnum: 27034, Price: 50, Count: 1},
+			{Slot: 34, ItemVnum: 27035, Price: 50, Count: 1}, {Slot: 35, ItemVnum: 27036, Price: 50, Count: 1},
+			{Slot: 36, ItemVnum: 27037, Price: 50, Count: 1}, {Slot: 37, ItemVnum: 27038, Price: 50, Count: 1},
+			{Slot: 38, ItemVnum: 27039, Price: 50, Count: 1}, {Slot: 39, ItemVnum: 27040, Price: 50, Count: 1},
+			{Slot: 40, ItemVnum: 27041, Price: 50, Count: 1},
+		},
+	}}}
+	if err := store.Save(oversizedShopPreviewCatalog); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for oversized shop preview catalog, got %v", err)
+	}
 	shopPreviewZeroPrice := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 0, Count: 1}}}}}
 	if err := store.Save(shopPreviewZeroPrice); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for zero-price shop preview entry, got %v", err)
