@@ -372,6 +372,39 @@ func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitP
 	if r == nil || unitPrice == 0 {
 		return MerchantSellResult{}, false
 	}
+	soldCount, ok := r.MerchantSellCount(slot, count)
+	if !ok || unitPrice > (^uint64(0))/uint64(soldCount) {
+		return MerchantSellResult{}, false
+	}
+	return r.SellMerchantItemForCredit(slot, count, unitPrice*uint64(soldCount))
+}
+
+func (r *Runtime) MerchantSellCount(slot inventory.SlotIndex, count uint16) (uint16, bool) {
+	if r == nil {
+		return 0, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return 0, false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Count == 0 {
+		return 0, false
+	}
+	soldCount := count
+	if soldCount == 0 || soldCount > item.Count {
+		soldCount = item.Count
+	}
+	if soldCount == 0 {
+		return 0, false
+	}
+	return soldCount, true
+}
+
+func (r *Runtime) SellMerchantItemForCredit(slot inventory.SlotIndex, count uint16, credit uint64) (MerchantSellResult, bool) {
+	if r == nil || credit == 0 {
+		return MerchantSellResult{}, false
+	}
 	index := findInventorySlot(r.liveInventory, slot)
 	if index < 0 {
 		return MerchantSellResult{}, false
@@ -384,10 +417,9 @@ func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitP
 	if soldCount == 0 || soldCount > item.Count {
 		soldCount = item.Count
 	}
-	if soldCount == 0 || unitPrice > (^uint64(0))/uint64(soldCount) {
+	if soldCount == 0 {
 		return MerchantSellResult{}, false
 	}
-	credit := unitPrice * uint64(soldCount)
 	if r.liveGold > (^uint64(0))-credit {
 		return MerchantSellResult{}, false
 	}
@@ -410,17 +442,34 @@ func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitP
 	return result, true
 }
 
-func MerchantSellUnitPrice(template itemcatalog.Template) (uint64, bool) {
-	if !itemcatalog.ValidTemplate(template) || template.ShopBuyPrice == 0 {
+func MerchantSellCredit(template itemcatalog.Template, count uint16) (uint64, bool) {
+	if !itemcatalog.ValidTemplate(template) || count == 0 {
 		return 0, false
 	}
-	price := template.ShopBuyPrice / 5
+	var price uint64
+	if template.SellCountPerGold {
+		if template.ShopBuyPrice == 0 {
+			price = uint64(count)
+		} else {
+			price = uint64(count) / template.ShopBuyPrice
+		}
+	} else {
+		if template.ShopBuyPrice == 0 || template.ShopBuyPrice > (^uint64(0))/uint64(count) {
+			return 0, false
+		}
+		price = template.ShopBuyPrice * uint64(count)
+	}
+	price /= 5
 	tax := price * 3 / 100
 	price -= tax
 	if price == 0 {
 		return 0, false
 	}
 	return price, true
+}
+
+func MerchantSellUnitPrice(template itemcatalog.Template) (uint64, bool) {
+	return MerchantSellCredit(template, 1)
 }
 
 func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {

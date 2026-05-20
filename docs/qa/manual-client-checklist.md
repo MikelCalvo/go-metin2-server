@@ -615,7 +615,7 @@ Expected result:
 
 Expected result:
 - packet `SELL` / `SELL2` mutate the selected character's carried inventory and gold while the merchant context is active
-- the current bootstrap sell price uses the loaded item template's ordinary shop-buy price divided by `5`, then the owned `3%` tax step; count-per-gold flags, anti-sell/locked policy, and richer sell UI choreography remain later slices
+- the current bootstrap sell price uses the loaded item template's ordinary shop-buy price and count-per-gold flag through the owned legacy count/price branch, then applies the shared `/5` and `3%` tax floors; anti-sell/locked policy and richer sell UI choreography remain later slices
 - no peer-facing packet fanout is emitted from sell-back alone
 
 ### 6.20 Training-dummy combat target selection (packet-harness optional)

@@ -15,14 +15,15 @@ var (
 )
 
 type Template struct {
-	Vnum         uint32       `json:"vnum"`
-	Name         string       `json:"name"`
-	Stackable    bool         `json:"stackable"`
-	MaxCount     uint16       `json:"max_count"`
-	ShopBuyPrice uint64       `json:"shop_buy_price,omitempty"`
-	EquipSlot    string       `json:"equip_slot,omitempty"`
-	UseEffect    *UseEffect   `json:"use_effect,omitempty"`
-	EquipEffect  *PointEffect `json:"equip_effect,omitempty"`
+	Vnum             uint32       `json:"vnum"`
+	Name             string       `json:"name"`
+	Stackable        bool         `json:"stackable"`
+	MaxCount         uint16       `json:"max_count"`
+	ShopBuyPrice     uint64       `json:"shop_buy_price,omitempty"`
+	SellCountPerGold bool         `json:"sell_count_per_gold,omitempty"`
+	EquipSlot        string       `json:"equip_slot,omitempty"`
+	UseEffect        *UseEffect   `json:"use_effect,omitempty"`
+	EquipEffect      *PointEffect `json:"equip_effect,omitempty"`
 }
 
 type PointEffect struct {

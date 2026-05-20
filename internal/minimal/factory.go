@@ -1332,7 +1332,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				}
 				return nil, false
 			}
-			unitPrice, ok := merchantSellUnitPriceForSlot(runtime.itemTemplates, selectedPlayer, slot)
+			soldCount, ok := selectedPlayer.MerchantSellCount(slot, count)
+			if !ok {
+				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
+				if !ok {
+					return nil, false
+				}
+				return frames, true
+			}
+			credit, ok := merchantSellCreditForSlot(runtime.itemTemplates, selectedPlayer, slot, soldCount)
 			if !ok {
 				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
 				if !ok {
@@ -1341,7 +1349,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return frames, true
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
-			sellResult, ok := selectedPlayer.SellMerchantItem(slot, count, unitPrice)
+			sellResult, ok := selectedPlayer.SellMerchantItemForCredit(slot, count, credit)
 			if !ok {
 				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
 				if !ok {
@@ -2866,8 +2874,8 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 	return frames, nil
 }
 
-func merchantSellUnitPriceForSlot(templates map[uint32]itemcatalog.Template, selectedPlayer *player.Runtime, slot inventory.SlotIndex) (uint64, bool) {
-	if selectedPlayer == nil {
+func merchantSellCreditForSlot(templates map[uint32]itemcatalog.Template, selectedPlayer *player.Runtime, slot inventory.SlotIndex, soldCount uint16) (uint64, bool) {
+	if selectedPlayer == nil || soldCount == 0 {
 		return 0, false
 	}
 	for _, item := range selectedPlayer.LiveInventory() {
@@ -2878,7 +2886,7 @@ func merchantSellUnitPriceForSlot(templates map[uint32]itemcatalog.Template, sel
 		if !ok {
 			return 0, false
 		}
-		return player.MerchantSellUnitPrice(template)
+		return player.MerchantSellCredit(template, soldCount)
 	}
 	return 0, false
 }

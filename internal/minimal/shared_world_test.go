@@ -12820,6 +12820,42 @@ func TestGameSessionFlowShopSell2PacketDecrementsPartialStackAndCreditsCurrency(
 	}
 }
 
+func TestGameSessionFlowShopSellCountPerGoldCreditsLegacyCountDivision(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacketCountPerGold", 0x01040122, 0x02050122, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 25, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-count-per-gold", 0x22222222, buyer)
+	defer closeSessionFlow(t, flow)
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, SellCountPerGold: true, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 1, Message: "metadata"}}
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 25})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop sell2 count-per-gold error: %v", err)
+	}
+	if len(sellOut) != 2 {
+		t.Fatalf("expected packet shop sell2 count-per-gold success to emit 2 frames, got %d", len(sellOut))
+	}
+	if _, err := itemproto.DecodeDel(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode packet shop-sell2 count-per-gold del frame: %v", err)
+	}
+	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, sellOut[1])); err != nil {
+		t.Fatalf("decode packet shop-sell2 count-per-gold ok frame: %v", err)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after count-per-gold packet shop sell2")
+	}
+	if currencySnapshot.Gold != 126 {
+		t.Fatalf("expected count-per-gold packet shop sell2 to credit gold to 126, got %+v", currencySnapshot)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted count-per-gold merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 126 || len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("unexpected persisted count-per-gold merchant seller inventory: %+v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacket", 0x01040105, 0x02050105, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet", 0x55555555, buyer)

@@ -256,8 +256,9 @@ The first live sell-back contract remains intentionally narrow:
 - sell requests target carried inventory slots only
 - `SELL(slot)` uses count `0`, meaning the full current stack
 - `SELL2(slot,count)` sells the requested count, with count `0` or a count larger than the current stack meaning the full current stack
-- accepted sells remove the whole stack or decrement the stack count and credit `unit_sell_price * sold_count` to the selected character's live gold total
-- the first compatibility step derives `unit_sell_price` from loaded item-template `shop_buy_price` as `floor(shop_buy_price / 5)` minus `floor(3% tax)`, matching the legacy oracle's ordinary non-count-per-gold branch for one item before multiplication by sold count
+- accepted sells remove the whole stack or decrement the stack count and credit the selected character's live gold total with the owned template-derived sell credit
+- ordinary sell credit derives from loaded item-template `shop_buy_price` as `floor((shop_buy_price * sold_count) / 5)` minus `floor(3% tax)`
+- templates flagged `sell_count_per_gold` follow the legacy count-per-gold branch first: use `floor(sold_count / shop_buy_price)` when `shop_buy_price > 0`, or `sold_count` when it is zero, then apply the same `/5` and 3% tax floor; if the resulting credit is zero, the bootstrap runtime fails closed
 - the updated selected-character snapshot is persisted before the live shared-world registration is refreshed
 - whole-stack success emits self-only `ITEM_DEL(slot)` followed by bare self-only `GC::SHOP OK`
 - partial-stack success emits self-only `ITEM_SET(slot, remaining_count)` followed by bare self-only `GC::SHOP OK`
@@ -265,14 +266,14 @@ The first live sell-back contract remains intentionally narrow:
 - an invalid packet/runtime sell while an active merchant window exists returns bare self-only `GC::SHOP INVALID_POS`
 - stale active merchant context still returns `GC::SHOP END`, clears the active context, and leaves inventory/currency unchanged
 
-The packet/runtime path now loads the ordinary item shop-buy price through `itemstore.Template.shop_buy_price` and applies the first legacy-compatible sell-price step (`shop_buy_price / 5`, then 3% tax). This still is not a full 1:1 pricing claim: flags such as count-per-gold, anti-sell/locked item policy, locale-specific tax variants, and final UI/result choreography remain later slices.
+The packet/runtime path now loads the item shop-buy price and count-per-gold flag through `itemstore.Template.shop_buy_price` and `itemstore.Template.sell_count_per_gold`, then applies the legacy-compatible count/price branch before the shared `/5` and 3% tax floors. This still is not a full 1:1 pricing claim: anti-sell/locked item policy, locale-specific tax variants, and final UI/result choreography remain later slices.
 
 This slice owns the state mutation and smallest visible merchant-window companion only. It still does not freeze richer sell-result packets, merchant stock updates, tax formulas, or final client UI refresh choreography.
 
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- full compatibility-grade sell-price rules including count-per-gold flags, anti-sell/locked item policy, and locale-specific tax variants
+- full compatibility-grade sell-price rules including anti-sell/locked item policy and locale-specific tax variants
 - final client-visible sell-result choreography beyond `ITEM_DEL`/`ITEM_SET` + `GC::SHOP OK`
 - personal-shop (`MYSHOP`) behavior
 - merchant stock depletion

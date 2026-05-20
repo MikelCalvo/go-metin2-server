@@ -479,6 +479,29 @@ func TestMerchantSellUnitPriceFromTemplateUsesLegacyFloorAfterTax(t *testing.T) 
 	}
 }
 
+func TestMerchantSellCreditForCountPerGoldTemplateUsesLegacyCountDivision(t *testing.T) {
+	credit, ok := MerchantSellCredit(itemcatalog.Template{Vnum: 80001, Name: "Bundle", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, SellCountPerGold: true, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 1, Message: "metadata"}}, 25)
+	if !ok {
+		t.Fatal("expected count-per-gold sell credit to resolve")
+	}
+	if credit != 1 {
+		t.Fatalf("expected count-per-gold credit 1 after legacy count division, /5 floor, and tax, got %d", credit)
+	}
+
+	_, ok = MerchantSellCredit(itemcatalog.Template{Vnum: 80001, Name: "Bundle", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, SellCountPerGold: true, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 1, Message: "metadata"}}, 12)
+	if ok {
+		t.Fatal("expected small count-per-gold sell credit to fail closed after legacy floor/tax")
+	}
+
+	credit, ok = MerchantSellCredit(itemcatalog.Template{Vnum: 80002, Name: "Raw Bundle", Stackable: true, MaxCount: 200, SellCountPerGold: true, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 1, Message: "metadata"}}, 12)
+	if !ok {
+		t.Fatal("expected zero-price count-per-gold sell credit to use sold count")
+	}
+	if credit != 2 {
+		t.Fatalf("expected zero-price count-per-gold credit 2 after legacy floor/tax, got %d", credit)
+	}
+}
+
 func TestRuntimeSellMerchantItemRejectsInvalidInputWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
