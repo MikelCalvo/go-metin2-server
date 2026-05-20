@@ -12899,6 +12899,53 @@ func TestGameSessionFlowShopSellRejectsAntiSellTemplateWithoutMutation(t *testin
 	}
 }
 
+func TestGameSessionFlowShopSellRejectsEquippedItemWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacketEquipped", 0x01040124, 0x02050124, 125, nil)
+	buyer.Equipment = []inventory.ItemInstance{{ID: 88, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-equipped", 0x24242424, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected equipped-item packet shop sell error: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected equipped-item packet shop sell to emit 1 invalid-pos frame, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode equipped-item packet shop sell invalid-pos frame: %v", err)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after equipped-item packet shop sell")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected equipped-item packet shop sell to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after equipped-item packet shop sell")
+	}
+	if len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected equipped-item packet shop sell to keep carried inventory empty, got %+v", inventorySnapshot.Inventory)
+	}
+	equipmentSnapshot, ok := runtime.EquipmentSnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected equipment snapshot after equipped-item packet shop sell")
+	}
+	if len(equipmentSnapshot.Equipment) != 1 || equipmentSnapshot.Equipment[0].ID != 88 || equipmentSnapshot.Equipment[0].Vnum != 11200 || equipmentSnapshot.Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon.String() {
+		t.Fatalf("expected equipped-item packet shop sell to keep live equipment unchanged, got %+v", equipmentSnapshot.Equipment)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted equipped-item merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 0 || len(account.Characters[0].Equipment) != 1 || account.Characters[0].Equipment[0].ID != 88 || account.Characters[0].Equipment[0].Vnum != 11200 || !account.Characters[0].Equipment[0].Equipped || account.Characters[0].Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon {
+		t.Fatalf("expected equipped-item packet shop sell to keep persisted state unchanged, got %+v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopBuyPacketDebitsCurrencyAndAddsItem(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerPacket", 0x01040105, 0x02050105, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-buy-packet", 0x55555555, buyer)
