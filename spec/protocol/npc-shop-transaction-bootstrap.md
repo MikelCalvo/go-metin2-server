@@ -190,6 +190,16 @@ The first buy path must fail closed when any of these are true:
 - no valid carried inventory placement exists
 - persistence/writeback fails
 
+The first sell/sell2 path must fail closed when any of these are true:
+- no active merchant transaction gate exists
+- the requested carried slot is unknown or empty
+- the requested count is zero or larger than the carried stack
+- the item is currently equipped or otherwise not in a plain carried state
+- the carried item is marked runtime-locked
+- the template is marked `anti_sell`
+- the template has no sell price
+- persistence/writeback fails
+
 Failure behavior in this bootstrap contract:
 - no partial live mutation may remain committed
 - no gold may be debited on failure
@@ -256,6 +266,21 @@ The repository now owns that packet shape at the codec level:
 This is a codec-only compatibility seam for later stock/sold-out/player-shop refresh work.
 The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus their separately frozen merchant companions: packet `SHOP BUY` success is item-refresh-only, sell success still appends bare `GC::SHOP OK`, and error paths use the owned bare merchant error frames.
 They do not emit `UPDATE_ITEM` yet.
+
+### Runtime-locked item sell guard
+
+The bootstrap item instance model now carries a runtime `locked` flag so merchant sell validation can preserve a narrow legacy-style guard for items that should remain visible in carried inventory but temporarily cannot be sold.
+For this slice:
+- account and login-ticket stores round-trip the `locked` bit as part of each carried/equipped item instance
+- carried-item slot movement preserves the lock bit while clearing equipment state as before
+- packet `SHOP SELL` / `SHOP SELL2` reject locked carried items before mutation
+- rejection emits the same self-only `GC::SHOP INVALID_POS` frame used by the current anti-sell / equipped-item sell guards
+- live inventory, live gold, persisted inventory, and persisted gold remain unchanged on the locked-item rejection path
+
+This is still a bootstrap runtime guard, not a full legacy item-lock system:
+- the current runtime does not yet own lock acquisition/release packets or timers
+- equipment, trade, storage, drop, and personal-shop lock semantics remain later slices
+- no new client-visible lock state packet is introduced in this slice
 
 ### Frozen `GC::SHOP UPDATE_PRICE` codec seam
 

@@ -48,7 +48,7 @@ func TestFileStoreIssueThenLoadRoundTrip(t *testing.T) {
 				GuildName:   "Alpha",
 				Gold:        125000,
 				Inventory: []inventory.ItemInstance{
-					{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+					{ID: 11, Vnum: 27001, Count: 3, Slot: 5, Locked: true},
 				},
 				Equipment: []inventory.ItemInstance{
 					{ID: 22, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},

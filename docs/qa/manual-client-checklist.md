@@ -611,11 +611,13 @@ Expected result:
 - [ ] Confirm whole-stack sell removes the carried slot and answers with `ITEM_DEL` followed by `GC::SHOP OK`
 - [ ] Repeat with `SHOP SELL2` and a count lower than the stack size
 - [ ] Confirm partial sell refreshes the carried slot with the remaining count and answers with `GC::SHOP OK`
+- [ ] If the QA setup can mark a carried item as runtime-locked, attempt one `SHOP SELL` or `SHOP SELL2` for that slot from an open merchant window
+- [ ] Confirm the locked sell attempt returns the merchant invalid-position path and does not change gold, carried inventory, or persisted account state
 - [ ] Confirm loopback inventory/currency snapshots or reconnect state show the credited bootstrap gold and updated carried inventory
 
 Expected result:
 - packet `SELL` / `SELL2` mutate the selected character's carried inventory and gold while the merchant context is active
-- the current bootstrap sell price uses the loaded item template's ordinary shop-buy price and count-per-gold flag through the owned legacy count/price branch, then applies the shared `/5` and `3%` tax floors; anti-sell/locked policy and richer sell UI choreography remain later slices
+- the current bootstrap sell price uses the loaded item template's ordinary shop-buy price and count-per-gold flag through the owned legacy count/price branch, then applies the shared `/5` and `3%` tax floors; anti-sell and runtime-locked item guards fail closed without mutation, while richer sell UI choreography remains later slices
 - no peer-facing packet fanout is emitted from sell-back alone
 
 ### 6.20 Training-dummy combat target selection (packet-harness optional)

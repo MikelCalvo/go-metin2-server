@@ -36,7 +36,7 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 			SkillGroup: 1,
 			Gold:       88000,
 			Inventory: []inventory.ItemInstance{
-				{ID: 1001, Vnum: 27001, Count: 5, Slot: 8},
+				{ID: 1001, Vnum: 27001, Count: 5, Slot: 8, Locked: true},
 			},
 			Equipment: []inventory.ItemInstance{
 				{ID: 2002, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},

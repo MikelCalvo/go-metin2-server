@@ -23,6 +23,7 @@ type ItemInstance struct {
 	Slot      SlotIndex
 	Equipped  bool
 	EquipSlot EquipmentSlot
+	Locked    bool
 }
 
 type MoveResult struct {
