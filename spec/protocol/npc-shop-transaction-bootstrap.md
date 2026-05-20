@@ -254,7 +254,8 @@ The repository now owns that packet shape at the codec level:
 - item entry layout matches the currently frozen `START` catalog entry layout: `vnum uint32 LE`, `price uint32 LE`, `count uint8`, `display_pos uint8`, three little-endian `int32` sockets, and seven `(type uint8, value int16 LE)` attributes
 
 This is a codec-only compatibility seam for later stock/sold-out/player-shop refresh work.
-The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus bare `GC::SHOP OK` / error companions; they do not emit `UPDATE_ITEM` yet.
+The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus their separately frozen merchant companions: packet `SHOP BUY` success is item-refresh-only, sell success still appends bare `GC::SHOP OK`, and error paths use the owned bare merchant error frames.
+They do not emit `UPDATE_ITEM` yet.
 
 ### Frozen `GC::SHOP UPDATE_PRICE` codec seam
 

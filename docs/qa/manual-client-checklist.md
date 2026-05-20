@@ -259,7 +259,7 @@ If the lab currently has no such content, either:
 - [ ] Approach a visible authored QA NPC with `info`, `talk`, or merchant `shop_preview`
 - [ ] For `info` / `talk`, interact once and wait for the self-only response
 - [ ] For a merchant actor, interact once and confirm a merchant window opens instead of only a chat preview
-- [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one buy from the open window and confirm the success path ends on the merchant-family `GC::SHOP OK` instead of the older placeholder info chat
+- [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one packet `SHOP BUY` from the open window and confirm the success path returns the changed self-only `ITEM_SET` refreshes without an extra merchant-family `GC::SHOP OK` or the older placeholder info chat
 - [ ] If the bought item is stackable and the character already carries the same `vnum`, confirm the count can increase on that existing stack instead of always creating a new slot
 - [ ] If the QA setup allows it, fill the carried inventory, leave two compatible carried stacks nearly full, buy a stackable merchant entry whose count exactly matches their combined remaining room, and confirm both existing stacks fill without needing any fresh slot
 - [ ] If the QA setup allows it, leave one compatible carried stack nearly full, buy a stackable merchant entry whose count overflows that stack, and confirm the existing stack fills first while the remainder lands in a fresh carried slot
@@ -296,7 +296,7 @@ Expected result:
 Important note:
 - this smoke step validates only the current bootstrap open / buy / close merchant slice
 - broader merchant update choreography, sell flow, stock semantics, and richer NPC UI are still ahead
-- local fallback QA through `/shop_buy <slot>` now mirrors the same merchant-family `GC::SHOP OK` / `GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL` / `GC::SHOP INVALID_POS` surfaces as the owned packet path for those same authoritative results instead of keeping a silent unknown-slot branch
+- local fallback QA through `/shop_buy <slot>` now mirrors the same merchant-family `GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL` / `GC::SHOP INVALID_POS` failure surfaces as the owned packet path for those same authoritative results instead of keeping a silent unknown-slot branch; its local debug success surface may still append the older bare `GC::SHOP OK` after item refreshes until that harness is tightened separately
 
 #### 5.4.2 Warp interaction
 

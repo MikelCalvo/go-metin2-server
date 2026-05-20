@@ -210,20 +210,14 @@ The live merchant-window runtime now owns the narrowest honest packet-path succe
 When a live packet `SHOP BUY` request succeeds on a still-open merchant session, the packet-path response now:
 - keeps the existing self-only authoritative carried-slot refreshes (`ITEM_SET` per changed carried slot in carried-slot order)
 - stops using the older placeholder packet-path success chat as the terminal success signal for that packet flow
-- appends one bare merchant-family `GC::SHOP OK` after those carried-slot refreshes
+- does **not** append an extra bare merchant-family `GC::SHOP OK`; the carried-slot refreshes are the complete visible success companion for the current packet-buy path
 
-The bootstrap wire shape for that success companion is intentionally tiny:
-- header: `0x0810`
-- total length: `5`
-- payload bytes:
-  - `subheader = OK`
-
-No trailing payload bytes are owned for `GC::SHOP OK` in the current slice.
+The bootstrap wire shape for bare `GC::SHOP OK` remains owned by the codec and by the current sell/debug success companions, but packet `SHOP BUY` no longer uses it as an additional terminal success frame.
 
 This success freeze is still narrower than full merchant-window choreography:
 - it applies only to successful packet `SHOP BUY` while an active merchant session still exists
 - it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `SOLDOUT`, or `START_EX`
-- the temporary local `/shop_buy <catalog_slot>` debug harness may keep the current placeholder success info chat until a later cleanup slice says otherwise
+- the temporary local `/shop_buy <catalog_slot>` debug harness may still append the older bare merchant-family `GC::SHOP OK` after its local debug item refreshes until a later cleanup slice tightens that surface
 
 ## Open rule
 
