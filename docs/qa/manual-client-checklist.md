@@ -638,7 +638,7 @@ Expected result:
 ### 6.19 Packet carried inventory move/swap/split/merge smoke (packet-harness optional)
 
 - [ ] Enter `GAME` with a QA character that has one known carried item stack in slot `A` and an empty carried slot `B`
-- [ ] Send one real client `ITEM_MOVE` request from `A` to `B` (`source TItemPos`, `destination TItemPos`, `count`) using the full current stack count
+- [ ] Send one real client `ITEM_MOVE` request from `A` to `B` (`source TItemPos`, `destination TItemPos`, `count = 0`) to exercise full-stack drag/drop semantics
 - [ ] Confirm the selected session receives `ITEM_DEL(A)` followed by `ITEM_SET(B)`
 - [ ] Confirm loopback inventory snapshots or reconnect state show the item persisted in slot `B`
 - [ ] Repeat with a destination occupied by another carried item if the QA setup has two disposable carried items
