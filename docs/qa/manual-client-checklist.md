@@ -622,7 +622,7 @@ Expected result:
 - compatible existing stacks fill first in slot order, then the remainder lands in the lowest free carried slot
 - no harness-only placement drift appears in persisted or live runtime state
 
-### 6.19 Packet carried inventory move/swap/split smoke (packet-harness optional)
+### 6.19 Packet carried inventory move/swap/split/merge smoke (packet-harness optional)
 
 - [ ] Enter `GAME` with a QA character that has one known carried item stack in slot `A` and an empty carried slot `B`
 - [ ] Send one real client `ITEM_MOVE` request from `A` to `B` (`source TItemPos`, `destination TItemPos`, `count`) using the full current stack count
@@ -631,11 +631,13 @@ Expected result:
 - [ ] Repeat with a destination occupied by another carried item if the QA setup has two disposable carried items
 - [ ] Reset to a stack count greater than one, then send `ITEM_MOVE` from `A` to empty slot `B` with a partial count lower than the current stack count
 - [ ] Confirm the selected session receives self-only refreshes for both slots: source stack remains in `A` with the reduced count and the split stack appears in `B`
-- [ ] Repeat the same partial-count request with an occupied destination and confirm it fails closed without changing live or persisted inventory
+- [ ] Reset to two compatible carried stacks, then send a partial-count `ITEM_MOVE` from `A` into occupied compatible stack slot `C`
+- [ ] Confirm the selected session receives self-only `ITEM_SET` refreshes for both slots: source stack remains in `A` with the reduced count and destination stack `C` grows by the moved count
+- [ ] Repeat the same partial-count request with an incompatible occupied destination and confirm it fails closed without changing live or persisted inventory
 
 Expected result:
 - packet `ITEM_MOVE` reuses the same authoritative full-stack move/swap semantics as `/inventory_move`
-- empty-destination partial splits are accepted and persisted, while occupied-destination partial splits remain deferred/fail-closed
+- empty-destination partial splits and compatible occupied-destination partial merges are accepted and persisted, while incompatible occupied destinations remain deferred/fail-closed
 - the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` refresh family
 - non-carried windows and out-of-range cells fail closed without mutation
 

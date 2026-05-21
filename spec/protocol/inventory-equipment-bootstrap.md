@@ -150,10 +150,11 @@ The first client-originated carried-slot drag/drop ingress is now frozen as `ITE
   3. `count uint8`
 - for the current bootstrap runtime, both source and destination must be normal carried inventory positions (`window_type = INVENTORY`, `0 <= cell < 90`)
 - full-stack `count` values reuse the same selected-character move/swap semantics and `ITEM_DEL` / `ITEM_SET` refresh frames already owned by `/inventory_move`
-- counted `ITEM_MOVE` also accepts the first partial-stack split when the destination carried slot is empty: the source stack is decremented, a fresh runtime item instance is placed in the destination slot, and the same self-only source/destination refresh path is reused
+- counted `ITEM_MOVE` accepts an empty-destination partial-stack split: the source stack is decremented, a fresh runtime item instance is placed in the destination slot, and the same self-only source/destination refresh path is reused
+- counted `ITEM_MOVE` now also accepts a compatible occupied-destination partial-stack merge: the source stack is decremented, the destination stack's existing item instance grows by the moved count, and the same self-only source/destination `ITEM_SET` refresh path is reused
 - locked carried-slot items fail closed for move/swap, counted `ITEM_MOVE`, equip, and use attempts; locked equipped items fail closed for unequip attempts; these rejections leave live and persisted item state unchanged and emit no item refresh frames
-- counted `ITEM_MOVE` into an occupied destination still fails closed until stack-merge semantics are owned; oversized counts and zero counts also remain rejected without mutation
-- richer split/merge rules remain future work; this slice owns only empty-destination partial splits and existing full-stack moves/swaps
+- counted `ITEM_MOVE` into an incompatible occupied destination still fails closed until swap-with-count semantics are owned; oversized counts, zero counts, and overflowing destination stack counts also remain rejected without mutation
+- richer split/merge rules remain future work; this slice owns only empty-destination partial splits, compatible occupied-destination partial merges, and existing full-stack moves/swaps
 
 For the current owned bootstrap surface:
 - carried inventory uses `window_type = INVENTORY (1)` with `0 <= cell < 90`
