@@ -182,7 +182,7 @@ func (r *Runtime) MoveInventoryItemCount(from inventory.SlotIndex, to inventory.
 
 func (r *Runtime) moveInventoryItemFullStack(from inventory.SlotIndex, to inventory.SlotIndex, result inventory.MoveResult) (inventory.MoveResult, bool) {
 	fromIndex := findInventorySlot(r.liveInventory, from)
-	if fromIndex < 0 {
+	if fromIndex < 0 || r.liveInventory[fromIndex].Locked {
 		return inventory.MoveResult{}, false
 	}
 	movedItem, err := r.liveInventory[fromIndex].WithInventorySlot(to)
@@ -190,6 +190,9 @@ func (r *Runtime) moveInventoryItemFullStack(from inventory.SlotIndex, to invent
 		return inventory.MoveResult{}, false
 	}
 	toIndex := findInventorySlot(r.liveInventory, to)
+	if toIndex >= 0 && r.liveInventory[toIndex].Locked {
+		return inventory.MoveResult{}, false
+	}
 	if toIndex < 0 {
 		r.liveInventory[fromIndex] = movedItem
 		sortInventoryItems(r.liveInventory)
@@ -218,7 +221,7 @@ func (r *Runtime) EquipItem(from inventory.SlotIndex, equipSlot inventory.Equipm
 		return inventory.ItemInstance{}, false
 	}
 	fromIndex := findInventorySlot(r.liveInventory, from)
-	if fromIndex < 0 {
+	if fromIndex < 0 || r.liveInventory[fromIndex].Locked {
 		return inventory.ItemInstance{}, false
 	}
 	item := r.liveInventory[fromIndex]
@@ -292,7 +295,7 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	}
 	effect := *template.UseEffect
 	item := r.liveInventory[index]
-	if item.Equipped || item.Vnum != template.Vnum || item.Count == 0 {
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 {
 		return ItemUseResult{}, false
 	}
 	currentPointValue := r.livePoints[effect.PointIndex]

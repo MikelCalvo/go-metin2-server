@@ -229,6 +229,32 @@ func TestRuntimeMoveInventoryItemCountRejectsDeferredPartialAndOversizedStackMov
 	}
 }
 
+func TestRuntimeRejectsLockedInventoryItemMutationWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{{ID: 31, Vnum: 27001, Count: 3, Slot: 5, Locked: true}}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "used"}}
+
+	if _, ok := runtime.MoveInventoryItem(5, 6); ok {
+		t.Fatal("expected locked carried-slot item to reject inventory move")
+	}
+	if _, ok := runtime.MoveInventoryItemCount(5, 6, 3); ok {
+		t.Fatal("expected locked carried-slot item to reject counted inventory move")
+	}
+	if _, ok := runtime.EquipItem(5, inventory.EquipmentSlotBody); ok {
+		t.Fatal("expected locked carried-slot item to reject equip")
+	}
+	if _, ok := runtime.UseItem(5, template); ok {
+		t.Fatal("expected locked carried-slot item to reject use")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected locked item mutation attempts to leave live inventory unchanged, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after locked item mutation attempts, got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+}
+
 func TestRuntimeBuyMerchantItemMergesIntoExistingCompatibleStackBeforeAllocatingNewSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
