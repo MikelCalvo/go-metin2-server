@@ -48,7 +48,7 @@ The minimal runtime accepts an item move only when all of these are true:
 5. the source stack exists and is not locked;
 6. the destination stack, when occupied, is not locked;
 7. counted moves do not exceed the source stack count or the relevant template `max_count`;
-8. counted moves into an occupied destination require the same `vnum` and must not overflow `max_count`.
+8. counted moves into an occupied destination require the same `vnum` and must not overflow `max_count`, including the exact-count/full-stack case.
 
 Rejected requests fail closed and emit no frames.
 

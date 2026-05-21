@@ -188,10 +188,13 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 	if sourceItem.Count > maxCount {
 		return inventory.MoveResult{}, false
 	}
+	toIndex := findInventorySlot(r.liveInventory, to)
 	if count == sourceItem.Count {
+		if toIndex >= 0 && r.liveInventory[toIndex].Vnum != sourceItem.Vnum {
+			return inventory.MoveResult{}, false
+		}
 		return r.moveInventoryItemFullStack(from, to, result)
 	}
-	toIndex := findInventorySlot(r.liveInventory, to)
 	sourceRemainder := sourceItem
 	sourceRemainder.Count -= count
 	if toIndex >= 0 {

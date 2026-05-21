@@ -323,6 +323,9 @@ func TestRuntimeMoveInventoryItemCountRejectsIncompatibleOccupiedDestinationAndO
 	if _, ok := runtime.MoveInventoryItemCount(5, 8, 2); ok {
 		t.Fatal("expected partial stack move count into incompatible occupied destination to fail closed until swap-with-count semantics are owned")
 	}
+	if _, ok := runtime.MoveInventoryItemCount(5, 8, 3); ok {
+		t.Fatal("expected exact counted full-stack move into incompatible occupied destination to fail closed instead of swapping")
+	}
 	if _, ok := runtime.MoveInventoryItemCount(5, 6, 4); ok {
 		t.Fatal("expected oversized stack move count to fail closed")
 	}
@@ -332,7 +335,7 @@ func TestRuntimeMoveInventoryItemCountRejectsIncompatibleOccupiedDestinationAndO
 
 	result, ok := runtime.MoveInventoryItemCount(5, 6, 3)
 	if !ok {
-		t.Fatal("expected exact counted full-stack move to succeed")
+		t.Fatal("expected exact counted full-stack move into empty destination to succeed")
 	}
 	if !result.Changed || result.ToItem.Slot != 6 || result.ToItem.Count != 3 {
 		t.Fatalf("unexpected exact counted move result: %+v", result)
