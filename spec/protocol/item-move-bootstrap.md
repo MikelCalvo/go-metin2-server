@@ -59,7 +59,7 @@ The bootstrap runtime emits only self-facing item refresh frames for the mutated
 - full-stack move into an empty slot: `GC_ITEM_DEL(source)` then `GC_ITEM_SET(destination)`;
 - full-stack swap: `GC_ITEM_SET(source)` then `GC_ITEM_SET(destination)`;
 - counted partial split into an empty slot: `GC_ITEM_SET(source remainder)` then `GC_ITEM_SET(destination split stack)`;
-- counted partial merge into a compatible destination: `GC_ITEM_SET(source remainder)` then `GC_ITEM_SET(destination merged stack)`.
+- counted partial merge into a compatible destination: `GC_ITEM_UPDATE(source remainder count)` then `GC_ITEM_UPDATE(destination merged count)`.
 
 The same mutation is persisted to the account snapshot after the response frames are built. If frame generation fails, the selected player runtime rolls back to the previous persisted snapshot before reporting rejection.
 
@@ -70,4 +70,4 @@ Current coverage:
 - `internal/proto/item` freezes the `CG::ITEM_MOVE` wire layout and invalid-header/payload rejection.
 - `internal/game` freezes GAME-phase dispatch to `HandleItemMove` and fail-closed denied behavior.
 - `internal/player` freezes runtime full-stack, counted split/merge, max-count, incompatible-destination, and locked-stack behavior.
-- `internal/minimal` freezes runtime persistence and self-frame behavior for slash-command full-stack movement and direct `CG::ITEM_MOVE` counted partial splits.
+- `internal/minimal` freezes runtime persistence and self-frame behavior for slash-command full-stack movement and direct `CG::ITEM_MOVE` counted partial splits and compatible occupied-destination partial merges.
