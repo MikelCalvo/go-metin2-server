@@ -255,6 +255,26 @@ func TestRuntimeRejectsLockedInventoryItemMutationWithoutMutatingState(t *testin
 	}
 }
 
+func TestRuntimeRejectsLockedEquippedItemUnequipWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = nil
+	persisted.Equipment = []inventory.ItemInstance{{ID: 41, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon, Locked: true}}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.UnequipItem(inventory.EquipmentSlotWeapon, 4); ok {
+		t.Fatal("expected locked equipped item to reject unequip")
+	}
+	if !reflect.DeepEqual(runtime.LiveEquipment(), persisted.Equipment) {
+		t.Fatalf("expected locked equipped item attempt to leave live equipment unchanged, got %#v want %#v", runtime.LiveEquipment(), persisted.Equipment)
+	}
+	if len(runtime.LiveInventory()) != 0 {
+		t.Fatalf("expected locked equipped item attempt to leave live inventory empty, got %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Equipment, persisted.Equipment) {
+		t.Fatalf("expected persisted equipment to stay unchanged after locked equipped item attempt, got %#v", runtime.PersistedSnapshot().Equipment)
+	}
+}
+
 func TestRuntimeBuyMerchantItemMergesIntoExistingCompatibleStackBeforeAllocatingNewSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

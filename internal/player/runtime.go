@@ -243,7 +243,7 @@ func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.Sl
 		return inventory.ItemInstance{}, false
 	}
 	equipIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
-	if equipIndex < 0 {
+	if equipIndex < 0 || r.liveEquipment[equipIndex].Locked {
 		return inventory.ItemInstance{}, false
 	}
 	item, err := r.liveEquipment[equipIndex].WithInventorySlot(to)

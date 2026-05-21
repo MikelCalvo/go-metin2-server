@@ -151,7 +151,7 @@ The first client-originated carried-slot drag/drop ingress is now frozen as `ITE
 - for the current bootstrap runtime, both source and destination must be normal carried inventory positions (`window_type = INVENTORY`, `0 <= cell < 90`)
 - the accepted runtime path reuses the same selected-character full-stack move/swap semantics and `ITEM_DEL` / `ITEM_SET` refresh frames already owned by `/inventory_move`
 - `count` is now honored as an exact full-stack guard for packet ingress: the packet is accepted only when `count` matches the authoritative stack count currently occupying the source slot
-- locked carried-slot items fail closed for move/swap, counted `ITEM_MOVE`, equip, and use attempts; these rejections leave live and persisted item state unchanged and emit no item refresh frames
+- locked carried-slot items fail closed for move/swap, counted `ITEM_MOVE`, equip, and use attempts; locked equipped items fail closed for unequip attempts; these rejections leave live and persisted item state unchanged and emit no item refresh frames
 - partial stack splitting remains future work and fails closed instead of silently moving the entire source stack
 
 For the current owned bootstrap surface:
