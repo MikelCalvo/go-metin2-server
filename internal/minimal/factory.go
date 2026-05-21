@@ -2903,11 +2903,11 @@ func merchantSellResultFrames(character loginticket.Character, result player.Mer
 	if result.ItemRemoved {
 		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
 	} else {
-		setFrame, err := encodeBootstrapItemFrame(position, result.Item)
+		updateFrame, err := encodeBootstrapItemUpdateFrame(position, result.Item)
 		if err != nil {
 			return nil, err
 		}
-		frames = append(frames, setFrame)
+		frames = append(frames, updateFrame)
 	}
 	if result.Gold < result.GoldBefore || result.Gold > uint64(math.MaxInt32) || result.Gold-result.GoldBefore > uint64(math.MaxInt32) {
 		return nil, fmt.Errorf("merchant sell gold point-change out of range")
@@ -2991,6 +2991,16 @@ func encodeBootstrapItemFrame(position itemproto.Position, instance inventory.It
 	return itemproto.EncodeSet(itemproto.SetPacket{
 		Position: position,
 		Vnum:     instance.Vnum,
+		Count:    uint8(instance.Count),
+	}), nil
+}
+
+func encodeBootstrapItemUpdateFrame(position itemproto.Position, instance inventory.ItemInstance) ([]byte, error) {
+	if instance.Count > 255 {
+		return nil, fmt.Errorf("bootstrap item count exceeds legacy uint8: %d", instance.Count)
+	}
+	return itemproto.EncodeUpdate(itemproto.UpdatePacket{
+		Position: position,
 		Count:    uint8(instance.Count),
 	}), nil
 }

@@ -9465,12 +9465,12 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantSellMutationNonAuthoritati
 	if len(sellOut) != 3 {
 		t.Fatalf("expected stale merchant packet sell to remain self-local with item refresh, gold point-change, and shop ok, got %d", len(sellOut))
 	}
-	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, sellOut[0]))
+	updatePacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, sellOut[0]))
 	if err != nil {
-		t.Fatalf("decode stale merchant sell item frame: %v", err)
+		t.Fatalf("decode stale merchant sell item update frame: %v", err)
 	}
-	if setPacket.Position != itemproto.InventoryPosition(5) || setPacket.Vnum != 27001 || setPacket.Count != 1 {
-		t.Fatalf("unexpected stale merchant sell item frame: %+v", setPacket)
+	if updatePacket.Position != itemproto.InventoryPosition(5) || updatePacket.Count != 1 {
+		t.Fatalf("unexpected stale merchant sell item update frame: %+v", updatePacket)
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, sellOut[1]))
 	if err != nil {
@@ -12961,12 +12961,12 @@ func TestGameSessionFlowShopSell2PacketDecrementsPartialStackAndCreditsCurrency(
 	if len(sellOut) != 3 {
 		t.Fatalf("expected packet shop sell2 partial success to emit item refresh, gold point-change, and shop ok, got %d", len(sellOut))
 	}
-	set, err := itemproto.DecodeSet(decodeSingleFrame(t, sellOut[0]))
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, sellOut[0]))
 	if err != nil {
-		t.Fatalf("decode packet shop-sell2 set frame: %v", err)
+		t.Fatalf("decode packet shop-sell2 update frame: %v", err)
 	}
-	if set.Position != itemproto.InventoryPosition(5) || set.Vnum != 27001 || set.Count != 1 {
-		t.Fatalf("unexpected packet shop-sell2 item refresh: %+v", set)
+	if update.Position != itemproto.InventoryPosition(5) || update.Count != 1 {
+		t.Fatalf("unexpected packet shop-sell2 item update: %+v", update)
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, sellOut[1]))
 	if err != nil {

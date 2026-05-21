@@ -369,13 +369,13 @@ Run this only when the target build has a visible authored `shop_preview` mercha
 - [ ] Sell one whole carried stack through the client merchant `SELL` path
 - [ ] Confirm the carried slot clears and the selected character's displayed gold increases without requiring reconnect
 - [ ] Repeat with a multi-count carried stack through the `SELL2` path for a partial count
-- [ ] Confirm the carried slot remains with the reduced count and the selected character's displayed gold increases immediately
+- [ ] Confirm the already-known carried slot refreshes through the lighter `ITEM_UPDATE` count path, remains with the reduced count, and the selected character's displayed gold increases immediately
 - [ ] Reconnect and confirm the updated carried inventory and gold persisted
 
 Expected result:
-- accepted merchant sell-back responses are ordered as `ITEM_DEL` or `ITEM_SET`, then self-only `PLAYER_POINT_CHANGE(POINT_GOLD)`, then bare `GC::SHOP OK`
+- accepted merchant sell-back responses are ordered as whole-stack `ITEM_DEL` or partial-stack `ITEM_UPDATE`, then self-only `PLAYER_POINT_CHANGE(POINT_GOLD)`, then bare `GC::SHOP OK`
 - invalid, anti-sell, equipped, or runtime-locked items fail closed and leave both live and persisted inventory/gold unchanged
-- richer `GC::SHOP UPDATE_ITEM` / `UPDATE_PRICE` UI choreography remains out of scope for this bootstrap sell-back smoke
+- richer `GC::SHOP UPDATE_ITEM` / `UPDATE_PRICE` merchant-window choreography remains out of scope for this bootstrap sell-back smoke
 
 ### 5.8 Training dummy repeated-hit smoke
 
