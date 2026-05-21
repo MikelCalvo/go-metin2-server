@@ -117,9 +117,9 @@ When placement succeeds, one or more carried slots change in this contract:
 
 That property matters for the current bootstrap runtime because the self-facing refresh contract can stay deterministic:
 - one `ITEM_SET` for a fresh carried slot that appears
-- one `ITEM_SET` for bought-item merge successes until the lighter count-only refresh path is explicitly wired through the merchant-buy runtime
-- one `ITEM_SET` per changed carried slot in carried-slot order for multi-slot merchant-buy success in the current runtime
-- the exact `ITEM_UPDATE` packet shape is now codec-owned for later count/socket/attribute-only refreshes, but no runtime path emits it yet
+- one `ITEM_UPDATE` for bought-item merge successes that only change an already-known carried cell's count
+- one refresh per changed carried slot in carried-slot order for multi-slot merchant-buy success, using `ITEM_SET` for newly occupied slots and `ITEM_UPDATE` for existing-stack count refreshes
+- the exact `ITEM_UPDATE` packet shape is now codec-owned and emitted by merchant buy/sell paths for count/socket/attribute-only refreshes of already-known carried cells
 
 The selected-character persistence boundary remains the same as other M3 item mutations:
 - persist the updated selected snapshot before committing the new live state
@@ -158,7 +158,6 @@ This first stack contract does **not** yet freeze:
 - merchant sell-back or rebuy semantics
 - automatic consolidation of duplicate stacks outside the current grant path
 - peer-visible inventory/equipment deltas
-- runtime use of the now codec-owned `ITEM_UPDATE` count/socket/attribute refresh path
 - final legacy item packet families beyond the already-owned `ITEM_SET` / `ITEM_DEL` refresh slice and the codec-owned `ITEM_UPDATE` shape
 
 ## Success definition

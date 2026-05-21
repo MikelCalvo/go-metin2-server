@@ -13254,12 +13254,12 @@ func TestGameSessionFlowShopBuyPacketMergesIntoExistingCompatibleCarriedStack(t 
 	if len(buyOut) != 1 {
 		t.Fatalf("expected 1 frame for merged merchant packet buy, got %d", len(buyOut))
 	}
-	updatedItem, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
+	updatedItem, err := itemproto.DecodeUpdate(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
-		t.Fatalf("decode merged merchant packet buy item: %v", err)
+		t.Fatalf("decode merged merchant packet buy item update: %v", err)
 	}
-	if updatedItem.Position != itemproto.InventoryPosition(5) || updatedItem.Vnum != 27001 || updatedItem.Count != 4 {
-		t.Fatalf("unexpected merged merchant packet buy item: %+v", updatedItem)
+	if updatedItem.Position != itemproto.InventoryPosition(5) || updatedItem.Count != 4 {
+		t.Fatalf("unexpected merged merchant packet buy item update: %+v", updatedItem)
 	}
 
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
@@ -13305,12 +13305,12 @@ func TestGameSessionFlowShopBuyPacketPartiallyMergesIntoExistingCompatibleStackT
 	if firstUpdate.Position != itemproto.InventoryPosition(0) || firstUpdate.Vnum != 27001 || firstUpdate.Count != 1 {
 		t.Fatalf("unexpected partial-merge merchant packet buy first item: %+v", firstUpdate)
 	}
-	secondUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[1]))
+	secondUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, buyOut[1]))
 	if err != nil {
-		t.Fatalf("decode partial-merge merchant packet buy second item: %v", err)
+		t.Fatalf("decode partial-merge merchant packet buy second item update: %v", err)
 	}
-	if secondUpdate.Position != itemproto.InventoryPosition(5) || secondUpdate.Vnum != 27001 || secondUpdate.Count != 200 {
-		t.Fatalf("unexpected partial-merge merchant packet buy second item: %+v", secondUpdate)
+	if secondUpdate.Position != itemproto.InventoryPosition(5) || secondUpdate.Count != 200 {
+		t.Fatalf("unexpected partial-merge merchant packet buy second item update: %+v", secondUpdate)
 	}
 
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
@@ -13353,19 +13353,19 @@ func TestGameSessionFlowShopBuyPacketFansOutAcrossSeveralExistingCompatibleStack
 	if len(buyOut) != 2 {
 		t.Fatalf("expected 2 frames for distributed-merge merchant packet buy, got %d", len(buyOut))
 	}
-	firstUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
+	firstUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
-		t.Fatalf("decode distributed-merge merchant packet buy first item: %v", err)
+		t.Fatalf("decode distributed-merge merchant packet buy first item update: %v", err)
 	}
-	if firstUpdate.Position != itemproto.InventoryPosition(5) || firstUpdate.Vnum != 27001 || firstUpdate.Count != 200 {
-		t.Fatalf("unexpected distributed-merge merchant packet buy first item: %+v", firstUpdate)
+	if firstUpdate.Position != itemproto.InventoryPosition(5) || firstUpdate.Count != 200 {
+		t.Fatalf("unexpected distributed-merge merchant packet buy first item update: %+v", firstUpdate)
 	}
-	secondUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[1]))
+	secondUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, buyOut[1]))
 	if err != nil {
-		t.Fatalf("decode distributed-merge merchant packet buy second item: %v", err)
+		t.Fatalf("decode distributed-merge merchant packet buy second item update: %v", err)
 	}
-	if secondUpdate.Position != itemproto.InventoryPosition(7) || secondUpdate.Vnum != 27001 || secondUpdate.Count != 200 {
-		t.Fatalf("unexpected distributed-merge merchant packet buy second item: %+v", secondUpdate)
+	if secondUpdate.Position != itemproto.InventoryPosition(7) || secondUpdate.Count != 200 {
+		t.Fatalf("unexpected distributed-merge merchant packet buy second item update: %+v", secondUpdate)
 	}
 
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
@@ -13411,19 +13411,19 @@ func TestGameSessionFlowShopBuyPacketFansOutAcrossSeveralExistingCompatibleStack
 	if firstUpdate.Position != itemproto.InventoryPosition(0) || firstUpdate.Vnum != 27001 || firstUpdate.Count != 1 {
 		t.Fatalf("unexpected distributed-merge-plus-slot merchant packet buy first item: %+v", firstUpdate)
 	}
-	secondUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[1]))
+	secondUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, buyOut[1]))
 	if err != nil {
-		t.Fatalf("decode distributed-merge-plus-slot merchant packet buy second item: %v", err)
+		t.Fatalf("decode distributed-merge-plus-slot merchant packet buy second item update: %v", err)
 	}
-	if secondUpdate.Position != itemproto.InventoryPosition(5) || secondUpdate.Vnum != 27001 || secondUpdate.Count != 200 {
-		t.Fatalf("unexpected distributed-merge-plus-slot merchant packet buy second item: %+v", secondUpdate)
+	if secondUpdate.Position != itemproto.InventoryPosition(5) || secondUpdate.Count != 200 {
+		t.Fatalf("unexpected distributed-merge-plus-slot merchant packet buy second item update: %+v", secondUpdate)
 	}
-	thirdUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[2]))
+	thirdUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, buyOut[2]))
 	if err != nil {
-		t.Fatalf("decode distributed-merge-plus-slot merchant packet buy third item: %v", err)
+		t.Fatalf("decode distributed-merge-plus-slot merchant packet buy third item update: %v", err)
 	}
-	if thirdUpdate.Position != itemproto.InventoryPosition(7) || thirdUpdate.Vnum != 27001 || thirdUpdate.Count != 200 {
-		t.Fatalf("unexpected distributed-merge-plus-slot merchant packet buy third item: %+v", thirdUpdate)
+	if thirdUpdate.Position != itemproto.InventoryPosition(7) || thirdUpdate.Count != 200 {
+		t.Fatalf("unexpected distributed-merge-plus-slot merchant packet buy third item update: %+v", thirdUpdate)
 	}
 
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
@@ -13792,19 +13792,19 @@ func TestGameSessionFlowShopBuyInteractionFansOutAcrossSeveralExistingCompatible
 	if firstUpdate.Position != itemproto.InventoryPosition(0) || firstUpdate.Vnum != 27001 || firstUpdate.Count != 1 {
 		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy first item: %+v", firstUpdate)
 	}
-	secondUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[1]))
+	secondUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, buyOut[1]))
 	if err != nil {
-		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy second item: %v", err)
+		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy second item update: %v", err)
 	}
-	if secondUpdate.Position != itemproto.InventoryPosition(5) || secondUpdate.Vnum != 27001 || secondUpdate.Count != 200 {
-		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy second item: %+v", secondUpdate)
+	if secondUpdate.Position != itemproto.InventoryPosition(5) || secondUpdate.Count != 200 {
+		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy second item update: %+v", secondUpdate)
 	}
-	thirdUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[2]))
+	thirdUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, buyOut[2]))
 	if err != nil {
-		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy third item: %v", err)
+		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy third item update: %v", err)
 	}
-	if thirdUpdate.Position != itemproto.InventoryPosition(7) || thirdUpdate.Vnum != 27001 || thirdUpdate.Count != 200 {
-		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy third item: %+v", thirdUpdate)
+	if thirdUpdate.Position != itemproto.InventoryPosition(7) || thirdUpdate.Count != 200 {
+		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy third item update: %+v", thirdUpdate)
 	}
 	deliveryFrame := decodeSingleFrame(t, buyOut[3])
 	if err := shopproto.DecodeServerOK(deliveryFrame); err != nil {

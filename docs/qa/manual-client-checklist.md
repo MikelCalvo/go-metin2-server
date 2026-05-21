@@ -259,7 +259,7 @@ If the lab currently has no such content, either:
 - [ ] Approach a visible authored QA NPC with `info`, `talk`, or merchant `shop_preview`
 - [ ] For `info` / `talk`, interact once and wait for the self-only response
 - [ ] For a merchant actor, interact once and confirm a merchant window opens instead of only a chat preview
-- [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one packet `SHOP BUY` from the open window and confirm the success path returns the changed self-only `ITEM_SET` refreshes without an extra merchant-family `GC::SHOP OK` or the older placeholder info chat
+- [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one packet `SHOP BUY` from the open window and confirm the success path returns self-only inventory refreshes without an extra merchant-family `GC::SHOP OK` or the older placeholder info chat; newly occupied slots should use `ITEM_SET`, while merges into already-known carried stacks should use `ITEM_UPDATE`
 - [ ] If the bought item is stackable and the character already carries the same `vnum`, confirm the count can increase on that existing stack instead of always creating a new slot
 - [ ] If the QA setup allows it, fill the carried inventory, leave two compatible carried stacks nearly full, buy a stackable merchant entry whose count exactly matches their combined remaining room, and confirm both existing stacks fill without needing any fresh slot
 - [ ] If the QA setup allows it, leave one compatible carried stack nearly full, buy a stackable merchant entry whose count overflows that stack, and confirm the existing stack fills first while the remainder lands in a fresh carried slot
@@ -280,7 +280,7 @@ If the lab currently has no such content, either:
 Expected result:
 - `info` and `talk` still return deterministic self-only text
 - merchant interaction opens a stable bootstrap `GC::SHOP START` window
-- a bootstrap `SHOP BUY` request can debit gold and grant the authored item without disconnecting the client, and successful packet buys now return self-only `ITEM_SET` refreshes for changed carried slots without an extra merchant-family `GC::SHOP OK`
+- a bootstrap `SHOP BUY` request can debit gold and grant the authored item without disconnecting the client, and successful packet buys now return self-only inventory refreshes (`ITEM_SET` for newly occupied slots, `ITEM_UPDATE` for existing-stack count refreshes) without an extra merchant-family `GC::SHOP OK`
 - when the authored item is stackable and a compatible carried stack already exists, the buy can refresh that same slot with the increased count
 - when several compatible carried stacks together can absorb the full authored count, the buy can fill those existing stacks in carried-slot order without needing a fresh slot
 - when several compatible carried stacks together cannot absorb the full authored count but one free carried slot exists, the buy can fill those existing stacks first and place only the final remainder into one fresh carried slot
@@ -572,7 +572,7 @@ Expected result:
 
 - [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
 - [ ] On the stale old socket, keep a merchant window/context open and send one real `SHOP BUY` for slot `0` (or the local `/shop_buy 0` harness where appropriate)
-- [ ] Confirm the stale socket may still receive only its self-local merchant success burst (`ITEM_SET` refreshes without `GC::SHOP OK` on packet `SHOP BUY`, or `ITEM_SET` plus the debug-harness companion on `/shop_buy` where that local harness is used)
+- [ ] Confirm the stale socket may still receive only its self-local merchant success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes without `GC::SHOP OK` on packet `SHOP BUY`, or those refreshes plus the debug-harness companion on `/shop_buy` where that local harness is used)
 - [ ] Confirm the authoritative live replacement session and any visible watcher do **not** gain gold/items or otherwise change because of that stale mutation
 - [ ] Confirm loopback-only `/local/inventory/{name}` (and currency introspection if available) still report the replacement live owner's authoritative state, not the stale socket's local divergence
 
@@ -598,7 +598,7 @@ Expected result:
 ### 6.17 Reconnect after stale merchant-buy close rebuilds authoritative state (debug-harness optional)
 
 - [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
-- [ ] On the stale old socket, keep the merchant gate active and issue `SHOP BUY` (or `/shop_buy <slot>` in the local harness) so only the stale socket sees the local success burst (`ITEM_SET` refreshes without `GC::SHOP OK` on packet `SHOP BUY`, or `ITEM_SET` plus the debug-harness companion where that local harness is used)
+- [ ] On the stale old socket, keep the merchant gate active and issue `SHOP BUY` (or `/shop_buy <slot>` in the local harness) so only the stale socket sees the local success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes without `GC::SHOP OK` on packet `SHOP BUY`, or those refreshes plus the debug-harness companion where that local harness is used)
 - [ ] Close the authoritative replacement session first, then close the stale old socket
 - [ ] Reconnect fresh on the same character
 - [ ] Confirm the new bootstrap/reconnect state keeps the authoritative persisted `gold` and empty/unchanged carried inventory from before the stale local-only buy, not the stale socket's local grant
@@ -612,7 +612,7 @@ Expected result:
 
 - [ ] Using the local merchant debug harness, prepare a buyer with several compatible partial `27001` carried stacks plus at least one free carried slot
 - [ ] Open the merchant context and run `/shop_buy <slot>` for an authored entry whose `count` requires filling those compatible carried stacks and placing the final remainder into the lowest free carried slot
-- [ ] Confirm the harness returns one `ITEM_SET` per changed carried slot in carried-slot order plus the current merchant success info delivery
+- [ ] Confirm the harness returns one inventory refresh per changed carried slot in carried-slot order (`ITEM_SET` for fresh slots, `ITEM_UPDATE` for existing stack fills) plus the current merchant success companion
 - [ ] Confirm persisted `gold` and inventory match the same final state already frozen for the packet `SHOP BUY` path
 
 Expected result:

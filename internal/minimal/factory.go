@@ -2863,13 +2863,32 @@ func encodePlayerPointChangeFrame(vid uint32, result player.PointChangeResult) [
 }
 
 func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames bool) ([][]byte, error) {
-	frames := make([][]byte, 0, len(result.Items)+1)
-	for _, item := range result.Items {
-		setFrame, err := encodeBootstrapInventoryItemFrame(item)
+	changes := result.ItemChanges
+	if len(changes) == 0 && len(result.Items) != 0 {
+		changes = make([]player.MerchantBuyItemChange, 0, len(result.Items))
+		for _, item := range result.Items {
+			changes = append(changes, player.MerchantBuyItemChange{Item: item, Created: true})
+		}
+	}
+	frames := make([][]byte, 0, len(changes)+1)
+	for _, change := range changes {
+		if change.Created {
+			setFrame, err := encodeBootstrapInventoryItemFrame(change.Item)
+			if err != nil {
+				return nil, err
+			}
+			frames = append(frames, setFrame)
+			continue
+		}
+		position, err := itemproto.CarriedInventoryPosition(uint16(change.Item.Slot))
 		if err != nil {
 			return nil, err
 		}
-		frames = append(frames, setFrame)
+		updateFrame, err := encodeBootstrapItemUpdateFrame(position, change.Item)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, updateFrame)
 	}
 	if !packetShopFrames {
 		frames = append(frames, shopproto.EncodeServerOK())

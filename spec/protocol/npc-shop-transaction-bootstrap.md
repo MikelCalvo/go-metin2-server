@@ -159,20 +159,21 @@ It does **not** yet claim the final client-visible merchant-window choreography.
 ### Packet-path success companion
 
 The live merchant-window success step is now owned explicitly:
-- successful packet `SHOP BUY` keeps the existing self-only `ITEM_SET` refreshes for every changed carried slot in carried-slot order
+- successful packet `SHOP BUY` emits one self-only inventory refresh for every changed carried slot in carried-slot order
+- newly occupied carried slots use `ITEM_SET`; existing compatible stack merges use the count-only `ITEM_UPDATE` carrier
 - that packet-path success does **not** append an extra bare self-only `GC::SHOP OK`; the changed carried-slot refreshes are the complete visible success companion for this packet path
 - the packet-path success no longer ends on the older placeholder `CHAT_TYPE_INFO("Merchant purchase complete.")`
 
 That owned seam remains intentionally small:
 - it applies to successful packet `SHOP BUY` while the merchant session is still active
-- the temporary local `/shop_buy <slot>` debug harness remains a local QA/debug ingress and may still append the older bare `GC::SHOP OK` after its item refreshes until a later slice removes or replaces that debug surface
+- the temporary local `/shop_buy <slot>` debug harness remains a local QA/debug ingress; it now uses the same `ITEM_SET` versus `ITEM_UPDATE` refresh split and still appends the older bare `GC::SHOP OK` until a later slice removes or replaces that debug surface
 - it does not yet emit any extra merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` choreography
 
 ### Stale post-reclaim isolation
 
 If a socket already lost live shared-world ownership because another session reclaimed the same selected character:
-- packet `SHOP BUY` may still return the same self-local packet success burst (`ITEM_SET` refreshes only, with no extra `GC::SHOP OK`) to that stale socket
-- the local `/shop_buy <slot>` debug harness may still return its local debug success burst (`ITEM_SET` refreshes plus the older bare `GC::SHOP OK`) to that stale socket until that debug surface is tightened separately
+- packet `SHOP BUY` may still return the same self-local packet success burst (`ITEM_SET` for newly occupied slots and `ITEM_UPDATE` for existing-stack count refreshes, with no extra `GC::SHOP OK`) to that stale socket
+- the local `/shop_buy <slot>` debug harness may still return its local debug success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes plus the older bare `GC::SHOP OK`) to that stale socket until that debug surface is tightened separately
 - that stale buy mutation must not persist updated `gold` or `inventory`
 - that stale buy mutation must not replace the replacement live owner's exact-name loopback inventory/currency snapshots
 - if that stale socket later closes, a fresh reconnect/bootstrap must still reload the authoritative persisted `gold`/inventory state rather than the stale socket's local divergence

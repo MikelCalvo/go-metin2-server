@@ -40,9 +40,15 @@ type PointChangeResult struct {
 	PointValue  int32
 }
 
+type MerchantBuyItemChange struct {
+	Item    inventory.ItemInstance
+	Created bool
+}
+
 type MerchantBuyResult struct {
-	Items []inventory.ItemInstance
-	Gold  uint64
+	Items       []inventory.ItemInstance
+	ItemChanges []MerchantBuyItemChange
+	Gold        uint64
 }
 
 type MerchantSellResult struct {
@@ -333,6 +339,7 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 	}
 	inventoryItems := cloneItemInstances(r.liveInventory)
 	changedItems := make([]inventory.ItemInstance, 0, 2)
+	changedExistingSlots := map[inventory.SlotIndex]bool{}
 	remaining := count
 	if template.Stackable {
 		if mergeIndex := findMergeableInventoryIndex(inventoryItems, template.Vnum, remaining, template.MaxCount); mergeIndex >= 0 {
@@ -343,10 +350,14 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 			}
 			inventoryItems[mergeIndex] = item
 			changedItems = append(changedItems, item)
+			changedExistingSlots[item.Slot] = true
 			remaining = 0
 		} else if distributedItems, distributedChanged, distributedRemaining, ok := distributeMerchantGrantAcrossExistingStacks(inventoryItems, template.Vnum, remaining, template.MaxCount); ok {
 			inventoryItems = distributedItems
 			changedItems = append(changedItems, distributedChanged...)
+			for _, item := range distributedChanged {
+				changedExistingSlots[item.Slot] = true
+			}
 			remaining = distributedRemaining
 		}
 	}
@@ -364,9 +375,13 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 	}
 	sortInventoryItems(inventoryItems)
 	sortInventoryItems(changedItems)
+	itemChanges := make([]MerchantBuyItemChange, 0, len(changedItems))
+	for _, item := range changedItems {
+		itemChanges = append(itemChanges, MerchantBuyItemChange{Item: item, Created: !changedExistingSlots[item.Slot]})
+	}
 	r.liveGold -= price
 	r.liveInventory = inventoryItems
-	return MerchantBuyResult{Items: changedItems, Gold: r.liveGold}, true
+	return MerchantBuyResult{Items: changedItems, ItemChanges: itemChanges, Gold: r.liveGold}, true
 }
 
 func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitPrice uint64) (MerchantSellResult, bool) {
