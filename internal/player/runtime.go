@@ -163,7 +163,14 @@ func (r *Runtime) MoveInventoryItem(from inventory.SlotIndex, to inventory.SlotI
 }
 
 func (r *Runtime) MoveInventoryItemCount(from inventory.SlotIndex, to inventory.SlotIndex, count uint16) (inventory.MoveResult, bool) {
+	return r.MoveInventoryItemCountBounded(from, to, count, ^uint16(0))
+}
+
+func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inventory.SlotIndex, count uint16, maxCount uint16) (inventory.MoveResult, bool) {
 	if r == nil || count == 0 {
+		return inventory.MoveResult{}, false
+	}
+	if maxCount == 0 || count > maxCount {
 		return inventory.MoveResult{}, false
 	}
 	result := inventory.MoveResult{From: from, To: to}
@@ -178,6 +185,9 @@ func (r *Runtime) MoveInventoryItemCount(from inventory.SlotIndex, to inventory.
 	if count > sourceItem.Count {
 		return inventory.MoveResult{}, false
 	}
+	if sourceItem.Count > maxCount {
+		return inventory.MoveResult{}, false
+	}
 	if count == sourceItem.Count {
 		return r.moveInventoryItemFullStack(from, to, result)
 	}
@@ -190,7 +200,7 @@ func (r *Runtime) MoveInventoryItemCount(from inventory.SlotIndex, to inventory.
 			return inventory.MoveResult{}, false
 		}
 		mergedCount := uint32(destinationItem.Count) + uint32(count)
-		if mergedCount > uint32(^uint16(0)) {
+		if mergedCount > uint32(maxCount) {
 			return inventory.MoveResult{}, false
 		}
 		destinationItem.Count = uint16(mergedCount)

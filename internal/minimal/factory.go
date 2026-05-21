@@ -1948,7 +1948,20 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
-					moveResult, ok := selectedPlayer.MoveInventoryItemCount(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), uint16(packet.Count))
+					moveCount := uint16(packet.Count)
+					maxCount := ^uint16(0)
+					if packet.Count > 0 {
+						for _, sourceItem := range selectedPlayer.LiveInventory() {
+							if sourceItem.Slot != inventory.SlotIndex(packet.Source.Cell) {
+								continue
+							}
+							if template, ok := runtime.itemTemplates[sourceItem.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.MaxCount > 0 {
+								maxCount = template.MaxCount
+							}
+							break
+						}
+					}
+					moveResult, ok := selectedPlayer.MoveInventoryItemCountBounded(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), moveCount, maxCount)
 					if !ok {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}

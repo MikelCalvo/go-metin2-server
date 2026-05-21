@@ -12299,6 +12299,48 @@ func TestGameSessionFlowItemMovePacketMovesCarriedInventory(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowItemMovePacketRejectsPartialMergeAboveTemplateMaxCount(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PacketMoveBoundedOwner", 0x01030511, 0x02040511, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 77, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 78, Vnum: 27001, Count: 199, Slot: 8},
+	}
+	issuePeerTicket(t, store, "packet-move-bounded-owner", 0x50505051, owner)
+	if err := accounts.Save(accountstore.Account{Login: "packet-move-bounded-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed bounded packet item-move owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "packet-move-bounded-owner", 0x50505051)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: itemproto.InventoryPosition(8), Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected bounded item-move packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected over-max partial merge to fail closed without item frames, got %d", len(out))
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after rejected bounded item-move packet")
+	}
+	if len(inventorySnapshot.Inventory) != 2 || inventorySnapshot.Inventory[0].Slot != 5 || inventorySnapshot.Inventory[0].Count != 3 || inventorySnapshot.Inventory[1].Slot != 8 || inventorySnapshot.Inventory[1].Count != 199 {
+		t.Fatalf("expected runtime inventory to stay unchanged after over-max merge, got %+v", inventorySnapshot.Inventory)
+	}
+	persisted, err := accounts.Load("packet-move-bounded-owner")
+	if err != nil {
+		t.Fatalf("load persisted bounded item-move owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after over-max merge, got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+}
+
 func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerClose", 0x01040104, 0x02050104, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-close", 0x44444444, buyer)

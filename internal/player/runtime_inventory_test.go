@@ -270,6 +270,33 @@ func TestRuntimeMoveInventoryItemCountMergesPartialStackIntoCompatibleDestinatio
 	}
 }
 
+func TestRuntimeMoveInventoryItemCountBoundedRejectsDestinationAboveTemplateMaxWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 27001, Count: 199, Slot: 8},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.MoveInventoryItemCountBounded(5, 8, 2, 200); ok {
+		t.Fatal("expected partial stack merge above template max_count to fail closed")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected template-bounded merge rejection to leave live inventory unchanged, got %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected template-bounded merge rejection to leave persisted inventory unchanged, got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+
+	result, ok := runtime.MoveInventoryItemCountBounded(5, 8, 1, 200)
+	if !ok {
+		t.Fatal("expected partial stack merge up to template max_count to succeed")
+	}
+	if result.FromItem.Count != 2 || result.ToItem.Count != 200 {
+		t.Fatalf("unexpected bounded merge result: %+v", result)
+	}
+}
+
 func TestRuntimeMoveInventoryItemCountRejectsOverflowingDestinationStackWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{

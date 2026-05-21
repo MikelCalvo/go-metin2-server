@@ -363,7 +363,20 @@ Expected result:
 - the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then `CHAT_TYPE_INFO`
 - the selected-character snapshot persists atomically through the current save/rollback boundary
 
-### 5.7 Merchant sell-back gold refresh
+### 5.7 Counted carried-slot `ITEM_MOVE` stack bounds
+
+Run this only when the QA character has two compatible carried stacks for the same stackable template (current bootstrap seed: `27001`) and the destination stack can be brought near that template's `max_count`.
+
+- [ ] Send one counted carried-slot `ITEM_MOVE` from a compatible source stack into a destination stack where `destination_count + count == template.max_count`
+- [ ] Confirm the move succeeds, decrements the source stack, grows the destination stack, and persists after reconnect
+- [ ] Repeat with a count that would make `destination_count + count > template.max_count`
+- [ ] Confirm the move fails closed: no item refresh frames, no source decrement, no destination growth, and no persisted inventory change
+
+Expected result:
+- packet-originated compatible partial merges respect item-template `max_count`, not only the packet count or storage integer bounds
+- failure preserves live and persisted carried-slot state atomically
+
+### 5.8 Merchant sell-back gold refresh
 
 Run this only when the target build has a visible authored `shop_preview` merchant and a disposable carried item stack with a sellable item template.
 
