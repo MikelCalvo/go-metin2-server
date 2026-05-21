@@ -265,7 +265,7 @@ The repository now owns that packet shape at the codec level:
 - item entry layout matches the currently frozen `START` catalog entry layout: `vnum uint32 LE`, `price uint32 LE`, `count uint8`, `display_pos uint8`, three little-endian `int32` sockets, and seven `(type uint8, value int16 LE)` attributes
 
 This is a codec-only compatibility seam for later stock/sold-out/player-shop refresh work.
-The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus their separately frozen merchant companions: packet `SHOP BUY` success is item-refresh-only, sell success still appends bare `GC::SHOP OK`, and error paths use the owned bare merchant error frames.
+The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still use the already-owned selected-character inventory refreshes plus their separately frozen merchant companions: packet `SHOP BUY` success is item-refresh-only, sell success is item/currency-refresh-only, and error paths use the owned bare merchant error frames.
 They do not emit `UPDATE_ITEM` yet.
 
 ### Frozen `GC::ITEM_UPDATE` codec seam
@@ -343,8 +343,9 @@ The first live sell-back contract remains intentionally narrow:
 - templates flagged `anti_sell` fail closed before credit calculation, return bare self-only `GC::SHOP INVALID_POS` on the packet sell path while a merchant window is active, and leave live plus persisted inventory/currency unchanged
 - the updated selected-character snapshot is persisted before the live shared-world registration is refreshed
 - if persistence/writeback fails, the runtime rolls the selected character's live gold and carried inventory back to the pre-sell snapshot, emits no success frames, and leaves the persisted account snapshot unchanged
-- whole-stack success emits self-only `ITEM_DEL(slot)`, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`, then bare self-only `GC::SHOP OK`
-- partial-stack success emits self-only `ITEM_UPDATE(slot, remaining_count)`, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`, then bare self-only `GC::SHOP OK`
+- whole-stack success emits self-only `ITEM_DEL(slot)`, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`
+- partial-stack success emits self-only `ITEM_UPDATE(slot, remaining_count)`, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`
+- packet `SHOP SELL` / `SHOP SELL2` success does not append an extra bare self-only `GC::SHOP OK`; the owned visible success companion is the item refresh plus gold `POINT_CHANGE`
 - invalid slots, equipped items, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
 - an invalid packet/runtime sell while an active merchant window exists returns bare self-only `GC::SHOP INVALID_POS`
 - stale active merchant context still returns `GC::SHOP END`, clears the active context, and leaves inventory/currency unchanged
@@ -361,7 +362,7 @@ This slice owns the state mutation and smallest visible merchant-window companio
 
 This slice does **not** yet freeze:
 - full compatibility-grade sell-price rules including locked/bound item-instance policy and locale-specific tax variants
-- final client-visible sell-result choreography beyond `ITEM_DEL` / `ITEM_UPDATE` + `GC::SHOP OK`
+- final client-visible sell-result choreography beyond `ITEM_DEL` / `ITEM_UPDATE` plus gold `POINT_CHANGE`
 - personal-shop (`MYSHOP`) behavior
 - merchant stock depletion
 - merchant refresh timers

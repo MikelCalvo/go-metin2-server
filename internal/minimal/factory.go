@@ -2965,7 +2965,6 @@ func merchantSellResultFrames(character loginticket.Character, result player.Mer
 		Amount: int32(result.Gold - result.GoldBefore),
 		Value:  int32(result.Gold),
 	}))
-	frames = append(frames, shopproto.EncodeServerOK())
 	return frames, nil
 }
 

@@ -9462,8 +9462,8 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantSellMutationNonAuthoritati
 	if err != nil {
 		t.Fatalf("unexpected stale merchant packet sell error: %v", err)
 	}
-	if len(sellOut) != 3 {
-		t.Fatalf("expected stale merchant packet sell to remain self-local with item refresh, gold point-change, and shop ok, got %d", len(sellOut))
+	if len(sellOut) != 2 {
+		t.Fatalf("expected stale merchant packet sell to remain self-local with item refresh and gold point-change, got %d", len(sellOut))
 	}
 	updatePacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, sellOut[0]))
 	if err != nil {
@@ -9478,9 +9478,6 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantSellMutationNonAuthoritati
 	}
 	if pointChange.VID != buyer.VID || pointChange.Type != bootstrapGoldPointType || pointChange.Amount != 2 || pointChange.Value != int32(beforePersisted.Characters[0].Gold+2) {
 		t.Fatalf("unexpected stale merchant sell gold point-change frame: %+v", pointChange)
-	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, sellOut[2])); err != nil {
-		t.Fatalf("decode stale merchant sell ok frame: %v", err)
 	}
 	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
 		t.Fatalf("expected replacement merchant seller to receive no queued frames from stale merchant sell, got %d", len(queued))
@@ -12955,8 +12952,8 @@ func TestGameSessionFlowShopSellPacketRemovesWholeStackAndCreditsCurrency(t *tes
 	if err != nil {
 		t.Fatalf("unexpected packet shop sell error: %v", err)
 	}
-	if len(sellOut) != 3 {
-		t.Fatalf("expected packet shop sell whole-stack success to emit item delete, gold point-change, and shop ok, got %d", len(sellOut))
+	if len(sellOut) != 2 {
+		t.Fatalf("expected packet shop sell whole-stack success to emit item delete and gold point-change, got %d", len(sellOut))
 	}
 	del, err := itemproto.DecodeDel(decodeSingleFrame(t, sellOut[0]))
 	if err != nil {
@@ -12971,9 +12968,6 @@ func TestGameSessionFlowShopSellPacketRemovesWholeStackAndCreditsCurrency(t *tes
 	}
 	if pointChange.VID != buyer.VID || pointChange.Type != bootstrapGoldPointType || pointChange.Amount != 3 || pointChange.Value != 128 {
 		t.Fatalf("unexpected packet shop-sell gold point-change frame: %+v", pointChange)
-	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, sellOut[2])); err != nil {
-		t.Fatalf("decode packet shop-sell ok frame: %v", err)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for packet shop sell, got %d", len(queued))
@@ -13011,8 +13005,8 @@ func TestGameSessionFlowShopSell2PacketDecrementsPartialStackAndCreditsCurrency(
 	if err != nil {
 		t.Fatalf("unexpected packet shop sell2 error: %v", err)
 	}
-	if len(sellOut) != 3 {
-		t.Fatalf("expected packet shop sell2 partial success to emit item refresh, gold point-change, and shop ok, got %d", len(sellOut))
+	if len(sellOut) != 2 {
+		t.Fatalf("expected packet shop sell2 partial success to emit item refresh and gold point-change, got %d", len(sellOut))
 	}
 	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, sellOut[0]))
 	if err != nil {
@@ -13027,9 +13021,6 @@ func TestGameSessionFlowShopSell2PacketDecrementsPartialStackAndCreditsCurrency(
 	}
 	if pointChange.VID != buyer.VID || pointChange.Type != bootstrapGoldPointType || pointChange.Amount != 2 || pointChange.Value != 127 {
 		t.Fatalf("unexpected packet shop-sell2 gold point-change frame: %+v", pointChange)
-	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, sellOut[2])); err != nil {
-		t.Fatalf("decode packet shop-sell2 ok frame: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
@@ -13065,8 +13056,8 @@ func TestGameSessionFlowShopSellCountPerGoldCreditsLegacyCountDivision(t *testin
 	if err != nil {
 		t.Fatalf("unexpected packet shop sell2 count-per-gold error: %v", err)
 	}
-	if len(sellOut) != 3 {
-		t.Fatalf("expected packet shop sell2 count-per-gold success to emit item delete, gold point-change, and shop ok, got %d", len(sellOut))
+	if len(sellOut) != 2 {
+		t.Fatalf("expected packet shop sell2 count-per-gold success to emit item delete and gold point-change, got %d", len(sellOut))
 	}
 	if _, err := itemproto.DecodeDel(decodeSingleFrame(t, sellOut[0])); err != nil {
 		t.Fatalf("decode packet shop-sell2 count-per-gold del frame: %v", err)
@@ -13077,9 +13068,6 @@ func TestGameSessionFlowShopSellCountPerGoldCreditsLegacyCountDivision(t *testin
 	}
 	if pointChange.VID != buyer.VID || pointChange.Type != bootstrapGoldPointType || pointChange.Amount != 1 || pointChange.Value != 126 {
 		t.Fatalf("unexpected packet shop-sell2 count-per-gold gold point-change frame: %+v", pointChange)
-	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, sellOut[2])); err != nil {
-		t.Fatalf("decode packet shop-sell2 count-per-gold ok frame: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
