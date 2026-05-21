@@ -34,6 +34,7 @@ type MoveResult struct {
 	FromItem     ItemInstance
 	ToOccupied   bool
 	ToItem       ItemInstance
+	CountOnly    bool
 }
 
 func (i ItemInstance) Validate() error {

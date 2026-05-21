@@ -218,6 +218,7 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 		result.FromItem = sourceRemainder
 		result.ToOccupied = true
 		result.ToItem = destinationItem
+		result.CountOnly = true
 		return result, true
 	}
 	destinationItem := sourceItem

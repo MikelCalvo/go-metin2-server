@@ -2782,6 +2782,25 @@ func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
 		return nil, nil
 	}
 	frames := make([][]byte, 0, 2)
+	if result.CountOnly {
+		if result.FromOccupied {
+			frame, err := encodeInventoryItemUpdateFrame(result.FromItem)
+			if err != nil {
+				return nil, err
+			}
+			frames = append(frames, frame)
+		} else {
+			frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(uint16(result.From))}))
+		}
+		if result.ToOccupied {
+			frame, err := encodeInventoryItemUpdateFrame(result.ToItem)
+			if err != nil {
+				return nil, err
+			}
+			frames = append(frames, frame)
+		}
+		return frames, nil
+	}
 	if result.FromOccupied {
 		frame, err := encodeBootstrapInventoryItemFrame(result.FromItem)
 		if err != nil {
@@ -2799,6 +2818,14 @@ func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
 		frames = append(frames, frame)
 	}
 	return frames, nil
+}
+
+func encodeInventoryItemUpdateFrame(item inventory.ItemInstance) ([]byte, error) {
+	position, err := itemproto.CarriedInventoryPosition(uint16(item.Slot))
+	if err != nil {
+		return nil, err
+	}
+	return itemproto.EncodeUpdate(itemproto.UpdatePacket{Position: position, Count: uint8(item.Count)}), nil
 }
 
 func equipResultFrames(character loginticket.Character, from inventory.SlotIndex, equippedItem inventory.ItemInstance, pointChange *player.PointChangeResult) ([][]byte, error) {

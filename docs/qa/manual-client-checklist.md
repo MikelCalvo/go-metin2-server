@@ -368,7 +368,7 @@ Expected result:
 Run this only when the QA character has two compatible carried stacks for the same stackable template (current bootstrap seed: `27001`) and the destination stack can be brought near that template's `max_count`.
 
 - [ ] Send one counted carried-slot `ITEM_MOVE` from a compatible source stack into a destination stack where `destination_count + count == template.max_count`
-- [ ] Confirm the move succeeds, decrements the source stack, grows the destination stack, and persists after reconnect
+- [ ] Confirm the move succeeds with source/destination count refreshes, decrements the source stack, grows the destination stack, and persists after reconnect
 - [ ] Repeat with a count that would make `destination_count + count > template.max_count`
 - [ ] Confirm the move fails closed: no item refresh frames, no source decrement, no destination growth, and no persisted inventory change
 

@@ -12299,6 +12299,62 @@ func TestGameSessionFlowItemMovePacketMovesCarriedInventory(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowItemMovePacketMergesPartialStackWithItemUpdateFrames(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PacketMoveMergeOwner", 0x01030512, 0x02040512, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 77, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 78, Vnum: 27001, Count: 197, Slot: 8},
+	}
+	issuePeerTicket(t, store, "packet-move-merge-owner", 0x50505052, owner)
+	if err := accounts.Save(accountstore.Account{Login: "packet-move-merge-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed merge packet item-move owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "packet-move-merge-owner", 0x50505052)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: itemproto.InventoryPosition(8), Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected partial-merge item-move packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected partial merge to emit 2 item refresh frames, got %d", len(out))
+	}
+	fromUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode partial-merge source item update: %v", err)
+	}
+	if fromUpdate.Position != itemproto.InventoryPosition(5) || fromUpdate.Count != 1 {
+		t.Fatalf("unexpected partial-merge source update: %+v", fromUpdate)
+	}
+	toUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode partial-merge destination item update: %v", err)
+	}
+	if toUpdate.Position != itemproto.InventoryPosition(8) || toUpdate.Count != 199 {
+		t.Fatalf("unexpected partial-merge destination update: %+v", toUpdate)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after partial-merge item-move packet")
+	}
+	if len(inventorySnapshot.Inventory) != 2 || inventorySnapshot.Inventory[0].Slot != 5 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[1].Slot != 8 || inventorySnapshot.Inventory[1].Count != 199 {
+		t.Fatalf("expected runtime inventory to reflect partial merge, got %+v", inventorySnapshot.Inventory)
+	}
+	persisted, err := accounts.Load("packet-move-merge-owner")
+	if err != nil {
+		t.Fatalf("load persisted partial-merge item-move owner account: %v", err)
+	}
+	if len(persisted.Characters[0].Inventory) != 2 || persisted.Characters[0].Inventory[0].Slot != 5 || persisted.Characters[0].Inventory[0].Count != 1 || persisted.Characters[0].Inventory[1].Slot != 8 || persisted.Characters[0].Inventory[1].Count != 199 {
+		t.Fatalf("unexpected persisted inventory after partial merge: %+v", persisted.Characters[0].Inventory)
+	}
+}
+
 func TestGameSessionFlowItemMovePacketRejectsPartialMergeAboveTemplateMaxCount(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
