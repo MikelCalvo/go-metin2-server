@@ -171,13 +171,42 @@ func (r *Runtime) MoveInventoryItemCount(from inventory.SlotIndex, to inventory.
 		return result, true
 	}
 	fromIndex := findInventorySlot(r.liveInventory, from)
-	if fromIndex < 0 {
+	if fromIndex < 0 || r.liveInventory[fromIndex].Locked {
 		return inventory.MoveResult{}, false
 	}
-	if r.liveInventory[fromIndex].Count != count {
+	sourceItem := r.liveInventory[fromIndex]
+	if count > sourceItem.Count {
 		return inventory.MoveResult{}, false
 	}
-	return r.moveInventoryItemFullStack(from, to, result)
+	if count == sourceItem.Count {
+		return r.moveInventoryItemFullStack(from, to, result)
+	}
+	toIndex := findInventorySlot(r.liveInventory, to)
+	if toIndex >= 0 {
+		return inventory.MoveResult{}, false
+	}
+	sourceRemainder := sourceItem
+	sourceRemainder.Count -= count
+	destinationItem := sourceItem
+	destinationItem.ID = r.nextSplitItemID()
+	destinationItem.Count = count
+	var err error
+	destinationItem, err = destinationItem.WithInventorySlot(to)
+	if err != nil {
+		return inventory.MoveResult{}, false
+	}
+	if err := sourceRemainder.Validate(); err != nil {
+		return inventory.MoveResult{}, false
+	}
+	r.liveInventory[fromIndex] = sourceRemainder
+	r.liveInventory = append(r.liveInventory, destinationItem)
+	sortInventoryItems(r.liveInventory)
+	result.Changed = true
+	result.FromOccupied = true
+	result.FromItem = sourceRemainder
+	result.ToOccupied = true
+	result.ToItem = destinationItem
+	return result, true
 }
 
 func (r *Runtime) moveInventoryItemFullStack(from inventory.SlotIndex, to inventory.SlotIndex, result inventory.MoveResult) (inventory.MoveResult, bool) {
@@ -562,10 +591,28 @@ func cloneItemInstances(items []inventory.ItemInstance) []inventory.ItemInstance
 	return append([]inventory.ItemInstance(nil), items...)
 }
 
+func (r *Runtime) nextSplitItemID() uint64 {
+	var maxID uint64
+	for _, item := range r.liveInventory {
+		if item.ID > maxID {
+			maxID = item.ID
+		}
+	}
+	for _, item := range r.liveEquipment {
+		if item.ID > maxID {
+			maxID = item.ID
+		}
+	}
+	if maxID == ^uint64(0) {
+		return 0
+	}
+	return maxID + 1
+}
+
 func findInventorySlot(items []inventory.ItemInstance, slot inventory.SlotIndex) int {
-	for i, item := range items {
-		if item.Slot == slot {
-			return i
+	for index, item := range items {
+		if !item.Equipped && item.Slot == slot {
+			return index
 		}
 	}
 	return -1

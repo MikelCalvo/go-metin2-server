@@ -206,12 +206,44 @@ func TestRuntimeMoveInventoryItemSwapsOccupiedSlots(t *testing.T) {
 	}
 }
 
-func TestRuntimeMoveInventoryItemCountRejectsDeferredPartialAndOversizedStackMoves(t *testing.T) {
+func TestRuntimeMoveInventoryItemCountSplitsPartialStackIntoEmptySlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	if _, ok := runtime.MoveInventoryItemCount(5, 6, 2); ok {
-		t.Fatal("expected partial stack move count to fail closed until split semantics are owned")
+	result, ok := runtime.MoveInventoryItemCount(5, 6, 2)
+	if !ok {
+		t.Fatal("expected partial stack move count into empty carried slot to succeed")
+	}
+	if !result.Changed || !result.FromOccupied || !result.ToOccupied {
+		t.Fatalf("expected split result to refresh both source and destination slots, got %+v", result)
+	}
+	if result.From != 5 || result.To != 6 {
+		t.Fatalf("unexpected split slots: %+v", result)
+	}
+	if result.FromItem.ID != 11 || result.FromItem.Vnum != 27001 || result.FromItem.Count != 1 || result.FromItem.Slot != 5 {
+		t.Fatalf("expected source stack to retain one item at slot 5, got %+v", result.FromItem)
+	}
+	if result.ToItem.ID == 0 || result.ToItem.ID == result.FromItem.ID || result.ToItem.Vnum != 27001 || result.ToItem.Count != 2 || result.ToItem.Slot != 6 {
+		t.Fatalf("expected split stack clone with a fresh instance id at slot 6, got %+v", result.ToItem)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: result.ToItem.ID, Vnum: 27001, Count: 2, Slot: 6},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after partial split: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after partial split, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
+func TestRuntimeMoveInventoryItemCountRejectsDeferredOccupiedDestinationAndOversizedStackMoves(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.MoveInventoryItemCount(5, 8, 2); ok {
+		t.Fatal("expected partial stack move count into occupied destination to fail closed until merge semantics are owned")
 	}
 	if _, ok := runtime.MoveInventoryItemCount(5, 6, 4); ok {
 		t.Fatal("expected oversized stack move count to fail closed")
