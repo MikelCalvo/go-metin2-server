@@ -12262,7 +12262,7 @@ func TestGameSessionFlowItemMovePacketMovesCarriedInventory(t *testing.T) {
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "packet-move-owner", 0x50505050)
 	defer closeSessionFlow(t, flow)
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: itemproto.InventoryPosition(6), Count: 3})))
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: itemproto.InventoryPosition(6), Count: 0})))
 	if err != nil {
 		t.Fatalf("unexpected item-move packet error: %v", err)
 	}

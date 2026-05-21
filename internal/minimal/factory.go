@@ -1948,9 +1948,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
-					moveCount := uint16(packet.Count)
-					maxCount := ^uint16(0)
-					if packet.Count > 0 {
+					var moveResult inventory.MoveResult
+					if packet.Count == 0 {
+						moveResult, ok = selectedPlayer.MoveInventoryItem(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell))
+					} else {
+						moveCount := uint16(packet.Count)
+						maxCount := ^uint16(0)
 						for _, sourceItem := range selectedPlayer.LiveInventory() {
 							if sourceItem.Slot != inventory.SlotIndex(packet.Source.Cell) {
 								continue
@@ -1960,8 +1963,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							break
 						}
+						moveResult, ok = selectedPlayer.MoveInventoryItemCountBounded(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), moveCount, maxCount)
 					}
-					moveResult, ok := selectedPlayer.MoveInventoryItemCountBounded(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), moveCount, maxCount)
 					if !ok {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}

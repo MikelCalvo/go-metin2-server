@@ -35,7 +35,7 @@ Payload size is 7 bytes:
 
 The current carried-inventory window is `WindowInventory = 1`.
 
-`count = 0` means full-stack move/swap. Non-zero `count` means a counted move bounded by the source item's template `max_count` when a valid template exists.
+`count = 0` means full-stack move/swap and must be routed through the same full-stack runtime path as the local `/move_item` QA helper. Non-zero `count` means a counted move bounded by the source item's template `max_count` when a valid template exists.
 
 ## Runtime acceptance
 
@@ -70,4 +70,4 @@ Current coverage:
 - `internal/proto/item` freezes the `CG::ITEM_MOVE` wire layout and invalid-header/payload rejection.
 - `internal/game` freezes GAME-phase dispatch to `HandleItemMove` and fail-closed denied behavior.
 - `internal/player` freezes runtime full-stack, counted split/merge, max-count, incompatible-destination, and locked-stack behavior.
-- `internal/minimal` freezes runtime persistence and self-frame behavior for slash-command full-stack movement and direct `CG::ITEM_MOVE` counted partial splits and compatible occupied-destination partial merges.
+- `internal/minimal` freezes runtime persistence and self-frame behavior for slash-command full-stack movement and direct `CG::ITEM_MOVE` full-stack moves, counted partial splits, and compatible occupied-destination partial merges.
