@@ -13182,6 +13182,84 @@ func TestGameSessionFlowShopSellRejectsAntiSellTemplateWithoutMutation(t *testin
 	}
 }
 
+func TestGameSessionFlowShopSellRejectsLockedItemWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacketLocked", 0x01040126, 0x02050126, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5, Locked: true}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-locked", 0x26262626, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected locked-item packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected locked-item packet shop sell2 to emit 1 invalid-pos frame, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode locked-item packet shop sell2 invalid-pos frame: %v", err)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after locked-item packet shop sell2")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected locked-item packet shop sell2 to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after locked-item packet shop sell2")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != 77 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 3 || inventorySnapshot.Inventory[0].Slot != 5 {
+		t.Fatalf("expected locked-item packet shop sell2 to keep live inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted locked-item merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0] != (inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 3, Slot: 5, Locked: true}) {
+		t.Fatalf("expected locked-item packet shop sell2 to keep persisted state unchanged, got %+v", account.Characters[0])
+	}
+}
+
+func TestGameSessionFlowShopSell2RejectsOverCountWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacketOverCount", 0x01040127, 0x02050127, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-over-count", 0x27272727, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 4})))
+	if err != nil {
+		t.Fatalf("unexpected over-count packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected over-count packet shop sell2 to emit 1 invalid-pos frame, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode over-count packet shop sell2 invalid-pos frame: %v", err)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after over-count packet shop sell2")
+	}
+	if currencySnapshot.Gold != 125 {
+		t.Fatalf("expected over-count packet shop sell2 to keep gold at 125, got %+v", currencySnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after over-count packet shop sell2")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != 77 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 3 || inventorySnapshot.Inventory[0].Slot != 5 {
+		t.Fatalf("expected over-count packet shop sell2 to keep live inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted over-count merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 125 || len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0] != (inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 3, Slot: 5}) {
+		t.Fatalf("expected over-count packet shop sell2 to keep persisted state unchanged, got %+v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopSellRejectsEquippedItemWithoutMutation(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantSellerPacketEquipped", 0x01040124, 0x02050124, 125, nil)
 	buyer.Equipment = []inventory.ItemInstance{{ID: 88, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}

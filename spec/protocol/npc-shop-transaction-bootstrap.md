@@ -337,7 +337,7 @@ The client-originated sell packet layouts are now owned as packet ingress plus t
 The first live sell-back contract remains intentionally narrow:
 - sell requests target carried inventory slots only
 - `SELL(slot)` uses count `0`, meaning the full current stack
-- `SELL2(slot,count)` sells the requested count, with count `0` or a count larger than the current stack meaning the full current stack
+- `SELL2(slot,count)` sells the requested count; count `0` and counts larger than the current stack fail closed instead of silently widening into a whole-stack sell
 - accepted sells remove the whole stack or decrement the stack count and credit the selected character's live gold total with the owned template-derived sell credit
 - ordinary sell credit derives from loaded item-template `shop_buy_price` as `floor((shop_buy_price * sold_count) / 5)` minus `floor(3% tax)`
 - templates flagged `sell_count_per_gold` follow the legacy count-per-gold branch first: use `floor(sold_count / shop_buy_price)` when `shop_buy_price > 0`, or `sold_count` when it is zero, then apply the same `/5` and 3% tax floor; if the resulting credit is zero, the bootstrap runtime fails closed
@@ -347,22 +347,22 @@ The first live sell-back contract remains intentionally narrow:
 - whole-stack success emits self-only `ITEM_DEL(slot)`, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`
 - partial-stack success emits self-only `ITEM_UPDATE(slot, remaining_count)`, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`
 - packet `SHOP SELL` / `SHOP SELL2` success does not append an extra bare self-only `GC::SHOP OK`; the owned visible success companion is the item refresh plus gold `POINT_CHANGE`
-- invalid slots, equipped items, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
+- invalid slots, locked carried items, equipped items, explicit `SELL2` count `0`, over-count `SELL2`, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
 - an invalid packet/runtime sell while an active merchant window exists returns bare self-only `GC::SHOP INVALID_POS`
 - stale active merchant context still returns `GC::SHOP END`, clears the active context, and leaves inventory/currency unchanged
-- if a socket already lost live shared-world ownership because another session reclaimed the same selected character, packet `SHOP SELL` / `SHOP SELL2` may still return the same self-local sell success burst (`ITEM_DEL` or `ITEM_UPDATE` plus bare `GC::SHOP OK`) to that stale socket
+- if a socket already lost live shared-world ownership because another session reclaimed the same selected character, packet `SHOP SELL` / `SHOP SELL2` may still return the same self-local sell success burst (`ITEM_DEL` or `ITEM_UPDATE` plus gold `PLAYER_POINT_CHANGE`) to that stale socket
 - that stale sell mutation must not persist updated `gold` or `inventory`
 - that stale sell mutation must not replace the replacement live owner's exact-name loopback inventory/currency snapshots
 - no peer-facing packets are emitted from that stale socket for this bootstrap merchant-sell path
 
-The packet/runtime path now loads the item shop-buy price, count-per-gold flag, and first anti-sell policy through `itemstore.Template.shop_buy_price`, `itemstore.Template.sell_count_per_gold`, and `itemstore.Template.anti_sell`, then applies the legacy-compatible count/price branch before the shared `/5` and 3% tax floors. This still is not a full 1:1 pricing claim: locked/bound instance policy, locale-specific tax variants, and final UI/result choreography remain later slices.
+The packet/runtime path now loads the item shop-buy price, count-per-gold flag, and first anti-sell policy through `itemstore.Template.shop_buy_price`, `itemstore.Template.sell_count_per_gold`, and `itemstore.Template.anti_sell`, then applies the legacy-compatible count/price branch before the shared `/5` and 3% tax floors. The first runtime-locked item-instance guard is also owned for packet sell-back: locked carried items fail closed with `INVALID_POS` and leave live plus persisted inventory/currency unchanged. This still is not a full 1:1 pricing claim: broader bound-item policy, locale-specific tax variants, and final UI/result choreography remain later slices.
 
 This slice owns the state mutation and smallest visible merchant-window companion only. It still does not freeze richer sell-result packets, merchant stock updates, tax formulas, or final client UI refresh choreography.
 
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- full compatibility-grade sell-price rules including locked/bound item-instance policy and locale-specific tax variants
+- full compatibility-grade sell-price rules including broader bound item-instance policy and locale-specific tax variants
 - final client-visible sell-result choreography beyond `ITEM_DEL` / `ITEM_UPDATE` plus gold `POINT_CHANGE`
 - personal-shop (`MYSHOP`) behavior
 - merchant stock depletion

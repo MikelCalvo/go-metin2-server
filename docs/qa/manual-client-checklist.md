@@ -639,9 +639,10 @@ Expected result:
 
 - [ ] Open a structured merchant `shop_preview` window while the QA character has at least one carried inventory stack
 - [ ] Send one real client `SHOP SELL` request for a carried slot containing a stack
-- [ ] Confirm whole-stack sell removes the carried slot and answers with `ITEM_DEL` followed by `GC::SHOP OK`
+- [ ] Confirm whole-stack sell removes the carried slot and answers with `ITEM_DEL` followed by `PLAYER_POINT_CHANGE(POINT_GOLD)` with no extra bare `GC::SHOP OK`
 - [ ] Repeat with `SHOP SELL2` and a count lower than the stack size
-- [ ] Confirm partial sell refreshes the carried slot with the remaining count and answers with `GC::SHOP OK`
+- [ ] Confirm partial sell refreshes the carried slot with `ITEM_UPDATE`, then answers with `PLAYER_POINT_CHANGE(POINT_GOLD)` with no extra bare `GC::SHOP OK`
+- [ ] Repeat `SHOP SELL2` with a count larger than the current stack and confirm it returns the merchant invalid-position path without changing gold, carried inventory, or persisted account state
 - [ ] If the QA setup can mark a carried item as runtime-locked, attempt one `SHOP SELL` or `SHOP SELL2` for that slot from an open merchant window
 - [ ] Confirm the locked sell attempt returns the merchant invalid-position path and does not change gold, carried inventory, or persisted account state
 - [ ] Confirm loopback inventory/currency snapshots or reconnect state show the credited bootstrap gold and updated carried inventory
