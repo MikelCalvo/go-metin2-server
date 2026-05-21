@@ -71,6 +71,63 @@ func TestHandleClientFrameAcceptsMoveInGameWithExplicitEmptyFrames(t *testing.T)
 	}
 }
 
+func TestHandleClientFrameAcceptsItemMoveInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(5)})
+	flow := NewFlow(machine, Config{
+		HandleItemMove: func(packet itemproto.ClientMovePacket) ItemMoveResult {
+			if packet.Source != itemproto.InventoryPosition(5) || packet.Destination != itemproto.InventoryPosition(6) || packet.Count != 2 {
+				t.Fatalf("unexpected item move packet: %+v", packet)
+			}
+			return ItemMoveResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(6),
+		Count:       2,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected item move error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler item-move frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsDeniedItemMoveInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	called := false
+	flow := NewFlow(machine, Config{
+		HandleItemMove: func(packet itemproto.ClientMovePacket) ItemMoveResult {
+			called = true
+			return ItemMoveResult{Accepted: false, Frames: [][]byte{itemproto.EncodeDel(itemproto.DelPacket{Position: packet.Source})}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(6),
+		Count:       1,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected denied item move error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected item move handler to be called")
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected denied item move to emit no frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsSyncPositionInGameAndReturnsSynchronization(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{

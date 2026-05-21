@@ -827,6 +827,79 @@ func TestNewGameSessionFactoryInventorySwapPersistsAndEmitsTwoSetFrames(t *testi
 	}
 }
 
+func TestNewGameSessionFactoryItemMovePacketSplitsPartialStackPersistsAndEmitsTwoSetFrames(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 3, Slot: 5}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(6),
+		Count:       2,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected item move packet error: %v", err)
+	}
+	if len(moveOut) != 2 {
+		t.Fatalf("expected two set frames for partial stack split item move, got %d", len(moveOut))
+	}
+	fromPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode partial item move source refresh: %v", err)
+	}
+	if fromPacket.Position.WindowType != itemproto.WindowInventory || fromPacket.Position.Cell != 5 || fromPacket.Vnum != 27001 || fromPacket.Count != 1 {
+		t.Fatalf("unexpected partial item move source refresh: %+v", fromPacket)
+	}
+	toPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, moveOut[1]))
+	if err != nil {
+		t.Fatalf("decode partial item move destination refresh: %v", err)
+	}
+	if toPacket.Position.WindowType != itemproto.WindowInventory || toPacket.Position.Cell != 6 || toPacket.Vnum != 27001 || toPacket.Count != 2 {
+		t.Fatalf("unexpected partial item move destination refresh: %+v", toPacket)
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if len(account.Characters[1].Inventory) != 2 {
+		t.Fatalf("expected two persisted inventory stacks after partial item move, got %#v", account.Characters[1].Inventory)
+	}
+	if account.Characters[1].Inventory[0] != (inventory.ItemInstance{ID: 1001, Vnum: 27001, Count: 1, Slot: 5}) {
+		t.Fatalf("unexpected persisted source stack after partial item move: %#v", account.Characters[1].Inventory)
+	}
+	if account.Characters[1].Inventory[1].ID == 0 || account.Characters[1].Inventory[1].ID == 1001 || account.Characters[1].Inventory[1].Vnum != 27001 || account.Characters[1].Inventory[1].Count != 2 || account.Characters[1].Inventory[1].Slot != 6 {
+		t.Fatalf("unexpected persisted destination split stack after partial item move: %#v", account.Characters[1].Inventory)
+	}
+}
+
 func TestNewGameSessionFactoryEquipPersistsAndEmitsInventoryDeleteThenEquipmentSet(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
