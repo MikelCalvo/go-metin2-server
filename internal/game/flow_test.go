@@ -187,6 +187,32 @@ func TestHandleClientFrameAcceptsItemUseInGameAndReturnsFrames(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameAcceptsItemMoveInGameAndReturnsFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	flow := NewFlow(machine, Config{
+		HandleItemMove: func(packet itemproto.ClientMovePacket) ItemMoveResult {
+			if packet.Source != (itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 5}) || packet.Destination != (itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 6}) || packet.Count != 3 {
+				t.Fatalf("unexpected item-move packet: %+v", packet)
+			}
+			return ItemMoveResult{Accepted: true, Frames: [][]byte{[]byte("item-moved")}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 5}, Destination: itemproto.Position{WindowType: itemproto.WindowInventory, Cell: 6}, Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected item-move error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 outgoing frame, got %d", len(out))
+	}
+	if !bytes.Equal(out[0], []byte("item-moved")) {
+		t.Fatalf("unexpected item-move frames: %q", out[0])
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameChatCanTransitionBackToSelect(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{

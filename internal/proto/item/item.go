@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	HeaderClientUse uint16 = 0x0502
-	HeaderDel       uint16 = 0x0510
-	HeaderSet       uint16 = 0x0511
-	HeaderUpdate    uint16 = 0x0514
+	HeaderClientUse  uint16 = 0x0502
+	HeaderClientMove uint16 = 0x0504
+	HeaderDel        uint16 = 0x0510
+	HeaderSet        uint16 = 0x0511
+	HeaderUpdate     uint16 = 0x0514
 
 	WindowReserved            uint8  = 0
 	WindowInventory           uint8  = 1
@@ -26,12 +27,13 @@ const (
 	ItemSocketCount                  = 3
 	ItemAttributeCount               = 7
 
-	positionSize         = 3
-	attributeSize        = 3
-	clientUsePayloadSize = positionSize
-	delPayloadSize       = positionSize
-	setPayloadSize       = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
-	updatePayloadSize    = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	positionSize          = 3
+	attributeSize         = 3
+	clientUsePayloadSize  = positionSize
+	clientMovePayloadSize = positionSize + positionSize + 1
+	delPayloadSize        = positionSize
+	setPayloadSize        = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	updatePayloadSize     = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 )
 
 var (
@@ -77,6 +79,12 @@ type ClientUsePacket struct {
 	Position Position
 }
 
+type ClientMovePacket struct {
+	Source      Position
+	Destination Position
+	Count       uint8
+}
+
 func InventoryPosition(cell uint16) Position {
 	return Position{WindowType: WindowInventory, Cell: cell}
 }
@@ -109,6 +117,28 @@ func DecodeClientUse(f frame.Frame) (ClientUsePacket, error) {
 		return ClientUsePacket{}, ErrInvalidPayload
 	}
 	return ClientUsePacket{Position: decodePosition(f.Payload)}, nil
+}
+
+func EncodeClientMove(packet ClientMovePacket) []byte {
+	payload := make([]byte, clientMovePayloadSize)
+	encodePosition(payload[:positionSize], packet.Source)
+	encodePosition(payload[positionSize:positionSize+positionSize], packet.Destination)
+	payload[positionSize+positionSize] = packet.Count
+	return frame.Encode(HeaderClientMove, payload)
+}
+
+func DecodeClientMove(f frame.Frame) (ClientMovePacket, error) {
+	if f.Header != HeaderClientMove {
+		return ClientMovePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientMovePayloadSize {
+		return ClientMovePacket{}, ErrInvalidPayload
+	}
+	return ClientMovePacket{
+		Source:      decodePosition(f.Payload[:positionSize]),
+		Destination: decodePosition(f.Payload[positionSize : positionSize+positionSize]),
+		Count:       f.Payload[positionSize+positionSize],
+	}, nil
 }
 
 func EncodeSet(packet SetPacket) []byte {

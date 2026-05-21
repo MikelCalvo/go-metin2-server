@@ -35,6 +35,8 @@ type HandleAttackFunc func(combatproto.ClientAttackPacket) AttackResult
 
 type HandleItemUseFunc func(itemproto.ClientUsePacket) ItemUseResult
 
+type HandleItemMoveFunc func(itemproto.ClientMovePacket) ItemMoveResult
+
 type HandleShopBuyFunc func(shopproto.ClientBuyPacket) ShopResult
 
 type HandleShopCloseFunc func() ShopResult
@@ -52,6 +54,7 @@ type Config struct {
 	HandleTarget       HandleTargetFunc
 	HandleAttack       HandleAttackFunc
 	HandleItemUse      HandleItemUseFunc
+	HandleItemMove     HandleItemMoveFunc
 	HandleShopBuy      HandleShopBuyFunc
 	HandleShopClose    HandleShopCloseFunc
 	HandleShopSell     HandleShopSellFunc
@@ -102,6 +105,11 @@ type ItemUseResult struct {
 	Frames   [][]byte
 }
 
+type ItemMoveResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type ShopResult struct {
 	Accepted bool
 	Frames   [][]byte
@@ -117,6 +125,7 @@ type Flow struct {
 	handleTarget       HandleTargetFunc
 	handleAttack       HandleAttackFunc
 	handleItemUse      HandleItemUseFunc
+	handleItemMove     HandleItemMoveFunc
 	handleShopBuy      HandleShopBuyFunc
 	handleShopClose    HandleShopCloseFunc
 	handleShopSell     HandleShopSellFunc
@@ -156,6 +165,10 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if itemUseHandler == nil {
 		itemUseHandler = func(itemproto.ClientUsePacket) ItemUseResult { return ItemUseResult{Accepted: false} }
 	}
+	itemMoveHandler := cfg.HandleItemMove
+	if itemMoveHandler == nil {
+		itemMoveHandler = func(itemproto.ClientMovePacket) ItemMoveResult { return ItemMoveResult{Accepted: false} }
+	}
 	shopBuyHandler := cfg.HandleShopBuy
 	if shopBuyHandler == nil {
 		shopBuyHandler = func(shopproto.ClientBuyPacket) ShopResult { return ShopResult{Accepted: false} }
@@ -182,6 +195,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleTarget:       targetHandler,
 		handleAttack:       attackHandler,
 		handleItemUse:      itemUseHandler,
+		handleItemMove:     itemMoveHandler,
 		handleShopBuy:      shopBuyHandler,
 		handleShopClose:    shopCloseHandler,
 		handleShopSell:     shopSellHandler,
@@ -299,6 +313,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, err
 		}
 		result := f.handleItemUse(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case itemproto.HeaderClientMove:
+		packet, err := itemproto.DecodeClientMove(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleItemMove(packet)
 		if !result.Accepted {
 			return nil, nil
 		}

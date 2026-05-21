@@ -620,7 +620,20 @@ Expected result:
 - compatible existing stacks fill first in slot order, then the remainder lands in the lowest free carried slot
 - no harness-only placement drift appears in persisted or live runtime state
 
-### 6.19 Packet merchant sell-back smoke (packet-harness optional)
+### 6.19 Packet carried inventory move/swap smoke (packet-harness optional)
+
+- [ ] Enter `GAME` with a QA character that has one known carried item stack in slot `A` and an empty carried slot `B`
+- [ ] Send one real client `ITEM_MOVE` request from `A` to `B` (`source TItemPos`, `destination TItemPos`, `count`)
+- [ ] Confirm the selected session receives `ITEM_DEL(A)` followed by `ITEM_SET(B)`
+- [ ] Confirm loopback inventory snapshots or reconnect state show the item persisted in slot `B`
+- [ ] Repeat with a destination occupied by another carried item if the QA setup has two disposable carried items
+
+Expected result:
+- packet `ITEM_MOVE` reuses the same authoritative move/swap semantics as `/inventory_move`
+- the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` refresh family
+- non-carried windows and out-of-range cells fail closed without mutation
+
+### 6.20 Packet merchant sell-back smoke (packet-harness optional)
 
 - [ ] Open a structured merchant `shop_preview` window while the QA character has at least one carried inventory stack
 - [ ] Send one real client `SHOP SELL` request for a carried slot containing a stack

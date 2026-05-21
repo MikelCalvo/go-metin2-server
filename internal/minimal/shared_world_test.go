@@ -12249,6 +12249,59 @@ func TestGameSessionFlowStaticActorShopPreviewInteractionOpensMerchantWindow(t *
 	}
 }
 
+func TestGameSessionFlowItemMovePacketMovesCarriedInventory(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PacketMoveOwner", 0x01030501, 0x02040501, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}}
+	issuePeerTicket(t, store, "packet-move-owner", 0x50505050, owner)
+	if err := accounts.Save(accountstore.Account{Login: "packet-move-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed packet item-move owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "packet-move-owner", 0x50505050)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: itemproto.InventoryPosition(6), Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected item-move packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected item-move packet to emit 2 item frames, got %d", len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode item-move packet delete: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected item-move packet delete: %+v", del)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode item-move packet set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27001 || set.Count != 3 {
+		t.Fatalf("unexpected item-move packet set: %+v", set)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after item-move packet")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Slot != 6 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 3 {
+		t.Fatalf("unexpected runtime inventory after item-move packet: %+v", inventorySnapshot.Inventory)
+	}
+	persisted, err := accounts.Load("packet-move-owner")
+	if err != nil {
+		t.Fatalf("load persisted item-move packet owner account: %v", err)
+	}
+	if len(persisted.Characters[0].Inventory) != 1 || persisted.Characters[0].Inventory[0].Slot != 6 || persisted.Characters[0].Inventory[0].Vnum != 27001 || persisted.Characters[0].Inventory[0].Count != 3 {
+		t.Fatalf("unexpected persisted inventory after item-move packet: %+v", persisted.Characters[0].Inventory)
+	}
+}
+
 func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerClose", 0x01040104, 0x02050104, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-close", 0x44444444, buyer)

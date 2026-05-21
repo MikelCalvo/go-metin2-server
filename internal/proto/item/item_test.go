@@ -121,6 +121,32 @@ func TestDecodeClientUseReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeClientMoveBuildsAFrame(t *testing.T) {
+	from, err := CarriedInventoryPosition(5)
+	if err != nil {
+		t.Fatalf("unexpected source position error: %v", err)
+	}
+	to, err := CarriedInventoryPosition(6)
+	if err != nil {
+		t.Fatalf("unexpected target position error: %v", err)
+	}
+	want := frame.Encode(HeaderClientMove, []byte{WindowInventory, 5, 0, WindowInventory, 6, 0, 3})
+	got := EncodeClientMove(ClientMovePacket{Source: from, Destination: to, Count: 3})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected item move frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientMoveReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientMove(decodeSingleFrame(t, frame.Encode(HeaderClientMove, []byte{WindowInventory, 5, 0, WindowInventory, 6, 0, 3})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientMovePacket{Source: Position{WindowType: WindowInventory, Cell: 5}, Destination: Position{WindowType: WindowInventory, Cell: 6}, Count: 3}) {
+		t.Fatalf("unexpected item-move packet: %+v", packet)
+	}
+}
+
 func TestEncodeDelBuildsAFrame(t *testing.T) {
 	want := loadHexFixture(t, "item-del-frame.hex")
 	got := EncodeDel(sampleDelPacket())
@@ -208,6 +234,20 @@ func TestDecodeClientUseRejectsUnexpectedHeader(t *testing.T) {
 
 func TestDecodeClientUseRejectsInvalidPayload(t *testing.T) {
 	_, err := DecodeClientUse(frame.Frame{Header: HeaderClientUse, Length: 6, Payload: make([]byte, clientUsePayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeClientMoveRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientMove(frame.Frame{Header: HeaderClientMove + 1, Length: 11, Payload: make([]byte, clientMovePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientMoveRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeClientMove(frame.Frame{Header: HeaderClientMove, Length: 10, Payload: make([]byte, clientMovePayloadSize-1)})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
 	}

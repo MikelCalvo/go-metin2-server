@@ -113,9 +113,11 @@ The exact wire layout is now frozen by `internal/proto/item` golden tests.
 ## First live mutation refresh boundary
 
 After the bootstrap burst, the owned mutation surface remains intentionally bootstrap-scoped:
-- ingress is still server-owned slash-command seams for inventory move/equip/unequip rather than the final legacy drag/drop packet families; the first carried-slot client-originated `ITEM_USE` ingress now lives separately in `item-use-bootstrap.md`
+- ingress now includes the first carried-slot client-originated `ITEM_MOVE` packet for inventory move/swap; the older `/inventory_move <from> <to>` slash-command seam remains as operator/test bootstrap compatibility
+- the first carried-slot client-originated `ITEM_USE` ingress lives separately in `item-use-bootstrap.md`
 - the current supported seams are:
-  - `/inventory_move <from> <to>` for carried-slot move/swap
+  - `ITEM_MOVE` (`0x0504`) for carried-slot move/swap
+  - `/inventory_move <from> <to>` for carried-slot move/swap compatibility
   - `/equip_item <from> <equip_slot>` for carried -> worn transitions
   - `/unequip_item <equip_slot> <to>` for worn -> carried transitions
 - carried inventory keeps using `window_type = INVENTORY (1)` with `0 <= cell < 90`
@@ -138,6 +140,17 @@ Refresh rules for a successful self-only mutation:
 The first item family uses a packed legacy-compatible `TItemPos` equivalent:
 - `window_type` — `uint8`
 - `cell` — little-endian `uint16`
+
+The first client-originated carried-slot drag/drop ingress is now frozen as `ITEM_MOVE`:
+- header `0x0504`
+- total frame length `11`
+- payload order:
+  1. source packed `TItemPos`
+  2. destination packed `TItemPos`
+  3. `count uint8`
+- for the current bootstrap runtime, both source and destination must be normal carried inventory positions (`window_type = INVENTORY`, `0 <= cell < 90`)
+- the accepted runtime path reuses the same selected-character `MoveInventoryItem(...)` semantics and `ITEM_DEL` / `ITEM_SET` refresh frames already owned by `/inventory_move`
+- `count` is decoded and preserved at the protocol boundary but the current runtime still moves the authoritative item instance occupying the source slot as one bootstrap operation; partial stack splitting remains future work
 
 For the current owned bootstrap surface:
 - carried inventory uses `window_type = INVENTORY (1)` with `0 <= cell < 90`
@@ -186,6 +199,6 @@ After this slice, the repository should be able to say:
 - inventory/equipment are no longer undefined territory in project docs
 - the first self-only bootstrap ordering for item state is frozen relative to `ENTERGAME`
 - the loading-to-game burst now emits owned `ITEM_SET` frames for occupied carried/equipped slots immediately after `PLAYER_POINT_CHANGE`
-- the first carried/worn mutation loops now persist selected-character move/swap/equip/unequip changes and refresh the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames, plus one self-only template-backed `PLAYER_POINT_CHANGE` when matched equip templates carry the current narrow `equip_effect`, one self-only `CHARACTER_UPDATE` after successful equip/unequip appearance changes, and one queued peer-visible `CHARACTER_UPDATE` for already-visible stable watchers in shared world
+- the first carried/worn mutation loops now persist selected-character move/swap/equip/unequip changes; carried-slot move/swap is accepted through both `ITEM_MOVE` and the older `/inventory_move` bootstrap seam, and refreshes the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames, plus one self-only template-backed `PLAYER_POINT_CHANGE` when matched equip templates carry the current narrow `equip_effect`, one self-only `CHARACTER_UPDATE` after successful equip/unequip appearance changes, and one queued peer-visible `CHARACTER_UPDATE` for already-visible stable watchers in shared world
 - the repo owns a stable vocabulary for carried inventory slots, equipment slots, minimum item snapshot semantics, and the first self-only mutation refresh rules
 - the packet matrix and `internal/proto/item` codec now agree on the first byte-level item bootstrap family

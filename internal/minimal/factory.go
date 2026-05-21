@@ -1936,6 +1936,34 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 
 					return executeSelectedItemUse(packet.Position)
 				},
+				HandleItemMove: func(packet itemproto.ClientMovePacket) gameflow.ItemMoveResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if packet.Source.WindowType != itemproto.WindowInventory || packet.Destination.WindowType != itemproto.WindowInventory || inventory.SlotIndex(packet.Source.Cell) >= inventory.CarriedInventorySlotCount || inventory.SlotIndex(packet.Destination.Cell) >= inventory.CarriedInventorySlotCount {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
+					previousSelected := selectedPlayer.LiveCharacter()
+					moveResult, ok := selectedPlayer.MoveInventoryItem(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell))
+					if !ok {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
+					if !moveResult.Changed {
+						return gameflow.ItemMoveResult{Accepted: true}
+					}
+					frames, err := inventoryMoveResultFrames(moveResult)
+					if err != nil {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						refreshLiveCharacterRegistration()
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
+					chatResult := commitSelectedNonPointItemMutation(selectedPlayer, previousSelected, frames)
+					return gameflow.ItemMoveResult{Accepted: chatResult.Accepted, Frames: chatResult.Frames}
+				},
 				HandleWhisper: func(packet chatproto.ClientWhisperPacket) gameflow.WhisperResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()
