@@ -159,6 +159,28 @@ func (r *Runtime) MoveInventoryItem(from inventory.SlotIndex, to inventory.SlotI
 	if from == to {
 		return result, true
 	}
+	return r.moveInventoryItemFullStack(from, to, result)
+}
+
+func (r *Runtime) MoveInventoryItemCount(from inventory.SlotIndex, to inventory.SlotIndex, count uint16) (inventory.MoveResult, bool) {
+	if r == nil || count == 0 {
+		return inventory.MoveResult{}, false
+	}
+	result := inventory.MoveResult{From: from, To: to}
+	if from == to {
+		return result, true
+	}
+	fromIndex := findInventorySlot(r.liveInventory, from)
+	if fromIndex < 0 {
+		return inventory.MoveResult{}, false
+	}
+	if r.liveInventory[fromIndex].Count != count {
+		return inventory.MoveResult{}, false
+	}
+	return r.moveInventoryItemFullStack(from, to, result)
+}
+
+func (r *Runtime) moveInventoryItemFullStack(from inventory.SlotIndex, to inventory.SlotIndex, result inventory.MoveResult) (inventory.MoveResult, bool) {
 	fromIndex := findInventorySlot(r.liveInventory, from)
 	if fromIndex < 0 {
 		return inventory.MoveResult{}, false

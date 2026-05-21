@@ -149,8 +149,9 @@ The first client-originated carried-slot drag/drop ingress is now frozen as `ITE
   2. destination packed `TItemPos`
   3. `count uint8`
 - for the current bootstrap runtime, both source and destination must be normal carried inventory positions (`window_type = INVENTORY`, `0 <= cell < 90`)
-- the accepted runtime path reuses the same selected-character `MoveInventoryItem(...)` semantics and `ITEM_DEL` / `ITEM_SET` refresh frames already owned by `/inventory_move`
-- `count` is decoded and preserved at the protocol boundary but the current runtime still moves the authoritative item instance occupying the source slot as one bootstrap operation; partial stack splitting remains future work
+- the accepted runtime path reuses the same selected-character full-stack move/swap semantics and `ITEM_DEL` / `ITEM_SET` refresh frames already owned by `/inventory_move`
+- `count` is now honored as an exact full-stack guard for packet ingress: the packet is accepted only when `count` matches the authoritative stack count currently occupying the source slot
+- partial stack splitting remains future work and fails closed instead of silently moving the entire source stack
 
 For the current owned bootstrap surface:
 - carried inventory uses `window_type = INVENTORY (1)` with `0 <= cell < 90`

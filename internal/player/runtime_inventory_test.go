@@ -206,6 +206,29 @@ func TestRuntimeMoveInventoryItemSwapsOccupiedSlots(t *testing.T) {
 	}
 }
 
+func TestRuntimeMoveInventoryItemCountRejectsDeferredPartialAndOversizedStackMoves(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.MoveInventoryItemCount(5, 6, 2); ok {
+		t.Fatal("expected partial stack move count to fail closed until split semantics are owned")
+	}
+	if _, ok := runtime.MoveInventoryItemCount(5, 6, 4); ok {
+		t.Fatal("expected oversized stack move count to fail closed")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected rejected counted moves to leave live inventory unchanged, got %#v", runtime.LiveInventory())
+	}
+
+	result, ok := runtime.MoveInventoryItemCount(5, 6, 3)
+	if !ok {
+		t.Fatal("expected exact counted full-stack move to succeed")
+	}
+	if !result.Changed || result.ToItem.Slot != 6 || result.ToItem.Count != 3 {
+		t.Fatalf("unexpected exact counted move result: %+v", result)
+	}
+}
+
 func TestRuntimeBuyMerchantItemMergesIntoExistingCompatibleStackBeforeAllocatingNewSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

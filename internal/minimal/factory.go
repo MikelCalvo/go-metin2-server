@@ -1948,7 +1948,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
-					moveResult, ok := selectedPlayer.MoveInventoryItem(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell))
+					moveResult, ok := selectedPlayer.MoveInventoryItemCount(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), uint16(packet.Count))
 					if !ok {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
