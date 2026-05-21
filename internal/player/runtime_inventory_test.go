@@ -392,6 +392,43 @@ func TestRuntimeBuyMerchantItemFansOutAcrossSeveralExistingCompatibleStacksWitho
 	}
 }
 
+func TestRuntimeBuyMerchantItemFansOutOnlyAcrossUnlockedCompatibleStacks(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = make([]inventory.ItemInstance, 0, int(inventory.CarriedInventorySlotCount))
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		item := inventory.ItemInstance{ID: 1000 + uint64(slot), Vnum: 40000 + uint32(slot), Count: 1, Slot: slot}
+		switch slot {
+		case 5:
+			item = inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 199, Slot: slot}
+		case 7:
+			item = inventory.ItemInstance{ID: 79, Vnum: 27001, Count: 199, Slot: slot, Locked: true}
+		case 9:
+			item = inventory.ItemInstance{ID: 81, Vnum: 27001, Count: 199, Slot: slot}
+		}
+		persisted.Inventory = append(persisted.Inventory, item)
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if failure := runtime.ValidateMerchantBuy(template, 2, 50); failure != "" {
+		t.Fatalf("expected locked partial stack to be skipped during fan-out validation, got %q", failure)
+	}
+	result, ok := runtime.BuyMerchantItem(template, 2, 50)
+	if !ok {
+		t.Fatal("expected merchant buy to fan out across unlocked stacks while skipping locked stack")
+	}
+	if len(result.Items) != 2 || result.Items[0].ID != 77 || result.Items[0].Count != 200 || result.Items[0].Slot != 5 || result.Items[1].ID != 81 || result.Items[1].Count != 200 || result.Items[1].Slot != 9 {
+		t.Fatalf("expected fan-out to skip locked slot 7 and fill slots 5/9, got %+v", result.Items)
+	}
+	gotLive := runtime.LiveInventory()
+	if !reflect.DeepEqual(gotLive[5], inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 200, Slot: 5}) || !reflect.DeepEqual(gotLive[7], inventory.ItemInstance{ID: 79, Vnum: 27001, Count: 199, Slot: 7, Locked: true}) || !reflect.DeepEqual(gotLive[9], inventory.ItemInstance{ID: 81, Vnum: 27001, Count: 200, Slot: 9}) {
+		t.Fatalf("unexpected live inventory after locked-stack-skipping fan-out: %#v", gotLive)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after locked-stack-skipping fan-out, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeBuyMerchantItemFansOutAcrossSeveralExistingCompatibleStacksThenUsesFreshSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{
