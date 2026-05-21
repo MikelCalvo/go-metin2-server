@@ -275,6 +275,34 @@ func TestRuntimeRejectsLockedEquippedItemUnequipWithoutMutatingState(t *testing.
 	}
 }
 
+func TestRuntimeBuyMerchantItemDoesNotMergeIntoLockedCompatibleStack(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory[0].Locked = true
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if failure := runtime.ValidateMerchantBuy(template, 2, 50); failure != "" {
+		t.Fatalf("expected locked compatible stack to be skipped in favor of fresh placement, got failure %q", failure)
+	}
+	result, ok := runtime.BuyMerchantItem(template, 2, 50)
+	if !ok {
+		t.Fatal("expected merchant buy to allocate fresh slot when only compatible stack is locked")
+	}
+	if len(result.ItemChanges) != 1 || !result.ItemChanges[0].Created || result.ItemChanges[0].Item.Slot != 0 || result.ItemChanges[0].Item.Count != 2 {
+		t.Fatalf("expected fresh-slot placement instead of locked-stack merge, got %+v", result.ItemChanges)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 22, Vnum: 27001, Count: 2, Slot: 0},
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5, Locked: true},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after locked-stack-skipping merchant buy: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after locked-stack-skipping merchant buy, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeBuyMerchantItemMergesIntoExistingCompatibleStackBeforeAllocatingNewSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

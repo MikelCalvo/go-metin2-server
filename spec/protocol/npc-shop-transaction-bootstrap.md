@@ -308,8 +308,8 @@ The current bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths still do not 
 The first repository-owned carried placement contract now lives beside this document in `item-stack-bootstrap.md`:
 - validate merchant grants against template `stackable` / `max_count`
 - prefer one deterministic full merge into an existing compatible carried stack
-- otherwise allow deterministic full fan-out across several existing compatible carried stacks
-- otherwise allow deterministic existing-stack fan-out plus one fresh carried slot
+- otherwise allow deterministic full fan-out across several existing compatible non-locked carried stacks
+- otherwise allow deterministic existing-stack fan-out plus one fresh carried slot while skipping locked stacks
 - otherwise claim one deterministic fresh carried slot
 - otherwise fail closed
 

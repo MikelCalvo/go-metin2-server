@@ -610,7 +610,7 @@ func findMergeableInventoryIndex(items []inventory.ItemInstance, vnum uint32, co
 	}
 	mergeIndex := -1
 	for i, item := range items {
-		if item.Equipped || item.Vnum != vnum || item.Count == 0 {
+		if item.Equipped || item.Locked || item.Vnum != vnum || item.Count == 0 {
 			continue
 		}
 		if uint32(item.Count)+uint32(count) > uint32(maxCount) {
@@ -629,7 +629,7 @@ func findPartiallyMergeableInventoryIndices(items []inventory.ItemInstance, vnum
 	}
 	indices := make([]int, 0)
 	for i, item := range items {
-		if item.Equipped || item.Vnum != vnum || item.Count == 0 || item.Count >= maxCount {
+		if item.Equipped || item.Locked || item.Vnum != vnum || item.Count == 0 || item.Count >= maxCount {
 			continue
 		}
 		indices = append(indices, i)

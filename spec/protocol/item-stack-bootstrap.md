@@ -60,6 +60,7 @@ A carried stack is an eligible merge target only when all of these are true:
 - it is an existing carried inventory item for the selected character
 - it has the same `vnum`
 - it is not equipped
+- it is not runtime-locked
 - its current `count` is non-zero
 - `current_count + grant_count <= template.max_count`
 
@@ -72,8 +73,8 @@ The first owned deterministic rule is:
 
 If no existing carried stack can absorb the full grant by itself, the runtime may still place the full grant across existing compatible carried stacks when all of these are true:
 - the template is stackable
-- one or more existing compatible carried stacks with remaining room exist
-- the combined remaining room across those stacks is at least the grant `count`
+- one or more existing compatible, non-locked carried stacks with remaining room exist
+- the combined remaining room across those non-locked stacks is at least the grant `count`
 
 The first owned deterministic rules for this path are:
 - consider eligible partially compatible stacks in ascending carried-slot order
@@ -85,9 +86,9 @@ The first owned deterministic rules for this path are:
 
 If no existing compatible carried stacks can fully absorb the grant, the runtime may still place the grant across one or more existing compatible carried stacks plus one fresh carried slot when all of these are true:
 - the template is stackable
-- one or more existing compatible carried stacks with remaining room exist
+- one or more existing compatible, non-locked carried stacks with remaining room exist
 - a free carried slot exists
-- after filling the compatible existing stacks in deterministic order, the remainder still forms one valid fresh stack
+- after filling the compatible non-locked existing stacks in deterministic order, the remainder still forms one valid fresh stack
 
 The first owned deterministic rules for this path are:
 - consider eligible partially compatible stacks in ascending carried-slot order
@@ -164,6 +165,6 @@ This first stack contract does **not** yet freeze:
 
 After this slice, the repository should be able to say:
 - the first carried-item stack contract is no longer implicit runtime behavior
-- merchant grants now have a frozen order of decisions: validate, prefer one full merge, otherwise allow full fan-out across existing compatible stacks, otherwise allow deterministic existing-stack fan-out plus one fresh slot, otherwise use one fresh slot, otherwise fail closed
+- merchant grants now have a frozen order of decisions: validate, prefer one full merge into a non-locked stack, otherwise allow full fan-out across existing compatible non-locked stacks, otherwise allow deterministic existing-stack fan-out plus one fresh slot, otherwise use one fresh slot, otherwise fail closed
 - template metadata (`stackable`, `max_count`) now explicitly controls carried merchant-grant placement
 - stackable merchant grants can now consume several compatible carried stacks before claiming one deterministic fresh-slot remainder instead of leaving that hybrid case ambiguous
