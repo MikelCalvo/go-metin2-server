@@ -194,7 +194,8 @@ The first buy path must fail closed when any of these are true:
 The first sell/sell2 path must fail closed when any of these are true:
 - no active merchant transaction gate exists
 - the requested carried slot is unknown or empty
-- the requested count is zero or larger than the carried stack
+- explicit `SELL` / `SELL2` counts larger than the carried stack fail closed instead of silently selling the whole stack
+- the legacy whole-stack sentinel remains `count = 0` for the currently owned sell-back path
 - the item is currently equipped or otherwise not in a plain carried state
 - the carried item is marked runtime-locked
 - the template is marked `anti_sell`

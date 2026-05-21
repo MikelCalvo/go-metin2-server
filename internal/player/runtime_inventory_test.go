@@ -653,6 +653,12 @@ func TestRuntimeSellMerchantItemRejectsInvalidInputWithoutMutatingState(t *testi
 	if _, ok := runtime.SellMerchantItem(5, 1, 0); ok {
 		t.Fatal("expected zero unit-price merchant sell to fail")
 	}
+	if _, ok := runtime.SellMerchantItem(5, 4, 10); ok {
+		t.Fatal("expected over-count merchant sell to fail")
+	}
+	if _, ok := runtime.MerchantSellCount(5, 4); ok {
+		t.Fatal("expected over-count merchant sell count resolution to fail")
+	}
 	if got := runtime.LiveGold(); got != persisted.Gold {
 		t.Fatalf("expected live gold to stay unchanged after invalid sell attempts, got %d", got)
 	}

@@ -433,10 +433,10 @@ func (r *Runtime) MerchantSellCount(slot inventory.SlotIndex, count uint16) (uin
 		return 0, false
 	}
 	soldCount := count
-	if soldCount == 0 || soldCount > item.Count {
+	if soldCount == 0 {
 		soldCount = item.Count
 	}
-	if soldCount == 0 {
+	if soldCount == 0 || soldCount > item.Count {
 		return 0, false
 	}
 	return soldCount, true
@@ -455,10 +455,10 @@ func (r *Runtime) SellMerchantItemForCredit(slot inventory.SlotIndex, count uint
 		return MerchantSellResult{}, false
 	}
 	soldCount := count
-	if soldCount == 0 || soldCount > item.Count {
+	if soldCount == 0 {
 		soldCount = item.Count
 	}
-	if soldCount == 0 {
+	if soldCount == 0 || soldCount > item.Count {
 		return MerchantSellResult{}, false
 	}
 	if r.liveGold > (^uint64(0))-credit {
