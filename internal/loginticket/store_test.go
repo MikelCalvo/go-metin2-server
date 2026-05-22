@@ -53,6 +53,9 @@ func TestFileStoreIssueThenLoadRoundTrip(t *testing.T) {
 				Equipment: []inventory.ItemInstance{
 					{ID: 22, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
 				},
+				Quickslots: []Quickslot{
+					{Position: 3, Type: 1, Slot: 5},
+				},
 			},
 		},
 	}
@@ -147,20 +150,25 @@ func TestFileStoreReturnsNotFoundAfterSuccessfulConsume(t *testing.T) {
 
 func TestCloneCharactersDeepCopiesItemStateSlices(t *testing.T) {
 	source := []Character{{
-		ID:        1,
-		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
-		Equipment: []inventory.ItemInstance{{ID: 22, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
+		ID:         1,
+		Inventory:  []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+		Equipment:  []inventory.ItemInstance{{ID: 22, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
+		Quickslots: []Quickslot{{Position: 3, Type: 1, Slot: 5}},
 	}}
 
 	cloned := CloneCharacters(source)
 	cloned[0].Inventory[0].Count = 7
 	cloned[0].Equipment[0].Vnum = 29
+	cloned[0].Quickslots[0].Slot = 6
 
 	if source[0].Inventory[0].Count != 3 {
 		t.Fatalf("expected source inventory to stay unchanged, got %#v", source[0].Inventory)
 	}
 	if source[0].Equipment[0].Vnum != 19 {
 		t.Fatalf("expected source equipment to stay unchanged, got %#v", source[0].Equipment)
+	}
+	if source[0].Quickslots[0].Slot != 5 {
+		t.Fatalf("expected source quickslots to stay unchanged, got %#v", source[0].Quickslots)
 	}
 }
 
@@ -183,6 +191,9 @@ func TestFileStoreIssueDoesNotMutateCallerItemState(t *testing.T) {
 	}
 	if ticket.Characters[0].Equipment != nil {
 		t.Fatalf("expected caller equipment slice to remain nil, got %#v", ticket.Characters[0].Equipment)
+	}
+	if ticket.Characters[0].Quickslots != nil {
+		t.Fatalf("expected caller quickslots slice to remain nil, got %#v", ticket.Characters[0].Quickslots)
 	}
 }
 
@@ -214,6 +225,9 @@ func TestFileStoreIssuePersistsEmptyItemStateAsArrays(t *testing.T) {
 	}
 	if !strings.Contains(text, "\"equipment\":[]") {
 		t.Fatalf("expected empty equipment array, got %s", text)
+	}
+	if !strings.Contains(text, "\"quickslots\":[]") {
+		t.Fatalf("expected empty quickslots array, got %s", text)
 	}
 }
 
@@ -248,5 +262,11 @@ func TestFileStoreLoadNormalizesMissingItemStateFromLegacySnapshot(t *testing.T)
 	}
 	if len(character.Equipment) != 0 {
 		t.Fatalf("expected empty equipment, got %#v", character.Equipment)
+	}
+	if character.Quickslots == nil {
+		t.Fatal("expected legacy quickslots to normalize to an empty slice, got nil")
+	}
+	if len(character.Quickslots) != 0 {
+		t.Fatalf("expected empty quickslots, got %#v", character.Quickslots)
 	}
 }

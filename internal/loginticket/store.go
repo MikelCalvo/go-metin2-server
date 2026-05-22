@@ -46,6 +46,13 @@ type Character struct {
 	Gold        uint64                   `json:"gold"`
 	Inventory   []inventory.ItemInstance `json:"inventory"`
 	Equipment   []inventory.ItemInstance `json:"equipment"`
+	Quickslots  []Quickslot              `json:"quickslots"`
+}
+
+type Quickslot struct {
+	Position uint8 `json:"position"`
+	Type     uint8 `json:"type"`
+	Slot     uint8 `json:"slot"`
 }
 
 func (c *Character) NormalizeItemState() {
@@ -54,6 +61,9 @@ func (c *Character) NormalizeItemState() {
 	}
 	if c.Equipment == nil {
 		c.Equipment = []inventory.ItemInstance{}
+	}
+	if c.Quickslots == nil {
+		c.Quickslots = []Quickslot{}
 	}
 }
 
@@ -69,6 +79,9 @@ func CloneCharacters(characters []Character) []Character {
 		}
 		if cloned[i].Equipment != nil {
 			cloned[i].Equipment = append(cloned[i].Equipment[:0:0], cloned[i].Equipment...)
+		}
+		if cloned[i].Quickslots != nil {
+			cloned[i].Quickslots = append(cloned[i].Quickslots[:0:0], cloned[i].Quickslots...)
 		}
 	}
 	return cloned

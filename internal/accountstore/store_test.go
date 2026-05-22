@@ -41,6 +41,9 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 			Equipment: []inventory.ItemInstance{
 				{ID: 2002, Vnum: 19, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
 			},
+			Quickslots: []loginticket.Quickslot{
+				{Position: 3, Type: 1, Slot: 8},
+			},
 		}},
 	}
 
@@ -94,6 +97,12 @@ func TestFileStoreLoadNormalizesMissingItemStateFromLegacySnapshot(t *testing.T)
 	if len(character.Equipment) != 0 {
 		t.Fatalf("expected empty equipment, got %#v", character.Equipment)
 	}
+	if character.Quickslots == nil {
+		t.Fatal("expected legacy quickslots to normalize to an empty slice, got nil")
+	}
+	if len(character.Quickslots) != 0 {
+		t.Fatalf("expected empty quickslots, got %#v", character.Quickslots)
+	}
 }
 
 func TestFileStoreSaveDoesNotMutateCallerItemState(t *testing.T) {
@@ -115,6 +124,9 @@ func TestFileStoreSaveDoesNotMutateCallerItemState(t *testing.T) {
 	}
 	if account.Characters[0].Equipment != nil {
 		t.Fatalf("expected caller equipment slice to remain nil, got %#v", account.Characters[0].Equipment)
+	}
+	if account.Characters[0].Quickslots != nil {
+		t.Fatalf("expected caller quickslots slice to remain nil, got %#v", account.Characters[0].Quickslots)
 	}
 }
 
@@ -145,5 +157,8 @@ func TestFileStoreSavePersistsEmptyItemStateAsArrays(t *testing.T) {
 	}
 	if !strings.Contains(text, "\"equipment\":[]") {
 		t.Fatalf("expected empty equipment array, got %s", text)
+	}
+	if !strings.Contains(text, "\"quickslots\":[]") {
+		t.Fatalf("expected empty quickslots array, got %s", text)
 	}
 }

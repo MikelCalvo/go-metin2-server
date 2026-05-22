@@ -1,6 +1,6 @@
 # Quickslot bootstrap packet codecs
 
-This note freezes the first wire-codec and `GAME`-phase dispatch contract for quickslot packets. Runtime quickslot persistence, runtime quickslot edits, and item-move quickslot synchronization are intentionally left for later slices.
+This note freezes the first wire-codec and `GAME`-phase dispatch contract for quickslot packets, plus the first persisted character snapshot field needed to carry quickslot state from auth ticket to game session. Accepted runtime quickslot edits and item-move quickslot synchronization are intentionally left for later slices.
 
 ## Evidence
 
@@ -113,6 +113,18 @@ Payload:
 
 Total frame length: `6` bytes.
 
+## Snapshot ownership
+
+The bootstrap account and login-ticket character snapshots now carry a `quickslots` array with the same byte-sized fields as the wire tuple:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `position` | `uint8` | quickslot bar index |
+| `type` | `uint8` | `0 = none`, `1 = item`, `2 = skill`, `3 = command` |
+| `slot` | `uint8` | type-relative item cell / skill index / command index |
+
+Missing `quickslots` in older file-backed snapshots is normalized to an empty array. This preserves authd -> gamed ticket handoff and account-store round trips before any accepted runtime quickslot mutation is enabled.
+
 ## Current scope
 
 Implemented now:
@@ -121,11 +133,12 @@ Implemented now:
 - Go codecs for server `QUICKSLOT_ADD`, `QUICKSLOT_DEL`, and `QUICKSLOT_SWAP`.
 - Strict header and payload-size validation for those client and server packets.
 - `GAME`-phase dispatch hooks for client quickslot edit packets, with default fail-closed behavior until runtime mutation is owned.
+- file-backed account and login-ticket snapshot round trips for bootstrap quickslot arrays.
 
 Not implemented yet:
 
 - accepted runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`
-- account snapshot persistence for quickslot state
+- accepted runtime updates to persisted quickslot state
 - loading-time quickslot bootstrap frames
 - automatic item quickslot synchronization after `ITEM_MOVE`, `ITEM_USE`, shop sell, safebox, exchange, item timeout, or destruction
 - validation of quickslot ranges beyond codec payload size
