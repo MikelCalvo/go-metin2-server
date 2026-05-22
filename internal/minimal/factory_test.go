@@ -873,6 +873,51 @@ func TestNewGameSessionFactoryQuickslotAddRejectsInvalidInputWithoutPersisting(t
 	}
 }
 
+func TestNewGameSessionFactoryItemMoveSyncsMatchingItemQuickslot(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 3, Slot: 5}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	characters[1].Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	flow := newStartedGameFlow(t, store, accounts)
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: itemproto.InventoryPosition(6), Count: 0})))
+	if err != nil {
+		t.Fatalf("unexpected item move error: %v", err)
+	}
+	if len(moveOut) != 3 {
+		t.Fatalf("expected delete+set+quickslot add frames for item move, got %d", len(moveOut))
+	}
+	quickslotRefresh, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, moveOut[2]))
+	if err != nil {
+		t.Fatalf("decode quickslot refresh after item move: %v", err)
+	}
+	if quickslotRefresh.Position != 2 || quickslotRefresh.Slot.Type != quickslotproto.TypeItem || quickslotRefresh.Slot.Position != 6 {
+		t.Fatalf("unexpected quickslot refresh after item move: %+v", quickslotRefresh)
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load account after item move quickslot sync: %v", err)
+	}
+	if got := account.Characters[1].Quickslots; !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}) {
+		t.Fatalf("unexpected persisted quickslots after item move sync: %#v", got)
+	}
+}
+
 func newStartedGameFlow(t *testing.T, store loginticket.Store, accounts accountstore.Store) service.SessionFlow {
 	t.Helper()
 	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)

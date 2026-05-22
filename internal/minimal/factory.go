@@ -1979,6 +1979,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						refreshLiveCharacterRegistration()
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
+					if quickslotFrames, ok := itemMoveQuickslotSyncFrames(selectedPlayer, moveResult); !ok {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						refreshLiveCharacterRegistration()
+						return gameflow.ItemMoveResult{Accepted: false}
+					} else {
+						frames = append(frames, quickslotFrames...)
+					}
 					chatResult := commitSelectedNonPointItemMutation(selectedPlayer, previousSelected, frames)
 					return gameflow.ItemMoveResult{Accepted: chatResult.Accepted, Frames: chatResult.Frames}
 				},
@@ -2831,6 +2838,21 @@ func buildSelectedItemBootstrapFrames(character loginticket.Character) ([][]byte
 		frames = append(frames, raw)
 	}
 	return frames, nil
+}
+
+func itemMoveQuickslotSyncFrames(selectedPlayer *player.Runtime, result inventory.MoveResult) ([][]byte, bool) {
+	if selectedPlayer == nil || !result.Changed || result.CountOnly || result.From == result.To {
+		return nil, true
+	}
+	changed, ok := selectedPlayer.SyncItemQuickslotsForInventoryMove(result.From, result.To)
+	if !ok {
+		return nil, false
+	}
+	frames := make([][]byte, 0, len(changed))
+	for _, slot := range changed {
+		frames = append(frames, quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: slot.Position, Slot: quickslotproto.Slot{Type: slot.Type, Position: slot.Slot}}))
+	}
+	return frames, true
 }
 
 func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
