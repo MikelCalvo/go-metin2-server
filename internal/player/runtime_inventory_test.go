@@ -173,12 +173,12 @@ func TestRuntimeCanUnequipLiveItemBackIntoInventory(t *testing.T) {
 	}
 }
 
-func TestRuntimeMoveInventoryItemRejectsOccupiedDestinationWithoutCount(t *testing.T) {
+func TestRuntimeMoveInventoryItemRejectsIncompatibleOccupiedDestinationWithoutCount(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
 	if _, ok := runtime.MoveInventoryItem(5, 8); ok {
-		t.Fatal("expected occupied destination without a counted stack merge to fail closed")
+		t.Fatal("expected incompatible occupied destination without a counted stack merge to fail closed")
 	}
 
 	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
@@ -186,6 +186,38 @@ func TestRuntimeMoveInventoryItemRejectsOccupiedDestinationWithoutCount(t *testi
 	}
 	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
 		t.Fatalf("expected persisted inventory to stay unchanged, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
+func TestRuntimeMoveInventoryItemBoundedZeroCountMergesCompatibleOccupiedDestination(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 27001, Count: 198, Slot: 8},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.MoveInventoryItemBounded(5, 8, 200)
+	if !ok {
+		t.Fatal("expected zero-count compatible occupied destination move to merge up to template max")
+	}
+	if !result.Changed || !result.CountOnly || !result.FromOccupied || !result.ToOccupied {
+		t.Fatalf("expected zero-count bounded merge to refresh both counts, got %+v", result)
+	}
+	if result.FromItem.ID != 11 || result.FromItem.Count != 1 || result.FromItem.Slot != 5 {
+		t.Fatalf("expected source remainder of one at slot 5, got %+v", result.FromItem)
+	}
+	if result.ToItem.ID != 12 || result.ToItem.Count != 200 || result.ToItem.Slot != 8 {
+		t.Fatalf("expected destination capped at 200 in slot 8, got %+v", result.ToItem)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 12, Vnum: 27001, Count: 200, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after zero-count bounded merge: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after zero-count bounded merge, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
 	}
 }
 

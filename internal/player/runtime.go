@@ -162,6 +162,72 @@ func (r *Runtime) MoveInventoryItem(from inventory.SlotIndex, to inventory.SlotI
 	return r.moveInventoryItemFullStack(from, to, result)
 }
 
+func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventory.SlotIndex, maxCount uint16) (inventory.MoveResult, bool) {
+	if r == nil || maxCount == 0 {
+		return inventory.MoveResult{}, false
+	}
+	result := inventory.MoveResult{From: from, To: to}
+	if from == to {
+		return result, true
+	}
+	fromIndex := findInventorySlot(r.liveInventory, from)
+	if fromIndex < 0 || r.liveInventory[fromIndex].Locked {
+		return inventory.MoveResult{}, false
+	}
+	sourceItem := r.liveInventory[fromIndex]
+	if sourceItem.Count > maxCount {
+		return inventory.MoveResult{}, false
+	}
+	toIndex := findInventorySlot(r.liveInventory, to)
+	if toIndex < 0 {
+		return r.moveInventoryItemFullStack(from, to, result)
+	}
+	destinationItem := r.liveInventory[toIndex]
+	if destinationItem.Locked || destinationItem.Vnum != sourceItem.Vnum || destinationItem.Count >= maxCount {
+		return inventory.MoveResult{}, false
+	}
+	mergeCount := sourceItem.Count
+	available := maxCount - destinationItem.Count
+	if mergeCount > available {
+		mergeCount = available
+	}
+	if mergeCount == 0 {
+		return inventory.MoveResult{}, false
+	}
+	destinationItem.Count += mergeCount
+	if err := destinationItem.Validate(); err != nil {
+		return inventory.MoveResult{}, false
+	}
+	if mergeCount == sourceItem.Count {
+		r.liveInventory = removeInventoryIndex(r.liveInventory, fromIndex)
+		toIndex = findInventorySlot(r.liveInventory, to)
+		if toIndex < 0 {
+			return inventory.MoveResult{}, false
+		}
+		r.liveInventory[toIndex] = destinationItem
+		sortInventoryItems(r.liveInventory)
+		result.Changed = true
+		result.ToOccupied = true
+		result.ToItem = destinationItem
+		result.CountOnly = true
+		return result, true
+	}
+	sourceItem.Count -= mergeCount
+	if err := sourceItem.Validate(); err != nil {
+		return inventory.MoveResult{}, false
+	}
+	r.liveInventory[fromIndex] = sourceItem
+	r.liveInventory[toIndex] = destinationItem
+	sortInventoryItems(r.liveInventory)
+	result.Changed = true
+	result.FromOccupied = true
+	result.FromItem = sourceItem
+	result.ToOccupied = true
+	result.ToItem = destinationItem
+	result.CountOnly = true
+	return result, true
+}
+
 func (r *Runtime) MoveInventoryItemCount(from inventory.SlotIndex, to inventory.SlotIndex, count uint16) (inventory.MoveResult, bool) {
 	return r.MoveInventoryItemCountBounded(from, to, count, ^uint16(0))
 }

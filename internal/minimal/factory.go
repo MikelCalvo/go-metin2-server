@@ -1949,20 +1949,20 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
 					var moveResult inventory.MoveResult
+					maxCount := ^uint16(0)
+					for _, sourceItem := range selectedPlayer.LiveInventory() {
+						if sourceItem.Slot != inventory.SlotIndex(packet.Source.Cell) {
+							continue
+						}
+						if template, ok := runtime.itemTemplates[sourceItem.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.MaxCount > 0 {
+							maxCount = template.MaxCount
+						}
+						break
+					}
 					if packet.Count == 0 {
-						moveResult, ok = selectedPlayer.MoveInventoryItem(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell))
+						moveResult, ok = selectedPlayer.MoveInventoryItemBounded(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), maxCount)
 					} else {
 						moveCount := uint16(packet.Count)
-						maxCount := ^uint16(0)
-						for _, sourceItem := range selectedPlayer.LiveInventory() {
-							if sourceItem.Slot != inventory.SlotIndex(packet.Source.Cell) {
-								continue
-							}
-							if template, ok := runtime.itemTemplates[sourceItem.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.MaxCount > 0 {
-								maxCount = template.MaxCount
-							}
-							break
-						}
 						moveResult, ok = selectedPlayer.MoveInventoryItemCountBounded(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), moveCount, maxCount)
 					}
 					if !ok {

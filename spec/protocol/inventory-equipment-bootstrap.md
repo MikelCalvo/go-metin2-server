@@ -113,7 +113,7 @@ The exact wire layout is now frozen by `internal/proto/item` golden tests.
 ## First live mutation refresh boundary
 
 After the bootstrap burst, the owned mutation surface remains intentionally bootstrap-scoped:
-- ingress now includes the first carried-slot client-originated `ITEM_MOVE` packet for inventory moves and counted split/merge behavior; occupied-destination no-count swaps currently fail closed, and the older `/inventory_move <from> <to>` slash-command seam remains as operator/test bootstrap compatibility only for empty-destination moves
+- ingress now includes the first carried-slot client-originated `ITEM_MOVE` packet for inventory moves and split/merge behavior; compatible occupied-destination `count = 0` packet moves now merge as much of the source stack as the destination can accept, incompatible occupied-destination no-count swaps still fail closed, and the older `/inventory_move <from> <to>` slash-command seam remains as operator/test bootstrap compatibility only for empty-destination moves
 - the first carried-slot client-originated `ITEM_USE` ingress lives separately in `item-use-bootstrap.md`
 - the current supported seams are:
   - `ITEM_MOVE` (`0x0504`) for carried-slot moves and counted split/merge behavior
@@ -149,13 +149,14 @@ The first client-originated carried-slot drag/drop ingress is now frozen as `ITE
   2. destination packed `TItemPos`
   3. `count uint8`
 - for the current bootstrap runtime, both source and destination must be normal carried inventory positions (`window_type = INVENTORY`, `0 <= cell < 90`)
-- `count = 0` values reuse the selected-character full-stack move path and `ITEM_DEL` / `ITEM_SET` refresh frames only when the destination carried slot is empty; occupied destinations fail closed until the precise swap compatibility rule is frozen
+- `count = 0` values reuse the selected-character full-stack move path and `ITEM_DEL` / `ITEM_SET` refresh frames when the destination carried slot is empty
+- `count = 0` values targeting a compatible occupied destination now follow the legacy stack merge rule: move as much of the source stack as the destination can accept up to the source template's `max_count`, leave a source remainder when the destination fills first, and use self-only `ITEM_UPDATE` count refreshes or `ITEM_DEL(source)` plus `ITEM_UPDATE(destination)` when the merge consumes the full source stack
 - counted `ITEM_MOVE` accepts an empty-destination partial-stack split: the source stack is decremented, a fresh runtime item instance is placed in the destination slot, and the same self-only source/destination refresh path is reused
-- counted `ITEM_MOVE` now also accepts a compatible occupied-destination merge: the source stack is decremented or removed, the destination stack's existing item instance grows by the moved count, and the response uses self-only `ITEM_UPDATE` count refreshes for live source/destination stacks or `ITEM_DEL(source)` plus `ITEM_UPDATE(destination)` when the counted move consumes the full source stack
+- counted `ITEM_MOVE` also accepts a compatible occupied-destination merge: the source stack is decremented or removed, the destination stack's existing item instance grows by the moved count, and the response uses self-only `ITEM_UPDATE` count refreshes for live source/destination stacks or `ITEM_DEL(source)` plus `ITEM_UPDATE(destination)` when the counted move consumes the full source stack
 - for packet-originated merges, the runtime resolves the source carried item's owned item-template metadata when available and rejects merges whose destination count would exceed that template's `max_count` rather than using only the packet count / `uint16` storage bound
 - locked carried-slot items fail closed for moves, counted `ITEM_MOVE`, equip, and use attempts; locked equipped items fail closed for unequip attempts; these rejections leave live and persisted item state unchanged and emit no item refresh frames
-- counted `ITEM_MOVE` into an incompatible occupied destination still fails closed until swap-with-count semantics are owned; oversized non-zero counts, template-`max_count` overflow, and storage-overflowing destination stack counts also remain rejected without mutation
-- richer split/merge rules remain future work; this slice owns only empty-destination splits, template-bounded compatible occupied-destination merges with count-only `ITEM_UPDATE` refreshes where appropriate, and existing full-stack empty-destination moves
+- `ITEM_MOVE` into an incompatible occupied destination still fails closed until swap/swap-with-count semantics are owned; oversized non-zero counts, template-`max_count` overflow, and storage-overflowing destination stack counts also remain rejected without mutation
+- richer split/merge rules remain future work; this slice owns only empty-destination splits, template-bounded compatible occupied-destination merges with count-only `ITEM_UPDATE` refreshes where appropriate, zero-count compatible occupied-destination merges, and existing full-stack empty-destination moves
 
 For the current owned bootstrap surface:
 - carried inventory uses `window_type = INVENTORY (1)` with `0 <= cell < 90`

@@ -641,7 +641,9 @@ Expected result:
 - [ ] Send one real client `ITEM_MOVE` request from `A` to `B` (`source TItemPos`, `destination TItemPos`, `count = 0`) to exercise full-stack drag/drop semantics
 - [ ] Confirm the selected session receives `ITEM_DEL(A)` followed by `ITEM_SET(B)`
 - [ ] Confirm loopback inventory snapshots or reconnect state show the item persisted in slot `B`
-- [ ] Repeat with a destination occupied by another carried item if the QA setup has two disposable carried items
+- [ ] Repeat with an incompatible destination occupied by another carried item if the QA setup has two disposable carried items, and confirm it fails closed without changing inventory
+- [ ] Reset to two compatible carried stacks, then send `ITEM_MOVE` from `A` into occupied compatible stack slot `C` with `count = 0`
+- [ ] Confirm the selected session receives self-only count refreshes: `ITEM_UPDATE(A)` if a source remainder survives or `ITEM_DEL(A)` if the source is fully consumed, followed by `ITEM_UPDATE(C)` capped at the authored template `max_count`
 - [ ] Reset to a stack count greater than one, then send `ITEM_MOVE` from `A` to empty slot `B` with a partial count lower than the current stack count
 - [ ] Confirm the selected session receives self-only refreshes for both slots: source stack remains in `A` with the reduced count and the split stack appears in `B`
 - [ ] Reset to two compatible carried stacks, then send a partial-count `ITEM_MOVE` from `A` into occupied compatible stack slot `C`
@@ -649,9 +651,9 @@ Expected result:
 - [ ] Repeat the same partial-count request with an incompatible occupied destination and confirm it fails closed without changing live or persisted inventory
 
 Expected result:
-- packet `ITEM_MOVE` reuses the same authoritative full-stack move/swap semantics as `/inventory_move`
-- empty-destination partial splits and compatible occupied-destination partial merges are accepted and persisted, while incompatible occupied destinations remain deferred/fail-closed
-- the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` refresh family
+- packet `ITEM_MOVE` reuses the same authoritative full-stack empty-destination move semantics as `/inventory_move`
+- empty-destination partial splits plus compatible occupied-destination partial, exact, and zero-count merges are accepted and persisted, while incompatible occupied destinations remain deferred/fail-closed
+- the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` / `ITEM_UPDATE` refresh family
 - non-carried windows and out-of-range cells fail closed without mutation
 
 ### 6.20 Packet merchant sell-back smoke (packet-harness optional)
