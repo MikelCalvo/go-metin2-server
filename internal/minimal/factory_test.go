@@ -1050,6 +1050,62 @@ func TestNewGameSessionFactoryItemMovePacketMergesPartialStackPersistsAndEmitsTw
 	}
 }
 
+func TestNewGameSessionFactoryItemMovePacketRejectsLockedDestinationWithoutMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{
+		{ID: 1001, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 2002, Vnum: 1120, Count: 1, Slot: 8, Locked: true},
+	}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(8),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected locked-destination item move packet error: %v", err)
+	}
+	if len(moveOut) != 0 {
+		t.Fatalf("expected locked-destination item move to fail closed with no frames, got %d", len(moveOut))
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Inventory, characters[1].Inventory) {
+		t.Fatalf("expected locked-destination item move to leave persisted inventory unchanged, got %#v want %#v", account.Characters[1].Inventory, characters[1].Inventory)
+	}
+}
+
 func TestNewGameSessionFactoryItemMovePacketRejectsIncompatiblePartialStackDestinationWithoutMutation(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
