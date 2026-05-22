@@ -24,6 +24,7 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
@@ -13042,6 +13043,10 @@ func TestGameSessionFlowPracticeMobRetaliationFloorClosesOpenMerchantWindow(t *t
 
 func TestGameSessionFlowShopSellPacketRemovesWholeStackAndCreditsCurrency(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantSellerPacket", 0x01040120, 0x02050120, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	buyer.Quickslots = []loginticket.Quickslot{
+		{Position: 1, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 2, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-packet", 0x20202020, buyer)
 	defer closeSessionFlow(t, flow)
 
@@ -13050,8 +13055,8 @@ func TestGameSessionFlowShopSellPacketRemovesWholeStackAndCreditsCurrency(t *tes
 	if err != nil {
 		t.Fatalf("unexpected packet shop sell error: %v", err)
 	}
-	if len(sellOut) != 2 {
-		t.Fatalf("expected packet shop sell whole-stack success to emit item delete and gold point-change, got %d", len(sellOut))
+	if len(sellOut) != 3 {
+		t.Fatalf("expected packet shop sell whole-stack success to emit item delete, quickslot delete, and gold point-change, got %d", len(sellOut))
 	}
 	del, err := itemproto.DecodeDel(decodeSingleFrame(t, sellOut[0]))
 	if err != nil {
@@ -13060,7 +13065,14 @@ func TestGameSessionFlowShopSellPacketRemovesWholeStackAndCreditsCurrency(t *tes
 	if del.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected packet shop-sell delete frame: %+v", del)
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, sellOut[1]))
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, sellOut[1]))
+	if err != nil {
+		t.Fatalf("decode packet shop-sell quickslot del frame: %v", err)
+	}
+	if quickslotDel.Position != 1 {
+		t.Fatalf("expected packet shop sell to delete only item quickslot at position 1, got %+v", quickslotDel)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, sellOut[2]))
 	if err != nil {
 		t.Fatalf("decode packet shop-sell gold point-change frame: %v", err)
 	}

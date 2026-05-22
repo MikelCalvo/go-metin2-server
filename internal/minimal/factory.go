@@ -1367,6 +1367,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
+			if sellResult.ItemRemoved {
+				quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, sellResult.Slot)
+				if !ok {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
+				if len(quickslotFrames) > 0 {
+					frames = append(frames[:1], append(quickslotFrames, frames[1:]...)...)
+				}
+			}
 			if !ownsLiveSharedWorldSession() {
 				return frames, true
 			}

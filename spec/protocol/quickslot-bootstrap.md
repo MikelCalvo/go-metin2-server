@@ -148,13 +148,16 @@ When an accepted carried-inventory `ITEM_MOVE` moves a whole stack from one carr
 
 When an accepted carried-inventory `ITEM_USE` consumes the last item in a stack and the carried slot becomes empty, the minimal runtime scans the selected character's live quickslots for item tuples matching that removed cell. Each matching item quickslot is deleted, persisted with the same selected-character snapshot mutation as the item use, and appended to the self response as `GC::QUICKSLOT_DEL(position)` after the `ITEM_DEL` for the removed stack and before the temporary `CHAT_TYPE_INFO` effect placeholder.
 
+When an accepted merchant `SHOP SELL` / `SELL2` removes a whole carried-inventory stack, the minimal runtime now applies the same item-removal quickslot synchronization. Each matching item quickslot is deleted, persisted with the merchant sell selected-character mutation, and appended to the self response as `GC::QUICKSLOT_DEL(position)` after the `ITEM_DEL` for the sold stack and before the gold `PLAYER_POINT_CHANGE`.
+
 The current owned synchronization is intentionally narrow:
 
 - move synchronization applies only to accepted full-stack carried-inventory moves where `from != to`;
-- removal synchronization applies only to accepted last-stack carried-inventory `ITEM_USE` paths where the item slot becomes empty;
+- removal synchronization applies only to accepted last-stack carried-inventory `ITEM_USE` paths and accepted whole-stack merchant sell paths where the item slot becomes empty;
 - it does not rewrite or delete skill or command quickslots that happen to carry the same byte value;
 - move synchronization does not run for count-only merges or partial-stack splits, because the original item still remains at the source cell;
-- it does not yet delete item quickslots when shop sell, safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths clear an item cell.
+- merchant partial-stack `SELL2` does not delete quickslots, because the original item still remains at the source cell;
+- it does not yet delete item quickslots when safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths clear an item cell.
 
 ## Current scope
 
@@ -170,10 +173,11 @@ Implemented now:
 - accepted runtime updates to persisted quickslot state.
 - automatic item quickslot update synchronization after accepted full-stack carried-inventory `ITEM_MOVE` packets.
 - automatic item quickslot deletion synchronization after accepted last-stack carried-inventory `ITEM_USE` packets.
+- automatic item quickslot deletion synchronization after accepted whole-stack merchant `SHOP SELL` / `SELL2` packets.
 - validation of bootstrap quickslot positions (`0..35`), item quickslot cells (`0..89`), and supported tuple types (`item`, `skill`, `command`).
 
 Not implemented yet:
 
-- automatic item quickslot deletion after shop sell, safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other non-`ITEM_USE` item-removal paths
+- automatic item quickslot deletion after safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths
 - automatic item quickslot synchronization for belt inventory cells beyond the current carried inventory bootstrap range
 - stricter skill/command range policy beyond accepting byte-sized `skill` / `command` tuple positions
