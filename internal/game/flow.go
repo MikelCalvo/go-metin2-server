@@ -10,6 +10,7 @@ import (
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
@@ -37,6 +38,12 @@ type HandleItemUseFunc func(itemproto.ClientUsePacket) ItemUseResult
 
 type HandleItemMoveFunc func(itemproto.ClientMovePacket) ItemMoveResult
 
+type HandleQuickslotAddFunc func(quickslotproto.ClientAddPacket) QuickslotResult
+
+type HandleQuickslotDelFunc func(quickslotproto.ClientDelPacket) QuickslotResult
+
+type HandleQuickslotSwapFunc func(quickslotproto.ClientSwapPacket) QuickslotResult
+
 type HandleShopBuyFunc func(shopproto.ClientBuyPacket) ShopResult
 
 type HandleShopCloseFunc func() ShopResult
@@ -46,19 +53,22 @@ type HandleShopSellFunc func(shopproto.ClientSellPacket) ShopResult
 type HandleShopSell2Func func(shopproto.ClientSell2Packet) ShopResult
 
 type Config struct {
-	HandleMove         HandleMoveFunc
-	HandleSyncPosition HandleSyncPositionFunc
-	HandleChat         HandleChatFunc
-	HandleWhisper      HandleWhisperFunc
-	HandleInteraction  HandleInteractionFunc
-	HandleTarget       HandleTargetFunc
-	HandleAttack       HandleAttackFunc
-	HandleItemUse      HandleItemUseFunc
-	HandleItemMove     HandleItemMoveFunc
-	HandleShopBuy      HandleShopBuyFunc
-	HandleShopClose    HandleShopCloseFunc
-	HandleShopSell     HandleShopSellFunc
-	HandleShopSell2    HandleShopSell2Func
+	HandleMove          HandleMoveFunc
+	HandleSyncPosition  HandleSyncPositionFunc
+	HandleChat          HandleChatFunc
+	HandleWhisper       HandleWhisperFunc
+	HandleInteraction   HandleInteractionFunc
+	HandleTarget        HandleTargetFunc
+	HandleAttack        HandleAttackFunc
+	HandleItemUse       HandleItemUseFunc
+	HandleItemMove      HandleItemMoveFunc
+	HandleQuickslotAdd  HandleQuickslotAddFunc
+	HandleQuickslotDel  HandleQuickslotDelFunc
+	HandleQuickslotSwap HandleQuickslotSwapFunc
+	HandleShopBuy       HandleShopBuyFunc
+	HandleShopClose     HandleShopCloseFunc
+	HandleShopSell      HandleShopSellFunc
+	HandleShopSell2     HandleShopSell2Func
 }
 
 type Result struct {
@@ -110,26 +120,34 @@ type ItemMoveResult struct {
 	Frames   [][]byte
 }
 
+type QuickslotResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type ShopResult struct {
 	Accepted bool
 	Frames   [][]byte
 }
 
 type Flow struct {
-	machine            *session.StateMachine
-	handleMove         HandleMoveFunc
-	handleSyncPosition HandleSyncPositionFunc
-	handleChat         HandleChatFunc
-	handleWhisper      HandleWhisperFunc
-	handleInteraction  HandleInteractionFunc
-	handleTarget       HandleTargetFunc
-	handleAttack       HandleAttackFunc
-	handleItemUse      HandleItemUseFunc
-	handleItemMove     HandleItemMoveFunc
-	handleShopBuy      HandleShopBuyFunc
-	handleShopClose    HandleShopCloseFunc
-	handleShopSell     HandleShopSellFunc
-	handleShopSell2    HandleShopSell2Func
+	machine             *session.StateMachine
+	handleMove          HandleMoveFunc
+	handleSyncPosition  HandleSyncPositionFunc
+	handleChat          HandleChatFunc
+	handleWhisper       HandleWhisperFunc
+	handleInteraction   HandleInteractionFunc
+	handleTarget        HandleTargetFunc
+	handleAttack        HandleAttackFunc
+	handleItemUse       HandleItemUseFunc
+	handleItemMove      HandleItemMoveFunc
+	handleQuickslotAdd  HandleQuickslotAddFunc
+	handleQuickslotDel  HandleQuickslotDelFunc
+	handleQuickslotSwap HandleQuickslotSwapFunc
+	handleShopBuy       HandleShopBuyFunc
+	handleShopClose     HandleShopCloseFunc
+	handleShopSell      HandleShopSellFunc
+	handleShopSell2     HandleShopSell2Func
 }
 
 func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
@@ -169,6 +187,18 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if itemMoveHandler == nil {
 		itemMoveHandler = func(itemproto.ClientMovePacket) ItemMoveResult { return ItemMoveResult{Accepted: false} }
 	}
+	quickslotAddHandler := cfg.HandleQuickslotAdd
+	if quickslotAddHandler == nil {
+		quickslotAddHandler = func(quickslotproto.ClientAddPacket) QuickslotResult { return QuickslotResult{Accepted: false} }
+	}
+	quickslotDelHandler := cfg.HandleQuickslotDel
+	if quickslotDelHandler == nil {
+		quickslotDelHandler = func(quickslotproto.ClientDelPacket) QuickslotResult { return QuickslotResult{Accepted: false} }
+	}
+	quickslotSwapHandler := cfg.HandleQuickslotSwap
+	if quickslotSwapHandler == nil {
+		quickslotSwapHandler = func(quickslotproto.ClientSwapPacket) QuickslotResult { return QuickslotResult{Accepted: false} }
+	}
 	shopBuyHandler := cfg.HandleShopBuy
 	if shopBuyHandler == nil {
 		shopBuyHandler = func(shopproto.ClientBuyPacket) ShopResult { return ShopResult{Accepted: false} }
@@ -186,20 +216,23 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		shopSell2Handler = func(shopproto.ClientSell2Packet) ShopResult { return ShopResult{Accepted: false} }
 	}
 	return &Flow{
-		machine:            machine,
-		handleMove:         handler,
-		handleSyncPosition: syncHandler,
-		handleChat:         chatHandler,
-		handleWhisper:      whisperHandler,
-		handleInteraction:  interactionHandler,
-		handleTarget:       targetHandler,
-		handleAttack:       attackHandler,
-		handleItemUse:      itemUseHandler,
-		handleItemMove:     itemMoveHandler,
-		handleShopBuy:      shopBuyHandler,
-		handleShopClose:    shopCloseHandler,
-		handleShopSell:     shopSellHandler,
-		handleShopSell2:    shopSell2Handler,
+		machine:             machine,
+		handleMove:          handler,
+		handleSyncPosition:  syncHandler,
+		handleChat:          chatHandler,
+		handleWhisper:       whisperHandler,
+		handleInteraction:   interactionHandler,
+		handleTarget:        targetHandler,
+		handleAttack:        attackHandler,
+		handleItemUse:       itemUseHandler,
+		handleItemMove:      itemMoveHandler,
+		handleQuickslotAdd:  quickslotAddHandler,
+		handleQuickslotDel:  quickslotDelHandler,
+		handleQuickslotSwap: quickslotSwapHandler,
+		handleShopBuy:       shopBuyHandler,
+		handleShopClose:     shopCloseHandler,
+		handleShopSell:      shopSellHandler,
+		handleShopSell2:     shopSell2Handler,
 	}
 }
 
@@ -323,6 +356,36 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, err
 		}
 		result := f.handleItemMove(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case quickslotproto.HeaderClientAdd:
+		packet, err := quickslotproto.DecodeClientAdd(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleQuickslotAdd(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case quickslotproto.HeaderClientDel:
+		packet, err := quickslotproto.DecodeClientDel(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleQuickslotDel(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case quickslotproto.HeaderClientSwap:
+		packet, err := quickslotproto.DecodeClientSwap(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleQuickslotSwap(packet)
 		if !result.Accepted {
 			return nil, nil
 		}

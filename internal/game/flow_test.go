@@ -12,6 +12,7 @@ import (
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 )
@@ -96,6 +97,69 @@ func TestHandleClientFrameAcceptsItemMoveInGameAndReturnsHandlerFrames(t *testin
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsQuickslotAddInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("quickslot-add")
+	flow := NewFlow(machine, Config{
+		HandleQuickslotAdd: func(packet quickslotproto.ClientAddPacket) QuickslotResult {
+			if packet.Position != 3 || packet.Slot.Type != quickslotproto.TypeItem || packet.Slot.Position != 17 {
+				t.Fatalf("unexpected quickslot add packet: %+v", packet)
+			}
+			return QuickslotResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 3, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 17}})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot add error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler quickslot-add frame, got %#v", out)
+	}
+}
+
+func TestHandleClientFrameAcceptsQuickslotDelInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("quickslot-del")
+	flow := NewFlow(machine, Config{
+		HandleQuickslotDel: func(packet quickslotproto.ClientDelPacket) QuickslotResult {
+			if packet.Position != 3 {
+				t.Fatalf("unexpected quickslot del packet: %+v", packet)
+			}
+			return QuickslotResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientDel(quickslotproto.ClientDelPacket{Position: 3})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot del error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler quickslot-del frame, got %#v", out)
+	}
+}
+
+func TestHandleClientFrameAcceptsQuickslotSwapInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("quickslot-swap")
+	flow := NewFlow(machine, Config{
+		HandleQuickslotSwap: func(packet quickslotproto.ClientSwapPacket) QuickslotResult {
+			if packet.Position != 3 || packet.TargetPosition != 4 {
+				t.Fatalf("unexpected quickslot swap packet: %+v", packet)
+			}
+			return QuickslotResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientSwap(quickslotproto.ClientSwapPacket{Position: 3, TargetPosition: 4})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot swap error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler quickslot-swap frame, got %#v", out)
 	}
 }
 
