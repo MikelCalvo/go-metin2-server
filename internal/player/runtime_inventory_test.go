@@ -270,6 +270,37 @@ func TestRuntimeMoveInventoryItemCountMergesPartialStackIntoCompatibleDestinatio
 	}
 }
 
+func TestRuntimeMoveInventoryItemCountBoundedMergesExactFullStackIntoCompatibleDestination(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 27001, Count: 2, Slot: 8},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.MoveInventoryItemCountBounded(5, 8, 3, 200)
+	if !ok {
+		t.Fatal("expected exact counted full-stack merge into compatible destination to succeed")
+	}
+	if !result.Changed || !result.CountOnly || result.FromOccupied || !result.ToOccupied {
+		t.Fatalf("expected exact counted merge to delete source and update destination as count-only result, got %+v", result)
+	}
+	if result.From != 5 || result.To != 8 {
+		t.Fatalf("unexpected exact counted merge slots: %+v", result)
+	}
+	if result.ToItem.ID != 12 || result.ToItem.Vnum != 27001 || result.ToItem.Count != 5 || result.ToItem.Slot != 8 {
+		t.Fatalf("expected destination stack to absorb source count, got %+v", result.ToItem)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 12, Vnum: 27001, Count: 5, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after exact counted full-stack merge: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after exact counted full-stack merge, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeMoveInventoryItemCountBoundedRejectsDestinationAboveTemplateMaxWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{
