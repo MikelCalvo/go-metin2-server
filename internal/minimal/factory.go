@@ -1965,7 +1965,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if packet.Source.WindowType != itemproto.WindowInventory || inventory.SlotIndex(packet.Source.Cell) >= inventory.CarriedInventorySlotCount {
+					if packet.Source.WindowType != itemproto.WindowInventory {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					selectedPlayer, ok := currentSelectedPlayer()
@@ -1973,6 +1973,40 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
+					if packet.Source.Cell >= itemproto.InventoryMaxCell && packet.Destination.WindowType == itemproto.WindowInventory && inventory.SlotIndex(packet.Destination.Cell) < inventory.CarriedInventorySlotCount {
+						equipWearCell := packet.Source.Cell - itemproto.InventoryMaxCell
+						equipSlot, ok := equipmentBootstrapSlot(equipWearCell)
+						if !ok {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						template, hasEquipTemplate := runtime.resolveRuntimeUnequipTemplate(selectedPlayer, equipSlot)
+						inventoryItem, ok := selectedPlayer.UnequipItem(equipSlot, inventory.SlotIndex(packet.Destination.Cell))
+						if !ok {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						var pointChange *player.PointChangeResult
+						if hasEquipTemplate {
+							result, ok := selectedPlayer.RemoveEquipTemplateEffect(template)
+							if !ok {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.ItemMoveResult{Accepted: false}
+							}
+							pointChange = &result
+						}
+						frames, err := unequipResultFrames(selectedPlayer.LiveCharacter(), equipSlot, inventoryItem, pointChange)
+						if err != nil {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+						return gameflow.ItemMoveResult{Accepted: ok, Frames: frames}
+					}
+					if inventory.SlotIndex(packet.Source.Cell) >= inventory.CarriedInventorySlotCount {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
 					if packet.Destination.WindowType == itemproto.WindowInventory && packet.Destination.Cell >= itemproto.InventoryMaxCell {
 						equipWearCell := packet.Destination.Cell - itemproto.InventoryMaxCell
 						equipSlot, ok := equipmentBootstrapSlot(equipWearCell)
