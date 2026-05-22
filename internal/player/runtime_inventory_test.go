@@ -193,16 +193,51 @@ func TestRuntimeSyncItemQuickslotsForInventoryMoveUpdatesMatchingItemSlots(t *te
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	changed, ok := runtime.SyncItemQuickslotsForInventoryMove(5, 6)
+	changed, deleted, ok := runtime.SyncItemQuickslotsForInventoryMove(5, 6)
 	if !ok {
 		t.Fatal("expected item quickslot sync to succeed")
 	}
 	if !reflect.DeepEqual(changed, []loginticket.Quickslot{{Position: 3, Type: 1, Slot: 6}}) {
 		t.Fatalf("unexpected changed quickslots: %#v", changed)
 	}
+	if len(deleted) != 0 {
+		t.Fatalf("expected no deleted quickslots, got %#v", deleted)
+	}
 	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
 		{Position: 3, Type: 1, Slot: 6},
 		{Position: 4, Type: 2, Slot: 5},
+		{Position: 7, Type: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live quickslots after item sync: %#v", got)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Quickslots, persisted.Quickslots) {
+		t.Fatalf("expected persisted quickslots to remain unchanged, got %#v", runtime.PersistedSnapshot().Quickslots)
+	}
+}
+
+func TestRuntimeSyncItemQuickslotsForInventoryMoveDeletesConflictingDestinationItemSlots(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Quickslots = []loginticket.Quickslot{
+		{Position: 3, Type: 1, Slot: 5},
+		{Position: 4, Type: 1, Slot: 6},
+		{Position: 5, Type: 2, Slot: 6},
+		{Position: 7, Type: 1, Slot: 8},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	changed, deleted, ok := runtime.SyncItemQuickslotsForInventoryMove(5, 6)
+	if !ok {
+		t.Fatal("expected item quickslot sync to succeed")
+	}
+	if !reflect.DeepEqual(changed, []loginticket.Quickslot{{Position: 3, Type: 1, Slot: 6}}) {
+		t.Fatalf("unexpected changed quickslots: %#v", changed)
+	}
+	if !reflect.DeepEqual(deleted, []loginticket.Quickslot{{Position: 4, Type: 1, Slot: 6}}) {
+		t.Fatalf("unexpected deleted quickslots: %#v", deleted)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 3, Type: 1, Slot: 6},
+		{Position: 5, Type: 2, Slot: 6},
 		{Position: 7, Type: 1, Slot: 8},
 	}) {
 		t.Fatalf("unexpected live quickslots after item sync: %#v", got)

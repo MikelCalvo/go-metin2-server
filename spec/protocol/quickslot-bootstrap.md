@@ -23,7 +23,7 @@ It also uses three server packets for quickslot refreshes:
 - `GC::QUICKSLOT_DEL = 0x051A`
 - `GC::QUICKSLOT_SWAP = 0x051B`
 
-`SyncQuickslot(QUICKSLOT_TYPE_ITEM, old_cell, new_cell)` updates item quickslots when carried inventory items move between carried inventory cells, and deletes matching item quickslots when `new_cell = 255`. The current Go slices own the first update half of that behavior for accepted full-stack carried-inventory `ITEM_MOVE` packets and the first deletion half for accepted last-stack carried-inventory `ITEM_USE` packets.
+`SyncQuickslot(QUICKSLOT_TYPE_ITEM, old_cell, new_cell)` updates item quickslots when carried inventory items move between carried inventory cells, and deletes matching item quickslots when `new_cell = 255`. The current Go slices own the first update half of that behavior for accepted carried-inventory `ITEM_MOVE` packets, including deletion of stale item quickslots that already pointed at an occupied destination cell before the source quickslot is retargeted there, and the first deletion half for accepted last-stack carried-inventory `ITEM_USE` packets.
 
 ## Packet layouts
 
@@ -144,7 +144,7 @@ This keeps bootstrap quickslots self-only and snapshot-derived. Runtime `ADD` / 
 
 ## Item synchronization ownership
 
-When an accepted carried-inventory `ITEM_MOVE` moves a whole stack from one carried inventory cell to another carried inventory cell, the minimal runtime now scans the selected character's live quickslots for item tuples matching the old cell. Each matching item quickslot is updated to the new cell, persisted with the same selected-character snapshot mutation as the item move, and appended to the self response as `GC::QUICKSLOT_ADD(position, {item, new_cell})` after the item delete/set refresh frames.
+When an accepted carried-inventory `ITEM_MOVE` leaves the source cell empty and moves the item to another carried inventory cell, the minimal runtime now scans the selected character's live quickslots for item tuples matching the old cell or the destination cell. Destination-cell item quickslots are deleted first with `GC::QUICKSLOT_DEL(position)` so stale quickslot ownership does not survive a merge or swap into that cell. Each matching source-cell item quickslot is then updated to the new cell, persisted with the same selected-character snapshot mutation as the item move, and appended to the self response as `GC::QUICKSLOT_ADD(position, {item, new_cell})` after the item delete/set refresh frames.
 
 When an accepted carried-inventory `ITEM_USE` consumes the last item in a stack and the carried slot becomes empty, the minimal runtime scans the selected character's live quickslots for item tuples matching that removed cell. Each matching item quickslot is deleted, persisted with the same selected-character snapshot mutation as the item use, and appended to the self response as `GC::QUICKSLOT_DEL(position)` after the `ITEM_DEL` for the removed stack and before the temporary `CHAT_TYPE_INFO` effect placeholder.
 
@@ -153,6 +153,7 @@ When an accepted merchant `SHOP SELL` / `SELL2` removes a whole carried-inventor
 The current owned synchronization is intentionally narrow:
 
 - move synchronization applies to accepted carried-inventory mutations where the source cell becomes empty and the moved item now lives at a different carried cell, including exact counted full-stack compatible merges;
+- when that destination carried cell already has matching item quickslots, those destination quickslots are deleted before the moved source quickslot is retargeted so one carried cell does not retain multiple stale item quickslot bindings;
 - removal synchronization applies only to accepted last-stack carried-inventory `ITEM_USE` paths and accepted whole-stack merchant sell paths where the item slot becomes empty;
 - it does not rewrite or delete skill or command quickslots that happen to carry the same byte value;
 - move synchronization does not run for partial merges or partial-stack splits where the original item still remains at the source cell;
@@ -171,7 +172,7 @@ Implemented now:
 - loading-time selected-character `QUICKSLOT_ADD` bootstrap frames for persisted quickslot arrays, emitted after the selected-character presence/state burst and before trailing peer/static-actor visibility frames.
 - accepted self-only runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`.
 - accepted runtime updates to persisted quickslot state.
-- automatic item quickslot update synchronization after accepted full-stack carried-inventory `ITEM_MOVE` packets.
+- automatic item quickslot update synchronization after accepted carried-inventory `ITEM_MOVE` packets that empty the source cell, including destination-cell stale quickslot deletion when needed.
 - automatic item quickslot deletion synchronization after accepted last-stack carried-inventory `ITEM_USE` packets.
 - automatic item quickslot deletion synchronization after accepted whole-stack merchant `SHOP SELL` / `SELL2` packets.
 - validation of bootstrap quickslot positions (`0..35`), item quickslot cells (`0..89`), and supported tuple types (`item`, `skill`, `command`).

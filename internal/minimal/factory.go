@@ -2870,11 +2870,14 @@ func itemMoveQuickslotSyncFrames(selectedPlayer *player.Runtime, result inventor
 	if result.CountOnly && result.FromOccupied {
 		return nil, true
 	}
-	changed, ok := selectedPlayer.SyncItemQuickslotsForInventoryMove(result.From, result.To)
-	if !ok || len(changed) == 0 {
+	changed, deleted, ok := selectedPlayer.SyncItemQuickslotsForInventoryMove(result.From, result.To)
+	if !ok || len(changed)+len(deleted) == 0 {
 		return nil, ok
 	}
-	frames := make([][]byte, 0, len(changed))
+	frames := make([][]byte, 0, len(deleted)+len(changed))
+	for _, slot := range deleted {
+		frames = append(frames, quickslotproto.EncodeDel(quickslotproto.DelPacket{Position: slot.Position}))
+	}
 	for _, slot := range changed {
 		frames = append(frames, quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: slot.Position, Slot: quickslotproto.Slot{Type: slot.Type, Position: slot.Slot}}))
 	}

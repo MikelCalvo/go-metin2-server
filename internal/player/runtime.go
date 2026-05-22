@@ -229,26 +229,39 @@ func (r *Runtime) SwapQuickslots(position uint8, targetPosition uint8) (Quickslo
 	return QuickslotSwapResult{Position: position, TargetPosition: targetPosition}, true
 }
 
-func (r *Runtime) SyncItemQuickslotsForInventoryMove(from inventory.SlotIndex, to inventory.SlotIndex) ([]loginticket.Quickslot, bool) {
+func (r *Runtime) SyncItemQuickslotsForInventoryMove(from inventory.SlotIndex, to inventory.SlotIndex) ([]loginticket.Quickslot, []loginticket.Quickslot, bool) {
 	if r == nil || from == to || from >= inventory.CarriedInventorySlotCount || to >= inventory.CarriedInventorySlotCount {
-		return nil, false
+		return nil, nil, false
 	}
 	updated := cloneQuickslots(r.liveQuickslots)
 	changed := make([]loginticket.Quickslot, 0, 1)
-	for i := range updated {
-		if updated[i].Type != quickslotproto.TypeItem || inventory.SlotIndex(updated[i].Slot) != from {
+	deleted := make([]loginticket.Quickslot, 0, 1)
+	for i := 0; i < len(updated); {
+		if updated[i].Type != quickslotproto.TypeItem {
+			i++
 			continue
 		}
-		updated[i].Slot = uint8(to)
-		changed = append(changed, updated[i])
+		slot := inventory.SlotIndex(updated[i].Slot)
+		switch slot {
+		case from:
+			updated[i].Slot = uint8(to)
+			changed = append(changed, updated[i])
+			i++
+		case to:
+			deleted = append(deleted, updated[i])
+			updated = append(updated[:i], updated[i+1:]...)
+		default:
+			i++
+		}
 	}
-	if len(changed) == 0 {
-		return nil, true
+	if len(changed) == 0 && len(deleted) == 0 {
+		return nil, nil, true
 	}
 	sortQuickslots(updated)
 	sortQuickslots(changed)
+	sortQuickslots(deleted)
 	r.liveQuickslots = updated
-	return changed, true
+	return changed, deleted, true
 }
 
 func (r *Runtime) SyncItemQuickslotsForItemRemoval(slot inventory.SlotIndex) ([]loginticket.Quickslot, bool) {
