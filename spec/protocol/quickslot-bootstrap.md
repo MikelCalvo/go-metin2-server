@@ -1,6 +1,6 @@
 # Quickslot bootstrap packet codecs
 
-This note freezes the first wire-codec and `GAME`-phase dispatch contract for quickslot packets, plus the first persisted character snapshot field needed to carry quickslot state from auth ticket to game session. Accepted runtime quickslot edits and item-move quickslot synchronization are intentionally left for later slices.
+This note freezes the first wire-codec and `GAME`-phase dispatch contract for quickslot packets, the first persisted character snapshot field needed to carry quickslot state from auth ticket to game session, and the first loading-time selected-character quickslot bootstrap burst. Accepted runtime quickslot edits and item-move quickslot synchronization are intentionally left for later slices.
 
 ## Evidence
 
@@ -125,6 +125,23 @@ The bootstrap account and login-ticket character snapshots now carry a `quickslo
 
 Missing `quickslots` in older file-backed snapshots is normalized to an empty array. This preserves authd -> gamed ticket handoff and account-store round trips before any accepted runtime quickslot mutation is enabled.
 
+## Loading-time bootstrap ownership
+
+When `ENTERGAME` moves the selected character from `LOADING` to `GAME`, the current selected-character bootstrap burst now appends one server `QUICKSLOT_ADD` frame for each persisted quickslot on that selected character.
+
+The owned bootstrap ordering is:
+
+1. selected-character presence/state frames:
+   - `CHARACTER_ADD`
+   - `CHAR_ADDITIONAL_INFO`
+   - `CHARACTER_UPDATE`
+   - `PLAYER_POINT_CHANGE`
+2. selected-character persisted quickslot frames, sorted by `position` ascending:
+   - `QUICKSLOT_ADD(position, {type, slot})...`
+3. trailing visible peer/static-actor frames, if any
+
+This keeps quickslots self-only and snapshot-derived in the current runtime. It does not yet accept client-authored quickslot mutation or synchronize item quickslots after later item movement/destruction paths.
+
 ## Current scope
 
 Implemented now:
@@ -134,11 +151,11 @@ Implemented now:
 - Strict header and payload-size validation for those client and server packets.
 - `GAME`-phase dispatch hooks for client quickslot edit packets, with default fail-closed behavior until runtime mutation is owned.
 - file-backed account and login-ticket snapshot round trips for bootstrap quickslot arrays.
+- loading-time selected-character `QUICKSLOT_ADD` bootstrap frames for persisted quickslot arrays, emitted after the selected-character presence/state burst and before trailing peer/static-actor visibility frames.
 
 Not implemented yet:
 
 - accepted runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`
 - accepted runtime updates to persisted quickslot state
-- loading-time quickslot bootstrap frames
 - automatic item quickslot synchronization after `ITEM_MOVE`, `ITEM_USE`, shop sell, safebox, exchange, item timeout, or destruction
 - validation of quickslot ranges beyond codec payload size

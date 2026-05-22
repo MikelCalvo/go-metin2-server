@@ -1,8 +1,11 @@
 package worldentry
 
 import (
+	"sort"
+
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
 
@@ -14,12 +17,33 @@ func BuildBootstrapFrames(character loginticket.Character) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return [][]byte{
+	frames := [][]byte{
 		worldproto.EncodeCharacterAdd(bootstrapCharacterAddPacket(character)),
 		infoRaw,
 		worldproto.EncodeCharacterUpdate(bootstrapCharacterUpdatePacket(character)),
 		worldproto.EncodePlayerPointChange(bootstrapPlayerPointChangePacket(character)),
-	}, nil
+	}
+	for _, quickslot := range sortedBootstrapQuickslots(character.Quickslots) {
+		frames = append(frames, quickslotproto.EncodeAdd(quickslotproto.AddPacket{
+			Position: quickslot.Position,
+			Slot: quickslotproto.Slot{
+				Type:     quickslot.Type,
+				Position: quickslot.Slot,
+			},
+		}))
+	}
+	return frames, nil
+}
+
+func sortedBootstrapQuickslots(quickslots []loginticket.Quickslot) []loginticket.Quickslot {
+	if len(quickslots) == 0 {
+		return nil
+	}
+	sorted := append(quickslots[:0:0], quickslots...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Position < sorted[j].Position
+	})
+	return sorted
 }
 
 func bootstrapCharacterAddPacket(character loginticket.Character) worldproto.CharacterAddPacket {

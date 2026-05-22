@@ -20,6 +20,7 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -692,6 +693,58 @@ func TestNewGameSessionFactoryReturnsItemBootstrapForSelectedCharacter(t *testin
 	}
 	if equipmentSet.Position.WindowType != itemproto.WindowInventory || equipmentSet.Position.Cell != itemproto.InventoryMaxCell+10 || equipmentSet.Vnum != 0x55667788 || equipmentSet.Count != 1 {
 		t.Fatalf("unexpected equipment item bootstrap packet: %+v", equipmentSet)
+	}
+}
+
+func TestNewGameSessionFactoryReturnsQuickslotBootstrapForSelectedCharacter(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Quickslots = []loginticket.Quickslot{
+		{Position: 5, Type: quickslotproto.TypeItem, Slot: 7},
+		{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1},
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	factory, err := newGameSessionFactory(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+
+	enterGameOut, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame()))
+	if err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	if len(enterGameOut) != 7 {
+		t.Fatalf("expected 7 game bootstrap frames with two quickslots, got %d", len(enterGameOut))
+	}
+	first, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, enterGameOut[5]))
+	if err != nil {
+		t.Fatalf("decode first quickslot bootstrap: %v", err)
+	}
+	if first.Position != 2 || first.Slot.Type != quickslotproto.TypeSkill || first.Slot.Position != 1 {
+		t.Fatalf("unexpected first quickslot bootstrap: %+v", first)
+	}
+	second, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, enterGameOut[6]))
+	if err != nil {
+		t.Fatalf("decode second quickslot bootstrap: %v", err)
+	}
+	if second.Position != 5 || second.Slot.Type != quickslotproto.TypeItem || second.Slot.Position != 7 {
+		t.Fatalf("unexpected second quickslot bootstrap: %+v", second)
 	}
 }
 

@@ -363,6 +363,20 @@ Expected result:
 - the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then `CHAT_TYPE_INFO`
 - the selected-character snapshot persists atomically through the current save/rollback boundary
 
+### 5.6.1 Quickslot bootstrap replay
+
+Run this only when the selected QA character has persisted quickslots in its bootstrap account snapshot.
+
+- [ ] Enter the world with that character
+- [ ] Confirm the client receives/restores the expected quickslot bar entries after world entry
+- [ ] Reconnect and enter again with the same character
+- [ ] Confirm the same quickslot entries are replayed without manual reconfiguration
+
+Expected result:
+- persisted selected-character quickslots are replayed as self-only `QUICKSLOT_ADD` bootstrap frames after the selected-character presence/state burst
+- quickslot entries are stable across auth/login-ticket handoff and reconnect
+- client-authored quickslot edits may still fail closed until the dedicated runtime mutation slice lands
+
 ### 5.7 Counted carried-slot `ITEM_MOVE` stack bounds
 
 Run this only when the QA character has two compatible carried stacks for the same stackable template (current bootstrap seed: `27001`) and the destination stack can be brought near that template's `max_count`.

@@ -5,11 +5,11 @@ This document freezes the current server-owned burst emitted when the client lea
 The goal of this slice is narrow:
 - accept `ENTERGAME` in `LOADING`
 - transition the session to `GAME`
-- emit one deterministic selected-character bootstrap burst first
+- emit one deterministic selected-character bootstrap burst first, including any persisted selected-character quickslot refreshes
 - append already-visible peer bootstrap frames only after that self burst
 
 This slice is intentionally small.
-It does not yet freeze the full long-term world-entry contract for items, quickslots, NPCs, mobs, scripted warps, or loading-screen choreography.
+It does not yet freeze the full long-term world-entry contract for all item bootstrap state, accepted quickslot edits, NPCs, mobs, scripted warps, or loading-screen choreography.
 
 ## Covered packets
 
@@ -19,6 +19,7 @@ It does not yet freeze the full long-term world-entry contract for items, quicks
 - `CHAR_ADDITIONAL_INFO` server -> client (`0x0207`)
 - `CHARACTER_UPDATE` server -> client (`0x0209`)
 - `PLAYER_POINT_CHANGE` server -> client (`0x0215`)
+- `QUICKSLOT_ADD` server -> client (`0x0519`)
 
 ## Working flow
 
@@ -40,8 +41,9 @@ The current selected-character bootstrap burst is emitted in this exact order:
 2. `CHAR_ADDITIONAL_INFO`
 3. `CHARACTER_UPDATE`
 4. `PLAYER_POINT_CHANGE`
+5. zero or more persisted selected-character `QUICKSLOT_ADD` frames sorted by quickslot position
 
-These four frames belong to the selected character only.
+These frames belong to the selected character only.
 They are emitted before any trailing peer frames.
 
 ## Trailing peer frames
@@ -76,11 +78,13 @@ This slice freezes:
 - acceptance of `ENTERGAME` from `LOADING`
 - the `LOADING -> GAME` phase transition
 - the exact selected-character bootstrap order after `PHASE(GAME)`
+- the rule that persisted selected-character quickslots are replayed as sorted self-only `QUICKSLOT_ADD` frames after the selected-character presence/state frames
 - the rule that trailing visibility frames, when present, are appended after the selected-character burst
 - the current ordering that visible peer-player bursts are appended before visible bootstrap static-actor bursts
 
 It does not yet freeze:
-- item or quickslot bootstrap
+- broader item bootstrap beyond the currently owned selected-character state and quickslot replay
+- accepted runtime quickslot mutation / synchronization
 - NPC or mob insertion
 - final loading-screen / warp choreography
 - cross-channel migration behavior

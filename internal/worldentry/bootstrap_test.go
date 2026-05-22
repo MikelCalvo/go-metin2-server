@@ -5,6 +5,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
 
@@ -69,5 +70,44 @@ func TestBuildBootstrapFramesReturnsSelectedCharacterBurst(t *testing.T) {
 	}
 	if pointChange.VID != character.VID || pointChange.Type != 1 || pointChange.Amount != 750 || pointChange.Value != 750 {
 		t.Fatalf("unexpected bootstrap point-change packet: %+v", pointChange)
+	}
+}
+
+func TestBuildBootstrapFramesAppendsSortedQuickslots(t *testing.T) {
+	character := loginticket.Character{
+		ID:      0x01030102,
+		VID:     0x02040102,
+		Name:    "PeerTwo",
+		RaceNum: 2,
+		X:       1700,
+		Y:       2800,
+		Quickslots: []loginticket.Quickslot{
+			{Position: 7, Type: quickslotproto.TypeItem, Slot: 9},
+			{Position: 1, Type: quickslotproto.TypeSkill, Slot: 2},
+		},
+	}
+
+	frames, err := BuildBootstrapFrames(character)
+	if err != nil {
+		t.Fatalf("unexpected bootstrap frame error: %v", err)
+	}
+	if len(frames) != 6 {
+		t.Fatalf("expected 6 bootstrap frames, got %d", len(frames))
+	}
+
+	first, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, frames[4]))
+	if err != nil {
+		t.Fatalf("decode first quickslot add: %v", err)
+	}
+	if first.Position != 1 || first.Slot.Type != quickslotproto.TypeSkill || first.Slot.Position != 2 {
+		t.Fatalf("unexpected first quickslot add: %+v", first)
+	}
+
+	second, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, frames[5]))
+	if err != nil {
+		t.Fatalf("decode second quickslot add: %v", err)
+	}
+	if second.Position != 7 || second.Slot.Type != quickslotproto.TypeItem || second.Slot.Position != 9 {
+		t.Fatalf("unexpected second quickslot add: %+v", second)
 	}
 }
