@@ -1965,7 +1965,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if packet.Source.WindowType != itemproto.WindowInventory || packet.Destination.WindowType != itemproto.WindowInventory || inventory.SlotIndex(packet.Source.Cell) >= inventory.CarriedInventorySlotCount || inventory.SlotIndex(packet.Destination.Cell) >= inventory.CarriedInventorySlotCount {
+					if packet.Source.WindowType != itemproto.WindowInventory || inventory.SlotIndex(packet.Source.Cell) >= inventory.CarriedInventorySlotCount {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					selectedPlayer, ok := currentSelectedPlayer()
@@ -1973,6 +1973,40 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
+					if packet.Destination.WindowType == itemproto.WindowInventory && packet.Destination.Cell >= itemproto.InventoryMaxCell {
+						equipWearCell := packet.Destination.Cell - itemproto.InventoryMaxCell
+						equipSlot, ok := equipmentBootstrapSlot(equipWearCell)
+						if !ok {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						template, hasEquipTemplate := runtime.resolveRuntimeEquipTemplate(selectedPlayer, inventory.SlotIndex(packet.Source.Cell), equipSlot)
+						equippedItem, ok := selectedPlayer.EquipItem(inventory.SlotIndex(packet.Source.Cell), equipSlot)
+						if !ok {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						var pointChange *player.PointChangeResult
+						if hasEquipTemplate {
+							result, ok := selectedPlayer.ApplyEquipTemplateEffect(template)
+							if !ok {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.ItemMoveResult{Accepted: false}
+							}
+							pointChange = &result
+						}
+						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), inventory.SlotIndex(packet.Source.Cell), equippedItem, pointChange)
+						if err != nil {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
+						return gameflow.ItemMoveResult{Accepted: ok, Frames: frames}
+					}
+					if packet.Destination.WindowType != itemproto.WindowInventory || inventory.SlotIndex(packet.Destination.Cell) >= inventory.CarriedInventorySlotCount {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
 					var moveResult inventory.MoveResult
 					maxCount := ^uint16(0)
 					for _, sourceItem := range selectedPlayer.LiveInventory() {
@@ -3257,6 +3291,38 @@ func equipmentBootstrapWearIndex(slot inventory.EquipmentSlot) (uint16, bool) {
 		return 0, false
 	}
 	return wearIndex, true
+}
+
+func equipmentBootstrapSlot(wearIndex uint16) (inventory.EquipmentSlot, bool) {
+	const costumeHairWearIndex uint16 = 20
+	switch wearIndex {
+	case 0:
+		return inventory.EquipmentSlotBody, true
+	case 1:
+		return inventory.EquipmentSlotHead, true
+	case 2:
+		return inventory.EquipmentSlotShoes, true
+	case 3:
+		return inventory.EquipmentSlotWrist, true
+	case 4:
+		return inventory.EquipmentSlotWeapon, true
+	case 5:
+		return inventory.EquipmentSlotNeck, true
+	case 6:
+		return inventory.EquipmentSlotEar, true
+	case 7:
+		return inventory.EquipmentSlotUnique1, true
+	case 8:
+		return inventory.EquipmentSlotUnique2, true
+	case 9:
+		return inventory.EquipmentSlotArrow, true
+	case 10:
+		return inventory.EquipmentSlotShield, true
+	case costumeHairWearIndex:
+		return inventory.EquipmentSlotHair, true
+	default:
+		return inventory.EquipmentSlotNone, false
+	}
 }
 
 func ticketMoveAckPacket(character loginticket.Character, packet movep.MovePacket) movep.MoveAckPacket {
