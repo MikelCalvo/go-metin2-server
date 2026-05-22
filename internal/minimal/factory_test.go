@@ -2052,6 +2052,7 @@ func TestNewGameSessionFactoryItemUseConsumesTheLastStackAndEmitsDelete(t *testi
 	characters[1].Points[bootstrapPlayerPointValueIndex] = 700
 	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 1, Slot: 5}}
 	characters[1].Equipment = []inventory.ItemInstance{}
+	characters[1].Quickslots = []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 5}}
 	wantVID := characters[1].VID
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
@@ -2084,8 +2085,8 @@ func TestNewGameSessionFactoryItemUseConsumesTheLastStackAndEmitsDelete(t *testi
 	if err != nil {
 		t.Fatalf("unexpected item use error: %v", err)
 	}
-	if len(useOut) != 3 {
-		t.Fatalf("expected point-change + item-del + info frames for last-stack item use, got %d", len(useOut))
+	if len(useOut) != 4 {
+		t.Fatalf("expected point-change + item-del + quickslot-del + info frames for last-stack item use, got %d", len(useOut))
 	}
 	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
 	if err != nil {
@@ -2101,7 +2102,14 @@ func TestNewGameSessionFactoryItemUseConsumesTheLastStackAndEmitsDelete(t *testi
 	if delPacket.Position.WindowType != itemproto.WindowInventory || delPacket.Position.Cell != 5 {
 		t.Fatalf("unexpected item-use del packet: %+v", delPacket)
 	}
-	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
+	quickslotDelPacket, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[2]))
+	if err != nil {
+		t.Fatalf("decode item-use quickslot delete frame: %v", err)
+	}
+	if quickslotDelPacket.Position != 4 {
+		t.Fatalf("unexpected item-use quickslot delete packet: %+v", quickslotDelPacket)
+	}
+	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[3]))
 	if err != nil {
 		t.Fatalf("decode item-use info frame: %v", err)
 	}
@@ -2117,6 +2125,9 @@ func TestNewGameSessionFactoryItemUseConsumesTheLastStackAndEmitsDelete(t *testi
 	}
 	if len(account.Characters[1].Inventory) != 0 {
 		t.Fatalf("expected persisted inventory to be empty after consuming the last stack, got %#v", account.Characters[1].Inventory)
+	}
+	if len(account.Characters[1].Quickslots) != 0 {
+		t.Fatalf("expected persisted quickslots to delete removed item reference, got %#v", account.Characters[1].Quickslots)
 	}
 }
 

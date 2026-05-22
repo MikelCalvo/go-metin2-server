@@ -63,7 +63,8 @@ When `/use_item <slot>` or `ITEM_USE(TItemPos{window = INVENTORY, cell = slot})`
 4. the server emits a deterministic self-only response burst in this order:
    1. `PLAYER_POINT_CHANGE`
    2. item refresh for that same carried slot
-   3. one self-only `CHAT_TYPE_INFO` delivery acting as the temporary effect placeholder
+   3. zero or more `QUICKSLOT_DEL` frames for item quickslots that referenced the removed carried slot, only when the stack reaches zero
+   4. one self-only `CHAT_TYPE_INFO` delivery acting as the temporary effect placeholder
 
 ## Frozen self-only refresh semantics
 
@@ -81,6 +82,8 @@ For the current seeded bootstrap consumable template this still means:
 The item refresh for the consumed slot must use the existing owned item family:
 - if the stack remains non-zero after consume, emit `ITEM_SET(slot)` with the decremented `count`
 - if the consumed stack reaches zero, emit `ITEM_DEL(slot)`
+
+If the consumed stack reaches zero, any selected-character item quickslots referencing that carried inventory cell are removed and refreshed with self-only `QUICKSLOT_DEL` frames. Skill and command quickslots that carry the same byte value are not affected.
 
 The temporary self-facing effect placeholder is intentionally text-backed in this slice:
 - one self-only `CHAT_TYPE_INFO`
@@ -110,6 +113,7 @@ Failure behavior in this bootstrap slice:
 
 The first consumable path extends the existing M3 selected-character save-back boundary:
 - `inventory` must reflect the decremented or removed stack
+- `quickslots` must reflect any item quickslot deletion caused by a last-stack removal
 - `points` must reflect the updated `Points[template.use_effect.point_index]` (currently `Points[1]` for the seeded bootstrap consumable)
 - the save/commit path remains atomic from the perspective of the selected runtime
 
@@ -145,5 +149,5 @@ With the first implementation slice landed, the repository can now say:
 - the first owned item-use vertical is no longer undefined
 - exactly one template-backed consumable shape is frozen and implemented before broader gameplay scripting begins
 - `/use_item <slot>` and the first owned client-originated `ITEM_USE` packet now both mutate the first carried template-backed consumable in the bootstrap minimal runtime
-- the self-only outputs are explicit and exercised: `PLAYER_POINT_CHANGE`, `ITEM_SET`/`ITEM_DEL`, and one `CHAT_TYPE_INFO` placeholder effect
+- the self-only outputs are explicit and exercised: `PLAYER_POINT_CHANGE`, `ITEM_SET`/`ITEM_DEL`, last-stack `QUICKSLOT_DEL`, and one `CHAT_TYPE_INFO` placeholder effect
 - the selected-character writeback still preserves the existing atomic persistence and rollback boundary

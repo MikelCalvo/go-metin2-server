@@ -23,7 +23,7 @@ It also uses three server packets for quickslot refreshes:
 - `GC::QUICKSLOT_DEL = 0x051A`
 - `GC::QUICKSLOT_SWAP = 0x051B`
 
-`SyncQuickslot(QUICKSLOT_TYPE_ITEM, old_cell, new_cell)` updates item quickslots when carried inventory items move between carried inventory cells, and deletes matching item quickslots when `new_cell = 255`. The current Go slice owns the first update half of that behavior for accepted full-stack carried-inventory `ITEM_MOVE` packets. Deletion-on-destruction/sell/use remains a later slice.
+`SyncQuickslot(QUICKSLOT_TYPE_ITEM, old_cell, new_cell)` updates item quickslots when carried inventory items move between carried inventory cells, and deletes matching item quickslots when `new_cell = 255`. The current Go slices own the first update half of that behavior for accepted full-stack carried-inventory `ITEM_MOVE` packets and the first deletion half for accepted last-stack carried-inventory `ITEM_USE` packets.
 
 ## Packet layouts
 
@@ -142,16 +142,19 @@ The owned bootstrap ordering is:
 
 This keeps bootstrap quickslots self-only and snapshot-derived. Runtime `ADD` / `DEL` / `SWAP` edits are also self-only in this slice: the selected live character is mutated, the selected character snapshot is persisted back to the account store, and the server returns the matching quickslot refresh frame to the same session.
 
-## Item-move synchronization ownership
+## Item synchronization ownership
 
 When an accepted carried-inventory `ITEM_MOVE` moves a whole stack from one carried inventory cell to another carried inventory cell, the minimal runtime now scans the selected character's live quickslots for item tuples matching the old cell. Each matching item quickslot is updated to the new cell, persisted with the same selected-character snapshot mutation as the item move, and appended to the self response as `GC::QUICKSLOT_ADD(position, {item, new_cell})` after the item delete/set refresh frames.
 
+When an accepted carried-inventory `ITEM_USE` consumes the last item in a stack and the carried slot becomes empty, the minimal runtime scans the selected character's live quickslots for item tuples matching that removed cell. Each matching item quickslot is deleted, persisted with the same selected-character snapshot mutation as the item use, and appended to the self response as `GC::QUICKSLOT_DEL(position)` after the `ITEM_DEL` for the removed stack and before the temporary `CHAT_TYPE_INFO` effect placeholder.
+
 The current owned synchronization is intentionally narrow:
 
-- it applies only to accepted full-stack carried-inventory moves where `from != to`;
-- it does not rewrite skill or command quickslots that happen to carry the same byte value;
-- it does not run for count-only merges or partial-stack splits, because the original item still remains at the source cell;
-- it does not yet delete item quickslots when items are consumed, sold, destroyed, traded, moved to non-carried storage, or otherwise removed.
+- move synchronization applies only to accepted full-stack carried-inventory moves where `from != to`;
+- removal synchronization applies only to accepted last-stack carried-inventory `ITEM_USE` paths where the item slot becomes empty;
+- it does not rewrite or delete skill or command quickslots that happen to carry the same byte value;
+- move synchronization does not run for count-only merges or partial-stack splits, because the original item still remains at the source cell;
+- it does not yet delete item quickslots when shop sell, safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths clear an item cell.
 
 ## Current scope
 
@@ -166,10 +169,11 @@ Implemented now:
 - accepted self-only runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`.
 - accepted runtime updates to persisted quickslot state.
 - automatic item quickslot update synchronization after accepted full-stack carried-inventory `ITEM_MOVE` packets.
+- automatic item quickslot deletion synchronization after accepted last-stack carried-inventory `ITEM_USE` packets.
 - validation of bootstrap quickslot positions (`0..35`), item quickslot cells (`0..89`), and supported tuple types (`item`, `skill`, `command`).
 
 Not implemented yet:
 
-- automatic item quickslot deletion after `ITEM_USE`, shop sell, safebox, exchange, item timeout, destruction, or other item-removal paths
+- automatic item quickslot deletion after shop sell, safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other non-`ITEM_USE` item-removal paths
 - automatic item quickslot synchronization for belt inventory cells beyond the current carried inventory bootstrap range
 - stricter skill/command range policy beyond accepting byte-sized `skill` / `command` tuple positions

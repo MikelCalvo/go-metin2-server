@@ -251,6 +251,29 @@ func (r *Runtime) SyncItemQuickslotsForInventoryMove(from inventory.SlotIndex, t
 	return changed, true
 }
 
+func (r *Runtime) SyncItemQuickslotsForItemRemoval(slot inventory.SlotIndex) ([]loginticket.Quickslot, bool) {
+	if r == nil || slot >= inventory.CarriedInventorySlotCount {
+		return nil, false
+	}
+	updated := cloneQuickslots(r.liveQuickslots)
+	deleted := make([]loginticket.Quickslot, 0, 1)
+	for i := 0; i < len(updated); {
+		if updated[i].Type != quickslotproto.TypeItem || inventory.SlotIndex(updated[i].Slot) != slot {
+			i++
+			continue
+		}
+		deleted = append(deleted, updated[i])
+		updated = append(updated[:i], updated[i+1:]...)
+	}
+	if len(deleted) == 0 {
+		return nil, true
+	}
+	sortQuickslots(updated)
+	sortQuickslots(deleted)
+	r.liveQuickslots = updated
+	return deleted, true
+}
+
 func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventory.SlotIndex, maxCount uint16) (inventory.MoveResult, bool) {
 	if r == nil || maxCount == 0 || from == to {
 		return inventory.MoveResult{}, false

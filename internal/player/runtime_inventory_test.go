@@ -212,6 +212,33 @@ func TestRuntimeSyncItemQuickslotsForInventoryMoveUpdatesMatchingItemSlots(t *te
 	}
 }
 
+func TestRuntimeSyncItemQuickslotsForItemRemovalDeletesMatchingItemSlots(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Quickslots = []loginticket.Quickslot{
+		{Position: 3, Type: 1, Slot: 5},
+		{Position: 4, Type: 2, Slot: 5},
+		{Position: 7, Type: 1, Slot: 8},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	deleted, ok := runtime.SyncItemQuickslotsForItemRemoval(5)
+	if !ok {
+		t.Fatal("expected item quickslot removal sync to succeed")
+	}
+	if !reflect.DeepEqual(deleted, []loginticket.Quickslot{{Position: 3, Type: 1, Slot: 5}}) {
+		t.Fatalf("unexpected deleted quickslots: %#v", deleted)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 4, Type: 2, Slot: 5},
+		{Position: 7, Type: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live quickslots after item removal sync: %#v", got)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Quickslots, persisted.Quickslots) {
+		t.Fatalf("expected persisted quickslots to remain unchanged, got %#v", runtime.PersistedSnapshot().Quickslots)
+	}
+}
+
 func TestRuntimeApplyPersistedSnapshotRealignsLiveCurrencyInventoryAndEquipment(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

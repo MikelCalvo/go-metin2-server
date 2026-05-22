@@ -1149,6 +1149,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			persistedSelected.Gold = updatedSelected.Gold
 			persistedSelected.Inventory = updatedSelected.Inventory
 			persistedSelected.Equipment = updatedSelected.Equipment
+			persistedSelected.Quickslots = updatedSelected.Quickslots
 			for pointIndex := range persistedSelected.Points {
 				pointDelta := int64(updatedSelected.Points[pointIndex]) - int64(previousSelected.Points[pointIndex])
 				pointValue := int64(persistedSelected.Points[pointIndex]) + pointDelta
@@ -1394,6 +1395,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
 				return gameflow.ItemUseResult{Accepted: false}
+			}
+			if useResult.ItemRemoved {
+				quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, useResult.Slot)
+				if !ok {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return gameflow.ItemUseResult{Accepted: false}
+				}
+				if len(quickslotFrames) > 0 {
+					frames = append(frames[:2], append(quickslotFrames, frames[2:]...)...)
+				}
 			}
 			if !ownsLiveSharedWorldSession() {
 				return gameflow.ItemUseResult{Accepted: true, Frames: frames}
@@ -2845,12 +2857,27 @@ func itemMoveQuickslotSyncFrames(selectedPlayer *player.Runtime, result inventor
 		return nil, true
 	}
 	changed, ok := selectedPlayer.SyncItemQuickslotsForInventoryMove(result.From, result.To)
-	if !ok {
-		return nil, false
+	if !ok || len(changed) == 0 {
+		return nil, ok
 	}
 	frames := make([][]byte, 0, len(changed))
 	for _, slot := range changed {
 		frames = append(frames, quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: slot.Position, Slot: quickslotproto.Slot{Type: slot.Type, Position: slot.Slot}}))
+	}
+	return frames, true
+}
+
+func itemRemovalQuickslotSyncFrames(selectedPlayer *player.Runtime, slot inventory.SlotIndex) ([][]byte, bool) {
+	if selectedPlayer == nil {
+		return nil, true
+	}
+	deleted, ok := selectedPlayer.SyncItemQuickslotsForItemRemoval(slot)
+	if !ok || len(deleted) == 0 {
+		return nil, ok
+	}
+	frames := make([][]byte, 0, len(deleted))
+	for _, quickslot := range deleted {
+		frames = append(frames, quickslotproto.EncodeDel(quickslotproto.DelPacket{Position: quickslot.Position}))
 	}
 	return frames, true
 }
