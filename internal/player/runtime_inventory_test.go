@@ -173,6 +173,27 @@ func TestRuntimeCanUnequipLiveItemBackIntoInventory(t *testing.T) {
 	}
 }
 
+func TestRuntimeMoveInventoryItemRejectsSameSlotMovesWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.MoveInventoryItem(5, 5); ok {
+		t.Fatal("expected same-slot full-stack inventory move to fail closed")
+	}
+	if _, ok := runtime.MoveInventoryItemBounded(5, 5, 200); ok {
+		t.Fatal("expected same-slot bounded inventory move to fail closed")
+	}
+	if _, ok := runtime.MoveInventoryItemCount(5, 5, 1); ok {
+		t.Fatal("expected same-slot counted inventory move to fail closed")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected same-slot move attempts to leave live inventory unchanged, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected same-slot move attempts to leave persisted inventory unchanged, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeMoveInventoryItemRejectsIncompatibleOccupiedDestinationWithoutCount(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

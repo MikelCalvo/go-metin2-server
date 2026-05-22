@@ -152,24 +152,18 @@ func (r *Runtime) ApplyPointDelta(pointType uint8, pointIndex uint8, pointDelta 
 }
 
 func (r *Runtime) MoveInventoryItem(from inventory.SlotIndex, to inventory.SlotIndex) (inventory.MoveResult, bool) {
-	if r == nil {
+	if r == nil || from == to {
 		return inventory.MoveResult{}, false
 	}
 	result := inventory.MoveResult{From: from, To: to}
-	if from == to {
-		return result, true
-	}
 	return r.moveInventoryItemFullStack(from, to, result)
 }
 
 func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventory.SlotIndex, maxCount uint16) (inventory.MoveResult, bool) {
-	if r == nil || maxCount == 0 {
+	if r == nil || maxCount == 0 || from == to {
 		return inventory.MoveResult{}, false
 	}
 	result := inventory.MoveResult{From: from, To: to}
-	if from == to {
-		return result, true
-	}
 	fromIndex := findInventorySlot(r.liveInventory, from)
 	if fromIndex < 0 || r.liveInventory[fromIndex].Locked {
 		return inventory.MoveResult{}, false
@@ -236,13 +230,10 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 	if r == nil || count == 0 {
 		return inventory.MoveResult{}, false
 	}
-	if maxCount == 0 || count > maxCount {
+	if maxCount == 0 || count > maxCount || from == to {
 		return inventory.MoveResult{}, false
 	}
 	result := inventory.MoveResult{From: from, To: to}
-	if from == to {
-		return result, true
-	}
 	fromIndex := findInventorySlot(r.liveInventory, from)
 	if fromIndex < 0 || r.liveInventory[fromIndex].Locked {
 		return inventory.MoveResult{}, false
