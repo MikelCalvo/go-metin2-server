@@ -336,11 +336,24 @@ func (r *Runtime) moveInventoryItemFullStack(from inventory.SlotIndex, to invent
 		return inventory.MoveResult{}, false
 	}
 	toIndex := findInventorySlot(r.liveInventory, to)
-	if toIndex >= 0 && r.liveInventory[toIndex].Locked {
-		return inventory.MoveResult{}, false
-	}
 	if toIndex >= 0 {
-		return inventory.MoveResult{}, false
+		destinationItem := r.liveInventory[toIndex]
+		if destinationItem.Locked {
+			return inventory.MoveResult{}, false
+		}
+		sourceItem, err := destinationItem.WithInventorySlot(from)
+		if err != nil {
+			return inventory.MoveResult{}, false
+		}
+		r.liveInventory[fromIndex] = movedItem
+		r.liveInventory[toIndex] = sourceItem
+		sortInventoryItems(r.liveInventory)
+		result.Changed = true
+		result.FromOccupied = true
+		result.FromItem = sourceItem
+		result.ToOccupied = true
+		result.ToItem = movedItem
+		return result, true
 	}
 	r.liveInventory[fromIndex] = movedItem
 	sortInventoryItems(r.liveInventory)

@@ -194,16 +194,28 @@ func TestRuntimeMoveInventoryItemRejectsSameSlotMovesWithoutMutatingState(t *tes
 	}
 }
 
-func TestRuntimeMoveInventoryItemRejectsIncompatibleOccupiedDestinationWithoutCount(t *testing.T) {
+func TestRuntimeMoveInventoryItemSwapsIncompatibleOccupiedDestinationWithoutCount(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	if _, ok := runtime.MoveInventoryItem(5, 8); ok {
-		t.Fatal("expected incompatible occupied destination without a counted stack merge to fail closed")
+	result, ok := runtime.MoveInventoryItem(5, 8)
+	if !ok {
+		t.Fatal("expected incompatible occupied destination without count to swap full stacks")
 	}
-
-	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
-		t.Fatalf("expected rejected occupied-destination move to leave live inventory unchanged, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	if !result.Changed || !result.FromOccupied || !result.ToOccupied || result.CountOnly {
+		t.Fatalf("expected occupied-destination swap to refresh both slots, got %+v", result)
+	}
+	if result.FromItem.ID != 12 || result.FromItem.Vnum != 1120 || result.FromItem.Count != 1 || result.FromItem.Slot != 5 {
+		t.Fatalf("expected destination item to move into source slot, got %+v", result.FromItem)
+	}
+	if result.ToItem.ID != 11 || result.ToItem.Vnum != 27001 || result.ToItem.Count != 3 || result.ToItem.Slot != 8 {
+		t.Fatalf("expected source item to move into destination slot, got %+v", result.ToItem)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 5},
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after occupied-destination swap: %#v", runtime.LiveInventory())
 	}
 	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
 		t.Fatalf("expected persisted inventory to stay unchanged, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
