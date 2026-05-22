@@ -758,7 +758,7 @@ func TestNewGameSessionFactoryInventoryMovePersistsAndEmitsDeleteThenSet(t *test
 	}
 }
 
-func TestNewGameSessionFactoryInventorySwapPersistsAndEmitsTwoSetFrames(t *testing.T) {
+func TestNewGameSessionFactoryItemMovePacketRejectsOccupiedDestinationWithoutCount(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	characters := stubCharacters()
@@ -794,36 +794,23 @@ func TestNewGameSessionFactoryInventorySwapPersistsAndEmitsTwoSetFrames(t *testi
 		t.Fatalf("unexpected entergame error: %v", err)
 	}
 
-	swapOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/inventory_move 5 8"})))
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(8),
+		Count:       0,
+	})))
 	if err != nil {
-		t.Fatalf("unexpected inventory swap error: %v", err)
+		t.Fatalf("unexpected occupied-destination item move packet error: %v", err)
 	}
-	if len(swapOut) != 2 {
-		t.Fatalf("expected two set frames for inventory swap, got %d", len(swapOut))
-	}
-	fromPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, swapOut[0]))
-	if err != nil {
-		t.Fatalf("decode inventory swap from-slot refresh: %v", err)
-	}
-	if fromPacket.Position.WindowType != itemproto.WindowInventory || fromPacket.Position.Cell != 5 || fromPacket.Vnum != 0x55667788 || fromPacket.Count != 1 {
-		t.Fatalf("unexpected from-slot swap packet: %+v", fromPacket)
-	}
-	toPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, swapOut[1]))
-	if err != nil {
-		t.Fatalf("decode inventory swap to-slot refresh: %v", err)
-	}
-	if toPacket.Position.WindowType != itemproto.WindowInventory || toPacket.Position.Cell != 8 || toPacket.Vnum != 0x11223344 || toPacket.Count != 3 {
-		t.Fatalf("unexpected to-slot swap packet: %+v", toPacket)
+	if len(moveOut) != 0 {
+		t.Fatalf("expected occupied-destination item move without count to fail closed with no frames, got %d", len(moveOut))
 	}
 	account, err := accounts.Load(StubLogin)
 	if err != nil {
 		t.Fatalf("load persisted account: %v", err)
 	}
-	if !reflect.DeepEqual(account.Characters[1].Inventory, []inventory.ItemInstance{
-		{ID: 2002, Vnum: 0x55667788, Count: 1, Slot: 5},
-		{ID: 1001, Vnum: 0x11223344, Count: 3, Slot: 8},
-	}) {
-		t.Fatalf("unexpected persisted inventory after swap: %#v", account.Characters[1].Inventory)
+	if !reflect.DeepEqual(account.Characters[1].Inventory, characters[1].Inventory) {
+		t.Fatalf("expected occupied-destination item move to leave persisted inventory unchanged, got %#v want %#v", account.Characters[1].Inventory, characters[1].Inventory)
 	}
 }
 

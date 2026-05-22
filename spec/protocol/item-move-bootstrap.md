@@ -8,12 +8,13 @@ Owned in this slice:
 
 - `CG::ITEM_MOVE` is accepted only in `GAME` phase through the normal game flow dispatch.
 - The request is limited to carried inventory slots in the bootstrap runtime.
-- Full-stack moves, swaps, counted partial splits, counted partial merges, and exact counted full-stack merges into a compatible destination use the same runtime inventory mutation path.
+- Full-stack moves into empty carried slots, counted partial splits, counted partial merges, and exact counted full-stack merges into a compatible destination use the same runtime inventory mutation path.
 - Successful mutations are self-only and refresh the touched inventory cells with existing item packets.
 
 Not owned yet:
 
 - Safebox, mall, belt, dragon-soul, equipment-window, or ground movement.
+- Occupied-destination swap semantics for `count = 0`; the current packet path fails closed there until the precise compatibility rule is frozen.
 - Counted move semantics for incompatible occupied destinations beyond fail-closed rejection.
 - Stack splitting/merging outside carried inventory.
 - Cross-window drag/drop behavior.
@@ -36,7 +37,7 @@ Payload size is 7 bytes:
 
 The current carried-inventory window is `WindowInventory = 1`.
 
-`count = 0` means full-stack move/swap and must be routed through the same full-stack runtime path as the local `/move_item` QA helper. Non-zero `count` means a counted move bounded by the source item's template `max_count` when a valid template exists.
+`count = 0` means a full-stack move. In the current owned packet path it succeeds only when the destination carried slot is empty. Non-zero `count` means a counted move bounded by the source item's template `max_count` when a valid template exists.
 
 ## Runtime acceptance
 
@@ -47,10 +48,11 @@ The minimal runtime accepts an item move only when all of these are true:
 3. source and destination cells are carried-inventory cells;
 4. the selected player is active and not at the bootstrap HP floor;
 5. the source stack exists and is not locked;
-6. the destination stack, when occupied, is not locked;
-7. counted moves do not exceed the source stack count or the relevant template `max_count`;
-8. counted moves into an occupied destination require the same `vnum` and must not overflow `max_count`;
-9. if a counted move equals the source stack count and the destination is compatible, it merges into the destination stack instead of swapping items.
+6. `count = 0` moves target an empty destination slot;
+7. the destination stack, when occupied for a counted merge, is not locked;
+8. counted moves do not exceed the source stack count or the relevant template `max_count`;
+9. counted moves into an occupied destination require the same `vnum` and must not overflow `max_count`;
+10. if a counted move equals the source stack count and the destination is compatible, it merges into the destination stack instead of swapping items.
 
 Rejected requests fail closed and emit no frames.
 
@@ -59,7 +61,6 @@ Rejected requests fail closed and emit no frames.
 The bootstrap runtime emits only self-facing item refresh frames for the mutated cells:
 
 - full-stack move into an empty slot: `GC_ITEM_DEL(source)` then `GC_ITEM_SET(destination)`;
-- full-stack swap: `GC_ITEM_SET(source)` then `GC_ITEM_SET(destination)`;
 - counted partial split into an empty slot: `GC_ITEM_SET(source remainder)` then `GC_ITEM_SET(destination split stack)`;
 - counted partial merge into a compatible destination: `GC_ITEM_UPDATE(source remainder count)` then `GC_ITEM_UPDATE(destination merged count)`;
 - exact counted full-stack merge into a compatible destination: `GC_ITEM_DEL(source)` then `GC_ITEM_UPDATE(destination merged count)`.
@@ -72,5 +73,5 @@ Current coverage:
 
 - `internal/proto/item` freezes the `CG::ITEM_MOVE` wire layout and invalid-header/payload rejection.
 - `internal/game` freezes GAME-phase dispatch to `HandleItemMove` and fail-closed denied behavior.
-- `internal/player` freezes runtime full-stack, counted split/merge, exact counted full-stack compatible merge, max-count, incompatible-destination, and locked-stack behavior.
-- `internal/minimal` freezes runtime persistence and self-frame behavior for slash-command full-stack movement and direct `CG::ITEM_MOVE` full-stack moves, counted partial splits, compatible occupied-destination partial merges, and exact counted full-stack compatible merges.
+- `internal/player` freezes runtime full-stack empty-destination, counted split/merge, exact counted full-stack compatible merge, max-count, incompatible-destination, occupied-destination no-count rejection, and locked-stack behavior.
+- `internal/minimal` freezes runtime persistence and self-frame behavior for slash-command full-stack movement and direct `CG::ITEM_MOVE` full-stack moves, occupied-destination no-count rejection, counted partial splits, compatible occupied-destination partial merges, and exact counted full-stack compatible merges.

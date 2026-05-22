@@ -5,7 +5,7 @@ This document freezes the first minimal owned inventory/equipment contract for `
 The goal of the current contract is still narrow:
 - define the first self-only M3 item-state surface for carried inventory and worn equipment
 - reserve a deterministic slot-addressed bootstrap shape for owned items
-- freeze the first self-only mutation refresh semantics for inventory slot move/swap without pretending the final client drag/drop packet family already exists
+- freeze the first self-only mutation refresh semantics for inventory slot moves, while keeping occupied-destination swap semantics explicitly deferred until the final compatibility rule is owned
 - keep the scope small enough that later slices can add richer runtime, equip/use semantics, and final compatibility packet ingress without rewriting the contract
 
 It does **not** yet define the full compatibility-grade item system.
@@ -64,7 +64,7 @@ The first bootstrap inventory surface is intentionally narrow:
 - it covers only the selected character's normal carried inventory
 - it is addressed by deterministic numeric slot indices
 - empty slots do not need dedicated bootstrap frames in the first slice; only occupied slots need representation
-- later move/swap slices must preserve stable slot identity instead of treating inventory as an unordered bag
+- later move/swap slices must preserve stable slot identity instead of treating inventory as an unordered bag; occupied-destination swap behavior remains a separate contract from the current no-count empty-destination move
 
 This contract deliberately avoids freezing mall/storage/safebox windows or any secondary inventory pages beyond the project-owned carried-inventory surface required for the first M3 loop.
 
@@ -113,11 +113,11 @@ The exact wire layout is now frozen by `internal/proto/item` golden tests.
 ## First live mutation refresh boundary
 
 After the bootstrap burst, the owned mutation surface remains intentionally bootstrap-scoped:
-- ingress now includes the first carried-slot client-originated `ITEM_MOVE` packet for inventory move/swap; the older `/inventory_move <from> <to>` slash-command seam remains as operator/test bootstrap compatibility
+- ingress now includes the first carried-slot client-originated `ITEM_MOVE` packet for inventory moves and counted split/merge behavior; occupied-destination no-count swaps currently fail closed, and the older `/inventory_move <from> <to>` slash-command seam remains as operator/test bootstrap compatibility only for empty-destination moves
 - the first carried-slot client-originated `ITEM_USE` ingress lives separately in `item-use-bootstrap.md`
 - the current supported seams are:
-  - `ITEM_MOVE` (`0x0504`) for carried-slot move/swap
-  - `/inventory_move <from> <to>` for carried-slot move/swap compatibility
+  - `ITEM_MOVE` (`0x0504`) for carried-slot moves and counted split/merge behavior
+  - `/inventory_move <from> <to>` for carried-slot empty-destination move compatibility
   - `/equip_item <from> <equip_slot>` for carried -> worn transitions
   - `/unequip_item <equip_slot> <to>` for worn -> carried transitions
 - carried inventory keeps using `window_type = INVENTORY (1)` with `0 <= cell < 90`
@@ -149,13 +149,13 @@ The first client-originated carried-slot drag/drop ingress is now frozen as `ITE
   2. destination packed `TItemPos`
   3. `count uint8`
 - for the current bootstrap runtime, both source and destination must be normal carried inventory positions (`window_type = INVENTORY`, `0 <= cell < 90`)
-- full-stack `count` values reuse the same selected-character move/swap semantics and `ITEM_DEL` / `ITEM_SET` refresh frames already owned by `/inventory_move`
+- `count = 0` values reuse the selected-character full-stack move path and `ITEM_DEL` / `ITEM_SET` refresh frames only when the destination carried slot is empty; occupied destinations fail closed until the precise swap compatibility rule is frozen
 - counted `ITEM_MOVE` accepts an empty-destination partial-stack split: the source stack is decremented, a fresh runtime item instance is placed in the destination slot, and the same self-only source/destination refresh path is reused
-- counted `ITEM_MOVE` now also accepts a compatible occupied-destination partial-stack merge: the source stack is decremented, the destination stack's existing item instance grows by the moved count, and the response uses self-only `ITEM_UPDATE` for the source and destination count refreshes because neither item identity changes
-- for packet-originated partial merges, the runtime resolves the source carried item's owned item-template metadata when available and rejects merges whose destination count would exceed that template's `max_count` rather than using only the packet count / `uint16` storage bound
-- locked carried-slot items fail closed for move/swap, counted `ITEM_MOVE`, equip, and use attempts; locked equipped items fail closed for unequip attempts; these rejections leave live and persisted item state unchanged and emit no item refresh frames
-- counted `ITEM_MOVE` into an incompatible occupied destination still fails closed until swap-with-count semantics are owned; oversized non-zero counts, template-`max_count` overflow, and storage-overflowing destination stack counts also remain rejected without mutation, while `count = 0` is reserved for full-stack move/swap semantics
-- richer split/merge rules remain future work; this slice owns only empty-destination partial splits, template-bounded compatible occupied-destination partial merges with count-only `ITEM_UPDATE` refreshes, and existing full-stack moves/swaps
+- counted `ITEM_MOVE` now also accepts a compatible occupied-destination merge: the source stack is decremented or removed, the destination stack's existing item instance grows by the moved count, and the response uses self-only `ITEM_UPDATE` count refreshes for live source/destination stacks or `ITEM_DEL(source)` plus `ITEM_UPDATE(destination)` when the counted move consumes the full source stack
+- for packet-originated merges, the runtime resolves the source carried item's owned item-template metadata when available and rejects merges whose destination count would exceed that template's `max_count` rather than using only the packet count / `uint16` storage bound
+- locked carried-slot items fail closed for moves, counted `ITEM_MOVE`, equip, and use attempts; locked equipped items fail closed for unequip attempts; these rejections leave live and persisted item state unchanged and emit no item refresh frames
+- counted `ITEM_MOVE` into an incompatible occupied destination still fails closed until swap-with-count semantics are owned; oversized non-zero counts, template-`max_count` overflow, and storage-overflowing destination stack counts also remain rejected without mutation
+- richer split/merge rules remain future work; this slice owns only empty-destination splits, template-bounded compatible occupied-destination merges with count-only `ITEM_UPDATE` refreshes where appropriate, and existing full-stack empty-destination moves
 
 For the current owned bootstrap surface:
 - carried inventory uses `window_type = INVENTORY (1)` with `0 <= cell < 90`
@@ -204,6 +204,6 @@ After this slice, the repository should be able to say:
 - inventory/equipment are no longer undefined territory in project docs
 - the first self-only bootstrap ordering for item state is frozen relative to `ENTERGAME`
 - the loading-to-game burst now emits owned `ITEM_SET` frames for occupied carried/equipped slots immediately after `PLAYER_POINT_CHANGE`
-- the first carried/worn mutation loops now persist selected-character move/swap/equip/unequip changes; carried-slot move/swap is accepted through both `ITEM_MOVE` and the older `/inventory_move` bootstrap seam, and refreshes the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` frames, plus one self-only template-backed `PLAYER_POINT_CHANGE` when matched equip templates carry the current narrow `equip_effect`, one self-only `CHARACTER_UPDATE` after successful equip/unequip appearance changes, and one queued peer-visible `CHARACTER_UPDATE` for already-visible stable watchers in shared world
+- the first carried/worn mutation loops now persist selected-character move/equip/unequip changes; carried-slot empty-destination moves are accepted through both `ITEM_MOVE` and the older `/inventory_move` bootstrap seam, counted `ITEM_MOVE` owns the current carried-slot split/merge subset, and successful item mutations refresh the client with deterministic self-only `ITEM_DEL` / `ITEM_SET` / `ITEM_UPDATE` frames, plus one self-only template-backed `PLAYER_POINT_CHANGE` when matched equip templates carry the current narrow `equip_effect`, one self-only `CHARACTER_UPDATE` after successful equip/unequip appearance changes, and one queued peer-visible `CHARACTER_UPDATE` for already-visible stable watchers in shared world
 - the repo owns a stable vocabulary for carried inventory slots, equipment slots, minimum item snapshot semantics, and the first self-only mutation refresh rules
 - the packet matrix and `internal/proto/item` codec now agree on the first byte-level item bootstrap family

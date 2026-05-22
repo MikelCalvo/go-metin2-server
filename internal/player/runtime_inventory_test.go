@@ -173,33 +173,16 @@ func TestRuntimeCanUnequipLiveItemBackIntoInventory(t *testing.T) {
 	}
 }
 
-func TestRuntimeMoveInventoryItemSwapsOccupiedSlots(t *testing.T) {
+func TestRuntimeMoveInventoryItemRejectsOccupiedDestinationWithoutCount(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	result, ok := runtime.MoveInventoryItem(5, 8)
-	if !ok {
-		t.Fatal("expected inventory swap to succeed")
-	}
-	if !result.Changed || !result.FromOccupied || !result.ToOccupied {
-		t.Fatalf("expected swap result to describe both occupied slots, got %+v", result)
-	}
-	if result.From != 5 || result.To != 8 {
-		t.Fatalf("unexpected swap slots: %+v", result)
-	}
-	if result.FromItem.ID != 12 || result.FromItem.Slot != 5 {
-		t.Fatalf("expected destination occupant to move into slot 5, got %+v", result.FromItem)
-	}
-	if result.ToItem.ID != 11 || result.ToItem.Slot != 8 {
-		t.Fatalf("expected source item to move into slot 8, got %+v", result.ToItem)
+	if _, ok := runtime.MoveInventoryItem(5, 8); ok {
+		t.Fatal("expected occupied destination without a counted stack merge to fail closed")
 	}
 
-	gotLive := runtime.LiveInventory()
-	if !reflect.DeepEqual(gotLive, []inventory.ItemInstance{
-		{ID: 12, Vnum: 1120, Count: 1, Slot: 5},
-		{ID: 11, Vnum: 27001, Count: 3, Slot: 8},
-	}) {
-		t.Fatalf("unexpected live inventory after swap: %#v", gotLive)
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected rejected occupied-destination move to leave live inventory unchanged, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
 	}
 	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
 		t.Fatalf("expected persisted inventory to stay unchanged, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)

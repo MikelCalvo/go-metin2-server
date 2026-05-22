@@ -282,24 +282,12 @@ func (r *Runtime) moveInventoryItemFullStack(from inventory.SlotIndex, to invent
 	if toIndex >= 0 && r.liveInventory[toIndex].Locked {
 		return inventory.MoveResult{}, false
 	}
-	if toIndex < 0 {
-		r.liveInventory[fromIndex] = movedItem
-		sortInventoryItems(r.liveInventory)
-		result.Changed = true
-		result.ToOccupied = true
-		result.ToItem = movedItem
-		return result, true
-	}
-	swappedItem, err := r.liveInventory[toIndex].WithInventorySlot(from)
-	if err != nil {
+	if toIndex >= 0 {
 		return inventory.MoveResult{}, false
 	}
-	r.liveInventory[fromIndex] = swappedItem
-	r.liveInventory[toIndex] = movedItem
+	r.liveInventory[fromIndex] = movedItem
 	sortInventoryItems(r.liveInventory)
 	result.Changed = true
-	result.FromOccupied = true
-	result.FromItem = swappedItem
 	result.ToOccupied = true
 	result.ToItem = movedItem
 	return result, true

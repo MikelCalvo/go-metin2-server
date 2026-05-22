@@ -59,7 +59,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`
 - `inventory-equipment-bootstrap.md` — first owned self-only inventory/equipment bootstrap surface and item-family boundary for M3 character state
 - `item-use-bootstrap.md` — first owned self-only consumable item-use bootstrap contract, now covering both the slash harness and the first tiny client-originated `ITEM_USE` ingress for carried inventory
-- `item-move-bootstrap.md` — first owned client-originated carried-inventory `ITEM_MOVE` contract for GAME-phase move/swap/split/merge and self-only slot refreshes
+- `item-move-bootstrap.md` — first owned client-originated carried-inventory `ITEM_MOVE` contract for GAME-phase moves, counted splits/merges, occupied-destination no-count rejection, and self-only slot refreshes
 - `sync-position-bootstrap.md` — first self-only sync-position reconciliation after entering `GAME`
 - `boot-path.md` — first milestone from connect to basic movement
 - `packet-matrix.md` — working inventory for the first protocol slice
