@@ -38,6 +38,7 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/securecipher"
@@ -1114,6 +1115,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			persistedSelected.Gold = updatedSelected.Gold
 			persistedSelected.Inventory = updatedSelected.Inventory
 			persistedSelected.Equipment = updatedSelected.Equipment
+			persistedSelected.Quickslots = updatedSelected.Quickslots
 			updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
 			if !ok {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -1979,6 +1981,57 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					chatResult := commitSelectedNonPointItemMutation(selectedPlayer, previousSelected, frames)
 					return gameflow.ItemMoveResult{Accepted: chatResult.Accepted, Frames: chatResult.Frames}
+				},
+				HandleQuickslotAdd: func(packet quickslotproto.ClientAddPacket) gameflow.QuickslotResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						return gameflow.QuickslotResult{Accepted: false}
+					}
+					previousSelected := selectedPlayer.LiveCharacter()
+					result, ok := selectedPlayer.SetQuickslot(packet.Position, loginticket.Quickslot{Type: packet.Slot.Type, Slot: packet.Slot.Position})
+					if !ok {
+						return gameflow.QuickslotResult{Accepted: false}
+					}
+					frames := [][]byte{quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: result.Position, Slot: quickslotproto.Slot{Type: result.Type, Position: result.Slot}})}
+					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					return gameflow.QuickslotResult{Accepted: ok, Frames: frames}
+				},
+				HandleQuickslotDel: func(packet quickslotproto.ClientDelPacket) gameflow.QuickslotResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						return gameflow.QuickslotResult{Accepted: false}
+					}
+					previousSelected := selectedPlayer.LiveCharacter()
+					result, ok := selectedPlayer.DeleteQuickslot(packet.Position)
+					if !ok {
+						return gameflow.QuickslotResult{Accepted: false}
+					}
+					frames := [][]byte{quickslotproto.EncodeDel(quickslotproto.DelPacket{Position: result.Position})}
+					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					return gameflow.QuickslotResult{Accepted: ok, Frames: frames}
+				},
+				HandleQuickslotSwap: func(packet quickslotproto.ClientSwapPacket) gameflow.QuickslotResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						return gameflow.QuickslotResult{Accepted: false}
+					}
+					previousSelected := selectedPlayer.LiveCharacter()
+					result, ok := selectedPlayer.SwapQuickslots(packet.Position, packet.TargetPosition)
+					if !ok {
+						return gameflow.QuickslotResult{Accepted: false}
+					}
+					frames := [][]byte{quickslotproto.EncodeSwap(quickslotproto.SwapPacket{Position: result.Position, TargetPosition: result.TargetPosition})}
+					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					return gameflow.QuickslotResult{Accepted: ok, Frames: frames}
 				},
 				HandleWhisper: func(packet chatproto.ClientWhisperPacket) gameflow.WhisperResult {
 					stateMu.Lock()

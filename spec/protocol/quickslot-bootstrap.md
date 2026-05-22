@@ -1,6 +1,6 @@
-# Quickslot bootstrap packet codecs
+# Quickslot bootstrap packet codecs and runtime edits
 
-This note freezes the first wire-codec and `GAME`-phase dispatch contract for quickslot packets, the first persisted character snapshot field needed to carry quickslot state from auth ticket to game session, and the first loading-time selected-character quickslot bootstrap burst. Accepted runtime quickslot edits and item-move quickslot synchronization are intentionally left for later slices.
+This note freezes the first wire-codec and `GAME`-phase dispatch contract for quickslot packets, the first persisted character snapshot field needed to carry quickslot state from auth ticket to game session, the first loading-time selected-character quickslot bootstrap burst, and the first accepted self-only runtime quickslot edit path. Automatic item-move quickslot synchronization is intentionally left for a later slice.
 
 ## Evidence
 
@@ -43,7 +43,7 @@ Payload:
 
 Total frame length: `7` bytes.
 
-Current runtime behavior: decoded and dispatched only in `GAME`; the default runtime handler is fail-closed and emits no frames until a later persistence/edit slice owns accepted mutation semantics.
+Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid edits for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_ADD`. Invalid edits fail closed with no frames.
 
 ### Client `QUICKSLOT_DEL` (`0x050A`)
 
@@ -57,7 +57,7 @@ Payload:
 
 Total frame length: `5` bytes.
 
-Current runtime behavior: decoded and dispatched only in `GAME`; the default runtime handler is fail-closed and emits no frames until a later persistence/edit slice owns accepted mutation semantics.
+Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid delete requests for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_DEL`. Invalid positions fail closed with no frames.
 
 ### Client `QUICKSLOT_SWAP` (`0x050B`)
 
@@ -72,7 +72,7 @@ Payload:
 
 Total frame length: `6` bytes.
 
-Current runtime behavior: decoded and dispatched only in `GAME`; the default runtime handler is fail-closed and emits no frames until a later persistence/edit slice owns accepted mutation semantics.
+Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid swaps for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_SWAP`. Invalid positions fail closed with no frames.
 
 ### Server `QUICKSLOT_ADD` (`0x0519`)
 
@@ -140,7 +140,7 @@ The owned bootstrap ordering is:
    - `QUICKSLOT_ADD(position, {type, slot})...`
 3. trailing visible peer/static-actor frames, if any
 
-This keeps quickslots self-only and snapshot-derived in the current runtime. It does not yet accept client-authored quickslot mutation or synchronize item quickslots after later item movement/destruction paths.
+This keeps bootstrap quickslots self-only and snapshot-derived. Runtime `ADD` / `DEL` / `SWAP` edits are also self-only in this slice: the selected live character is mutated, the selected character snapshot is persisted back to the account store, and the server returns the matching quickslot refresh frame to the same session. The slice does not yet synchronize item quickslots after later item movement/destruction paths.
 
 ## Current scope
 
@@ -149,13 +149,15 @@ Implemented now:
 - Go codecs for client `QUICKSLOT_ADD`, `QUICKSLOT_DEL`, and `QUICKSLOT_SWAP`.
 - Go codecs for server `QUICKSLOT_ADD`, `QUICKSLOT_DEL`, and `QUICKSLOT_SWAP`.
 - Strict header and payload-size validation for those client and server packets.
-- `GAME`-phase dispatch hooks for client quickslot edit packets, with default fail-closed behavior until runtime mutation is owned.
+- `GAME`-phase dispatch hooks for client quickslot edit packets.
 - file-backed account and login-ticket snapshot round trips for bootstrap quickslot arrays.
 - loading-time selected-character `QUICKSLOT_ADD` bootstrap frames for persisted quickslot arrays, emitted after the selected-character presence/state burst and before trailing peer/static-actor visibility frames.
+- accepted self-only runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`.
+- accepted runtime updates to persisted quickslot state.
+- validation of bootstrap quickslot positions (`0..35`), item quickslot cells (`0..89`), and supported tuple types (`item`, `skill`, `command`).
 
 Not implemented yet:
 
-- accepted runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`
-- accepted runtime updates to persisted quickslot state
 - automatic item quickslot synchronization after `ITEM_MOVE`, `ITEM_USE`, shop sell, safebox, exchange, item timeout, or destruction
-- validation of quickslot ranges beyond codec payload size
+- belt inventory item quickslot cells beyond the current carried inventory bootstrap range
+- stricter skill/command range policy beyond accepting byte-sized `skill` / `command` tuple positions

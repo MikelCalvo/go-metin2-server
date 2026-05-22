@@ -22,6 +22,7 @@ import (
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
+	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -746,6 +747,154 @@ func TestNewGameSessionFactoryReturnsQuickslotBootstrapForSelectedCharacter(t *t
 	if second.Position != 5 || second.Slot.Type != quickslotproto.TypeItem || second.Slot.Position != 7 {
 		t.Fatalf("unexpected second quickslot bootstrap: %+v", second)
 	}
+}
+
+func TestNewGameSessionFactoryQuickslotAddPersistsAndEmitsAdd(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1}}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	flow := newStartedGameFlow(t, store, accounts)
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 5, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 7}})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot add error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected one quickslot add frame, got %d", len(out))
+	}
+	add, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode quickslot add response: %v", err)
+	}
+	if add.Position != 5 || add.Slot.Type != quickslotproto.TypeItem || add.Slot.Position != 7 {
+		t.Fatalf("unexpected quickslot add response: %+v", add)
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load account after quickslot add: %v", err)
+	}
+	if got := account.Characters[1].Quickslots; !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1},
+		{Position: 5, Type: quickslotproto.TypeItem, Slot: 7},
+	}) {
+		t.Fatalf("unexpected persisted quickslots after add: %#v", got)
+	}
+}
+
+func TestNewGameSessionFactoryQuickslotDelAndSwapPersistAndEmitFrames(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1},
+		{Position: 5, Type: quickslotproto.TypeItem, Slot: 7},
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	flow := newStartedGameFlow(t, store, accounts)
+	deleteOut, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientDel(quickslotproto.ClientDelPacket{Position: 2})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot del error: %v", err)
+	}
+	if len(deleteOut) != 1 {
+		t.Fatalf("expected one quickslot del frame, got %d", len(deleteOut))
+	}
+	deleted, err := quickslotproto.DecodeDel(decodeSingleFrame(t, deleteOut[0]))
+	if err != nil {
+		t.Fatalf("decode quickslot del response: %v", err)
+	}
+	if deleted.Position != 2 {
+		t.Fatalf("unexpected quickslot del response: %+v", deleted)
+	}
+
+	swapOut, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientSwap(quickslotproto.ClientSwapPacket{Position: 5, TargetPosition: 7})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot swap error: %v", err)
+	}
+	if len(swapOut) != 1 {
+		t.Fatalf("expected one quickslot swap frame, got %d", len(swapOut))
+	}
+	swapped, err := quickslotproto.DecodeSwap(decodeSingleFrame(t, swapOut[0]))
+	if err != nil {
+		t.Fatalf("decode quickslot swap response: %v", err)
+	}
+	if swapped.Position != 5 || swapped.TargetPosition != 7 {
+		t.Fatalf("unexpected quickslot swap response: %+v", swapped)
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load account after quickslot mutations: %v", err)
+	}
+	if got := account.Characters[1].Quickslots; !reflect.DeepEqual(got, []loginticket.Quickslot{{Position: 7, Type: quickslotproto.TypeItem, Slot: 7}}) {
+		t.Fatalf("unexpected persisted quickslots after del+swap: %#v", got)
+	}
+}
+
+func TestNewGameSessionFactoryQuickslotAddRejectsInvalidInputWithoutPersisting(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1}}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	flow := newStartedGameFlow(t, store, accounts)
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 36, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 7}})))
+	if err != nil {
+		t.Fatalf("unexpected rejected quickslot add error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected invalid quickslot add to emit no frames, got %d", len(out))
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load account after rejected quickslot add: %v", err)
+	}
+	if got := account.Characters[1].Quickslots; !reflect.DeepEqual(got, characters[1].Quickslots) {
+		t.Fatalf("expected rejected quickslot add to preserve snapshot, got %#v", got)
+	}
+}
+
+func newStartedGameFlow(t *testing.T, store loginticket.Store, accounts accountstore.Store) service.SessionFlow {
+	t.Helper()
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	return flow
 }
 
 func TestNewGameSessionFactoryInventoryMovePersistsAndEmitsDeleteThenSet(t *testing.T) {

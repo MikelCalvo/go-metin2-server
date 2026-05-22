@@ -65,26 +65,122 @@ func TestRuntimeKeepsLiveCurrencyAndItemStateSeparateFromPersistedSnapshot(t *te
 	}
 }
 
-func TestRuntimeAccessorsDeepCopyLiveAndPersistedItemState(t *testing.T) {
+func TestRuntimeAccessorsDeepCopyLivePersistedAndQuickslotState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Quickslots = []loginticket.Quickslot{{Position: 3, Type: 1, Slot: 5}}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
 	persistedSnapshot := runtime.PersistedSnapshot()
 	liveInventory := runtime.LiveInventory()
 	liveEquipment := runtime.LiveEquipment()
+	liveQuickslots := runtime.LiveQuickslots()
 
 	persistedSnapshot.Inventory[0].Count = 99
+	persistedSnapshot.Quickslots[0].Slot = 9
 	liveInventory[0].Count = 77
 	liveEquipment[0].Vnum = 9999
+	liveQuickslots[0].Slot = 8
 
 	if got := runtime.PersistedSnapshot().Inventory[0].Count; got != 3 {
 		t.Fatalf("expected persisted inventory count to stay 3, got %d", got)
+	}
+	if got := runtime.PersistedSnapshot().Quickslots[0].Slot; got != 5 {
+		t.Fatalf("expected persisted quickslot slot to stay 5, got %d", got)
 	}
 	if got := runtime.LiveInventory()[0].Count; got != 3 {
 		t.Fatalf("expected live inventory count to stay 3, got %d", got)
 	}
 	if got := runtime.LiveEquipment()[0].Vnum; got != 19 {
 		t.Fatalf("expected live equipment vnum to stay 19, got %d", got)
+	}
+	if got := runtime.LiveQuickslots()[0].Slot; got != 5 {
+		t.Fatalf("expected live quickslot slot to stay 5, got %d", got)
+	}
+}
+
+func TestRuntimeCanSetDeleteAndSwapQuickslots(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Quickslots = []loginticket.Quickslot{
+		{Position: 3, Type: 1, Slot: 5},
+		{Position: 7, Type: 2, Slot: 9},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	set, ok := runtime.SetQuickslot(4, loginticket.Quickslot{Type: 1, Slot: 6})
+	if !ok {
+		t.Fatal("expected quickslot set to succeed")
+	}
+	if set.Position != 4 || set.Type != 1 || set.Slot != 6 {
+		t.Fatalf("unexpected set quickslot result: %+v", set)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 3, Type: 1, Slot: 5},
+		{Position: 4, Type: 1, Slot: 6},
+		{Position: 7, Type: 2, Slot: 9},
+	}) {
+		t.Fatalf("unexpected live quickslots after set: %#v", got)
+	}
+
+	duplicate, ok := runtime.SetQuickslot(8, loginticket.Quickslot{Type: 1, Slot: 6})
+	if !ok || duplicate.Position != 8 {
+		t.Fatalf("expected duplicate quickslot target to move to position 8, got %+v ok=%v", duplicate, ok)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 3, Type: 1, Slot: 5},
+		{Position: 7, Type: 2, Slot: 9},
+		{Position: 8, Type: 1, Slot: 6},
+	}) {
+		t.Fatalf("unexpected live quickslots after duplicate move: %#v", got)
+	}
+
+	deleted, ok := runtime.DeleteQuickslot(3)
+	if !ok || deleted.Position != 3 {
+		t.Fatalf("expected quickslot delete to return position 3, got %+v ok=%v", deleted, ok)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 7, Type: 2, Slot: 9},
+		{Position: 8, Type: 1, Slot: 6},
+	}) {
+		t.Fatalf("unexpected live quickslots after delete: %#v", got)
+	}
+
+	swap, ok := runtime.SwapQuickslots(8, 7)
+	if !ok || swap.Position != 8 || swap.TargetPosition != 7 {
+		t.Fatalf("expected quickslot swap 8<->7, got %+v ok=%v", swap, ok)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 7, Type: 1, Slot: 6},
+		{Position: 8, Type: 2, Slot: 9},
+	}) {
+		t.Fatalf("unexpected live quickslots after swap: %#v", got)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Quickslots, persisted.Quickslots) {
+		t.Fatalf("expected persisted quickslots to remain unchanged, got %#v", runtime.PersistedSnapshot().Quickslots)
+	}
+}
+
+func TestRuntimeSetQuickslotRejectsInvalidInputs(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	invalid := []struct {
+		name     string
+		position uint8
+		slot     loginticket.Quickslot
+	}{
+		{name: "quickslot position", position: 36, slot: loginticket.Quickslot{Type: 1, Slot: 5}},
+		{name: "type", position: 3, slot: loginticket.Quickslot{Type: 4, Slot: 5}},
+		{name: "item slot", position: 3, slot: loginticket.Quickslot{Type: 1, Slot: 90}},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, ok := runtime.SetQuickslot(tc.position, tc.slot); ok {
+				t.Fatalf("expected invalid %s quickslot to fail closed", tc.name)
+			}
+		})
+	}
+	if got := runtime.LiveQuickslots(); len(got) != 0 {
+		t.Fatalf("expected rejected quickslots to leave live state empty, got %#v", got)
 	}
 }
 

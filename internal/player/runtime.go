@@ -6,8 +6,11 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
+
+const quickslotMaxNum uint8 = 36
 
 type SessionLink struct {
 	Login          string
@@ -15,13 +18,14 @@ type SessionLink struct {
 }
 
 type Runtime struct {
-	persisted     loginticket.Character
-	live          worldruntime.Position
-	liveGold      uint64
-	livePoints    [255]int32
-	liveInventory []inventory.ItemInstance
-	liveEquipment []inventory.ItemInstance
-	sessionLink   SessionLink
+	persisted      loginticket.Character
+	live           worldruntime.Position
+	liveGold       uint64
+	livePoints     [255]int32
+	liveInventory  []inventory.ItemInstance
+	liveEquipment  []inventory.ItemInstance
+	liveQuickslots []loginticket.Quickslot
+	sessionLink    SessionLink
 }
 
 type ItemUseResult struct {
@@ -59,6 +63,11 @@ type MerchantSellResult struct {
 	Gold        uint64
 }
 
+type QuickslotSwapResult struct {
+	Position       uint8
+	TargetPosition uint8
+}
+
 type MerchantBuyFailure string
 
 const (
@@ -92,6 +101,7 @@ func (r *Runtime) LiveCharacter() loginticket.Character {
 	live.Points = r.livePoints
 	live.Inventory = cloneItemInstances(r.liveInventory)
 	live.Equipment = cloneItemInstances(r.liveEquipment)
+	live.Quickslots = cloneQuickslots(r.liveQuickslots)
 	return live
 }
 
@@ -121,6 +131,13 @@ func (r *Runtime) LiveEquipment() []inventory.ItemInstance {
 		return []inventory.ItemInstance{}
 	}
 	return cloneItemInstances(r.liveEquipment)
+}
+
+func (r *Runtime) LiveQuickslots() []loginticket.Quickslot {
+	if r == nil {
+		return []loginticket.Quickslot{}
+	}
+	return cloneQuickslots(r.liveQuickslots)
 }
 
 func (r *Runtime) SetLivePosition(mapIndex uint32, x int32, y int32) {
@@ -157,6 +174,59 @@ func (r *Runtime) MoveInventoryItem(from inventory.SlotIndex, to inventory.SlotI
 	}
 	result := inventory.MoveResult{From: from, To: to}
 	return r.moveInventoryItemFullStack(from, to, result)
+}
+
+func (r *Runtime) SetQuickslot(position uint8, slot loginticket.Quickslot) (loginticket.Quickslot, bool) {
+	if r == nil || !validQuickslotPosition(position) || !validQuickslotTuple(slot) {
+		return loginticket.Quickslot{}, false
+	}
+	updated := cloneQuickslots(r.liveQuickslots)
+	for i := 0; i < len(updated); {
+		if updated[i].Type == slot.Type && updated[i].Slot == slot.Slot {
+			updated = append(updated[:i], updated[i+1:]...)
+			continue
+		}
+		i++
+	}
+	result := loginticket.Quickslot{Position: position, Type: slot.Type, Slot: slot.Slot}
+	if index := findQuickslotPosition(updated, position); index >= 0 {
+		updated[index] = result
+	} else {
+		updated = append(updated, result)
+	}
+	sortQuickslots(updated)
+	r.liveQuickslots = updated
+	return result, true
+}
+
+func (r *Runtime) DeleteQuickslot(position uint8) (loginticket.Quickslot, bool) {
+	if r == nil || !validQuickslotPosition(position) {
+		return loginticket.Quickslot{}, false
+	}
+	updated := cloneQuickslots(r.liveQuickslots)
+	if index := findQuickslotPosition(updated, position); index >= 0 {
+		updated = append(updated[:index], updated[index+1:]...)
+	}
+	r.liveQuickslots = updated
+	return loginticket.Quickslot{Position: position}, true
+}
+
+func (r *Runtime) SwapQuickslots(position uint8, targetPosition uint8) (QuickslotSwapResult, bool) {
+	if r == nil || !validQuickslotPosition(position) || !validQuickslotPosition(targetPosition) {
+		return QuickslotSwapResult{}, false
+	}
+	updated := cloneQuickslots(r.liveQuickslots)
+	leftIndex := findQuickslotPosition(updated, position)
+	rightIndex := findQuickslotPosition(updated, targetPosition)
+	if leftIndex >= 0 {
+		updated[leftIndex].Position = targetPosition
+	}
+	if rightIndex >= 0 {
+		updated[rightIndex].Position = position
+	}
+	sortQuickslots(updated)
+	r.liveQuickslots = updated
+	return QuickslotSwapResult{Position: position, TargetPosition: targetPosition}, true
 }
 
 func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventory.SlotIndex, maxCount uint16) (inventory.MoveResult, bool) {
@@ -676,8 +746,10 @@ func (r *Runtime) ApplyPersistedSnapshot(persisted loginticket.Character) {
 	r.livePoints = r.persisted.Points
 	r.liveInventory = cloneItemInstances(r.persisted.Inventory)
 	r.liveEquipment = cloneItemInstances(r.persisted.Equipment)
+	r.liveQuickslots = cloneQuickslots(r.persisted.Quickslots)
 	sortInventoryItems(r.liveInventory)
 	sortEquipmentItems(r.liveEquipment)
+	sortQuickslots(r.liveQuickslots)
 }
 
 func (r *Runtime) SetPersistedSnapshot(persisted loginticket.Character) {
@@ -713,6 +785,13 @@ func cloneItemInstances(items []inventory.ItemInstance) []inventory.ItemInstance
 		return []inventory.ItemInstance{}
 	}
 	return append([]inventory.ItemInstance(nil), items...)
+}
+
+func cloneQuickslots(quickslots []loginticket.Quickslot) []loginticket.Quickslot {
+	if quickslots == nil {
+		return []loginticket.Quickslot{}
+	}
+	return append([]loginticket.Quickslot(nil), quickslots...)
 }
 
 func (r *Runtime) nextSplitItemID() uint64 {
@@ -884,6 +963,38 @@ func sortEquipmentItems(items []inventory.ItemInstance) {
 		}
 		return items[i].ID < items[j].ID
 	})
+}
+
+func sortQuickslots(quickslots []loginticket.Quickslot) {
+	sort.Slice(quickslots, func(i int, j int) bool {
+		return quickslots[i].Position < quickslots[j].Position
+	})
+}
+
+func findQuickslotPosition(quickslots []loginticket.Quickslot, position uint8) int {
+	for index, quickslot := range quickslots {
+		if quickslot.Position == position {
+			return index
+		}
+	}
+	return -1
+}
+
+func validQuickslotPosition(position uint8) bool {
+	return position < quickslotMaxNum
+}
+
+func validQuickslotTuple(slot loginticket.Quickslot) bool {
+	switch slot.Type {
+	case quickslotproto.TypeItem:
+		return slot.Slot < uint8(inventory.CarriedInventorySlotCount)
+	case quickslotproto.TypeSkill:
+		return true
+	case quickslotproto.TypeCommand:
+		return true
+	default:
+		return false
+	}
 }
 
 func equipmentSlotOrderIndex() map[inventory.EquipmentSlot]int {

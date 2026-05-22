@@ -375,7 +375,8 @@ Run this only when the selected QA character has persisted quickslots in its boo
 Expected result:
 - persisted selected-character quickslots are replayed as self-only `QUICKSLOT_ADD` bootstrap frames after the selected-character presence/state burst
 - quickslot entries are stable across auth/login-ticket handoff and reconnect
-- client-authored quickslot edits may still fail closed until the dedicated runtime mutation slice lands
+- client-authored quickslot add/delete/swap edits return the matching self-only quickslot refresh frame, persist to the selected-character snapshot, and survive reconnect
+- automatic item-mutation quickslot synchronization is still pending, so moving or consuming an item may not yet update an existing item quickslot automatically
 
 ### 5.7 Counted carried-slot `ITEM_MOVE` stack bounds
 
