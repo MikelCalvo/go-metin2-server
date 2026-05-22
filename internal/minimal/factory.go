@@ -2028,11 +2028,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							pointChange = &result
 						}
-						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), inventory.SlotIndex(packet.Source.Cell), equippedItem, pointChange)
+						fromSlot := inventory.SlotIndex(packet.Source.Cell)
+						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), fromSlot, equippedItem, pointChange)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
 							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						if quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, fromSlot); !ok {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.ItemMoveResult{Accepted: false}
+						} else {
+							frames = append(frames, quickslotFrames...)
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot)
 						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)

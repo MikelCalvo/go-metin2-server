@@ -1415,6 +1415,7 @@ func TestNewGameSessionFactoryItemMovePacketEquipsInventoryItem(t *testing.T) {
 	characters := stubCharacters()
 	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}}
 	characters[1].Equipment = []inventory.ItemInstance{}
+	characters[1].Quickslots = []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}}
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
 	}
@@ -1450,8 +1451,8 @@ func TestNewGameSessionFactoryItemMovePacketEquipsInventoryItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected item-move equip error: %v", err)
 	}
-	if len(equipOut) != 3 {
-		t.Fatalf("expected delete+set+update frames for packet equip, got %d", len(equipOut))
+	if len(equipOut) != 4 {
+		t.Fatalf("expected delete+set+update+quickslot-del frames for packet equip, got %d", len(equipOut))
 	}
 	delPacket, err := itemproto.DecodeDel(decodeSingleFrame(t, equipOut[0]))
 	if err != nil {
@@ -1470,6 +1471,13 @@ func TestNewGameSessionFactoryItemMovePacketEquipsInventoryItem(t *testing.T) {
 	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[2])); err != nil {
 		t.Fatalf("decode packet equip character update: %v", err)
 	}
+	quickslotDelPacket, err := quickslotproto.DecodeDel(decodeSingleFrame(t, equipOut[3]))
+	if err != nil {
+		t.Fatalf("decode packet equip quickslot delete: %v", err)
+	}
+	if quickslotDelPacket.Position != 4 {
+		t.Fatalf("unexpected packet equip quickslot delete packet: %+v", quickslotDelPacket)
+	}
 	account, err := accounts.Load(StubLogin)
 	if err != nil {
 		t.Fatalf("load persisted account: %v", err)
@@ -1479,6 +1487,9 @@ func TestNewGameSessionFactoryItemMovePacketEquipsInventoryItem(t *testing.T) {
 	}
 	if !reflect.DeepEqual(account.Characters[1].Equipment, []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}) {
 		t.Fatalf("unexpected persisted equipment after packet equip: %#v", account.Characters[1].Equipment)
+	}
+	if len(account.Characters[1].Quickslots) != 0 {
+		t.Fatalf("expected persisted quickslots to delete equipped item reference, got %#v", account.Characters[1].Quickslots)
 	}
 }
 
