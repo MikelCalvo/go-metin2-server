@@ -177,7 +177,13 @@ func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventor
 		return r.moveInventoryItemFullStack(from, to, result)
 	}
 	destinationItem := r.liveInventory[toIndex]
-	if destinationItem.Locked || destinationItem.Vnum != sourceItem.Vnum || destinationItem.Count >= maxCount {
+	if destinationItem.Locked {
+		return inventory.MoveResult{}, false
+	}
+	if destinationItem.Vnum != sourceItem.Vnum {
+		return r.moveInventoryItemFullStack(from, to, result)
+	}
+	if destinationItem.Count >= maxCount {
 		return inventory.MoveResult{}, false
 	}
 	mergeCount := sourceItem.Count

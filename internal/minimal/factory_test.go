@@ -758,7 +758,7 @@ func TestNewGameSessionFactoryInventoryMovePersistsAndEmitsDeleteThenSet(t *test
 	}
 }
 
-func TestNewGameSessionFactoryItemMovePacketRejectsIncompatibleOccupiedDestinationWithoutCount(t *testing.T) {
+func TestNewGameSessionFactoryItemMovePacketSwapsIncompatibleOccupiedDestinationWithoutCount(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	characters := stubCharacters()
@@ -802,15 +802,32 @@ func TestNewGameSessionFactoryItemMovePacketRejectsIncompatibleOccupiedDestinati
 	if err != nil {
 		t.Fatalf("unexpected occupied-destination item move packet error: %v", err)
 	}
-	if len(moveOut) != 0 {
-		t.Fatalf("expected incompatible occupied-destination item move without count to fail closed with no frames, got %d", len(moveOut))
+	if len(moveOut) != 2 {
+		t.Fatalf("expected two item-set frames for incompatible occupied-destination item move swap without count, got %d", len(moveOut))
+	}
+	fromPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode item-move swap source refresh: %v", err)
+	}
+	if fromPacket.Position != itemproto.InventoryPosition(5) || fromPacket.Vnum != 0x55667788 || fromPacket.Count != 1 {
+		t.Fatalf("unexpected item-move swap source refresh: %+v", fromPacket)
+	}
+	toPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, moveOut[1]))
+	if err != nil {
+		t.Fatalf("decode item-move swap destination refresh: %v", err)
+	}
+	if toPacket.Position != itemproto.InventoryPosition(8) || toPacket.Vnum != 0x11223344 || toPacket.Count != 3 {
+		t.Fatalf("unexpected item-move swap destination refresh: %+v", toPacket)
 	}
 	account, err := accounts.Load(StubLogin)
 	if err != nil {
 		t.Fatalf("load persisted account: %v", err)
 	}
-	if !reflect.DeepEqual(account.Characters[1].Inventory, characters[1].Inventory) {
-		t.Fatalf("expected incompatible occupied-destination item move to leave persisted inventory unchanged, got %#v want %#v", account.Characters[1].Inventory, characters[1].Inventory)
+	if !reflect.DeepEqual(account.Characters[1].Inventory, []inventory.ItemInstance{
+		{ID: 2002, Vnum: 0x55667788, Count: 1, Slot: 5},
+		{ID: 1001, Vnum: 0x11223344, Count: 3, Slot: 8},
+	}) {
+		t.Fatalf("unexpected persisted inventory after item-move swap: %#v", account.Characters[1].Inventory)
 	}
 }
 
