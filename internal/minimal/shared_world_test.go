@@ -12308,6 +12308,7 @@ func TestGameSessionFlowItemMovePacketMergesPartialStackWithItemUpdateFrames(t *
 		{ID: 77, Vnum: 27001, Count: 3, Slot: 5},
 		{ID: 78, Vnum: 27001, Count: 197, Slot: 8},
 	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 	issuePeerTicket(t, store, "packet-move-merge-owner", 0x50505052, owner)
 	if err := accounts.Save(accountstore.Account{Login: "packet-move-merge-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed merge packet item-move owner account: %v", err)
@@ -12324,7 +12325,7 @@ func TestGameSessionFlowItemMovePacketMergesPartialStackWithItemUpdateFrames(t *
 		t.Fatalf("unexpected partial-merge item-move packet error: %v", err)
 	}
 	if len(out) != 2 {
-		t.Fatalf("expected partial merge to emit 2 item refresh frames, got %d", len(out))
+		t.Fatalf("expected partial merge to emit 2 item refresh frames without quickslot sync, got %d", len(out))
 	}
 	fromUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -12353,6 +12354,72 @@ func TestGameSessionFlowItemMovePacketMergesPartialStackWithItemUpdateFrames(t *
 	}
 	if len(persisted.Characters[0].Inventory) != 2 || persisted.Characters[0].Inventory[0].Slot != 5 || persisted.Characters[0].Inventory[0].Count != 1 || persisted.Characters[0].Inventory[1].Slot != 8 || persisted.Characters[0].Inventory[1].Count != 199 {
 		t.Fatalf("unexpected persisted inventory after partial merge: %+v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}) {
+		t.Fatalf("expected partial merge to keep source quickslot unchanged while source remains occupied, got %+v", persisted.Characters[0].Quickslots)
+	}
+}
+
+func TestGameSessionFlowItemMovePacketExactFullStackMergeSyncsSourceQuickslotToDestination(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PacketMoveExactMergeQuickslot", 0x01030513, 0x02040513, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 77, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 78, Vnum: 27001, Count: 198, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, store, "move-exact-qs", 0x50505053, owner)
+	if err := accounts.Save(accountstore.Account{Login: "move-exact-qs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exact-merge packet item-move owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "move-exact-qs", 0x50505053)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: itemproto.InventoryPosition(8), Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected exact-merge item-move packet error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected exact full-stack merge to emit item delete, destination update, and quickslot sync, got %d", len(out))
+	}
+	if del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0])); err != nil || del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected exact-merge source delete: %+v err=%v", del, err)
+	}
+	if update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1])); err != nil || update.Position != itemproto.InventoryPosition(8) || update.Count != 200 {
+		t.Fatalf("unexpected exact-merge destination update: %+v err=%v", update, err)
+	}
+	quickslotAdd, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode exact-merge quickslot sync: %v", err)
+	}
+	if quickslotAdd.Position != 2 || quickslotAdd.Slot.Type != quickslotproto.TypeItem || quickslotAdd.Slot.Position != 8 {
+		t.Fatalf("expected exact merge to update only item quickslot to destination slot 8, got %+v", quickslotAdd)
+	}
+
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after exact-merge item-move packet")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Slot != 8 || inventorySnapshot.Inventory[0].Count != 200 {
+		t.Fatalf("expected runtime inventory to reflect exact merge, got %+v", inventorySnapshot.Inventory)
+	}
+	persisted, err := accounts.Load("move-exact-qs")
+	if err != nil {
+		t.Fatalf("load persisted exact-merge item-move owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}) {
+		t.Fatalf("unexpected persisted quickslots after exact merge: %+v", persisted.Characters[0].Quickslots)
 	}
 }
 

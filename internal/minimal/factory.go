@@ -2864,7 +2864,10 @@ func buildSelectedItemBootstrapFrames(character loginticket.Character) ([][]byte
 }
 
 func itemMoveQuickslotSyncFrames(selectedPlayer *player.Runtime, result inventory.MoveResult) ([][]byte, bool) {
-	if selectedPlayer == nil || !result.Changed || result.CountOnly || result.From == result.To {
+	if selectedPlayer == nil || !result.Changed || result.From == result.To {
+		return nil, true
+	}
+	if result.CountOnly && result.FromOccupied {
 		return nil, true
 	}
 	changed, ok := selectedPlayer.SyncItemQuickslotsForInventoryMove(result.From, result.To)

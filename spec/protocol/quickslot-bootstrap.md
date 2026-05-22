@@ -152,10 +152,10 @@ When an accepted merchant `SHOP SELL` / `SELL2` removes a whole carried-inventor
 
 The current owned synchronization is intentionally narrow:
 
-- move synchronization applies only to accepted full-stack carried-inventory moves where `from != to`;
+- move synchronization applies to accepted carried-inventory mutations where the source cell becomes empty and the moved item now lives at a different carried cell, including exact counted full-stack compatible merges;
 - removal synchronization applies only to accepted last-stack carried-inventory `ITEM_USE` paths and accepted whole-stack merchant sell paths where the item slot becomes empty;
 - it does not rewrite or delete skill or command quickslots that happen to carry the same byte value;
-- move synchronization does not run for count-only merges or partial-stack splits, because the original item still remains at the source cell;
+- move synchronization does not run for partial merges or partial-stack splits where the original item still remains at the source cell;
 - merchant partial-stack `SELL2` does not delete quickslots, because the original item still remains at the source cell;
 - it does not yet delete item quickslots when safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths clear an item cell.
 

@@ -10,7 +10,7 @@ Owned in this slice:
 - The request is limited to carried inventory slots in the bootstrap runtime.
 - Same-position move requests fail closed before runtime mutation, matching the legacy dupe-guard behavior.
 - Full-stack moves into empty carried slots, full-stack swaps with incompatible occupied carried slots, counted partial splits, counted partial merges, and exact counted full-stack merges into a compatible destination use the same runtime inventory mutation path.
-- Successful mutations are self-only and refresh the touched inventory cells with existing item packets.
+- Successful mutations are self-only and refresh the touched inventory cells with existing item packets. When the source carried cell becomes empty and an item quickslot points at that source cell, the runtime also appends the existing `GC::QUICKSLOT_ADD` refresh to retarget that item quickslot to the destination cell.
 
 Not owned yet:
 
@@ -69,7 +69,7 @@ The bootstrap runtime emits only self-facing item refresh frames for the mutated
 - full-stack swap with an incompatible occupied slot: `GC_ITEM_SET(source with former destination item)` then `GC_ITEM_SET(destination with former source item)`;
 - counted partial split into an empty slot: `GC_ITEM_SET(source remainder)` then `GC_ITEM_SET(destination split stack)`;
 - counted or zero-count partial merge into a compatible destination: `GC_ITEM_UPDATE(source remainder count)` then `GC_ITEM_UPDATE(destination merged count)`;
-- exact counted or zero-count full-stack merge into a compatible destination: `GC_ITEM_DEL(source)` then `GC_ITEM_UPDATE(destination merged count)`.
+- exact counted or zero-count full-stack merge into a compatible destination: `GC_ITEM_DEL(source)` then `GC_ITEM_UPDATE(destination merged count)`, followed by one `GC_QUICKSLOT_ADD` per matching item quickslot retargeted from source cell to destination cell.
 
 The same mutation is persisted to the account snapshot after the response frames are built. If frame generation fails, the selected player runtime rolls back to the previous persisted snapshot before reporting rejection.
 
