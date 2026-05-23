@@ -252,6 +252,82 @@ func TestGameRuntimeRadiusAOIItemDropPickupRebuildsGroundVisibilityOnMove(t *tes
 	}
 }
 
+func TestGameRuntimeExactPositionTransferRebuildsGroundItemVisibility(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	sourceDropper := peerVisibilityCharacter("TransferGroundSource", 0x01030178, 0x02040178, 1100, 2100, 0, 101, 201)
+	sourceDropper.Inventory = []inventory.ItemInstance{{ID: 1006, Vnum: 27005, Count: 1, Slot: 8}}
+	mover := peerVisibilityCharacter("TransferGroundMover", 0x01030179, 0x02040179, 1300, 2300, 0, 101, 201)
+	destDropper := peerVisibilityCharacter("TransferGroundDest", 0x0103017a, 0x0204017a, 1700, 2800, 0, 101, 201)
+	destDropper.MapIndex = 42
+	destDropper.Inventory = []inventory.ItemInstance{{ID: 1007, Vnum: 27006, Count: 1, Slot: 9}}
+	issuePeerTicket(t, ticketStore, "transfer-ground-source", 0x78787878, sourceDropper)
+	issuePeerTicket(t, ticketStore, "transfer-ground-mover", 0x79797979, mover)
+	issuePeerTicket(t, ticketStore, "transfer-ground-dest", 0x7a7a7a7a, destDropper)
+	for _, account := range []accountstore.Account{
+		{Login: "transfer-ground-source", Empire: sourceDropper.Empire, Characters: cloneCharacters([]loginticket.Character{sourceDropper})},
+		{Login: "transfer-ground-mover", Empire: mover.Empire, Characters: cloneCharacters([]loginticket.Character{mover})},
+		{Login: "transfer-ground-dest", Empire: destDropper.Empire, Characters: cloneCharacters([]loginticket.Character{destDropper})},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("seed %s account: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndTransferTriggers(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, []bootstrapTransferTrigger{{
+		SourceMapIndex: bootstrapMapIndex,
+		SourceX:        1500,
+		SourceY:        2600,
+		TargetMapIndex: 42,
+		TargetX:        1700,
+		TargetY:        2800,
+	}})
+	if err != nil {
+		t.Fatalf("unexpected transfer ground runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+	sourceFlow, _ := enterGameWithLoginTicket(t, factory, "transfer-ground-source", 0x78787878)
+	moverFlow, _ := enterGameWithLoginTicket(t, factory, "transfer-ground-mover", 0x79797979)
+	destFlow, _ := enterGameWithLoginTicket(t, factory, "transfer-ground-dest", 0x7a7a7a7a)
+	flushServerFrames(t, sourceFlow)
+	flushServerFrames(t, moverFlow)
+	flushServerFrames(t, destFlow)
+
+	sourceGround := dropAndDecodeGroundAdd(t, sourceFlow, itemproto.InventoryPosition(8))
+	if queued := flushServerFrames(t, moverFlow); len(queued) != 1 {
+		t.Fatalf("expected mover to see source-map ground add before transfer, got %d frames", len(queued))
+	}
+	destGround := dropAndDecodeGroundAdd(t, destFlow, itemproto.InventoryPosition(9))
+	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
+		t.Fatalf("expected mover to miss destination-map ground add before transfer, got %d frames", len(queued))
+	}
+
+	moveOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x51525354})))
+	if err != nil {
+		t.Fatalf("unexpected transfer move error: %v", err)
+	}
+	if len(moveOut) != 10 {
+		t.Fatalf("expected self bootstrap, peer del/add, and ground del/add transfer frames, got %d", len(moveOut))
+	}
+	sourceDelete, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, moveOut[8]))
+	if err != nil {
+		t.Fatalf("decode transfer source ground delete: %v", err)
+	}
+	if sourceDelete.VID != sourceGround.VID {
+		t.Fatalf("unexpected source ground delete after transfer: got %+v want vid %d", sourceDelete, sourceGround.VID)
+	}
+	destAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, moveOut[9]))
+	if err != nil {
+		t.Fatalf("decode transfer destination ground add: %v", err)
+	}
+	if destAdd != destGround {
+		t.Fatalf("unexpected destination ground add after transfer: got %+v want %+v", destAdd, destGround)
+	}
+	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued mover frames after immediate transfer ground rebuild, got %d", len(queued))
+	}
+}
+
 func TestGameRuntimeItemPickupRejectsOtherSessionGroundHandle(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
