@@ -1504,20 +1504,25 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
-			if characterInventorySlotOccupied(previousSelected.Inventory, droppedItem.Slot) {
+			pickupSlot, ok := firstAvailableCarriedInventorySlot(previousSelected.Inventory, droppedItem.Slot)
+			if !ok {
+				return nil, false
+			}
+			pickedItem, err := droppedItem.WithInventorySlot(pickupSlot)
+			if err != nil {
 				return nil, false
 			}
 			updatedSelected := selectedPlayer.LiveCharacter()
-			updatedSelected.Inventory = append(cloneInventoryItems(updatedSelected.Inventory), droppedItem)
+			updatedSelected.Inventory = append(cloneInventoryItems(updatedSelected.Inventory), pickedItem)
 			sortInventoryItemsBySlot(updatedSelected.Inventory)
 			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
-			position, err := itemproto.CarriedInventoryPosition(uint16(droppedItem.Slot))
+			position, err := itemproto.CarriedInventoryPosition(uint16(pickupSlot))
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
-			setFrame, err := encodeBootstrapItemFrame(position, droppedItem)
+			setFrame, err := encodeBootstrapItemFrame(position, pickedItem)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -3411,6 +3416,18 @@ func characterInventorySlotOccupied(items []inventory.ItemInstance, slot invento
 		}
 	}
 	return false
+}
+
+func firstAvailableCarriedInventorySlot(items []inventory.ItemInstance, preferred inventory.SlotIndex) (inventory.SlotIndex, bool) {
+	if preferred < inventory.CarriedInventorySlotCount && !characterInventorySlotOccupied(items, preferred) {
+		return preferred, true
+	}
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		if !characterInventorySlotOccupied(items, slot) {
+			return slot, true
+		}
+	}
+	return 0, false
 }
 
 func bootstrapGroundItemVID(character loginticket.Character, slot inventory.SlotIndex) uint32 {

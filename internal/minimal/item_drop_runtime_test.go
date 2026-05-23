@@ -328,6 +328,102 @@ func TestGameRuntimeExactPositionTransferRebuildsGroundItemVisibility(t *testing
 	}
 }
 
+func TestGameRuntimeItemPickupPlacesVisibleDropIntoFirstEmptySlotWhenOriginalSlotOccupied(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupFirstEmptyOwner", 0x0103017b, 0x0204017b, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1008, Vnum: 27007, Count: 2, Slot: 6}}
+	collector := peerVisibilityCharacter("PickupFirstEmptyCollector", 0x0103017c, 0x0204017c, 1450, 2450, 0, 101, 201)
+	collector.Inventory = []inventory.ItemInstance{{ID: 2008, Vnum: 27008, Count: 1, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "pickup-first-empty-owner", 0x7b7b7b7b, owner)
+	issuePeerTicket(t, ticketStore, "pickup-first-empty-collector", 0x7c7c7c7c, collector)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-first-empty-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup first-empty owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "pickup-first-empty-collector", Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
+		t.Fatalf("seed pickup first-empty collector account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected item-pickup runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-first-empty-owner", 0x7b7b7b7b)
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-first-empty-collector", 0x7c7c7c7c)
+	flushServerFrames(t, ownerFlow)
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+	flushServerFrames(t, collectorFlow)
+
+	pickupOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(pickupOut) != 2 {
+		t.Fatalf("expected occupied-original pickup to emit GROUND_DEL and ITEM_SET, got %d frames", len(pickupOut))
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode occupied-original pickup item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(0) || set.Vnum != 27007 || set.Count != 2 {
+		t.Fatalf("expected pickup to choose first empty slot 0, got %+v", set)
+	}
+	collectorAccount, err := accounts.Load("pickup-first-empty-collector")
+	if err != nil {
+		t.Fatalf("load pickup first-empty collector account: %v", err)
+	}
+	wantCollectorInventory := []inventory.ItemInstance{
+		{ID: 1008, Vnum: 27007, Count: 2, Slot: 0},
+		{ID: 2008, Vnum: 27008, Count: 1, Slot: 6},
+	}
+	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, wantCollectorInventory) {
+		t.Fatalf("unexpected persisted collector inventory after occupied-original pickup: got %#v want %#v", collectorAccount.Characters[0].Inventory, wantCollectorInventory)
+	}
+	if replayOut := pickupGroundItem(t, ownerFlow, ground.VID); len(replayOut) != 0 {
+		t.Fatalf("expected owner replay after occupied-original pickup to fail closed, got %d frames", len(replayOut))
+	}
+}
+
+func TestGameRuntimeItemPickupRejectsWhenNoCarriedSlotIsFree(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupFullOwner", 0x0103017d, 0x0204017d, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1009, Vnum: 27009, Count: 2, Slot: 6}}
+	collector := peerVisibilityCharacter("PickupFullCollector", 0x0103017e, 0x0204017e, 1450, 2450, 0, 101, 201)
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		collector.Inventory = append(collector.Inventory, inventory.ItemInstance{ID: uint64(3000 + slot), Vnum: 28000 + uint32(slot), Count: 1, Slot: slot})
+	}
+	issuePeerTicket(t, ticketStore, "pickup-full-owner", 0x7d7d7d7d, owner)
+	issuePeerTicket(t, ticketStore, "pickup-full-collector", 0x7e7e7e7e, collector)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-full-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup full owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "pickup-full-collector", Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
+		t.Fatalf("seed pickup full collector account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected full-inventory item-pickup runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-full-owner", 0x7d7d7d7d)
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-full-collector", 0x7e7e7e7e)
+	flushServerFrames(t, ownerFlow)
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+	flushServerFrames(t, collectorFlow)
+
+	if out := pickupGroundItem(t, collectorFlow, ground.VID); len(out) != 0 {
+		t.Fatalf("expected full-inventory pickup to fail closed, got %d frames", len(out))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected failed full-inventory pickup to leave owner without ground delete, got %d frames", len(queued))
+	}
+	collectorAccount, err := accounts.Load("pickup-full-collector")
+	if err != nil {
+		t.Fatalf("load pickup full collector account: %v", err)
+	}
+	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, collector.Inventory) {
+		t.Fatalf("expected full-inventory pickup to preserve persisted inventory, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
+	}
+}
+
 func TestGameRuntimeItemPickupRejectsOtherSessionGroundHandle(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

@@ -98,12 +98,13 @@ For the first visible-peer pickup runtime slice, accepted pickup is visible-worl
 1. Accepted drops are registered as temporary bootstrap ground handles at the dropper's current effective map/position after the selected character mutation is persisted.
 2. The dropper receives the same direct `GC::ITEM_GROUND_ADD` already owned by the first drop slice, and currently visible peers receive one queued `GC::ITEM_GROUND_ADD` for the same handle.
 3. `ITEM_PICKUP` is accepted when its `vid` matches a still-pending bootstrap ground handle in the collector's visible world.
-4. The item is restored into the collector's carried slot only if that original slot is still empty.
-5. The collector's selected character snapshot is persisted through the same account-store path used by drops before the handle is removed from the temporary ground table.
-6. The collector receives self `GC::ITEM_GROUND_DEL` first, then `GC::ITEM_SET` for the restored carried slot; other visible sessions receive one queued `GC::ITEM_GROUND_DEL`.
-7. While a temporary handle remains pending, later radius-AOI `MOVE` / `SYNC_POSITION` visibility transitions rebuild it for the moving/syncing session: crossing into the handle's visible world queues `GC::ITEM_GROUND_ADD` after ordinary player/static visibility transition frames, and crossing out queues `GC::ITEM_GROUND_DEL` after ordinary transition frames.
-8. Gameplay-triggered exact-position transfer also rebuilds pending ground-item visibility for the moved session as part of the immediate self rebootstrap result: source-map handles no longer visible to the destination emit `GC::ITEM_GROUND_DEL`, and destination handles newly visible after transfer emit `GC::ITEM_GROUND_ADD` after the existing self bootstrap, peer, and static-actor transfer frames.
-9. Replayed, unknown, invisible, or occupied-slot pickups fail closed with no frames.
+4. The item is restored into the collector's original carried slot when that slot is empty; if that original slot is occupied, the bootstrap runtime falls back to the lowest empty carried inventory slot.
+5. If no carried inventory slot is free, pickup fails closed and leaves the temporary ground handle pending.
+6. The collector's selected character snapshot is persisted through the same account-store path used by drops before the handle is removed from the temporary ground table.
+7. The collector receives self `GC::ITEM_GROUND_DEL` first, then `GC::ITEM_SET` for the restored carried slot; other visible sessions receive one queued `GC::ITEM_GROUND_DEL`.
+8. While a temporary handle remains pending, later radius-AOI `MOVE` / `SYNC_POSITION` visibility transitions rebuild it for the moving/syncing session: crossing into the handle's visible world queues `GC::ITEM_GROUND_ADD` after ordinary player/static visibility transition frames, and crossing out queues `GC::ITEM_GROUND_DEL` after ordinary transition frames.
+9. Gameplay-triggered exact-position transfer also rebuilds pending ground-item visibility for the moved session as part of the immediate self rebootstrap result: source-map handles no longer visible to the destination emit `GC::ITEM_GROUND_DEL`, and destination handles newly visible after transfer emit `GC::ITEM_GROUND_ADD` after the existing self bootstrap, peer, and static-actor transfer frames.
+10. Replayed, unknown, invisible, or no-free-slot pickups fail closed with no frames.
 
 The dropped ground item is still bootstrap-scoped rather than a durable shared-world entity. Reconnecting does not restore it as a ground entity, and broader ownership/range/despawn policy remains future work.
 
