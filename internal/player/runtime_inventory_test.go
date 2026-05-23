@@ -588,17 +588,33 @@ func TestRuntimeMoveInventoryItemCountRejectsIncompatibleOccupiedDestinationAndO
 	if _, ok := runtime.MoveInventoryItemCount(5, 8, 2); ok {
 		t.Fatal("expected partial stack move count into incompatible occupied destination to fail closed until swap-with-count semantics are owned")
 	}
-	if _, ok := runtime.MoveInventoryItemCount(5, 8, 3); ok {
-		t.Fatal("expected exact counted full-stack move into incompatible occupied destination to fail closed instead of swapping")
+	result, ok := runtime.MoveInventoryItemCount(5, 8, 3)
+	if !ok {
+		t.Fatal("expected exact counted full-stack move into incompatible occupied destination to behave as full-stack move")
 	}
+	if !result.Changed || !result.FromOccupied || !result.ToOccupied || result.FromItem.ID != 12 || result.FromItem.Slot != 5 || result.ToItem.ID != 11 || result.ToItem.Slot != 8 {
+		t.Fatalf("unexpected exact counted incompatible-destination full-stack move result: %+v", result)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 5},
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after exact counted incompatible-destination full-stack move: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after exact counted incompatible-destination full-stack move, got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+
+	persisted = inventoryRuntimeCharacterFixture()
+	runtime = NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 	if _, ok := runtime.MoveInventoryItemCount(5, 6, 4); ok {
 		t.Fatal("expected oversized stack move count to fail closed")
 	}
 	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
-		t.Fatalf("expected rejected counted moves to leave live inventory unchanged, got %#v", runtime.LiveInventory())
+		t.Fatalf("expected oversized counted move to leave live inventory unchanged, got %#v", runtime.LiveInventory())
 	}
 
-	result, ok := runtime.MoveInventoryItemCount(5, 6, 3)
+	result, ok = runtime.MoveInventoryItemCount(5, 6, 3)
 	if !ok {
 		t.Fatal("expected exact counted full-stack move into empty destination to succeed")
 	}

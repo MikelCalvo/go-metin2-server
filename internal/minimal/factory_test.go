@@ -2901,6 +2901,80 @@ func TestNewGameSessionFactoryItemMoveExactCountMergesFullStackIntoCompatibleDes
 	}
 }
 
+func TestNewGameSessionFactoryItemMoveExactCountSwapsIncompatibleFullStackDestination(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accountDir := t.TempDir()
+	accounts := accountstore.NewFileStore(accountDir)
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow := runtime.SessionFactory()()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, frame.Encode(worldproto.HeaderEnterGame, nil))); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	moveRaw := itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(8),
+		Count:       3,
+	})
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, moveRaw))
+	if err != nil {
+		t.Fatalf("unexpected item move error: %v", err)
+	}
+	if len(moveOut) != 2 {
+		t.Fatalf("expected source and destination item set frames for incompatible full-stack swap, got %d frames", len(moveOut))
+	}
+	sourceSet, err := itemproto.DecodeSet(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode source set: %v", err)
+	}
+	if sourceSet.Position != itemproto.InventoryPosition(5) || sourceSet.Vnum != 1120 || sourceSet.Count != 1 {
+		t.Fatalf("expected destination item to move into source slot, got %+v", sourceSet)
+	}
+	destinationSet, err := itemproto.DecodeSet(decodeSingleFrame(t, moveOut[1]))
+	if err != nil {
+		t.Fatalf("decode destination set: %v", err)
+	}
+	if destinationSet.Position != itemproto.InventoryPosition(8) || destinationSet.Vnum != 27001 || destinationSet.Count != 3 {
+		t.Fatalf("expected source stack to move into destination slot, got %+v", destinationSet)
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Inventory, []inventory.ItemInstance{
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 5},
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 8},
+	}) {
+		t.Fatalf("unexpected persisted inventory after exact counted incompatible full-stack swap: %#v", account.Characters[1].Inventory)
+	}
+}
+
 func TestNewGameRuntimeClearsSelectedCharacterItemStateSnapshotsOnClose(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	characters := stubCharacters()

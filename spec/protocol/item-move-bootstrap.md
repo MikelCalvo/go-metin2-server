@@ -17,7 +17,7 @@ Owned in this slice:
 Not owned yet:
 
 - Safebox, mall, belt, dragon-soul, or ground movement.
-- Counted move/swap semantics for incompatible occupied destinations beyond fail-closed rejection.
+- Counted partial move/swap semantics for incompatible occupied destinations beyond fail-closed rejection.
 - Stack splitting/merging outside carried inventory.
 - Cross-window drag/drop behavior.
 - Server-side pickup/drop packets or item ownership on the ground.
@@ -39,7 +39,7 @@ Payload size is 7 bytes:
 
 The current carried-inventory window is `WindowInventory = 1`. Equipment cells are addressed in the same bootstrap window as `InventoryMaxCell + wear_index`; the currently owned wear-index mapping is the same mapping already used for equipment bootstrap: body `0`, head `1`, shoes `2`, wrist `3`, weapon `4`, neck `5`, ear `6`, unique1 `7`, unique2 `8`, arrow `9`, shield `10`, and costume hair `20`.
 
-`count = 0` means a full-stack move. In the current owned packet path it succeeds when the destination carried slot is empty, swaps with an incompatible occupied carried slot, merges into a compatible stackable item that can accept at least one source item up to the source template's `max_count`, equips the source item into an empty owned equipment cell, or unequips an owned equipment-cell source into an empty carried slot. Non-zero `count` means a counted move bounded by the source item's template `max_count` when a valid template exists; counted equipment moves are not owned yet.
+`count = 0` means a full-stack move. In the current owned packet path it succeeds when the destination carried slot is empty, swaps with an incompatible occupied carried slot, merges into a compatible stackable item that can accept at least one source item up to the source template's `max_count`, equips the source item into an empty owned equipment cell, or unequips an owned equipment-cell source into an empty carried slot. Non-zero `count` means a counted move bounded by the source item's template `max_count` when a valid template exists; when the count covers the whole source stack and the carried destination is incompatible, the runtime treats the request as the same full-stack carried swap already owned for `count = 0`. Counted equipment moves are not owned yet.
 
 Reference-oracle evidence: the legacy item-move entrypoint delegates to the character item-move routine, whose carried-item path has an explicit same-position guard, a compatible-stack merge branch, and then a zero-count/full-stack occupied-cell movement path that swaps ordinary carried items instead of treating every incompatible occupied destination as a rejection. This repository owns only the project-written carried-inventory subset of that behavior.
 
@@ -59,10 +59,11 @@ The minimal runtime accepts an item move only when all of these are true:
 10. zero-count occupied-destination merges move as much of the source stack as the destination can accept, capped by `max_count`, and leave a source remainder when the destination fills first;
 11. counted moves do not exceed the source stack count or the relevant template `max_count`;
 12. if a counted move equals the source stack count and the destination is compatible, it merges into the destination stack instead of swapping items;
-13. incompatible occupied-destination swaps are owned only for `count = 0` full-stack moves;
-14. equipment destinations and sources are owned only for `WindowInventory` cells at `InventoryMaxCell + owned wear index`;
-15. packet equip succeeds only when the destination equipment slot is empty, the source stack exists and is not locked, and the runtime can encode the destination equipment cell;
-16. packet unequip succeeds only when the equipment source exists and is not locked, the destination carried slot is empty, and the runtime can encode both touched cells.
+13. incompatible occupied-destination swaps are owned for `count = 0` full-stack moves and for non-zero counts that are greater than or equal to the source stack count;
+14. partial incompatible occupied-destination moves still fail closed;
+15. equipment destinations and sources are owned only for `WindowInventory` cells at `InventoryMaxCell + owned wear index`;
+16. packet equip succeeds only when the destination equipment slot is empty, the source stack exists and is not locked, and the runtime can encode the destination equipment cell;
+17. packet unequip succeeds only when the equipment source exists and is not locked, the destination carried slot is empty, and the runtime can encode both touched cells.
 
 Rejected requests fail closed and emit no frames.
 
@@ -71,7 +72,7 @@ Rejected requests fail closed and emit no frames.
 The bootstrap runtime emits only self-facing item refresh frames for the mutated cells:
 
 - full-stack move into an empty slot: `GC_ITEM_DEL(source)` then `GC_ITEM_SET(destination)`;
-- full-stack swap with an incompatible occupied slot: `GC_ITEM_SET(source with former destination item)` then `GC_ITEM_SET(destination with former source item)`;
+- full-stack swap with an incompatible occupied slot, including a non-zero count that covers the whole source stack: `GC_ITEM_SET(source with former destination item)` then `GC_ITEM_SET(destination with former source item)`;
 - counted partial split into an empty slot: `GC_ITEM_SET(source remainder)` then `GC_ITEM_SET(destination split stack)`;
 - counted or zero-count partial merge into a compatible destination: `GC_ITEM_UPDATE(source remainder count)` then `GC_ITEM_UPDATE(destination merged count)`;
 - exact counted or zero-count full-stack merge into a compatible destination: `GC_ITEM_DEL(source)` then `GC_ITEM_UPDATE(destination merged count)`, followed by `GC_QUICKSLOT_DEL` for any stale destination item quickslot and one `GC_QUICKSLOT_ADD` per matching item quickslot retargeted from source cell to destination cell;
@@ -87,4 +88,4 @@ Current coverage:
 - `internal/proto/item` freezes the `CG::ITEM_MOVE` wire layout and invalid-header/payload rejection.
 - `internal/game` freezes GAME-phase dispatch to `HandleItemMove` and fail-closed denied behavior.
 - `internal/player` freezes runtime same-slot rejection, full-stack empty-destination, full-stack incompatible occupied-destination swaps, counted split/merge, exact counted full-stack compatible merge, max-count, counted incompatible-destination rejection, and locked-stack behavior.
-- `internal/minimal` freezes runtime persistence and self-frame behavior for slash-command full-stack movement and direct `CG::ITEM_MOVE` full-stack moves, direct incompatible full-stack swaps, locked-destination rejection, counted incompatible-destination rejection, counted partial splits, compatible occupied-destination partial merges, exact counted full-stack compatible merges, quickslot synchronization frames generated by those source-empty carried moves, quickslot deletion when direct `CG::ITEM_MOVE` equip removes a carried item, direct `CG::ITEM_MOVE` carried-to-equipment equip, and direct `CG::ITEM_MOVE` equipment-to-carried unequip.
+- `internal/minimal` freezes runtime persistence and self-frame behavior for slash-command full-stack movement and direct `CG::ITEM_MOVE` full-stack moves, direct incompatible full-stack swaps, exact-count incompatible full-stack swaps, locked-destination rejection, counted partial incompatible-destination rejection, counted partial splits, compatible occupied-destination partial merges, exact counted full-stack compatible merges, quickslot synchronization frames generated by those source-empty carried moves, quickslot deletion when direct `CG::ITEM_MOVE` equip removes a carried item, direct `CG::ITEM_MOVE` carried-to-equipment equip, and direct `CG::ITEM_MOVE` equipment-to-carried unequip.
