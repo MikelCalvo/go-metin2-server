@@ -796,7 +796,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 		var issuedPracticeMobServerOriginRetaliationSnapshotVersion uint64
 		var activeMerchantBuy merchantBuyContext
 		var hasActiveMerchantBuy bool
-		groundItemsByVID := make(map[uint32]inventory.ItemInstance)
 		interactionCooldowns := make(map[uint32]time.Time)
 		sessionNow := func() time.Time {
 			if runtime != nil && runtime.now != nil {
@@ -1487,7 +1486,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
-			groundItemsByVID[bootstrapGroundItemVID(previousSelected, result.From)] = droppedItem
+			if ownsLiveSharedWorldSession() {
+				sharedWorld.RegisterGroundItem(sharedWorldID, previousSelected, bootstrapGroundItemVID(previousSelected, result.From), droppedItem)
+			}
 			return frames, true
 		}
 		executeSelectedItemPickup := func(vid uint32) ([][]byte, bool) {
@@ -1498,11 +1499,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 				return nil, false
 			}
-			droppedItem, ok := groundItemsByVID[vid]
+			previousSelected := selectedPlayer.LiveCharacter()
+			droppedItem, ok := sharedWorld.GroundItemVisibleTo(sharedWorldID, previousSelected, vid)
 			if !ok {
 				return nil, false
 			}
-			previousSelected := selectedPlayer.LiveCharacter()
 			if characterInventorySlotOccupied(previousSelected.Inventory, droppedItem.Slot) {
 				return nil, false
 			}
@@ -1527,7 +1528,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
-			delete(groundItemsByVID, vid)
+			if ownsLiveSharedWorldSession() && !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
+				return nil, false
+			}
 			return frames, true
 		}
 

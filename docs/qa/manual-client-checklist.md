@@ -671,7 +671,26 @@ Expected result:
 - the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` / `ITEM_UPDATE` refresh family
 - non-carried windows and out-of-range cells fail closed without mutation
 
-### 6.20 Packet merchant sell-back smoke (packet-harness optional)
+### 6.20 Visible-peer item drop / pickup smoke (packet-harness optional)
+
+- [ ] Put client A and client B in the same visible bootstrap scope with client A carrying one disposable stack
+- [ ] Send one real client `ITEM_DROP` or `ITEM_DROP2` request from client A for that carried slot
+- [ ] Confirm client A receives its carried-slot mutation refresh followed by `GC::ITEM_GROUND_ADD`
+- [ ] Confirm visible client B receives one queued/rendered ground-item add for the same visible ground handle
+- [ ] Send one real client `ITEM_PICKUP` request from client B for that handle
+- [ ] Confirm client B receives `GC::ITEM_GROUND_DEL` followed by `GC::ITEM_SET` for the restored carried slot
+- [ ] Confirm client A sees the queued ground delete and no longer owns the dropped item in persisted inventory
+- [ ] Attempt a replayed pickup for the same handle and confirm it fails closed without extra item grants
+
+Expected result:
+- accepted drops publish one temporary bootstrap ground handle to currently visible peers
+- visible peers can collect the temporary handle after their carried destination slot is validated empty
+- the collector mutation persists before the temporary handle is removed
+- ground-item delete fanout reaches other visible sessions after successful pickup
+- replayed, unknown, invisible, or occupied-slot pickup attempts fail closed
+- reconnecting does not restore the temporary bootstrap ground handle as a durable world entity
+
+### 6.21 Packet merchant sell-back smoke (packet-harness optional)
 
 - [ ] Open a structured merchant `shop_preview` window while the QA character has at least one carried inventory stack
 - [ ] Send one real client `SHOP SELL` request for a carried slot containing a stack

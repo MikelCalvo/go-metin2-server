@@ -6,10 +6,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
@@ -42,7 +44,18 @@ type sharedWorldRegistry struct {
 	sessionCombatTargets            map[uint64]uint32
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
+	groundItemsByVID                map[uint32]sharedGroundItem
 	now                             func() time.Time
+}
+
+type sharedGroundItem struct {
+	VID      uint32
+	OwnerID  uint64
+	Item     inventory.ItemInstance
+	MapIndex uint32
+	X        int32
+	Y        int32
+	Z        int32
 }
 
 const (
@@ -208,6 +221,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		staticActorCombatSnapshot:  make(map[uint64]uint64),
 		staticActorCombatEngagedBy: make(map[uint64]uint64),
 		lastKnownCharacters:        make(map[uint64]loginticket.Character),
+		groundItemsByVID:           make(map[uint32]sharedGroundItem),
 		now:                        time.Now,
 	}
 }
@@ -797,6 +811,75 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 
 	_ = r.entities.UpdatePlayer(id, character)
 	r.lastKnownCharacters[id] = character
+}
+
+func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, character loginticket.Character, vid uint32, item inventory.ItemInstance) bool {
+	if r == nil || ownerID == 0 || vid == 0 || item.Vnum == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.playerCharacter(ownerID); !ok {
+		return false
+	}
+	ground := sharedGroundItem{
+		VID:      vid,
+		OwnerID:  ownerID,
+		Item:     item,
+		MapIndex: r.topology.EffectiveMapIndex(character),
+		X:        character.X,
+		Y:        character.Y,
+		Z:        character.Z,
+	}
+	r.groundItemsByVID[vid] = ground
+	frames := [][]byte{itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: vid, Vnum: item.Vnum, X: ground.X, Y: ground.Y, Z: ground.Z})}
+	for _, target := range r.scopesLocked().VisibleTargets(ownerID, character) {
+		r.enqueueToEntityLocked(target.Entity.ID, frames)
+	}
+	return true
+}
+
+func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector loginticket.Character, vid uint32) (inventory.ItemInstance, bool) {
+	if r == nil || collectorID == 0 || vid == 0 {
+		return inventory.ItemInstance{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.playerCharacter(collectorID); !ok {
+		return inventory.ItemInstance{}, false
+	}
+	ground, ok := r.groundItemsByVID[vid]
+	if !ok || !r.topology.SharesVisibleWorld(collector, loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y}) {
+		return inventory.ItemInstance{}, false
+	}
+	return ground.Item, true
+}
+
+func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector loginticket.Character, vid uint32) bool {
+	if r == nil || collectorID == 0 || vid == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.playerCharacter(collectorID); !ok {
+		return false
+	}
+	ground, ok := r.groundItemsByVID[vid]
+	if !ok || !r.topology.SharesVisibleWorld(collector, loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y}) {
+		return false
+	}
+	delete(r.groundItemsByVID, vid)
+	frames := [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid})}
+	for _, target := range r.scopesLocked().VisibleTargets(collectorID, collector) {
+		r.enqueueToEntityLocked(target.Entity.ID, frames)
+	}
+	return true
 }
 
 func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64, previous loginticket.Character, current loginticket.Character, stableFrames [][]byte) {

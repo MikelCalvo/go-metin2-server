@@ -1,6 +1,6 @@
 # Item drop and pickup bootstrap
 
-This note freezes the first clean-room packet, dispatch, and minimal runtime contract for the item ground-interaction family. The current runtime owns player-local drop mutation, a self-visible ground-add echo, and self-only pickup of ground handles created by the same session. Shared ground item state remains a later slice.
+This note freezes the first clean-room packet, dispatch, and minimal runtime contract for the item ground-interaction family. The current runtime owns player-local drop mutation, a self-visible ground-add echo, and visible-peer pickup of ground handles created by accepted drops. Broader shared ground item policy remains a later slice.
 
 Owned in this slice family:
 
@@ -19,7 +19,7 @@ Owned by the first runtime drop slice:
 
 Not owned yet:
 
-- shared ground item entity ownership, visibility fanout, despawn timing, anti-drop policy, trade/shop restrictions, or multi-player pickup authorization;
+- permanent/shared-world ground item entity IDs, ownership timers, despawn timing, anti-drop policy, trade/shop restrictions, or range/path authorization beyond current visible-world scope;
 - gold-drop semantics beyond freezing the client packet fields;
 - `GC::ITEM_DROP`, `GC::ITEM_OWNERSHIP`, or `GC::ITEM_GET` behavior.
 
@@ -80,7 +80,7 @@ Payload size is 4 bytes:
 
 ## Current runtime contract
 
-`internal/game` now recognizes all three client packets while already in `GAME` and routes decoded requests to dedicated handlers. The default handler behavior is deny/no-response. The shipped bootstrap runtime currently accepts carried-item drops plus self-only pickup of same-session ground handles created by those accepted drops.
+`internal/game` now recognizes all three client packets while already in `GAME` and routes decoded requests to dedicated handlers. The default handler behavior is deny/no-response. The shipped bootstrap runtime currently accepts carried-item drops plus visible-world pickup of temporary bootstrap ground handles created by those accepted drops.
 
 The `0x0502` header is shared by the already-owned carried-slot `ITEM_USE` request and the legacy `ITEM_DROP` request. Dispatch therefore uses the payload size: 3-byte payloads route to `ITEM_USE`, and 7-byte payloads route to `ITEM_DROP`. Other payload sizes fail closed at the codec layer.
 
@@ -93,15 +93,17 @@ For the first live runtime slice, accepted drops are self-facing and persistence
 5. The server returns the carried-slot mutation frame first (`GC::ITEM_DEL` or `GC::ITEM_UPDATE`), then any quickslot deletes, then one self-only `GC::ITEM_GROUND_ADD` at the selected character's current coordinates.
 6. The same session remembers that deterministic ground handle until it is picked up or the session ends.
 
-For the first pickup runtime slice, accepted pickup is deliberately self-only:
+For the first visible-peer pickup runtime slice, accepted pickup is visible-world scoped:
 
-1. `ITEM_PICKUP` is accepted only when its `vid` matches a still-pending ground handle produced by this same session's earlier accepted drop.
-2. The item is restored into its original carried slot only if that slot is still empty.
-3. The selected character snapshot is persisted through the same account-store path used by drops.
-4. The server returns self-only `GC::ITEM_GROUND_DEL` first, then `GC::ITEM_SET` for the restored carried slot.
-5. Replayed, unknown, cross-session, or occupied-slot pickups fail closed with no frames.
+1. Accepted drops are registered as temporary bootstrap ground handles at the dropper's current effective map/position after the selected character mutation is persisted.
+2. The dropper receives the same direct `GC::ITEM_GROUND_ADD` already owned by the first drop slice, and currently visible peers receive one queued `GC::ITEM_GROUND_ADD` for the same handle.
+3. `ITEM_PICKUP` is accepted when its `vid` matches a still-pending bootstrap ground handle in the collector's visible world.
+4. The item is restored into the collector's carried slot only if that original slot is still empty.
+5. The collector's selected character snapshot is persisted through the same account-store path used by drops before the handle is removed from the temporary ground table.
+6. The collector receives self `GC::ITEM_GROUND_DEL` first, then `GC::ITEM_SET` for the restored carried slot; other visible sessions receive one queued `GC::ITEM_GROUND_DEL`.
+7. Replayed, unknown, invisible, or occupied-slot pickups fail closed with no frames.
 
-The dropped ground item is not yet registered in shared-world state. Other players do not see it, cannot collect it, and reconnecting does not restore it as a ground entity.
+The dropped ground item is still bootstrap-scoped rather than a durable shared-world entity. Reconnecting does not restore it as a ground entity, and broader ownership/range/despawn policy remains future work.
 
 Reference-oracle evidence: the TMP4-compatible client exposes `SendItemDropPacket`, `SendItemDropPacketNew`, and `SendItemPickUpPacket` on the game socket, and consumes `GC::ITEM_GROUND_ADD` / `GC::ITEM_GROUND_DEL` to create and remove client-side ground item actors. This repository owns only the project-written field layouts and dispatch boundaries above.
 
@@ -109,4 +111,4 @@ Current coverage:
 
 - `internal/proto/item` freezes encode/decode round-trips for `ITEM_DROP`, `ITEM_DROP2`, `ITEM_PICKUP`, `ITEM_GROUND_ADD`, and `ITEM_GROUND_DEL`, plus unexpected-header and invalid-payload rejection for the new codecs.
 - `internal/game` freezes `GAME`-phase dispatch for `ITEM_DROP`, `ITEM_DROP2`, and `ITEM_PICKUP`, including the shared-header `ITEM_USE` / `ITEM_DROP` payload-size split.
-- `internal/minimal` accepts carried-item drop requests with self-only ground-add echoes and accepts self-only pickup of same-session dropped handles while shared ground item state remains deferred.
+- `internal/minimal` accepts carried-item drop requests with self ground-add echoes, queues matching ground-add echoes to currently visible peers, and accepts visible-world pickup of temporary bootstrap ground handles while durable ground item ownership remains deferred.

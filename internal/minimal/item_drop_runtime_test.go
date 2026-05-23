@@ -196,21 +196,64 @@ func TestGameRuntimeItemPickupRejectsOtherSessionGroundHandle(t *testing.T) {
 	}
 	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-owner", 0x47474747)
 	snooperFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-snooper", 0x57575757)
+	flushServerFrames(t, ownerFlow)
 	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
 
-	if out := pickupGroundItem(t, snooperFlow, ground.VID); len(out) != 0 {
-		t.Fatalf("expected cross-session pickup to fail closed, got %d frames", len(out))
+	if queued := flushServerFrames(t, snooperFlow); len(queued) != 1 {
+		t.Fatalf("expected visible peer to receive one dropped ground-item add, got %d frames", len(queued))
+	} else {
+		peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, queued[0]))
+		if err != nil {
+			t.Fatalf("decode peer ground add: %v", err)
+		}
+		if peerGround != ground {
+			t.Fatalf("unexpected peer ground add: got %+v want %+v", peerGround, ground)
+		}
 	}
-	ownerOut := pickupGroundItem(t, ownerFlow, ground.VID)
-	if len(ownerOut) != 2 {
-		t.Fatalf("expected owner pickup after cross-session denial to still succeed, got %d frames", len(ownerOut))
+
+	snooperOut := pickupGroundItem(t, snooperFlow, ground.VID)
+	if len(snooperOut) != 2 {
+		t.Fatalf("expected visible peer pickup to emit GROUND_DEL and ITEM_SET, got %d frames", len(snooperOut))
 	}
-	account, err := accounts.Load("pickup-owner")
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, snooperOut[0]))
+	if err != nil {
+		t.Fatalf("decode visible peer pickup ground del: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected visible peer pickup ground del: got %+v want vid %d", groundDel, ground.VID)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, snooperOut[1]))
+	if err != nil {
+		t.Fatalf("decode visible peer pickup item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27003 || set.Count != 2 {
+		t.Fatalf("unexpected visible peer pickup item set: %+v", set)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 1 {
+		t.Fatalf("expected drop owner to receive one queued ground delete after peer pickup, got %d frames", len(queued))
+	} else if ownerGroundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, queued[0])); err != nil {
+		t.Fatalf("decode owner queued ground del: %v", err)
+	} else if ownerGroundDel.VID != ground.VID {
+		t.Fatalf("unexpected owner queued ground del: got %+v want vid %d", ownerGroundDel, ground.VID)
+	}
+
+	if replayOut := pickupGroundItem(t, ownerFlow, ground.VID); len(replayOut) != 0 {
+		t.Fatalf("expected replayed owner pickup after peer collection to fail closed, got %d frames", len(replayOut))
+	}
+	ownerAccount, err := accounts.Load("pickup-owner")
 	if err != nil {
 		t.Fatalf("load pickup owner account: %v", err)
 	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("unexpected persisted owner inventory after pickup: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	if len(ownerAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected drop owner inventory to stay empty after peer pickup, got %#v", ownerAccount.Characters[0].Inventory)
+	}
+	snooperAccount, err := accounts.Load("pickup-snooper")
+	if err != nil {
+		t.Fatalf("load pickup snooper account: %v", err)
+	}
+	wantSnooperInventory := []inventory.ItemInstance{{ID: 1004, Vnum: 27003, Count: 2, Slot: 6}}
+	if !reflect.DeepEqual(snooperAccount.Characters[0].Inventory, wantSnooperInventory) {
+		t.Fatalf("unexpected persisted snooper inventory after pickup: got %#v want %#v", snooperAccount.Characters[0].Inventory, wantSnooperInventory)
 	}
 }
 
