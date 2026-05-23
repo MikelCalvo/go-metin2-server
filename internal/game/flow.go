@@ -36,7 +36,13 @@ type HandleAttackFunc func(combatproto.ClientAttackPacket) AttackResult
 
 type HandleItemUseFunc func(itemproto.ClientUsePacket) ItemUseResult
 
+type HandleItemDropFunc func(itemproto.ClientDropPacket) ItemDropResult
+
+type HandleItemDrop2Func func(itemproto.ClientDrop2Packet) ItemDrop2Result
+
 type HandleItemMoveFunc func(itemproto.ClientMovePacket) ItemMoveResult
+
+type HandleItemPickupFunc func(itemproto.ClientPickupPacket) ItemPickupResult
 
 type HandleQuickslotAddFunc func(quickslotproto.ClientAddPacket) QuickslotResult
 
@@ -61,7 +67,10 @@ type Config struct {
 	HandleTarget        HandleTargetFunc
 	HandleAttack        HandleAttackFunc
 	HandleItemUse       HandleItemUseFunc
+	HandleItemDrop      HandleItemDropFunc
+	HandleItemDrop2     HandleItemDrop2Func
 	HandleItemMove      HandleItemMoveFunc
+	HandleItemPickup    HandleItemPickupFunc
 	HandleQuickslotAdd  HandleQuickslotAddFunc
 	HandleQuickslotDel  HandleQuickslotDelFunc
 	HandleQuickslotSwap HandleQuickslotSwapFunc
@@ -115,7 +124,22 @@ type ItemUseResult struct {
 	Frames   [][]byte
 }
 
+type ItemDropResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
+type ItemDrop2Result struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type ItemMoveResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
+type ItemPickupResult struct {
 	Accepted bool
 	Frames   [][]byte
 }
@@ -140,7 +164,10 @@ type Flow struct {
 	handleTarget        HandleTargetFunc
 	handleAttack        HandleAttackFunc
 	handleItemUse       HandleItemUseFunc
+	handleItemDrop      HandleItemDropFunc
+	handleItemDrop2     HandleItemDrop2Func
 	handleItemMove      HandleItemMoveFunc
+	handleItemPickup    HandleItemPickupFunc
 	handleQuickslotAdd  HandleQuickslotAddFunc
 	handleQuickslotDel  HandleQuickslotDelFunc
 	handleQuickslotSwap HandleQuickslotSwapFunc
@@ -183,9 +210,21 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	if itemUseHandler == nil {
 		itemUseHandler = func(itemproto.ClientUsePacket) ItemUseResult { return ItemUseResult{Accepted: false} }
 	}
+	itemDropHandler := cfg.HandleItemDrop
+	if itemDropHandler == nil {
+		itemDropHandler = func(itemproto.ClientDropPacket) ItemDropResult { return ItemDropResult{Accepted: false} }
+	}
+	itemDrop2Handler := cfg.HandleItemDrop2
+	if itemDrop2Handler == nil {
+		itemDrop2Handler = func(itemproto.ClientDrop2Packet) ItemDrop2Result { return ItemDrop2Result{Accepted: false} }
+	}
 	itemMoveHandler := cfg.HandleItemMove
 	if itemMoveHandler == nil {
 		itemMoveHandler = func(itemproto.ClientMovePacket) ItemMoveResult { return ItemMoveResult{Accepted: false} }
+	}
+	itemPickupHandler := cfg.HandleItemPickup
+	if itemPickupHandler == nil {
+		itemPickupHandler = func(itemproto.ClientPickupPacket) ItemPickupResult { return ItemPickupResult{Accepted: false} }
 	}
 	quickslotAddHandler := cfg.HandleQuickslotAdd
 	if quickslotAddHandler == nil {
@@ -225,7 +264,10 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleTarget:        targetHandler,
 		handleAttack:        attackHandler,
 		handleItemUse:       itemUseHandler,
+		handleItemDrop:      itemDropHandler,
+		handleItemDrop2:     itemDrop2Handler,
 		handleItemMove:      itemMoveHandler,
+		handleItemPickup:    itemPickupHandler,
 		handleQuickslotAdd:  quickslotAddHandler,
 		handleQuickslotDel:  quickslotDelHandler,
 		handleQuickslotSwap: quickslotSwapHandler,
@@ -341,11 +383,32 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		}
 		return result.Frames, nil
 	case itemproto.HeaderClientUse:
-		packet, err := itemproto.DecodeClientUse(in)
+		if len(in.Payload) == 3 {
+			packet, err := itemproto.DecodeClientUse(in)
+			if err != nil {
+				return nil, err
+			}
+			result := f.handleItemUse(packet)
+			if !result.Accepted {
+				return nil, nil
+			}
+			return result.Frames, nil
+		}
+		packet, err := itemproto.DecodeClientDrop(in)
 		if err != nil {
 			return nil, err
 		}
-		result := f.handleItemUse(packet)
+		result := f.handleItemDrop(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case itemproto.HeaderClientDrop2:
+		packet, err := itemproto.DecodeClientDrop2(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleItemDrop2(packet)
 		if !result.Accepted {
 			return nil, nil
 		}
@@ -356,6 +419,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, err
 		}
 		result := f.handleItemMove(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case itemproto.HeaderClientPickup:
+		packet, err := itemproto.DecodeClientPickup(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleItemPickup(packet)
 		if !result.Accepted {
 			return nil, nil
 		}

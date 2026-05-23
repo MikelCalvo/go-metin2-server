@@ -100,6 +100,85 @@ func TestHandleClientFrameAcceptsItemMoveInGameAndReturnsHandlerFrames(t *testin
 	}
 }
 
+func TestHandleClientFrameAcceptsItemDropInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("item-drop")
+	flow := NewFlow(machine, Config{
+		HandleItemDrop: func(packet itemproto.ClientDropPacket) ItemDropResult {
+			if packet.Position != itemproto.InventoryPosition(5) || packet.Elk != 1234 {
+				t.Fatalf("unexpected item drop packet: %+v", packet)
+			}
+			return ItemDropResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{
+		Position: itemproto.InventoryPosition(5),
+		Elk:      1234,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected item drop error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler item-drop frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsItemDrop2InGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("item-drop2")
+	flow := NewFlow(machine, Config{
+		HandleItemDrop2: func(packet itemproto.ClientDrop2Packet) ItemDrop2Result {
+			if packet.Position != itemproto.InventoryPosition(5) || packet.Gold != 4321 || packet.Count != 3 {
+				t.Fatalf("unexpected item drop2 packet: %+v", packet)
+			}
+			return ItemDrop2Result{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{
+		Position: itemproto.InventoryPosition(5),
+		Gold:     4321,
+		Count:    3,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected item drop2 error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler item-drop2 frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameAcceptsItemPickupInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("item-pickup")
+	flow := NewFlow(machine, Config{
+		HandleItemPickup: func(packet itemproto.ClientPickupPacket) ItemPickupResult {
+			if packet.VID != 0x01020304 {
+				t.Fatalf("unexpected item pickup packet: %+v", packet)
+			}
+			return ItemPickupResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: 0x01020304})))
+	if err != nil {
+		t.Fatalf("unexpected item pickup error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler item-pickup frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsQuickslotAddInGameAndReturnsHandlerFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	wantFrame := []byte("quickslot-add")

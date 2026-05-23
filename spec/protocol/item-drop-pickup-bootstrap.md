@@ -1,18 +1,18 @@
 # Item drop and pickup bootstrap
 
-This note freezes the first clean-room packet contract for the item ground-interaction family. It is intentionally protocol-only for now: the runtime still rejects these packets until a later slice owns world item state, visibility, ownership, and persistence.
+This note freezes the first clean-room packet and dispatch contract for the item ground-interaction family. Runtime behavior remains intentionally fail-closed until a later slice owns ground item state, visibility, ownership, and persistence.
 
-Owned in this slice:
+Owned in this slice family:
 
-- client `CG::ITEM_DROP` codec shape;
-- client `CG::ITEM_DROP2` codec shape;
-- client `CG::ITEM_PICKUP` codec shape;
+- client `CG::ITEM_DROP` codec shape and `GAME` dispatch seam;
+- client `CG::ITEM_DROP2` codec shape and `GAME` dispatch seam;
+- client `CG::ITEM_PICKUP` codec shape and `GAME` dispatch seam;
 - server `GC::ITEM_GROUND_ADD` codec shape;
 - server `GC::ITEM_GROUND_DEL` codec shape.
 
 Not owned yet:
 
-- accepting item drop or pickup in `GAME`;
+- accepting item drop or pickup in the shipped bootstrap runtime;
 - mutating carried inventory as a result of drop/pickup;
 - ground item entity ownership, visibility fanout, despawn timing, anti-drop policy, trade/shop restrictions, or pickup authorization;
 - gold-drop semantics beyond freezing the client packet fields;
@@ -75,10 +75,16 @@ Payload size is 4 bytes:
 
 ## Current runtime contract
 
-These codecs are not yet wired into `internal/game` or `internal/minimal`. Until a later runtime slice owns ground item state, client-originated drop and pickup packets remain unsupported by the live `GAME` flow and should fail closed with no inventory mutation.
+`internal/game` now recognizes all three client packets while already in `GAME` and routes decoded requests to dedicated handlers. The default handler behavior is deny/no-response, and the shipped bootstrap runtime keeps that fail-closed behavior for all drop/pickup requests.
 
-Reference-oracle evidence: the TMP4-compatible client exposes `SendItemDropPacket`, `SendItemDropPacketNew`, and `SendItemPickUpPacket` on the game socket, and consumes `GC::ITEM_GROUND_ADD` / `GC::ITEM_GROUND_DEL` to create and remove client-side ground item actors. This repository owns only the project-written field layouts above.
+The `0x0502` header is shared by the already-owned carried-slot `ITEM_USE` request and the legacy `ITEM_DROP` request. Dispatch therefore uses the payload size: 3-byte payloads route to `ITEM_USE`, and 7-byte payloads route to `ITEM_DROP`. Other payload sizes fail closed at the codec layer.
+
+Until a later runtime slice owns ground item state, client-originated drop and pickup packets remain unsupported by the live runtime and must not mutate inventory, gold, quickslots, persisted account state, or shared-world visibility.
+
+Reference-oracle evidence: the TMP4-compatible client exposes `SendItemDropPacket`, `SendItemDropPacketNew`, and `SendItemPickUpPacket` on the game socket, and consumes `GC::ITEM_GROUND_ADD` / `GC::ITEM_GROUND_DEL` to create and remove client-side ground item actors. This repository owns only the project-written field layouts and dispatch boundaries above.
 
 Current coverage:
 
 - `internal/proto/item` freezes encode/decode round-trips for `ITEM_DROP`, `ITEM_DROP2`, `ITEM_PICKUP`, `ITEM_GROUND_ADD`, and `ITEM_GROUND_DEL`, plus unexpected-header and invalid-payload rejection for the new codecs.
+- `internal/game` freezes `GAME`-phase dispatch for `ITEM_DROP`, `ITEM_DROP2`, and `ITEM_PICKUP`, including the shared-header `ITEM_USE` / `ITEM_DROP` payload-size split.
+- `internal/minimal` keeps all three live runtime handlers fail-closed until ground item state is owned.

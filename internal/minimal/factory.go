@@ -1971,6 +1971,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 
 					return executeSelectedItemUse(packet.Position)
 				},
+				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
+					return gameflow.ItemDropResult{Accepted: false}
+				},
+				HandleItemDrop2: func(packet itemproto.ClientDrop2Packet) gameflow.ItemDrop2Result {
+					return gameflow.ItemDrop2Result{Accepted: false}
+				},
 				HandleItemMove: func(packet itemproto.ClientMovePacket) gameflow.ItemMoveResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()
@@ -2097,6 +2103,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					chatResult := commitSelectedNonPointItemMutation(selectedPlayer, previousSelected, frames)
 					return gameflow.ItemMoveResult{Accepted: chatResult.Accepted, Frames: chatResult.Frames}
+				},
+				HandleItemPickup: func(packet itemproto.ClientPickupPacket) gameflow.ItemPickupResult {
+					return gameflow.ItemPickupResult{Accepted: false}
 				},
 				HandleQuickslotAdd: func(packet quickslotproto.ClientAddPacket) gameflow.QuickslotResult {
 					stateMu.Lock()
