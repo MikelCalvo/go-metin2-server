@@ -7,6 +7,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
@@ -137,6 +138,50 @@ func TestGameRuntimeItemDrop2DecrementsStackAndEmitsGroundAdd(t *testing.T) {
 	wantInventory := []inventory.ItemInstance{{ID: 1002, Vnum: 27001, Count: 3, Slot: 5}}
 	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
 		t.Fatalf("unexpected persisted inventory after counted drop: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+}
+
+func TestGameRuntimeItemDropRejectsAntiDropAndAntiGiveTemplatesWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("BoundDropOwner", 0x01030191, 0x02040191, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1019, Vnum: 27019, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "bound-drop-owner", 0x19191919, owner)
+	if err := accounts.Save(accountstore.Account{Login: "bound-drop-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed bound drop owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27019,
+		Name:      "Bound Practice Potion",
+		Stackable: true,
+		MaxCount:  200,
+		AntiDrop:  true,
+		AntiGive:  true,
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected anti-drop item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "bound-drop-owner", 0x19191919)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected anti-drop item drop error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected anti-drop/give item drop to fail closed with no frames, got %d", len(out))
+	}
+	account, err := accounts.Load("bound-drop-owner")
+	if err != nil {
+		t.Fatalf("load bound drop owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected anti-drop/give item inventory to stay unchanged, got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected anti-drop/give item quickslots to stay unchanged, got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
 	}
 }
 

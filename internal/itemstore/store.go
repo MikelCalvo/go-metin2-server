@@ -22,6 +22,8 @@ type Template struct {
 	ShopBuyPrice     uint64       `json:"shop_buy_price,omitempty"`
 	SellCountPerGold bool         `json:"sell_count_per_gold,omitempty"`
 	AntiSell         bool         `json:"anti_sell,omitempty"`
+	AntiDrop         bool         `json:"anti_drop,omitempty"`
+	AntiGive         bool         `json:"anti_give,omitempty"`
 	EquipSlot        string       `json:"equip_slot,omitempty"`
 	UseEffect        *UseEffect   `json:"use_effect,omitempty"`
 	EquipEffect      *PointEffect `json:"equip_effect,omitempty"`

@@ -325,7 +325,8 @@ Expected result:
 - client B receives a ground delete plus a party-shaped pickup notice naming client A
 - client A receives the ground delete plus a party-shaped pickup notice naming client B
 - the item is delivered back to client A's owned account/runtime rather than being added to client B
-- this remains a bootstrap party approximation; real party membership, ownership timers, public ownership release, and anti-give/drop flags are still not owned
+- `anti_drop` / `anti_give` template-flagged items fail closed when dropped through the normal client inventory path and leave carried inventory plus quickslots unchanged
+- this remains a bootstrap party approximation; real party membership, ownership timers, and public ownership release are still not owned
 
 ### 5.6 Bootstrap equip / unequip appearance refresh
 
@@ -699,6 +700,7 @@ Expected result:
 
 Expected result:
 - accepted drops publish one temporary bootstrap ground handle plus the current ownership label to currently visible peers
+- `anti_drop` / `anti_give` template-flagged carried items reject `ITEM_DROP` / `ITEM_DROP2` before inventory, quickslots, or temporary ground handles mutate
 - visible peers can collect the temporary handle when compatible carried stack capacity and/or a carried destination slot can accept the entire picked count
 - the collector mutation persists before the temporary handle is removed
 - ground-item delete fanout reaches other visible sessions after successful pickup

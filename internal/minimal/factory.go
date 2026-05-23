@@ -1447,6 +1447,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
+			if template, ok := itemDropTemplateForSlot(runtime.itemTemplates, previousSelected, slot); ok && (template.AntiDrop || template.AntiGive) {
+				return nil, false
+			}
 			if count == 0 {
 				for _, item := range selectedPlayer.LiveInventory() {
 					if item.Slot == slot && !item.Equipped {
@@ -3411,6 +3414,20 @@ func merchantSellResultFrames(character loginticket.Character, result player.Mer
 		Value:  int32(result.Gold),
 	}))
 	return frames, nil
+}
+
+func itemDropTemplateForSlot(templates map[uint32]itemcatalog.Template, character loginticket.Character, slot inventory.SlotIndex) (itemcatalog.Template, bool) {
+	for _, item := range character.Inventory {
+		if item.Slot != slot || item.Equipped || item.Vnum == 0 {
+			continue
+		}
+		template, ok := templates[item.Vnum]
+		if !ok || !itemcatalog.ValidTemplate(template) {
+			return itemcatalog.Template{}, false
+		}
+		return template, true
+	}
+	return itemcatalog.Template{}, false
 }
 
 func itemDropResultFrames(character loginticket.Character, result inventory.MoveResult, droppedItem inventory.ItemInstance) ([][]byte, error) {

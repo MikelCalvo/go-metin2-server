@@ -21,7 +21,7 @@ Owned by the first runtime drop slice:
 
 Not owned yet:
 
-- permanent/shared-world ground item entity IDs, ownership timers, despawn timing, anti-drop policy, trade/shop restrictions, or range/path authorization beyond current visible-world scope;
+- permanent/shared-world ground item entity IDs, ownership timers, despawn timing, trade/shop restrictions, or range/path authorization beyond current visible-world scope;
 - gold-drop semantics beyond freezing the client packet fields;
 - `GC::ITEM_DROP`, timed/permission-changing ownership transitions, real party membership checks, or public ownership release.
 
@@ -118,10 +118,11 @@ For the first live runtime slice, accepted drops are self-facing and persistence
 
 1. `ITEM_DROP` uses the current full carried stack count.
 2. `ITEM_DROP2` uses the requested non-zero count and rejects counts larger than the stack.
-3. The selected player's live inventory is removed or decremented, then the selected character snapshot is persisted through the existing account-store path.
-4. Whole-stack drops clear item quickslots pointing at the removed slot.
-5. The server returns the carried-slot mutation frame first (`GC::ITEM_DEL` or `GC::ITEM_UPDATE`), then any quickslot deletes, then one self-only `GC::ITEM_GROUND_ADD` at the selected character's current coordinates followed by `GC::ITEM_OWNERSHIP` naming the dropping character.
-6. The same session remembers that deterministic ground handle until it is picked up or the session ends.
+3. If the carried item's loaded template is marked `anti_drop` or `anti_give`, the drop fails closed before live inventory, quickslots, ground handles, or persistence are mutated. This mirrors the legacy oracle's early rejection for player-requested drops of bound/non-giveable items while keeping forced system-drop and death-drop policy out of scope.
+4. The selected player's live inventory is removed or decremented, then the selected character snapshot is persisted through the existing account-store path.
+5. Whole-stack drops clear item quickslots pointing at the removed slot.
+6. The server returns the carried-slot mutation frame first (`GC::ITEM_DEL` or `GC::ITEM_UPDATE`), then any quickslot deletes, then one self-only `GC::ITEM_GROUND_ADD` at the selected character's current coordinates followed by `GC::ITEM_OWNERSHIP` naming the dropping character.
+7. The same session remembers that deterministic ground handle until it is picked up or the session ends.
 
 For the first visible-peer pickup runtime slice, accepted pickup is visible-world scoped:
 
@@ -149,4 +150,4 @@ Current coverage:
 
 - `internal/proto/item` freezes encode/decode round-trips for `ITEM_DROP`, `ITEM_DROP2`, `ITEM_PICKUP`, `ITEM_GROUND_ADD`, `ITEM_GROUND_DEL`, `ITEM_OWNERSHIP`, and normal/party-shaped `ITEM_GET`, plus unexpected-header and invalid-payload rejection for the new codecs.
 - `internal/game` freezes `GAME`-phase dispatch for `ITEM_DROP`, `ITEM_DROP2`, and `ITEM_PICKUP`, including the shared-header `ITEM_USE` / `ITEM_DROP` payload-size split.
-- `internal/minimal` accepts carried-item drop requests with self ground-add/ownership echoes, queues matching ground-add/ownership echoes to currently visible peers, accepts visible-world pickup of temporary bootstrap ground handles, supports the first party-shaped owner-delivery pickup notices for visible live owners, and rebuilds still-pending ground-handle visibility for the moving/syncing session on radius-AOI `MOVE` / `SYNC_POSITION` boundary crossings and exact-position transfer self rebootstrap while durable ownership timers, real party membership, and permission changes remain deferred.
+- `internal/minimal` accepts carried-item drop requests with self ground-add/ownership echoes, rejects loaded-template `anti_drop` / `anti_give` player-requested drops before mutation, queues matching ground-add/ownership echoes to currently visible peers, accepts visible-world pickup of temporary bootstrap ground handles, supports the first party-shaped owner-delivery pickup notices for visible live owners, and rebuilds still-pending ground-handle visibility for the moving/syncing session on radius-AOI `MOVE` / `SYNC_POSITION` boundary crossings and exact-position transfer self rebootstrap while durable ownership timers, real party membership, and permission changes remain deferred.
