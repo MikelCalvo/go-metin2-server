@@ -302,6 +302,33 @@ func TestRuntimePickupGroundItemDistributesStackAcrossCompatibleStacksBeforeFres
 	}
 }
 
+func TestRuntimePickupGroundItemMergesIntoCompatibleStackBeforeFreshSlot(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 4, Slot: 0},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.PickupGroundItem(inventory.ItemInstance{ID: 13, Vnum: 27001, Count: 3, Slot: 6}, 6, 200)
+	if !ok {
+		t.Fatal("expected pickup to merge into the compatible stack")
+	}
+	if !result.Merged || result.Split || result.Placed.ID != 0 {
+		t.Fatalf("expected pure merge result, got %+v", result)
+	}
+	if result.Updated != (inventory.ItemInstance{ID: 11, Vnum: 27001, Count: 7, Slot: 0}) {
+		t.Fatalf("unexpected merged item: %+v", result.Updated)
+	}
+	wantLive := []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 7, Slot: 0}}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, wantLive) {
+		t.Fatalf("unexpected live inventory after merge pickup: got %#v want %#v", got, wantLive)
+	}
+}
+
 func TestRuntimePickupGroundItemFailsWhenPartialStacksNeedRemainderButNoFreshSlot(t *testing.T) {
 	persisted := loginticket.Character{ID: 0x01030102, VID: 0x02040102, Name: "PeerTwo"}
 	persisted.Inventory = []inventory.ItemInstance{

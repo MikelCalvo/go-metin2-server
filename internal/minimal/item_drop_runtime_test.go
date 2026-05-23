@@ -548,7 +548,7 @@ func TestGameRuntimeItemPickupIgnoresCollectorCapacityWhenDeliveringToOwner(t *t
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PickupFullOwner", 0x0103017d, 0x0204017d, 1400, 2400, 0, 101, 201)
-	owner.Inventory = []inventory.ItemInstance{{ID: 1009, Vnum: 27009, Count: 2, Slot: 6}}
+	owner.Inventory = []inventory.ItemInstance{{ID: 1009, Vnum: 27001, Count: 2, Slot: 6}}
 	collector := peerVisibilityCharacter("PickupFullCollector", 0x0103017e, 0x0204017e, 1450, 2450, 0, 101, 201)
 	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
 		collector.Inventory = append(collector.Inventory, inventory.ItemInstance{ID: uint64(3000 + slot), Vnum: 28000 + uint32(slot), Count: 1, Slot: slot})
@@ -576,8 +576,8 @@ func TestGameRuntimeItemPickupIgnoresCollectorCapacityWhenDeliveringToOwner(t *t
 	if len(collectorOut) != 2 {
 		t.Fatalf("expected party owner-delivery pickup to emit GROUND_DEL and delivered ITEM_GET, got %d frames", len(collectorOut))
 	}
-	if queued := flushServerFrames(t, ownerFlow); len(queued) != 2 {
-		t.Fatalf("expected owner to receive ground delete and from-party ITEM_GET despite collector full inventory, got %d frames", len(queued))
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected owner to receive ground delete, inventory refresh, and from-party ITEM_GET despite collector full inventory, got %d frames", len(queued))
 	}
 	collectorAccount, err := accounts.Load("pickup-full-collector")
 	if err != nil {
@@ -585,6 +585,79 @@ func TestGameRuntimeItemPickupIgnoresCollectorCapacityWhenDeliveringToOwner(t *t
 	}
 	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, collector.Inventory) {
 		t.Fatalf("expected full collector inventory to stay unchanged after owner-delivery pickup, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
+	}
+}
+
+func TestGameRuntimeItemPickupOwnedByPartyMemberUsesOwnerCompatibleStackBeforeFreshSlot(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PartyPickupStackOwner", 0x01030185, 0x02040185, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1015, Vnum: 27001, Count: 3, Slot: 6},
+		{ID: 2015, Vnum: 27001, Count: 4, Slot: 0},
+	}
+	collector := peerVisibilityCharacter("PartyPickupStackCollector", 0x01030186, 0x02040186, 1450, 2450, 0, 101, 201)
+	collector.Inventory = []inventory.ItemInstance{{ID: 3015, Vnum: 27013, Count: 1, Slot: 6}}
+	ownerLogin := "party-pickup-stack-owner-login"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x85858585, owner)
+	issuePeerTicket(t, ticketStore, "party-pickup-stack-collector", 0x86868686, collector)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed party pickup stack owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "party-pickup-stack-collector", Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
+		t.Fatalf("seed party pickup stack collector account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected party stack item-pickup runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x85858585)
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "party-pickup-stack-collector", 0x86868686)
+	flushServerFrames(t, ownerFlow)
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+	flushServerFrames(t, collectorFlow)
+
+	collectorOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(collectorOut) != 2 {
+		t.Fatalf("expected party collector pickup to emit GROUND_DEL and delivered ITEM_GET, got %d frames", len(collectorOut))
+	}
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected owner to receive peer ground delete, merged ITEM_UPDATE, and from-party ITEM_GET, got %d frames", len(ownerQueued))
+	}
+	ownerDelete, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode party owner peer ground delete: %v", err)
+	}
+	if ownerDelete.VID != ground.VID {
+		t.Fatalf("unexpected party owner peer ground delete: %+v", ownerDelete)
+	}
+	ownerFrame := decodeSingleFrame(t, ownerQueued[1])
+	if ownerFrame.Header != itemproto.HeaderUpdate {
+		t.Fatalf("expected party owner merged refresh to use ITEM_UPDATE, got header %#x", ownerFrame.Header)
+	}
+	ownerUpdate, err := itemproto.DecodeUpdate(ownerFrame)
+	if err != nil {
+		t.Fatalf("decode party owner merged update: %v", err)
+	}
+	if ownerUpdate.Position != itemproto.InventoryPosition(0) || ownerUpdate.Count != 7 {
+		t.Fatalf("expected owner-delivery pickup to merge into owner slot 0 with count 7, got %+v", ownerUpdate)
+	}
+	ownerGet, err := itemproto.DecodeGet(decodeSingleFrame(t, ownerQueued[2]))
+	if err != nil {
+		t.Fatalf("decode party owner get notice after merge: %v", err)
+	}
+	if ownerGet != (itemproto.GetPacket{Vnum: 27001, Count: 3, Arg: itemproto.GetArgFromPartyMember, FromName: collector.Name}) {
+		t.Fatalf("unexpected party owner get notice after merge: %+v", ownerGet)
+	}
+	ownerAccount, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load party pickup stack owner: %v", err)
+	}
+	wantOwnerInventory := []inventory.ItemInstance{{ID: 2015, Vnum: 27001, Count: 7, Slot: 0}}
+	if !reflect.DeepEqual(ownerAccount.Characters[0].Inventory, wantOwnerInventory) {
+		t.Fatalf("unexpected owner inventory after party stack merge pickup: got %#v want %#v", ownerAccount.Characters[0].Inventory, wantOwnerInventory)
 	}
 }
 
@@ -635,8 +708,8 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {
 	}
 
 	ownerQueued := flushServerFrames(t, ownerFlow)
-	if len(ownerQueued) != 2 {
-		t.Fatalf("expected owner to receive ground delete and from-party ITEM_GET, got %d frames", len(ownerQueued))
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected owner to receive ground delete, ITEM_SET, and from-party ITEM_GET, got %d frames", len(ownerQueued))
 	}
 	ownerDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerQueued[0]))
 	if err != nil {
@@ -645,7 +718,14 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {
 	if ownerDel.VID != ground.VID {
 		t.Fatalf("unexpected party owner ground del: got %+v want vid %d", ownerDel, ground.VID)
 	}
-	ownerGet, err := itemproto.DecodeGet(decodeSingleFrame(t, ownerQueued[1]))
+	ownerSet, err := itemproto.DecodeSet(decodeSingleFrame(t, ownerQueued[1]))
+	if err != nil {
+		t.Fatalf("decode party owner set: %v", err)
+	}
+	if ownerSet.Position != itemproto.InventoryPosition(6) || ownerSet.Vnum != 27010 || ownerSet.Count != 2 {
+		t.Fatalf("unexpected party owner set: %+v", ownerSet)
+	}
+	ownerGet, err := itemproto.DecodeGet(decodeSingleFrame(t, ownerQueued[2]))
 	if err != nil {
 		t.Fatalf("decode party owner get notice: %v", err)
 	}

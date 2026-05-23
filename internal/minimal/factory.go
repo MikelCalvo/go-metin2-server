@@ -1509,17 +1509,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				if ownerSelected.ID == 0 {
 					return nil, false
 				}
-				pickupSlot, ok := firstAvailableCarriedInventorySlot(ownerSelected.Inventory, pickup.Item.Slot)
+				ownerRuntime := player.NewRuntime(ownerSelected, player.SessionLink{Login: pickup.OwnerLogin})
+				pickupMaxCount := uint16(0)
+				if runtime != nil {
+					if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.Stackable {
+						pickupMaxCount = template.MaxCount
+					}
+				}
+				pickupResult, ok := ownerRuntime.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
 				if !ok {
 					return nil, false
 				}
-				pickedItem, err := pickup.Item.WithInventorySlot(pickupSlot)
-				if err != nil {
+				itemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult)
+				if !ok {
 					return nil, false
 				}
-				updatedOwner := ownerSelected
-				updatedOwner.Inventory = append(cloneInventoryItems(updatedOwner.Inventory), pickedItem)
-				sortInventoryItemsBySlot(updatedOwner.Inventory)
+				updatedOwner := ownerRuntime.LiveCharacter()
 				if accounts == nil {
 					return nil, false
 				}
@@ -1539,15 +1544,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				if !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
 					return nil, false
 				}
-				collectorGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickedItem, itemproto.GetArgDeliveredToPartyMember, pickup.OwnerName)
+				collectorGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickup.Item, itemproto.GetArgDeliveredToPartyMember, pickup.OwnerName)
 				if err != nil {
 					return nil, false
 				}
-				ownerGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickedItem, itemproto.GetArgFromPartyMember, previousSelected.Name)
+				ownerGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickup.Item, itemproto.GetArgFromPartyMember, previousSelected.Name)
 				if err != nil {
 					return nil, false
 				}
-				sharedWorld.EnqueueToEntity(pickup.OwnerID, [][]byte{ownerGetFrame})
+				ownerFrames := append([][]byte(nil), itemFrames...)
+				ownerFrames = append(ownerFrames, ownerGetFrame)
+				sharedWorld.EnqueueToEntity(pickup.OwnerID, ownerFrames)
 				return [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), collectorGetFrame}, true
 			}
 			pickupMaxCount := uint16(0)
