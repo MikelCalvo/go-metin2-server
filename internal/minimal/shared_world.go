@@ -49,21 +49,23 @@ type sharedWorldRegistry struct {
 }
 
 type sharedGroundItem struct {
-	VID       uint32
-	OwnerID   uint64
-	OwnerName string
-	Item      inventory.ItemInstance
-	MapIndex  uint32
-	X         int32
-	Y         int32
-	Z         int32
+	VID        uint32
+	OwnerID    uint64
+	OwnerLogin string
+	OwnerName  string
+	Item       inventory.ItemInstance
+	MapIndex   uint32
+	X          int32
+	Y          int32
+	Z          int32
 }
 
 type sharedGroundItemPickup struct {
-	Item      inventory.ItemInstance
-	OwnerID   uint64
-	OwnerName string
-	Owner     loginticket.Character
+	Item       inventory.ItemInstance
+	OwnerID    uint64
+	OwnerLogin string
+	OwnerName  string
+	Owner      loginticket.Character
 }
 
 type sharedGroundItemVisibilityDiff struct {
@@ -835,7 +837,7 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 	r.lastKnownCharacters[id] = character
 }
 
-func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, character loginticket.Character, vid uint32, item inventory.ItemInstance) bool {
+func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance) bool {
 	if r == nil || ownerID == 0 || vid == 0 || item.Vnum == 0 {
 		return false
 	}
@@ -847,14 +849,15 @@ func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, character login
 		return false
 	}
 	ground := sharedGroundItem{
-		VID:       vid,
-		OwnerID:   ownerID,
-		OwnerName: character.Name,
-		Item:      item,
-		MapIndex:  r.topology.EffectiveMapIndex(character),
-		X:         character.X,
-		Y:         character.Y,
-		Z:         character.Z,
+		VID:        vid,
+		OwnerID:    ownerID,
+		OwnerLogin: ownerLogin,
+		OwnerName:  character.Name,
+		Item:       item,
+		MapIndex:   r.topology.EffectiveMapIndex(character),
+		X:          character.X,
+		Y:          character.Y,
+		Z:          character.Z,
 	}
 	r.groundItemsByVID[vid] = ground
 	frames := encodeGroundItemVisibleFrames(ground)
@@ -965,7 +968,7 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 			}
 		}
 	}
-	return sharedGroundItemPickup{Item: ground.Item, OwnerID: ground.OwnerID, OwnerName: ownerName, Owner: ownerCharacter}, true
+	return sharedGroundItemPickup{Item: ground.Item, OwnerID: ground.OwnerID, OwnerLogin: ground.OwnerLogin, OwnerName: ownerName, Owner: ownerCharacter}, true
 }
 
 func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector loginticket.Character, vid uint32) bool {

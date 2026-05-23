@@ -417,7 +417,7 @@ func TestGameRuntimeItemPickupPlacesOwnedVisibleDropIntoFirstEmptySlotWhenOrigin
 	}
 }
 
-func TestGameRuntimeItemPickupRejectsWhenNoCarriedSlotIsFree(t *testing.T) {
+func TestGameRuntimeItemPickupIgnoresCollectorCapacityWhenDeliveringToOwner(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PickupFullOwner", 0x0103017d, 0x0204017d, 1400, 2400, 0, 101, 201)
@@ -445,18 +445,19 @@ func TestGameRuntimeItemPickupRejectsWhenNoCarriedSlotIsFree(t *testing.T) {
 	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
 	flushServerFrames(t, collectorFlow)
 
-	if out := pickupGroundItem(t, collectorFlow, ground.VID); len(out) != 0 {
-		t.Fatalf("expected full-inventory pickup to fail closed, got %d frames", len(out))
+	collectorOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(collectorOut) != 2 {
+		t.Fatalf("expected party owner-delivery pickup to emit GROUND_DEL and delivered ITEM_GET, got %d frames", len(collectorOut))
 	}
-	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
-		t.Fatalf("expected failed full-inventory pickup to leave owner without ground delete, got %d frames", len(queued))
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 2 {
+		t.Fatalf("expected owner to receive ground delete and from-party ITEM_GET despite collector full inventory, got %d frames", len(queued))
 	}
 	collectorAccount, err := accounts.Load("pickup-full-collector")
 	if err != nil {
 		t.Fatalf("load pickup full collector account: %v", err)
 	}
 	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, collector.Inventory) {
-		t.Fatalf("expected full-inventory pickup to preserve persisted inventory, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
+		t.Fatalf("expected full collector inventory to stay unchanged after owner-delivery pickup, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
 	}
 }
 
@@ -467,9 +468,10 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {
 	owner.Inventory = []inventory.ItemInstance{{ID: 1010, Vnum: 27010, Count: 2, Slot: 6}}
 	collector := peerVisibilityCharacter("PartyPickupCollector", 0x01030181, 0x02040181, 1450, 2450, 0, 101, 201)
 	collector.Inventory = []inventory.ItemInstance{{ID: 2010, Vnum: 27011, Count: 1, Slot: 6}}
-	issuePeerTicket(t, ticketStore, owner.Name, 0x80808080, owner)
+	ownerLogin := "party-pickup-owner-login"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x80808080, owner)
 	issuePeerTicket(t, ticketStore, "party-pickup-collector", 0x81818181, collector)
-	if err := accounts.Save(accountstore.Account{Login: owner.Name, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed party pickup owner account: %v", err)
 	}
 	if err := accounts.Save(accountstore.Account{Login: "party-pickup-collector", Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
@@ -480,7 +482,7 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected party item-pickup runtime error: %v", err)
 	}
-	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), owner.Name, 0x80808080)
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x80808080)
 	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "party-pickup-collector", 0x81818181)
 	flushServerFrames(t, ownerFlow)
 	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
@@ -524,7 +526,7 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {
 		t.Fatalf("unexpected party owner get notice: %+v", ownerGet)
 	}
 
-	ownerAccount, err := accounts.Load(owner.Name)
+	ownerAccount, err := accounts.Load(ownerLogin)
 	if err != nil {
 		t.Fatalf("load party pickup owner account: %v", err)
 	}

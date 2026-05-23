@@ -1487,7 +1487,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			if ownsLiveSharedWorldSession() {
-				sharedWorld.RegisterGroundItem(sharedWorldID, previousSelected, bootstrapGroundItemVID(previousSelected, result.From), droppedItem)
+				sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, bootstrapGroundItemVID(previousSelected, result.From), droppedItem)
 			}
 			return frames, true
 		}
@@ -1523,7 +1523,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				if accounts == nil {
 					return nil, false
 				}
-				ownerLogin := ownerSelected.Name
+				ownerLogin := pickup.OwnerLogin
+				if ownerLogin == "" {
+					return nil, false
+				}
 				ownerAccount, err := accounts.Load(ownerLogin)
 				if err != nil {
 					return nil, false
