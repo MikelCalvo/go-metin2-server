@@ -60,7 +60,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `inventory-equipment-bootstrap.md` — first owned self-only inventory/equipment bootstrap surface and item-family boundary for M3 character state
 - `item-use-bootstrap.md` — first owned self-only consumable item-use bootstrap contract, now covering both the slash harness and the first tiny client-originated `ITEM_USE` ingress for carried inventory
 - `item-move-bootstrap.md` — first owned client-originated carried-inventory `ITEM_MOVE` contract for GAME-phase moves, counted splits/merges, zero-count and exact-count incompatible occupied-destination swaps, and self-only slot refreshes
-- `item-drop-pickup-bootstrap.md` — first frozen ground-item drop/pickup packet codecs and `GAME` dispatch seams, with shipped runtime behavior still fail-closed before ground-item state is owned
+- `item-drop-pickup-bootstrap.md` — first frozen ground-item drop/pickup packet codecs and `GAME` dispatch seams, now with carried-slot drop mutation plus a self-only ground-add echo while pickup/shared ground-item state remains pending
 - `quickslot-bootstrap.md` — first owned quickslot packet codecs, selected-character bootstrap replay, and accepted self-only client quickslot edit persistence (`QUICKSLOT_ADD`, `QUICKSLOT_DEL`, `QUICKSLOT_SWAP`) before automatic item-mutation quickslot synchronization
 - `sync-position-bootstrap.md` — first self-only sync-position reconciliation after entering `GAME`
 - `boot-path.md` — first milestone from connect to basic movement

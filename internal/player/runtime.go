@@ -287,6 +287,38 @@ func (r *Runtime) SyncItemQuickslotsForItemRemoval(slot inventory.SlotIndex) ([]
 	return deleted, true
 }
 
+func (r *Runtime) DropInventoryItem(slot inventory.SlotIndex, count uint16) (inventory.MoveResult, bool) {
+	if r == nil || count == 0 {
+		return inventory.MoveResult{}, false
+	}
+	result := inventory.MoveResult{From: slot}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 || r.liveInventory[index].Locked {
+		return inventory.MoveResult{}, false
+	}
+	item := r.liveInventory[index]
+	if count > item.Count {
+		return inventory.MoveResult{}, false
+	}
+	if count == item.Count {
+		r.liveInventory = removeInventoryIndex(r.liveInventory, index)
+		sortInventoryItems(r.liveInventory)
+		result.Changed = true
+		return result, true
+	}
+	item.Count -= count
+	if err := item.Validate(); err != nil {
+		return inventory.MoveResult{}, false
+	}
+	r.liveInventory[index] = item
+	sortInventoryItems(r.liveInventory)
+	result.Changed = true
+	result.FromOccupied = true
+	result.FromItem = item
+	result.CountOnly = true
+	return result, true
+}
+
 func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventory.SlotIndex, maxCount uint16) (inventory.MoveResult, bool) {
 	if r == nil || maxCount == 0 || from == to {
 		return inventory.MoveResult{}, false

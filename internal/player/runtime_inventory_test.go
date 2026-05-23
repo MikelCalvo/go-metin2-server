@@ -9,6 +9,65 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
 
+func TestDropInventoryItemRemovesWholeStack(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 3, Slot: 5}},
+	}, SessionLink{})
+
+	result, ok := runtime.DropInventoryItem(5, 3)
+	if !ok {
+		t.Fatalf("expected whole-stack drop to be accepted")
+	}
+	if !result.Changed || result.From != 5 || result.FromOccupied {
+		t.Fatalf("unexpected whole-stack drop result: %+v", result)
+	}
+	if got := runtime.LiveInventory(); len(got) != 0 {
+		t.Fatalf("expected inventory to be empty after whole-stack drop, got %#v", got)
+	}
+}
+
+func TestDropInventoryItemDecrementsStack(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}},
+	}, SessionLink{})
+
+	result, ok := runtime.DropInventoryItem(5, 2)
+	if !ok {
+		t.Fatalf("expected counted drop to be accepted")
+	}
+	if !result.Changed || !result.FromOccupied || !result.CountOnly || result.FromItem.Count != 3 {
+		t.Fatalf("unexpected counted drop result: %+v", result)
+	}
+	want := []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 3, Slot: 5}}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected inventory after counted drop: got %#v want %#v", got, want)
+	}
+}
+
+func TestDropInventoryItemRejectsLockedOrOversizedDrop(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5, Locked: true}},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	if _, ok := runtime.DropInventoryItem(5, 1); ok {
+		t.Fatalf("expected locked item drop to be rejected")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("locked drop mutated inventory: got %#v want %#v", got, before)
+	}
+
+	runtime = NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}},
+	}, SessionLink{})
+	before = runtime.LiveInventory()
+	if _, ok := runtime.DropInventoryItem(5, 6); ok {
+		t.Fatalf("expected oversized item drop to be rejected")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("oversized drop mutated inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestRuntimeKeepsLiveCurrencyAndItemStateSeparateFromPersistedSnapshot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

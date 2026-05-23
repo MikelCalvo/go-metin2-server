@@ -1437,6 +1437,48 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return gameflow.ItemUseResult{Accepted: true, Frames: frames}
 		}
+		executeSelectedItemDrop := func(cell uint16, count uint16) ([][]byte, bool) {
+			slot := inventory.SlotIndex(cell)
+			if slot >= inventory.CarriedInventorySlotCount {
+				return nil, false
+			}
+			selectedPlayer, ok := currentSelectedPlayer()
+			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+				return nil, false
+			}
+			previousSelected := selectedPlayer.LiveCharacter()
+			if count == 0 {
+				for _, item := range selectedPlayer.LiveInventory() {
+					if item.Slot == slot && !item.Equipped {
+						count = item.Count
+						break
+					}
+				}
+			}
+			result, ok := selectedPlayer.DropInventoryItem(slot, count)
+			if !ok || !result.Changed {
+				return nil, false
+			}
+			frames, err := itemDropResultFrames(previousSelected, result)
+			if err != nil {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			if !result.FromOccupied {
+				quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, slot)
+				if !ok {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
+				if len(quickslotFrames) != 0 {
+					frames = append(frames[:1], append(quickslotFrames, frames[1:]...)...)
+				}
+			}
+			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			return frames, ok
+		}
 
 		inner := boot.NewFlow(boot.Config{
 			Handshake: handshake.Config{
@@ -1972,10 +2014,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					return executeSelectedItemUse(packet.Position)
 				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
-					return gameflow.ItemDropResult{Accepted: false}
+					stateMu.Lock()
+					defer stateMu.Unlock()
+					if packet.Position.WindowType != itemproto.WindowInventory {
+						return gameflow.ItemDropResult{Accepted: false}
+					}
+					frames, accepted := executeSelectedItemDrop(packet.Position.Cell, 0)
+					return gameflow.ItemDropResult{Accepted: accepted, Frames: frames}
 				},
 				HandleItemDrop2: func(packet itemproto.ClientDrop2Packet) gameflow.ItemDrop2Result {
-					return gameflow.ItemDrop2Result{Accepted: false}
+					stateMu.Lock()
+					defer stateMu.Unlock()
+					if packet.Position.WindowType != itemproto.WindowInventory {
+						return gameflow.ItemDrop2Result{Accepted: false}
+					}
+					frames, accepted := executeSelectedItemDrop(packet.Position.Cell, uint16(packet.Count))
+					return gameflow.ItemDrop2Result{Accepted: accepted, Frames: frames}
 				},
 				HandleItemMove: func(packet itemproto.ClientMovePacket) gameflow.ItemMoveResult {
 					stateMu.Lock()
@@ -3223,6 +3277,53 @@ func merchantSellResultFrames(character loginticket.Character, result player.Mer
 		Value:  int32(result.Gold),
 	}))
 	return frames, nil
+}
+
+func itemDropResultFrames(character loginticket.Character, result inventory.MoveResult) ([][]byte, error) {
+	if !result.Changed {
+		return nil, nil
+	}
+	position, err := itemproto.CarriedInventoryPosition(uint16(result.From))
+	if err != nil {
+		return nil, err
+	}
+	frames := make([][]byte, 0, 2)
+	var droppedVnum uint32
+	if result.FromOccupied {
+		updateFrame, err := encodeBootstrapItemUpdateFrame(position, result.FromItem)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, updateFrame)
+		droppedVnum = result.FromItem.Vnum
+	} else {
+		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
+		for _, item := range character.Inventory {
+			if item.Slot == result.From && !item.Equipped {
+				droppedVnum = item.Vnum
+				break
+			}
+		}
+	}
+	if droppedVnum == 0 {
+		return nil, fmt.Errorf("item drop source item not found for slot %d", result.From)
+	}
+	frames = append(frames, itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{
+		VID:  bootstrapGroundItemVID(character, result.From),
+		Vnum: droppedVnum,
+		X:    character.X,
+		Y:    character.Y,
+		Z:    character.Z,
+	}))
+	return frames, nil
+}
+
+func bootstrapGroundItemVID(character loginticket.Character, slot inventory.SlotIndex) uint32 {
+	vid := character.VID ^ 0x80000000 ^ uint32(slot+1)
+	if vid == 0 {
+		return uint32(slot) + 1
+	}
+	return vid
 }
 
 func merchantBuyFailureFrames(failure player.MerchantBuyFailure, packetFailureFrames bool) ([][]byte, bool) {
