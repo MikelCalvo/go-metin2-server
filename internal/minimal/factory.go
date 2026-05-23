@@ -1112,6 +1112,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
+			if !ownsLiveSharedWorldSession() {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return frames, true
+			}
 			persistedSelected.Gold = updatedSelected.Gold
 			persistedSelected.Inventory = updatedSelected.Inventory
 			persistedSelected.Equipment = updatedSelected.Equipment
@@ -1145,6 +1150,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
 				return nil, false
+			}
+			if !ownsLiveSharedWorldSession() {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return frames, true
 			}
 			persistedSelected.Gold = updatedSelected.Gold
 			persistedSelected.Inventory = updatedSelected.Inventory
