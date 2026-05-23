@@ -1550,38 +1550,51 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				sharedWorld.EnqueueToEntity(pickup.OwnerID, [][]byte{ownerGetFrame})
 				return [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), collectorGetFrame}, true
 			}
-			droppedItem := pickup.Item
-			pickupSlot, ok := firstAvailableCarriedInventorySlot(previousSelected.Inventory, droppedItem.Slot)
+			pickupMaxCount := uint16(0)
+			if runtime != nil {
+				if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.Stackable {
+					pickupMaxCount = template.MaxCount
+				}
+			}
+			pickupResult, ok := selectedPlayer.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
 			if !ok {
 				return nil, false
 			}
-			pickedItem, err := droppedItem.WithInventorySlot(pickupSlot)
-			if err != nil {
-				return nil, false
+			var itemFrame []byte
+			if pickupResult.Merged {
+				position, err := itemproto.CarriedInventoryPosition(uint16(pickupResult.Updated.Slot))
+				if err != nil {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
+				itemFrame, err = encodeBootstrapItemUpdateFrame(position, pickupResult.Updated)
+				if err != nil {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
+			} else {
+				position, err := itemproto.CarriedInventoryPosition(uint16(pickupResult.Placed.Slot))
+				if err != nil {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
+				itemFrame, err = encodeBootstrapItemFrame(position, pickupResult.Placed)
+				if err != nil {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
 			}
-			updatedSelected := selectedPlayer.LiveCharacter()
-			updatedSelected.Inventory = append(cloneInventoryItems(updatedSelected.Inventory), pickedItem)
-			sortInventoryItemsBySlot(updatedSelected.Inventory)
-			selectedPlayer.ApplyPersistedSnapshot(updatedSelected)
-			position, err := itemproto.CarriedInventoryPosition(uint16(pickupSlot))
+			getFrame, err := encodeBootstrapItemGetFrame(pickupResult.Item)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
-			setFrame, err := encodeBootstrapItemFrame(position, pickedItem)
-			if err != nil {
-				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-				refreshLiveCharacterRegistration()
-				return nil, false
-			}
-			getFrame, err := encodeBootstrapItemGetFrame(pickedItem)
-			if err != nil {
-				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-				refreshLiveCharacterRegistration()
-				return nil, false
-			}
-			frames := [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), setFrame, getFrame}
+			frames := [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), itemFrame, getFrame}
 			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 			if !ok {
 				return nil, false

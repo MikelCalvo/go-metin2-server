@@ -63,6 +63,13 @@ type MerchantSellResult struct {
 	Gold        uint64
 }
 
+type GroundItemPickupResult struct {
+	Item    inventory.ItemInstance
+	Merged  bool
+	Updated inventory.ItemInstance
+	Placed  inventory.ItemInstance
+}
+
 type QuickslotSwapResult struct {
 	Position       uint8
 	TargetPosition uint8
@@ -317,6 +324,42 @@ func (r *Runtime) DropInventoryItem(slot inventory.SlotIndex, count uint16) (inv
 	result.FromItem = item
 	result.CountOnly = true
 	return result, true
+}
+
+func (r *Runtime) PickupGroundItem(item inventory.ItemInstance, preferred inventory.SlotIndex, maxCount uint16) (GroundItemPickupResult, bool) {
+	if r == nil || item.ID == 0 || item.Vnum == 0 || item.Count == 0 || preferred >= inventory.CarriedInventorySlotCount {
+		return GroundItemPickupResult{}, false
+	}
+	updatedInventory := cloneItemInstances(r.liveInventory)
+	if maxCount > 0 {
+		if mergeIndex := findMergeableInventoryIndex(updatedInventory, item.Vnum, item.Count, maxCount); mergeIndex >= 0 {
+			merged := updatedInventory[mergeIndex]
+			merged.Count += item.Count
+			if err := merged.Validate(); err != nil {
+				return GroundItemPickupResult{}, false
+			}
+			updatedInventory[mergeIndex] = merged
+			sortInventoryItems(updatedInventory)
+			r.liveInventory = updatedInventory
+			return GroundItemPickupResult{Item: item, Merged: true, Updated: merged}, true
+		}
+	}
+	placementSlot := preferred
+	if inventorySlotOccupied(updatedInventory, placementSlot) {
+		var ok bool
+		placementSlot, ok = nextFreeInventorySlot(updatedInventory)
+		if !ok {
+			return GroundItemPickupResult{}, false
+		}
+	}
+	placed, err := item.WithInventorySlot(placementSlot)
+	if err != nil {
+		return GroundItemPickupResult{}, false
+	}
+	updatedInventory = append(updatedInventory, placed)
+	sortInventoryItems(updatedInventory)
+	r.liveInventory = updatedInventory
+	return GroundItemPickupResult{Item: item, Placed: placed}, true
 }
 
 func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventory.SlotIndex, maxCount uint16) (inventory.MoveResult, bool) {

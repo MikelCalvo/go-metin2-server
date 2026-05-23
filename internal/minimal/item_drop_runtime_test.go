@@ -363,6 +363,65 @@ func TestGameRuntimeExactPositionTransferRebuildsGroundItemVisibility(t *testing
 	}
 }
 
+func TestGameRuntimeItemPickupMergesOwnedVisibleDropIntoCompatibleStack(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupMergeOwner", 0x01030182, 0x02040182, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1011, Vnum: 27001, Count: 2, Slot: 6},
+		{ID: 2011, Vnum: 27001, Count: 3, Slot: 0},
+	}
+	issuePeerTicket(t, ticketStore, "pickup-merge-owner", 0x82828282, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-merge-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup merge owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected item-pickup merge runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-merge-owner", 0x82828282)
+	flushServerFrames(t, flow)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(6))
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected merged pickup to emit GROUND_DEL, ITEM_UPDATE, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode merged pickup ground del: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected merged pickup ground del: got %+v want vid %d", groundDel, ground.VID)
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode merged pickup item update: %v", err)
+	}
+	if update.Position != itemproto.InventoryPosition(0) || update.Count != 5 {
+		t.Fatalf("expected pickup to merge into lowest compatible slot 0 with count 5, got %+v", update)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode merged pickup item get: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: 27001, Count: 2, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected merged pickup item get: %+v", get)
+	}
+	account, err := accounts.Load("pickup-merge-owner")
+	if err != nil {
+		t.Fatalf("load pickup merge owner account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 2011, Vnum: 27001, Count: 5, Slot: 0}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted inventory after merged pickup: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+	if replayOut := pickupGroundItem(t, flow, ground.VID); len(replayOut) != 0 {
+		t.Fatalf("expected replay after merged pickup to fail closed, got %d frames", len(replayOut))
+	}
+}
+
 func TestGameRuntimeItemPickupPlacesOwnedVisibleDropIntoFirstEmptySlotWhenOriginalSlotOccupied(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
