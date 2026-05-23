@@ -690,7 +690,22 @@ Expected result:
 - replayed, unknown, invisible, or occupied-slot pickup attempts fail closed
 - reconnecting does not restore the temporary bootstrap ground handle as a durable world entity
 
-### 6.21 Packet merchant sell-back smoke (packet-harness optional)
+### 6.21 Radius-AOI ground item visibility rebuild smoke (packet-harness optional)
+
+- [ ] Start `gamed` with radius AOI enabled for QA
+- [ ] Put client A carrying one disposable stack inside radius of the future drop point, and keep client B initially outside that radius
+- [ ] Have client A drop the carried stack and confirm client A receives the carried-slot mutation plus `GC::ITEM_GROUND_ADD`
+- [ ] Confirm client B does not receive the ground add while still outside radius
+- [ ] Move client B into radius with position-only `MOVE` or `SYNC_POSITION`
+- [ ] Confirm client B receives the ordinary queued visibility-entry frames first and then one queued `GC::ITEM_GROUND_ADD` for the still-pending handle
+- [ ] Move client B back outside radius and confirm it receives the ordinary visibility-exit cleanup first and then one queued `GC::ITEM_GROUND_DEL` for that handle
+
+Expected result:
+- pending bootstrap ground handles rebuild for sessions that cross into their visible world after the original drop
+- pending bootstrap ground handles are torn down for sessions that cross back out before pickup/despawn policy exists
+- the rebuild/teardown is self-facing to the moving/syncing session and does not make the handle durable across reconnects
+
+### 6.22 Packet merchant sell-back smoke (packet-harness optional)
 
 - [ ] Open a structured merchant `shop_preview` window while the QA character has at least one carried inventory stack
 - [ ] Send one real client `SHOP SELL` request for a carried slot containing a stack

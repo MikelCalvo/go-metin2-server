@@ -10,6 +10,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 )
 
@@ -172,6 +173,82 @@ func TestGameRuntimeItemPickupRestoresSelfDroppedWholeStack(t *testing.T) {
 	replayOut := pickupGroundItem(t, flow, ground.VID)
 	if len(replayOut) != 0 {
 		t.Fatalf("expected replayed pickup to fail closed, got %d frames", len(replayOut))
+	}
+}
+
+func TestGameRuntimeRadiusAOIItemDropPickupRebuildsGroundVisibilityOnMove(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DropAOIOwner", 0x01030176, 0x02040176, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1005, Vnum: 27004, Count: 2, Slot: 7}}
+	watcher := peerVisibilityCharacter("DropAOIWatcher", 0x01030177, 0x02040177, 1900, 2900, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "drop-aoi-owner", 0x67676767, owner)
+	issuePeerTicket(t, ticketStore, "drop-aoi-watcher", 0x77777777, watcher)
+	if err := accounts.Save(accountstore.Account{Login: "drop-aoi-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed drop aoi owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "drop-aoi-watcher", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed drop aoi watcher account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected radius item-drop runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-aoi-owner", 0x67676767)
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-aoi-watcher", 0x77777777)
+	flushServerFrames(t, ownerFlow)
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected initially out-of-range watcher to see no owner frames, got %d", len(queued))
+	}
+
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(7))
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected out-of-range watcher to miss ground add, got %d frames", len(queued))
+	}
+
+	moveIn, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1200, Y: 2200, Time: 0x11121314})))
+	if err != nil {
+		t.Fatalf("unexpected watcher move-in error: %v", err)
+	}
+	if len(moveIn) != 1 {
+		t.Fatalf("expected one self move ack for watcher move-in, got %d", len(moveIn))
+	}
+	queuedIn := flushServerFrames(t, watcherFlow)
+	if len(queuedIn) != 4 {
+		t.Fatalf("expected peer bootstrap plus ground add after moving into range, got %d frames", len(queuedIn))
+	}
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, queuedIn[3]))
+	if err != nil {
+		t.Fatalf("decode moved-in watcher ground add: %v", err)
+	}
+	if peerGround != ground {
+		t.Fatalf("unexpected moved-in watcher ground add: got %+v want %+v", peerGround, ground)
+	}
+
+	moveOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 8, X: 1900, Y: 2900, Time: 0x11121315})))
+	if err != nil {
+		t.Fatalf("unexpected watcher move-out error: %v", err)
+	}
+	if len(moveOut) != 1 {
+		t.Fatalf("expected one self move ack for watcher move-out, got %d", len(moveOut))
+	}
+	queuedOut := flushServerFrames(t, watcherFlow)
+	if len(queuedOut) != 2 {
+		t.Fatalf("expected peer delete plus ground delete after moving out of range, got %d frames", len(queuedOut))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, queuedOut[1]))
+	if err != nil {
+		t.Fatalf("decode moved-out watcher ground delete: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected moved-out watcher ground delete: got %+v want vid %d", groundDel, ground.VID)
 	}
 }
 

@@ -58,6 +58,11 @@ type sharedGroundItem struct {
 	Z        int32
 }
 
+type sharedGroundItemVisibilityDiff struct {
+	Removed []sharedGroundItem
+	Added   []sharedGroundItem
+}
+
 const (
 	StaticActorInteractionFailureSubjectNotFound        = "subject_not_found"
 	StaticActorInteractionFailureSubjectDead            = "subject_dead"
@@ -841,6 +846,55 @@ func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, character login
 	return true
 }
 
+func (r *sharedWorldRegistry) groundItemVisibleToCharacterLocked(ground sharedGroundItem, character loginticket.Character) bool {
+	return r.topology.SharesVisibleWorld(character, loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y})
+}
+
+func (r *sharedWorldRegistry) groundItemVisibilityDiffLocked(previous loginticket.Character, current loginticket.Character) sharedGroundItemVisibilityDiff {
+	if r == nil || len(r.groundItemsByVID) == 0 {
+		return sharedGroundItemVisibilityDiff{}
+	}
+	diff := sharedGroundItemVisibilityDiff{}
+	for _, ground := range r.groundItemsByVID {
+		wasVisible := r.groundItemVisibleToCharacterLocked(ground, previous)
+		isVisible := r.groundItemVisibleToCharacterLocked(ground, current)
+		switch {
+		case wasVisible && !isVisible:
+			diff.Removed = append(diff.Removed, ground)
+		case !wasVisible && isVisible:
+			diff.Added = append(diff.Added, ground)
+		}
+	}
+	sortSharedGroundItemsByVID(diff.Removed)
+	sortSharedGroundItemsByVID(diff.Added)
+	return diff
+}
+
+func sortSharedGroundItemsByVID(items []sharedGroundItem) {
+	sort.Slice(items, func(i int, j int) bool {
+		return items[i].VID < items[j].VID
+	})
+}
+
+func encodeGroundItemAddFrame(ground sharedGroundItem) []byte {
+	return itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: ground.VID, Vnum: ground.Item.Vnum, X: ground.X, Y: ground.Y, Z: ground.Z})
+}
+
+func encodeGroundItemDeleteFrame(ground sharedGroundItem) []byte {
+	return itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: ground.VID})
+}
+
+func buildGroundItemVisibilityTransitionFrames(removed []sharedGroundItem, added []sharedGroundItem) [][]byte {
+	frames := make([][]byte, 0, len(removed)+len(added))
+	for _, ground := range removed {
+		frames = append(frames, encodeGroundItemDeleteFrame(ground))
+	}
+	for _, ground := range added {
+		frames = append(frames, encodeGroundItemAddFrame(ground))
+	}
+	return frames
+}
+
 func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector loginticket.Character, vid uint32) (inventory.ItemInstance, bool) {
 	if r == nil || collectorID == 0 || vid == 0 {
 		return inventory.ItemInstance{}, false
@@ -853,7 +907,7 @@ func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector 
 		return inventory.ItemInstance{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
-	if !ok || !r.topology.SharesVisibleWorld(collector, loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y}) {
+	if !ok || !r.groundItemVisibleToCharacterLocked(ground, collector) {
 		return inventory.ItemInstance{}, false
 	}
 	return ground.Item, true
@@ -871,7 +925,7 @@ func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector log
 		return false
 	}
 	ground, ok := r.groundItemsByVID[vid]
-	if !ok || !r.topology.SharesVisibleWorld(collector, loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y}) {
+	if !ok || !r.groundItemVisibleToCharacterLocked(ground, collector) {
 		return false
 	}
 	delete(r.groundItemsByVID, vid)
@@ -893,6 +947,7 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 	scopes := r.scopesLocked()
 	visibilityDiff := scopes.RelocateVisibilityDiff(previous, current)
 	staticActorVisibilityDiff := scopes.RelocateStaticActorVisibilityDiff(previous, current)
+	groundItemVisibilityDiff := r.groundItemVisibilityDiffLocked(previous, current)
 	_ = r.entities.UpdatePlayer(id, current)
 	r.lastKnownCharacters[id] = current
 
@@ -928,6 +983,7 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 
 	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
 	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
+	originFrames = append(originFrames, buildGroundItemVisibilityTransitionFrames(groundItemVisibilityDiff.Removed, groundItemVisibilityDiff.Added)...)
 	if len(originFrames) == 0 {
 		return
 	}

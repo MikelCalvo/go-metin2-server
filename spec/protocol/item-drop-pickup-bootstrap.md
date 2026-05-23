@@ -101,7 +101,8 @@ For the first visible-peer pickup runtime slice, accepted pickup is visible-worl
 4. The item is restored into the collector's carried slot only if that original slot is still empty.
 5. The collector's selected character snapshot is persisted through the same account-store path used by drops before the handle is removed from the temporary ground table.
 6. The collector receives self `GC::ITEM_GROUND_DEL` first, then `GC::ITEM_SET` for the restored carried slot; other visible sessions receive one queued `GC::ITEM_GROUND_DEL`.
-7. Replayed, unknown, invisible, or occupied-slot pickups fail closed with no frames.
+7. While a temporary handle remains pending, later radius-AOI `MOVE` / `SYNC_POSITION` visibility transitions rebuild it for the moving/syncing session: crossing into the handle's visible world queues `GC::ITEM_GROUND_ADD` after ordinary player/static visibility transition frames, and crossing out queues `GC::ITEM_GROUND_DEL` after ordinary transition frames.
+8. Replayed, unknown, invisible, or occupied-slot pickups fail closed with no frames.
 
 The dropped ground item is still bootstrap-scoped rather than a durable shared-world entity. Reconnecting does not restore it as a ground entity, and broader ownership/range/despawn policy remains future work.
 
@@ -111,4 +112,4 @@ Current coverage:
 
 - `internal/proto/item` freezes encode/decode round-trips for `ITEM_DROP`, `ITEM_DROP2`, `ITEM_PICKUP`, `ITEM_GROUND_ADD`, and `ITEM_GROUND_DEL`, plus unexpected-header and invalid-payload rejection for the new codecs.
 - `internal/game` freezes `GAME`-phase dispatch for `ITEM_DROP`, `ITEM_DROP2`, and `ITEM_PICKUP`, including the shared-header `ITEM_USE` / `ITEM_DROP` payload-size split.
-- `internal/minimal` accepts carried-item drop requests with self ground-add echoes, queues matching ground-add echoes to currently visible peers, and accepts visible-world pickup of temporary bootstrap ground handles while durable ground item ownership remains deferred.
+- `internal/minimal` accepts carried-item drop requests with self ground-add echoes, queues matching ground-add echoes to currently visible peers, accepts visible-world pickup of temporary bootstrap ground handles, and rebuilds still-pending ground-handle visibility for the moving/syncing session on radius-AOI `MOVE` / `SYNC_POSITION` boundary crossings while durable ground item ownership remains deferred.
