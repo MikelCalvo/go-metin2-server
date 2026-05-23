@@ -59,6 +59,13 @@ type sharedGroundItem struct {
 	Z         int32
 }
 
+type sharedGroundItemPickup struct {
+	Item      inventory.ItemInstance
+	OwnerID   uint64
+	OwnerName string
+	Owner     loginticket.Character
+}
+
 type sharedGroundItemVisibilityDiff struct {
 	Removed []sharedGroundItem
 	Added   []sharedGroundItem
@@ -641,6 +648,15 @@ func (r *sharedWorldRegistry) enqueueToEntityLocked(entityID uint64, frames [][]
 	return true
 }
 
+func (r *sharedWorldRegistry) EnqueueToEntity(entityID uint64, frames [][]byte) bool {
+	if r == nil || entityID == 0 || len(frames) == 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.enqueueToEntityLocked(entityID, frames)
+}
+
 func (r *sharedWorldRegistry) enqueueToCharacterLocked(character loginticket.Character, frames [][]byte) bool {
 	entry, ok := r.sessionEntryForCharacterLocked(character)
 	if !ok || entry.FrameSink == nil {
@@ -921,6 +937,35 @@ func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector 
 		return inventory.ItemInstance{}, false
 	}
 	return ground.Item, true
+}
+
+func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector loginticket.Character, vid uint32) (sharedGroundItemPickup, bool) {
+	if r == nil || collectorID == 0 || vid == 0 {
+		return sharedGroundItemPickup{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.playerCharacter(collectorID); !ok {
+		return sharedGroundItemPickup{}, false
+	}
+	ground, ok := r.groundItemsByVID[vid]
+	if !ok || !r.groundItemVisibleToCharacterLocked(ground, collector) {
+		return sharedGroundItemPickup{}, false
+	}
+	ownerName := ground.OwnerName
+	var ownerCharacter loginticket.Character
+	if ground.OwnerID != 0 && ground.OwnerID != collectorID {
+		owner, ok := r.entities.Player(ground.OwnerID)
+		if ok && r.topology.SharesVisibleWorld(collector, owner.Character) {
+			ownerCharacter = owner.Character
+			if ownerName == "" {
+				ownerName = owner.Character.Name
+			}
+		}
+	}
+	return sharedGroundItemPickup{Item: ground.Item, OwnerID: ground.OwnerID, OwnerName: ownerName, Owner: ownerCharacter}, true
 }
 
 func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector loginticket.Character, vid uint32) bool {
@@ -1731,11 +1776,15 @@ func (r *sharedWorldRegistry) snapshotCharactersLocked() []loginticket.Character
 	return r.entities.PlayerCharacters()
 }
 
-func (r *sharedWorldRegistry) playerCharacter(id uint64) (loginticket.Character, bool) {
+func (r *sharedWorldRegistry) playerEntity(id uint64) (worldruntime.PlayerEntity, bool) {
 	if r == nil || r.entities == nil {
-		return loginticket.Character{}, false
+		return worldruntime.PlayerEntity{}, false
 	}
-	playerEntity, ok := r.entities.Player(id)
+	return r.entities.Player(id)
+}
+
+func (r *sharedWorldRegistry) playerCharacter(id uint64) (loginticket.Character, bool) {
+	playerEntity, ok := r.playerEntity(id)
 	if !ok {
 		return loginticket.Character{}, false
 	}

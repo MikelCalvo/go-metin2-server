@@ -312,7 +312,22 @@ Expected result:
 - the client remains stable after the warp
 - no merchant window, quest window, or inventory mutation appears
 
-### 5.5 Bootstrap equip / unequip appearance refresh
+### 5.5 Bootstrap item drop / pickup smoke
+
+Run this when two QA clients can enter the same visible bootstrap world.
+
+- [ ] On client A, drop one ordinary carried item stack using the normal client inventory drop path
+- [ ] Confirm client A sees a ground item plus ownership label
+- [ ] Confirm visible client B sees the same ground item plus ownership label
+- [ ] On client B, pick up client A's still-owned ground item
+
+Expected result:
+- client B receives a ground delete plus a party-shaped pickup notice naming client A
+- client A receives the ground delete plus a party-shaped pickup notice naming client B
+- the item is delivered back to client A's owned account/runtime rather than being added to client B
+- this remains a bootstrap party approximation; real party membership, ownership timers, public ownership release, and anti-give/drop flags are still not owned
+
+### 5.6 Bootstrap equip / unequip appearance refresh
 
 Run this only when the QA character has one wearable `body`, `weapon`, or `head` item plus at least one free carried slot.
 
@@ -330,7 +345,7 @@ Expected result:
 Important note:
 - broader visibility-changing appearance fanout beyond the currently frozen late-join, reconnect-driven, transfer-driven, duplicate-live retry-`ENTERGAME`, and radius-AOI move-into-range branches is still out of scope for this slice
 
-#### 5.5.1 Template-backed equip point refresh
+#### 5.6.1 Template-backed equip point refresh
 
 - [ ] Seed or confirm one wearable item whose template carries `equip_effect` metadata (current bootstrap QA seed: `12200`, weapon)
 - [ ] Record the current selected-character point value used by the seeded template (`Points[1]` in the current bootstrap slice)
@@ -348,7 +363,7 @@ Expected result:
 - if a point-bearing wearable is forced through the wrong slash seam slot, the item mutation can still stay appearance-only in the current bootstrap slice but the template-backed `PLAYER_POINT_CHANGE` must not fire
 - already-visible peers still only receive the projected appearance refresh; no peer-visible point stream is frozen by this slice
 
-### 5.6 Template-backed consumable item use
+### 5.7 Template-backed consumable item use
 
 - [ ] Seed or confirm one carried consumable whose item template has a `use_effect` payload (current bootstrap QA seed: `27001`)
 - [ ] Use the carried consumable through the current client item-use path or a carried-slot `ITEM_USE` packet (the older `/use_item <slot>` harness still remains valid)
@@ -363,7 +378,7 @@ Expected result:
 - the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then `CHAT_TYPE_INFO`
 - the selected-character snapshot persists atomically through the current save/rollback boundary
 
-### 5.6.1 Quickslot bootstrap replay
+### 5.7.1 Quickslot bootstrap replay
 
 Run this only when the selected QA character has persisted quickslots in its bootstrap account snapshot.
 
@@ -378,7 +393,7 @@ Expected result:
 - client-authored quickslot add/delete/swap edits return the matching self-only quickslot refresh frame, persist to the selected-character snapshot, and survive reconnect
 - automatic item-mutation quickslot synchronization is still pending, so moving or consuming an item may not yet update an existing item quickslot automatically
 
-### 5.7 Counted carried-slot `ITEM_MOVE` stack bounds
+### 5.8 Counted carried-slot `ITEM_MOVE` stack bounds
 
 Run this only when the QA character has two compatible carried stacks for the same stackable template (current bootstrap seed: `27001`) and the destination stack can be brought near that template's `max_count`.
 
@@ -391,7 +406,7 @@ Expected result:
 - packet-originated compatible partial merges respect item-template `max_count`, not only the packet count or storage integer bounds
 - failure preserves live and persisted carried-slot state atomically
 
-### 5.8 Merchant sell-back gold refresh
+### 5.9 Merchant sell-back gold refresh
 
 Run this only when the target build has a visible authored `shop_preview` merchant and a disposable carried item stack with a sellable item template.
 
@@ -407,7 +422,7 @@ Expected result:
 - invalid, anti-sell, equipped, or runtime-locked items fail closed and leave both live and persisted inventory/gold unchanged
 - richer `GC::SHOP UPDATE_ITEM` / `UPDATE_PRICE` merchant-window choreography remains out of scope for this bootstrap sell-back smoke
 
-### 5.8 Training dummy repeated-hit smoke
+### 5.10 Training dummy repeated-hit smoke
 
 Run this only when the target build has a visible authored `training_dummy` nearby.
 

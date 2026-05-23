@@ -23,7 +23,7 @@ Not owned yet:
 
 - permanent/shared-world ground item entity IDs, ownership timers, despawn timing, anti-drop policy, trade/shop restrictions, or range/path authorization beyond current visible-world scope;
 - gold-drop semantics beyond freezing the client packet fields;
-- `GC::ITEM_DROP`, timed/permission-changing ownership transitions, or party-delivery `GC::ITEM_GET` behavior.
+- `GC::ITEM_DROP`, timed/permission-changing ownership transitions, real party membership checks, or public ownership release.
 
 ## Client packets
 
@@ -103,10 +103,10 @@ Payload size: `30` bytes.
 | --- | --- | --- | --- |
 | 0 | `vnum` | `uint32 LE` | item vnum |
 | 4 | `count` | `uint8` | count displayed in the pickup notice |
-| 5 | `arg` | `uint8` | `0` for normal/self pickup in the current runtime |
-| 6 | `from_name` | fixed `25` bytes | zero-filled for normal/self pickup; reserved for later party-delivery variants |
+| 5 | `arg` | `uint8` | `0` for normal/self pickup; party-shaped notices use the already-frozen legacy-compatible arg values |
+| 6 | `from_name` | fixed `25` bytes | zero-filled for normal/self pickup; party-shaped notices carry the other participant name |
 
-The legacy server emits this notice after accepted ordinary item pickup. The current bootstrap runtime owns only the normal/self form (`arg = 0`, empty `from_name`).
+The legacy server emits this notice after accepted ordinary item pickup. The current bootstrap runtime owns the normal/self form (`arg = 0`, empty `from_name`) plus the first party-shaped owner-delivery notices when a visible bootstrap party peer collects an item still owned by another live session.
 
 ## Current runtime contract
 
@@ -134,9 +134,10 @@ For the first visible-peer pickup runtime slice, accepted pickup is visible-worl
 7. The collector receives self `GC::ITEM_GROUND_DEL` first, then `GC::ITEM_SET` for the restored carried slot, then normal/self `GC::ITEM_GET(vnum, count, arg=0, from_name="")`; other visible sessions receive one queued `GC::ITEM_GROUND_DEL`.
 8. While a temporary handle remains pending, later radius-AOI `MOVE` / `SYNC_POSITION` visibility transitions rebuild it for the moving/syncing session: crossing into the handle's visible world queues `GC::ITEM_GROUND_ADD` followed by `GC::ITEM_OWNERSHIP` after ordinary player/static visibility transition frames, and crossing out queues `GC::ITEM_GROUND_DEL` after ordinary transition frames.
 9. Gameplay-triggered exact-position transfer also rebuilds pending ground-item visibility for the moved session as part of the immediate self rebootstrap result: source-map handles no longer visible to the destination emit `GC::ITEM_GROUND_DEL`, and destination handles newly visible after transfer emit `GC::ITEM_GROUND_ADD` followed by `GC::ITEM_OWNERSHIP` after the existing self bootstrap, peer, and static-actor transfer frames.
-10. Replayed, unknown, invisible, or no-free-slot pickups fail closed with no frames.
+10. If a visible collector picks up a ground handle still owned by another live session, the bootstrap runtime treats that collector as a temporary bootstrap party member. The item is delivered to the owner account/runtime instead of the collector, the collector receives `GC::ITEM_GROUND_DEL` plus `GC::ITEM_GET(arg=2, from_name=<owner>)`, and the owner receives the queued peer delete plus `GC::ITEM_GET(arg=1, from_name=<collector>)`.
+11. Replayed, unknown, invisible, or no-free-slot pickups fail closed with no frames.
 
-The dropped ground item is still bootstrap-scoped rather than a durable shared-world entity. Reconnecting does not restore it as a ground entity, and broader ownership/range/despawn policy remains future work.
+The dropped ground item is still bootstrap-scoped rather than a durable shared-world entity. Reconnecting does not restore it as a ground entity, and broader ownership/range/despawn policy remains future work. Party pickup is likewise bootstrap-scoped: all visible live sessions are treated as the temporary party surface until real party membership and anti-give/anti-drop flags are owned.
 
 Reference-oracle evidence: the TMP4-compatible client exposes `SendItemDropPacket`, `SendItemDropPacketNew`, and `SendItemPickUpPacket` on the game socket, and consumes `GC::ITEM_GROUND_ADD` / `GC::ITEM_GROUND_DEL` to create and remove client-side ground item actors plus `GC::ITEM_OWNERSHIP` to label item ownership. This repository owns only the project-written field layouts and dispatch boundaries above.
 
@@ -144,4 +145,4 @@ Current coverage:
 
 - `internal/proto/item` freezes encode/decode round-trips for `ITEM_DROP`, `ITEM_DROP2`, `ITEM_PICKUP`, `ITEM_GROUND_ADD`, `ITEM_GROUND_DEL`, `ITEM_OWNERSHIP`, and normal/party-shaped `ITEM_GET`, plus unexpected-header and invalid-payload rejection for the new codecs.
 - `internal/game` freezes `GAME`-phase dispatch for `ITEM_DROP`, `ITEM_DROP2`, and `ITEM_PICKUP`, including the shared-header `ITEM_USE` / `ITEM_DROP` payload-size split.
-- `internal/minimal` accepts carried-item drop requests with self ground-add/ownership echoes, queues matching ground-add/ownership echoes to currently visible peers, accepts visible-world pickup of temporary bootstrap ground handles, and rebuilds still-pending ground-handle visibility for the moving/syncing session on radius-AOI `MOVE` / `SYNC_POSITION` boundary crossings and exact-position transfer self rebootstrap while durable ownership timers and permission changes remain deferred.
+- `internal/minimal` accepts carried-item drop requests with self ground-add/ownership echoes, queues matching ground-add/ownership echoes to currently visible peers, accepts visible-world pickup of temporary bootstrap ground handles, supports the first party-shaped owner-delivery pickup notices for visible live owners, and rebuilds still-pending ground-handle visibility for the moving/syncing session on radius-AOI `MOVE` / `SYNC_POSITION` boundary crossings and exact-position transfer self rebootstrap while durable ownership timers, real party membership, and permission changes remain deferred.

@@ -1500,10 +1500,54 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
-			droppedItem, ok := sharedWorld.GroundItemVisibleTo(sharedWorldID, previousSelected, vid)
+			pickup, ok := sharedWorld.GroundItemPickupFor(sharedWorldID, previousSelected, vid)
 			if !ok {
 				return nil, false
 			}
+			if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID {
+				ownerSelected := pickup.Owner
+				if ownerSelected.ID == 0 {
+					return nil, false
+				}
+				pickupSlot, ok := firstAvailableCarriedInventorySlot(ownerSelected.Inventory, pickup.Item.Slot)
+				if !ok {
+					return nil, false
+				}
+				pickedItem, err := pickup.Item.WithInventorySlot(pickupSlot)
+				if err != nil {
+					return nil, false
+				}
+				updatedOwner := ownerSelected
+				updatedOwner.Inventory = append(cloneInventoryItems(updatedOwner.Inventory), pickedItem)
+				sortInventoryItemsBySlot(updatedOwner.Inventory)
+				if accounts == nil {
+					return nil, false
+				}
+				ownerLogin := ownerSelected.Name
+				ownerAccount, err := accounts.Load(ownerLogin)
+				if err != nil {
+					return nil, false
+				}
+				updatedCharacters, ok := selectedCharacterSnapshotByIDUpdate(ownerAccount.Characters, ownerSelected.ID, updatedOwner)
+				if !ok || !saveAccountSnapshot(accounts, ownerAccount.Login, ownerAccount.Empire, updatedCharacters) {
+					return nil, false
+				}
+				sharedWorld.UpdateCharacterWithVisibilityTransition(pickup.OwnerID, ownerSelected, updatedOwner, nil)
+				if !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
+					return nil, false
+				}
+				collectorGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickedItem, itemproto.GetArgDeliveredToPartyMember, pickup.OwnerName)
+				if err != nil {
+					return nil, false
+				}
+				ownerGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickedItem, itemproto.GetArgFromPartyMember, previousSelected.Name)
+				if err != nil {
+					return nil, false
+				}
+				sharedWorld.EnqueueToEntity(pickup.OwnerID, [][]byte{ownerGetFrame})
+				return [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), collectorGetFrame}, true
+			}
+			droppedItem := pickup.Item
 			pickupSlot, ok := firstAvailableCarriedInventorySlot(previousSelected.Inventory, droppedItem.Slot)
 			if !ok {
 				return nil, false
@@ -2766,6 +2810,25 @@ func selectedCharacterSnapshotUpdate(characters []loginticket.Character, selecte
 	return updatedCharacters, true
 }
 
+func selectedCharacterSnapshotByIDUpdate(characters []loginticket.Character, characterID uint32, updated loginticket.Character) ([]loginticket.Character, bool) {
+	if characterID == 0 || updated.ID == 0 || updated.ID != characterID {
+		return nil, false
+	}
+	clonedUpdated := loginticket.CloneCharacters([]loginticket.Character{updated})
+	if len(clonedUpdated) != 1 {
+		return nil, false
+	}
+	clonedUpdated[0].NormalizeItemState()
+	updatedCharacters := cloneCharacters(characters)
+	for i := range updatedCharacters {
+		if updatedCharacters[i].ID == characterID {
+			updatedCharacters[i] = clonedUpdated[0]
+			return updatedCharacters, true
+		}
+	}
+	return nil, false
+}
+
 func cloneCharacters(characters []loginticket.Character) []loginticket.Character {
 	return loginticket.CloneCharacters(characters)
 }
@@ -3530,13 +3593,18 @@ func encodeBootstrapItemUpdateFrame(position itemproto.Position, instance invent
 }
 
 func encodeBootstrapItemGetFrame(instance inventory.ItemInstance) ([]byte, error) {
+	return encodeBootstrapItemGetFrameWithPartyArg(instance, itemproto.GetArgNormal, "")
+}
+
+func encodeBootstrapItemGetFrameWithPartyArg(instance inventory.ItemInstance, arg uint8, fromName string) ([]byte, error) {
 	if instance.Count > 255 {
 		return nil, fmt.Errorf("bootstrap item count exceeds legacy uint8: %d", instance.Count)
 	}
 	return itemproto.EncodeGet(itemproto.GetPacket{
-		Vnum:  instance.Vnum,
-		Count: uint8(instance.Count),
-		Arg:   itemproto.GetArgNormal,
+		Vnum:     instance.Vnum,
+		Count:    uint8(instance.Count),
+		Arg:      arg,
+		FromName: fromName,
 	}), nil
 }
 
