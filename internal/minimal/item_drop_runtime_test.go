@@ -8,6 +8,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 )
@@ -139,22 +140,9 @@ func TestGameRuntimeItemPickupRestoresSelfDroppedWholeStack(t *testing.T) {
 		t.Fatalf("unexpected item-pickup runtime error: %v", err)
 	}
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-owner", 0x37373737)
-	dropOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
-	if err != nil {
-		t.Fatalf("unexpected item drop error: %v", err)
-	}
-	if len(dropOut) != 2 {
-		t.Fatalf("expected item drop to emit ITEM_DEL and GROUND_ADD, got %d frames", len(dropOut))
-	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
-	if err != nil {
-		t.Fatalf("decode item drop ground add: %v", err)
-	}
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(5))
 
-	pickupOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
-	if err != nil {
-		t.Fatalf("unexpected item pickup error: %v", err)
-	}
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
 	if len(pickupOut) != 2 {
 		t.Fatalf("expected pickup to emit GROUND_DEL and ITEM_SET, got %d frames", len(pickupOut))
 	}
@@ -181,11 +169,76 @@ func TestGameRuntimeItemPickupRestoresSelfDroppedWholeStack(t *testing.T) {
 		t.Fatalf("unexpected persisted inventory after pickup: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
 	}
 
-	replayOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
-	if err != nil {
-		t.Fatalf("unexpected item pickup replay error: %v", err)
-	}
+	replayOut := pickupGroundItem(t, flow, ground.VID)
 	if len(replayOut) != 0 {
 		t.Fatalf("expected replayed pickup to fail closed, got %d frames", len(replayOut))
 	}
+}
+
+func TestGameRuntimeItemPickupRejectsOtherSessionGroundHandle(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupOwner", 0x01030174, 0x02040174, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1004, Vnum: 27003, Count: 2, Slot: 6}}
+	snooper := peerVisibilityCharacter("PickupSnooper", 0x01030175, 0x02040175, 1450, 2450, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "pickup-owner", 0x47474747, owner)
+	issuePeerTicket(t, ticketStore, "pickup-snooper", 0x57575757, snooper)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "pickup-snooper", Empire: snooper.Empire, Characters: cloneCharacters([]loginticket.Character{snooper})}); err != nil {
+		t.Fatalf("seed pickup snooper account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected item-pickup runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-owner", 0x47474747)
+	snooperFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-snooper", 0x57575757)
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+
+	if out := pickupGroundItem(t, snooperFlow, ground.VID); len(out) != 0 {
+		t.Fatalf("expected cross-session pickup to fail closed, got %d frames", len(out))
+	}
+	ownerOut := pickupGroundItem(t, ownerFlow, ground.VID)
+	if len(ownerOut) != 2 {
+		t.Fatalf("expected owner pickup after cross-session denial to still succeed, got %d frames", len(ownerOut))
+	}
+	account, err := accounts.Load("pickup-owner")
+	if err != nil {
+		t.Fatalf("load pickup owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("unexpected persisted owner inventory after pickup: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+}
+
+func dropAndDecodeGroundAdd(t *testing.T, flow interface {
+	HandleClientFrame(frame.Frame) ([][]byte, error)
+}, position itemproto.Position) itemproto.GroundAddPacket {
+	t.Helper()
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: position})))
+	if err != nil {
+		t.Fatalf("unexpected item drop error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected item drop to emit ITEM_DEL and GROUND_ADD, got %d frames", len(out))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode item drop ground add: %v", err)
+	}
+	return ground
+}
+
+func pickupGroundItem(t *testing.T, flow interface {
+	HandleClientFrame(frame.Frame) ([][]byte, error)
+}, vid uint32) [][]byte {
+	t.Helper()
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: vid})))
+	if err != nil {
+		t.Fatalf("unexpected item pickup error: %v", err)
+	}
+	return out
 }
