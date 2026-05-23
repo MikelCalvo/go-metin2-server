@@ -8,11 +8,16 @@ import (
 )
 
 const (
-	HeaderClientUse  uint16 = 0x0502
-	HeaderClientMove uint16 = 0x0504
-	HeaderDel        uint16 = 0x0510
-	HeaderSet        uint16 = 0x0511
-	HeaderUpdate     uint16 = 0x0514
+	HeaderClientUse    uint16 = 0x0502
+	HeaderClientDrop   uint16 = 0x0502
+	HeaderClientDrop2  uint16 = 0x0503
+	HeaderClientMove   uint16 = 0x0504
+	HeaderClientPickup uint16 = 0x0505
+	HeaderDel          uint16 = 0x0510
+	HeaderSet          uint16 = 0x0511
+	HeaderUpdate       uint16 = 0x0514
+	HeaderGroundAdd    uint16 = 0x0515
+	HeaderGroundDel    uint16 = 0x0516
 
 	WindowReserved            uint8  = 0
 	WindowInventory           uint8  = 1
@@ -27,13 +32,18 @@ const (
 	ItemSocketCount                  = 3
 	ItemAttributeCount               = 7
 
-	positionSize          = 3
-	attributeSize         = 3
-	clientUsePayloadSize  = positionSize
-	clientMovePayloadSize = positionSize + positionSize + 1
-	delPayloadSize        = positionSize
-	setPayloadSize        = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
-	updatePayloadSize     = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	positionSize            = 3
+	attributeSize           = 3
+	clientUsePayloadSize    = positionSize
+	clientDropPayloadSize   = positionSize + 4
+	clientDrop2PayloadSize  = positionSize + 4 + 1
+	clientMovePayloadSize   = positionSize + positionSize + 1
+	clientPickupPayloadSize = 4
+	delPayloadSize          = positionSize
+	setPayloadSize          = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	updatePayloadSize       = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	groundAddPayloadSize    = 4 + 4 + 4 + 4 + 4
+	groundDelPayloadSize    = 4
 )
 
 var (
@@ -79,10 +89,37 @@ type ClientUsePacket struct {
 	Position Position
 }
 
+type ClientDropPacket struct {
+	Position Position
+	Elk      uint32
+}
+
+type ClientDrop2Packet struct {
+	Position Position
+	Gold     uint32
+	Count    uint8
+}
+
 type ClientMovePacket struct {
 	Source      Position
 	Destination Position
 	Count       uint8
+}
+
+type ClientPickupPacket struct {
+	VID uint32
+}
+
+type GroundAddPacket struct {
+	VID  uint32
+	Vnum uint32
+	X    int32
+	Y    int32
+	Z    int32
+}
+
+type GroundDelPacket struct {
+	VID uint32
 }
 
 func InventoryPosition(cell uint16) Position {
@@ -139,6 +176,64 @@ func DecodeClientMove(f frame.Frame) (ClientMovePacket, error) {
 		Destination: decodePosition(f.Payload[positionSize : positionSize+positionSize]),
 		Count:       f.Payload[positionSize+positionSize],
 	}, nil
+}
+
+func EncodeClientDrop(packet ClientDropPacket) []byte {
+	payload := make([]byte, clientDropPayloadSize)
+	encodePosition(payload[:positionSize], packet.Position)
+	binary.LittleEndian.PutUint32(payload[positionSize:], packet.Elk)
+	return frame.Encode(HeaderClientDrop, payload)
+}
+
+func DecodeClientDrop(f frame.Frame) (ClientDropPacket, error) {
+	if f.Header != HeaderClientDrop {
+		return ClientDropPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientDropPayloadSize {
+		return ClientDropPacket{}, ErrInvalidPayload
+	}
+	return ClientDropPacket{
+		Position: decodePosition(f.Payload[:positionSize]),
+		Elk:      binary.LittleEndian.Uint32(f.Payload[positionSize:]),
+	}, nil
+}
+
+func EncodeClientDrop2(packet ClientDrop2Packet) []byte {
+	payload := make([]byte, clientDrop2PayloadSize)
+	encodePosition(payload[:positionSize], packet.Position)
+	binary.LittleEndian.PutUint32(payload[positionSize:], packet.Gold)
+	payload[positionSize+4] = packet.Count
+	return frame.Encode(HeaderClientDrop2, payload)
+}
+
+func DecodeClientDrop2(f frame.Frame) (ClientDrop2Packet, error) {
+	if f.Header != HeaderClientDrop2 {
+		return ClientDrop2Packet{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientDrop2PayloadSize {
+		return ClientDrop2Packet{}, ErrInvalidPayload
+	}
+	return ClientDrop2Packet{
+		Position: decodePosition(f.Payload[:positionSize]),
+		Gold:     binary.LittleEndian.Uint32(f.Payload[positionSize:]),
+		Count:    f.Payload[positionSize+4],
+	}, nil
+}
+
+func EncodeClientPickup(packet ClientPickupPacket) []byte {
+	payload := make([]byte, clientPickupPayloadSize)
+	binary.LittleEndian.PutUint32(payload, packet.VID)
+	return frame.Encode(HeaderClientPickup, payload)
+}
+
+func DecodeClientPickup(f frame.Frame) (ClientPickupPacket, error) {
+	if f.Header != HeaderClientPickup {
+		return ClientPickupPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientPickupPayloadSize {
+		return ClientPickupPacket{}, ErrInvalidPayload
+	}
+	return ClientPickupPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
 }
 
 func EncodeSet(packet SetPacket) []byte {
@@ -257,6 +352,48 @@ func DecodeUpdate(f frame.Frame) (UpdatePacket, error) {
 		offset += 2
 	}
 	return packet, nil
+}
+
+func EncodeGroundAdd(packet GroundAddPacket) []byte {
+	payload := make([]byte, groundAddPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:], packet.VID)
+	binary.LittleEndian.PutUint32(payload[4:], packet.Vnum)
+	binary.LittleEndian.PutUint32(payload[8:], uint32(packet.X))
+	binary.LittleEndian.PutUint32(payload[12:], uint32(packet.Y))
+	binary.LittleEndian.PutUint32(payload[16:], uint32(packet.Z))
+	return frame.Encode(HeaderGroundAdd, payload)
+}
+
+func DecodeGroundAdd(f frame.Frame) (GroundAddPacket, error) {
+	if f.Header != HeaderGroundAdd {
+		return GroundAddPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != groundAddPayloadSize {
+		return GroundAddPacket{}, ErrInvalidPayload
+	}
+	return GroundAddPacket{
+		VID:  binary.LittleEndian.Uint32(f.Payload[0:]),
+		Vnum: binary.LittleEndian.Uint32(f.Payload[4:]),
+		X:    int32(binary.LittleEndian.Uint32(f.Payload[8:])),
+		Y:    int32(binary.LittleEndian.Uint32(f.Payload[12:])),
+		Z:    int32(binary.LittleEndian.Uint32(f.Payload[16:])),
+	}, nil
+}
+
+func EncodeGroundDel(packet GroundDelPacket) []byte {
+	payload := make([]byte, groundDelPayloadSize)
+	binary.LittleEndian.PutUint32(payload, packet.VID)
+	return frame.Encode(HeaderGroundDel, payload)
+}
+
+func DecodeGroundDel(f frame.Frame) (GroundDelPacket, error) {
+	if f.Header != HeaderGroundDel {
+		return GroundDelPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != groundDelPayloadSize {
+		return GroundDelPacket{}, ErrInvalidPayload
+	}
+	return GroundDelPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
 }
 
 func encodePosition(dst []byte, position Position) {
