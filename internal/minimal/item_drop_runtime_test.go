@@ -144,15 +144,15 @@ func TestGameRuntimeItemPickupRestoresSelfDroppedWholeStack(t *testing.T) {
 	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(5))
 
 	pickupOut := pickupGroundItem(t, flow, ground.VID)
-	if len(pickupOut) != 2 {
-		t.Fatalf("expected pickup to emit GROUND_DEL and ITEM_SET, got %d frames", len(pickupOut))
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
 	}
 	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0]))
 	if err != nil {
 		t.Fatalf("decode pickup ground del: %v", err)
 	}
 	if groundDel.VID != ground.VID {
-		t.Fatalf("unexpected pickup ground del: got %+v want vid %d", groundDel, ground.VID)
+		t.Fatalf("unexpected pickup ground del vid: got %d want %d", groundDel.VID, ground.VID)
 	}
 	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
 	if err != nil {
@@ -160,6 +160,13 @@ func TestGameRuntimeItemPickupRestoresSelfDroppedWholeStack(t *testing.T) {
 	}
 	if set.Position != itemproto.InventoryPosition(5) || set.Vnum != 27002 || set.Count != 4 {
 		t.Fatalf("unexpected pickup item set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode pickup item get: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: 27002, Count: 4, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected pickup item get: %+v", get)
 	}
 
 	account, err := accounts.Load("pickup-owner")
@@ -355,8 +362,8 @@ func TestGameRuntimeItemPickupPlacesVisibleDropIntoFirstEmptySlotWhenOriginalSlo
 	flushServerFrames(t, collectorFlow)
 
 	pickupOut := pickupGroundItem(t, collectorFlow, ground.VID)
-	if len(pickupOut) != 2 {
-		t.Fatalf("expected occupied-original pickup to emit GROUND_DEL and ITEM_SET, got %d frames", len(pickupOut))
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected occupied-original pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
 	}
 	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
 	if err != nil {
@@ -364,6 +371,13 @@ func TestGameRuntimeItemPickupPlacesVisibleDropIntoFirstEmptySlotWhenOriginalSlo
 	}
 	if set.Position != itemproto.InventoryPosition(0) || set.Vnum != 27007 || set.Count != 2 {
 		t.Fatalf("expected pickup to choose first empty slot 0, got %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode occupied-original pickup item get: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: 27007, Count: 2, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected occupied-original pickup item get: %+v", get)
 	}
 	collectorAccount, err := accounts.Load("pickup-first-empty-collector")
 	if err != nil {
@@ -461,8 +475,8 @@ func TestGameRuntimeItemPickupRejectsOtherSessionGroundHandle(t *testing.T) {
 	}
 
 	snooperOut := pickupGroundItem(t, snooperFlow, ground.VID)
-	if len(snooperOut) != 2 {
-		t.Fatalf("expected visible peer pickup to emit GROUND_DEL and ITEM_SET, got %d frames", len(snooperOut))
+	if len(snooperOut) != 3 {
+		t.Fatalf("expected visible peer pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(snooperOut))
 	}
 	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, snooperOut[0]))
 	if err != nil {
@@ -477,6 +491,13 @@ func TestGameRuntimeItemPickupRejectsOtherSessionGroundHandle(t *testing.T) {
 	}
 	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27003 || set.Count != 2 {
 		t.Fatalf("unexpected visible peer pickup item set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, snooperOut[2]))
+	if err != nil {
+		t.Fatalf("decode visible peer pickup item get: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: 27003, Count: 2, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected visible peer pickup item get: %+v", get)
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 1 {
 		t.Fatalf("expected drop owner to receive one queued ground delete after peer pickup, got %d frames", len(queued))

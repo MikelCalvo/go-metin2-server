@@ -245,6 +245,56 @@ func TestDecodeGroundDelReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeGetBuildsANormalPickupNoticeFrame(t *testing.T) {
+	want := frame.Encode(HeaderGet, []byte{
+		0x44, 0x33, 0x22, 0x11,
+		7,
+		GetArgNormal,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	})
+	got := EncodeGet(GetPacket{Vnum: 0x11223344, Count: 7})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected item get frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestEncodeGetBuildsPartyDeliveryNoticeFrame(t *testing.T) {
+	want := frame.Encode(HeaderGet, []byte{
+		0x44, 0x33, 0x22, 0x11,
+		2,
+		GetArgDeliveredToPartyMember,
+		'P', 'e', 'e', 'r', 'O', 'n', 'e', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	})
+	got := EncodeGet(GetPacket{Vnum: 0x11223344, Count: 2, Arg: GetArgDeliveredToPartyMember, FromName: "PeerOne"})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected party delivery item get frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeGetReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeGet(decodeSingleFrame(t, EncodeGet(GetPacket{Vnum: 0x11223344, Count: 2, Arg: GetArgFromPartyMember, FromName: "PeerOne"})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (GetPacket{Vnum: 0x11223344, Count: 2, Arg: GetArgFromPartyMember, FromName: "PeerOne"}) {
+		t.Fatalf("unexpected item-get packet: %+v", packet)
+	}
+}
+
+func TestDecodeGetRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeGet(frame.Frame{Header: HeaderGet + 1, Length: 43, Payload: make([]byte, getPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeGetRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeGet(frame.Frame{Header: HeaderGet, Length: 42, Payload: make([]byte, getPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestEncodeDelBuildsAFrame(t *testing.T) {
 	want := loadHexFixture(t, "item-del-frame.hex")
 	got := EncodeDel(sampleDelPacket())

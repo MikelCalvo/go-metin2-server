@@ -18,6 +18,7 @@ const (
 	HeaderUpdate       uint16 = 0x0514
 	HeaderGroundAdd    uint16 = 0x0515
 	HeaderGroundDel    uint16 = 0x0516
+	HeaderGet          uint16 = 0x0518
 
 	WindowReserved            uint8  = 0
 	WindowInventory           uint8  = 1
@@ -31,6 +32,7 @@ const (
 	WearMaxCell               uint16 = 32
 	ItemSocketCount                  = 3
 	ItemAttributeCount               = 7
+	CharacterNameMaxLength           = 24
 
 	positionSize            = 3
 	attributeSize           = 3
@@ -44,6 +46,13 @@ const (
 	updatePayloadSize       = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 	groundAddPayloadSize    = 4 + 4 + 4 + 4 + 4
 	groundDelPayloadSize    = 4
+	getPayloadSize          = 4 + 1 + 1 + (CharacterNameMaxLength + 1)
+)
+
+const (
+	GetArgNormal                 uint8 = 0
+	GetArgFromPartyMember        uint8 = 1
+	GetArgDeliveredToPartyMember uint8 = 2
 )
 
 var (
@@ -120,6 +129,13 @@ type GroundAddPacket struct {
 
 type GroundDelPacket struct {
 	VID uint32
+}
+
+type GetPacket struct {
+	Vnum     uint32
+	Count    uint8
+	Arg      uint8
+	FromName string
 }
 
 func InventoryPosition(cell uint16) Position {
@@ -396,6 +412,30 @@ func DecodeGroundDel(f frame.Frame) (GroundDelPacket, error) {
 	return GroundDelPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
 }
 
+func EncodeGet(packet GetPacket) []byte {
+	payload := make([]byte, getPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:], packet.Vnum)
+	payload[4] = packet.Count
+	payload[5] = packet.Arg
+	copyFixedString(payload[6:], packet.FromName)
+	return frame.Encode(HeaderGet, payload)
+}
+
+func DecodeGet(f frame.Frame) (GetPacket, error) {
+	if f.Header != HeaderGet {
+		return GetPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != getPayloadSize {
+		return GetPacket{}, ErrInvalidPayload
+	}
+	return GetPacket{
+		Vnum:     binary.LittleEndian.Uint32(f.Payload[0:]),
+		Count:    f.Payload[4],
+		Arg:      f.Payload[5],
+		FromName: decodeFixedString(f.Payload[6:]),
+	}, nil
+}
+
 func encodePosition(dst []byte, position Position) {
 	dst[0] = position.WindowType
 	binary.LittleEndian.PutUint16(dst[1:], position.Cell)
@@ -406,4 +446,16 @@ func decodePosition(src []byte) Position {
 		WindowType: src[0],
 		Cell:       binary.LittleEndian.Uint16(src[1:]),
 	}
+}
+
+func copyFixedString(dst []byte, value string) {
+	copy(dst, value)
+}
+
+func decodeFixedString(src []byte) string {
+	end := 0
+	for end < len(src) && src[end] != 0 {
+		end++
+	}
+	return string(src[:end])
 }

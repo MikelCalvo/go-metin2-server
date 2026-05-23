@@ -8,7 +8,8 @@ Owned in this slice family:
 - client `CG::ITEM_DROP2` codec shape and `GAME` dispatch seam;
 - client `CG::ITEM_PICKUP` codec shape and `GAME` dispatch seam;
 - server `GC::ITEM_GROUND_ADD` codec shape;
-- server `GC::ITEM_GROUND_DEL` codec shape.
+- server `GC::ITEM_GROUND_DEL` codec shape;
+- server `GC::ITEM_GET` codec shape for pickup notices.
 
 Owned by the first runtime drop slice:
 
@@ -21,7 +22,7 @@ Not owned yet:
 
 - permanent/shared-world ground item entity IDs, ownership timers, despawn timing, anti-drop policy, trade/shop restrictions, or range/path authorization beyond current visible-world scope;
 - gold-drop semantics beyond freezing the client packet fields;
-- `GC::ITEM_DROP`, `GC::ITEM_OWNERSHIP`, or `GC::ITEM_GET` behavior.
+- `GC::ITEM_DROP`, `GC::ITEM_OWNERSHIP`, or party-delivery `GC::ITEM_GET` behavior.
 
 ## Client packets
 
@@ -78,6 +79,19 @@ Payload size is 4 bytes:
 | --- | --- | --- | --- |
 | 0 | `vid` | `uint32 LE` | visible ground-item runtime identifier to remove |
 
+### `GC::ITEM_GET` (`0x0518`)
+
+Payload size is 31 bytes:
+
+| Offset | Field | Type | Notes |
+| --- | --- | --- | --- |
+| 0 | `vnum` | `uint32 LE` | item template id |
+| 4 | `count` | `uint8` | picked-up count |
+| 5 | `arg` | `uint8` | `0` for normal/self pickup in the current runtime |
+| 6 | `from_name` | fixed `25` bytes | zero-filled for normal/self pickup; reserved for later party-delivery variants |
+
+The legacy server emits this notice after accepted ordinary item pickup. The current bootstrap runtime owns only the normal/self form (`arg = 0`, empty `from_name`).
+
 ## Current runtime contract
 
 `internal/game` now recognizes all three client packets while already in `GAME` and routes decoded requests to dedicated handlers. The default handler behavior is deny/no-response. The shipped bootstrap runtime currently accepts carried-item drops plus visible-world pickup of temporary bootstrap ground handles created by those accepted drops.
@@ -101,7 +115,7 @@ For the first visible-peer pickup runtime slice, accepted pickup is visible-worl
 4. The item is restored into the collector's original carried slot when that slot is empty; if that original slot is occupied, the bootstrap runtime falls back to the lowest empty carried inventory slot.
 5. If no carried inventory slot is free, pickup fails closed and leaves the temporary ground handle pending.
 6. The collector's selected character snapshot is persisted through the same account-store path used by drops before the handle is removed from the temporary ground table.
-7. The collector receives self `GC::ITEM_GROUND_DEL` first, then `GC::ITEM_SET` for the restored carried slot; other visible sessions receive one queued `GC::ITEM_GROUND_DEL`.
+7. The collector receives self `GC::ITEM_GROUND_DEL` first, then `GC::ITEM_SET` for the restored carried slot, then normal/self `GC::ITEM_GET(vnum, count, arg=0, from_name="")`; other visible sessions receive one queued `GC::ITEM_GROUND_DEL`.
 8. While a temporary handle remains pending, later radius-AOI `MOVE` / `SYNC_POSITION` visibility transitions rebuild it for the moving/syncing session: crossing into the handle's visible world queues `GC::ITEM_GROUND_ADD` after ordinary player/static visibility transition frames, and crossing out queues `GC::ITEM_GROUND_DEL` after ordinary transition frames.
 9. Gameplay-triggered exact-position transfer also rebuilds pending ground-item visibility for the moved session as part of the immediate self rebootstrap result: source-map handles no longer visible to the destination emit `GC::ITEM_GROUND_DEL`, and destination handles newly visible after transfer emit `GC::ITEM_GROUND_ADD` after the existing self bootstrap, peer, and static-actor transfer frames.
 10. Replayed, unknown, invisible, or no-free-slot pickups fail closed with no frames.
@@ -112,6 +126,6 @@ Reference-oracle evidence: the TMP4-compatible client exposes `SendItemDropPacke
 
 Current coverage:
 
-- `internal/proto/item` freezes encode/decode round-trips for `ITEM_DROP`, `ITEM_DROP2`, `ITEM_PICKUP`, `ITEM_GROUND_ADD`, and `ITEM_GROUND_DEL`, plus unexpected-header and invalid-payload rejection for the new codecs.
+- `internal/proto/item` freezes encode/decode round-trips for `ITEM_DROP`, `ITEM_DROP2`, `ITEM_PICKUP`, `ITEM_GROUND_ADD`, `ITEM_GROUND_DEL`, and normal/party-shaped `ITEM_GET`, plus unexpected-header and invalid-payload rejection for the new codecs.
 - `internal/game` freezes `GAME`-phase dispatch for `ITEM_DROP`, `ITEM_DROP2`, and `ITEM_PICKUP`, including the shared-header `ITEM_USE` / `ITEM_DROP` payload-size split.
 - `internal/minimal` accepts carried-item drop requests with self ground-add echoes, queues matching ground-add echoes to currently visible peers, accepts visible-world pickup of temporary bootstrap ground handles, and rebuilds still-pending ground-handle visibility for the moving/syncing session on radius-AOI `MOVE` / `SYNC_POSITION` boundary crossings and exact-position transfer self rebootstrap while durable ground item ownership remains deferred.

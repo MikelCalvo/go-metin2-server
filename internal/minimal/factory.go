@@ -1528,7 +1528,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
-			frames := [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), setFrame}
+			getFrame, err := encodeBootstrapItemGetFrame(pickedItem)
+			if err != nil {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			frames := [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), setFrame, getFrame}
 			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 			if !ok {
 				return nil, false
@@ -3518,6 +3524,17 @@ func encodeBootstrapItemUpdateFrame(position itemproto.Position, instance invent
 	return itemproto.EncodeUpdate(itemproto.UpdatePacket{
 		Position: position,
 		Count:    uint8(instance.Count),
+	}), nil
+}
+
+func encodeBootstrapItemGetFrame(instance inventory.ItemInstance) ([]byte, error) {
+	if instance.Count > 255 {
+		return nil, fmt.Errorf("bootstrap item count exceeds legacy uint8: %d", instance.Count)
+	}
+	return itemproto.EncodeGet(itemproto.GetPacket{
+		Vnum:  instance.Vnum,
+		Count: uint8(instance.Count),
+		Arg:   itemproto.GetArgNormal,
 	}), nil
 }
 
