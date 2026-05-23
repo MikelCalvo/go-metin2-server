@@ -64,10 +64,12 @@ type MerchantSellResult struct {
 }
 
 type GroundItemPickupResult struct {
-	Item    inventory.ItemInstance
-	Merged  bool
-	Updated inventory.ItemInstance
-	Placed  inventory.ItemInstance
+	Item         inventory.ItemInstance
+	Merged       bool
+	Split        bool
+	Updated      inventory.ItemInstance
+	UpdatedItems []inventory.ItemInstance
+	Placed       inventory.ItemInstance
 }
 
 type QuickslotSwapResult struct {
@@ -343,6 +345,32 @@ func (r *Runtime) PickupGroundItem(item inventory.ItemInstance, preferred invent
 			r.liveInventory = updatedInventory
 			return GroundItemPickupResult{Item: item, Merged: true, Updated: merged}, true
 		}
+		if distributedInventory, changes, remaining, ok := distributeMerchantGrantAcrossExistingStacks(updatedInventory, item.Vnum, item.Count, maxCount); ok && len(changes) > 0 {
+			updatedInventory = distributedInventory
+			if remaining == 0 {
+				sortInventoryItems(updatedInventory)
+				r.liveInventory = updatedInventory
+				return GroundItemPickupResult{Item: item, Split: true, UpdatedItems: clonePickupUpdatedItems(changes)}, true
+			}
+			placementSlot := preferred
+			if inventorySlotOccupied(updatedInventory, placementSlot) {
+				var found bool
+				placementSlot, found = nextFreeInventorySlot(updatedInventory)
+				if !found {
+					return GroundItemPickupResult{}, false
+				}
+			}
+			remainder := item
+			remainder.Count = remaining
+			placed, err := remainder.WithInventorySlot(placementSlot)
+			if err != nil {
+				return GroundItemPickupResult{}, false
+			}
+			updatedInventory = append(updatedInventory, placed)
+			sortInventoryItems(updatedInventory)
+			r.liveInventory = updatedInventory
+			return GroundItemPickupResult{Item: item, Split: true, UpdatedItems: clonePickupUpdatedItems(changes), Placed: placed}, true
+		}
 	}
 	placementSlot := preferred
 	if inventorySlotOccupied(updatedInventory, placementSlot) {
@@ -360,6 +388,12 @@ func (r *Runtime) PickupGroundItem(item inventory.ItemInstance, preferred invent
 	sortInventoryItems(updatedInventory)
 	r.liveInventory = updatedInventory
 	return GroundItemPickupResult{Item: item, Placed: placed}, true
+}
+
+func clonePickupUpdatedItems(changes []inventory.ItemInstance) []inventory.ItemInstance {
+	items := cloneItemInstances(changes)
+	sortInventoryItems(items)
+	return items
 }
 
 func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventory.SlotIndex, maxCount uint16) (inventory.MoveResult, bool) {

@@ -1560,33 +1560,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
-			var itemFrame []byte
-			if pickupResult.Merged {
-				position, err := itemproto.CarriedInventoryPosition(uint16(pickupResult.Updated.Slot))
-				if err != nil {
-					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-					refreshLiveCharacterRegistration()
-					return nil, false
-				}
-				itemFrame, err = encodeBootstrapItemUpdateFrame(position, pickupResult.Updated)
-				if err != nil {
-					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-					refreshLiveCharacterRegistration()
-					return nil, false
-				}
-			} else {
-				position, err := itemproto.CarriedInventoryPosition(uint16(pickupResult.Placed.Slot))
-				if err != nil {
-					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-					refreshLiveCharacterRegistration()
-					return nil, false
-				}
-				itemFrame, err = encodeBootstrapItemFrame(position, pickupResult.Placed)
-				if err != nil {
-					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-					refreshLiveCharacterRegistration()
-					return nil, false
-				}
+			itemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult)
+			if !ok {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
 			}
 			getFrame, err := encodeBootstrapItemGetFrame(pickupResult.Item)
 			if err != nil {
@@ -1594,7 +1572,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
-			frames := [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), itemFrame, getFrame}
+			frames := append([][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid})}, itemFrames...)
+			frames = append(frames, getFrame)
 			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 			if !ok {
 				return nil, false
@@ -3585,6 +3564,57 @@ func encodeBootstrapEquipmentItemFrame(instance inventory.ItemInstance) ([]byte,
 		return nil, fmt.Errorf("bootstrap equipment slot unsupported: %s", instance.EquipSlot.String())
 	}
 	return encodeBootstrapItemFrame(position, instance)
+}
+
+func encodeBootstrapGroundPickupInventoryFrames(result player.GroundItemPickupResult) ([][]byte, bool) {
+	frames := make([][]byte, 0, len(result.UpdatedItems)+1)
+	if result.Merged {
+		frame, ok := encodeBootstrapGroundPickupUpdateFrame(result.Updated)
+		if !ok {
+			return nil, false
+		}
+		frames = append(frames, frame)
+	} else if result.Split {
+		for _, updated := range result.UpdatedItems {
+			frame, ok := encodeBootstrapGroundPickupUpdateFrame(updated)
+			if !ok {
+				return nil, false
+			}
+			frames = append(frames, frame)
+		}
+	}
+	if result.Placed.ID != 0 {
+		frame, ok := encodeBootstrapGroundPickupSetFrame(result.Placed)
+		if !ok {
+			return nil, false
+		}
+		frames = append(frames, frame)
+	}
+	return frames, len(frames) > 0
+}
+
+func encodeBootstrapGroundPickupSetFrame(instance inventory.ItemInstance) ([]byte, bool) {
+	position, err := itemproto.CarriedInventoryPosition(uint16(instance.Slot))
+	if err != nil {
+		return nil, false
+	}
+	frame, err := encodeBootstrapItemFrame(position, instance)
+	if err != nil {
+		return nil, false
+	}
+	return frame, true
+}
+
+func encodeBootstrapGroundPickupUpdateFrame(instance inventory.ItemInstance) ([]byte, bool) {
+	position, err := itemproto.CarriedInventoryPosition(uint16(instance.Slot))
+	if err != nil {
+		return nil, false
+	}
+	frame, err := encodeBootstrapItemUpdateFrame(position, instance)
+	if err != nil {
+		return nil, false
+	}
+	return frame, true
 }
 
 func encodeBootstrapItemFrame(position itemproto.Position, instance inventory.ItemInstance) ([]byte, error) {

@@ -422,6 +422,74 @@ func TestGameRuntimeItemPickupMergesOwnedVisibleDropIntoCompatibleStack(t *testi
 	}
 }
 
+func TestGameRuntimeItemPickupSplitsStackableDropAcrossPartialStacksAndFreshSlot(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupSplitOwner", 0x01030184, 0x02040184, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1013, Vnum: 27001, Count: 5, Slot: 6},
+		{ID: 2013, Vnum: 27001, Count: 198, Slot: 0},
+		{ID: 3013, Vnum: 27001, Count: 199, Slot: 2},
+	}
+	issuePeerTicket(t, ticketStore, "pickup-split-owner", 0x84848484, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-split-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup split owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected item-pickup split runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-split-owner", 0x84848484)
+	flushServerFrames(t, flow)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(6))
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 5 {
+		t.Fatalf("expected split pickup to emit GROUND_DEL, two ITEM_UPDATEs, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	firstUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode split pickup first update: %v", err)
+	}
+	if firstUpdate.Position != itemproto.InventoryPosition(0) || firstUpdate.Count != 200 {
+		t.Fatalf("unexpected first split pickup update: %+v", firstUpdate)
+	}
+	secondUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode split pickup second update: %v", err)
+	}
+	if secondUpdate.Position != itemproto.InventoryPosition(2) || secondUpdate.Count != 200 {
+		t.Fatalf("unexpected second split pickup update: %+v", secondUpdate)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[3]))
+	if err != nil {
+		t.Fatalf("decode split pickup remainder set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27001 || set.Count != 2 {
+		t.Fatalf("unexpected split pickup remainder set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[4]))
+	if err != nil {
+		t.Fatalf("decode split pickup item get: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: 27001, Count: 5, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected split pickup get: %+v", get)
+	}
+	account, err := accounts.Load("pickup-split-owner")
+	if err != nil {
+		t.Fatalf("load pickup split owner account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 2013, Vnum: 27001, Count: 200, Slot: 0},
+		{ID: 3013, Vnum: 27001, Count: 200, Slot: 2},
+		{ID: 1013, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted inventory after split pickup: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+}
+
 func TestGameRuntimeItemPickupPlacesOwnedVisibleDropIntoFirstEmptySlotWhenOriginalSlotOccupied(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

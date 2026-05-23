@@ -693,13 +693,13 @@ Expected result:
 - [ ] Confirm client A receives its carried-slot mutation refresh followed by `GC::ITEM_GROUND_ADD` and `GC::ITEM_OWNERSHIP` naming client A's character
 - [ ] Confirm visible client B receives one queued/rendered ground-item add plus the matching ownership label for the same visible ground handle
 - [ ] Send one real client `ITEM_PICKUP` request from client B for that handle
-- [ ] Confirm client B receives `GC::ITEM_GROUND_DEL` followed by `GC::ITEM_SET` for the restored carried slot, or `GC::ITEM_UPDATE` when the picked stack fully merges into an already-carried compatible stack
+- [ ] Confirm client B receives `GC::ITEM_GROUND_DEL` followed by deterministic carried inventory refreshes: `GC::ITEM_SET` for a restored/new carried slot, `GC::ITEM_UPDATE` for compatible stack merges, or multiple `GC::ITEM_UPDATE` frames plus a `GC::ITEM_SET` when a stackable pickup fills partial stacks and places a remainder
 - [ ] Confirm client A sees the queued ground delete and no longer owns the dropped item in persisted inventory
 - [ ] Attempt a replayed pickup for the same handle and confirm it fails closed without extra item grants
 
 Expected result:
 - accepted drops publish one temporary bootstrap ground handle plus the current ownership label to currently visible peers
-- visible peers can collect the temporary handle after either a compatible carried stack can absorb the picked count or a carried destination slot is available
+- visible peers can collect the temporary handle when compatible carried stack capacity and/or a carried destination slot can accept the entire picked count
 - the collector mutation persists before the temporary handle is removed
 - ground-item delete fanout reaches other visible sessions after successful pickup
 - replayed, unknown, invisible, no-merge-capacity, or no-free-slot pickup attempts fail closed
