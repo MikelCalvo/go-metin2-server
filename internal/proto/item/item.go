@@ -18,6 +18,7 @@ const (
 	HeaderUpdate       uint16 = 0x0514
 	HeaderGroundAdd    uint16 = 0x0515
 	HeaderGroundDel    uint16 = 0x0516
+	HeaderOwnership    uint16 = 0x0517
 	HeaderGet          uint16 = 0x0518
 
 	WindowReserved            uint8  = 0
@@ -46,6 +47,7 @@ const (
 	updatePayloadSize       = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 	groundAddPayloadSize    = 4 + 4 + 4 + 4 + 4
 	groundDelPayloadSize    = 4
+	ownershipPayloadSize    = 4 + (CharacterNameMaxLength + 1)
 	getPayloadSize          = 4 + 1 + 1 + (CharacterNameMaxLength + 1)
 )
 
@@ -129,6 +131,11 @@ type GroundAddPacket struct {
 
 type GroundDelPacket struct {
 	VID uint32
+}
+
+type OwnershipPacket struct {
+	VID       uint32
+	OwnerName string
 }
 
 type GetPacket struct {
@@ -410,6 +417,26 @@ func DecodeGroundDel(f frame.Frame) (GroundDelPacket, error) {
 		return GroundDelPacket{}, ErrInvalidPayload
 	}
 	return GroundDelPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
+}
+
+func EncodeOwnership(packet OwnershipPacket) []byte {
+	payload := make([]byte, ownershipPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:], packet.VID)
+	copyFixedString(payload[4:], packet.OwnerName)
+	return frame.Encode(HeaderOwnership, payload)
+}
+
+func DecodeOwnership(f frame.Frame) (OwnershipPacket, error) {
+	if f.Header != HeaderOwnership {
+		return OwnershipPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != ownershipPayloadSize {
+		return OwnershipPacket{}, ErrInvalidPayload
+	}
+	return OwnershipPacket{
+		VID:       binary.LittleEndian.Uint32(f.Payload[0:]),
+		OwnerName: decodeFixedString(f.Payload[4:]),
+	}, nil
 }
 
 func EncodeGet(packet GetPacket) []byte {

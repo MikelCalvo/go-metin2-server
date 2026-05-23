@@ -245,6 +245,27 @@ func TestDecodeGroundDelReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeOwnershipBuildsAFrame(t *testing.T) {
+	want := frame.Encode(HeaderOwnership, []byte{
+		0x78, 0x56, 0x34, 0x12,
+		'D', 'r', 'o', 'p', 'O', 'w', 'n', 'e', 'r', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	})
+	got := EncodeOwnership(OwnershipPacket{VID: 0x12345678, OwnerName: "DropOwner"})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected item ownership frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeOwnershipReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeOwnership(decodeSingleFrame(t, EncodeOwnership(OwnershipPacket{VID: 0x12345678, OwnerName: "DropOwner"})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (OwnershipPacket{VID: 0x12345678, OwnerName: "DropOwner"}) {
+		t.Fatalf("unexpected item ownership packet: %+v", packet)
+	}
+}
+
 func TestEncodeGetBuildsANormalPickupNoticeFrame(t *testing.T) {
 	want := frame.Encode(HeaderGet, []byte{
 		0x44, 0x33, 0x22, 0x11,

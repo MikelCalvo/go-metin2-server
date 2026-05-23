@@ -38,8 +38,8 @@ func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected item drop error: %v", err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("expected item drop to emit ITEM_DEL, QUICKSLOT_DEL, and GROUND_ADD, got %d frames", len(out))
+	if len(out) != 4 {
+		t.Fatalf("expected item drop to emit ITEM_DEL, QUICKSLOT_DEL, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
 	}
 	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -61,6 +61,13 @@ func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
 	}
 	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != owner.X || ground.Y != owner.Y || ground.Z != owner.Z {
 		t.Fatalf("unexpected item drop ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode item drop ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: owner.Name}) {
+		t.Fatalf("unexpected item drop ownership: got %+v want vid %d owner %q", ownership, ground.VID, owner.Name)
 	}
 
 	account, err := accounts.Load("drop-owner")
@@ -98,8 +105,8 @@ func TestGameRuntimeItemDrop2DecrementsStackAndEmitsGroundAdd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected item drop2 error: %v", err)
 	}
-	if len(out) != 2 {
-		t.Fatalf("expected counted item drop to emit ITEM_UPDATE and GROUND_ADD, got %d frames", len(out))
+	if len(out) != 3 {
+		t.Fatalf("expected counted item drop to emit ITEM_UPDATE, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
 	}
 	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -114,6 +121,13 @@ func TestGameRuntimeItemDrop2DecrementsStackAndEmitsGroundAdd(t *testing.T) {
 	}
 	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != owner.X || ground.Y != owner.Y || ground.Z != owner.Z {
 		t.Fatalf("unexpected item drop2 ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode item drop2 ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: owner.Name}) {
+		t.Fatalf("unexpected item drop2 ownership: got %+v want vid %d owner %q", ownership, ground.VID, owner.Name)
 	}
 
 	account, err := accounts.Load("drop-count-owner")
@@ -228,8 +242,8 @@ func TestGameRuntimeRadiusAOIItemDropPickupRebuildsGroundVisibilityOnMove(t *tes
 		t.Fatalf("expected one self move ack for watcher move-in, got %d", len(moveIn))
 	}
 	queuedIn := flushServerFrames(t, watcherFlow)
-	if len(queuedIn) != 4 {
-		t.Fatalf("expected peer bootstrap plus ground add after moving into range, got %d frames", len(queuedIn))
+	if len(queuedIn) != 5 {
+		t.Fatalf("expected peer bootstrap plus ground add/ownership after moving into range, got %d frames", len(queuedIn))
 	}
 	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, queuedIn[3]))
 	if err != nil {
@@ -237,6 +251,13 @@ func TestGameRuntimeRadiusAOIItemDropPickupRebuildsGroundVisibilityOnMove(t *tes
 	}
 	if peerGround != ground {
 		t.Fatalf("unexpected moved-in watcher ground add: got %+v want %+v", peerGround, ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, queuedIn[4]))
+	if err != nil {
+		t.Fatalf("decode moved-in watcher ground ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: owner.Name}) {
+		t.Fatalf("unexpected moved-in watcher ground ownership: got %+v want vid %d owner %q", ownership, ground.VID, owner.Name)
 	}
 
 	moveOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 8, X: 1900, Y: 2900, Time: 0x11121315})))
@@ -301,8 +322,8 @@ func TestGameRuntimeExactPositionTransferRebuildsGroundItemVisibility(t *testing
 	flushServerFrames(t, destFlow)
 
 	sourceGround := dropAndDecodeGroundAdd(t, sourceFlow, itemproto.InventoryPosition(8))
-	if queued := flushServerFrames(t, moverFlow); len(queued) != 1 {
-		t.Fatalf("expected mover to see source-map ground add before transfer, got %d frames", len(queued))
+	if queued := flushServerFrames(t, moverFlow); len(queued) != 2 {
+		t.Fatalf("expected mover to see source-map ground add plus ownership before transfer, got %d frames", len(queued))
 	}
 	destGround := dropAndDecodeGroundAdd(t, destFlow, itemproto.InventoryPosition(9))
 	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
@@ -313,8 +334,8 @@ func TestGameRuntimeExactPositionTransferRebuildsGroundItemVisibility(t *testing
 	if err != nil {
 		t.Fatalf("unexpected transfer move error: %v", err)
 	}
-	if len(moveOut) != 10 {
-		t.Fatalf("expected self bootstrap, peer del/add, and ground del/add transfer frames, got %d", len(moveOut))
+	if len(moveOut) != 11 {
+		t.Fatalf("expected self bootstrap, peer del/add, and ground del/add/ownership transfer frames, got %d", len(moveOut))
 	}
 	sourceDelete, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, moveOut[8]))
 	if err != nil {
@@ -329,6 +350,13 @@ func TestGameRuntimeExactPositionTransferRebuildsGroundItemVisibility(t *testing
 	}
 	if destAdd != destGround {
 		t.Fatalf("unexpected destination ground add after transfer: got %+v want %+v", destAdd, destGround)
+	}
+	destOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, moveOut[10]))
+	if err != nil {
+		t.Fatalf("decode transfer destination ground ownership: %v", err)
+	}
+	if destOwnership != (itemproto.OwnershipPacket{VID: destGround.VID, OwnerName: destDropper.Name}) {
+		t.Fatalf("unexpected destination ground ownership after transfer: got %+v want vid %d owner %q", destOwnership, destGround.VID, destDropper.Name)
 	}
 	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
 		t.Fatalf("expected no queued mover frames after immediate transfer ground rebuild, got %d", len(queued))
@@ -462,8 +490,8 @@ func TestGameRuntimeItemPickupRejectsOtherSessionGroundHandle(t *testing.T) {
 	flushServerFrames(t, ownerFlow)
 	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
 
-	if queued := flushServerFrames(t, snooperFlow); len(queued) != 1 {
-		t.Fatalf("expected visible peer to receive one dropped ground-item add, got %d frames", len(queued))
+	if queued := flushServerFrames(t, snooperFlow); len(queued) != 2 {
+		t.Fatalf("expected visible peer to receive ground-item add plus ownership, got %d frames", len(queued))
 	} else {
 		peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, queued[0]))
 		if err != nil {
@@ -471,6 +499,13 @@ func TestGameRuntimeItemPickupRejectsOtherSessionGroundHandle(t *testing.T) {
 		}
 		if peerGround != ground {
 			t.Fatalf("unexpected peer ground add: got %+v want %+v", peerGround, ground)
+		}
+		ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, queued[1]))
+		if err != nil {
+			t.Fatalf("decode peer ground ownership: %v", err)
+		}
+		if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: owner.Name}) {
+			t.Fatalf("unexpected peer ground ownership: got %+v want vid %d owner %q", ownership, ground.VID, owner.Name)
 		}
 	}
 
@@ -535,8 +570,8 @@ func dropAndDecodeGroundAdd(t *testing.T, flow interface {
 	if err != nil {
 		t.Fatalf("unexpected item drop error: %v", err)
 	}
-	if len(out) != 2 {
-		t.Fatalf("expected item drop to emit ITEM_DEL and GROUND_ADD, got %d frames", len(out))
+	if len(out) != 3 {
+		t.Fatalf("expected item drop to emit ITEM_DEL, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
 	}
 	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[1]))
 	if err != nil {

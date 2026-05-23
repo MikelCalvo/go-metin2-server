@@ -675,15 +675,15 @@ Expected result:
 
 - [ ] Put client A and client B in the same visible bootstrap scope with client A carrying one disposable stack
 - [ ] Send one real client `ITEM_DROP` or `ITEM_DROP2` request from client A for that carried slot
-- [ ] Confirm client A receives its carried-slot mutation refresh followed by `GC::ITEM_GROUND_ADD`
-- [ ] Confirm visible client B receives one queued/rendered ground-item add for the same visible ground handle
+- [ ] Confirm client A receives its carried-slot mutation refresh followed by `GC::ITEM_GROUND_ADD` and `GC::ITEM_OWNERSHIP` naming client A's character
+- [ ] Confirm visible client B receives one queued/rendered ground-item add plus the matching ownership label for the same visible ground handle
 - [ ] Send one real client `ITEM_PICKUP` request from client B for that handle
 - [ ] Confirm client B receives `GC::ITEM_GROUND_DEL` followed by `GC::ITEM_SET` for the restored carried slot
 - [ ] Confirm client A sees the queued ground delete and no longer owns the dropped item in persisted inventory
 - [ ] Attempt a replayed pickup for the same handle and confirm it fails closed without extra item grants
 
 Expected result:
-- accepted drops publish one temporary bootstrap ground handle to currently visible peers
+- accepted drops publish one temporary bootstrap ground handle plus the current ownership label to currently visible peers
 - visible peers can collect the temporary handle after their carried destination slot is validated empty
 - the collector mutation persists before the temporary handle is removed
 - ground-item delete fanout reaches other visible sessions after successful pickup
@@ -694,10 +694,10 @@ Expected result:
 
 - [ ] Start `gamed` with radius AOI enabled for QA
 - [ ] Put client A carrying one disposable stack inside radius of the future drop point, and keep client B initially outside that radius
-- [ ] Have client A drop the carried stack and confirm client A receives the carried-slot mutation plus `GC::ITEM_GROUND_ADD`
-- [ ] Confirm client B does not receive the ground add while still outside radius
+- [ ] Have client A drop the carried stack and confirm client A receives the carried-slot mutation plus `GC::ITEM_GROUND_ADD` and `GC::ITEM_OWNERSHIP`
+- [ ] Confirm client B does not receive the ground add/ownership pair while still outside radius
 - [ ] Move client B into radius with position-only `MOVE` or `SYNC_POSITION`
-- [ ] Confirm client B receives the ordinary queued visibility-entry frames first and then one queued `GC::ITEM_GROUND_ADD` for the still-pending handle
+- [ ] Confirm client B receives the ordinary queued visibility-entry frames first and then one queued `GC::ITEM_GROUND_ADD` plus `GC::ITEM_OWNERSHIP` for the still-pending handle
 - [ ] Move client B back outside radius and confirm it receives the ordinary visibility-exit cleanup first and then one queued `GC::ITEM_GROUND_DEL` for that handle
 
 Expected result:

@@ -49,13 +49,14 @@ type sharedWorldRegistry struct {
 }
 
 type sharedGroundItem struct {
-	VID      uint32
-	OwnerID  uint64
-	Item     inventory.ItemInstance
-	MapIndex uint32
-	X        int32
-	Y        int32
-	Z        int32
+	VID       uint32
+	OwnerID   uint64
+	OwnerName string
+	Item      inventory.ItemInstance
+	MapIndex  uint32
+	X         int32
+	Y         int32
+	Z         int32
 }
 
 type sharedGroundItemVisibilityDiff struct {
@@ -830,16 +831,17 @@ func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, character login
 		return false
 	}
 	ground := sharedGroundItem{
-		VID:      vid,
-		OwnerID:  ownerID,
-		Item:     item,
-		MapIndex: r.topology.EffectiveMapIndex(character),
-		X:        character.X,
-		Y:        character.Y,
-		Z:        character.Z,
+		VID:       vid,
+		OwnerID:   ownerID,
+		OwnerName: character.Name,
+		Item:      item,
+		MapIndex:  r.topology.EffectiveMapIndex(character),
+		X:         character.X,
+		Y:         character.Y,
+		Z:         character.Z,
 	}
 	r.groundItemsByVID[vid] = ground
-	frames := [][]byte{itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: vid, Vnum: item.Vnum, X: ground.X, Y: ground.Y, Z: ground.Z})}
+	frames := encodeGroundItemVisibleFrames(ground)
 	for _, target := range r.scopesLocked().VisibleTargets(ownerID, character) {
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
@@ -880,17 +882,25 @@ func encodeGroundItemAddFrame(ground sharedGroundItem) []byte {
 	return itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: ground.VID, Vnum: ground.Item.Vnum, X: ground.X, Y: ground.Y, Z: ground.Z})
 }
 
+func encodeGroundItemOwnershipFrame(ground sharedGroundItem) []byte {
+	return itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: ground.VID, OwnerName: ground.OwnerName})
+}
+
+func encodeGroundItemVisibleFrames(ground sharedGroundItem) [][]byte {
+	return [][]byte{encodeGroundItemAddFrame(ground), encodeGroundItemOwnershipFrame(ground)}
+}
+
 func encodeGroundItemDeleteFrame(ground sharedGroundItem) []byte {
 	return itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: ground.VID})
 }
 
 func buildGroundItemVisibilityTransitionFrames(removed []sharedGroundItem, added []sharedGroundItem) [][]byte {
-	frames := make([][]byte, 0, len(removed)+len(added))
+	frames := make([][]byte, 0, len(removed)+(len(added)*2))
 	for _, ground := range removed {
 		frames = append(frames, encodeGroundItemDeleteFrame(ground))
 	}
 	for _, ground := range added {
-		frames = append(frames, encodeGroundItemAddFrame(ground))
+		frames = append(frames, encodeGroundItemVisibleFrames(ground)...)
 	}
 	return frames
 }

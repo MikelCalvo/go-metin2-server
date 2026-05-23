@@ -3369,13 +3369,15 @@ func itemDropResultFrames(character loginticket.Character, result inventory.Move
 	if droppedItem.Vnum == 0 {
 		return nil, fmt.Errorf("item drop source item not found for slot %d", result.From)
 	}
-	frames = append(frames, itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{
-		VID:  bootstrapGroundItemVID(character, result.From),
-		Vnum: droppedItem.Vnum,
-		X:    character.X,
-		Y:    character.Y,
-		Z:    character.Z,
-	}))
+	ground := sharedGroundItem{
+		VID:       bootstrapGroundItemVID(character, result.From),
+		OwnerName: character.Name,
+		Item:      droppedItem,
+		X:         character.X,
+		Y:         character.Y,
+		Z:         character.Z,
+	}
+	frames = append(frames, encodeGroundItemVisibleFrames(ground)...)
 	return frames, nil
 }
 
