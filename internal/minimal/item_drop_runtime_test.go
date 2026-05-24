@@ -769,6 +769,105 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberUsesOwnerCompatibleStackBeforeFr
 	}
 }
 
+func TestGameRuntimePartyItemPickupFallsBackToCollectorWhenOwnerInventoryIsFull(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PartyOwnerFullFallback", 0x01030198, 0x02040198, 1500, 2500, 0, 101, 201)
+	owner.Inventory = fullBootstrapInventoryExcept(28042, 1, 5200)
+	owner.Inventory[6] = inventory.ItemInstance{ID: 1024, Vnum: 27024, Count: 2, Slot: 6}
+	collector := peerVisibilityCharacter("PartyCollectorFallback", 0x01030199, 0x02040199, owner.X, owner.Y, 0, 101, 201)
+	ownerLogin := "party-owner-fallback"
+	collectorLogin := "party-collector-fb"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x98989898, owner)
+	issuePeerTicket(t, ticketStore, collectorLogin, 0x99999999, collector)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed party pickup fallback owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: collectorLogin, Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
+		t.Fatalf("seed party pickup fallback collector account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected party pickup fallback item runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x98989898)
+	flushServerFrames(t, ownerFlow)
+	dropOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(6), Count: 1})))
+	if err != nil {
+		t.Fatalf("unexpected party pickup fallback owner drop error: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected counted owner drop to emit ITEM_UPDATE, GROUND_ADD, and OWNERSHIP, got %d frames", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode party pickup fallback ground add: %v", err)
+	}
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), collectorLogin, 0x99999999)
+	flushServerFrames(t, collectorFlow)
+	flushServerFrames(t, ownerFlow)
+
+	out := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(out) != 3 {
+		t.Fatalf("expected party pickup fallback to collector to emit GROUND_DEL, ITEM_SET, and normal ITEM_GET, got %d", len(out))
+	}
+	collectorDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode party fallback collector ground del: %v", err)
+	}
+	if collectorDel.VID != ground.VID {
+		t.Fatalf("unexpected party fallback collector ground del: got %+v want vid %d", collectorDel, ground.VID)
+	}
+	collectorSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode party fallback collector item set: %v", err)
+	}
+	if collectorSet.Position != itemproto.InventoryPosition(6) || collectorSet.Vnum != 27024 || collectorSet.Count != 1 {
+		t.Fatalf("unexpected party fallback collector item set: %+v", collectorSet)
+	}
+	collectorGet, err := itemproto.DecodeGet(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode party fallback collector get notice: %v", err)
+	}
+	if collectorGet != (itemproto.GetPacket{Vnum: 27024, Count: 1, Arg: itemproto.GetArgNormal, FromName: ""}) {
+		t.Fatalf("unexpected party fallback collector get notice: %+v", collectorGet)
+	}
+
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 1 {
+		t.Fatalf("expected owner to receive only peer ground delete after collector fallback pickup, got %d frames", len(ownerQueued))
+	}
+	ownerDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode party fallback owner queued ground del: %v", err)
+	}
+	if ownerDel.VID != ground.VID {
+		t.Fatalf("unexpected party fallback owner queued ground del: %+v", ownerDel)
+	}
+
+	ownerAccount, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load party pickup fallback owner account: %v", err)
+	}
+	wantOwnerInventory := append([]inventory.ItemInstance(nil), owner.Inventory...)
+	wantOwnerInventory[6].Count = 1
+	if !reflect.DeepEqual(ownerAccount.Characters[0].Inventory, wantOwnerInventory) {
+		t.Fatalf("expected party fallback pickup to leave owner inventory unchanged after counted drop, got %#v want %#v", ownerAccount.Characters[0].Inventory, wantOwnerInventory)
+	}
+	collectorAccount, err := accounts.Load(collectorLogin)
+	if err != nil {
+		t.Fatalf("load party pickup fallback collector account: %v", err)
+	}
+	wantCollectorInventory := []inventory.ItemInstance{{ID: 1024, Vnum: 27024, Count: 1, Slot: 6}}
+	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, wantCollectorInventory) {
+		t.Fatalf("expected party fallback pickup to place item in collector inventory, got %#v want %#v", collectorAccount.Characters[0].Inventory, wantCollectorInventory)
+	}
+	if replay := pickupGroundItem(t, collectorFlow, ground.VID); len(replay) != 0 {
+		t.Fatalf("expected party fallback pickup to remove ground handle, replay got %d frames", len(replay))
+	}
+}
+
 func TestGameRuntimePartyItemPickupNoFreeOwnerSlotEmitsInventoryFullInfoWithoutRemovingGroundHandle(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -776,6 +875,7 @@ func TestGameRuntimePartyItemPickupNoFreeOwnerSlotEmitsInventoryFullInfoWithoutR
 	owner.Inventory = fullBootstrapInventoryExcept(28042, 1, 5000)
 	owner.Inventory[6] = inventory.ItemInstance{ID: 1022, Vnum: 27022, Count: 2, Slot: 6}
 	collector := peerVisibilityCharacter("PartyPickupFullCollector", 0x01030197, 0x02040197, owner.X, owner.Y, 0, 101, 201)
+	collector.Inventory = fullBootstrapInventoryExcept(29042, 1, 6000)
 	ownerLogin := "party-pickup-full-owner"
 	collectorLogin := "party-pickup-full-collector"
 	issuePeerTicket(t, ticketStore, ownerLogin, 0x96969696, owner)

@@ -1523,7 +1523,32 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				}
 				pickupResult, ok := ownerRuntime.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
 				if !ok {
-					return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
+					collectorResult, collectorOK := selectedPlayer.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
+					if !collectorOK {
+						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
+					}
+					collectorItemFrames, collectorOK := encodeBootstrapGroundPickupInventoryFrames(collectorResult)
+					if !collectorOK {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						refreshLiveCharacterRegistration()
+						return nil, false
+					}
+					collectorGetFrame, err := encodeBootstrapItemGetFrame(collectorResult.Item)
+					if err != nil {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						refreshLiveCharacterRegistration()
+						return nil, false
+					}
+					collectorFrames := append([][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid})}, collectorItemFrames...)
+					collectorFrames = append(collectorFrames, collectorGetFrame)
+					collectorFrames, collectorOK = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, collectorFrames, nil)
+					if !collectorOK {
+						return nil, false
+					}
+					if !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
+						return nil, false
+					}
+					return collectorFrames, true
 				}
 				itemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult)
 				if !ok {
