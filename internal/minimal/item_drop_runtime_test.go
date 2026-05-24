@@ -769,6 +769,76 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberUsesOwnerCompatibleStackBeforeFr
 	}
 }
 
+func TestGameRuntimePartyItemPickupNoFreeOwnerSlotEmitsInventoryFullInfoWithoutRemovingGroundHandle(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PartyPickupFullOwner", 0x01030196, 0x02040196, 1500, 2500, 0, 101, 201)
+	owner.Inventory = fullBootstrapInventoryExcept(28042, 1, 5000)
+	owner.Inventory[6] = inventory.ItemInstance{ID: 1022, Vnum: 27022, Count: 2, Slot: 6}
+	collector := peerVisibilityCharacter("PartyPickupFullCollector", 0x01030197, 0x02040197, owner.X, owner.Y, 0, 101, 201)
+	ownerLogin := "party-pickup-full-owner"
+	collectorLogin := "party-pickup-full-collector"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x96969696, owner)
+	issuePeerTicket(t, ticketStore, collectorLogin, 0x97979797, collector)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed party pickup-full owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: collectorLogin, Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
+		t.Fatalf("seed party pickup-full collector account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected party pickup-full item runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x96969696)
+	flushServerFrames(t, ownerFlow)
+	dropOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(6), Count: 1})))
+	if err != nil {
+		t.Fatalf("unexpected party pickup-full owner drop error: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected counted owner drop to emit ITEM_UPDATE, GROUND_ADD, and OWNERSHIP, got %d frames", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode party pickup-full ground add: %v", err)
+	}
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), collectorLogin, 0x97979797)
+	flushServerFrames(t, collectorFlow)
+
+	out := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(out) != 1 {
+		t.Fatalf("expected party owner full-inventory pickup to emit one info chat frame, got %d", len(out))
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode party owner full-inventory info chat: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != itemPickupInventoryFullInfoMessage {
+		t.Fatalf("unexpected party owner full-inventory info chat: %+v", info)
+	}
+
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected failed party pickup to leave only collector join frames queued for owner, got %d frames", len(ownerQueued))
+	}
+	ownerAccount, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load party pickup-full owner account: %v", err)
+	}
+	wantOwnerInventory := append([]inventory.ItemInstance(nil), owner.Inventory...)
+	wantOwnerInventory[6].Count = 1
+	if !reflect.DeepEqual(ownerAccount.Characters[0].Inventory, wantOwnerInventory) {
+		t.Fatalf("expected party owner full-inventory pickup to leave owner inventory unchanged after counted drop, got %#v want %#v", ownerAccount.Characters[0].Inventory, wantOwnerInventory)
+	}
+
+	retry := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(retry) != 1 {
+		t.Fatalf("expected failed party pickup to keep ground handle pending for retry, got %d frames", len(retry))
+	}
+}
+
 func TestGameRuntimeItemPickupNoFreeSlotEmitsInventoryFullInfoWithoutRemovingGroundHandle(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
