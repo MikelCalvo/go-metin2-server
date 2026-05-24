@@ -55,6 +55,13 @@ type StaticActorDeathReward struct {
 	DropVnums  []uint32
 }
 
+type StaticActorCombatProfileDefaults struct {
+	MaxHP                 uint8
+	DamagePerNormalAttack uint8
+	RespawnDelay          time.Duration
+	DeathReward           StaticActorDeathReward
+}
+
 func staticActorCombatProfile(profile string, kind string) string {
 	if profile != "" {
 		return profile
@@ -77,31 +84,42 @@ func StaticActorVisibilityVID(actor StaticEntity) (uint32, bool) {
 	return uint32(actor.Entity.ID), true
 }
 
-func BootstrapStaticActorCurrentHP(combatKind string) (uint8, bool) {
+func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCombatProfileDefaults, bool) {
 	switch combatKind {
 	case StaticActorCombatKindTrainingDummy:
-		return TrainingDummyBootstrapMaxHP, true
+		return StaticActorCombatProfileDefaults{
+			MaxHP:                 TrainingDummyBootstrapMaxHP,
+			DamagePerNormalAttack: TrainingDummyBootstrapDamagePerNormalAttack,
+			RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+			DeathReward:           StaticActorDeathReward{},
+		}, true
 	default:
+		return StaticActorCombatProfileDefaults{}, false
+	}
+}
+
+func BootstrapStaticActorCurrentHP(combatKind string) (uint8, bool) {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatKind)
+	if !ok {
 		return 0, false
 	}
+	return defaults.MaxHP, true
 }
 
 func BootstrapStaticActorRespawnDelay(combatKind string) (time.Duration, bool) {
-	switch combatKind {
-	case StaticActorCombatKindTrainingDummy:
-		return TrainingDummyBootstrapRespawnDelay, true
-	default:
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatKind)
+	if !ok {
 		return 0, false
 	}
+	return defaults.RespawnDelay, true
 }
 
 func BootstrapStaticActorDeathReward(combatKind string) (StaticActorDeathReward, bool) {
-	switch combatKind {
-	case StaticActorCombatKindTrainingDummy:
-		return StaticActorDeathReward{}, true
-	default:
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatKind)
+	if !ok {
 		return StaticActorDeathReward{}, false
 	}
+	return defaults.DeathReward, true
 }
 
 func BootstrapStaticActorHPPercent(combatKind string, currentHP uint8) (uint8, bool) {

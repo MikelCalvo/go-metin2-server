@@ -48,6 +48,35 @@ func TestBootstrapStaticActorRespawnDelayReturnsTrainingDummyBootstrapDelay(t *t
 	}
 }
 
+func TestBootstrapStaticActorCombatProfileDefaultsSupportsTrainingDummyProfile(t *testing.T) {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(StaticActorCombatProfileTrainingDummy)
+	if !ok {
+		t.Fatal("expected bootstrap training-dummy combat profile defaults to be supported")
+	}
+	if defaults.MaxHP != TrainingDummyBootstrapMaxHP {
+		t.Fatalf("expected training-dummy max HP %d, got %d", TrainingDummyBootstrapMaxHP, defaults.MaxHP)
+	}
+	if defaults.DamagePerNormalAttack != TrainingDummyBootstrapDamagePerNormalAttack {
+		t.Fatalf("expected training-dummy normal attack damage %d, got %d", TrainingDummyBootstrapDamagePerNormalAttack, defaults.DamagePerNormalAttack)
+	}
+	if defaults.RespawnDelay != TrainingDummyBootstrapRespawnDelay {
+		t.Fatalf("expected training-dummy respawn delay %v, got %v", TrainingDummyBootstrapRespawnDelay, defaults.RespawnDelay)
+	}
+	if defaults.DeathReward.Experience != 0 || defaults.DeathReward.Gold != 0 || len(defaults.DeathReward.DropVnums) != 0 {
+		t.Fatalf("expected rewardless training-dummy profile defaults, got %+v", defaults.DeathReward)
+	}
+}
+
+func TestBootstrapStaticActorCombatProfileDefaultsRejectsUnknownProfile(t *testing.T) {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults("boss")
+	if ok {
+		t.Fatalf("expected unknown combat profile defaults to fail closed, got %+v", defaults)
+	}
+	if defaults.MaxHP != 0 || defaults.DamagePerNormalAttack != 0 || defaults.RespawnDelay != 0 || defaults.DeathReward.Experience != 0 || defaults.DeathReward.Gold != 0 || len(defaults.DeathReward.DropVnums) != 0 {
+		t.Fatalf("expected zero defaults on failure, got %+v", defaults)
+	}
+}
+
 func TestBootstrapStaticActorCurrentHPSupportsTrainingDummyCombatProfile(t *testing.T) {
 	currentHP, ok := BootstrapStaticActorCurrentHP(StaticActorCombatProfileTrainingDummy)
 	if !ok {

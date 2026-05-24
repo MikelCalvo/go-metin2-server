@@ -40,12 +40,14 @@ This slice does **not** yet freeze:
 
 ## Implementation contract
 
-Runtime helpers that need a death reward should ask the world-runtime combat profile seam instead of inlining reward constants in session code.
+Runtime helpers that need combat defaults or death rewards should ask the world-runtime combat-profile seam instead of inlining constants in session code.
 
 For the current bootstrap runtime:
-- `training_dummy` returns a supported zero-valued reward
+- `training_dummy` returns one supported profile-default record
+- that record carries `max_hp = 10`, `damage_per_normal_attack = 1`, and `respawn_delay = 2s`
+- the same record carries the current rewardless death descriptor: EXP `0`, gold `0`, and no drop vnums
 - unsupported combat kinds return `ok = false`
-- reward data remains runtime/configuration owned; it is not character persistence
+- reward/default data remains runtime/configuration owned; it is not character persistence
 
 ## Success definition
 

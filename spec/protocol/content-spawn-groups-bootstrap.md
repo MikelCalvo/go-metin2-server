@@ -134,6 +134,7 @@ This slice freezes a narrow ownership model:
 ### Combat profile owns
 - combat defaults and rules shared by authored actors using that profile
 - for the current bootstrap profile, that includes the existing training-dummy HP/death/respawn semantics already frozen elsewhere
+- the current profile-default seam is deliberately compact: `max_hp`, `damage_per_normal_attack`, `respawn_delay`, and the reward descriptor documented in `non-player-reward-bootstrap.md`
 
 ### Runtime owns
 - live entity IDs / VIDs
