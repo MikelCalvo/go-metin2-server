@@ -68,6 +68,61 @@ func TestDropInventoryItemRejectsLockedOrOversizedDrop(t *testing.T) {
 	}
 }
 
+func TestPickupGroundItemFillsCompatibleStacksBeforePlacingRemainder(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 198, Slot: 2},
+			{ID: 12, Vnum: 27001, Count: 199, Slot: 5},
+		},
+	}, SessionLink{})
+
+	ground := inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 5, Slot: 9}
+	result, ok := runtime.PickupGroundItem(ground, 9, 200)
+	if !ok {
+		t.Fatal("expected compatible ground pickup to fill existing stacks and place the remainder")
+	}
+	if !result.Split || result.Merged || result.Placed.ID != 31 || result.Placed.Count != 2 || result.Placed.Slot != 9 {
+		t.Fatalf("unexpected pickup split result: %+v", result)
+	}
+	if !reflect.DeepEqual(result.UpdatedItems, []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 200, Slot: 2},
+		{ID: 12, Vnum: 27001, Count: 200, Slot: 5},
+	}) {
+		t.Fatalf("unexpected pickup stack updates: %#v", result.UpdatedItems)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 200, Slot: 2},
+		{ID: 12, Vnum: 27001, Count: 200, Slot: 5},
+		{ID: 31, Vnum: 27001, Count: 2, Slot: 9},
+	}) {
+		t.Fatalf("unexpected inventory after split pickup: %#v", runtime.LiveInventory())
+	}
+}
+
+func TestPickupGroundItemFailsWhenCompatibleStacksCannotFitRemainderAndNoFreshSlotExists(t *testing.T) {
+	inventoryItems := make([]inventory.ItemInstance, 0, inventory.CarriedInventorySlotCount)
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		item := inventory.ItemInstance{ID: uint64(slot) + 1, Vnum: 11200, Count: 1, Slot: slot}
+		if slot == 2 {
+			item = inventory.ItemInstance{ID: uint64(slot) + 1, Vnum: 27001, Count: 198, Slot: slot}
+		}
+		if slot == 5 {
+			item = inventory.ItemInstance{ID: uint64(slot) + 1, Vnum: 27001, Count: 199, Slot: slot}
+		}
+		inventoryItems = append(inventoryItems, item)
+	}
+	runtime := NewRuntime(loginticket.Character{Inventory: inventoryItems}, SessionLink{})
+	before := runtime.LiveInventory()
+
+	ground := inventory.ItemInstance{ID: 301, Vnum: 27001, Count: 5, Slot: 9}
+	if _, ok := runtime.PickupGroundItem(ground, 9, 200); ok {
+		t.Fatal("expected split pickup with no fresh slot for the remainder to fail closed")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), before) {
+		t.Fatalf("failed split pickup mutated inventory: got %#v want %#v", runtime.LiveInventory(), before)
+	}
+}
+
 func TestRuntimeKeepsLiveCurrencyAndItemStateSeparateFromPersistedSnapshot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
