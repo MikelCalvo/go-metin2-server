@@ -329,6 +329,55 @@ func TestRuntimePickupGroundItemMergesIntoCompatibleStackBeforeFreshSlot(t *test
 	}
 }
 
+func TestRuntimePickupGroundItemSkipsLockedCompatibleStacks(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 4, Slot: 0, Locked: true},
+			{ID: 12, Vnum: 27001, Count: 6, Slot: 2},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.PickupGroundItem(inventory.ItemInstance{ID: 13, Vnum: 27001, Count: 3, Slot: 6}, 6, 200)
+	if !ok {
+		t.Fatal("expected pickup to skip locked stack and merge into unlocked compatible stack")
+	}
+	if !result.Merged || result.Split || result.Placed.ID != 0 {
+		t.Fatalf("expected locked-stack pickup to remain a pure merge, got %+v", result)
+	}
+	if result.Updated != (inventory.ItemInstance{ID: 12, Vnum: 27001, Count: 9, Slot: 2}) {
+		t.Fatalf("unexpected locked-stack pickup merge result: %+v", result.Updated)
+	}
+	wantLive := []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 4, Slot: 0, Locked: true},
+		{ID: 12, Vnum: 27001, Count: 9, Slot: 2},
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, wantLive) {
+		t.Fatalf("unexpected live inventory after locked-stack pickup: got %#v want %#v", got, wantLive)
+	}
+}
+
+func TestRuntimePickupGroundItemFailsWhenOnlyCompatibleCapacityIsLocked(t *testing.T) {
+	persisted := loginticket.Character{ID: 0x01030102, VID: 0x02040102, Name: "PeerTwo"}
+	persisted.Inventory = []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 4, Slot: 0, Locked: true}}
+	for slot := inventory.SlotIndex(1); slot < inventory.CarriedInventorySlotCount; slot++ {
+		persisted.Inventory = append(persisted.Inventory, inventory.ItemInstance{ID: uint64(1000 + slot), Vnum: 28000 + uint32(slot), Count: 1, Slot: slot})
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if result, ok := runtime.PickupGroundItem(inventory.ItemInstance{ID: 13, Vnum: 27001, Count: 3, Slot: 6}, 6, 200); ok {
+		t.Fatalf("expected pickup to fail when only compatible capacity is locked and no fresh slot exists, got %+v", result)
+	}
+	want := append([]inventory.ItemInstance(nil), persisted.Inventory...)
+	sortInventoryItems(want)
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected failed locked-stack pickup to leave live inventory unchanged, got %#v want %#v", got, want)
+	}
+}
+
 func TestRuntimePickupGroundItemFailsWhenPartialStacksNeedRemainderButNoFreshSlot(t *testing.T) {
 	persisted := loginticket.Character{ID: 0x01030102, VID: 0x02040102, Name: "PeerTwo"}
 	persisted.Inventory = []inventory.ItemInstance{
