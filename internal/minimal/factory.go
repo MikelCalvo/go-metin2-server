@@ -1476,6 +1476,47 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return gameflow.ItemUseResult{Accepted: true, Frames: frames}
 		}
+		executeSelectedItemUseToItem := func(source itemproto.Position, target itemproto.Position) gameflow.ItemUseToItemResult {
+			if source.WindowType != itemproto.WindowInventory || target.WindowType != itemproto.WindowInventory {
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			}
+			if inventory.SlotIndex(source.Cell) >= inventory.CarriedInventorySlotCount || inventory.SlotIndex(target.Cell) >= inventory.CarriedInventorySlotCount {
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			}
+			selectedPlayer, ok := currentSelectedPlayer()
+			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			}
+			sourceSlot := inventory.SlotIndex(source.Cell)
+			targetSlot := inventory.SlotIndex(target.Cell)
+			previousSelected := selectedPlayer.LiveCharacter()
+			template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, sourceSlot)
+			if !ok || !template.Stackable || template.MaxCount == 0 {
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			}
+			moveResult, ok := selectedPlayer.UseItemOnItem(sourceSlot, targetSlot, template)
+			if !ok {
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			}
+			if !moveResult.Changed {
+				return gameflow.ItemUseToItemResult{Accepted: true}
+			}
+			frames, err := inventoryMoveResultFrames(moveResult)
+			if err != nil {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			}
+			if quickslotFrames, ok := itemMoveQuickslotSyncFrames(selectedPlayer, moveResult); !ok {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return gameflow.ItemUseToItemResult{Accepted: false}
+			} else {
+				frames = append(frames, quickslotFrames...)
+			}
+			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			return gameflow.ItemUseToItemResult{Accepted: ok, Frames: frames}
+		}
 		executeSelectedGoldDrop := func(amount uint32) ([][]byte, bool) {
 			if amount == 0 {
 				return nil, false
@@ -2292,6 +2333,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					defer stateMu.Unlock()
 
 					return executeSelectedItemUse(packet.Position)
+				},
+				HandleItemUseToItem: func(packet itemproto.ClientUseToItemPacket) gameflow.ItemUseToItemResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					return executeSelectedItemUseToItem(packet.Source, packet.Target)
 				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
 					stateMu.Lock()
@@ -4374,6 +4421,14 @@ func defaultBootstrapItemTemplateSnapshot() itemcatalog.Snapshot {
 }
 
 func (r *gameRuntime) resolveRuntimeUseTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {
+	template, ok := r.resolveRuntimeItemTemplate(selectedPlayer, slot)
+	if !ok || template.UseEffect == nil {
+		return itemcatalog.Template{}, false
+	}
+	return template, true
+}
+
+func (r *gameRuntime) resolveRuntimeItemTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {
 	if r == nil || selectedPlayer == nil {
 		return itemcatalog.Template{}, false
 	}
@@ -4382,7 +4437,7 @@ func (r *gameRuntime) resolveRuntimeUseTemplate(selectedPlayer *player.Runtime, 
 			continue
 		}
 		template, ok := r.itemTemplates[item.Vnum]
-		if !ok || !itemcatalog.ValidTemplate(template) || template.UseEffect == nil {
+		if !ok || !itemcatalog.ValidTemplate(template) {
 			return itemcatalog.Template{}, false
 		}
 		return template, true

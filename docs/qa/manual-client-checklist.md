@@ -395,6 +395,22 @@ Expected result:
 - client-authored quickslot add/delete/swap edits return the matching self-only quickslot refresh frame, persist to the selected-character snapshot, and survive reconnect
 - automatic item-mutation quickslot synchronization is still pending, so moving or consuming an item may not yet update an existing item quickslot automatically
 
+### 5.7.2 Drag-to-item carried-stack merge
+
+Run this only when the QA character has two compatible carried stacks for the same stackable template (current bootstrap seed: `27001`).
+
+- [ ] Send one `ITEM_USE_TO_ITEM` / drag-to-item request from a source carried stack into a compatible target carried stack
+- [ ] Confirm the source stack shrinks or clears and the target stack grows by the moved count
+- [ ] Confirm no normal consumable `PLAYER_POINT_CHANGE` or `CHAT_TYPE_INFO` effect placeholder fires from this drag-to-item path
+- [ ] Repeat against an incompatible target stack
+- [ ] Confirm the incompatible target fails closed: no item refresh frames, no point/effect placeholder, and no inventory mutation
+- [ ] Reconnect and confirm the accepted merge persisted while the rejected request did not
+
+Expected result:
+- `ITEM_USE_TO_ITEM` currently owns only carried same-`vnum` stack-on-stack consolidation
+- the path reuses the existing self-only carried inventory refresh family and selected-character persistence boundary
+- broader drag-to-item behavior such as sockets, enchanting, refines, quest items, or equipment effects remains out of scope
+
 ### 5.8 Counted carried-slot `ITEM_MOVE` stack bounds
 
 Run this only when the QA character has two compatible carried stacks for the same stackable template (current bootstrap seed: `27001`) and the destination stack can be brought near that template's `max_count`.

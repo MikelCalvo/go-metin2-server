@@ -198,6 +198,110 @@ func TestGameRuntimeItemDrop2DecrementsStackAndEmitsGroundAdd(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemUseToItemMergesCompatibleInventoryStacks(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemOwner", 0x01030192, 0x02040192, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1011, Vnum: 27001, Count: 3, Slot: 5}, {ID: 1012, Vnum: 27001, Count: 4, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "use-to-item-owner", 0x92929292, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed use-to-item owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-owner", 0x92929292)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected use-to-item error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected use-to-item stack merge to emit ITEM_DEL and ITEM_SET, got %d frames", len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode use-to-item source del: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected use-to-item source del: %+v", del)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode use-to-item target set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27001 || set.Count != 7 {
+		t.Fatalf("unexpected use-to-item target set: %+v", set)
+	}
+
+	account, err := accounts.Load("use-to-item-owner")
+	if err != nil {
+		t.Fatalf("load use-to-item owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1012, Vnum: 27001, Count: 7, Slot: 6}}) {
+		t.Fatalf("unexpected persisted inventory after use-to-item merge: %#v", account.Characters[0].Inventory)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected use-to-item merge to avoid normal use point effect, got %d", account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameRuntimeItemUseToItemRejectsIncompatibleTargetWithoutNormalUseFallback(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemReject", 0x01030193, 0x02040193, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1021, Vnum: 27001, Count: 3, Slot: 5}, {ID: 1022, Vnum: 27002, Count: 4, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "use-to-item-reject", 0x93939393, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-reject", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed rejected use-to-item owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+	}, {
+		Vnum:      27002,
+		Name:      "Practice Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected rejected use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-reject", 0x93939393)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected rejected use-to-item error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected incompatible use-to-item to emit no frames, got %d", len(out))
+	}
+	account, err := accounts.Load("use-to-item-reject")
+	if err != nil {
+		t.Fatalf("load rejected use-to-item owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected rejected use-to-item inventory to stay unchanged, got %#v", account.Characters[0].Inventory)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected rejected use-to-item to avoid normal use point effect, got %d", account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameRuntimeItemDropRejectsAntiDropAndAntiGiveTemplatesWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

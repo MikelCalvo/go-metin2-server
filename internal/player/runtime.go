@@ -721,6 +721,61 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	return result, true
 }
 
+func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.SlotIndex, template itemcatalog.Template) (inventory.MoveResult, bool) {
+	if r == nil || source == target || !itemcatalog.ValidTemplate(template) {
+		return inventory.MoveResult{}, false
+	}
+	sourceIndex := findInventorySlot(r.liveInventory, source)
+	if sourceIndex < 0 {
+		return inventory.MoveResult{}, false
+	}
+	sourceItem := r.liveInventory[sourceIndex]
+	if sourceItem.Equipped || sourceItem.Locked || sourceItem.Vnum != template.Vnum || sourceItem.Count == 0 {
+		return inventory.MoveResult{}, false
+	}
+	targetIndex := findInventorySlot(r.liveInventory, target)
+	if targetIndex < 0 {
+		return inventory.MoveResult{}, false
+	}
+	targetItem := r.liveInventory[targetIndex]
+	if targetItem.Equipped || targetItem.Locked || targetItem.Vnum != sourceItem.Vnum || targetItem.Count == 0 || targetItem.Count >= template.MaxCount {
+		return inventory.MoveResult{}, false
+	}
+	mergeCount := sourceItem.Count
+	available := template.MaxCount - targetItem.Count
+	if mergeCount > available {
+		mergeCount = available
+	}
+	if mergeCount == 0 {
+		return inventory.MoveResult{}, false
+	}
+	targetItem.Count += mergeCount
+	if err := targetItem.Validate(); err != nil {
+		return inventory.MoveResult{}, false
+	}
+	result := inventory.MoveResult{Changed: true, From: source, To: target, ToOccupied: true, ToItem: targetItem}
+	if mergeCount == sourceItem.Count {
+		r.liveInventory = removeInventoryIndex(r.liveInventory, sourceIndex)
+		targetIndex = findInventorySlot(r.liveInventory, target)
+		if targetIndex < 0 {
+			return inventory.MoveResult{}, false
+		}
+		r.liveInventory[targetIndex] = targetItem
+		sortInventoryItems(r.liveInventory)
+		return result, true
+	}
+	sourceItem.Count -= mergeCount
+	if err := sourceItem.Validate(); err != nil {
+		return inventory.MoveResult{}, false
+	}
+	r.liveInventory[sourceIndex] = sourceItem
+	r.liveInventory[targetIndex] = targetItem
+	sortInventoryItems(r.liveInventory)
+	result.FromOccupied = true
+	result.FromItem = sourceItem
+	return result, true
+}
+
 func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint16, price uint64) MerchantBuyFailure {
 	if r == nil || !itemcatalog.ValidTemplate(template) || count == 0 || count > template.MaxCount || price == 0 {
 		return MerchantBuyFailureInvalid

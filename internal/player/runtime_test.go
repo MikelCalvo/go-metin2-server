@@ -223,6 +223,60 @@ func TestRuntimeItemUseRemovesTheLastConsumableStack(t *testing.T) {
 	}
 }
 
+func TestRuntimeUseItemOnItemMergesCompatibleStacksWithoutPointEffect(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.UseItemOnItem(5, 6, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50"))
+	if !ok {
+		t.Fatal("expected compatible stack use-to-item merge to succeed")
+	}
+	if !result.Changed || result.CountOnly || result.FromOccupied {
+		t.Fatalf("unexpected use-to-item merge result metadata: %+v", result)
+	}
+	if result.ToItem.ID != 12 || result.ToItem.Vnum != 27001 || result.ToItem.Count != 7 || result.ToItem.Slot != 6 {
+		t.Fatalf("unexpected destination item after use-to-item merge: %+v", result.ToItem)
+	}
+	live := runtime.LiveCharacter()
+	if live.Points[1] != 700 {
+		t.Fatalf("expected use-to-item merge to avoid point effects, got points[1]=%d", live.Points[1])
+	}
+	if !reflect.DeepEqual(live.Inventory, []inventory.ItemInstance{{ID: 12, Vnum: 27001, Count: 7, Slot: 6}}) {
+		t.Fatalf("unexpected live inventory after use-to-item merge: %#v", live.Inventory)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to remain unchanged before save-back, got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+}
+
+func TestRuntimeUseItemOnItemRejectsPointUseTemplateWithoutCompatibleTarget(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27002, Count: 4, Slot: 6}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.UseItemOnItem(5, 6, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")); ok {
+		t.Fatal("expected use-to-item to reject incompatible target instead of falling back to normal item use")
+	}
+	live := runtime.LiveCharacter()
+	if live.Points[1] != 700 {
+		t.Fatalf("expected rejected use-to-item to avoid point effects, got points[1]=%d", live.Points[1])
+	}
+	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) {
+		t.Fatalf("expected rejected use-to-item to leave inventory unchanged, got %#v", live.Inventory)
+	}
+}
+
 func TestRuntimeItemUseResolvesPointEffectFromTemplateMetadata(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

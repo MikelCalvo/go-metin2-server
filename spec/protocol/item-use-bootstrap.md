@@ -34,8 +34,16 @@ The client source also exposes a separate drag-to-item packet family, `ITEM_USE_
 - payload is exactly two packed `TItemPos` values: `source_pos` then `target_pos`
 - each packed `TItemPos` remains `window_type:uint8`, `cell:uint16` little-endian
 
-This slice freezes the wire codec, packet identity, and `GAME`-phase dispatch seam for `ITEM_USE_TO_ITEM`.
-The default game-flow handler rejects it silently/fail-closed when no runtime handler is installed, and live runtime effects remain intentionally unimplemented until a later behavior slice owns one concrete legacy-compatible drag-to-item use case.
+The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-stack consolidation:
+- source and target must both be carried inventory positions
+- source and target must be different occupied slots with the same `vnum`
+- the source template must resolve to a valid stackable item with non-zero `max_count`
+- the target stack must have free capacity under that `max_count`
+- the runtime moves as many source items as fit into the target stack
+- the normal `use_effect` path is not executed for this drag-to-item request, even when the source item also has a consumable template
+
+Incompatible targets, empty slots, equipped cells, non-stackable templates, missing templates, and already-full targets fail closed with no frames and no mutation.
+When no runtime handler is installed, the default game-flow handler still rejects the packet silently/fail-closed.
 
 For the first owned packet ingress, the runtime only accepts:
 - `window_type = INVENTORY`
@@ -145,7 +153,7 @@ This first item-use bootstrap contract does **not** yet freeze:
 - timed buffs
 - equipment enchanting
 - drag-to-world use semantics
-- runtime `ITEM_USE_TO_ITEM` effects or dispatch beyond the wire codec
+- runtime `ITEM_USE_TO_ITEM` effects beyond the first carried stack-on-stack consolidation case
 - area effects or peer-visible FX
 - general-purpose multi-effect template execution beyond the first point-change shape
 - heal-over-time, poison, or buff stacking rules
@@ -157,5 +165,6 @@ With the first implementation slice landed, the repository can now say:
 - the first owned item-use vertical is no longer undefined
 - exactly one template-backed consumable shape is frozen and implemented before broader gameplay scripting begins
 - `/use_item <slot>` and the first owned client-originated `ITEM_USE` packet now both mutate the first carried template-backed consumable in the bootstrap minimal runtime
-- the self-only outputs are explicit and exercised: `PLAYER_POINT_CHANGE`, `ITEM_SET`/`ITEM_DEL`, last-stack `QUICKSLOT_DEL`, and one `CHAT_TYPE_INFO` placeholder effect
+- the self-only consumable outputs are explicit and exercised: `PLAYER_POINT_CHANGE`, `ITEM_SET`/`ITEM_DEL`, last-stack `QUICKSLOT_DEL`, and one `CHAT_TYPE_INFO` placeholder effect
+- the first live `ITEM_USE_TO_ITEM` runtime case now reuses the carried-stack merge path for compatible same-`vnum` inventory stacks, persists the merged inventory, and deliberately avoids falling back to the normal consumable `use_effect`
 - the selected-character writeback still preserves the existing atomic persistence and rollback boundary
