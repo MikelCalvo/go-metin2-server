@@ -773,6 +773,7 @@ func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.Slo
 	sortInventoryItems(r.liveInventory)
 	result.FromOccupied = true
 	result.FromItem = sourceItem
+	result.CountOnly = true
 	return result, true
 }
 

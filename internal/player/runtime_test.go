@@ -255,6 +255,43 @@ func TestRuntimeUseItemOnItemMergesCompatibleStacksWithoutPointEffect(t *testing
 	}
 }
 
+func TestRuntimeUseItemOnItemMergesPartialStackWhenTargetHasLimitedRoom(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 7, Slot: 5}, {ID: 12, Vnum: 27001, Count: 8, Slot: 6}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
+	template.MaxCount = 10
+	result, ok := runtime.UseItemOnItem(5, 6, template)
+	if !ok {
+		t.Fatal("expected partial compatible stack use-to-item merge to succeed")
+	}
+	if !result.Changed || !result.CountOnly || !result.FromOccupied || !result.ToOccupied {
+		t.Fatalf("unexpected partial use-to-item metadata: %+v", result)
+	}
+	if result.FromItem.ID != 11 || result.FromItem.Count != 5 || result.FromItem.Slot != 5 {
+		t.Fatalf("unexpected source remainder after partial merge: %+v", result.FromItem)
+	}
+	if result.ToItem.ID != 12 || result.ToItem.Count != 10 || result.ToItem.Slot != 6 {
+		t.Fatalf("unexpected target stack after partial merge: %+v", result.ToItem)
+	}
+	live := runtime.LiveCharacter()
+	if live.Points[1] != 700 {
+		t.Fatalf("expected partial use-to-item merge to avoid point effects, got points[1]=%d", live.Points[1])
+	}
+	if !reflect.DeepEqual(live.Inventory, []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 5, Slot: 5}, {ID: 12, Vnum: 27001, Count: 10, Slot: 6}}) {
+		t.Fatalf("unexpected live inventory after partial use-to-item merge: %#v", live.Inventory)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to remain unchanged before save-back, got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsPointUseTemplateWithoutCompatibleTarget(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,
