@@ -29,6 +29,14 @@ The first owned item-use ingress remains bootstrap-scoped and deliberately narro
 - only carried inventory slots are valid live runtime inputs
 - equipped items remain out of scope even though equipment still uses the legacy combined inventory/equipment cell namespace elsewhere in the bootstrap item family
 
+The client source also exposes a separate drag-to-item packet family, `ITEM_USE_TO_ITEM`:
+- framed header `0x0506`
+- payload is exactly two packed `TItemPos` values: `source_pos` then `target_pos`
+- each packed `TItemPos` remains `window_type:uint8`, `cell:uint16` little-endian
+
+This slice freezes only the wire codec and packet identity for `ITEM_USE_TO_ITEM`.
+`GAME` dispatch and runtime effects for drag-to-item use remain intentionally unimplemented until a later behavior slice owns one concrete legacy-compatible use case.
+
 For the first owned packet ingress, the runtime only accepts:
 - `window_type = INVENTORY`
 - `cell < 90`
@@ -137,7 +145,7 @@ This first item-use bootstrap contract does **not** yet freeze:
 - timed buffs
 - equipment enchanting
 - drag-to-world use semantics
-- drag-and-drop target semantics
+- runtime `ITEM_USE_TO_ITEM` effects or dispatch beyond the wire codec
 - area effects or peer-visible FX
 - general-purpose multi-effect template execution beyond the first point-change shape
 - heal-over-time, poison, or buff stacking rules

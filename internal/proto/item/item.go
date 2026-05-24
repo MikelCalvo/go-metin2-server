@@ -8,18 +8,19 @@ import (
 )
 
 const (
-	HeaderClientUse    uint16 = 0x0502
-	HeaderClientDrop   uint16 = 0x0502
-	HeaderClientDrop2  uint16 = 0x0503
-	HeaderClientMove   uint16 = 0x0504
-	HeaderClientPickup uint16 = 0x0505
-	HeaderDel          uint16 = 0x0510
-	HeaderSet          uint16 = 0x0511
-	HeaderUpdate       uint16 = 0x0514
-	HeaderGroundAdd    uint16 = 0x0515
-	HeaderGroundDel    uint16 = 0x0516
-	HeaderOwnership    uint16 = 0x0517
-	HeaderGet          uint16 = 0x0518
+	HeaderClientUse       uint16 = 0x0502
+	HeaderClientDrop      uint16 = 0x0502
+	HeaderClientDrop2     uint16 = 0x0503
+	HeaderClientMove      uint16 = 0x0504
+	HeaderClientPickup    uint16 = 0x0505
+	HeaderClientUseToItem uint16 = 0x0506
+	HeaderDel             uint16 = 0x0510
+	HeaderSet             uint16 = 0x0511
+	HeaderUpdate          uint16 = 0x0514
+	HeaderGroundAdd       uint16 = 0x0515
+	HeaderGroundDel       uint16 = 0x0516
+	HeaderOwnership       uint16 = 0x0517
+	HeaderGet             uint16 = 0x0518
 
 	WindowReserved            uint8  = 0
 	WindowInventory           uint8  = 1
@@ -35,20 +36,21 @@ const (
 	ItemAttributeCount               = 7
 	CharacterNameMaxLength           = 24
 
-	positionSize            = 3
-	attributeSize           = 3
-	clientUsePayloadSize    = positionSize
-	clientDropPayloadSize   = positionSize + 4
-	clientDrop2PayloadSize  = positionSize + 4 + 1
-	clientMovePayloadSize   = positionSize + positionSize + 1
-	clientPickupPayloadSize = 4
-	delPayloadSize          = positionSize
-	setPayloadSize          = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
-	updatePayloadSize       = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
-	groundAddPayloadSize    = 4 + 4 + 4 + 4 + 4
-	groundDelPayloadSize    = 4
-	ownershipPayloadSize    = 4 + (CharacterNameMaxLength + 1)
-	getPayloadSize          = 4 + 1 + 1 + (CharacterNameMaxLength + 1)
+	positionSize               = 3
+	attributeSize              = 3
+	clientUsePayloadSize       = positionSize
+	clientDropPayloadSize      = positionSize + 4
+	clientDrop2PayloadSize     = positionSize + 4 + 1
+	clientMovePayloadSize      = positionSize + positionSize + 1
+	clientPickupPayloadSize    = 4
+	clientUseToItemPayloadSize = positionSize + positionSize
+	delPayloadSize             = positionSize
+	setPayloadSize             = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	updatePayloadSize          = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	groundAddPayloadSize       = 4 + 4 + 4 + 4 + 4
+	groundDelPayloadSize       = 4
+	ownershipPayloadSize       = 4 + (CharacterNameMaxLength + 1)
+	getPayloadSize             = 4 + 1 + 1 + (CharacterNameMaxLength + 1)
 )
 
 const (
@@ -98,6 +100,11 @@ type UpdatePacket struct {
 
 type ClientUsePacket struct {
 	Position Position
+}
+
+type ClientUseToItemPacket struct {
+	Source Position
+	Target Position
 }
 
 type ClientDropPacket struct {
@@ -177,6 +184,26 @@ func DecodeClientUse(f frame.Frame) (ClientUsePacket, error) {
 		return ClientUsePacket{}, ErrInvalidPayload
 	}
 	return ClientUsePacket{Position: decodePosition(f.Payload)}, nil
+}
+
+func EncodeClientUseToItem(packet ClientUseToItemPacket) []byte {
+	payload := make([]byte, clientUseToItemPayloadSize)
+	encodePosition(payload[:positionSize], packet.Source)
+	encodePosition(payload[positionSize:positionSize+positionSize], packet.Target)
+	return frame.Encode(HeaderClientUseToItem, payload)
+}
+
+func DecodeClientUseToItem(f frame.Frame) (ClientUseToItemPacket, error) {
+	if f.Header != HeaderClientUseToItem {
+		return ClientUseToItemPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientUseToItemPayloadSize {
+		return ClientUseToItemPacket{}, ErrInvalidPayload
+	}
+	return ClientUseToItemPacket{
+		Source: decodePosition(f.Payload[:positionSize]),
+		Target: decodePosition(f.Payload[positionSize : positionSize+positionSize]),
+	}, nil
 }
 
 func EncodeClientMove(packet ClientMovePacket) []byte {

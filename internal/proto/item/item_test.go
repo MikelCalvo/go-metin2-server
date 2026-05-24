@@ -121,6 +121,46 @@ func TestDecodeClientUseReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeClientUseToItemBuildsAFrame(t *testing.T) {
+	source, err := CarriedInventoryPosition(5)
+	if err != nil {
+		t.Fatalf("unexpected source position error: %v", err)
+	}
+	target, err := CarriedInventoryPosition(6)
+	if err != nil {
+		t.Fatalf("unexpected target position error: %v", err)
+	}
+	want := frame.Encode(HeaderClientUseToItem, []byte{WindowInventory, 5, 0, WindowInventory, 6, 0})
+	got := EncodeClientUseToItem(ClientUseToItemPacket{Source: source, Target: target})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected item use-to-item frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientUseToItemReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientUseToItem(decodeSingleFrame(t, frame.Encode(HeaderClientUseToItem, []byte{WindowInventory, 5, 0, WindowInventory, 6, 0})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientUseToItemPacket{Source: Position{WindowType: WindowInventory, Cell: 5}, Target: Position{WindowType: WindowInventory, Cell: 6}}) {
+		t.Fatalf("unexpected item-use-to-item packet: %+v", packet)
+	}
+}
+
+func TestDecodeClientUseToItemRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientUseToItem(frame.Frame{Header: HeaderClientUseToItem + 1, Length: 10, Payload: make([]byte, clientUseToItemPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientUseToItemRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeClientUseToItem(frame.Frame{Header: HeaderClientUseToItem, Length: 9, Payload: make([]byte, clientUseToItemPayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestEncodeClientMoveBuildsAFrame(t *testing.T) {
 	from, err := CarriedInventoryPosition(5)
 	if err != nil {
