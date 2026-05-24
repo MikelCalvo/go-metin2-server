@@ -1586,6 +1586,47 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			if pickup.GoldAmount != 0 {
+				if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID && pickup.Owner.ID != 0 {
+					ownerSelected := pickup.Owner
+					if ownerSelected.Gold > uint64(math.MaxInt32)-uint64(pickup.GoldAmount) {
+						return nil, false
+					}
+					ownerRuntime := player.NewRuntime(ownerSelected, player.SessionLink{Login: pickup.OwnerLogin})
+					ownerRuntime.SetLiveGold(ownerRuntime.LiveGold() + uint64(pickup.GoldAmount))
+					updatedOwner := ownerRuntime.LiveCharacter()
+					if accounts == nil || pickup.OwnerLogin == "" {
+						return nil, false
+					}
+					ownerAccount, err := accounts.Load(pickup.OwnerLogin)
+					if err != nil {
+						return nil, false
+					}
+					updatedCharacters, ok := selectedCharacterSnapshotByIDUpdate(ownerAccount.Characters, ownerSelected.ID, updatedOwner)
+					if !ok || !saveAccountSnapshot(accounts, ownerAccount.Login, ownerAccount.Empire, updatedCharacters) {
+						return nil, false
+					}
+					if !runtime.applyLiveCharacterPersistedSnapshot(ownerSelected.Name, updatedOwner) {
+						return nil, false
+					}
+					sharedWorld.UpdateCharacterWithVisibilityTransition(pickup.OwnerID, ownerSelected, updatedOwner, nil)
+					if !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
+						return nil, false
+					}
+					collectorGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickup.Item, itemproto.GetArgDeliveredToPartyMember, pickup.OwnerName)
+					if err != nil {
+						return nil, false
+					}
+					ownerGetFrame, err := encodeBootstrapItemGetFrameWithPartyArg(pickup.Item, itemproto.GetArgFromPartyMember, previousSelected.Name)
+					if err != nil {
+						return nil, false
+					}
+					ownerFrames := [][]byte{
+						worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{VID: ownerSelected.VID, Type: bootstrapGoldPointType, Amount: int32(pickup.GoldAmount), Value: int32(updatedOwner.Gold)}),
+						ownerGetFrame,
+					}
+					sharedWorld.EnqueueToEntity(pickup.OwnerID, ownerFrames)
+					return [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), collectorGetFrame}, true
+				}
 				if selectedPlayer.LiveGold() > uint64(math.MaxInt32)-uint64(pickup.GoldAmount) {
 					return nil, false
 				}

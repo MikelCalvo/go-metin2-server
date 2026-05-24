@@ -1291,6 +1291,107 @@ func TestGameRuntimeItemDropOwnerCloseRemovesPendingGroundHandleForVisiblePeers(
 	closeSessionFlow(t, watcherFlow)
 }
 
+func TestGameRuntimeGoldPickupOwnedByPartyMemberDeliversCurrencyToOwner(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PartyGoldOwner", 0x0103019c, 0x0204019c, 1400, 2400, 0, 101, 201)
+	owner.Gold = 7000
+	owner.Inventory = []inventory.ItemInstance{{ID: 1110, Vnum: 27032, Count: 1, Slot: 5}}
+	collector := peerVisibilityCharacter("PartyGoldCollector", 0x0103019d, 0x0204019d, 1450, 2450, 0, 101, 201)
+	collector.Gold = 300
+	ownerLogin := "party-gold-owner-login"
+	collectorLogin := "party-gold-collector-login"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x9c9c9c9c, owner)
+	issuePeerTicket(t, ticketStore, collectorLogin, 0x9d9d9d9d, collector)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed party gold owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: collectorLogin, Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
+		t.Fatalf("seed party gold collector account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected party gold-pickup runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x9c9c9c9c)
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), collectorLogin, 0x9d9d9d9d)
+	flushServerFrames(t, ownerFlow)
+
+	dropOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5), Elk: 1200})))
+	if err != nil {
+		t.Fatalf("drop party gold: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected party gold drop point/add/ownership frames, got %d", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode party gold ground add: %v", err)
+	}
+	flushServerFrames(t, collectorFlow)
+
+	collectorOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(collectorOut) != 2 {
+		t.Fatalf("expected party gold collector pickup to emit GROUND_DEL and delivered ITEM_GET, got %d frames", len(collectorOut))
+	}
+	collectorDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, collectorOut[0]))
+	if err != nil {
+		t.Fatalf("decode party gold collector ground del: %v", err)
+	}
+	if collectorDel.VID != ground.VID {
+		t.Fatalf("unexpected party gold collector ground del: got %+v want vid %d", collectorDel, ground.VID)
+	}
+	collectorGet, err := itemproto.DecodeGet(decodeSingleFrame(t, collectorOut[1]))
+	if err != nil {
+		t.Fatalf("decode party gold collector get notice: %v", err)
+	}
+	if collectorGet != (itemproto.GetPacket{Vnum: 1, Count: 1, Arg: itemproto.GetArgDeliveredToPartyMember, FromName: owner.Name}) {
+		t.Fatalf("unexpected party gold collector get notice: %+v", collectorGet)
+	}
+
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected owner to receive ground delete, gold point change, and from-party ITEM_GET, got %d frames", len(ownerQueued))
+	}
+	ownerDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode party gold owner ground del: %v", err)
+	}
+	if ownerDel.VID != ground.VID {
+		t.Fatalf("unexpected party gold owner ground del: got %+v want vid %d", ownerDel, ground.VID)
+	}
+	ownerPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, ownerQueued[1]))
+	if err != nil {
+		t.Fatalf("decode party gold owner point change: %v", err)
+	}
+	if ownerPoint != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: 1200, Value: 7000}) {
+		t.Fatalf("unexpected party gold owner point change: %+v", ownerPoint)
+	}
+	ownerGet, err := itemproto.DecodeGet(decodeSingleFrame(t, ownerQueued[2]))
+	if err != nil {
+		t.Fatalf("decode party gold owner get notice: %v", err)
+	}
+	if ownerGet != (itemproto.GetPacket{Vnum: 1, Count: 1, Arg: itemproto.GetArgFromPartyMember, FromName: collector.Name}) {
+		t.Fatalf("unexpected party gold owner get notice: %+v", ownerGet)
+	}
+
+	ownerAccount, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load party gold owner account: %v", err)
+	}
+	if ownerAccount.Characters[0].Gold != 7000 {
+		t.Fatalf("expected party gold owner to receive dropped gold back, got %d", ownerAccount.Characters[0].Gold)
+	}
+	collectorAccount, err := accounts.Load(collectorLogin)
+	if err != nil {
+		t.Fatalf("load party gold collector account: %v", err)
+	}
+	if collectorAccount.Characters[0].Gold != collector.Gold {
+		t.Fatalf("expected party gold collector gold to stay unchanged, got %d want %d", collectorAccount.Characters[0].Gold, collector.Gold)
+	}
+}
+
 func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
