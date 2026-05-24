@@ -61,6 +61,7 @@ const bootstrapGoldPointType uint8 = 11
 const bootstrapPracticeMobRetaliationPointDelta int32 = -1
 const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
 const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
+const itemDropRejectedInfoMessage = "You cannot drop this item."
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -1448,7 +1449,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
 			if template, ok := itemDropTemplateForSlot(runtime.itemTemplates, previousSelected, slot); ok && (template.AntiDrop || template.AntiGive) {
-				return nil, false
+				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemDropRejectedInfoMessage})}, true
 			}
 			for _, item := range selectedPlayer.LiveInventory() {
 				if item.Slot == slot && !item.Equipped {

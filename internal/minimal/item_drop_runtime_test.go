@@ -9,6 +9,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
@@ -225,8 +226,15 @@ func TestGameRuntimeItemDropRejectsAntiDropAndAntiGiveTemplatesWithoutMutation(t
 	if err != nil {
 		t.Fatalf("unexpected anti-drop item drop error: %v", err)
 	}
-	if len(out) != 0 {
-		t.Fatalf("expected anti-drop/give item drop to fail closed with no frames, got %d", len(out))
+	if len(out) != 1 {
+		t.Fatalf("expected anti-drop/give item drop to emit one info chat frame, got %d", len(out))
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode anti-drop/give info chat: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != itemDropRejectedInfoMessage {
+		t.Fatalf("unexpected anti-drop/give info chat: %+v", info)
 	}
 	account, err := accounts.Load("bound-drop-owner")
 	if err != nil {
