@@ -1450,12 +1450,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if template, ok := itemDropTemplateForSlot(runtime.itemTemplates, previousSelected, slot); ok && (template.AntiDrop || template.AntiGive) {
 				return nil, false
 			}
-			if count == 0 {
-				for _, item := range selectedPlayer.LiveInventory() {
-					if item.Slot == slot && !item.Equipped {
+			for _, item := range selectedPlayer.LiveInventory() {
+				if item.Slot == slot && !item.Equipped {
+					if count == 0 || count > item.Count {
 						count = item.Count
-						break
 					}
+					break
 				}
 			}
 			result, ok := selectedPlayer.DropInventoryItem(slot, count)

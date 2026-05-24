@@ -117,7 +117,7 @@ The `0x0502` header is shared by the already-owned carried-slot `ITEM_USE` reque
 For the first live runtime slice, accepted drops are self-facing and persistence-backed:
 
 1. `ITEM_DROP` uses the current full carried stack count.
-2. `ITEM_DROP2` uses the requested non-zero count and rejects counts larger than the stack.
+2. `ITEM_DROP2` uses the requested non-zero count when it fits the current stack; a zero or oversized count is normalized to the whole stack before inventory mutation, matching the observed legacy `DropItem` count normalization.
 3. If the carried item's loaded template is marked `anti_drop` or `anti_give`, the drop fails closed before live inventory, quickslots, ground handles, or persistence are mutated. This mirrors the legacy oracle's early rejection for player-requested drops of bound/non-giveable items while keeping forced system-drop and death-drop policy out of scope.
 4. The selected player's live inventory is removed or decremented, then the selected character snapshot is persisted through the existing account-store path.
 5. Whole-stack drops clear item quickslots pointing at the removed slot.
