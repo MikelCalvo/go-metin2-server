@@ -36,6 +36,8 @@ type HandleAttackFunc func(combatproto.ClientAttackPacket) AttackResult
 
 type HandleItemUseFunc func(itemproto.ClientUsePacket) ItemUseResult
 
+type HandleItemUseToItemFunc func(itemproto.ClientUseToItemPacket) ItemUseToItemResult
+
 type HandleItemDropFunc func(itemproto.ClientDropPacket) ItemDropResult
 
 type HandleItemDrop2Func func(itemproto.ClientDrop2Packet) ItemDrop2Result
@@ -67,6 +69,7 @@ type Config struct {
 	HandleTarget        HandleTargetFunc
 	HandleAttack        HandleAttackFunc
 	HandleItemUse       HandleItemUseFunc
+	HandleItemUseToItem HandleItemUseToItemFunc
 	HandleItemDrop      HandleItemDropFunc
 	HandleItemDrop2     HandleItemDrop2Func
 	HandleItemMove      HandleItemMoveFunc
@@ -124,6 +127,11 @@ type ItemUseResult struct {
 	Frames   [][]byte
 }
 
+type ItemUseToItemResult struct {
+	Accepted bool
+	Frames   [][]byte
+}
+
 type ItemDropResult struct {
 	Accepted bool
 	Frames   [][]byte
@@ -164,6 +172,7 @@ type Flow struct {
 	handleTarget        HandleTargetFunc
 	handleAttack        HandleAttackFunc
 	handleItemUse       HandleItemUseFunc
+	handleItemUseToItem HandleItemUseToItemFunc
 	handleItemDrop      HandleItemDropFunc
 	handleItemDrop2     HandleItemDrop2Func
 	handleItemMove      HandleItemMoveFunc
@@ -209,6 +218,10 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 	itemUseHandler := cfg.HandleItemUse
 	if itemUseHandler == nil {
 		itemUseHandler = func(itemproto.ClientUsePacket) ItemUseResult { return ItemUseResult{Accepted: false} }
+	}
+	itemUseToItemHandler := cfg.HandleItemUseToItem
+	if itemUseToItemHandler == nil {
+		itemUseToItemHandler = func(itemproto.ClientUseToItemPacket) ItemUseToItemResult { return ItemUseToItemResult{Accepted: false} }
 	}
 	itemDropHandler := cfg.HandleItemDrop
 	if itemDropHandler == nil {
@@ -264,6 +277,7 @@ func NewFlow(machine *session.StateMachine, cfg Config) *Flow {
 		handleTarget:        targetHandler,
 		handleAttack:        attackHandler,
 		handleItemUse:       itemUseHandler,
+		handleItemUseToItem: itemUseToItemHandler,
 		handleItemDrop:      itemDropHandler,
 		handleItemDrop2:     itemDrop2Handler,
 		handleItemMove:      itemMoveHandler,
@@ -419,6 +433,16 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, err
 		}
 		result := f.handleItemMove(packet)
+		if !result.Accepted {
+			return nil, nil
+		}
+		return result.Frames, nil
+	case itemproto.HeaderClientUseToItem:
+		packet, err := itemproto.DecodeClientUseToItem(in)
+		if err != nil {
+			return nil, err
+		}
+		result := f.handleItemUseToItem(packet)
 		if !result.Accepted {
 			return nil, nil
 		}

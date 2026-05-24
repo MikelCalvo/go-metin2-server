@@ -179,6 +179,33 @@ func TestHandleClientFrameAcceptsItemPickupInGameAndReturnsHandlerFrames(t *test
 	}
 }
 
+func TestHandleClientFrameAcceptsItemUseToItemInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("item-use-to-item")
+	flow := NewFlow(machine, Config{
+		HandleItemUseToItem: func(packet itemproto.ClientUseToItemPacket) ItemUseToItemResult {
+			if packet.Source != itemproto.InventoryPosition(5) || packet.Target != itemproto.InventoryPosition(6) {
+				t.Fatalf("unexpected item use-to-item packet: %+v", packet)
+			}
+			return ItemUseToItemResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected item use-to-item error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler item-use-to-item frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsQuickslotAddInGameAndReturnsHandlerFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	wantFrame := []byte("quickslot-add")

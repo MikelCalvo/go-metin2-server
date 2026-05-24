@@ -34,8 +34,8 @@ The client source also exposes a separate drag-to-item packet family, `ITEM_USE_
 - payload is exactly two packed `TItemPos` values: `source_pos` then `target_pos`
 - each packed `TItemPos` remains `window_type:uint8`, `cell:uint16` little-endian
 
-This slice freezes only the wire codec and packet identity for `ITEM_USE_TO_ITEM`.
-`GAME` dispatch and runtime effects for drag-to-item use remain intentionally unimplemented until a later behavior slice owns one concrete legacy-compatible use case.
+This slice freezes the wire codec, packet identity, and `GAME`-phase dispatch seam for `ITEM_USE_TO_ITEM`.
+The default game-flow handler rejects it silently/fail-closed when no runtime handler is installed, and live runtime effects remain intentionally unimplemented until a later behavior slice owns one concrete legacy-compatible drag-to-item use case.
 
 For the first owned packet ingress, the runtime only accepts:
 - `window_type = INVENTORY`
