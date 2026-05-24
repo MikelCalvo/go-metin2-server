@@ -1,6 +1,7 @@
 package minimal
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -1392,6 +1393,78 @@ func TestGameRuntimeGoldPickupOwnedByPartyMemberDeliversCurrencyToOwner(t *testi
 	}
 }
 
+func TestGameRuntimeGoldPickupOwnedByPartyMemberFailsClosedWhenOwnerPersistenceFails(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PartyGoldFailOwner", 0x0103019e, 0x0204019e, 1400, 2400, 0, 101, 201)
+	owner.Gold = 7000
+	owner.Inventory = []inventory.ItemInstance{{ID: 1120, Vnum: 27032, Count: 1, Slot: 5}}
+	collector := peerVisibilityCharacter("PartyGoldFailCollector", 0x0103019f, 0x0204019f, 1450, 2450, 0, 101, 201)
+	collector.Gold = 300
+	ownerLogin := "pgfail-owner"
+	collectorLogin := "pgfail-coll"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x9e9e9e9e, owner)
+	issuePeerTicket(t, ticketStore, collectorLogin, 0x9f9f9f9f, collector)
+	accounts := &failingSaveAccountStore{
+		accounts: map[string]accountstore.Account{
+			ownerLogin:     {Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+			collectorLogin: {Login: collectorLogin, Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})},
+		},
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected party gold-pickup runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x9e9e9e9e)
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), collectorLogin, 0x9f9f9f9f)
+	flushServerFrames(t, ownerFlow)
+
+	dropOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5), Elk: 1200})))
+	if err != nil {
+		t.Fatalf("drop party gold before failing pickup: %v", err)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode party gold ground add before failing pickup: %v", err)
+	}
+	flushServerFrames(t, collectorFlow)
+
+	collectorOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(collectorOut) != 0 {
+		t.Fatalf("expected owner-persistence failure to reject party gold pickup without collector frames, got %d", len(collectorOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected owner-persistence failure to avoid queued owner delivery frames, got %d", len(queued))
+	}
+	ownerAccount := accounts.accounts[ownerLogin]
+	if ownerAccount.Characters[0].Gold != 5800 {
+		t.Fatalf("expected failed owner delivery to leave owner account at dropped-gold total, got %d", ownerAccount.Characters[0].Gold)
+	}
+	collectorAccount := accounts.accounts[collectorLogin]
+	if collectorAccount.Characters[0].Gold != collector.Gold {
+		t.Fatalf("expected failed owner delivery to leave collector gold unchanged, got %d want %d", collectorAccount.Characters[0].Gold, collector.Gold)
+	}
+
+	ownerOut := pickupGroundItem(t, ownerFlow, ground.VID)
+	if len(ownerOut) != 2 {
+		t.Fatalf("expected failed owner-delivery handle to remain retryable for owner self pickup, got %d frames", len(ownerOut))
+	}
+	ownerDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerOut[0]))
+	if err != nil {
+		t.Fatalf("decode owner retry ground del: %v", err)
+	}
+	if ownerDel.VID != ground.VID {
+		t.Fatalf("unexpected owner retry ground del: got %+v want vid %d", ownerDel, ground.VID)
+	}
+	ownerPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, ownerOut[1]))
+	if err != nil {
+		t.Fatalf("decode owner retry point change: %v", err)
+	}
+	if ownerPoint != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: 1200, Value: 7000}) {
+		t.Fatalf("unexpected owner retry point change: %+v", ownerPoint)
+	}
+}
+
 func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -1479,6 +1552,28 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {
 	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, collector.Inventory) {
 		t.Fatalf("expected party collector inventory to stay unchanged, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
 	}
+}
+
+type failingSaveAccountStore struct {
+	accounts       map[string]accountstore.Account
+	failedGoldSave bool
+}
+
+func (s *failingSaveAccountStore) Load(login string) (accountstore.Account, error) {
+	account, ok := s.accounts[login]
+	if !ok {
+		return accountstore.Account{}, accountstore.ErrAccountNotFound
+	}
+	return accountstore.Account{Login: account.Login, Empire: account.Empire, Characters: cloneCharacters(account.Characters)}, nil
+}
+
+func (s *failingSaveAccountStore) Save(account accountstore.Account) error {
+	if account.Login == "pgfail-owner" && len(account.Characters) > 0 && account.Characters[0].Gold > 5800 && !s.failedGoldSave {
+		s.failedGoldSave = true
+		return errors.New("account save failed")
+	}
+	s.accounts[account.Login] = accountstore.Account{Login: account.Login, Empire: account.Empire, Characters: cloneCharacters(account.Characters)}
+	return nil
 }
 
 func fullBootstrapInventoryExcept(vnum uint32, count uint16, startID uint64) []inventory.ItemInstance {
