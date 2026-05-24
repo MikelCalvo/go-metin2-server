@@ -64,6 +64,52 @@ func TestMapIndexRemoveClearsOccupancy(t *testing.T) {
 	}
 }
 
+func TestMapIndexRemoveClearsMapBucketWhenEntityIndexAlreadyMissing(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := newPlayerEntity(7, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	if !index.Register(alpha) {
+		t.Fatal("expected map-index registration to succeed")
+	}
+	delete(index.byEntityID, alpha.Entity.ID)
+
+	removed, ok := index.Remove(alpha.Entity.ID)
+	if !ok || removed.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected tolerant removal after entity-index loss, got entity=%+v ok=%v", removed, ok)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected player map bucket to be cleared after tolerant removal, got %+v", characters)
+	}
+	if _, ok := index.effectiveMapByEntityID[alpha.Entity.ID]; ok {
+		t.Fatal("expected effective map index entry to be cleared after tolerant removal")
+	}
+	if snapshots := index.Snapshot(); len(snapshots) != 0 {
+		t.Fatalf("expected no map snapshots after tolerant player removal, got %+v", snapshots)
+	}
+}
+
+func TestMapIndexRemoveClearsEntityIndexWhenMapBucketAlreadyMissing(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := newPlayerEntity(8, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	if !index.Register(alpha) {
+		t.Fatal("expected map-index registration to succeed")
+	}
+	delete(index.byMapIndex, uint32(42))
+
+	removed, ok := index.Remove(alpha.Entity.ID)
+	if !ok || removed.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected tolerant removal after map-bucket loss, got entity=%+v ok=%v", removed, ok)
+	}
+	if _, ok := index.byEntityID[alpha.Entity.ID]; ok {
+		t.Fatal("expected entity index entry to be cleared after tolerant removal")
+	}
+	if _, ok := index.effectiveMapByEntityID[alpha.Entity.ID]; ok {
+		t.Fatal("expected effective map index entry to be cleared after tolerant removal")
+	}
+	if snapshots := index.Snapshot(); len(snapshots) != 0 {
+		t.Fatalf("expected no map snapshots after tolerant player removal, got %+v", snapshots)
+	}
+}
+
 func TestMapIndexSnapshotReturnsStableSortedCharactersPerMap(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	if !index.Register(newPlayerEntity(3, entityRegistryCharacter("Zulu", 0x02040103, 42, 1900, 3000))) {

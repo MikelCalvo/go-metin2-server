@@ -100,19 +100,51 @@ func (m *MapIndex) Remove(entityID uint64) (PlayerEntity, bool) {
 	defer m.mu.Unlock()
 
 	player, ok := m.byEntityID[entityID]
-	if !ok {
-		return PlayerEntity{}, false
+	if ok {
+		delete(m.byEntityID, entityID)
+		m.removePlayerMapPresenceLocked(entityID)
+		return player, true
 	}
-	delete(m.byEntityID, entityID)
-	mapIndex := m.effectiveMapByEntityID[entityID]
-	delete(m.effectiveMapByEntityID, entityID)
-	if bucket := m.byMapIndex[mapIndex]; bucket != nil {
+
+	for mapIndex, bucket := range m.byMapIndex {
+		player, ok := bucket[entityID]
+		if !ok {
+			continue
+		}
 		delete(bucket, entityID)
 		if len(bucket) == 0 {
 			delete(m.byMapIndex, mapIndex)
 		}
+		delete(m.byEntityID, entityID)
+		delete(m.effectiveMapByEntityID, entityID)
+		return player, true
 	}
-	return player, true
+	delete(m.effectiveMapByEntityID, entityID)
+	return PlayerEntity{}, false
+}
+
+func (m *MapIndex) removePlayerMapPresenceLocked(entityID uint64) {
+	mapIndex, ok := m.effectiveMapByEntityID[entityID]
+	if ok {
+		delete(m.effectiveMapByEntityID, entityID)
+		if bucket := m.byMapIndex[mapIndex]; bucket != nil {
+			delete(bucket, entityID)
+			if len(bucket) == 0 {
+				delete(m.byMapIndex, mapIndex)
+			}
+		}
+		return
+	}
+	for mapIndex, bucket := range m.byMapIndex {
+		if _, ok := bucket[entityID]; !ok {
+			continue
+		}
+		delete(bucket, entityID)
+		if len(bucket) == 0 {
+			delete(m.byMapIndex, mapIndex)
+		}
+		return
+	}
 }
 
 func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {

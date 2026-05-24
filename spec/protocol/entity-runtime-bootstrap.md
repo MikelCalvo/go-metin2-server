@@ -66,8 +66,10 @@ The current owned responsibilities are:
 - normalize bootstrap `MapIndex = 0` through topology-aware effective-map semantics
 - expose deterministic per-map character snapshots for runtime callers
 - keep register, move, and remove bookkeeping explicit instead of rebuilding occupancy from whole-world scans by default
+- tolerate partial teardown when either the player entity index or map bucket has already been cleared first, so cleanup can still remove the remaining index state
 
 This keeps map occupancy as an owned runtime primitive, and the current connected-player / visibility / map-occupancy / static-actor introspection snapshots can now be composed through `internal/worldruntime/scopes.go` instead of bootstrap-local shared-world conversion code.
+The tolerant-remove rule is deliberately narrow: it makes reconnect/close cleanup idempotent across owned runtime indexes without treating stale map/index remnants as a live player session.
 
 ### Session directory
 
