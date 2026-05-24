@@ -13,6 +13,7 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
 
 func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
@@ -704,6 +705,61 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberUsesOwnerCompatibleStackBeforeFr
 	if !reflect.DeepEqual(ownerAccount.Characters[0].Inventory, wantOwnerInventory) {
 		t.Fatalf("unexpected owner inventory after party stack merge pickup: got %#v want %#v", ownerAccount.Characters[0].Inventory, wantOwnerInventory)
 	}
+}
+
+func TestGameRuntimeItemDropOwnerCloseRemovesPendingGroundHandleForVisiblePeers(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GroundCloseOwner", 0x01030192, 0x02040192, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1020, Vnum: 27020, Count: 1, Slot: 6}}
+	watcher := peerVisibilityCharacter("GroundCloseWatcher", 0x01030193, 0x02040193, 1450, 2450, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "ground-close-owner", 0x92929292, owner)
+	issuePeerTicket(t, ticketStore, "ground-close-watcher", 0x93939393, watcher)
+	if err := accounts.Save(accountstore.Account{Login: "ground-close-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed ground-close owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "ground-close-watcher", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed ground-close watcher account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected ground-close item runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "ground-close-owner", 0x92929292)
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "ground-close-watcher", 0x93939393)
+	flushServerFrames(t, ownerFlow)
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected watcher to receive dropped ground add and ownership before owner close, got %d frames", len(watcherQueued))
+	}
+
+	closeSessionFlow(t, ownerFlow)
+	ownerCloseQueued := flushServerFrames(t, watcherFlow)
+	if len(ownerCloseQueued) != 2 {
+		t.Fatalf("expected owner close to queue owner character delete and ground item delete, got %d frames", len(ownerCloseQueued))
+	}
+	ownerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, ownerCloseQueued[0]))
+	if err != nil {
+		t.Fatalf("decode owner character delete after ground owner close: %v", err)
+	}
+	if ownerDelete.VID != owner.VID {
+		t.Fatalf("expected owner close character delete for vid %d, got %+v", owner.VID, ownerDelete)
+	}
+	groundDelete, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerCloseQueued[1]))
+	if err != nil {
+		t.Fatalf("decode ground delete after owner close: %v", err)
+	}
+	if groundDelete.VID != ground.VID {
+		t.Fatalf("expected owner close to remove pending ground vid %d, got %+v", ground.VID, groundDelete)
+	}
+
+	pickupOut := pickupGroundItem(t, watcherFlow, ground.VID)
+	if len(pickupOut) != 0 {
+		t.Fatalf("expected closed owner's temporary ground handle to reject pickup, got %d frames", len(pickupOut))
+	}
+	closeSessionFlow(t, watcherFlow)
 }
 
 func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {

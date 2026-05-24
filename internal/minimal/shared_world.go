@@ -823,6 +823,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 		}
 		r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 	}
+	r.removeOwnedGroundItemsLocked(id, visibilityDiff.RemovedVisiblePeers)
 }
 
 func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.Character) {
@@ -835,6 +836,34 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 
 	_ = r.entities.UpdatePlayer(id, character)
 	r.lastKnownCharacters[id] = character
+}
+
+func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visiblePeers []loginticket.Character) {
+	if ownerID == 0 || len(r.groundItemsByVID) == 0 {
+		return
+	}
+	removed := make([]sharedGroundItem, 0)
+	for vid, ground := range r.groundItemsByVID {
+		if ground.OwnerID != ownerID {
+			continue
+		}
+		removed = append(removed, ground)
+		delete(r.groundItemsByVID, vid)
+	}
+	if len(removed) == 0 {
+		return
+	}
+	sortSharedGroundItemsByVID(removed)
+	frames := make([][]byte, 0, len(removed))
+	for _, ground := range removed {
+		frames = append(frames, encodeGroundItemDeleteFrame(ground))
+	}
+	for _, peer := range visiblePeers {
+		if characterAtBootstrapHPFloor(peer) {
+			continue
+		}
+		r.enqueueToCharacterLocked(peer, frames)
+	}
 }
 
 func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance) bool {
