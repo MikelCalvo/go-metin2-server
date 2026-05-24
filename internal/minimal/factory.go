@@ -1476,6 +1476,42 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return gameflow.ItemUseResult{Accepted: true, Frames: frames}
 		}
+		executeSelectedGoldDrop := func(amount uint32) ([][]byte, bool) {
+			if amount == 0 {
+				return nil, false
+			}
+			selectedPlayer, ok := currentSelectedPlayer()
+			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+				return nil, false
+			}
+			previousSelected := selectedPlayer.LiveCharacter()
+			if previousSelected.ID == 0 || uint64(amount) > selectedPlayer.LiveGold() || selectedPlayer.LiveGold() > uint64(math.MaxInt32) {
+				return nil, false
+			}
+			selectedPlayer.SetLiveGold(selectedPlayer.LiveGold() - uint64(amount))
+			updatedSelected := selectedPlayer.LiveCharacter()
+			if updatedSelected.Gold > uint64(math.MaxInt32) {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			groundVID := bootstrapGroundItemVID(previousSelected, inventory.SlotIndex(amount%uint32(inventory.CarriedInventorySlotCount)))
+			if groundVID == 0 {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
+			frames := [][]byte{
+				worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{VID: previousSelected.VID, Type: bootstrapGoldPointType, Amount: -int32(amount), Value: int32(updatedSelected.Gold)}),
+				itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: groundVID, Vnum: 1, X: previousSelected.X, Y: previousSelected.Y, Z: previousSelected.Z}),
+				itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: groundVID, OwnerName: previousSelected.Name}),
+			}
+			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			if !ok {
+				return nil, false
+			}
+			return frames, true
+		}
 		executeSelectedItemDrop := func(cell uint16, count uint16) ([][]byte, bool) {
 			slot := inventory.SlotIndex(cell)
 			if slot >= inventory.CarriedInventorySlotCount {
@@ -2200,6 +2236,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if packet.Position.WindowType != itemproto.WindowInventory {
 						return gameflow.ItemDropResult{Accepted: false}
 					}
+					if packet.Elk != 0 {
+						frames, accepted := executeSelectedGoldDrop(packet.Elk)
+						return gameflow.ItemDropResult{Accepted: accepted, Frames: frames}
+					}
 					frames, accepted := executeSelectedItemDrop(packet.Position.Cell, 0)
 					return gameflow.ItemDropResult{Accepted: accepted, Frames: frames}
 				},
@@ -2208,6 +2248,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					defer stateMu.Unlock()
 					if packet.Position.WindowType != itemproto.WindowInventory {
 						return gameflow.ItemDrop2Result{Accepted: false}
+					}
+					if packet.Gold != 0 {
+						frames, accepted := executeSelectedGoldDrop(packet.Gold)
+						return gameflow.ItemDrop2Result{Accepted: accepted, Frames: frames}
 					}
 					frames, accepted := executeSelectedItemDrop(packet.Position.Cell, uint16(packet.Count))
 					return gameflow.ItemDrop2Result{Accepted: accepted, Frames: frames}

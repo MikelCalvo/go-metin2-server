@@ -22,7 +22,6 @@ Owned by the first runtime drop slice:
 Not owned yet:
 
 - permanent/shared-world ground item entity IDs, ownership timers, despawn timing, trade/shop restrictions, or range/path authorization beyond current visible-world scope;
-- gold-drop semantics beyond freezing the client packet fields;
 - `GC::ITEM_DROP`, timed/permission-changing ownership transitions, real party membership checks, or public ownership release.
 
 ## Client packets
@@ -124,6 +123,14 @@ For the first live runtime slice, accepted drops are self-facing and persistence
 6. The server returns the carried-slot mutation frame first (`GC::ITEM_DEL` or `GC::ITEM_UPDATE`), then any quickslot deletes, then one self-only `GC::ITEM_GROUND_ADD` at the selected character's current coordinates followed by `GC::ITEM_OWNERSHIP` naming the dropping character.
 7. The shared bootstrap runtime remembers that deterministic ground handle until it is picked up or the owning live session ends. When the owner session closes while a handle is still pending, the runtime removes the temporary handle and queues `GC::ITEM_GROUND_DEL` to currently visible peers so they do not keep a stale ground item actor.
 
+The first gold-drop runtime slice owns the gold amount fields on `CG::ITEM_DROP` / `CG::ITEM_DROP2` as a bootstrap currency-only ground entry:
+
+1. If the packet gold/elk field is non-zero, the runtime treats the request as a gold drop and does not mutate the carried item slot/count field.
+2. The selected player's live and persisted gold are decremented by the requested amount. Zero, over-balance, and out-of-range amounts fail closed with no response and no mutation.
+3. The selected session receives `GC::PLAYER_POINT_CHANGE` for point type `11` with the negative amount and updated gold total, then one `GC::ITEM_GROUND_ADD` at the selected character's current coordinates and `GC::ITEM_OWNERSHIP` naming the dropping character.
+4. The bootstrap ground-add `vnum` for gold is currently fixed to `1`, matching the first owned currency marker while richer client display/count semantics remain deferred.
+5. Gold ground pickup remains intentionally deferred in this slice: the temporary gold ground marker is not registered as an ordinary item handle and `ITEM_PICKUP` for that marker fails closed for now. This keeps currency pickup separate from the already-owned inventory-item pickup path until a dedicated gold-pickup contract freezes `ITEM_GET`/point-change behavior.
+
 For the first visible-peer pickup runtime slice, accepted pickup is visible-world scoped:
 
 1. Accepted drops are registered as temporary bootstrap ground handles at the dropper's current effective map/position after the selected character mutation is persisted.
@@ -152,4 +159,4 @@ Current coverage:
 
 - `internal/proto/item` freezes encode/decode round-trips for `ITEM_DROP`, `ITEM_DROP2`, `ITEM_PICKUP`, `ITEM_GROUND_ADD`, `ITEM_GROUND_DEL`, `ITEM_OWNERSHIP`, and normal/party-shaped `ITEM_GET`, plus unexpected-header and invalid-payload rejection for the new codecs.
 - `internal/game` freezes `GAME`-phase dispatch for `ITEM_DROP`, `ITEM_DROP2`, and `ITEM_PICKUP`, including the shared-header `ITEM_USE` / `ITEM_DROP` payload-size split.
-- `internal/minimal` accepts carried-item drop requests with self ground-add/ownership echoes, rejects loaded-template `anti_drop` / `anti_give` player-requested drops before mutation with a self-only info chat rejection, queues matching ground-add/ownership echoes to currently visible peers, accepts visible-world pickup of temporary bootstrap ground handles only when the collector is within the owned 300-unit pickup reach, emits the inventory-full info chat while leaving the pending handle and persisted recipient inventory untouched when no eligible recipient can place the item, removes pending owner-scoped handles on owner session close with visible-peer `GROUND_DEL`, supports party-shaped owner-delivery pickup notices for visible live owners, falls back to normal collector delivery when owner delivery cannot place but the collector can, and rebuilds still-pending ground-handle visibility for the moving/syncing session on radius-AOI `MOVE` / `SYNC_POSITION` boundary crossings and exact-position transfer self rebootstrap while durable ownership timers, real party membership, and permission changes remain deferred.
+- `internal/minimal` accepts carried-item drop requests with self ground-add/ownership echoes, accepts bootstrap gold drops from the `elk`/`gold` packet field with a self point-change plus currency ground marker, rejects loaded-template `anti_drop` / `anti_give` player-requested drops before mutation with a self-only info chat rejection, queues matching ground-add/ownership echoes to currently visible peers for ordinary item drops, accepts visible-world pickup of temporary bootstrap ground handles only when the collector is within the owned 300-unit pickup reach, emits the inventory-full info chat while leaving the pending handle and persisted recipient inventory untouched when no eligible recipient can place the item, removes pending owner-scoped handles on owner session close with visible-peer `GROUND_DEL`, supports party-shaped owner-delivery pickup notices for visible live owners, falls back to normal collector delivery when owner delivery cannot place but the collector can, and rebuilds still-pending ground-handle visibility for the moving/syncing session on radius-AOI `MOVE` / `SYNC_POSITION` boundary crossings and exact-position transfer self rebootstrap while gold pickup, durable ownership timers, real party membership, and permission changes remain deferred.
