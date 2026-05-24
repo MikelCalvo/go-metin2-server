@@ -325,6 +325,7 @@ Expected result:
 - client B receives a ground delete plus a party-shaped pickup notice naming client A
 - client A receives the ground delete plus a party-shaped pickup notice naming client B
 - the item is delivered back to client A's owned account/runtime rather than being added to client B
+- client A can immediately use another normal item action against the delivered/updated carried slot, proving the live owner runtime was refreshed and not only the account file
 - `anti_drop` / `anti_give` template-flagged items fail closed when dropped through the normal client inventory path and leave carried inventory plus quickslots unchanged
 - this remains a bootstrap party approximation; real party membership, ownership timers, and public ownership release are still not owned
 

@@ -223,10 +223,12 @@ type liveCharacterStateSnapshot struct {
 }
 
 type liveCharacterStateSnapshotter func() (liveCharacterStateSnapshot, bool)
+type liveCharacterPersistedSnapshotApplier func(loginticket.Character) bool
 
 type liveCharacterRegistration struct {
-	id          uint64
-	snapshotter liveCharacterStateSnapshotter
+	id                     uint64
+	snapshotter            liveCharacterStateSnapshotter
+	applyPersistedSnapshot liveCharacterPersistedSnapshotApplier
 }
 
 func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
@@ -383,7 +385,7 @@ func (r *gameRuntime) CurrencySnapshot(name string) (CharacterCurrencySnapshot, 
 	return CharacterCurrencySnapshot{Name: state.Name, Gold: state.Gold}, true
 }
 
-func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, snapshotter liveCharacterStateSnapshotter) uint64 {
+func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, snapshotter liveCharacterStateSnapshotter, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier) uint64 {
 	if r == nil || snapshotter == nil {
 		return 0
 	}
@@ -398,7 +400,7 @@ func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, snapshotter 
 	}
 	r.liveCharacterNextID++
 	registrationID := r.liveCharacterNextID
-	r.liveCharactersByName[name] = liveCharacterRegistration{id: registrationID, snapshotter: snapshotter}
+	r.liveCharactersByName[name] = liveCharacterRegistration{id: registrationID, snapshotter: snapshotter, applyPersistedSnapshot: applyPersistedSnapshot}
 	return registrationID
 }
 
@@ -437,6 +439,23 @@ func (r *gameRuntime) liveCharacterState(name string) (liveCharacterStateSnapsho
 		return liveCharacterStateSnapshot{}, false
 	}
 	return registration.snapshotter()
+}
+
+func (r *gameRuntime) applyLiveCharacterPersistedSnapshot(name string, updated loginticket.Character) bool {
+	if r == nil {
+		return false
+	}
+	name = normalizeLiveCharacterName(name)
+	if name == "" {
+		return false
+	}
+	r.liveCharacterMu.RLock()
+	registration, ok := r.liveCharactersByName[name]
+	r.liveCharacterMu.RUnlock()
+	if !ok || registration.applyPersistedSnapshot == nil {
+		return false
+	}
+	return registration.applyPersistedSnapshot(updated)
 }
 
 func normalizeLiveCharacterName(name string) string {
@@ -936,6 +955,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					return liveCharacterStateSnapshot{}, false
 				}
 				return buildLiveCharacterStateSnapshot(current), true
+			}, func(updated loginticket.Character) bool {
+				stateMu.Lock()
+				defer stateMu.Unlock()
+				if !hasSelected || selectedPlayer == nil {
+					return false
+				}
+				current := selectedPlayer.LiveCharacter()
+				if current.ID == 0 || updated.ID == 0 || current.ID != updated.ID || normalizeLiveCharacterName(current.Name) != name {
+					return false
+				}
+				link := selectedPlayer.SessionLink()
+				updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, link.CharacterIndex, updated)
+				if !ok {
+					return false
+				}
+				sessionTicket.Characters = updatedCharacters
+				selectedPlayer.ApplyPersistedSnapshot(updated)
+				return true
 			})
 		}
 		refreshSelectedPlayerFromAccountSnapshot := func() bool {
@@ -1568,6 +1605,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				}
 				updatedCharacters, ok := selectedCharacterSnapshotByIDUpdate(ownerAccount.Characters, ownerSelected.ID, updatedOwner)
 				if !ok || !saveAccountSnapshot(accounts, ownerAccount.Login, ownerAccount.Empire, updatedCharacters) {
+					return nil, false
+				}
+				if !runtime.applyLiveCharacterPersistedSnapshot(ownerSelected.Name, updatedOwner) {
 					return nil, false
 				}
 				sharedWorld.UpdateCharacterWithVisibilityTransition(pickup.OwnerID, ownerSelected, updatedOwner, nil)
