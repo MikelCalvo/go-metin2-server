@@ -49,6 +49,12 @@ type StaticEntity struct {
 	CombatKind      string
 }
 
+type StaticActorDeathReward struct {
+	Experience uint64
+	Gold       uint64
+	DropVnums  []uint32
+}
+
 func staticActorCombatProfile(profile string, kind string) string {
 	if profile != "" {
 		return profile
@@ -86,6 +92,15 @@ func BootstrapStaticActorRespawnDelay(combatKind string) (time.Duration, bool) {
 		return TrainingDummyBootstrapRespawnDelay, true
 	default:
 		return 0, false
+	}
+}
+
+func BootstrapStaticActorDeathReward(combatKind string) (StaticActorDeathReward, bool) {
+	switch combatKind {
+	case StaticActorCombatKindTrainingDummy:
+		return StaticActorDeathReward{}, true
+	default:
+		return StaticActorDeathReward{}, false
 	}
 }
 

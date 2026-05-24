@@ -58,6 +58,32 @@ func TestBootstrapStaticActorCurrentHPSupportsTrainingDummyCombatProfile(t *test
 	}
 }
 
+func TestBootstrapStaticActorDeathRewardKeepsTrainingDummyRewardless(t *testing.T) {
+	reward, ok := BootstrapStaticActorDeathReward(StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected bootstrap training-dummy death reward to be supported")
+	}
+	if reward.Experience != 0 {
+		t.Fatalf("expected rewardless training-dummy EXP 0, got %d", reward.Experience)
+	}
+	if reward.Gold != 0 {
+		t.Fatalf("expected rewardless training-dummy gold 0, got %d", reward.Gold)
+	}
+	if len(reward.DropVnums) != 0 {
+		t.Fatalf("expected rewardless training-dummy to emit no drops, got %+v", reward.DropVnums)
+	}
+}
+
+func TestBootstrapStaticActorDeathRewardRejectsUnknownCombatKind(t *testing.T) {
+	reward, ok := BootstrapStaticActorDeathReward("boss")
+	if ok {
+		t.Fatalf("expected unknown death reward to fail closed, got %+v", reward)
+	}
+	if reward.Experience != 0 || reward.Gold != 0 || len(reward.DropVnums) != 0 {
+		t.Fatalf("expected zero reward on failure, got %+v", reward)
+	}
+}
+
 func TestValidStaticActorCombatProfileRejectsUnknownProfile(t *testing.T) {
 	if !ValidStaticActorCombatProfile("") {
 		t.Fatal("expected empty combat profile to remain valid for non-combat actors")

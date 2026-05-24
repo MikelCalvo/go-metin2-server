@@ -29,7 +29,7 @@ This contract currently applies only to:
 - one server-driven respawn reset that restores the dummy as a new live combat snapshot at bootstrap HP
 
 This contract does **not** yet claim:
-- loot, gold, EXP, quest credit, ownership rolls, or drop pickup
+- non-zero loot, gold, EXP, quest credit, ownership rolls, or drop pickup; the first reward seam is explicitly rewardless and documented in `non-player-reward-bootstrap.md`
 - corpse interaction, corpse timers, revive menus, or corpse-specific UI
 - hostile retaliation, aggro, patrol, pathing, or spawn-group AI beyond the later authored seam frozen in `content-spawn-groups-bootstrap.md`
 - player death / respawn semantics
@@ -125,7 +125,7 @@ That dead state freezes these rules:
 What is intentionally **not** frozen here:
 - corpse interaction affordances
 - corpse decay timers as user-facing gameplay
-- rewards, pickup windows, or kill-credit fanout
+- non-zero rewards, pickup windows, or kill-credit fanout
 
 ## Respawn trigger rule
 
@@ -175,7 +175,7 @@ This document does not open any global broadcast rule for combat lifecycle.
 
 This slice does **not** yet freeze:
 - damage numbers or `DAMAGE_INFO`
-- loot / EXP / reward fanout
+- non-zero loot / EXP / reward fanout beyond the rewardless seam in `non-player-reward-bootstrap.md`
 - corpse interaction or pickup
 - player resurrection
 - hostile AI wake-up on respawn
@@ -194,4 +194,4 @@ After this document lands, the repository should be able to say:
 - the first owned respawn reset reuses visible actor teardown + rebuild (`CHARACTER_DEL` + normal add/info/update burst) instead of inventing a dedicated revive packet
 - the respawned dummy is a new live combat snapshot that requires fresh target acquisition even if the visible `VID` is reused
 - later dummy death / respawn lifecycle fanout now also respects the current bootstrap player-death recipient gate, so an already-dead still-connected owner does not keep receiving those later non-player lifecycle frames
-- loot, EXP, corpse gameplay, and AI remain deliberately out of scope
+- non-zero loot, EXP, corpse gameplay, and AI remain deliberately out of scope while the first reward seam remains explicitly rewardless
