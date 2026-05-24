@@ -900,6 +900,16 @@ func (r *sharedWorldRegistry) groundItemVisibleToCharacterLocked(ground sharedGr
 	return r.topology.SharesVisibleWorld(character, loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y})
 }
 
+func (r *sharedWorldRegistry) groundItemReachableByCharacterLocked(ground sharedGroundItem, character loginticket.Character) bool {
+	if !r.groundItemVisibleToCharacterLocked(ground, character) {
+		return false
+	}
+	const bootstrapGroundItemPickupRange = int64(300)
+	dx := int64(character.X) - int64(ground.X)
+	dy := int64(character.Y) - int64(ground.Y)
+	return dx*dx+dy*dy <= bootstrapGroundItemPickupRange*bootstrapGroundItemPickupRange
+}
+
 func (r *sharedWorldRegistry) groundItemVisibilityDiffLocked(previous loginticket.Character, current loginticket.Character) sharedGroundItemVisibilityDiff {
 	if r == nil || len(r.groundItemsByVID) == 0 {
 		return sharedGroundItemVisibilityDiff{}
@@ -983,7 +993,7 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 		return sharedGroundItemPickup{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
-	if !ok || !r.groundItemVisibleToCharacterLocked(ground, collector) {
+	if !ok || !r.groundItemReachableByCharacterLocked(ground, collector) {
 		return sharedGroundItemPickup{}, false
 	}
 	ownerName := ground.OwnerName

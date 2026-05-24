@@ -471,6 +471,66 @@ func TestGameRuntimeExactPositionTransferRebuildsGroundItemVisibility(t *testing
 	}
 }
 
+func TestGameRuntimeItemPickupRejectsVisibleButOutOfReachGroundItem(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupFarOwner", 0x01030198, 0x02040198, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1030, Vnum: 27001, Count: 2, Slot: 6}}
+	collector := peerVisibilityCharacter("PickupFarCollector", 0x01030199, 0x02040199, 1900, 2400, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "pickup-far-owner", 0x98989898, owner)
+	issuePeerTicket(t, ticketStore, "pickup-far-collector", 0x99999999, collector)
+	for _, account := range []accountstore.Account{
+		{Login: "pickup-far-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+		{Login: "pickup-far-collector", Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("seed %s account: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     900,
+		VisibilitySectorSize: 300,
+	}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected out-of-reach pickup runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-far-owner", 0x98989898)
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-far-collector", 0x99999999)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, collectorFlow)
+
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+	if queued := flushServerFrames(t, collectorFlow); len(queued) != 2 {
+		t.Fatalf("expected collector to see visible-but-far ground item, got %d queued frames", len(queued))
+	}
+	out := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(out) != 0 {
+		t.Fatalf("expected visible-but-out-of-reach pickup to fail closed, got %d frames", len(out))
+	}
+
+	ownerAccount, err := accounts.Load("pickup-far-owner")
+	if err != nil {
+		t.Fatalf("load out-of-reach pickup owner account: %v", err)
+	}
+	if !reflect.DeepEqual(ownerAccount.Characters[0].Inventory, []inventory.ItemInstance{}) {
+		t.Fatalf("expected owner inventory to remain dropped after rejected far pickup, got %#v", ownerAccount.Characters[0].Inventory)
+	}
+	collectorAccount, err := accounts.Load("pickup-far-collector")
+	if err != nil {
+		t.Fatalf("load out-of-reach pickup collector account: %v", err)
+	}
+	if len(collectorAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected rejected far pickup to leave collector inventory unchanged, got %#v", collectorAccount.Characters[0].Inventory)
+	}
+	if retry := pickupGroundItem(t, ownerFlow, ground.VID); len(retry) != 3 {
+		t.Fatalf("expected ground handle to remain pending for owner retry, got %d frames", len(retry))
+	}
+}
+
 func TestGameRuntimeItemPickupMergesOwnedVisibleDropIntoCompatibleStack(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
