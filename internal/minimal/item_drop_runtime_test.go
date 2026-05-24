@@ -304,8 +304,33 @@ func TestGameRuntimeItemDropWithGoldDropsCurrencyInsteadOfInventoryItem(t *testi
 	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
 		t.Fatalf("expected gold drop to leave inventory unchanged, got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
 	}
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 2 {
+		t.Fatalf("expected gold pickup to emit GROUND_DEL and POINT_CHANGE, got %d frames", len(pickupOut))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode gold pickup ground del: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected gold pickup ground del: %+v", groundDel)
+	}
+	pickupPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode gold pickup point change: %v", err)
+	}
+	if pickupPoint != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: 1200, Value: 5000}) {
+		t.Fatalf("unexpected gold pickup point change: %+v", pickupPoint)
+	}
+	account, err = accounts.Load("gold-drop-owner")
+	if err != nil {
+		t.Fatalf("reload gold drop owner account after pickup: %v", err)
+	}
+	if account.Characters[0].Gold != 5000 {
+		t.Fatalf("expected persisted gold restored to 5000 after pickup, got %d", account.Characters[0].Gold)
+	}
 	if replay := pickupGroundItem(t, flow, ground.VID); len(replay) != 0 {
-		t.Fatalf("expected bootstrap gold ground pickup to remain deferred, got %d frames", len(replay))
+		t.Fatalf("expected replayed gold pickup to fail closed, got %d frames", len(replay))
 	}
 }
 

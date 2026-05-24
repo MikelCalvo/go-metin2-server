@@ -54,6 +54,7 @@ type sharedGroundItem struct {
 	OwnerLogin string
 	OwnerName  string
 	Item       inventory.ItemInstance
+	GoldAmount uint32
 	MapIndex   uint32
 	X          int32
 	Y          int32
@@ -62,6 +63,7 @@ type sharedGroundItem struct {
 
 type sharedGroundItemPickup struct {
 	Item       inventory.ItemInstance
+	GoldAmount uint32
 	OwnerID    uint64
 	OwnerLogin string
 	OwnerName  string
@@ -867,6 +869,20 @@ func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visib
 }
 
 func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance) bool {
+	if item.Vnum == 0 {
+		return false
+	}
+	return r.registerGroundItem(ownerID, ownerLogin, character, vid, item, 0)
+}
+
+func (r *sharedWorldRegistry) RegisterGroundGold(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32) bool {
+	if amount == 0 {
+		return false
+	}
+	return r.registerGroundItem(ownerID, ownerLogin, character, vid, inventory.ItemInstance{Vnum: 1, Count: 1}, amount)
+}
+
+func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32) bool {
 	if r == nil || ownerID == 0 || vid == 0 || item.Vnum == 0 {
 		return false
 	}
@@ -883,6 +899,7 @@ func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, ownerLogin stri
 		OwnerLogin: ownerLogin,
 		OwnerName:  character.Name,
 		Item:       item,
+		GoldAmount: goldAmount,
 		MapIndex:   r.topology.EffectiveMapIndex(character),
 		X:          character.X,
 		Y:          character.Y,
@@ -1007,7 +1024,7 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 			}
 		}
 	}
-	return sharedGroundItemPickup{Item: ground.Item, OwnerID: ground.OwnerID, OwnerLogin: ground.OwnerLogin, OwnerName: ownerName, Owner: ownerCharacter}, true
+	return sharedGroundItemPickup{Item: ground.Item, GoldAmount: ground.GoldAmount, OwnerID: ground.OwnerID, OwnerLogin: ground.OwnerLogin, OwnerName: ownerName, Owner: ownerCharacter}, true
 }
 
 func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector loginticket.Character, vid uint32) bool {

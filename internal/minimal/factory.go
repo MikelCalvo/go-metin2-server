@@ -1510,6 +1510,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
+			if ownsLiveSharedWorldSession() {
+				sharedWorld.RegisterGroundGold(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, amount)
+			}
 			return frames, true
 		}
 		executeSelectedItemDrop := func(cell uint16, count uint16) ([][]byte, bool) {
@@ -1581,6 +1584,25 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			pickup, ok := sharedWorld.GroundItemPickupFor(sharedWorldID, previousSelected, vid)
 			if !ok {
 				return nil, false
+			}
+			if pickup.GoldAmount != 0 {
+				if selectedPlayer.LiveGold() > uint64(math.MaxInt32)-uint64(pickup.GoldAmount) {
+					return nil, false
+				}
+				selectedPlayer.SetLiveGold(selectedPlayer.LiveGold() + uint64(pickup.GoldAmount))
+				updatedSelected := selectedPlayer.LiveCharacter()
+				frames := [][]byte{
+					itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}),
+					worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{VID: previousSelected.VID, Type: bootstrapGoldPointType, Amount: int32(pickup.GoldAmount), Value: int32(updatedSelected.Gold)}),
+				}
+				frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+				if !ok {
+					return nil, false
+				}
+				if ownsLiveSharedWorldSession() && !sharedWorld.RemoveGroundItem(sharedWorldID, previousSelected, vid) {
+					return nil, false
+				}
+				return frames, true
 			}
 			if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID {
 				ownerSelected := pickup.Owner
