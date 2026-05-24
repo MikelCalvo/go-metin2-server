@@ -203,9 +203,6 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
 	for i, spawnGroup := range spawnGroups {
 		spawnGroup.Ref = strings.TrimSpace(spawnGroup.Ref)
 		spawnGroup.Name = strings.TrimSpace(spawnGroup.Name)
-		if spawnGroup.Name == "" {
-			spawnGroup.Name = spawnGroup.Ref
-		}
 		spawnGroup.CombatProfile = strings.TrimSpace(spawnGroup.CombatProfile)
 		normalized[i] = spawnGroup
 	}

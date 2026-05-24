@@ -227,6 +227,44 @@ func TestCanonicalizeRejectsInvalidCombatProfile(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsDuplicateSpawnGroupRefs(t *testing.T) {
+	_, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{
+		{Ref: "practice.mob_alpha", Name: "Practice Mob Alpha", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
+		{Ref: "practice.mob_alpha", Name: "Practice Mob Beta", MapIndex: 42, X: 1875, Y: 2975, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
+	}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for duplicate spawn-group refs, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsSpawnGroupWithoutCombatProfile(t *testing.T) {
+	_, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
+		Ref:      "practice.mob_alpha",
+		Name:     "Practice Mob Alpha",
+		MapIndex: 42,
+		X:        1775,
+		Y:        2875,
+		RaceNum:  101,
+	}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for spawn group without combat profile, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsSpawnGroupWithBlankName(t *testing.T) {
+	_, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		MapIndex:      42,
+		X:             1775,
+		Y:             2875,
+		RaceNum:       101,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+	}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for spawn group without explicit name, got %v", err)
+	}
+}
+
 func TestExampleBootstrapNPCServiceBundleCanonicalizes(t *testing.T) {
 	path := filepath.Join("..", "..", "docs", "examples", "bootstrap-npc-service-bundle.json")
 	raw, err := os.ReadFile(path)

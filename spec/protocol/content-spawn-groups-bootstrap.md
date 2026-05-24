@@ -162,12 +162,13 @@ What is **not** yet frozen here:
 
 The first content contract should fail closed when:
 - `ref` is empty or duplicated
+- `name` is empty after trimming whitespace
 - `map_index` is `0`
 - `race_num` is `0`
 - `combat_profile` is missing or unknown
 - coordinates are malformed for the current bundle schema
 
-Import should reject malformed spawn groups before mutating live runtime state. The runtime bundle-import path now has a dedicated guard for duplicate `ref` values and preserves the prior authored/runtime snapshot when that validation fails.
+Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate `ref` values, and preserves the prior authored/runtime snapshot when validation fails.
 
 ## Relationship to existing static actors
 
