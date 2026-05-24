@@ -236,3 +236,42 @@ func TestGameRuntimeImportContentBundleMaterializesSpawnGroupsAsAttackablePracti
 		t.Fatalf("unexpected persisted spawn-group actors after import: %#v", persistedActors)
 	}
 }
+
+func TestGameRuntimeImportContentBundleRejectsDuplicateSpawnGroupRefsWithoutMutatingRuntime(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      42,
+		X:             1800,
+		Y:             2900,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import initial spawn-group content bundle: %v", err)
+	}
+	previous, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export previous content bundle: %v", err)
+	}
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{Ref: "practice.mob_alpha", Name: "PracticeMobAlpha", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy)},
+		{Ref: "practice.mob_alpha", Name: "PracticeMobBeta", MapIndex: 42, X: 1810, Y: 2910, RaceNum: 102, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy)},
+	}})
+	if !errors.Is(err, contentbundle.ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for duplicate spawn-group refs, got %v", err)
+	}
+	current, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("re-export content bundle after failed duplicate spawn-group import: %v", err)
+	}
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatalf("expected runtime content bundle to remain unchanged after duplicate spawn-group import:\n got: %#v\nwant: %#v", current, previous)
+	}
+}

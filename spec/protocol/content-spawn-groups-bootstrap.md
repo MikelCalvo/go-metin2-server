@@ -166,7 +166,7 @@ The first content contract should fail closed when:
 - `combat_profile` is missing or unknown
 - coordinates are malformed for the current bundle schema
 
-Import should reject malformed spawn groups before mutating live runtime state.
+Import should reject malformed spawn groups before mutating live runtime state. The runtime bundle-import path now has a dedicated guard for duplicate `ref` values and preserves the prior authored/runtime snapshot when that validation fails.
 
 ## Relationship to existing static actors
 
