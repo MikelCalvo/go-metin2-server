@@ -62,6 +62,7 @@ const bootstrapPracticeMobRetaliationPointDelta int32 = -1
 const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
 const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
 const itemDropRejectedInfoMessage = "You cannot drop this item."
+const itemPickupInventoryFullInfoMessage = "You have too many items."
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -1569,7 +1570,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			pickupResult, ok := selectedPlayer.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
 			if !ok {
-				return nil, false
+				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 			}
 			itemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult)
 			if !ok {

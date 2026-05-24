@@ -769,6 +769,53 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberUsesOwnerCompatibleStackBeforeFr
 	}
 }
 
+func TestGameRuntimeItemPickupNoFreeSlotEmitsInventoryFullInfoWithoutRemovingGroundHandle(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupFullOwner", 0x01030194, 0x02040194, 1500, 2500, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1021, Vnum: 27021, Count: 1, Slot: 6}}
+	collector := peerVisibilityCharacter("PickupFullCollector", 0x01030195, 0x02040195, owner.X, owner.Y, 0, 101, 201)
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		collector.Inventory = append(collector.Inventory, inventory.ItemInstance{ID: uint64(4096 + slot), Vnum: 28000 + uint32(slot), Count: 1, Slot: slot})
+	}
+	ownerLogin := "pickup-full-owner"
+	collectorLogin := "pickup-full-collector"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x94949494, owner)
+	issuePeerTicket(t, ticketStore, collectorLogin, 0x95959595, collector)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup-full owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: collectorLogin, Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
+		t.Fatalf("seed pickup-full collector account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected pickup-full item runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x94949494)
+	flushServerFrames(t, ownerFlow)
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), collectorLogin, 0x95959595)
+	flushServerFrames(t, collectorFlow)
+
+	out := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(out) != 2 {
+		t.Fatalf("expected full-inventory pickup to leave ground visible without committing inventory, got %d", len(out))
+	}
+	if groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, out[0])); err != nil || groundDel.VID != ground.VID {
+		t.Fatalf("expected full-inventory pickup to keep ground handle available, got %+v err %v", groundDel, err)
+	}
+
+	collectorAccount, err := accounts.Load(collectorLogin)
+	if err != nil {
+		t.Fatalf("load pickup-full collector account: %v", err)
+	}
+	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, collector.Inventory) {
+		t.Fatalf("expected full-inventory collector inventory to stay unchanged, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
+	}
+}
+
 func TestGameRuntimeItemDropOwnerCloseRemovesPendingGroundHandleForVisiblePeers(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -911,6 +958,14 @@ func TestGameRuntimeItemPickupOwnedByPartyMemberDeliversToOwner(t *testing.T) {
 	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, collector.Inventory) {
 		t.Fatalf("expected party collector inventory to stay unchanged, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
 	}
+}
+
+func fullBootstrapInventoryExcept(vnum uint32, count uint16, startID uint64) []inventory.ItemInstance {
+	items := make([]inventory.ItemInstance, 0, inventory.CarriedInventorySlotCount)
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		items = append(items, inventory.ItemInstance{ID: startID + uint64(slot) + 1, Vnum: vnum, Count: count, Slot: slot})
+	}
+	return items
 }
 
 func dropAndDecodeGroundAdd(t *testing.T, flow interface {
