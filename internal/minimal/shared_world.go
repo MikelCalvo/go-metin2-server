@@ -129,6 +129,7 @@ type StaticActorCombatAttackAttempt struct {
 	RequestedTargetVID          uint32
 	HPPercent                   uint8
 	Died                        bool
+	DeathReward                 worldruntime.StaticActorDeathReward
 	Actor                       StaticActorSnapshot
 }
 
@@ -1570,6 +1571,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 	attempt.HPPercent = hpPercent
 	if nextHP == 0 {
 		attempt.Died = true
+		attempt.DeathReward, _ = worldruntime.BootstrapStaticActorDeathReward(actor.CombatKind)
 		if r.staticActorCombatEngagedBy != nil {
 			delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
 		}

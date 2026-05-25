@@ -11900,6 +11900,41 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisib
 	}
 }
 
+func TestSharedWorldRegistrySelectedStaticActorAttackReturnsRewardlessDeathDescriptor(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected target selection before selected attack to succeed, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target selection to be recorded in shared-world ownership before selected attack")
+	}
+
+	var killingHit StaticActorCombatAttackAttempt
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		killingHit = registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+		if !killingHit.Accepted {
+			t.Fatalf("expected hit %d to be accepted before death reward descriptor, got %+v", hit, killingHit)
+		}
+	}
+	if !killingHit.Died {
+		t.Fatalf("expected final accepted hit to mark dummy death, got %+v", killingHit)
+	}
+	if killingHit.DeathReward.Experience != 0 || killingHit.DeathReward.Gold != 0 || len(killingHit.DeathReward.DropVnums) != 0 {
+		t.Fatalf("expected training-dummy death reward descriptor to stay rewardless, got %+v", killingHit.DeathReward)
+	}
+}
+
 func TestSharedWorldRegistryFirstPracticeMobHitClearsOtherPreselectedTargetOwnership(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)

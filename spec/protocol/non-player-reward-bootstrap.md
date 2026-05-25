@@ -20,6 +20,8 @@ The owned result is intentionally rewardless:
 - gold: `0`
 - drops: empty list
 
+The selected static-actor attack seam now carries that descriptor on the accepted zero-HP edge. In other words, the final accepted `ATTACK` that marks a `training_dummy` as dead returns the same explicit rewardless descriptor to runtime callers while the visible wire choreography remains unchanged: `GC DEAD(vid)` plus selected-target clear, not EXP/gold/drop packets.
+
 Unknown combat kinds fail closed and produce no reward result.
 
 ## Why freeze a zero reward first
@@ -46,6 +48,8 @@ For the current bootstrap runtime:
 - `training_dummy` returns one supported profile-default record
 - that record carries `max_hp = 10`, `damage_per_normal_attack = 1`, and `respawn_delay = 2s`
 - the same record carries the current rewardless death descriptor: EXP `0`, gold `0`, and no drop vnums
+- accepted non-lethal attacks keep their attack-result reward descriptor empty
+- the accepted killing attack result exposes the profile's death reward descriptor to runtime code even when that descriptor is currently rewardless
 - unsupported combat kinds return `ok = false`
 - reward/default data remains runtime/configuration owned; it is not character persistence
 
@@ -54,4 +58,4 @@ For the current bootstrap runtime:
 After this slice, the repository can truthfully say:
 - non-player death now has a dedicated reward seam
 - the first `training_dummy` reward contract is explicitly rewardless
-- later EXP/gold/drop slices have a small helper and protocol note to extend without changing the death/respawn choreography
+- later EXP/gold/drop slices have a small helper, attack-result handoff field, and protocol note to extend without changing the death/respawn choreography
