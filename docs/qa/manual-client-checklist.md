@@ -401,6 +401,7 @@ Run this only when the QA character has two compatible carried stacks for the sa
 
 - [ ] Send one `ITEM_USE_TO_ITEM` / drag-to-item request from a source carried stack into a compatible target carried stack
 - [ ] Confirm the source stack shrinks or clears and the target stack grows by the moved count
+- [ ] If the source stack clears and an item quickslot references that source slot, confirm the quickslot is deleted instead of being retargeted onto the destination stack
 - [ ] Confirm no normal consumable `PLAYER_POINT_CHANGE` or `CHAT_TYPE_INFO` effect placeholder fires from this drag-to-item path
 - [ ] Repeat against an incompatible target stack
 - [ ] Confirm the incompatible target fails closed: no item refresh frames, no point/effect placeholder, and no inventory mutation

@@ -3075,6 +3075,49 @@ func legacyFakeStubCharacters() []loginticket.Character {
 	return characters
 }
 
+func TestItemUseToItemQuickslotSyncDeletesConsumedSourceSlot(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 7, Slot: 6}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 3, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+			{Position: 5, Type: quickslotproto.TypeSkill, Slot: 5},
+		},
+	}
+	selectedPlayer := player.NewRuntime(persisted, player.SessionLink{Login: "peer-two", CharacterIndex: 1})
+	mergeResult := inventory.MoveResult{
+		Changed:    true,
+		From:       5,
+		To:         6,
+		ToOccupied: true,
+		ToItem:     inventory.ItemInstance{ID: 12, Vnum: 27001, Count: 10, Slot: 6},
+	}
+
+	frames, ok := itemUseToItemQuickslotSyncFrames(selectedPlayer, mergeResult)
+	if !ok {
+		t.Fatal("expected use-to-item quickslot sync to succeed")
+	}
+	if len(frames) != 1 {
+		t.Fatalf("expected one quickslot delete for consumed source stack, got %d", len(frames))
+	}
+	deleted, err := quickslotproto.DecodeDel(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode quickslot delete: %v", err)
+	}
+	if deleted.Position != 3 {
+		t.Fatalf("expected source item quickslot position 3 to be deleted, got %d", deleted.Position)
+	}
+	if got := selectedPlayer.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 5, Type: quickslotproto.TypeSkill, Slot: 5},
+	}) {
+		t.Fatalf("unexpected live quickslots after use-to-item full merge: %#v", got)
+	}
+}
+
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 	t.Helper()
 

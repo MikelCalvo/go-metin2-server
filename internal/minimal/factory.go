@@ -1507,7 +1507,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				refreshLiveCharacterRegistration()
 				return gameflow.ItemUseToItemResult{Accepted: false}
 			}
-			if quickslotFrames, ok := itemMoveQuickslotSyncFrames(selectedPlayer, moveResult); !ok {
+			if quickslotFrames, ok := itemUseToItemQuickslotSyncFrames(selectedPlayer, moveResult); !ok {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
 				return gameflow.ItemUseToItemResult{Accepted: false}
@@ -3377,7 +3377,24 @@ func itemMoveQuickslotSyncFrames(selectedPlayer *player.Runtime, result inventor
 	if result.CountOnly && result.FromOccupied {
 		return nil, true
 	}
-	changed, deleted, ok := selectedPlayer.SyncItemQuickslotsForInventoryMove(result.From, result.To)
+	return inventoryMoveQuickslotSyncFrames(selectedPlayer, result.From, result.To)
+}
+
+func itemUseToItemQuickslotSyncFrames(selectedPlayer *player.Runtime, result inventory.MoveResult) ([][]byte, bool) {
+	if selectedPlayer == nil || !result.Changed || result.From == result.To {
+		return nil, true
+	}
+	if !result.FromOccupied {
+		return itemRemovalQuickslotSyncFrames(selectedPlayer, result.From)
+	}
+	if result.CountOnly {
+		return nil, true
+	}
+	return inventoryMoveQuickslotSyncFrames(selectedPlayer, result.From, result.To)
+}
+
+func inventoryMoveQuickslotSyncFrames(selectedPlayer *player.Runtime, from inventory.SlotIndex, to inventory.SlotIndex) ([][]byte, bool) {
+	changed, deleted, ok := selectedPlayer.SyncItemQuickslotsForInventoryMove(from, to)
 	if !ok || len(changed)+len(deleted) == 0 {
 		return nil, ok
 	}
