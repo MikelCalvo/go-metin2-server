@@ -129,7 +129,7 @@ This slice freezes a narrow ownership model:
 - authored identity (`ref`)
 - map placement (`map_index`, `x`, `y`)
 - visual/template selection (`race_num`, optional `name`)
-- combat-profile selection (`combat_profile`)
+- combat-profile selection (`combat_profile`), defaulting to the first bootstrap `training_dummy` profile when omitted
 
 ### Combat profile owns
 - combat defaults and rules shared by authored actors using that profile
@@ -149,7 +149,7 @@ The first spawn-group contract keeps respawn deliberately narrow:
 - death still follows `non-player-death-respawn-bootstrap.md`
 - respawn is still server-driven, not client-requested
 - the recreated actor returns at the authored spawn-group position
-- the recreated actor uses the authored `combat_profile`
+- the recreated actor uses the authored `combat_profile`, or the default bootstrap `training_dummy` profile when the authored group omits that field
 - the live runtime actor after respawn is a fresh instance of the same authored spawn group, not persistence resurrecting an old runtime entity ID
 
 What is **not** yet frozen here:
@@ -165,7 +165,7 @@ The first content contract should fail closed when:
 - `name` is empty after trimming whitespace
 - `map_index` is `0`
 - `race_num` is `0`
-- `combat_profile` is missing or unknown
+- `combat_profile` is unknown when provided; an omitted profile is canonicalized to the bootstrap `training_dummy` profile for this first one-combat-profile contract
 - coordinates are malformed for the current bundle schema
 
 Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate `ref` values, and preserves the prior authored/runtime snapshot when validation fails.

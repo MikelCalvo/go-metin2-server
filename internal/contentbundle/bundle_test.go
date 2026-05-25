@@ -237,8 +237,8 @@ func TestCanonicalizeRejectsDuplicateSpawnGroupRefs(t *testing.T) {
 	}
 }
 
-func TestCanonicalizeRejectsSpawnGroupWithoutCombatProfile(t *testing.T) {
-	_, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
+func TestCanonicalizeAppliesTrainingDummyDefaultsToSpawnGroupWithoutCombatProfile(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
 		Ref:      "practice.mob_alpha",
 		Name:     "Practice Mob Alpha",
 		MapIndex: 42,
@@ -246,8 +246,11 @@ func TestCanonicalizeRejectsSpawnGroupWithoutCombatProfile(t *testing.T) {
 		Y:        2875,
 		RaceNum:  101,
 	}}})
-	if !errors.Is(err, ErrInvalidBundle) {
-		t.Fatalf("expected ErrInvalidBundle for spawn group without combat profile, got %v", err)
+	if err != nil {
+		t.Fatalf("expected spawn group without explicit combat profile to use training-dummy defaults, got %v", err)
+	}
+	if len(bundle.SpawnGroups) != 1 || bundle.SpawnGroups[0].CombatProfile != worldruntime.StaticActorCombatProfileTrainingDummy {
+		t.Fatalf("expected training-dummy combat profile default, got %#v", bundle.SpawnGroups)
 	}
 }
 
