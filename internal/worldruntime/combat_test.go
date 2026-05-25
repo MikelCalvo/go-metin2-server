@@ -112,6 +112,30 @@ func TestStaticActorDeathRewardEmptyDetectsAnyRewardChannel(t *testing.T) {
 	}
 }
 
+func TestStaticActorDeathRewardCloneCopiesDropVnums(t *testing.T) {
+	reward := StaticActorDeathReward{Experience: 7, Gold: 11, DropVnums: []uint32{101, 202}}
+	cloned := reward.Clone()
+
+	if cloned.Experience != reward.Experience || cloned.Gold != reward.Gold {
+		t.Fatalf("expected clone to preserve scalar reward fields, got %+v from %+v", cloned, reward)
+	}
+	if len(cloned.DropVnums) != len(reward.DropVnums) || cloned.DropVnums[0] != 101 || cloned.DropVnums[1] != 202 {
+		t.Fatalf("expected clone to preserve drop vnums, got %+v from %+v", cloned, reward)
+	}
+
+	reward.DropVnums[0] = 999
+	if cloned.DropVnums[0] != 101 {
+		t.Fatalf("expected cloned drop list to be isolated from source mutation, got %+v", cloned.DropVnums)
+	}
+}
+
+func TestStaticActorDeathRewardCloneNormalizesEmptyDropVnums(t *testing.T) {
+	cloned := (StaticActorDeathReward{DropVnums: []uint32{}}).Clone()
+	if cloned.DropVnums != nil {
+		t.Fatalf("expected empty drop list clone to normalize to nil, got %#v", cloned.DropVnums)
+	}
+}
+
 func TestBootstrapStaticActorDeathRewardRejectsUnknownCombatKind(t *testing.T) {
 	reward, ok := BootstrapStaticActorDeathReward("boss")
 	if ok {

@@ -51,6 +51,7 @@ For the current bootstrap runtime:
 - accepted non-lethal attacks keep their attack-result reward descriptor empty
 - the accepted killing attack result exposes the profile's death reward descriptor to runtime code even when that descriptor is currently rewardless
 - the descriptor has an explicit `Empty()` predicate so later EXP/gold/drop work can distinguish a deliberately empty reward from a non-empty reward without duplicating channel checks at each call site
+- the descriptor has an explicit `Clone()` helper that deep-copies the drop-vnum list and normalizes empty drop lists to `nil`, so future non-zero drop-table slices do not accidentally share mutable reward slices across profile-default lookups or attack results
 - unsupported combat kinds return `ok = false`
 - reward/default data remains runtime/configuration owned; it is not character persistence
 

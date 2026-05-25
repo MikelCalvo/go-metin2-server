@@ -59,6 +59,14 @@ func (r StaticActorDeathReward) Empty() bool {
 	return r.Experience == 0 && r.Gold == 0 && len(r.DropVnums) == 0
 }
 
+func (r StaticActorDeathReward) Clone() StaticActorDeathReward {
+	cloned := StaticActorDeathReward{Experience: r.Experience, Gold: r.Gold}
+	if len(r.DropVnums) > 0 {
+		cloned.DropVnums = append([]uint32(nil), r.DropVnums...)
+	}
+	return cloned
+}
+
 type StaticActorCombatProfileDefaults struct {
 	MaxHP                 uint8
 	DamagePerNormalAttack uint8
@@ -123,7 +131,7 @@ func BootstrapStaticActorDeathReward(combatKind string) (StaticActorDeathReward,
 	if !ok {
 		return StaticActorDeathReward{}, false
 	}
-	return defaults.DeathReward, true
+	return defaults.DeathReward.Clone(), true
 }
 
 func BootstrapStaticActorHPPercent(combatKind string, currentHP uint8) (uint8, bool) {
