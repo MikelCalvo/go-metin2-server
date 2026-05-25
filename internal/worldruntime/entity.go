@@ -55,6 +55,10 @@ type StaticActorDeathReward struct {
 	DropVnums  []uint32
 }
 
+func (r StaticActorDeathReward) Empty() bool {
+	return r.Experience == 0 && r.Gold == 0 && len(r.DropVnums) == 0
+}
+
 type StaticActorCombatProfileDefaults struct {
 	MaxHP                 uint8
 	DamagePerNormalAttack uint8

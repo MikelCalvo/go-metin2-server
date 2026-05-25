@@ -92,14 +92,23 @@ func TestBootstrapStaticActorDeathRewardKeepsTrainingDummyRewardless(t *testing.
 	if !ok {
 		t.Fatal("expected bootstrap training-dummy death reward to be supported")
 	}
-	if reward.Experience != 0 {
-		t.Fatalf("expected rewardless training-dummy EXP 0, got %d", reward.Experience)
+	if !reward.Empty() {
+		t.Fatalf("expected rewardless training-dummy death reward, got %+v", reward)
 	}
-	if reward.Gold != 0 {
-		t.Fatalf("expected rewardless training-dummy gold 0, got %d", reward.Gold)
+}
+
+func TestStaticActorDeathRewardEmptyDetectsAnyRewardChannel(t *testing.T) {
+	if !((StaticActorDeathReward{}).Empty()) {
+		t.Fatal("expected zero-value death reward to be empty")
 	}
-	if len(reward.DropVnums) != 0 {
-		t.Fatalf("expected rewardless training-dummy to emit no drops, got %+v", reward.DropVnums)
+	if (StaticActorDeathReward{Experience: 1}).Empty() {
+		t.Fatal("expected EXP-bearing death reward to be non-empty")
+	}
+	if (StaticActorDeathReward{Gold: 1}).Empty() {
+		t.Fatal("expected gold-bearing death reward to be non-empty")
+	}
+	if (StaticActorDeathReward{DropVnums: []uint32{1}}).Empty() {
+		t.Fatal("expected drop-bearing death reward to be non-empty")
 	}
 }
 
