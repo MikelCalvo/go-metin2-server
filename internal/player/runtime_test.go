@@ -119,6 +119,48 @@ func TestNilRuntimeReturnsZeroLiveCharacter(t *testing.T) {
 	}
 }
 
+func TestRuntimeAppliesGoldOnlyDeathRewardToLiveState(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Gold: 25,
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Gold: 75})
+	if !ok {
+		t.Fatal("expected gold-only death reward to apply to live runtime state")
+	}
+	if result.GoldBefore != 25 || result.GoldAfter != 100 || result.Gold != 75 {
+		t.Fatalf("unexpected gold reward result: %+v", result)
+	}
+	if got := runtime.LiveGold(); got != 100 {
+		t.Fatalf("expected live gold to increase to 100, got %d", got)
+	}
+	if got := runtime.PersistedSnapshot().Gold; got != 25 {
+		t.Fatalf("expected persisted gold to remain unchanged before an explicit save, got %d", got)
+	}
+}
+
+func TestRuntimeRejectsOverflowingGoldDeathRewardWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Gold: ^uint64(0) - 10,
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Gold: 11})
+	if ok {
+		t.Fatalf("expected overflowing gold death reward to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveGold(); got != ^uint64(0)-10 {
+		t.Fatalf("expected live gold to remain unchanged after overflow rejection, got %d", got)
+	}
+}
+
 func bootstrapConsumableTemplate(vnum uint32, pointType uint8, pointIndex uint8, pointDelta int32, message string) itemcatalog.Template {
 	return itemcatalog.Template{
 		Vnum:      vnum,

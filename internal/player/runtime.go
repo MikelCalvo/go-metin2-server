@@ -44,6 +44,12 @@ type PointChangeResult struct {
 	PointValue  int32
 }
 
+type DeathRewardResult struct {
+	Gold       uint64
+	GoldBefore uint64
+	GoldAfter  uint64
+}
+
 type MerchantBuyItemChange struct {
 	Item    inventory.ItemInstance
 	Created bool
@@ -161,6 +167,22 @@ func (r *Runtime) SetLiveGold(gold uint64) {
 		return
 	}
 	r.liveGold = gold
+}
+
+func (r *Runtime) ApplyStaticActorDeathReward(reward worldruntime.StaticActorDeathReward) (DeathRewardResult, bool) {
+	if r == nil || reward.Experience != 0 || len(reward.DropVnums) != 0 {
+		return DeathRewardResult{}, false
+	}
+	if reward.Gold == 0 {
+		return DeathRewardResult{GoldBefore: r.liveGold, GoldAfter: r.liveGold}, true
+	}
+	goldBefore := r.liveGold
+	goldAfter := goldBefore + reward.Gold
+	if goldAfter < goldBefore {
+		return DeathRewardResult{}, false
+	}
+	r.liveGold = goldAfter
+	return DeathRewardResult{Gold: reward.Gold, GoldBefore: goldBefore, GoldAfter: goldAfter}, true
 }
 
 func (r *Runtime) ApplyPointDelta(pointType uint8, pointIndex uint8, pointDelta int32) (PointChangeResult, bool) {

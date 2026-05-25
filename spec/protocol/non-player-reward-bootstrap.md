@@ -34,7 +34,9 @@ This also keeps the existing training dummy truthful: it is a practice target us
 
 This slice does **not** yet freeze:
 - EXP point types or level progression
-- gold mutation or gold packet fanout
+- non-zero reward descriptors for `training_dummy`
+- gold mutation beyond the live-runtime helper that can apply a future gold-only death descriptor before any persistence or visible packet fanout exists
+- gold packet fanout
 - item-drop packet creation, ownership, timeout, or pickup rules
 - party reward distribution
 - quest credit or kill counters
@@ -52,6 +54,7 @@ For the current bootstrap runtime:
 - the accepted killing attack result exposes the profile's death reward descriptor to runtime code even when that descriptor is currently rewardless
 - the descriptor has an explicit `Empty()` predicate so later EXP/gold/drop work can distinguish a deliberately empty reward from a non-empty reward without duplicating channel checks at each call site
 - the descriptor has an explicit `Clone()` helper that deep-copies the drop-vnum list and normalizes empty drop lists to `nil`, so future non-zero drop-table slices do not accidentally share mutable reward slices across profile-default lookups or attack results
+- the player runtime now has a narrow gold-only death-reward application helper for future non-zero descriptors; it mutates live session gold only, rejects EXP/drop-bearing descriptors, rejects overflow, and does not persist the account snapshot or emit any reward packet by itself
 - unsupported combat kinds return `ok = false`
 - reward/default data remains runtime/configuration owned; it is not character persistence
 
@@ -60,4 +63,4 @@ For the current bootstrap runtime:
 After this slice, the repository can truthfully say:
 - non-player death now has a dedicated reward seam
 - the first `training_dummy` reward contract is explicitly rewardless
-- later EXP/gold/drop slices have a small helper, attack-result handoff field, and protocol note to extend without changing the death/respawn choreography
+- later EXP/gold/drop slices have a small descriptor helper, attack-result handoff field, live gold-only application seam, and protocol note to extend without changing the death/respawn choreography
