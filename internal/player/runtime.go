@@ -730,7 +730,7 @@ func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.Slo
 		return inventory.MoveResult{}, false
 	}
 	sourceItem := r.liveInventory[sourceIndex]
-	if sourceItem.Equipped || sourceItem.Locked || sourceItem.Vnum != template.Vnum || sourceItem.Count == 0 {
+	if sourceItem.Equipped || sourceItem.Locked || sourceItem.Vnum != template.Vnum || sourceItem.Count == 0 || sourceItem.Count > template.MaxCount {
 		return inventory.MoveResult{}, false
 	}
 	targetIndex := findInventorySlot(r.liveInventory, target)

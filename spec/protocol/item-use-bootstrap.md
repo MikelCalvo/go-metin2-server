@@ -38,6 +38,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - source and target must both be carried inventory positions
 - source and target must be different occupied slots with the same `vnum`
 - the source template must resolve to a valid stackable item with non-zero `max_count`
+- the live source stack must have non-zero count and must not already exceed the template-authored `max_count`
 - the target stack must have free capacity under that `max_count`
 - the runtime moves as many source items as fit into the target stack
 - if the source stack fits completely, the response burst is `ITEM_DEL(source)`, `ITEM_SET(target)`, then zero or more `QUICKSLOT_DEL` frames for item quickslots referencing the removed source carried cell
@@ -46,7 +47,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - count-only partial refreshes use the existing `ITEM_UPDATE` packet shape for both changed carried cells and do not rewrite source item quickslots
 - the normal `use_effect` path is not executed for this drag-to-item request, even when the source item also has a consumable template
 
-Incompatible targets, empty slots, equipped cells, locked source or target items, non-stackable templates, missing templates, and already-full targets fail closed with no frames and no mutation.
+Incompatible targets, empty slots, equipped cells, locked source or target items, non-stackable templates, missing templates, over-template-max source stacks, and already-full targets fail closed with no frames and no mutation.
 The runtime also rejects non-stackable templates at the player mutation boundary itself, so this guard does not depend only on the minimal session handler pre-check.
 When no runtime handler is installed, the default game-flow handler still rejects the packet silently/fail-closed.
 
