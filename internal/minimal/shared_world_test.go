@@ -15581,7 +15581,9 @@ func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequire
 func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDelayAndRequiresFreshReselect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	observer := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, observer)
 
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
@@ -15613,6 +15615,14 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 		t.Fatalf("expected 8 bootstrap frames with visible content practice mob, got %d", len(enterOut))
 	}
 	defer closeSessionFlow(t, flow)
+	observerFlow, observerEnterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(observerEnterOut) != 11 {
+		t.Fatalf("expected 11 observer bootstrap frames with peer plus visible content practice mob, got %d", len(observerEnterOut))
+	}
+	defer closeSessionFlow(t, observerFlow)
+	if queued := flushServerFrames(t, flow); len(queued) != 3 {
+		t.Fatalf("expected peer-entry frames for observer before combat, got %d", len(queued))
+	}
 
 	targetVID := uint32(actors[0].EntityID)
 	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -15664,6 +15674,17 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
 		t.Fatalf("unexpected content practice-mob clear-target packet on death hit: %+v", cleared)
 	}
+	observerDeathFrames := flushServerFrames(t, observerFlow)
+	if len(observerDeathFrames) != 1 {
+		t.Fatalf("expected observer death fanout before content practice-mob respawn, got %d frames", len(observerDeathFrames))
+	}
+	observerDeath, err := worldproto.DecodeDead(decodeSingleFrame(t, observerDeathFrames[0]))
+	if err != nil {
+		t.Fatalf("decode observer content practice-mob death frame: %v", err)
+	}
+	if observerDeath.VID != targetVID {
+		t.Fatalf("unexpected observer content practice-mob death packet: %+v", observerDeath)
+	}
 
 	currentTime = currentTime.Add((2 * time.Second) - time.Millisecond)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -15674,6 +15695,10 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	respawnFrames := flushServerFrames(t, flow)
 	if len(respawnFrames) != 4 {
 		t.Fatalf("expected delete + add/info/update respawn rebuild for content practice mob after server-driven delay, got %d frames", len(respawnFrames))
+	}
+	observerRespawnFrames := flushServerFrames(t, observerFlow)
+	if len(observerRespawnFrames) != 4 {
+		t.Fatalf("expected observer delete + add/info/update respawn rebuild for content practice mob after server-driven delay, got %d frames", len(observerRespawnFrames))
 	}
 	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, respawnFrames[0]))
 	if err != nil {
