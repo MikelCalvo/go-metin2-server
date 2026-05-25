@@ -47,8 +47,8 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - count-only partial refreshes use the existing `ITEM_UPDATE` packet shape for both changed carried cells and do not rewrite source item quickslots
 - the normal `use_effect` path is not executed for this drag-to-item request, even when the source item also has a consumable template
 
-Incompatible targets, empty slots, equipped cells, locked source or target items, non-stackable templates, missing templates, over-template-max source stacks, and already-full targets fail closed with no frames and no mutation.
-The runtime also rejects non-stackable templates at the player mutation boundary itself, so this guard does not depend only on the minimal session handler pre-check.
+Incompatible targets, empty slots, equipped cells, locked source or target items, non-stackable templates, missing templates, over-template-max source stacks, over-template-max target stacks, and already-full targets fail closed with no frames and no mutation.
+The runtime also rejects non-stackable templates and over-template-max source or target stacks at the player mutation boundary itself, so these guards do not depend only on the minimal session handler pre-check.
 When no runtime handler is installed, the default game-flow handler still rejects the packet silently/fail-closed.
 
 For the first owned packet ingress, the runtime only accepts:
