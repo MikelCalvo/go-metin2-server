@@ -255,6 +255,78 @@ func TestGameRuntimeItemUseToItemMergesCompatibleInventoryStacks(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemUseToItemDeletesSourceItemQuickslotOnFullMerge(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemQuick", 0x01030197, 0x02040197, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1051, Vnum: 27001, Count: 3, Slot: 5}, {ID: 1052, Vnum: 27001, Count: 4, Slot: 6}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "use-to-item-quick", 0x97979797, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-quick", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed use-to-item quickslot owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected use-to-item quickslot runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-quick", 0x97979797)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected use-to-item quickslot error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected full use-to-item merge to emit ITEM_DEL, ITEM_SET, and QUICKSLOT_DEL, got %d frames", len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode use-to-item quickslot source del: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected use-to-item quickslot source del: %+v", del)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode use-to-item quickslot target set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27001 || set.Count != 7 {
+		t.Fatalf("unexpected use-to-item quickslot target set: %+v", set)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode use-to-item source quickslot del: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("expected only source item quickslot position 2 to be deleted, got %+v", quickslotDel)
+	}
+
+	account, err := accounts.Load("use-to-item-quick")
+	if err != nil {
+		t.Fatalf("load use-to-item quickslot owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1052, Vnum: 27001, Count: 7, Slot: 6}}) {
+		t.Fatalf("unexpected persisted inventory after use-to-item quickslot merge: %#v", account.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, []loginticket.Quickslot{
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}) {
+		t.Fatalf("unexpected persisted quickslots after use-to-item quickslot merge: %#v", account.Characters[0].Quickslots)
+	}
+}
+
 func TestGameRuntimeItemUseToItemRejectsIncompatibleTargetWithoutNormalUseFallback(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
