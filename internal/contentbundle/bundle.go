@@ -72,7 +72,7 @@ func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionst
 
 func Canonicalize(bundle Bundle) (Bundle, error) {
 	normalized := Bundle{
-		StaticActors:           cloneStaticActors(bundle.StaticActors),
+		StaticActors:           normalizeStaticActors(bundle.StaticActors),
 		SpawnGroups:            normalizeSpawnGroups(bundle.SpawnGroups),
 		InteractionDefinitions: cloneDefinitions(bundle.InteractionDefinitions),
 	}
@@ -216,13 +216,19 @@ func interactionDefinitionKey(kind string, ref string) string {
 	return strings.TrimSpace(kind) + "\x00" + strings.TrimSpace(ref)
 }
 
-func cloneStaticActors(actors []StaticActor) []StaticActor {
+func normalizeStaticActors(actors []StaticActor) []StaticActor {
 	if len(actors) == 0 {
 		return nil
 	}
-	cloned := make([]StaticActor, len(actors))
-	copy(cloned, actors)
-	return cloned
+	normalized := make([]StaticActor, len(actors))
+	copy(normalized, actors)
+	for i := range normalized {
+		normalized[i].Name = strings.TrimSpace(normalized[i].Name)
+		normalized[i].CombatProfile = strings.TrimSpace(normalized[i].CombatProfile)
+		normalized[i].InteractionKind = strings.TrimSpace(normalized[i].InteractionKind)
+		normalized[i].InteractionRef = strings.TrimSpace(normalized[i].InteractionRef)
+	}
+	return normalized
 }
 
 func cloneDefinitions(definitions []interactionstore.Definition) []interactionstore.Definition {

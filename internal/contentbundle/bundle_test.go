@@ -227,6 +227,32 @@ func TestCanonicalizeRejectsInvalidCombatProfile(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeTrimsStaticActorAuthoringFields(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		StaticActors: []StaticActor{{
+			Name:            "  TrainingDummy  ",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         20350,
+			CombatProfile:   " training_dummy ",
+			InteractionKind: " talk ",
+			InteractionRef:  " npc:village_guard ",
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize static actor with padded authoring fields: %v", err)
+	}
+	want := Bundle{
+		StaticActors:           []StaticActor{{Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
+	}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected canonical static actor fields:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
 func TestCanonicalizeRejectsDuplicateSpawnGroupRefs(t *testing.T) {
 	_, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{
 		{Ref: "practice.mob_alpha", Name: "Practice Mob Alpha", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
