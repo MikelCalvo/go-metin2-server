@@ -2715,16 +2715,35 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !resolution.DeathReward.Empty() {
 						attackFrames := append([][]byte(nil), frames...)
 						if len(resolution.DeathReward.DropVnums) != 0 {
-							if resolution.DeathReward.Experience == 0 && resolution.DeathReward.Gold == 0 && len(resolution.DeathReward.DropVnums) == 1 {
-								groundVID := bootstrapGroundItemVID(previousSelected, inventory.SlotIndex(resolution.DeathReward.DropVnums[0]%uint32(inventory.CarriedInventorySlotCount)))
-								if groundVID != 0 {
-									droppedItem := inventory.ItemInstance{Vnum: resolution.DeathReward.DropVnums[0], Count: 1}
+							if resolution.DeathReward.Experience == 0 && resolution.DeathReward.Gold == 0 {
+								type rewardDrop struct {
+									vid  uint32
+									item inventory.ItemInstance
+								}
+								rewardDrops := make([]rewardDrop, 0, len(resolution.DeathReward.DropVnums))
+								seenVIDs := make(map[uint32]struct{}, len(resolution.DeathReward.DropVnums))
+								for index, vnum := range resolution.DeathReward.DropVnums {
+									if vnum == 0 {
+										return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
+									}
+									groundVID := bootstrapRewardGroundItemVID(previousSelected, vnum, index)
+									if groundVID == 0 {
+										return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
+									}
+									if _, exists := seenVIDs[groundVID]; exists {
+										return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
+									}
+									seenVIDs[groundVID] = struct{}{}
+									droppedItem := inventory.ItemInstance{Vnum: vnum, Count: 1}
+									rewardDrops = append(rewardDrops, rewardDrop{vid: groundVID, item: droppedItem})
 									frames = append(frames,
 										itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: groundVID, Vnum: droppedItem.Vnum, X: previousSelected.X, Y: previousSelected.Y, Z: previousSelected.Z}),
 										itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: groundVID, OwnerName: previousSelected.Name}),
 									)
-									if ownsLiveSharedWorldSession() {
-										sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, droppedItem)
+								}
+								if ownsLiveSharedWorldSession() {
+									for _, drop := range rewardDrops {
+										sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, drop.vid, drop.item)
 									}
 								}
 							}
@@ -3821,6 +3840,14 @@ func bootstrapGroundItemVID(character loginticket.Character, slot inventory.Slot
 	vid := character.VID ^ 0x80000000 ^ uint32(slot+1)
 	if vid == 0 {
 		return uint32(slot) + 1
+	}
+	return vid
+}
+
+func bootstrapRewardGroundItemVID(character loginticket.Character, vnum uint32, index int) uint32 {
+	vid := character.VID ^ 0x81000000 ^ (vnum << 8) ^ uint32(index+1)
+	if vid == 0 {
+		return uint32(index) + 1
 	}
 	return vid
 }

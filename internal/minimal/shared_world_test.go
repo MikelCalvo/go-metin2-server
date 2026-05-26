@@ -12138,6 +12138,101 @@ func TestNewGameSessionFactoryRollsBackGoldOnlyPracticeMobDeathRewardWhenAccount
 	}
 }
 
+func TestNewGameSessionFactoryDropsMultipleItemRewardsForPracticeMobDeath(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050206, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050206, Name: "MultiDropRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.multi_drop_reward_mob",
+	}
+	killer := peerVisibilityCharacter("MultiDropRewardKiller", 0x01030106, 0x02040106, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "multi-drop-reward-killer", 0x66666666, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "multi-drop-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed multi-drop reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_500, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+		t.Fatal("expected multi-drop reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001, 27002}}) {
+		t.Fatal("expected test multi-drop reward override to apply to registered practice mob")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "multi-drop-reward-killer", 0x66666666)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before multi-drop reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on multi-drop reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 6 {
+		t.Fatalf("expected killing hit to return dead, clear target, and two ground-add/ownership pairs, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode multi-drop reward killing hit dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode multi-drop reward killing hit clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected multi-drop reward killing hit to clear target, got %+v", clearTarget)
+	}
+	firstGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode first multi-drop reward ground add: %v", err)
+	}
+	firstOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode first multi-drop reward ownership: %v", err)
+	}
+	secondGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	if err != nil {
+		t.Fatalf("decode second multi-drop reward ground add: %v", err)
+	}
+	secondOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	if err != nil {
+		t.Fatalf("decode second multi-drop reward ownership: %v", err)
+	}
+	if firstGround.Vnum != 27001 || secondGround.Vnum != 27002 || firstGround.VID == 0 || secondGround.VID == 0 || firstGround.VID == secondGround.VID {
+		t.Fatalf("unexpected multi-drop ground rewards: first=%+v second=%+v", firstGround, secondGround)
+	}
+	if firstGround.X != killer.X || firstGround.Y != killer.Y || secondGround.X != killer.X || secondGround.Y != killer.Y {
+		t.Fatalf("expected multi-drop rewards at killer position, got first=%+v second=%+v", firstGround, secondGround)
+	}
+	if firstOwnership != (itemproto.OwnershipPacket{VID: firstGround.VID, OwnerName: killer.Name}) || secondOwnership != (itemproto.OwnershipPacket{VID: secondGround.VID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected multi-drop ownership frames: first=%+v second=%+v", firstOwnership, secondOwnership)
+	}
+
+	account, err := accounts.Load("multi-drop-reward-killer")
+	if err != nil {
+		t.Fatalf("load multi-drop rewarded account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected multi-drop reward not to mutate persisted inventory, got %#v", account.Characters[0].Inventory)
+	}
+}
+
 func TestNewGameSessionFactoryDropsFirstItemRewardForPracticeMobDeath(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{

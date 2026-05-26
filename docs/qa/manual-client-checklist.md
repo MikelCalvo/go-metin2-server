@@ -948,7 +948,7 @@ Expected result:
 - [ ] If the content-loaded mob has a bootstrap EXP-only death reward configured, drive one full kill and confirm the killing client receives `GC DEAD(mob_vid)` -> `GC TARGET(0, 0)` -> one self-only `PLAYER_POINT_CHANGE(POINT_EXP = 3)` with the configured EXP amount and new EXP total
 - [ ] If the content-loaded mob has a bootstrap gold-only death reward configured, drive one full kill and confirm the killing client receives `GC DEAD(mob_vid)` -> `GC TARGET(0, 0)` -> one self-only `PLAYER_POINT_CHANGE(POINT_GOLD = 11)` with the configured gold amount and new gold total
 - [ ] Reconnect after a successful EXP-only or gold-only reward kill and confirm the selected character snapshot reflects the persisted reward total
-- [ ] Repeat with a single-drop-vnum reward descriptor in a debug harness if available and confirm the kill returns `GC DEAD(mob_vid)` -> `GC TARGET(0, 0)` -> one self-only `ITEM_GROUND_ADD` at the killer's current coordinates -> one self-only `ITEM_OWNERSHIP` for the killer, with no inventory/account persistence mutation from the drop reward alone
+- [ ] Repeat with a drop-only reward descriptor in a debug harness if available and confirm the kill returns `GC DEAD(mob_vid)` -> `GC TARGET(0, 0)` -> one self-only `ITEM_GROUND_ADD` at the killer's current coordinates plus one self-only `ITEM_OWNERSHIP` for the killer per configured drop vnum, with no inventory/account persistence mutation from the drop reward alone
 - [ ] Drive one full target -> hit -> zero-HP death -> timed respawn -> fresh reselect cycle against that content-loaded mob
 - [ ] Re-export or otherwise inspect authored content and confirm the actor still round-trips as `spawn_groups`, not as an interaction-backed `static_actor`
 

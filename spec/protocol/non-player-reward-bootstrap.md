@@ -27,8 +27,8 @@ Narrow EXP-only, gold-only, and first item-drop-only runtime descriptors are now
 - the account snapshot is persisted before an EXP/gold reward point-change frame is emitted
 - the live player runtime is refreshed to the persisted point/currency value
 - one self-only `PLAYER_POINT_CHANGE` for the EXP point (`POINT_EXP = 3`) or gold point (`POINT_GOLD = 11`) is appended after `GC DEAD(vid)` and `GC TARGET(0, 0)`
-- an item-drop-only descriptor with exactly one drop vnum appends one self-only `GROUND_ADD` plus `OWNERSHIP` pair after `GC DEAD(vid)` and `GC TARGET(0, 0)`
-- the first drop reward is runtime/world-owned ground presence at the killer's current position; it does not mutate character inventory or account persistence by itself
+- an item-drop-only descriptor appends one self-only `GROUND_ADD` plus `OWNERSHIP` pair per configured drop vnum after `GC DEAD(vid)` and `GC TARGET(0, 0)`
+- the first drop rewards are runtime/world-owned ground presence at the killer's current position; they do not mutate character inventory or account persistence by themselves
 
 Unknown combat kinds fail closed and produce no reward result.
 
@@ -43,9 +43,8 @@ This also keeps the existing training dummy truthful: it is a practice target us
 This slice does **not** yet freeze:
 - level progression from earned EXP
 - default non-zero reward descriptors for authored `training_dummy` / `practice_mob` content
-- multiple drop-vnum descriptor application
 - mixed EXP/gold/drop descriptor application
-- item-drop timeout, loot ownership handoff, or pickup reward rules beyond the first immediate self-visible `GROUND_ADD` + `OWNERSHIP` pair
+- item-drop timeout, loot ownership handoff, or pickup reward rules beyond the immediate self-visible `GROUND_ADD` + `OWNERSHIP` pairs
 - party reward distribution
 - quest credit or kill counters
 - corpse interaction
@@ -65,8 +64,8 @@ For the current bootstrap runtime:
 - the player runtime has a narrow EXP/gold death-reward application helper; it mutates live session EXP/gold only, rejects drop-bearing descriptors, rejects overflow, and does not persist the account snapshot or emit any reward packet by itself
 - the integrated game runtime owns the current persistence + packet edge for EXP/gold descriptors: save updated account points/currency, refresh the selected-player persisted snapshot, and append one self-only `PLAYER_POINT_CHANGE` after the death/target-clear frames
 - if EXP/gold reward persistence fails after an accepted killing edge, the runtime rolls live points/currency back to the previous selected-character snapshot, refreshes shared-world registration, preserves the already-owned death/target-clear frames, and omits the reward `PLAYER_POINT_CHANGE`
-- the integrated game runtime also owns a first item-drop-only descriptor edge: exactly one drop vnum emits a deterministic ground item at the killer's current location plus an `OWNERSHIP` frame for the killer, registers that ground item in shared-world runtime state, and leaves inventory/account persistence unchanged
-- mixed EXP/gold/drop descriptors and multi-drop descriptors currently preserve the accepted death edge while omitting reward mutation/frames until those richer channels are explicitly owned
+- the integrated game runtime also owns an item-drop-only descriptor edge: each configured drop vnum emits a deterministic ground item at the killer's current location plus an `OWNERSHIP` frame for the killer, registers that ground item in shared-world runtime state, and leaves inventory/account persistence unchanged
+- mixed EXP/gold/drop descriptors currently preserve the accepted death edge while omitting reward mutation/frames until those richer channels are explicitly owned
 - unsupported combat kinds return `ok = false`
 - reward/default data remains runtime/configuration owned; it is not character persistence by itself
 
@@ -76,6 +75,6 @@ After this slice, the repository can truthfully say:
 - non-player death has a dedicated reward seam
 - the default `training_dummy` / `practice_mob` reward contract is explicitly rewardless
 - EXP-only and gold-only descriptors can now be applied on the killing hit, persisted to the selected character, and reported with one self-only `PLAYER_POINT_CHANGE`
-- a first drop-only descriptor can now create one self-visible ground item reward without mutating character inventory/account persistence
-- unsupported mixed or multi-drop descriptors keep the already-accepted death edge visible while omitting reward mutation/frames until that reward channel is explicitly owned
+- drop-only descriptors can now create one self-visible ground item reward per configured drop vnum without mutating character inventory/account persistence
+- unsupported mixed descriptors keep the already-accepted death edge visible while omitting reward mutation/frames until that reward channel is explicitly owned
 - later EXP/drop/ownership slices have a small descriptor helper, attack-result handoff field, gold-only application seam, and protocol note to extend without changing the death/respawn choreography
