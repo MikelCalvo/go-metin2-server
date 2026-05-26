@@ -378,7 +378,6 @@ func TestRuntimeUseItemOnItemRejectsNonStackableTemplateWithoutMutatingState(t *
 	}
 }
 
-
 func TestRuntimeUseItemOnItemRejectsLockedSourceOrTargetWithoutMutatingState(t *testing.T) {
 	cases := []struct {
 		name      string

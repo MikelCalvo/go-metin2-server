@@ -11903,9 +11903,9 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisib
 func TestNewGameSessionFactoryAppliesGoldOnlyPracticeMobDeathReward(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
-		Entity: worldruntime.Entity{ID: 0x01050201, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050201, Name: "RewardMob"},
-		Position: worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
-		RaceNum:  20350,
+		Entity:        worldruntime.Entity{ID: 0x01050201, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050201, Name: "RewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
 		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
 		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
 		SpawnGroupRef: "practice.reward_mob",
