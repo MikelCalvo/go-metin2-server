@@ -156,9 +156,9 @@ The current owned synchronization is intentionally narrow:
 
 - move synchronization applies to accepted carried-inventory mutations where the source cell becomes empty and the moved item now lives at a different carried cell, including exact counted full-stack compatible merges;
 - when that destination carried cell already has matching item quickslots, those destination quickslots are deleted before the moved source quickslot is retargeted so one carried cell does not retain multiple stale item quickslot bindings;
-- removal synchronization applies to accepted carried-to-equipment `ITEM_MOVE` equips, accepted last-stack carried-inventory `ITEM_USE` paths, and accepted whole-stack merchant sell paths where the carried item slot becomes empty;
+- removal synchronization applies to accepted carried-to-equipment `ITEM_MOVE` equips, accepted last-stack carried-inventory `ITEM_USE` paths, full-source `ITEM_USE_TO_ITEM` merges, and accepted whole-stack merchant sell paths where the carried item slot becomes empty;
 - it does not rewrite or delete skill or command quickslots that happen to carry the same byte value;
-- move synchronization does not run for partial merges or partial-stack splits where the original item still remains at the source cell;
+- move/removal synchronization does not run for partial merges or partial-stack splits where the original item still remains at the source cell, including partial `ITEM_USE_TO_ITEM` stack consolidation;
 - merchant partial-stack `SELL2` does not delete quickslots, because the original item still remains at the source cell;
 - it does not yet delete item quickslots when safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths clear an item cell.
 
@@ -177,6 +177,7 @@ Implemented now:
 - automatic item quickslot update synchronization after accepted carried-inventory `ITEM_MOVE` packets that empty the source cell, including destination-cell stale quickslot deletion when needed.
 - automatic item quickslot deletion synchronization after accepted carried-to-equipment `ITEM_MOVE` equips.
 - automatic item quickslot deletion synchronization after accepted last-stack carried-inventory `ITEM_USE` packets.
+- automatic item quickslot deletion synchronization after full-source `ITEM_USE_TO_ITEM` stack consolidations, while partial consolidations keep source-slot item quickslots unchanged.
 - automatic item quickslot deletion synchronization after accepted whole-stack merchant `SHOP SELL` / `SELL2` packets.
 - validation of bootstrap quickslot positions (`0..35`), item quickslot cells (`0..89`), and supported tuple types (`item`, `skill`, `command`).
 

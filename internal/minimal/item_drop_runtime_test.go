@@ -327,6 +327,68 @@ func TestGameRuntimeItemUseToItemDeletesSourceItemQuickslotOnFullMerge(t *testin
 	}
 }
 
+func TestGameRuntimeItemUseToItemMergesPartialStackWithUpdateFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemPartial", 0x01030194, 0x02040194, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1031, Vnum: 27001, Count: 7, Slot: 5}, {ID: 1032, Vnum: 27001, Count: 8, Slot: 6}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "use-to-item-partial", 0x94949494, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partial use-to-item owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  10,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected partial use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-partial", 0x94949494)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected partial use-to-item error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected partial use-to-item merge to emit two ITEM_UPDATE frames, got %d", len(out))
+	}
+	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode partial use-to-item source update: %v", err)
+	}
+	if sourceUpdate.Position != itemproto.InventoryPosition(5) || sourceUpdate.Count != 5 {
+		t.Fatalf("unexpected partial use-to-item source update: %+v", sourceUpdate)
+	}
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode partial use-to-item target update: %v", err)
+	}
+	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 10 {
+		t.Fatalf("unexpected partial use-to-item target update: %+v", targetUpdate)
+	}
+
+	account, err := accounts.Load("use-to-item-partial")
+	if err != nil {
+		t.Fatalf("load partial use-to-item owner account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 1031, Vnum: 27001, Count: 5, Slot: 5}, {ID: 1032, Vnum: 27001, Count: 10, Slot: 6}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted inventory after partial use-to-item merge: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected partial use-to-item to keep source quickslot, got %#v", account.Characters[0].Quickslots)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected partial use-to-item merge to avoid normal use point effect, got %d", account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameRuntimeItemUseToItemRejectsIncompatibleTargetWithoutNormalUseFallback(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

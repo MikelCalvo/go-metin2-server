@@ -155,7 +155,7 @@ This document now owns the more general stack facts that item use depends on:
 ## Explicit non-goals
 
 This first stack contract does **not** yet freeze:
-- drag-and-drop client merge rules
+- drag-and-drop client merge rules beyond the currently owned `ITEM_USE_TO_ITEM` same-`vnum` carried-stack consolidation path documented in `item-use-bootstrap.md`
 - split-stack UI input
 - merchant sell-back or rebuy semantics
 - automatic consolidation of duplicate stacks outside the current grant path
