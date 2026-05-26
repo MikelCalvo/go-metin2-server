@@ -1693,13 +1693,18 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				if ownerSelected.ID == 0 {
 					return nil, false
 				}
-				ownerRuntime := player.NewRuntime(ownerSelected, player.SessionLink{Login: pickup.OwnerLogin})
 				pickupMaxCount := uint16(0)
 				if runtime != nil {
-					if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.Stackable {
-						pickupMaxCount = template.MaxCount
+					if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok && itemcatalog.ValidTemplate(template) {
+						if template.AntiGive {
+							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
+						}
+						if template.Stackable {
+							pickupMaxCount = template.MaxCount
+						}
 					}
 				}
+				ownerRuntime := player.NewRuntime(ownerSelected, player.SessionLink{Login: pickup.OwnerLogin})
 				pickupResult, ok := ownerRuntime.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
 				if !ok {
 					collectorResult, collectorOK := selectedPlayer.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)

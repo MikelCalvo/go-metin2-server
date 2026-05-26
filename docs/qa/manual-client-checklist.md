@@ -715,6 +715,7 @@ Expected result:
 - [ ] Send one real client `ITEM_PICKUP` request from client B for that handle
 - [ ] Confirm client B receives `GC::ITEM_GROUND_DEL` followed by deterministic carried inventory refreshes: `GC::ITEM_SET` for a restored/new carried slot, `GC::ITEM_UPDATE` for compatible stack merges, or multiple `GC::ITEM_UPDATE` frames plus a `GC::ITEM_SET` when a stackable pickup fills partial stacks and places a remainder
 - [ ] Confirm client A sees the queued ground delete and no longer owns the dropped item in persisted inventory
+- [ ] If the dropped item's loaded template can be marked `anti_give` after it is on the ground in a debug harness, repeat client B's owned-item pickup and confirm client B receives only the inventory-full info rejection, client A receives no owner-delivery frames, neither inventory mutates, and client A can still reclaim the pending handle
 - [ ] Repeat with client A dropping bootstrap gold and client B picking up the owned gold marker; confirm client B receives ground delete plus delivered-to-party-member `ITEM_GET`, while client A receives the peer-visible delete, a positive `POINT_CHANGE(POINT_GOLD)`, and from-party-member `ITEM_GET`; confirm client B's gold total is unchanged while client A's persisted gold is restored
 - [ ] Attempt a replayed pickup for the same handle and confirm it fails closed without extra item grants
 
@@ -725,6 +726,7 @@ Expected result:
 - full `ITEM_USE_TO_ITEM` stack merges delete item quickslots that pointed at the removed source slot while leaving skill/command quickslots with the same byte slot value unchanged
 - visible peers can collect the temporary handle when compatible carried stack capacity and/or a carried destination slot can accept the entire picked count
 - owner-owned visible gold markers restore the owner's gold with party-shaped pickup notices when a visible peer collects them
+- `anti_give` owner-owned item pickup by a visible peer rejects before owner/collector inventory mutation while leaving the pending handle available for owner reclaim
 - the recipient mutation persists before the temporary handle is removed
 - ground-item delete fanout reaches other visible sessions after successful pickup
 - replayed, unknown, invisible, no-merge-capacity, or no-free-slot pickup attempts fail closed

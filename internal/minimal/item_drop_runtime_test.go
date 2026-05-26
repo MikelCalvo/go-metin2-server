@@ -873,6 +873,73 @@ func TestGameRuntimeItemDrop2WithGoldDropsCurrencyInsteadOfCountedItem(t *testin
 	}
 }
 
+func TestGameRuntimeItemPickupRejectsAntiGiveOwnerDeliveryWithoutCollectorMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AntiGivePickupOwner", 0x0103019c, 0x0204019c, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1102, Vnum: 27001, Count: 199, Slot: 5}}
+	collector := peerVisibilityCharacter("AntiGivePickupCollector", 0x0103019d, 0x0204019d, 1320, 2320, 0, 101, 201)
+	collector.Inventory = []inventory.ItemInstance{{ID: 2102, Vnum: 27001, Count: 1, Slot: 0}}
+	issuePeerTicket(t, ticketStore, "anti-give-pickup-owner", 0x9c9c9c9c, owner)
+	issuePeerTicket(t, ticketStore, "anti-give-pickup-collector", 0x9d9d9d9d, collector)
+	for _, account := range []accountstore.Account{
+		{Login: "anti-give-pickup-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+		{Login: "anti-give-pickup-collector", Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("seed %s account: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected anti-give pickup runtime error: %v", err)
+	}
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "anti-give potion", Stackable: true, MaxCount: 200}
+	factory := runtime.SessionFactory()
+	ownerFlow, _ := enterGameWithLoginTicket(t, factory, "anti-give-pickup-owner", 0x9c9c9c9c)
+	collectorFlow, _ := enterGameWithLoginTicket(t, factory, "anti-give-pickup-collector", 0x9d9d9d9d)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, collectorFlow)
+
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(5))
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "anti-give potion", Stackable: true, MaxCount: 200, AntiGive: true}
+	flushServerFrames(t, collectorFlow)
+	pickupOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(pickupOut) != 1 {
+		t.Fatalf("expected anti-give pickup to emit one info rejection, got %d frames", len(pickupOut))
+	}
+	rejection, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode anti-give pickup rejection: %v", err)
+	}
+	if rejection.Type != chatproto.ChatTypeInfo || rejection.VID != 0 || rejection.Message != itemPickupInventoryFullInfoMessage {
+		t.Fatalf("unexpected anti-give pickup rejection: %+v", rejection)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected rejected anti-give pickup to avoid owner frames, got %d", len(queued))
+	}
+
+	ownerAccount, err := accounts.Load("anti-give-pickup-owner")
+	if err != nil {
+		t.Fatalf("load anti-give pickup owner account: %v", err)
+	}
+	if len(ownerAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected dropped anti-give item to remain out of owner inventory, got %#v", ownerAccount.Characters[0].Inventory)
+	}
+	collectorAccount, err := accounts.Load("anti-give-pickup-collector")
+	if err != nil {
+		t.Fatalf("load anti-give pickup collector account: %v", err)
+	}
+	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, collector.Inventory) {
+		t.Fatalf("expected rejected anti-give pickup to leave collector inventory unchanged, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
+	}
+	ownerRetry := pickupGroundItem(t, ownerFlow, ground.VID)
+	if len(ownerRetry) != 3 {
+		t.Fatalf("expected anti-give owner retry to pick pending ground item back up, got %d frames", len(ownerRetry))
+	}
+}
+
 func TestGameRuntimeItemPickupRestoresSelfDroppedWholeStack(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
