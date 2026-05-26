@@ -606,6 +606,85 @@ func TestGameRuntimeItemUseToItemRejectsLockedSourceOrTargetWithoutMutation(t *t
 	}
 }
 
+func TestGameRuntimeItemUseToItemRejectsNonStackableOrAntiStackTemplateWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		login     string
+		loginKey  uint32
+		template  itemcatalog.Template
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name:     "non-stackable template",
+			login:    "use-to-item-non-stackable",
+			loginKey: 0x9d9d9d9d,
+			template: itemcatalog.Template{
+				Vnum:      11200,
+				Name:      "Wooden Sword",
+				Stackable: false,
+				MaxCount:  1,
+				EquipSlot: inventory.EquipmentSlotWeapon.String(),
+			},
+			inventory: []inventory.ItemInstance{{ID: 1111, Vnum: 11200, Count: 1, Slot: 5}, {ID: 1112, Vnum: 11200, Count: 1, Slot: 6}},
+		},
+		{
+			name:     "anti-stack template",
+			login:    "use-to-item-anti-stack",
+			loginKey: 0x9e9e9e9e,
+			template: itemcatalog.Template{
+				Vnum:      27003,
+				Name:      "Anti-stack Potion",
+				Stackable: true,
+				MaxCount:  200,
+				AntiStack: true,
+				UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27003:+50"},
+			},
+			inventory: []inventory.ItemInstance{{ID: 1121, Vnum: 27003, Count: 2, Slot: 5}, {ID: 1122, Vnum: 27003, Count: 3, Slot: 6}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseToItemGuard", 0x0103019d, 0x0204019d, 1300, 2300, 0, 101, 201)
+			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}, {Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+			issuePeerTicket(t, ticketStore, tc.login, tc.loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed guarded use-to-item owner account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{tc.template})
+
+			runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+			if err != nil {
+				t.Fatalf("unexpected guarded use-to-item runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.loginKey)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+			if err != nil {
+				t.Fatalf("unexpected guarded use-to-item error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s use-to-item to fail closed with no frames, got %d", tc.name, len(out))
+			}
+			account, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load guarded use-to-item owner account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("expected %s use-to-item inventory to stay unchanged, got %#v", tc.name, account.Characters[0].Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("expected %s use-to-item quickslots to stay unchanged, got %#v", tc.name, account.Characters[0].Quickslots)
+			}
+			if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+				t.Fatalf("expected %s use-to-item to avoid normal use point effect, got %d", tc.name, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemDropRejectsAntiDropAndAntiGiveTemplatesWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
