@@ -11986,6 +11986,85 @@ func TestNewGameSessionFactoryAppliesGoldOnlyPracticeMobDeathReward(t *testing.T
 	}
 }
 
+func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobRewardDescriptorIsUnsupported(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050202, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050202, Name: "UnsupportedRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.unsupported_reward_mob",
+	}
+	killer := peerVisibilityCharacter("UnsupportedRewardKiller", 0x01030102, 0x02040102, 1100, 2100, 0, 101, 201)
+	killer.Gold = 25
+	issuePeerTicket(t, store, "unsupported-reward-killer", 0x22222222, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "unsupported-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed unsupported reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_100, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+		t.Fatal("expected unsupported reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 10}) {
+		t.Fatal("expected unsupported EXP reward override to apply to registered practice mob")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "unsupported-reward-killer", 0x22222222)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before unsupported reward kill: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target selection frame before unsupported reward kill, got %d", len(selectOut))
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on unsupported reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 2 {
+		t.Fatalf("expected unsupported reward killing hit to preserve dead + clear target frames only, got %d", len(killOut))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0]))
+	if err != nil {
+		t.Fatalf("decode unsupported reward killing hit dead frame: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("unexpected unsupported reward dead frame: %+v", dead)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode unsupported reward killing hit clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected unsupported reward killing hit to clear target, got %+v", clearTarget)
+	}
+
+	account, err := accounts.Load("unsupported-reward-killer")
+	if err != nil {
+		t.Fatalf("load unsupported rewarded account: %v", err)
+	}
+	if got := account.Characters[0].Gold; got != 25 {
+		t.Fatalf("expected unsupported reward account gold to remain 25, got %d", got)
+	}
+}
+
 func TestSharedWorldRegistrySelectedStaticActorAttackReturnsRewardlessDeathDescriptor(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)

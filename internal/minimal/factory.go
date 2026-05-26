@@ -2707,9 +2707,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						frames = append(frames, combatproto.EncodeServerTarget(*resolution.Packet))
 					}
 					if !resolution.DeathReward.Empty() {
+						attackFrames := append([][]byte(nil), frames...)
 						reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(resolution.DeathReward)
 						if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold > uint64(math.MaxInt32) {
-							return gameflow.AttackResult{Accepted: false}
+							return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 						}
 						updatedSelected := selectedPlayer.LiveCharacter()
 						persistedSelected := selectedPlayer.PersistedSnapshot()

@@ -70,4 +70,5 @@ After this slice, the repository can truthfully say:
 - non-player death has a dedicated reward seam
 - the default `training_dummy` / `practice_mob` reward contract is explicitly rewardless
 - a gold-only descriptor can now be applied on the killing hit, persisted to the selected character, and reported with one self-only `PLAYER_POINT_CHANGE`
+- unsupported non-empty descriptors keep the already-accepted death edge visible while omitting reward mutation/frames until that reward channel is explicitly owned
 - later EXP/drop/ownership slices have a small descriptor helper, attack-result handoff field, gold-only application seam, and protocol note to extend without changing the death/respawn choreography
