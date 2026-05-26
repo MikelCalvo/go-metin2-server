@@ -178,6 +178,7 @@ type staticActorCombatAttackResolution struct {
 	ActiveTargetSnapshotVersion uint64
 	RequestedTargetVID          uint32
 	Actor                       StaticActorSnapshot
+	DeathReward                 worldruntime.StaticActorDeathReward
 	Packet                      *combatproto.ServerTargetPacket
 	Frames                      [][]byte
 	ClearActiveTarget           bool
@@ -2705,6 +2706,30 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						frames = append(frames, combatproto.EncodeServerTarget(*resolution.Packet))
 					}
+					if !resolution.DeathReward.Empty() {
+						reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(resolution.DeathReward)
+						if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold > uint64(math.MaxInt32) {
+							return gameflow.AttackResult{Accepted: false}
+						}
+						updatedSelected := selectedPlayer.LiveCharacter()
+						persistedSelected := selectedPlayer.PersistedSnapshot()
+						persistedSelected.Gold = updatedSelected.Gold
+						updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
+						if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.AttackResult{Accepted: false}
+						}
+						sessionTicket.Characters = updatedCharacters
+						selectedPlayer.SetPersistedSnapshot(persistedSelected)
+						refreshLiveCharacterRegistration()
+						frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+							VID:    previousSelected.VID,
+							Type:   bootstrapGoldPointType,
+							Amount: int32(reward.Gold),
+							Value:  int32(reward.GoldAfter),
+						}))
+					}
 					attackFrames := append([][]byte(nil), frames...)
 					retaliation, ok, clearTarget := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, resolution.ClearActiveTarget)
 					if !ok {
@@ -4838,6 +4863,7 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 	resolution.Accepted = true
 	if attempt.Died {
 		resolution.ClearActiveTarget = true
+		resolution.DeathReward = attempt.DeathReward
 		resolution.Frames = [][]byte{
 			worldproto.EncodeDead(worldproto.DeadPacket{VID: activeTargetVID}),
 			combatproto.EncodeServerClearTarget(),

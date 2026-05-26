@@ -11900,6 +11900,92 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisib
 	}
 }
 
+func TestNewGameSessionFactoryAppliesGoldOnlyPracticeMobDeathReward(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity: worldruntime.Entity{ID: 0x01050201, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050201, Name: "RewardMob"},
+		Position: worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:  20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.reward_mob",
+	}
+	killer := peerVisibilityCharacter("RewardKiller", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	killer.Gold = 25
+	issuePeerTicket(t, store, "reward-killer", 0x11111111, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_000, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+		t.Fatal("expected reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Gold: 75}) {
+		t.Fatal("expected test reward override to apply to registered practice mob")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "reward-killer", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before gold reward kill: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target selection frame before gold reward kill, got %d", len(selectOut))
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on gold reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 3 {
+		t.Fatalf("expected killing hit to return dead, clear target, and gold point-change frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode gold reward killing hit dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode gold reward killing hit clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected gold reward killing hit to clear target, got %+v", clearTarget)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode gold reward point change: %v", err)
+	}
+	if pointChange.VID != killer.VID || pointChange.Type != bootstrapGoldPointType || pointChange.Amount != 75 || pointChange.Value != 100 {
+		t.Fatalf("unexpected gold reward point change: %+v", pointChange)
+	}
+
+	account, err := accounts.Load("reward-killer")
+	if err != nil {
+		t.Fatalf("load rewarded account: %v", err)
+	}
+	if got := account.Characters[0].Gold; got != 100 {
+		t.Fatalf("expected rewarded account gold 100 after practice mob death, got %d", got)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot("RewardKiller")
+	if !ok || currencySnapshot.Gold != 100 {
+		t.Fatalf("expected live currency snapshot gold 100 after practice mob death, got %+v ok=%v", currencySnapshot, ok)
+	}
+}
+
 func TestSharedWorldRegistrySelectedStaticActorAttackReturnsRewardlessDeathDescriptor(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)

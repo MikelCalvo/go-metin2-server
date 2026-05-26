@@ -41,6 +41,7 @@ type sharedWorldRegistry struct {
 	staticActorCombatRespawnAt      map[uint64]time.Time
 	staticActorCombatSnapshot       map[uint64]uint64
 	staticActorCombatEngagedBy      map[uint64]uint64
+	staticActorDeathReward          map[uint64]worldruntime.StaticActorDeathReward
 	sessionCombatTargets            map[uint64]uint32
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
@@ -238,6 +239,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		staticActorCombatRespawnAt: make(map[uint64]time.Time),
 		staticActorCombatSnapshot:  make(map[uint64]uint64),
 		staticActorCombatEngagedBy: make(map[uint64]uint64),
+		staticActorDeathReward:     make(map[uint64]worldruntime.StaticActorDeathReward),
 		lastKnownCharacters:        make(map[uint64]loginticket.Character),
 		groundItemsByVID:           make(map[uint32]sharedGroundItem),
 		now:                        time.Now,
@@ -327,6 +329,9 @@ func (r *sharedWorldRegistry) clearStaticActorCombatStateLocked(entityID uint64)
 	}
 	if r.staticActorCombatEngagedBy != nil {
 		delete(r.staticActorCombatEngagedBy, entityID)
+	}
+	if r.staticActorDeathReward != nil {
+		delete(r.staticActorDeathReward, entityID)
 	}
 }
 
@@ -427,6 +432,35 @@ func (r *sharedWorldRegistry) staticActorCombatSnapshotLocked(entityID uint64) u
 		return 0
 	}
 	return r.staticActorCombatSnapshot[entityID]
+}
+
+func (r *sharedWorldRegistry) staticActorDeathRewardLocked(actor worldruntime.StaticEntity) worldruntime.StaticActorDeathReward {
+	if r == nil || actor.Entity.ID == 0 {
+		return worldruntime.StaticActorDeathReward{}
+	}
+	if r.staticActorDeathReward != nil {
+		if reward, ok := r.staticActorDeathReward[actor.Entity.ID]; ok {
+			return reward.Clone()
+		}
+	}
+	reward, _ := worldruntime.BootstrapStaticActorDeathReward(actor.CombatKind)
+	return reward
+}
+
+func (r *sharedWorldRegistry) overrideStaticActorDeathReward(entityID uint64, reward worldruntime.StaticActorDeathReward) bool {
+	if r == nil || entityID == 0 {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.entities.StaticActor(entityID); !ok {
+		return false
+	}
+	if r.staticActorDeathReward == nil {
+		r.staticActorDeathReward = make(map[uint64]worldruntime.StaticActorDeathReward)
+	}
+	r.staticActorDeathReward[entityID] = reward.Clone()
+	return true
 }
 
 func (r *sharedWorldRegistry) ensureStaticActorCombatCurrentHPLocked(actor worldruntime.StaticEntity) (uint8, bool) {
@@ -1571,7 +1605,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 	attempt.HPPercent = hpPercent
 	if nextHP == 0 {
 		attempt.Died = true
-		attempt.DeathReward, _ = worldruntime.BootstrapStaticActorDeathReward(actor.CombatKind)
+		attempt.DeathReward = r.staticActorDeathRewardLocked(actor)
 		if r.staticActorCombatEngagedBy != nil {
 			delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
 		}
