@@ -2714,73 +2714,75 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					if !resolution.DeathReward.Empty() {
 						attackFrames := append([][]byte(nil), frames...)
+						type rewardDrop struct {
+							vid  uint32
+							item inventory.ItemInstance
+						}
+						rewardDrops := make([]rewardDrop, 0, len(resolution.DeathReward.DropVnums))
 						if len(resolution.DeathReward.DropVnums) != 0 {
-							if resolution.DeathReward.Experience == 0 && resolution.DeathReward.Gold == 0 {
-								type rewardDrop struct {
-									vid  uint32
-									item inventory.ItemInstance
+							seenVIDs := make(map[uint32]struct{}, len(resolution.DeathReward.DropVnums))
+							for index, vnum := range resolution.DeathReward.DropVnums {
+								if vnum == 0 {
+									return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 								}
-								rewardDrops := make([]rewardDrop, 0, len(resolution.DeathReward.DropVnums))
-								seenVIDs := make(map[uint32]struct{}, len(resolution.DeathReward.DropVnums))
-								for index, vnum := range resolution.DeathReward.DropVnums {
-									if vnum == 0 {
-										return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
-									}
-									groundVID := bootstrapRewardGroundItemVID(previousSelected, vnum, index)
-									if groundVID == 0 {
-										return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
-									}
-									if _, exists := seenVIDs[groundVID]; exists {
-										return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
-									}
-									seenVIDs[groundVID] = struct{}{}
-									droppedItem := inventory.ItemInstance{Vnum: vnum, Count: 1}
-									rewardDrops = append(rewardDrops, rewardDrop{vid: groundVID, item: droppedItem})
-									frames = append(frames,
-										itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: groundVID, Vnum: droppedItem.Vnum, X: previousSelected.X, Y: previousSelected.Y, Z: previousSelected.Z}),
-										itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: groundVID, OwnerName: previousSelected.Name}),
-									)
+								groundVID := bootstrapRewardGroundItemVID(previousSelected, vnum, index)
+								if groundVID == 0 {
+									return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 								}
-								if ownsLiveSharedWorldSession() {
-									for _, drop := range rewardDrops {
-										sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, drop.vid, drop.item)
-									}
+								if _, exists := seenVIDs[groundVID]; exists {
+									return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
+								}
+								seenVIDs[groundVID] = struct{}{}
+								rewardDrops = append(rewardDrops, rewardDrop{vid: groundVID, item: inventory.ItemInstance{Vnum: vnum, Count: 1}})
+							}
+						}
+						if resolution.DeathReward.Experience != 0 || resolution.DeathReward.Gold != 0 {
+							reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: resolution.DeathReward.Experience, Gold: resolution.DeathReward.Gold})
+							if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold > uint64(math.MaxInt32) || reward.Experience > uint64(math.MaxInt32) {
+								return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
+							}
+							updatedSelected := selectedPlayer.LiveCharacter()
+							persistedSelected := selectedPlayer.PersistedSnapshot()
+							persistedSelected.Gold = updatedSelected.Gold
+							persistedSelected.Points[bootstrapExperiencePointType] = updatedSelected.Points[bootstrapExperiencePointType]
+							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
+							if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
+							}
+							sessionTicket.Characters = updatedCharacters
+							selectedPlayer.SetPersistedSnapshot(persistedSelected)
+							refreshLiveCharacterRegistration()
+							if reward.Experience != 0 {
+								frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+									VID:    previousSelected.VID,
+									Type:   bootstrapExperiencePointType,
+									Amount: int32(reward.Experience),
+									Value:  reward.ExperienceAfter,
+								}))
+							}
+							if reward.Gold != 0 {
+								frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+									VID:    previousSelected.VID,
+									Type:   bootstrapGoldPointType,
+									Amount: int32(reward.Gold),
+									Value:  int32(reward.GoldAfter),
+								}))
+							}
+						}
+						if len(rewardDrops) != 0 {
+							for _, drop := range rewardDrops {
+								frames = append(frames,
+									itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: drop.vid, Vnum: drop.item.Vnum, X: previousSelected.X, Y: previousSelected.Y, Z: previousSelected.Z}),
+									itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: drop.vid, OwnerName: previousSelected.Name}),
+								)
+							}
+							if ownsLiveSharedWorldSession() {
+								for _, drop := range rewardDrops {
+									sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, drop.vid, drop.item)
 								}
 							}
-							return gameflow.AttackResult{Accepted: true, Frames: frames}
-						}
-						reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(resolution.DeathReward)
-						if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold > uint64(math.MaxInt32) || reward.Experience > uint64(math.MaxInt32) {
-							return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
-						}
-						updatedSelected := selectedPlayer.LiveCharacter()
-						persistedSelected := selectedPlayer.PersistedSnapshot()
-						persistedSelected.Gold = updatedSelected.Gold
-						persistedSelected.Points[bootstrapExperiencePointType] = updatedSelected.Points[bootstrapExperiencePointType]
-						updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
-						if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
-							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-							refreshLiveCharacterRegistration()
-							return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
-						}
-						sessionTicket.Characters = updatedCharacters
-						selectedPlayer.SetPersistedSnapshot(persistedSelected)
-						refreshLiveCharacterRegistration()
-						if reward.Experience != 0 {
-							frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-								VID:    previousSelected.VID,
-								Type:   bootstrapExperiencePointType,
-								Amount: int32(reward.Experience),
-								Value:  reward.ExperienceAfter,
-							}))
-						}
-						if reward.Gold != 0 {
-							frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-								VID:    previousSelected.VID,
-								Type:   bootstrapGoldPointType,
-								Amount: int32(reward.Gold),
-								Value:  int32(reward.GoldAfter),
-							}))
 						}
 					}
 					attackFrames := append([][]byte(nil), frames...)
