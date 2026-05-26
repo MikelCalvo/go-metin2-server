@@ -24,6 +24,7 @@ type Template struct {
 	AntiSell         bool         `json:"anti_sell,omitempty"`
 	AntiDrop         bool         `json:"anti_drop,omitempty"`
 	AntiGive         bool         `json:"anti_give,omitempty"`
+	AntiStack        bool         `json:"anti_stack,omitempty"`
 	EquipSlot        string       `json:"equip_slot,omitempty"`
 	UseEffect        *UseEffect   `json:"use_effect,omitempty"`
 	EquipEffect      *PointEffect `json:"equip_effect,omitempty"`

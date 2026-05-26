@@ -199,7 +199,7 @@ func TestFileStoreSaveRejectsInvalidUseEffectMetadata(t *testing.T) {
 	}
 }
 
-func TestFileStoreSaveThenLoadRoundTripPreservesAntiDropAndAntiGiveMetadata(t *testing.T) {
+func TestFileStoreSaveThenLoadRoundTripPreservesAntiFlagMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
 	want := Snapshot{Templates: []Template{{
@@ -209,26 +209,27 @@ func TestFileStoreSaveThenLoadRoundTripPreservesAntiDropAndAntiGiveMetadata(t *t
 		MaxCount:  200,
 		AntiDrop:  true,
 		AntiGive:  true,
+		AntiStack: true,
 	}}}
 
 	if err := store.Save(want); err != nil {
-		t.Fatalf("save snapshot with anti-drop/give metadata: %v", err)
+		t.Fatalf("save snapshot with anti-flag metadata: %v", err)
 	}
 	got, err := store.Load()
 	if err != nil {
-		t.Fatalf("load snapshot with anti-drop/give metadata: %v", err)
+		t.Fatalf("load snapshot with anti-flag metadata: %v", err)
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected snapshot with anti-drop/give metadata:\n got: %#v\nwant: %#v", got, want)
+		t.Fatalf("unexpected snapshot with anti-flag metadata:\n got: %#v\nwant: %#v", got, want)
 	}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read persisted snapshot with anti-drop/give metadata: %v", err)
+		t.Fatalf("read persisted snapshot with anti-flag metadata: %v", err)
 	}
-	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27003,\n      \"name\": \"Bound Practice Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_drop\": true,\n      \"anti_give\": true\n    }\n  ]\n}\n"
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27003,\n      \"name\": \"Bound Practice Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_drop\": true,\n      \"anti_give\": true,\n      \"anti_stack\": true\n    }\n  ]\n}\n"
 	if string(raw) != wantJSON {
-		t.Fatalf("unexpected deterministic snapshot with anti-drop/give metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+		t.Fatalf("unexpected deterministic snapshot with anti-flag metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
 	}
 }
 

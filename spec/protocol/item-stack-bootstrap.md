@@ -32,6 +32,7 @@ The first stack contract depends on template metadata already owned by `internal
 - `vnum`
 - `stackable`
 - `max_count`
+- `anti_stack` for the currently owned drag-to-item consolidation path
 
 Template invariants already frozen elsewhere remain in force here:
 - `max_count` must be greater than zero
