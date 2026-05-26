@@ -38,6 +38,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - source and target must both be carried inventory positions
 - source and target must be different occupied slots with the same `vnum`
 - the source template must resolve to a valid stackable item with non-zero `max_count`
+- the template-authored `max_count` must fit the currently owned one-byte item refresh count range (`<= 255`) because `ITEM_SET` / `ITEM_UPDATE` expose count as `uint8` in this bootstrap packet family
 - templates with authored `anti_stack = true` are rejected for drag-to-item stack consolidation even when the live stacks otherwise match
 - the live source stack must have non-zero count and must not already exceed the template-authored `max_count`
 - the target stack must have free capacity under that `max_count`
