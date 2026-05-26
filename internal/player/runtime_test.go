@@ -378,6 +378,45 @@ func TestRuntimeUseItemOnItemRejectsNonStackableTemplateWithoutMutatingState(t *
 	}
 }
 
+
+func TestRuntimeUseItemOnItemRejectsLockedSourceOrTargetWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name:      "locked source",
+			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5, Locked: true}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+		},
+		{
+			name:      "locked target",
+			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6, Locked: true}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "PeerTwo",
+				Points:    [255]int32{1: 700},
+				Inventory: tc.inventory,
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+			if _, ok := runtime.UseItemOnItem(5, 6, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")); ok {
+				t.Fatalf("expected use-to-item to reject %s", tc.name)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != 700 {
+				t.Fatalf("expected rejected locked use-to-item to leave live state unchanged, got %#v points[1]=%d", got.Inventory, got.Points[1])
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+				t.Fatalf("expected rejected locked use-to-item to leave persisted inventory unchanged, got %#v", runtime.PersistedSnapshot().Inventory)
+			}
+		})
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsOverMaxSourceStackWithoutMutatingState(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,
