@@ -38,6 +38,19 @@ func TestApplyBootstrapStaticActorNormalAttackRejectsDeadTrainingDummyCombatHP(t
 	}
 }
 
+func TestApplyBootstrapStaticActorNormalAttackSupportsPracticeMobProfile(t *testing.T) {
+	nextHP, hpPercent, ok := ApplyBootstrapStaticActorNormalAttack(StaticActorCombatProfilePracticeMob, PracticeMobBootstrapMaxHP)
+	if !ok {
+		t.Fatal("expected bootstrap practice-mob normal attack to be supported")
+	}
+	if nextHP != PracticeMobBootstrapMaxHP-PracticeMobBootstrapDamagePerNormalAttack {
+		t.Fatalf("expected practice-mob HP to decrement by one bootstrap hit, got %d", nextHP)
+	}
+	if hpPercent != 90 {
+		t.Fatalf("expected practice-mob HP percent 90 after one bootstrap hit, got %d", hpPercent)
+	}
+}
+
 func TestBootstrapStaticActorRespawnDelayReturnsTrainingDummyBootstrapDelay(t *testing.T) {
 	delay, ok := BootstrapStaticActorRespawnDelay(StaticActorCombatKindTrainingDummy)
 	if !ok {

@@ -156,25 +156,21 @@ func BootstrapStaticActorHPPercent(combatKind string, currentHP uint8) (uint8, b
 }
 
 func ApplyBootstrapStaticActorNormalAttack(combatKind string, currentHP uint8) (uint8, uint8, bool) {
-	switch combatKind {
-	case StaticActorCombatKindTrainingDummy:
-		if currentHP == 0 {
-			return 0, 0, false
-		}
-		if currentHP > TrainingDummyBootstrapMaxHP {
-			currentHP = TrainingDummyBootstrapMaxHP
-		}
-		nextHP := currentHP
-		if nextHP <= TrainingDummyBootstrapDamagePerNormalAttack {
-			nextHP = 0
-		} else {
-			nextHP -= TrainingDummyBootstrapDamagePerNormalAttack
-		}
-		hpPercent := bootstrapStaticActorHPPercent(nextHP, TrainingDummyBootstrapMaxHP)
-		return nextHP, hpPercent, true
-	default:
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatKind)
+	if !ok || currentHP == 0 {
 		return 0, 0, false
 	}
+	if currentHP > defaults.MaxHP {
+		currentHP = defaults.MaxHP
+	}
+	nextHP := currentHP
+	if nextHP <= defaults.DamagePerNormalAttack {
+		nextHP = 0
+	} else {
+		nextHP -= defaults.DamagePerNormalAttack
+	}
+	hpPercent := bootstrapStaticActorHPPercent(nextHP, defaults.MaxHP)
+	return nextHP, hpPercent, true
 }
 
 func bootstrapStaticActorHPPercent(currentHP uint8, maxHP uint8) uint8 {
