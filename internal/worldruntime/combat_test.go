@@ -67,6 +67,25 @@ func TestBootstrapStaticActorCombatProfileDefaultsSupportsTrainingDummyProfile(t
 	}
 }
 
+func TestBootstrapStaticActorCombatProfileDefaultsSupportsPracticeMobProfile(t *testing.T) {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected bootstrap practice-mob combat profile defaults to be supported")
+	}
+	if defaults.MaxHP != PracticeMobBootstrapMaxHP {
+		t.Fatalf("expected practice-mob max HP %d, got %d", PracticeMobBootstrapMaxHP, defaults.MaxHP)
+	}
+	if defaults.DamagePerNormalAttack != PracticeMobBootstrapDamagePerNormalAttack {
+		t.Fatalf("expected practice-mob normal attack damage %d, got %d", PracticeMobBootstrapDamagePerNormalAttack, defaults.DamagePerNormalAttack)
+	}
+	if defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
+		t.Fatalf("expected practice-mob respawn delay %v, got %v", PracticeMobBootstrapRespawnDelay, defaults.RespawnDelay)
+	}
+	if !defaults.DeathReward.Empty() {
+		t.Fatalf("expected rewardless practice-mob profile defaults, got %+v", defaults.DeathReward)
+	}
+}
+
 func TestBootstrapStaticActorCombatProfileDefaultsRejectsUnknownProfile(t *testing.T) {
 	defaults, ok := BootstrapStaticActorCombatProfileDefaults("boss")
 	if ok {
@@ -152,6 +171,9 @@ func TestValidStaticActorCombatProfileRejectsUnknownProfile(t *testing.T) {
 	}
 	if !ValidStaticActorCombatProfile(StaticActorCombatProfileTrainingDummy) {
 		t.Fatal("expected training-dummy combat profile to be valid")
+	}
+	if !ValidStaticActorCombatProfile(StaticActorCombatProfilePracticeMob) {
+		t.Fatal("expected practice-mob combat profile to be valid")
 	}
 	if ValidStaticActorCombatProfile("boss") {
 		t.Fatal("expected unknown combat profile to fail closed")

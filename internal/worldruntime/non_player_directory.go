@@ -125,7 +125,7 @@ func ValidStaticActorCombatKind(kind string) bool {
 
 func ValidStaticActorCombatProfile(profile string) bool {
 	switch profile {
-	case "", StaticActorCombatKindTrainingDummy:
+	case "", StaticActorCombatKindTrainingDummy, StaticActorCombatProfilePracticeMob:
 		return true
 	default:
 		return false

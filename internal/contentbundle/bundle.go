@@ -205,7 +205,7 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
 		spawnGroup.Name = strings.TrimSpace(spawnGroup.Name)
 		spawnGroup.CombatProfile = strings.TrimSpace(spawnGroup.CombatProfile)
 		if spawnGroup.CombatProfile == "" {
-			spawnGroup.CombatProfile = worldruntime.StaticActorCombatProfileTrainingDummy
+			spawnGroup.CombatProfile = worldruntime.StaticActorCombatProfilePracticeMob
 		}
 		normalized[i] = spawnGroup
 	}

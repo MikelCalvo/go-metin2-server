@@ -61,13 +61,13 @@ A spawn group is currently intentionally tiny and can be represented as JSON equ
 
 ```json
 {
-  "ref": "practice.training_dummy_a",
-  "name": "Training Dummy A",
+  "ref": "practice.mob_alpha",
+  "name": "Practice Mob Alpha",
   "map_index": 42,
   "x": 1775,
   "y": 2875,
   "race_num": 20350,
-  "combat_profile": "training_dummy"
+  "combat_profile": "practice_mob"
 }
 ```
 
@@ -77,13 +77,13 @@ In bundle form, the future authored surface is therefore:
 {
   "spawn_groups": [
     {
-      "ref": "practice.training_dummy_a",
-      "name": "Training Dummy A",
+      "ref": "practice.mob_alpha",
+      "name": "Practice Mob Alpha",
       "map_index": 42,
       "x": 1775,
       "y": 2875,
       "race_num": 20350,
-      "combat_profile": "training_dummy"
+      "combat_profile": "practice_mob"
     }
   ]
 }
@@ -106,8 +106,10 @@ The first bootstrap spawn-group contract freezes these fields:
 - `race_num`
   - the bootstrap non-player class/template identifier already used by static actors
 - `combat_profile`
-  - required authored combat metadata selector
-  - `training_dummy` is the first owned value
+  - optional authored combat metadata selector
+  - omitted values canonicalize to the current spawn-group default `practice_mob`
+  - `training_dummy` remains supported for legacy/bootstrap static actors and explicit authored use
+  - `practice_mob` currently reuses the same compact HP, damage, respawn, and rewardless defaults as `training_dummy` while giving spawn-loaded combatants their own authored profile name
 
 ## Why call it a group if it is one actor
 
@@ -129,7 +131,7 @@ This slice freezes a narrow ownership model:
 - authored identity (`ref`)
 - map placement (`map_index`, `x`, `y`)
 - visual/template selection (`race_num`, optional `name`)
-- combat-profile selection (`combat_profile`), defaulting to the first bootstrap `training_dummy` profile when omitted
+- combat-profile selection (`combat_profile`), defaulting to the bootstrap `practice_mob` profile when omitted
 
 ### Combat profile owns
 - combat defaults and rules shared by authored actors using that profile
@@ -149,7 +151,7 @@ The first spawn-group contract keeps respawn deliberately narrow:
 - death still follows `non-player-death-respawn-bootstrap.md`
 - respawn is still server-driven, not client-requested
 - the recreated actor returns at the authored spawn-group position
-- the recreated actor uses the authored `combat_profile`, or the default bootstrap `training_dummy` profile when the authored group omits that field
+- the recreated actor uses the authored `combat_profile`, or the default bootstrap `practice_mob` profile when the authored group omits that field
 - the live runtime actor after respawn is a fresh instance of the same authored spawn group, not persistence resurrecting an old runtime entity ID
 
 What is **not** yet frozen here:
@@ -165,7 +167,7 @@ The first content contract should fail closed when:
 - `name` is empty after trimming whitespace
 - `map_index` is `0`
 - `race_num` is `0`
-- `combat_profile` is unknown when provided; an omitted profile is canonicalized to the bootstrap `training_dummy` profile for this first one-combat-profile contract
+- `combat_profile` is unknown when provided; an omitted profile is canonicalized to the bootstrap `practice_mob` profile for this first one-spawn-profile contract
 - coordinates are malformed for the current bundle schema
 
 Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate `ref` values, and preserves the prior authored/runtime snapshot when validation fails.

@@ -15,11 +15,16 @@ const (
 
 	StaticActorCombatKindTrainingDummy    = "training_dummy"
 	StaticActorCombatProfileTrainingDummy = StaticActorCombatKindTrainingDummy
+	StaticActorCombatProfilePracticeMob   = "practice_mob"
 
 	TrainingDummyBootstrapMaxHP                 uint8 = 10
 	TrainingDummyBootstrapMinLiveHP             uint8 = 1
 	TrainingDummyBootstrapDamagePerNormalAttack uint8 = 1
 	TrainingDummyBootstrapRespawnDelay                = 2 * time.Second
+
+	PracticeMobBootstrapMaxHP                 uint8 = 10
+	PracticeMobBootstrapDamagePerNormalAttack uint8 = 1
+	PracticeMobBootstrapRespawnDelay                = 2 * time.Second
 )
 
 type Entity struct {
@@ -103,6 +108,13 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 			MaxHP:                 TrainingDummyBootstrapMaxHP,
 			DamagePerNormalAttack: TrainingDummyBootstrapDamagePerNormalAttack,
 			RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+			DeathReward:           StaticActorDeathReward{},
+		}, true
+	case StaticActorCombatProfilePracticeMob:
+		return StaticActorCombatProfileDefaults{
+			MaxHP:                 PracticeMobBootstrapMaxHP,
+			DamagePerNormalAttack: PracticeMobBootstrapDamagePerNormalAttack,
+			RespawnDelay:          PracticeMobBootstrapRespawnDelay,
 			DeathReward:           StaticActorDeathReward{},
 		}, true
 	default:
