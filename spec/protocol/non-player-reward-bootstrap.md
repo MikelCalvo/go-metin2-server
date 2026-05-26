@@ -61,6 +61,7 @@ For the current bootstrap runtime:
 - the descriptor has an explicit `Clone()` helper that deep-copies the drop-vnum list and normalizes empty drop lists to `nil`, so future non-zero drop-table slices do not accidentally share mutable reward slices across profile-default lookups or attack results
 - the player runtime has a narrow gold-only death-reward application helper; it mutates live session gold only, rejects EXP/drop-bearing descriptors, rejects overflow, and does not persist the account snapshot or emit any reward packet by itself
 - the integrated game runtime owns the current persistence + packet edge for gold-only descriptors: save updated account gold, refresh the selected-player persisted snapshot, and append one self-only `PLAYER_POINT_CHANGE` after the death/target-clear frames
+- if gold-reward persistence fails after an accepted killing edge, the runtime rolls live gold back to the previous selected-character snapshot, refreshes shared-world registration, preserves the already-owned death/target-clear frames, and omits the reward `PLAYER_POINT_CHANGE`
 - unsupported combat kinds return `ok = false`
 - reward/default data remains runtime/configuration owned; it is not character persistence by itself
 

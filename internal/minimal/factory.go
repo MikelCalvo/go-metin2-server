@@ -2719,7 +2719,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
-							return gameflow.AttackResult{Accepted: false}
+							return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 						}
 						sessionTicket.Characters = updatedCharacters
 						selectedPlayer.SetPersistedSnapshot(persistedSelected)
