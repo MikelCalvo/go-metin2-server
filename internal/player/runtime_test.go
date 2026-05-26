@@ -527,6 +527,29 @@ func TestRuntimeUseItemOnItemRejectsMaxCountBeyondClientCountRangeWithoutMutatin
 	}
 }
 
+func TestRuntimeUseItemOnItemRejectsFullTargetStackWithoutMutatingState(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 2, Slot: 5}, {ID: 12, Vnum: 27001, Count: 200, Slot: 6}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
+	template.MaxCount = 200
+
+	if _, ok := runtime.UseItemOnItem(5, 6, template); ok {
+		t.Fatal("expected use-to-item to reject target stacks that are already at template max_count")
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != 700 {
+		t.Fatalf("expected rejected full-target use-to-item to leave live state unchanged, got %#v points[1]=%d", got.Inventory, got.Points[1])
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected rejected full-target use-to-item to leave persisted inventory unchanged, got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsOverMaxTargetStackWithoutMutatingState(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,

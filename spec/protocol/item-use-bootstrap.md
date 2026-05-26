@@ -51,7 +51,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 
 Incompatible targets, empty slots, equipped cells, locked source or target items, non-stackable templates, anti-stack templates, missing templates, over-template-max source stacks, over-template-max target stacks, and already-full targets fail closed with no frames and no mutation.
 The runtime also rejects non-stackable templates, authored `anti_stack = true` templates, and over-template-max source or target stacks at the player mutation boundary itself, so these guards do not depend only on the minimal session handler pre-check.
-The minimal session/runtime harness also freezes those template-backed guards through the normal `ITEM_USE_TO_ITEM` packet path: non-stackable and `anti_stack` templates leave inventory and quickslot snapshots unchanged even when source and target live stacks otherwise share the same `vnum`.
+The minimal session/runtime harness also freezes those template-backed guards through the normal `ITEM_USE_TO_ITEM` packet path: non-stackable and `anti_stack` templates leave inventory and quickslot snapshots unchanged even when source and target live stacks otherwise share the same `vnum`. Already-full targets are likewise frozen through both the player mutation boundary and minimal session packet path as a no-frame/no-mutation rejection.
 When no runtime handler is installed, the default game-flow handler still rejects the packet silently/fail-closed.
 
 For the first owned packet ingress, the runtime only accepts:
