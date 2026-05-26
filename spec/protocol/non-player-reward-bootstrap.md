@@ -9,18 +9,24 @@ It sits on top of:
 
 Those documents already freeze the target-relative `training_dummy` combat loop, zero-HP death, and timed respawn rebuild. This note answers the narrower follow-up question:
 
-**What reward contract exists immediately after a bootstrap non-player death, before EXP, gold, drops, ownership rolls, or loot pickup are implemented?**
+**What reward contract exists immediately after a bootstrap non-player death, before EXP, drops, ownership rolls, or loot pickup are implemented?**
 
 ## Current scope
 
-The first reward seam applies only to bootstrap static actors whose combat kind/profile is currently `training_dummy`.
+The first reward seam applies only to bootstrap static actors whose combat kind/profile is currently `training_dummy` / `practice_mob`.
 
-The owned result is intentionally rewardless:
+The default authored result remains intentionally rewardless:
 - EXP: `0`
 - gold: `0`
 - drops: empty list
 
-The selected static-actor attack seam now carries that descriptor on the accepted zero-HP edge. In other words, the final accepted `ATTACK` that marks a `training_dummy` as dead returns the same explicit rewardless descriptor to runtime callers while the visible wire choreography remains unchanged: `GC DEAD(vid)` plus selected-target clear, not EXP/gold/drop packets.
+The selected static-actor attack seam carries that descriptor on the accepted zero-HP edge. In other words, the final accepted `ATTACK` that marks a default `training_dummy` / `practice_mob` as dead returns an explicit rewardless descriptor to runtime callers while the visible death choreography remains `GC DEAD(vid)` plus selected-target clear.
+
+A narrow gold-only runtime descriptor is now also owned for bootstrap practice-mob experiments:
+- accepted killing hit applies the descriptor to the selected player only
+- the account snapshot is persisted before the result is reported as accepted
+- the live player runtime is refreshed to the persisted gold value
+- one self-only `PLAYER_POINT_CHANGE` for the gold point is appended after `GC DEAD(vid)` and `GC TARGET(0, 0)`
 
 Unknown combat kinds fail closed and produce no reward result.
 
@@ -34,9 +40,8 @@ This also keeps the existing training dummy truthful: it is a practice target us
 
 This slice does **not** yet freeze:
 - EXP point types or level progression
-- non-zero reward descriptors for `training_dummy`
-- gold mutation beyond the live-runtime helper that can apply a future gold-only death descriptor before any persistence or visible packet fanout exists
-- gold packet fanout
+- default non-zero reward descriptors for authored `training_dummy` / `practice_mob` content
+- EXP/drop-bearing descriptor application
 - item-drop packet creation, ownership, timeout, or pickup rules
 - party reward distribution
 - quest credit or kill counters
@@ -47,20 +52,22 @@ This slice does **not** yet freeze:
 Runtime helpers that need combat defaults or death rewards should ask the world-runtime combat-profile seam instead of inlining constants in session code.
 
 For the current bootstrap runtime:
-- `training_dummy` returns one supported profile-default record
-- that record carries `max_hp = 10`, `damage_per_normal_attack = 1`, and `respawn_delay = 2s`
-- the same record carries the current rewardless death descriptor: EXP `0`, gold `0`, and no drop vnums
+- `training_dummy` and `practice_mob` return supported profile-default records
+- those records carry `max_hp = 10`, `damage_per_normal_attack = 1`, and `respawn_delay = 2s`
+- those default records carry the current rewardless death descriptor: EXP `0`, gold `0`, and no drop vnums
 - accepted non-lethal attacks keep their attack-result reward descriptor empty
-- the accepted killing attack result exposes the profile's death reward descriptor to runtime code even when that descriptor is currently rewardless
+- the accepted killing attack result exposes the profile or runtime override death-reward descriptor to runtime code
 - the descriptor has an explicit `Empty()` predicate so later EXP/gold/drop work can distinguish a deliberately empty reward from a non-empty reward without duplicating channel checks at each call site
 - the descriptor has an explicit `Clone()` helper that deep-copies the drop-vnum list and normalizes empty drop lists to `nil`, so future non-zero drop-table slices do not accidentally share mutable reward slices across profile-default lookups or attack results
-- the player runtime now has a narrow gold-only death-reward application helper for future non-zero descriptors; it mutates live session gold only, rejects EXP/drop-bearing descriptors, rejects overflow, and does not persist the account snapshot or emit any reward packet by itself
+- the player runtime has a narrow gold-only death-reward application helper; it mutates live session gold only, rejects EXP/drop-bearing descriptors, rejects overflow, and does not persist the account snapshot or emit any reward packet by itself
+- the integrated game runtime owns the current persistence + packet edge for gold-only descriptors: save updated account gold, refresh the selected-player persisted snapshot, and append one self-only `PLAYER_POINT_CHANGE` after the death/target-clear frames
 - unsupported combat kinds return `ok = false`
-- reward/default data remains runtime/configuration owned; it is not character persistence
+- reward/default data remains runtime/configuration owned; it is not character persistence by itself
 
 ## Success definition
 
 After this slice, the repository can truthfully say:
-- non-player death now has a dedicated reward seam
-- the first `training_dummy` reward contract is explicitly rewardless
-- later EXP/gold/drop slices have a small descriptor helper, attack-result handoff field, live gold-only application seam, and protocol note to extend without changing the death/respawn choreography
+- non-player death has a dedicated reward seam
+- the default `training_dummy` / `practice_mob` reward contract is explicitly rewardless
+- a gold-only descriptor can now be applied on the killing hit, persisted to the selected character, and reported with one self-only `PLAYER_POINT_CHANGE`
+- later EXP/drop/ownership slices have a small descriptor helper, attack-result handoff field, gold-only application seam, and protocol note to extend without changing the death/respawn choreography
