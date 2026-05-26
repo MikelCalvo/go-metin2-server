@@ -109,7 +109,7 @@ The first bootstrap spawn-group contract freezes these fields:
   - optional authored combat metadata selector
   - omitted values canonicalize to the current spawn-group default `practice_mob`
   - `training_dummy` remains supported for legacy/bootstrap static actors and explicit authored use
-  - `practice_mob` currently reuses the same compact HP, damage, respawn, and rewardless defaults as `training_dummy` while giving spawn-loaded combatants their own authored profile name
+  - `practice_mob` currently reuses the same compact HP, damage, respawn, HP-percent refresh, and rewardless defaults as `training_dummy` while giving spawn-loaded combatants their own authored profile name
 
 ## Why call it a group if it is one actor
 

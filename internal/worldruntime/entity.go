@@ -147,12 +147,11 @@ func BootstrapStaticActorDeathReward(combatKind string) (StaticActorDeathReward,
 }
 
 func BootstrapStaticActorHPPercent(combatKind string, currentHP uint8) (uint8, bool) {
-	switch combatKind {
-	case StaticActorCombatKindTrainingDummy:
-		return bootstrapStaticActorHPPercent(currentHP, TrainingDummyBootstrapMaxHP), true
-	default:
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatKind)
+	if !ok {
 		return 0, false
 	}
+	return bootstrapStaticActorHPPercent(currentHP, defaults.MaxHP), true
 }
 
 func ApplyBootstrapStaticActorNormalAttack(combatKind string, currentHP uint8) (uint8, uint8, bool) {

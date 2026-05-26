@@ -119,6 +119,16 @@ func TestBootstrapStaticActorCurrentHPSupportsTrainingDummyCombatProfile(t *test
 	}
 }
 
+func TestBootstrapStaticActorHPPercentSupportsPracticeMobCombatProfile(t *testing.T) {
+	hpPercent, ok := BootstrapStaticActorHPPercent(StaticActorCombatProfilePracticeMob, PracticeMobBootstrapMaxHP-PracticeMobBootstrapDamagePerNormalAttack)
+	if !ok {
+		t.Fatal("expected bootstrap practice-mob combat profile HP percent to be supported")
+	}
+	if hpPercent != 90 {
+		t.Fatalf("expected practice-mob HP percent 90 after one bootstrap hit, got %d", hpPercent)
+	}
+}
+
 func TestBootstrapStaticActorDeathRewardKeepsTrainingDummyRewardless(t *testing.T) {
 	reward, ok := BootstrapStaticActorDeathReward(StaticActorCombatKindTrainingDummy)
 	if !ok {
