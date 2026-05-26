@@ -12138,6 +12138,94 @@ func TestNewGameSessionFactoryRollsBackGoldOnlyPracticeMobDeathRewardWhenAccount
 	}
 }
 
+func TestNewGameSessionFactoryDropsFirstItemRewardForPracticeMobDeath(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050205, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050205, Name: "DropRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.drop_reward_mob",
+	}
+	killer := peerVisibilityCharacter("DropRewardKiller", 0x01030105, 0x02040105, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "drop-reward-killer", 0x55555555, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "drop-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed drop reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_400, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+		t.Fatal("expected drop reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001}}) {
+		t.Fatal("expected test drop reward override to apply to registered practice mob")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-reward-killer", 0x55555555)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before drop reward kill: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target selection frame before drop reward kill, got %d", len(selectOut))
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on drop reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode drop reward killing hit dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode drop reward killing hit clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected drop reward killing hit to clear target, got %+v", clearTarget)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode drop reward ground add: %v", err)
+	}
+	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
+		t.Fatalf("unexpected drop reward ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode drop reward ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected drop reward ownership: got %+v want vid %d owner %q", ownership, ground.VID, killer.Name)
+	}
+
+	account, err := accounts.Load("drop-reward-killer")
+	if err != nil {
+		t.Fatalf("load drop rewarded account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected drop reward not to mutate persisted inventory, got %#v", account.Characters[0].Inventory)
+	}
+}
+
 func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobRewardDescriptorIsUnsupported(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
@@ -12165,8 +12253,8 @@ func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobRewardDescrip
 	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
 		t.Fatal("expected unsupported reward mob registration to succeed")
 	}
-	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{19}}) {
-		t.Fatal("expected unsupported drop reward override to apply to registered practice mob")
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 5, DropVnums: []uint32{19}}) {
+		t.Fatal("expected unsupported mixed reward override to apply to registered practice mob")
 	}
 
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "unsupported-reward-killer", 0x22222222)

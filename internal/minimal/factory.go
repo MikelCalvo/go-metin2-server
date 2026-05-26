@@ -2709,6 +2709,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					if !resolution.DeathReward.Empty() {
 						attackFrames := append([][]byte(nil), frames...)
+						if len(resolution.DeathReward.DropVnums) != 0 {
+							if resolution.DeathReward.Experience == 0 && resolution.DeathReward.Gold == 0 && len(resolution.DeathReward.DropVnums) == 1 {
+								groundVID := bootstrapGroundItemVID(previousSelected, inventory.SlotIndex(resolution.DeathReward.DropVnums[0]%uint32(inventory.CarriedInventorySlotCount)))
+								if groundVID != 0 {
+									droppedItem := inventory.ItemInstance{Vnum: resolution.DeathReward.DropVnums[0], Count: 1}
+									frames = append(frames,
+										itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: groundVID, Vnum: droppedItem.Vnum, X: previousSelected.X, Y: previousSelected.Y, Z: previousSelected.Z}),
+										itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: groundVID, OwnerName: previousSelected.Name}),
+									)
+									if ownsLiveSharedWorldSession() {
+										sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, droppedItem)
+									}
+								}
+							}
+							return gameflow.AttackResult{Accepted: true, Frames: frames}
+						}
 						reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(resolution.DeathReward)
 						if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold > uint64(math.MaxInt32) || reward.Experience > uint64(math.MaxInt32) {
 							return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
