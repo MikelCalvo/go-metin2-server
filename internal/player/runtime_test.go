@@ -119,6 +119,30 @@ func TestNilRuntimeReturnsZeroLiveCharacter(t *testing.T) {
 	}
 }
 
+func TestRuntimeAppliesExperienceOnlyDeathRewardToLiveState(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:     0x01030101,
+		VID:    0x02040101,
+		Name:   "PeerOne",
+		Points: [255]int32{ExperiencePointIndex: 25},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-one", CharacterIndex: 0})
+
+	result, ok := runtime.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: 75})
+	if !ok {
+		t.Fatal("expected experience-only death reward to apply to live runtime state")
+	}
+	if result.ExperienceBefore != 25 || result.ExperienceAfter != 100 || result.Experience != 75 {
+		t.Fatalf("unexpected experience reward result: %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[ExperiencePointIndex]; got != 100 {
+		t.Fatalf("expected live experience point to increase to 100, got %d", got)
+	}
+	if got := runtime.PersistedSnapshot().Points[ExperiencePointIndex]; got != 25 {
+		t.Fatalf("expected persisted experience point to remain unchanged before an explicit save, got %d", got)
+	}
+}
+
 func TestRuntimeAppliesGoldOnlyDeathRewardToLiveState(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,
@@ -140,6 +164,24 @@ func TestRuntimeAppliesGoldOnlyDeathRewardToLiveState(t *testing.T) {
 	}
 	if got := runtime.PersistedSnapshot().Gold; got != 25 {
 		t.Fatalf("expected persisted gold to remain unchanged before an explicit save, got %d", got)
+	}
+}
+
+func TestRuntimeRejectsOverflowingExperienceDeathRewardWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:     0x01030101,
+		VID:    0x02040101,
+		Name:   "PeerOne",
+		Points: [255]int32{ExperiencePointIndex: 1<<31 - 10},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-one", CharacterIndex: 0})
+
+	result, ok := runtime.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: 11})
+	if ok {
+		t.Fatalf("expected overflowing experience death reward to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[ExperiencePointIndex]; got != 1<<31-10 {
+		t.Fatalf("expected live experience point to remain unchanged after overflow rejection, got %d", got)
 	}
 }
 

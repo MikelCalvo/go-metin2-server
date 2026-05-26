@@ -57,6 +57,7 @@ const (
 
 const bootstrapPlayerPointType uint8 = 1
 const bootstrapPlayerPointValueIndex = 1
+const bootstrapExperiencePointType = player.ExperiencePointIndex
 const bootstrapGoldPointType uint8 = 11
 const bootstrapPracticeMobRetaliationPointDelta int32 = -1
 const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
@@ -2709,12 +2710,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !resolution.DeathReward.Empty() {
 						attackFrames := append([][]byte(nil), frames...)
 						reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(resolution.DeathReward)
-						if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold > uint64(math.MaxInt32) {
+						if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold > uint64(math.MaxInt32) || reward.Experience > uint64(math.MaxInt32) {
 							return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 						}
 						updatedSelected := selectedPlayer.LiveCharacter()
 						persistedSelected := selectedPlayer.PersistedSnapshot()
 						persistedSelected.Gold = updatedSelected.Gold
+						persistedSelected.Points[bootstrapExperiencePointType] = updatedSelected.Points[bootstrapExperiencePointType]
 						updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
 						if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -2724,12 +2726,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						sessionTicket.Characters = updatedCharacters
 						selectedPlayer.SetPersistedSnapshot(persistedSelected)
 						refreshLiveCharacterRegistration()
-						frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-							VID:    previousSelected.VID,
-							Type:   bootstrapGoldPointType,
-							Amount: int32(reward.Gold),
-							Value:  int32(reward.GoldAfter),
-						}))
+						if reward.Experience != 0 {
+							frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+								VID:    previousSelected.VID,
+								Type:   bootstrapExperiencePointType,
+								Amount: int32(reward.Experience),
+								Value:  reward.ExperienceAfter,
+							}))
+						}
+						if reward.Gold != 0 {
+							frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+								VID:    previousSelected.VID,
+								Type:   bootstrapGoldPointType,
+								Amount: int32(reward.Gold),
+								Value:  int32(reward.GoldAfter),
+							}))
+						}
 					}
 					attackFrames := append([][]byte(nil), frames...)
 					retaliation, ok, clearTarget := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, resolution.ClearActiveTarget)

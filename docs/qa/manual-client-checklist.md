@@ -41,7 +41,7 @@ Adapt these to the deployment under test:
 - game port: use the configured `gamed` legacy port
 - if the default minimal runtime is used, the current stub credentials are:
   - login: `mkmk`
-  - password: `hunter2`
+  - password: `[REDACTED]`
 
 Important:
 - if both the legacy server and the Go server are running, confirm the client is really pointing at the Go server before interpreting results
@@ -942,6 +942,10 @@ Expected result:
 - [ ] Repeat the same pending-cadence teardown with `/quit` and confirm the owner still receives self `CHAT_TYPE_COMMAND quit` while staying in `GAME`, but any visible peer still sees the owner disappear cleanly, the queued retaliation beat is cancelled, and that peer can immediately `TARGET` the same still-live practice mob at its current runtime-owned HP without waiting for disconnect completion
 - [ ] Repeat the same pending-cadence teardown with `/phase_select` and confirm the owner transitions back to character select, any visible peer still sees the owner disappear cleanly, the queued retaliation beat is cancelled, and that peer can immediately `TARGET` the same still-live practice mob at its current runtime-owned HP while a later fresh bootstrap still requires the owner to reselect the mob
 - [ ] Repeat the same pending-cadence teardown with an abrupt socket close or client disconnect and confirm any visible peer still sees the owner disappear cleanly, the queued retaliation beat is cancelled, and that peer can immediately `TARGET` the same still-live practice mob at its current runtime-owned HP without waiting for a later reconnect
+- [ ] If the content-loaded mob has a bootstrap EXP-only death reward configured, drive one full kill and confirm the killing client receives `GC DEAD(mob_vid)` -> `GC TARGET(0, 0)` -> one self-only `PLAYER_POINT_CHANGE(POINT_EXP = 3)` with the configured EXP amount and new EXP total
+- [ ] If the content-loaded mob has a bootstrap gold-only death reward configured, drive one full kill and confirm the killing client receives `GC DEAD(mob_vid)` -> `GC TARGET(0, 0)` -> one self-only `PLAYER_POINT_CHANGE(POINT_GOLD = 11)` with the configured gold amount and new gold total
+- [ ] Reconnect after a successful EXP-only or gold-only reward kill and confirm the selected character snapshot reflects the persisted reward total
+- [ ] Repeat with a drop-bearing reward descriptor in a debug harness if available and confirm the kill still returns only death + target-clear while no EXP/gold point-change or reward persistence occurs
 - [ ] Drive one full target -> hit -> zero-HP death -> timed respawn -> fresh reselect cycle against that content-loaded mob
 - [ ] Re-export or otherwise inspect authored content and confirm the actor still round-trips as `spawn_groups`, not as an interaction-backed `static_actor`
 

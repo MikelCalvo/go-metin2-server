@@ -22,11 +22,11 @@ The default authored result remains intentionally rewardless:
 
 The selected static-actor attack seam carries that descriptor on the accepted zero-HP edge. In other words, the final accepted `ATTACK` that marks a default `training_dummy` / `practice_mob` as dead returns an explicit rewardless descriptor to runtime callers while the visible death choreography remains `GC DEAD(vid)` plus selected-target clear.
 
-A narrow gold-only runtime descriptor is now also owned for bootstrap practice-mob experiments:
+Narrow EXP-only and gold-only runtime descriptors are now also owned for bootstrap practice-mob experiments:
 - accepted killing hit applies the descriptor to the selected player only
-- the account snapshot is persisted before the result is reported as accepted
-- the live player runtime is refreshed to the persisted gold value
-- one self-only `PLAYER_POINT_CHANGE` for the gold point is appended after `GC DEAD(vid)` and `GC TARGET(0, 0)`
+- the account snapshot is persisted before the reward point-change frame is emitted
+- the live player runtime is refreshed to the persisted point/currency value
+- one self-only `PLAYER_POINT_CHANGE` for the EXP point (`POINT_EXP = 3`) or gold point (`POINT_GOLD = 11`) is appended after `GC DEAD(vid)` and `GC TARGET(0, 0)`
 
 Unknown combat kinds fail closed and produce no reward result.
 
@@ -39,9 +39,9 @@ This also keeps the existing training dummy truthful: it is a practice target us
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- EXP point types or level progression
+- level progression from earned EXP
 - default non-zero reward descriptors for authored `training_dummy` / `practice_mob` content
-- EXP/drop-bearing descriptor application
+- drop-bearing descriptor application
 - item-drop packet creation, ownership, timeout, or pickup rules
 - party reward distribution
 - quest credit or kill counters
