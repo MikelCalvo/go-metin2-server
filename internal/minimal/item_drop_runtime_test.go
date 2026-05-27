@@ -834,6 +834,81 @@ func TestGameRuntimeItemUseToItemRejectsLockedSourceOrTargetWithoutMutation(t *t
 	}
 }
 
+func TestGameRuntimeItemUseToItemRejectsMissingOrInvalidTemplateWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		login    string
+		loginKey uint32
+		template itemcatalog.Template
+		install  bool
+	}{
+		{
+			name:     "missing source template",
+			login:    "use-to-item-missing-template",
+			loginKey: 0xa1a1a1a1,
+		},
+		{
+			name:     "invalid source template",
+			login:    "use-to-item-invalid-template",
+			loginKey: 0xa2a2a2a2,
+			install:  true,
+			template: itemcatalog.Template{
+				Vnum:      27044,
+				Name:      "",
+				Stackable: true,
+				MaxCount:  200,
+				UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27044:+50"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseToItemTemplateGuard", 0x010301a1, 0x020401a1, 1300, 2300, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: 1141, Vnum: 27044, Count: 3, Slot: 5}, {ID: 1142, Vnum: 27044, Count: 4, Slot: 6}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}, {Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+			issuePeerTicket(t, ticketStore, tc.login, tc.loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed template-guard use-to-item owner account: %v", err)
+			}
+
+			runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, newItemTemplateStore(t, nil))
+			if err != nil {
+				t.Fatalf("unexpected template-guard use-to-item runtime error: %v", err)
+			}
+			if tc.install {
+				if runtime.itemTemplates == nil {
+					runtime.itemTemplates = make(map[uint32]itemcatalog.Template)
+				}
+				runtime.itemTemplates[tc.template.Vnum] = tc.template
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.loginKey)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+			if err != nil {
+				t.Fatalf("unexpected template-guard use-to-item error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s use-to-item to fail closed with no frames, got %d", tc.name, len(out))
+			}
+			account, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load template-guard use-to-item owner account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("expected %s use-to-item inventory to stay unchanged, got %#v", tc.name, account.Characters[0].Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("expected %s use-to-item quickslots to stay unchanged, got %#v", tc.name, account.Characters[0].Quickslots)
+			}
+			if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+				t.Fatalf("expected %s use-to-item to avoid normal use point effect, got %d", tc.name, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemUseToItemRejectsNonStackableOrAntiStackTemplateWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string

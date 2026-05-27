@@ -728,7 +728,22 @@ Expected result:
 - the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` / `ITEM_UPDATE` refresh family, with quickslot sync frames appended when the source item lands in the destination cell
 - non-carried windows and out-of-range cells fail closed without mutation
 
-### 6.20 Visible-peer item drop / pickup smoke (packet-harness optional)
+### 6.20 `ITEM_USE_TO_ITEM` stack consolidation smoke (packet-harness optional)
+
+- [ ] Enter `GAME` with a QA character that has two compatible carried stacks for a template-backed stackable item such as `27001`
+- [ ] Send one real client `ITEM_USE_TO_ITEM` request from the source carried slot onto the target carried slot
+- [ ] Confirm the selected session receives `ITEM_DEL(source)` then `ITEM_SET(target)` when the source fits completely into the target
+- [ ] If an item quickslot points at the removed source slot, confirm it receives `QUICKSLOT_DEL`; skill/command quickslots with the same byte slot value must stay unchanged
+- [ ] Repeat with a target stack that has only partial room under the authored `max_count`
+- [ ] Confirm the selected session receives count-only refreshes for both carried cells and the source item quickslot remains
+- [ ] Repeat with incompatible `vnum`, missing/invalid template metadata, `anti_stack`, non-stackable, locked, empty, same-cell, already-full, and over-template-max setups where available
+
+Expected result:
+- accepted drag-to-item consolidation is self-only, persists the merged inventory, and never runs the normal consumable `use_effect`
+- rejection cases fail closed with no frames, no inventory mutation, no quickslot mutation, and no point/effect fallback
+- templates with `max_count > 255` reject because the current bootstrap `ITEM_SET` / `ITEM_UPDATE` count field is one byte
+
+### 6.21 Visible-peer item drop / pickup smoke (packet-harness optional)
 
 - [ ] Put client A and client B in the same visible bootstrap scope with client A carrying one disposable stack
 - [ ] Send one real client `ITEM_DROP` or `ITEM_DROP2` request from client A for that carried slot
@@ -754,7 +769,7 @@ Expected result:
 - replayed, unknown, invisible, no-merge-capacity, or no-free-slot pickup attempts fail closed
 - reconnecting does not restore the temporary bootstrap ground handle as a durable world entity
 
-### 6.21 Radius-AOI ground item visibility rebuild smoke (packet-harness optional)
+### 6.22 Radius-AOI ground item visibility rebuild smoke (packet-harness optional)
 
 - [ ] Start `gamed` with radius AOI enabled for QA
 - [ ] Put client A carrying one disposable stack inside radius of the future drop point, and keep client B initially outside that radius
@@ -769,7 +784,7 @@ Expected result:
 - pending bootstrap ground handles are torn down for sessions that cross back out before pickup/despawn policy exists
 - the rebuild/teardown is self-facing to the moving/syncing session and does not make the handle durable across reconnects
 
-### 6.22 Packet merchant sell-back smoke (packet-harness optional)
+### 6.23 Packet merchant sell-back smoke (packet-harness optional)
 
 - [ ] Open a structured merchant `shop_preview` window while the QA character has at least one carried inventory stack
 - [ ] Send one real client `SHOP SELL` request for a carried slot containing a stack
