@@ -11980,6 +11980,69 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisib
 	}
 }
 
+func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisiblePracticeMob(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected visible practice-mob registration to succeed")
+	}
+
+	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !attempt.Accepted {
+		t.Fatalf("expected visible practice mob combat-target attempt to be accepted, got %+v", attempt)
+	}
+	if attempt.Failure != "" {
+		t.Fatalf("expected accepted practice-mob combat-target attempt to have no failure reason, got %+v", attempt)
+	}
+	if attempt.TargetVID != uint32(actor.EntityID) {
+		t.Fatalf("expected practice-mob target VID %#08x, got %#08x", uint32(actor.EntityID), attempt.TargetVID)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "PracticeMob" || attempt.HPPercent != 100 {
+		t.Fatalf("unexpected resolved practice-mob combat-target attempt: %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisiblePracticeMob(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected visible practice-mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected practice-mob target selection before selected attack to succeed, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted practice-mob target selection to be recorded in shared-world ownership before selected attack")
+	}
+
+	attempt := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+	if !attempt.Accepted {
+		t.Fatalf("expected matching selected practice-mob attack attempt to be accepted, got %+v", attempt)
+	}
+	if attempt.Failure != "" {
+		t.Fatalf("expected accepted practice-mob selected-attack attempt to have no failure reason, got %+v", attempt)
+	}
+	if attempt.ActiveTargetVID != uint32(actor.EntityID) || attempt.RequestedTargetVID != uint32(actor.EntityID) || attempt.HPPercent != 90 {
+		t.Fatalf("unexpected practice-mob selected-attack result: %+v", attempt)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "PracticeMob" {
+		t.Fatalf("unexpected resolved practice-mob selected-attack attempt: %+v", attempt)
+	}
+}
+
 func TestNewGameSessionFactoryAppliesExperienceOnlyPracticeMobDeathReward(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{

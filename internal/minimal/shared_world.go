@@ -1637,6 +1637,11 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 	return attempt
 }
 
+func staticActorCombatKindTargetable(combatKind string) bool {
+	_, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatKind)
+	return ok
+}
+
 func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subjectID uint64, subject loginticket.Character, targetVID uint32) StaticActorCombatTargetAttempt {
 	attempt := StaticActorCombatTargetAttempt{TargetVID: targetVID}
 	if characterAtBootstrapHPFloor(subject) {
@@ -1653,7 +1658,7 @@ func (r *sharedWorldRegistry) attemptStaticActorCombatTargetLocked(subjectID uin
 		attempt.Failure = StaticActorCombatTargetFailureTargetOutOfRange
 		return attempt
 	}
-	if actor.CombatKind != worldruntime.StaticActorCombatKindTrainingDummy {
+	if !staticActorCombatKindTargetable(actor.CombatKind) {
 		attempt.Failure = StaticActorCombatTargetFailureTargetNotTargetable
 		return attempt
 	}

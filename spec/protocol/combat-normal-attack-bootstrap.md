@@ -93,7 +93,7 @@ An `ATTACK` request is only eligible when all of the following are true:
 - that live character currently holds one active combat target from the existing `TARGET` selection contract
 - the request uses `attack_type = 0` for the first normal-attack bootstrap path
 - the request `target_vid` exactly matches the session's currently selected combat target
-- that selected target still resolves to a visible same-map `training_dummy`
+- that selected target still resolves to a visible same-map bootstrap practice target (`training_dummy` or `practice_mob` today)
 - that selected target still passes the current bootstrap combat band
 
 This keeps the first attack slice aligned with the already-owned `TARGET` path instead of creating a second competing target-identity model.

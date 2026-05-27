@@ -63,19 +63,19 @@ Because of those constraints, the next honest combat step is **target selection 
 
 ## First owned targetable actor class
 
-The first combat target is intentionally narrow:
+The first combat target class began intentionally narrow and now covers the two bootstrap practice profiles that share the owned compact combat defaults:
 - actor kind: visible bootstrap non-player actor
-- gameplay class: `training_dummy`
-- behavior today: stationary, passive, non-retaliating, and only interesting as a target candidate
+- gameplay classes: `training_dummy` and content-authored `practice_mob`
+- behavior today: stationary, passive unless the later practice-mob retaliation slices apply, and only interesting as bootstrap combat targets
 - identity surface: the actor's current visible `VID`
 
 This slice freezes the rule that **combat targetability is separate from interactability**:
 - a visible NPC/actor being interactable does not automatically make it combat-targetable
-- the first combat target path should only accept actors explicitly authored/runtime-marked with the `training_dummy` combat profile
+- the combat target path accepts only actors explicitly authored/runtime-marked with a supported bootstrap combat profile (`training_dummy` or `practice_mob` today)
 - later slices may broaden targetable non-player classes without changing the core identity rule (`visible VID`)
 
 The current authored metadata seam names that tag `combat_profile` and persists it through static-actor snapshots plus content-bundle import/export.
-What is frozen here is the behavior contract and authored meaning of the `training_dummy` profile, not a promise that richer future profiles are already implemented.
+What is frozen here is the behavior contract and authored meaning of the bootstrap practice profiles, not a promise that richer future profiles are already implemented.
 
 ## Planned request boundary
 
