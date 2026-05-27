@@ -1212,7 +1212,7 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	scopes := r.scopesLocked()
 	visibilityDiff := scopes.RelocateVisibilityDiff(previous, character)
 	staticActorVisibilityDiff := scopes.RelocateStaticActorVisibilityDiff(previous, character)
-	result := r.markRelocationPreviewStaticActorStateLocked(scopes.BuildRelocationPreview(previous, character, true))
+	result := r.markRelocationPreviewStateLocked(scopes.BuildRelocationPreview(previous, character, true))
 
 	groundItemVisibilityDiff := r.groundItemVisibilityDiffLocked(previous, character)
 	originAddedVisiblePeers := visibilityDiff.AddedVisiblePeers
@@ -1763,7 +1763,7 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 	target.X = x
 	target.Y = y
 
-	return r.markRelocationPreviewStaticActorStateLocked(r.scopesLocked().BuildRelocationPreview(current, target, false)), true
+	return r.markRelocationPreviewStateLocked(r.scopesLocked().BuildRelocationPreview(current, target, false)), true
 }
 
 func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][]byte) {
@@ -2002,17 +2002,16 @@ func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapsh
 	if r == nil || r.entities == nil {
 		return nil
 	}
-	snapshots := r.markMapOccupancyStaticActorStateLocked(r.scopesLocked().MapOccupancySnapshots())
-	if len(r.groundItemsByVID) == 0 {
-		return snapshots
-	}
+	return r.markMapOccupancySnapshotStateLocked(r.scopesLocked().MapOccupancySnapshots())
+}
 
-	byMap := make(map[uint32]int, len(snapshots)+len(r.groundItemsByVID))
+func appendGroundItemsToMapOccupancySnapshots(topology worldruntime.BootstrapTopology, snapshots []MapOccupancySnapshot, groundItems map[uint32]sharedGroundItem) []MapOccupancySnapshot {
+	byMap := make(map[uint32]int, len(snapshots)+len(groundItems))
 	for i := range snapshots {
 		byMap[snapshots[i].MapIndex] = i
 	}
-	for _, ground := range r.groundItemsByVID {
-		mapIndex := r.topology.EffectiveMapIndex(loginticket.Character{MapIndex: ground.MapIndex})
+	for _, ground := range groundItems {
+		mapIndex := topology.EffectiveMapIndex(loginticket.Character{MapIndex: ground.MapIndex})
 		idx, ok := byMap[mapIndex]
 		if !ok {
 			snapshots = append(snapshots, MapOccupancySnapshot{MapIndex: mapIndex})
@@ -2063,14 +2062,22 @@ func (r *sharedWorldRegistry) markMapOccupancyStaticActorStateLocked(snapshots [
 	return snapshots
 }
 
-func (r *sharedWorldRegistry) markRelocationPreviewStaticActorStateLocked(preview RelocationPreview) RelocationPreview {
+func (r *sharedWorldRegistry) markRelocationPreviewStateLocked(preview RelocationPreview) RelocationPreview {
 	preview.CurrentVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.CurrentVisibleStaticActors)
 	preview.TargetVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.TargetVisibleStaticActors)
 	preview.RemovedVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.RemovedVisibleStaticActors)
 	preview.AddedVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.AddedVisibleStaticActors)
-	preview.BeforeMapOccupancy = r.markMapOccupancyStaticActorStateLocked(preview.BeforeMapOccupancy)
-	preview.AfterMapOccupancy = r.markMapOccupancyStaticActorStateLocked(preview.AfterMapOccupancy)
+	preview.BeforeMapOccupancy = r.markMapOccupancySnapshotStateLocked(preview.BeforeMapOccupancy)
+	preview.AfterMapOccupancy = r.markMapOccupancySnapshotStateLocked(preview.AfterMapOccupancy)
 	return preview
+}
+
+func (r *sharedWorldRegistry) markMapOccupancySnapshotStateLocked(snapshots []MapOccupancySnapshot) []MapOccupancySnapshot {
+	snapshots = r.markMapOccupancyStaticActorStateLocked(snapshots)
+	if len(r.groundItemsByVID) == 0 {
+		return snapshots
+	}
+	return appendGroundItemsToMapOccupancySnapshots(r.topology, snapshots, r.groundItemsByVID)
 }
 
 func buildTransferOriginFrames(removed []loginticket.Character, added []loginticket.Character) [][]byte {

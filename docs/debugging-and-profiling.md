@@ -105,6 +105,7 @@ Returns JSON describing the active bootstrap runtime selection, including the cu
   - `map_occupancy_changes`
 
 Visible static-actor entries in this preview now also expose `dead: true` while a runtime-owned practice mob remains in its owned dead interval before respawn.
+`before_map_occupancy` and `after_map_occupancy` also include currently pending bootstrap ground items, preserving transient ground occupancy across dry-run map snapshots without redefining `map_occupancy_changes`, which remains character-count oriented.
 Player snapshots in the same preview now also expose `dead: true` while a still-connected engaged owner remains at the current retaliation-owned `0`-HP floor, whether that owner appears as `character`, `target`, or a visible peer.
 
 ### `POST /local/transfer`

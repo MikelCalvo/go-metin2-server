@@ -199,6 +199,62 @@ func TestGameRuntimeItemDrop2DecrementsStackAndEmitsGroundAdd(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeRelocationPreviewIncludesPendingGroundItemsInBeforeAndAfterOccupancy(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PreviewGroundOwner", 0x01030501, 0x02040501, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1501, Vnum: 27001, Count: 3, Slot: 5}}
+	mover := peerVisibilityCharacter("PreviewGroundMover", 0x01030502, 0x02040502, 5000, 6000, 0, 102, 202)
+	mover.MapIndex = 42
+	issuePeerTicket(t, ticketStore, "preview-ground-owner", 0x51515151, owner)
+	issuePeerTicket(t, ticketStore, "preview-ground-mover", 0x52525252, mover)
+	if err := accounts.Save(accountstore.Account{Login: "preview-ground-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed preview ground owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "preview-ground-mover", Empire: mover.Empire, Characters: cloneCharacters([]loginticket.Character{mover})}); err != nil {
+		t.Fatalf("seed preview ground mover account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected ground preview runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "preview-ground-owner", 0x51515151)
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 2}))); err != nil {
+		t.Fatalf("unexpected preview ground drop error: %v", err)
+	}
+	enterGameWithLoginTicket(t, runtime.SessionFactory(), "preview-ground-mover", 0x52525252)
+
+	preview, ok := runtime.PreviewRelocation("PreviewGroundMover", 1, 1200, 2200)
+	if !ok {
+		t.Fatal("expected relocation preview to resolve mover")
+	}
+	if preview.Applied {
+		t.Fatalf("expected dry-run relocation preview, got applied result: %+v", preview)
+	}
+	beforeSource, ok := findMapOccupancySnapshot(preview.BeforeMapOccupancy, 1)
+	if !ok || beforeSource.GroundItemCount != 1 || len(beforeSource.GroundItems) != 1 || beforeSource.GroundItems[0].Vnum != 27001 || beforeSource.GroundItems[0].Count != 2 || beforeSource.GroundItems[0].OwnerName != owner.Name {
+		t.Fatalf("expected source map before occupancy to include one pending ground item, got %+v", beforeSource)
+	}
+	afterSource, ok := findMapOccupancySnapshot(preview.AfterMapOccupancy, 1)
+	if !ok || afterSource.GroundItemCount != 1 || len(afterSource.GroundItems) != 1 || afterSource.GroundItems[0].Vnum != 27001 || afterSource.GroundItems[0].Count != 2 || afterSource.GroundItems[0].OwnerName != owner.Name || afterSource.CharacterCount != 2 {
+		t.Fatalf("expected source map after occupancy to preserve pending ground item and include moved player, got %+v", afterSource)
+	}
+	beforeDestination, ok := findMapOccupancySnapshot(preview.BeforeMapOccupancy, 42)
+	if !ok || beforeDestination.GroundItemCount != 0 || beforeDestination.CharacterCount != 1 {
+		t.Fatalf("expected destination map before occupancy to contain mover only, got %+v", beforeDestination)
+	}
+}
+
+func findMapOccupancySnapshot(snapshots []MapOccupancySnapshot, mapIndex uint32) (MapOccupancySnapshot, bool) {
+	for _, snapshot := range snapshots {
+		if snapshot.MapIndex == mapIndex {
+			return snapshot, true
+		}
+	}
+	return MapOccupancySnapshot{}, false
+}
+
 func TestGameRuntimeItemUseToItemMergesCompatibleInventoryStacks(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
