@@ -713,7 +713,7 @@ Expected result:
 - [ ] Send one real client `ITEM_MOVE` request from `A` to `B` (`source TItemPos`, `destination TItemPos`, `count = 0`) to exercise full-stack drag/drop semantics
 - [ ] Confirm the selected session receives `ITEM_DEL(A)` followed by `ITEM_SET(B)`
 - [ ] Confirm loopback inventory snapshots or reconnect state show the item persisted in slot `B`
-- [ ] Repeat with an incompatible destination occupied by another carried item if the QA setup has two disposable carried items, and confirm it fails closed without changing inventory
+- [ ] Repeat with an incompatible destination occupied by another carried item if the QA setup has two disposable carried items, and confirm the runtime swaps the two carried items; if an item quickslot points at the source slot, confirm it is retargeted to the destination slot and any stale destination item quickslot is deleted
 - [ ] Reset to two compatible carried stacks, then send `ITEM_MOVE` from `A` into occupied compatible stack slot `C` with `count = 0`
 - [ ] Confirm the selected session receives self-only count refreshes: `ITEM_UPDATE(A)` if a source remainder survives or `ITEM_DEL(A)` if the source is fully consumed, followed by `ITEM_UPDATE(C)` capped at the authored template `max_count`
 - [ ] Reset to a stack count greater than one, then send `ITEM_MOVE` from `A` to empty slot `B` with a partial count lower than the current stack count
@@ -724,8 +724,8 @@ Expected result:
 
 Expected result:
 - packet `ITEM_MOVE` reuses the same authoritative full-stack empty-destination move semantics as `/inventory_move`
-- empty-destination partial splits plus compatible occupied-destination partial, exact, and zero-count merges are accepted and persisted, while incompatible occupied destinations remain deferred/fail-closed
-- the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` / `ITEM_UPDATE` refresh family
+- empty-destination partial splits plus compatible occupied-destination partial, exact, and zero-count merges are accepted and persisted; full-stack incompatible occupied destinations swap and persist instead of failing closed
+- the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` / `ITEM_UPDATE` refresh family, with quickslot sync frames appended when the source item lands in the destination cell
 - non-carried windows and out-of-range cells fail closed without mutation
 
 ### 6.20 Visible-peer item drop / pickup smoke (packet-harness optional)

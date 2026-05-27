@@ -13402,6 +13402,70 @@ func TestGameSessionFlowItemMovePacketMergesPartialStackWithItemUpdateFrames(t *
 	}
 }
 
+func TestGameSessionFlowItemMovePacketSwapRetargetsSourceQuickslotAndDeletesDestinationQuickslot(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PacketMoveSwapQuickslot", 0x01030514, 0x02040514, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 77, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 78, Vnum: 27002, Count: 1, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 8},
+	}
+	issuePeerTicket(t, store, "move-swap-qs", 0x50505054, owner)
+	if err := accounts.Save(accountstore.Account{Login: "move-swap-qs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed packet item-move swap owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "move-swap-qs", 0x50505054)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(5), Destination: itemproto.InventoryPosition(8)})))
+	if err != nil {
+		t.Fatalf("unexpected swap item-move packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected swap to emit two item sets plus destination quickslot delete and source quickslot retarget, got %d", len(out))
+	}
+	if set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[0])); err != nil || set.Position != itemproto.InventoryPosition(5) || set.Vnum != 27002 || set.Count != 1 {
+		t.Fatalf("unexpected swap source set: %+v err=%v", set, err)
+	}
+	if set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1])); err != nil || set.Position != itemproto.InventoryPosition(8) || set.Vnum != 27001 || set.Count != 3 {
+		t.Fatalf("unexpected swap destination set: %+v err=%v", set, err)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode swap destination quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 4 {
+		t.Fatalf("expected stale destination item quickslot position 4 to be deleted, got %+v", quickslotDel)
+	}
+	quickslotAdd, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode swap source quickslot retarget: %v", err)
+	}
+	if quickslotAdd.Position != 2 || quickslotAdd.Slot.Type != quickslotproto.TypeItem || quickslotAdd.Slot.Position != 8 {
+		t.Fatalf("expected source item quickslot position 2 to retarget to destination slot 8, got %+v", quickslotAdd)
+	}
+
+	persisted, err := accounts.Load("move-swap-qs")
+	if err != nil {
+		t.Fatalf("load persisted packet item-move swap owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}) {
+		t.Fatalf("unexpected persisted quickslots after swap: %+v", persisted.Characters[0].Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemMovePacketExactFullStackMergeSyncsSourceQuickslotToDestination(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
