@@ -36,6 +36,86 @@ import (
 
 const defaultMerchantPreview = "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g; [2] Small Red Potion x2 @ 100g"
 
+func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFrames(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	mover := peerVisibilityCharacter("StaticTransferMover", 0x01030170, 0x02040170, 1100, 2100, 0, 101, 201)
+	mover.MapIndex = bootstrapMapIndex
+	mover.X = 1100
+	mover.Y = 2100
+	issuePeerTicket(t, store, "static-transfer-mover", 0x17171717, mover)
+	if err := accounts.Save(accountstore.Account{Login: "static-transfer-mover", Empire: mover.Empire, Characters: []loginticket.Character{mover}}); err != nil {
+		t.Fatalf("save mover account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		accounts,
+		staticActorStore,
+		interactionStore,
+		[]bootstrapTransferTrigger{{
+			SourceMapIndex: bootstrapMapIndex,
+			SourceX:        1200,
+			SourceY:        2200,
+			TargetMapIndex: 42,
+			TargetX:        5100,
+			TargetY:        6100,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("Destination Gate Guard", 42, 5125, 6125, 101)
+	if !ok {
+		t.Fatal("expected destination static actor registration to succeed")
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "static-transfer-mover", 0x17171717)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected no source static actor in initial bootstrap, got %d frames", len(enterOut))
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, X: 1200, Y: 2200, Time: 99})))
+	if err != nil {
+		t.Fatalf("unexpected transfer-triggering move error: %v", err)
+	}
+	if len(moveOut) != 7 {
+		t.Fatalf("expected 4 self bootstrap frames plus 3 destination static-actor frames, got %d", len(moveOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode transfer self character add: %v", err)
+	}
+	if selfAdd.VID != mover.VID || selfAdd.X != 5100 || selfAdd.Y != 6100 {
+		t.Fatalf("unexpected transfer self character add: %+v", selfAdd)
+	}
+	destinationActorAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[4]))
+	if err != nil {
+		t.Fatalf("decode destination static actor add after transfer: %v", err)
+	}
+	if destinationActorAdd.VID != uint32(actor.EntityID) || destinationActorAdd.X != actor.X || destinationActorAdd.Y != actor.Y || destinationActorAdd.Type != 1 {
+		t.Fatalf("unexpected destination static actor add after transfer: %+v", destinationActorAdd)
+	}
+	destinationActorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[5]))
+	if err != nil {
+		t.Fatalf("decode destination static actor info after transfer: %v", err)
+	}
+	if destinationActorInfo.VID != uint32(actor.EntityID) || destinationActorInfo.Name != actor.Name {
+		t.Fatalf("unexpected destination static actor info after transfer: %+v", destinationActorInfo)
+	}
+	destinationActorUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, moveOut[6]))
+	if err != nil {
+		t.Fatalf("decode destination static actor update after transfer: %v", err)
+	}
+	if destinationActorUpdate.VID != uint32(actor.EntityID) {
+		t.Fatalf("unexpected destination static actor update after transfer: %+v", destinationActorUpdate)
+	}
+}
+
 func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

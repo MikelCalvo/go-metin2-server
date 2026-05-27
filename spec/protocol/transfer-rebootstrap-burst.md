@@ -73,6 +73,7 @@ If:
 - player A stays visible on source map `1`
 - player B is the moved selected character
 - player C is already visible on destination map `42`
+- static actor D is already visible on destination map `42`
 
 then a successful committed transfer currently produces this self-session result for player B:
 
@@ -86,10 +87,15 @@ then a successful committed transfer currently produces this self-session result
    - `CHARACTER_ADD`
    - `CHAR_ADDITIONAL_INFO`
    - `CHARACTER_UPDATE`
+4. destination static-actor visibility burst for D:
+   - `CHARACTER_ADD`
+   - `CHAR_ADDITIONAL_INFO`
+   - `CHARACTER_UPDATE`
 
 At the same time:
 - player A receives `CHARACTER_DEL` for player B
 - player C receives the destination visibility burst for player B using B's relocated snapshot
+- static actor D does not receive any peer fanout; it is static runtime content projected to the moved player's socket
 - if player B had already changed a supported `body`, `weapon`, or `head` item before the transfer, player C sees that latest projected appearance in the `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE` frames of that destination burst
 
 ## Same-map transfers

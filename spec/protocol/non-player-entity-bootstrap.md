@@ -95,8 +95,8 @@ This slice does not yet freeze:
 - spawn groups or respawn rules
 - shops, drops, loot, or item generation
 - client-visible spawn/update/delete packet choreography beyond the first enter-game bootstrap burst, the first live operator-seed add burst, the first live operator-delete teardown for already-visible sessions, the first same-visible-set operator update refresh, the first operator-triggered map/AOI visibility rebuild for static-actor edits, and the first self-facing AOI add/delete rebuild for already-seeded static actors
-- damage, targeting, or death state
-- inter-channel ownership or automatic boot/runtime wiring of persisted non-player actors
+- damage, targeting, or death state beyond the currently documented training-dummy/death/reward bootstrap slices
+- inter-channel ownership
 
 ## Success definition for the next slice
 
