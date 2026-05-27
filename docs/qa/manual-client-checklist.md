@@ -439,7 +439,8 @@ Run this only when the target build has a visible authored `shop_preview` mercha
 
 Expected result:
 - accepted merchant sell-back responses are ordered as whole-stack `ITEM_DEL` or partial-stack `ITEM_UPDATE`, then self-only `PLAYER_POINT_CHANGE(POINT_GOLD)`, then bare `GC::SHOP OK`
-- invalid, anti-sell, equipped, or runtime-locked items fail closed and leave both live and persisted inventory/gold unchanged
+- invalid, anti-sell, equipped, runtime-locked, or zero-HP owner attempts fail closed and leave both live and persisted inventory/gold unchanged
+- after practice-mob retaliation reaches the player's current zero-HP floor, both whole-stack `SELL` and partial-stack `SELL2` attempts emit no sell success frames and do not delete carried-item quickslots
 - richer `GC::SHOP UPDATE_ITEM` / `UPDATE_PRICE` merchant-window choreography remains out of scope for this bootstrap sell-back smoke
 
 ### 5.10 Training dummy repeated-hit smoke
