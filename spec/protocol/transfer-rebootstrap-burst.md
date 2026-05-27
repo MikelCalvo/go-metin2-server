@@ -64,8 +64,11 @@ After the relocated self burst, the moved player currently receives the transfer
      - `CHARACTER_ADD`
      - `CHAR_ADDITIONAL_INFO`
      - `CHARACTER_UPDATE`
+4. then the temporary ground-item visibility deltas for the moved player itself:
+   - one `ITEM_GROUND_DEL` for each source-scope pending ground handle that stops being visible
+   - then one `ITEM_GROUND_ADD` plus `ITEM_OWNERSHIP` pair for each destination-scope pending ground handle that becomes visible
 
-This keeps the moved player's own actor bootstrap deterministic while still reusing the existing player/static visibility packet families.
+This keeps the moved player's own actor bootstrap deterministic while still reusing the existing player, static-actor, and temporary ground-item visibility packet families.
 
 ## Example: move from map 1 to map 42
 
@@ -74,6 +77,8 @@ If:
 - player B is the moved selected character
 - player C is already visible on destination map `42`
 - static actor D is already visible on destination map `42`
+- source-map ground item E is visible before transfer
+- destination-map ground item F is visible after transfer
 
 then a successful committed transfer currently produces this self-session result for player B:
 
@@ -91,6 +96,10 @@ then a successful committed transfer currently produces this self-session result
    - `CHARACTER_ADD`
    - `CHAR_ADDITIONAL_INFO`
    - `CHARACTER_UPDATE`
+5. temporary ground-item transfer deltas:
+   - `ITEM_GROUND_DEL` for source-map ground item E
+   - `ITEM_GROUND_ADD` for destination-map ground item F
+   - `ITEM_OWNERSHIP` for destination-map ground item F
 
 At the same time:
 - player A receives `CHARACTER_DEL` for player B

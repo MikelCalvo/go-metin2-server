@@ -16,6 +16,7 @@ import (
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
+	"github.com/MikelCalvo/go-metin2-server/internal/service"
 )
 
 func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
@@ -1169,6 +1170,19 @@ func TestGameRuntimeRadiusAOIItemDropPickupRebuildsGroundVisibilityOnMove(t *tes
 }
 
 func TestGameRuntimeExactPositionTransferRebuildsGroundItemVisibility(t *testing.T) {
+	assertExactPositionTransferRebuildsGroundItemVisibility(t, func(flow service.SessionFlow, mover loginticket.Character) ([][]byte, error) {
+		return flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x51525354})))
+	})
+}
+
+func TestGameRuntimeExactPositionSyncTransferRebuildsGroundItemVisibility(t *testing.T) {
+	assertExactPositionTransferRebuildsGroundItemVisibility(t, func(flow service.SessionFlow, mover loginticket.Character) ([][]byte, error) {
+		return flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: mover.VID, X: 1500, Y: 2600}}})))
+	})
+}
+
+func assertExactPositionTransferRebuildsGroundItemVisibility(t *testing.T, trigger func(service.SessionFlow, loginticket.Character) ([][]byte, error)) {
+	t.Helper()
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	sourceDropper := peerVisibilityCharacter("TransferGroundSource", 0x01030178, 0x02040178, 1100, 2100, 0, 101, 201)
@@ -1218,28 +1232,28 @@ func TestGameRuntimeExactPositionTransferRebuildsGroundItemVisibility(t *testing
 		t.Fatalf("expected mover to miss destination-map ground add before transfer, got %d frames", len(queued))
 	}
 
-	moveOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x51525354})))
+	transferOut, err := trigger(moverFlow, mover)
 	if err != nil {
-		t.Fatalf("unexpected transfer move error: %v", err)
+		t.Fatalf("unexpected transfer trigger error: %v", err)
 	}
-	if len(moveOut) != 11 {
-		t.Fatalf("expected self bootstrap, peer del/add, and ground del/add/ownership transfer frames, got %d", len(moveOut))
+	if len(transferOut) != 11 {
+		t.Fatalf("expected self bootstrap, peer del/add, and ground del/add/ownership transfer frames, got %d", len(transferOut))
 	}
-	sourceDelete, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, moveOut[8]))
+	sourceDelete, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, transferOut[8]))
 	if err != nil {
 		t.Fatalf("decode transfer source ground delete: %v", err)
 	}
 	if sourceDelete.VID != sourceGround.VID {
 		t.Fatalf("unexpected source ground delete after transfer: got %+v want vid %d", sourceDelete, sourceGround.VID)
 	}
-	destAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, moveOut[9]))
+	destAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, transferOut[9]))
 	if err != nil {
 		t.Fatalf("decode transfer destination ground add: %v", err)
 	}
 	if destAdd != destGround {
 		t.Fatalf("unexpected destination ground add after transfer: got %+v want %+v", destAdd, destGround)
 	}
-	destOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, moveOut[10]))
+	destOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, transferOut[10]))
 	if err != nil {
 		t.Fatalf("decode transfer destination ground ownership: %v", err)
 	}
