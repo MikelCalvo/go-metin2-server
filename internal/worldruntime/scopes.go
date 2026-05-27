@@ -64,12 +64,26 @@ type StaticActorSnapshot struct {
 	SpawnGroupRef   string `json:"spawn_group_ref,omitempty"`
 }
 
+type GroundItemSnapshot struct {
+	VID        uint32 `json:"vid"`
+	Vnum       uint32 `json:"vnum"`
+	Count      uint16 `json:"count,omitempty"`
+	OwnerName  string `json:"owner_name,omitempty"`
+	GoldAmount uint32 `json:"gold_amount,omitempty"`
+	MapIndex   uint32 `json:"map_index"`
+	X          int32  `json:"x"`
+	Y          int32  `json:"y"`
+	Z          int32  `json:"z"`
+}
+
 type MapOccupancySnapshot struct {
 	MapIndex         uint32                       `json:"map_index"`
 	CharacterCount   int                          `json:"character_count"`
 	Characters       []ConnectedCharacterSnapshot `json:"characters"`
 	StaticActorCount int                          `json:"static_actor_count"`
 	StaticActors     []StaticActorSnapshot        `json:"static_actors"`
+	GroundItemCount  int                          `json:"ground_item_count"`
+	GroundItems      []GroundItemSnapshot         `json:"ground_items"`
 }
 
 type MapOccupancyChange struct {
@@ -548,6 +562,8 @@ func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology Boots
 			Characters:       append([]ConnectedCharacterSnapshot(nil), snapshot.Characters...),
 			StaticActorCount: snapshot.StaticActorCount,
 			StaticActors:     append([]StaticActorSnapshot(nil), snapshot.StaticActors...),
+			GroundItemCount:  snapshot.GroundItemCount,
+			GroundItems:      append([]GroundItemSnapshot(nil), snapshot.GroundItems...),
 		}
 	}
 
@@ -595,9 +611,11 @@ func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology Boots
 	for mapIndex, snapshot := range byMap {
 		sortConnectedCharacterSnapshots(snapshot.Characters)
 		sortStaticActorSnapshots(snapshot.StaticActors)
+		sortGroundItemSnapshots(snapshot.GroundItems)
 		snapshot.MapIndex = mapIndex
 		snapshot.CharacterCount = len(snapshot.Characters)
 		snapshot.StaticActorCount = len(snapshot.StaticActors)
+		snapshot.GroundItemCount = len(snapshot.GroundItems)
 		snapshots = append(snapshots, snapshot)
 	}
 	sortMapOccupancySnapshots(snapshots)
@@ -685,6 +703,12 @@ func sortStaticActorSnapshots(snapshots []StaticActorSnapshot) {
 			return snapshots[i].EntityID < snapshots[j].EntityID
 		}
 		return snapshots[i].Name < snapshots[j].Name
+	})
+}
+
+func sortGroundItemSnapshots(snapshots []GroundItemSnapshot) {
+	sort.Slice(snapshots, func(i int, j int) bool {
+		return snapshots[i].VID < snapshots[j].VID
 	})
 }
 

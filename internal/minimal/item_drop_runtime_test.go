@@ -1169,6 +1169,42 @@ func TestGameRuntimeItemPickupRestoresSelfDroppedWholeStack(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeMapOccupancyIncludesPendingGroundItems(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GroundMapOwner", 0x010301b4, 0x020401b4, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1074, Vnum: 27031, Count: 1, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "ground-map-owner", 0xb4b4b4b4, owner)
+	if err := accounts.Save(accountstore.Account{Login: "ground-map-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed ground map owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected ground map runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "ground-map-owner", 0xb4b4b4b4)
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+
+	maps := runtime.MapOccupancy()
+	if len(maps) != 1 {
+		t.Fatalf("expected one occupied map after ground drop, got %+v", maps)
+	}
+	if maps[0].MapIndex != bootstrapMapIndex || maps[0].GroundItemCount != 1 || len(maps[0].GroundItems) != 1 {
+		t.Fatalf("unexpected ground occupancy summary: %+v", maps[0])
+	}
+	got := maps[0].GroundItems[0]
+	if got.VID != ground.VID || got.Vnum != ground.Vnum || got.OwnerName != owner.Name || got.X != owner.X || got.Y != owner.Y || got.Z != owner.Z {
+		t.Fatalf("unexpected ground occupancy item: got %+v want vid=%d vnum=%d owner=%q pos=(%d,%d,%d)", got, ground.VID, ground.Vnum, owner.Name, owner.X, owner.Y, owner.Z)
+	}
+
+	_ = pickupGroundItem(t, ownerFlow, ground.VID)
+	maps = runtime.MapOccupancy()
+	if len(maps) != 1 || maps[0].GroundItemCount != 0 || len(maps[0].GroundItems) != 0 {
+		t.Fatalf("expected ground occupancy to clear after pickup while character remains connected, got %+v", maps)
+	}
+}
+
 func TestGameRuntimeItemDropBootstrapsPendingGroundItemsForLateVisibleEntrant(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

@@ -160,10 +160,15 @@ Each entry includes:
 - `map_index`
 - `character_count`
 - `characters`
+- `static_actor_count`
+- `static_actors`
+- `ground_item_count`
+- `ground_items`
 
 The `characters` array is sorted by name and each character uses the same effective runtime location fields exposed by `/local/players`, including the current `dead` flag.
 Static actors are surfaced in the owned map snapshots as the current runtime expands beyond player-only visibility.
 Those static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still dead before respawn.
+Temporary pending ground items are surfaced with their visible `vid`, `vnum`, optional `count`, optional `owner_name`, optional `gold_amount`, effective `map_index`, and `x/y/z` position so operator map snapshots show both connected actors and transient ground occupancy.
 
 ### `GET /local/interaction-visibility`
 

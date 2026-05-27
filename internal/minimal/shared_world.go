@@ -992,6 +992,20 @@ func encodeGroundItemAddFrame(ground sharedGroundItem) []byte {
 	return itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: ground.VID, Vnum: ground.Item.Vnum, X: ground.X, Y: ground.Y, Z: ground.Z})
 }
 
+func groundItemSnapshot(ground sharedGroundItem) GroundItemSnapshot {
+	return GroundItemSnapshot{
+		VID:        ground.VID,
+		Vnum:       ground.Item.Vnum,
+		Count:      ground.Item.Count,
+		OwnerName:  ground.OwnerName,
+		GoldAmount: ground.GoldAmount,
+		MapIndex:   ground.MapIndex,
+		X:          ground.X,
+		Y:          ground.Y,
+		Z:          ground.Z,
+	}
+}
+
 func encodeGroundItemOwnershipFrame(ground sharedGroundItem) []byte {
 	return itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: ground.VID, OwnerName: ground.OwnerName})
 }
@@ -1988,7 +2002,31 @@ func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapsh
 	if r == nil || r.entities == nil {
 		return nil
 	}
-	return r.markMapOccupancyStaticActorStateLocked(r.scopesLocked().MapOccupancySnapshots())
+	snapshots := r.markMapOccupancyStaticActorStateLocked(r.scopesLocked().MapOccupancySnapshots())
+	if len(r.groundItemsByVID) == 0 {
+		return snapshots
+	}
+
+	byMap := make(map[uint32]int, len(snapshots)+len(r.groundItemsByVID))
+	for i := range snapshots {
+		byMap[snapshots[i].MapIndex] = i
+	}
+	for _, ground := range r.groundItemsByVID {
+		mapIndex := r.topology.EffectiveMapIndex(loginticket.Character{MapIndex: ground.MapIndex})
+		idx, ok := byMap[mapIndex]
+		if !ok {
+			snapshots = append(snapshots, MapOccupancySnapshot{MapIndex: mapIndex})
+			idx = len(snapshots) - 1
+			byMap[mapIndex] = idx
+		}
+		snapshots[idx].GroundItems = append(snapshots[idx].GroundItems, groundItemSnapshot(ground))
+	}
+	for i := range snapshots {
+		sortGroundItemSnapshots(snapshots[i].GroundItems)
+		snapshots[i].GroundItemCount = len(snapshots[i].GroundItems)
+	}
+	sortMapOccupancySnapshots(snapshots)
+	return snapshots
 }
 
 func (r *sharedWorldRegistry) staticActorDeadLocked(entityID uint64) bool {
@@ -2067,6 +2105,12 @@ func sortStaticActorSnapshots(snapshots []StaticActorSnapshot) {
 			return snapshots[i].EntityID < snapshots[j].EntityID
 		}
 		return snapshots[i].Name < snapshots[j].Name
+	})
+}
+
+func sortGroundItemSnapshots(snapshots []GroundItemSnapshot) {
+	sort.Slice(snapshots, func(i int, j int) bool {
+		return snapshots[i].VID < snapshots[j].VID
 	})
 }
 

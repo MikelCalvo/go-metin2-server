@@ -102,6 +102,8 @@ type CharacterVisibilitySnapshot = worldruntime.CharacterVisibilitySnapshot
 
 type MapOccupancySnapshot = worldruntime.MapOccupancySnapshot
 
+type GroundItemSnapshot = worldruntime.GroundItemSnapshot
+
 type StaticActorSnapshot = worldruntime.StaticActorSnapshot
 
 type InteractionDefinition = interactionstore.Definition
