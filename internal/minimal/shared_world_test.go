@@ -12425,6 +12425,46 @@ func TestNewGameSessionFactoryDropsFirstItemRewardForPracticeMobDeath(t *testing
 	if len(account.Characters[0].Inventory) != 0 {
 		t.Fatalf("expected drop reward not to mutate persisted inventory, got %#v", account.Characters[0].Inventory)
 	}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected drop reward pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode drop reward pickup ground del: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected drop reward pickup ground del: %+v", groundDel)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode drop reward pickup item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(0) || set.Vnum != ground.Vnum || set.Count != 1 {
+		t.Fatalf("unexpected drop reward pickup item set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode drop reward pickup item get: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: ground.Vnum, Count: 1, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected drop reward pickup item get: %+v", get)
+	}
+	account, err = accounts.Load("drop-reward-killer")
+	if err != nil {
+		t.Fatalf("reload drop rewarded account after pickup: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 1 {
+		t.Fatalf("expected one persisted item after drop reward pickup, got %#v", account.Characters[0].Inventory)
+	}
+	picked := account.Characters[0].Inventory[0]
+	if picked.ID == 0 || picked.Vnum != ground.Vnum || picked.Count != 1 || picked.Slot != 0 {
+		t.Fatalf("unexpected persisted inventory after drop reward pickup: %#v", account.Characters[0].Inventory)
+	}
+	if replay := pickupGroundItem(t, flow, ground.VID); len(replay) != 0 {
+		t.Fatalf("expected replayed drop reward pickup to fail closed, got %d frames", len(replay))
+	}
 }
 
 func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobRewardDescriptorHasInvalidDrop(t *testing.T) {

@@ -2739,7 +2739,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 									return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 								}
 								seenVIDs[groundVID] = struct{}{}
-								rewardDrops = append(rewardDrops, rewardDrop{vid: groundVID, item: inventory.ItemInstance{Vnum: vnum, Count: 1}})
+								item := inventory.ItemInstance{ID: uint64(groundVID), Vnum: vnum, Count: 1}
+								rewardDrops = append(rewardDrops, rewardDrop{vid: groundVID, item: item})
 							}
 						}
 						if resolution.DeathReward.Experience != 0 || resolution.DeathReward.Gold != 0 {

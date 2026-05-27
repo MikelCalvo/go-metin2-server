@@ -30,6 +30,7 @@ Narrow EXP, gold, and item-drop runtime descriptors are now also owned for boots
 - drop descriptors append one self-only `GROUND_ADD` plus `OWNERSHIP` pair per configured drop vnum after any owned EXP/gold point-change frames
 - mixed scalar+drop descriptors are now owned in one deterministic order: death, clear target, EXP point-change when present, gold point-change when present, then ground-add/ownership pairs in descriptor order
 - the first drop rewards are runtime/world-owned ground presence at the killer's current position; they do not mutate character inventory or account persistence by themselves
+- the killer can pick up a reward drop through the existing bootstrap ground-pickup path; pickup removes the ground item, emits `GROUND_DEL`, inventory `SET`/`UPDATE` frames as needed, emits `ITEM_GET`, persists the item in the selected character inventory, and rejects replayed pickup attempts fail-closed
 
 Unknown combat kinds fail closed and produce no reward result.
 
@@ -45,7 +46,7 @@ This slice does **not** yet freeze:
 - level progression from earned EXP
 - default non-zero reward descriptors for authored `training_dummy` / `practice_mob` content
 - level progression from mixed EXP/gold rewards
-- item-drop timeout, loot ownership handoff, or pickup reward rules beyond the immediate self-visible `GROUND_ADD` + `OWNERSHIP` pairs
+- item-drop timeout, loot ownership handoff beyond the bootstrap owner pickup path
 - party reward distribution
 - quest credit or kill counters
 - corpse interaction
@@ -65,7 +66,8 @@ For the current bootstrap runtime:
 - the player runtime has a narrow EXP/gold death-reward application helper; it mutates live session EXP/gold only, rejects drop-bearing descriptors, rejects overflow, and does not persist the account snapshot or emit any reward packet by itself
 - the integrated game runtime owns the current persistence + packet edge for EXP/gold descriptors: save updated account points/currency, refresh the selected-player persisted snapshot, and append self-only `PLAYER_POINT_CHANGE` frames after the death/target-clear frames
 - if EXP/gold reward persistence fails after an accepted killing edge, the runtime rolls live points/currency back to the previous selected-character snapshot, refreshes shared-world registration, preserves the already-owned death/target-clear frames, and omits reward `PLAYER_POINT_CHANGE` frames plus any later drop frames from that descriptor
-- the integrated game runtime also owns item-drop descriptor edges: each configured drop vnum emits a deterministic ground item at the killer's current location plus an `OWNERSHIP` frame for the killer, registers that ground item in shared-world runtime state, and leaves inventory/account persistence unchanged
+- the integrated game runtime also owns item-drop descriptor edges: each configured drop vnum emits a deterministic ground item at the killer's current location plus an `OWNERSHIP` frame for the killer, registers that ground item in shared-world runtime state, and leaves inventory/account persistence unchanged until an explicit pickup request
+- reward-drop registrations carry a non-zero runtime item ID derived from the ground VID so the existing ground-pickup inventory helper can accept and persist the pickup without special reward-only handling
 - mixed EXP/gold/drop descriptors are applied as one reward bundle after the accepted death edge; invalid drop entries or scalar persistence failure preserve the accepted death edge while omitting reward mutation/frames
 - unsupported combat kinds return `ok = false`
 - reward/default data remains runtime/configuration owned; it is not character persistence by itself
@@ -76,6 +78,6 @@ After this slice, the repository can truthfully say:
 - non-player death has a dedicated reward seam
 - the default `training_dummy` / `practice_mob` reward contract is explicitly rewardless
 - EXP and gold descriptors can now be applied on the killing hit, persisted to the selected character, and reported with self-only `PLAYER_POINT_CHANGE` frames
-- drop descriptors can now create one self-visible ground item reward per configured drop vnum without mutating character inventory/account persistence
+- drop descriptors can now create one self-visible ground item reward per configured drop vnum without immediate inventory/account mutation, and the killer can later pick up that ground reward through the existing persisted ground-pickup path
 - mixed scalar+drop descriptors now preserve deterministic reward ordering while keeping invalid-drop or save-failure fallbacks on the already-accepted death edge
 - later reward slices have a small descriptor helper, attack-result handoff field, scalar application seam, and protocol note to extend without changing the death/respawn choreography
