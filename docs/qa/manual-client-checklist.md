@@ -465,6 +465,28 @@ Important note:
 - do **not** treat the absence of account-style persistence for dummy HP as a regression in this slice
 - reconnect/transfer/reset behavior for dummy HP should be recorded if observed, but it is still a later contract than this repeated-hit smoke step
 
+### 5.11 Practice-mob reward smoke
+
+Run this only when the target build has authored QA `spawn_groups` practice-mob content loaded with a non-zero bootstrap death-reward descriptor.
+
+- [ ] Approach and select the visible practice mob
+- [ ] Land accepted normal attacks until the mob reaches the owned zero-HP death edge
+- [ ] Confirm the killing hit still shows the death + target-clear choreography before any reward feedback
+- [ ] If the QA mob grants EXP, confirm one self-only `PLAYER_POINT_CHANGE(POINT_EXP)` arrives after death/clear and that reconnect keeps the updated EXP value
+- [ ] If the QA mob grants gold, confirm one self-only `PLAYER_POINT_CHANGE(POINT_GOLD)` arrives after death/clear and that reconnect keeps the updated gold value
+- [ ] If the QA mob drops items, confirm one self-visible `GROUND_ADD` + `OWNERSHIP` pair appears per configured drop, at the killer's current position
+- [ ] Pick up one reward drop and confirm the normal bootstrap pickup path removes the ground item, adds it to carried inventory, persists it, and rejects a replayed pickup
+
+Expected result:
+- reward frames are ordered after `DEAD` and `TARGET(0, 0)`
+- scalar EXP/gold rewards persist to the selected character before their point-change frame is emitted
+- item drops are runtime ground items first; they do not mutate inventory until an explicit pickup succeeds
+- invalid or unsupported reward descriptors preserve the accepted death/clear edge while omitting reward mutation and reward frames
+
+Important note:
+- default `training_dummy` / `practice_mob` content remains rewardless unless the QA setup deliberately overrides or authors a non-zero descriptor
+- level progression, party distribution, loot ownership expiry, quest credit, and corpse gameplay are still out of scope for this bootstrap smoke
+
 ---
 
 ## 6. Two-client shared-world checks

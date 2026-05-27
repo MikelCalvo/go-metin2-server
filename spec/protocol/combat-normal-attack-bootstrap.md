@@ -24,6 +24,9 @@ The first owned death / respawn follow-up now lives in:
 The first owned owner-side zero-HP retaliation follow-up now lives in:
 - `player-death-bootstrap.md`
 
+The first deliberately narrow non-player reward seam now lives in:
+- `non-player-reward-bootstrap.md`
+
 ## Scope
 
 This contract currently applies only to:
@@ -39,7 +42,8 @@ This contract does **not** yet claim:
 - richer attack-result packets, hit effects, floating damage numbers, or skill systems
 - combat against player targets
 - aggro, retaliation, patrol, or movement AI
-- loot, EXP, death rewards, corpse state, or quest hooks
+- broader reward systems beyond the narrow `non-player-reward-bootstrap.md` descriptor seam
+- corpse state, quest hooks, party distribution, loot ownership expiry, or level progression
 - final persistence rules for non-player combat state
 
 ## Why freeze attack intent before full combat
@@ -244,7 +248,8 @@ This slice does **not** yet freeze:
 - broader player-death / respawn semantics or broader non-combat gameplay gating for zero-HP owners after that floor is reached beyond the self-only `GC DEAD(owner_vid)` signal frozen in `player-death-bootstrap.md`
 - player-vs-player attack semantics
 - skills, buffs, debuffs, or status effects
-- any loot, rewards, corpse gameplay, aggro movement, or independent mob AI
+- broader reward systems beyond the narrow non-player death descriptor seam
+- corpse gameplay, aggro movement, or independent mob AI
 
 
 ## Success definition
