@@ -10,6 +10,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/player"
@@ -24,6 +25,7 @@ import (
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/session"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -2620,6 +2622,40 @@ func TestNewGameRuntimeUpdateStaticActorRejectsInvalidSeed(t *testing.T) {
 	}
 	if _, ok := runtime.UpdateStaticActor(guard.EntityID, "VillageGuard", 42, 1700, 2800, 0); ok {
 		t.Fatal("expected zero-race static actor update to fail")
+	}
+}
+
+func TestNewGameRuntimeExportsSpawnGroupsInContentBundle(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		nil,
+		staticActorStore,
+		interactionStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.registerStaticActorWithInteractionCombatProfileAndSpawnGroupRef("Practice Wolf", 3, 1200, 2200, 101, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "spawn:wolf:1"); !ok {
+		t.Fatal("expected spawn-backed static actor registration to succeed")
+	}
+
+	bundle, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("unexpected content bundle export error: %v", err)
+	}
+	if len(bundle.StaticActors) != 0 {
+		t.Fatalf("expected spawn-backed actors to be exported as spawn groups, got static actors %+v", bundle.StaticActors)
+	}
+	if len(bundle.SpawnGroups) != 1 {
+		t.Fatalf("expected one exported spawn group, got %+v", bundle.SpawnGroups)
+	}
+	spawnGroup := bundle.SpawnGroups[0]
+	if spawnGroup.Ref != "spawn:wolf:1" || spawnGroup.Name != "Practice Wolf" || spawnGroup.MapIndex != 3 || spawnGroup.X != 1200 || spawnGroup.Y != 2200 || spawnGroup.RaceNum != 101 || spawnGroup.CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob {
+		t.Fatalf("unexpected exported spawn group: %+v", spawnGroup)
 	}
 }
 

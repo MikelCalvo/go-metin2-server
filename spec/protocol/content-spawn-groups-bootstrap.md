@@ -174,6 +174,18 @@ Import should reject malformed spawn groups before mutating live runtime state. 
 
 Runtime static-actor snapshots are also part of this contract because export, persistence rollback, map/visibility introspection, and respawn/rebuild code all round-trip through the same snapshot shape. A materialized spawn-group actor must therefore preserve its authored `spawn_group_ref` and normalized `combat_profile` in the live runtime snapshot, not just in the initial content-bundle record or file-backed store.
 
+## Content bundle operator/runtime boundary
+
+The bootstrap content-bundle surface uses the same top-level `spawn_groups` collection for export and import through the local operator bundle endpoint.
+
+Current runtime rules:
+- spawn-backed live actors export as `spawn_groups`, not as ordinary `static_actors`
+- importing a bundle with `spawn_groups` materializes one runtime static actor per group with the authored `spawn_group_ref`
+- the imported actor uses the authored placement, `race_num`, and normalized `combat_profile`
+- the operator endpoint remains loopback-only bootstrap tooling; it is not a gameplay packet or public API
+
+This keeps authored attackable spawn content distinct from hand-authored visible/static actor content while still letting local QA export and re-import the current bootstrap content bundle deterministically.
+
 ## Relationship to existing static actors
 
 This document does **not** retroactively make every static actor attackable.
