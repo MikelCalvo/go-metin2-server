@@ -12724,7 +12724,16 @@ func TestSharedWorldRegistrySelectedStaticActorAttackReturnsRewardlessDeathDescr
 	}
 }
 
+func TestSharedWorldRegistryFirstTrainingDummySpawnHitClearsOtherPreselectedTargetOwnership(t *testing.T) {
+	assertFirstSpawnHitClearsOtherPreselectedTargetOwnership(t, worldruntime.StaticActorCombatKindTrainingDummy)
+}
+
 func TestSharedWorldRegistryFirstPracticeMobHitClearsOtherPreselectedTargetOwnership(t *testing.T) {
+	assertFirstSpawnHitClearsOtherPreselectedTargetOwnership(t, worldruntime.StaticActorCombatProfilePracticeMob)
+}
+
+func assertFirstSpawnHitClearsOtherPreselectedTargetOwnership(t *testing.T, combatKind string) {
+	t.Helper()
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
 	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -12739,9 +12748,9 @@ func TestSharedWorldRegistryFirstPracticeMobHitClearsOtherPreselectedTargetOwner
 	if thirdPartyID == 0 {
 		t.Fatal("expected third-party join to return a live shared-world entity ID")
 	}
-	actor, ok := registry.registerStaticActor(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.mob_alpha")
+	actor, ok := registry.registerStaticActor(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", combatKind, "practice.mob_alpha")
 	if !ok {
-		t.Fatal("expected visible spawn-group training-dummy registration to succeed")
+		t.Fatalf("expected visible spawn-group combatant registration with profile %q to succeed", combatKind)
 	}
 	ownerTarget := registry.AttemptStaticActorCombatTarget(ownerID, uint32(actor.EntityID))
 	if !ownerTarget.Accepted {

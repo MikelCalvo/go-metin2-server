@@ -633,7 +633,7 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjec
 	if r == nil || subjectID == 0 || actor.Entity.ID == 0 || targetVID == 0 {
 		return false
 	}
-	if actor.SpawnGroupRef == "" || actor.CombatKind != worldruntime.StaticActorCombatKindTrainingDummy {
+	if actor.SpawnGroupRef == "" || !staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
 		return false
 	}
 	engagedBy, ok := r.staticActorCombatEngagedBy[actor.Entity.ID]
@@ -651,6 +651,15 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjec
 		return false
 	}
 	return true
+}
+
+func staticActorSpawnGroupAggroLiteCombatKind(combatKind string) bool {
+	switch combatKind {
+	case worldruntime.StaticActorCombatKindTrainingDummy, worldruntime.StaticActorCombatProfilePracticeMob:
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *sharedWorldRegistry) SetSessionCombatTarget(entityID uint64, targetVID uint32) bool {
@@ -1633,7 +1642,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 	}
 	r.staticActorCombatHP[actor.Entity.ID] = nextHP
 	r.setStaticActorCombatEngagementLocked(actor.Entity.ID, subjectID)
-	if actor.SpawnGroupRef != "" && actor.CombatKind == worldruntime.StaticActorCombatKindTrainingDummy {
+	if actor.SpawnGroupRef != "" && staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
 		r.clearOtherSessionCombatTargetsLocked(subjectID, activeTargetVID)
 	}
 	attempt.Accepted = true
