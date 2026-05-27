@@ -1457,6 +1457,27 @@ func (r *sharedWorldRegistry) VisibleStaticActorFrames(subject loginticket.Chara
 	return frames
 }
 
+func (r *sharedWorldRegistry) VisibleGroundItemFrames(subject loginticket.Character) [][]byte {
+	if r == nil || len(r.groundItemsByVID) == 0 {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	visible := make([]sharedGroundItem, 0)
+	for _, ground := range r.groundItemsByVID {
+		if r.groundItemVisibleToCharacterLocked(ground, subject) {
+			visible = append(visible, ground)
+		}
+	}
+	sortSharedGroundItemsByVID(visible)
+	frames := make([][]byte, 0, len(visible)*2)
+	for _, ground := range visible {
+		frames = append(frames, encodeGroundItemVisibleFrames(ground)...)
+	}
+	return frames
+}
+
 func (r *sharedWorldRegistry) AttemptStaticActorInteraction(subjectID uint64, targetVID uint32) StaticActorInteractionAttempt {
 	attempt := StaticActorInteractionAttempt{TargetVID: targetVID}
 	if r == nil || r.entities == nil {

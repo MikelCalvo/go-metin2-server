@@ -1973,6 +1973,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 					}
 					trailingFrames = append(trailingFrames, sharedWorld.VisibleStaticActorFrames(selected)...)
+					trailingFrames = append(trailingFrames, sharedWorld.VisibleGroundItemFrames(selected)...)
 					return worldentry.EnterGameResult{BootstrapFrames: bootstrapFrames, TrailingFrames: trailingFrames}
 				},
 			},

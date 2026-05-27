@@ -1086,6 +1086,50 @@ func TestGameRuntimeItemPickupRestoresSelfDroppedWholeStack(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemDropBootstrapsPendingGroundItemsForLateVisibleEntrant(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GroundLateOwner", 0x01030194, 0x02040194, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1034, Vnum: 27031, Count: 1, Slot: 6}}
+	watcher := peerVisibilityCharacter("GroundLateWatcher", 0x01030195, 0x02040195, 1450, 2450, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "ground-late-owner", 0x94949494, owner)
+	issuePeerTicket(t, ticketStore, "ground-late-watcher", 0x95959595, watcher)
+	for _, account := range []accountstore.Account{
+		{Login: "ground-late-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+		{Login: "ground-late-watcher", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("seed %s account: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected late-ground runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "ground-late-owner", 0x94949494)
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(6))
+
+	_, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "ground-late-watcher", 0x95959595)
+	if len(watcherEnter) != 10 {
+		t.Fatalf("expected self bootstrap, owner peer burst, and pending ground add/ownership for late entrant, got %d frames", len(watcherEnter))
+	}
+	lateGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, watcherEnter[8]))
+	if err != nil {
+		t.Fatalf("decode late entrant ground add: %v", err)
+	}
+	if lateGround != ground {
+		t.Fatalf("unexpected late entrant ground add: got %+v want %+v", lateGround, ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, watcherEnter[9]))
+	if err != nil {
+		t.Fatalf("decode late entrant ground ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: owner.Name}) {
+		t.Fatalf("unexpected late entrant ground ownership: got %+v want vid %d owner %q", ownership, ground.VID, owner.Name)
+	}
+}
+
 func TestGameRuntimeRadiusAOIItemDropPickupRebuildsGroundVisibilityOnMove(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
