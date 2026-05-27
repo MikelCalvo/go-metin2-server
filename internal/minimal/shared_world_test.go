@@ -19604,6 +19604,100 @@ func TestGameSessionFlowPracticeMobGoldDropFailsClosedAfterImmediateRetaliationR
 	}
 }
 
+func TestGameSessionFlowPracticeMobItemDropFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ItemDropOwnerImmediate", 0x01030195, 0x02040195, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27002, Count: 3, Slot: 5}}
+	issuePeerTicket(t, store, "item-drop-owner-immediate", 0x95959595, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-drop-owner-immediate", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed immediate zero-HP item-drop owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected item-drop/practice-mob runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000566, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for immediate zero-HP item-drop denial: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before immediate zero-HP item-drop denial, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-drop-owner-immediate", 0x95959595)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected item-drop/practice-mob owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before immediate zero-HP item-drop denial: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP item-drop denial, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before immediate zero-HP item-drop denial: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP item-drop denial, got %d", len(attackOut))
+	}
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no delayed retaliation frames after immediate zero-HP item-drop denial setup, got %d", len(queued))
+	}
+
+	dropOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 1})))
+	if err != nil {
+		t.Fatalf("unexpected item-drop error after immediate retaliation reached owner HP floor: %v", err)
+	}
+	if len(dropOut) != 0 {
+		t.Fatalf("expected item drop to fail closed once immediate retaliation reached owner HP floor, got %d frames", len(dropOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected immediate zero-HP item-drop denial not to queue frames, got %d", len(queued))
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after immediate zero-HP item-drop denial")
+	}
+	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != 1001 || inventorySnapshot.Inventory[0].Vnum != 27002 || inventorySnapshot.Inventory[0].Count != 3 || inventorySnapshot.Inventory[0].Slot != 5 {
+		t.Fatalf("expected immediate zero-HP item-drop denial to keep runtime inventory unchanged, got %#v", inventorySnapshot.Inventory)
+	}
+	persisted, err := accounts.Load("item-drop-owner-immediate")
+	if err != nil {
+		t.Fatalf("load persisted immediate zero-HP item-drop owner account: %v", err)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected immediate zero-HP item-drop owner points to stay at pre-retaliation value %d, got %d", owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected immediate zero-HP item-drop denial to keep persisted inventory unchanged, got %#v", persisted.Characters[0].Inventory)
+	}
+}
+
 func TestGameSessionFlowPracticeMobItemUsePacketFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
