@@ -617,6 +617,108 @@ func TestRuntimeMoveInventoryItemCountSplitsPartialStackIntoEmptySlot(t *testing
 	}
 }
 
+func TestRuntimeUseItemOnItemMergesCompatibleStacksWithTemplateGuards(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 31, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 32, Vnum: 27001, Count: 198, Slot: 6},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Template Potion", Stackable: true, MaxCount: 200}
+
+	result, ok := runtime.UseItemOnItem(5, 6, template)
+	if !ok {
+		t.Fatal("expected use-to-item stack consolidation to succeed")
+	}
+	if !result.Changed || !result.FromOccupied || !result.ToOccupied || !result.CountOnly {
+		t.Fatalf("expected partial use-to-item consolidation to refresh both stacks, got %+v", result)
+	}
+	if result.FromItem != (inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 1, Slot: 5}) {
+		t.Fatalf("unexpected source remainder after use-to-item: %+v", result.FromItem)
+	}
+	if result.ToItem != (inventory.ItemInstance{ID: 32, Vnum: 27001, Count: 200, Slot: 6}) {
+		t.Fatalf("unexpected target stack after use-to-item: %+v", result.ToItem)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 31, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 32, Vnum: 27001, Count: 200, Slot: 6},
+	}) {
+		t.Fatalf("unexpected live inventory after use-to-item: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after use-to-item runtime mutation, got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+}
+
+func TestRuntimeUseItemOnItemRejectsTemplateGuardEdgesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{
+			name:     "non-stackable",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Single Potion", Stackable: false, MaxCount: 1},
+		},
+		{
+			name:     "anti-stack",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Bound Stack", Stackable: true, MaxCount: 200, AntiStack: true},
+		},
+		{
+			name:     "over-uint8 max count",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Wide Stack", Stackable: true, MaxCount: 300},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := inventoryRuntimeCharacterFixture()
+			persisted.Inventory = []inventory.ItemInstance{
+				{ID: 41, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 42, Vnum: 27001, Count: 3, Slot: 6},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			if _, ok := runtime.UseItemOnItem(5, 6, tc.template); ok {
+				t.Fatalf("expected %s template use-to-item to fail closed", tc.name)
+			}
+			if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+				t.Fatalf("expected %s rejection to leave live inventory unchanged, got %#v", tc.name, runtime.LiveInventory())
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+				t.Fatalf("expected %s rejection to leave persisted inventory unchanged, got %#v", tc.name, runtime.PersistedSnapshot().Inventory)
+			}
+		})
+	}
+}
+
+func TestRuntimeUseItemOnItemRejectsLockedSourceOrTargetWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name:      "locked source",
+			inventory: []inventory.ItemInstance{{ID: 51, Vnum: 27001, Count: 3, Slot: 5, Locked: true}, {ID: 52, Vnum: 27001, Count: 3, Slot: 6}},
+		},
+		{
+			name:      "locked target",
+			inventory: []inventory.ItemInstance{{ID: 51, Vnum: 27001, Count: 3, Slot: 5}, {ID: 52, Vnum: 27001, Count: 3, Slot: 6, Locked: true}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := inventoryRuntimeCharacterFixture()
+			persisted.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			template := itemcatalog.Template{Vnum: 27001, Name: "Template Potion", Stackable: true, MaxCount: 200}
+			if _, ok := runtime.UseItemOnItem(5, 6, template); ok {
+				t.Fatalf("expected %s use-to-item to fail closed", tc.name)
+			}
+			if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+				t.Fatalf("expected %s rejection to leave live inventory unchanged, got %#v", tc.name, runtime.LiveInventory())
+			}
+		})
+	}
+}
+
 func TestRuntimeMoveInventoryItemCountMergesPartialStackIntoCompatibleDestination(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{
