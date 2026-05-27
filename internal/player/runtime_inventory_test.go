@@ -154,6 +154,124 @@ func TestPickupGroundItemFailsWhenCompatibleStacksCannotFitRemainderAndNoFreshSl
 	}
 }
 
+func TestUseItemOnItemConsolidatesFullSourceAndKeepsTargetQuickslotStable(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
+			{ID: 42, Vnum: 27001, Count: 3, Slot: 6},
+		},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: 1, Slot: 5},
+			{Position: 3, Type: 1, Slot: 6},
+			{Position: 4, Type: 2, Slot: 5},
+		},
+	}, SessionLink{})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	result, ok := runtime.UseItemOnItem(5, 6, template)
+	if !ok {
+		t.Fatal("expected compatible ITEM_USE_TO_ITEM consolidation to succeed")
+	}
+	if !result.Changed || result.From != 5 || result.To != 6 || result.FromOccupied || !result.ToOccupied || result.ToItem.ID != 42 || result.ToItem.Count != 5 {
+		t.Fatalf("unexpected full consolidation result: %+v", result)
+	}
+	deletedQuickslots, ok := runtime.SyncItemQuickslotsForItemRemoval(5)
+	if !ok {
+		t.Fatal("expected removed source item quickslot sync to succeed")
+	}
+	if !reflect.DeepEqual(deletedQuickslots, []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}) {
+		t.Fatalf("unexpected deleted quickslots after source removal: %#v", deletedQuickslots)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{{ID: 42, Vnum: 27001, Count: 5, Slot: 6}}) {
+		t.Fatalf("unexpected live inventory after full consolidation: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.LiveQuickslots(), []loginticket.Quickslot{{Position: 3, Type: 1, Slot: 6}, {Position: 4, Type: 2, Slot: 5}}) {
+		t.Fatalf("unexpected live quickslots after full consolidation: %#v", runtime.LiveQuickslots())
+	}
+}
+
+func TestUseItemOnItemPartiallyConsolidatesWithoutRemovingSourceQuickslot(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 41, Vnum: 27001, Count: 5, Slot: 5},
+			{ID: 42, Vnum: 27001, Count: 198, Slot: 6},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}},
+	}, SessionLink{})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	result, ok := runtime.UseItemOnItem(5, 6, template)
+	if !ok {
+		t.Fatal("expected partial ITEM_USE_TO_ITEM consolidation to succeed")
+	}
+	if !result.Changed || result.From != 5 || result.To != 6 || !result.FromOccupied || !result.ToOccupied || !result.CountOnly || result.FromItem.Count != 3 || result.ToItem.Count != 200 {
+		t.Fatalf("unexpected partial consolidation result: %+v", result)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 41, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 42, Vnum: 27001, Count: 200, Slot: 6},
+	}) {
+		t.Fatalf("unexpected live inventory after partial consolidation: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.LiveQuickslots(), []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}) {
+		t.Fatalf("partial consolidation should not remove source quickslot, got %#v", runtime.LiveQuickslots())
+	}
+}
+
+func TestUseItemOnItemRejectsIncompatibleAndGuardedTargetsWithoutMutation(t *testing.T) {
+	base := loginticket.Character{Inventory: []inventory.ItemInstance{
+		{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 42, Vnum: 27001, Count: 3, Slot: 6},
+	}}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	cases := []struct {
+		name      string
+		character loginticket.Character
+		template  itemcatalog.Template
+	}{
+		{name: "same slot", character: base},
+		{name: "empty source", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 42, Vnum: 27001, Count: 3, Slot: 6}}}},
+		{name: "empty target", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}}}},
+		{name: "different vnum target", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27002, Count: 3, Slot: 6}}}},
+		{name: "locked source", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5, Locked: true}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}}},
+		{name: "locked target", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6, Locked: true}}}},
+		{name: "non stackable template", character: base, template: itemcatalog.Template{Vnum: 27001, Name: "Single Potion", Stackable: false, MaxCount: 1}},
+		{name: "anti stack template", character: base, template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiStack: true}},
+		{name: "over max source", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 201, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}}},
+		{name: "over max target", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 201, Slot: 6}}}},
+		{name: "already full target", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 200, Slot: 6}}}},
+		{name: "template max above refresh count range", character: base, template: itemcatalog.Template{Vnum: 27001, Name: "Huge Stack Potion", Stackable: true, MaxCount: 256}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			character := cloneCharacter(tc.character)
+			runtime := NewRuntime(character, SessionLink{})
+			beforeInventory := runtime.LiveInventory()
+			activeTemplate := tc.template
+			if activeTemplate.Vnum == 0 {
+				activeTemplate = template
+			}
+			source := inventory.SlotIndex(5)
+			if tc.name == "same slot" {
+				source = 6
+			}
+			if _, ok := runtime.UseItemOnItem(source, 6, activeTemplate); ok {
+				t.Fatalf("expected %s ITEM_USE_TO_ITEM consolidation to fail", tc.name)
+			}
+			if !reflect.DeepEqual(runtime.LiveInventory(), beforeInventory) {
+				t.Fatalf("%s mutated inventory: got %#v want %#v", tc.name, runtime.LiveInventory(), beforeInventory)
+			}
+		})
+	}
+}
+
+func TestUseItemOnItemRejectsNilRuntime(t *testing.T) {
+	var runtime *Runtime
+	if _, ok := runtime.UseItemOnItem(5, 6, itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}); ok {
+		t.Fatal("expected nil runtime ITEM_USE_TO_ITEM consolidation to fail")
+	}
+}
+
 func TestRuntimeKeepsLiveCurrencyAndItemStateSeparateFromPersistedSnapshot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
