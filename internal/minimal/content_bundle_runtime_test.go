@@ -163,6 +163,23 @@ func TestGameRuntimeExportContentBundleIncludesStaticActorCombatProfile(t *testi
 	}
 }
 
+func TestGameRuntimeRegisterStaticActorReturnsCombatProfileSnapshot(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	actor, ok := runtime.RegisterStaticActorWithInteractionAndCombatProfile("TrainingDummy", 42, 1800, 2900, 20350, "", "", string(worldruntime.StaticActorCombatProfileTrainingDummy))
+	if !ok {
+		t.Fatal("expected combat-profile static actor registration to succeed")
+	}
+	if actor.CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
+		t.Fatalf("expected registration snapshot to preserve combat profile, got %#v", actor)
+	}
+}
+
 func TestGameRuntimeImportContentBundlePreservesCombatProfileActors(t *testing.T) {
 	staticPath := t.TempDir() + "/static-actors.json"
 	staticActorStore := staticstore.NewFileStore(staticPath)
@@ -227,6 +244,9 @@ func TestGameRuntimeImportContentBundleMaterializesSpawnGroupsAsAttackablePracti
 	actors := runtime.StaticActors()
 	if len(actors) != 1 || actors[0].Name != "PracticeMobAlpha" || actors[0].SpawnGroupRef != "practice.mob_alpha" || actors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
 		t.Fatalf("unexpected runtime practice-mob actors after import: %#v", actors)
+	}
+	if actor, ok := runtime.sharedWorld.entities.StaticActor(actors[0].EntityID); !ok || actor.SpawnGroupRef != "practice.mob_alpha" || actor.CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
+		t.Fatalf("expected runtime entity to preserve spawn-group combat metadata, got actor=%+v ok=%v", actor, ok)
 	}
 	persistedActors, err := staticActorStore.Load()
 	if err != nil {

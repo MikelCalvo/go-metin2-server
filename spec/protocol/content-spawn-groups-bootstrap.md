@@ -172,6 +172,8 @@ The first content contract should fail closed when:
 
 Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate `ref` values, and preserves the prior authored/runtime snapshot when validation fails.
 
+Runtime static-actor snapshots are also part of this contract because export, persistence rollback, map/visibility introspection, and respawn/rebuild code all round-trip through the same snapshot shape. A materialized spawn-group actor must therefore preserve its authored `spawn_group_ref` and normalized `combat_profile` in the live runtime snapshot, not just in the initial content-bundle record or file-backed store.
+
 ## Relationship to existing static actors
 
 This document does **not** retroactively make every static actor attackable.

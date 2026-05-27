@@ -1965,8 +1965,10 @@ func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldrun
 		X:               actor.Position.X,
 		Y:               actor.Position.Y,
 		RaceNum:         actor.RaceNum,
+		CombatProfile:   actor.CombatProfile,
 		InteractionKind: actor.InteractionKind,
 		InteractionRef:  actor.InteractionRef,
+		SpawnGroupRef:   actor.SpawnGroupRef,
 	}
 }
 
