@@ -344,12 +344,23 @@ func (r *Runtime) SyncItemQuickslotsForItemRemoval(slot inventory.SlotIndex) ([]
 }
 
 func (r *Runtime) DropInventoryItem(slot inventory.SlotIndex, count uint16) (inventory.MoveResult, bool) {
+	return r.dropInventoryItem(slot, count, itemcatalog.Template{})
+}
+
+func (r *Runtime) DropInventoryItemWithTemplate(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (inventory.MoveResult, bool) {
+	return r.dropInventoryItem(slot, count, template)
+}
+
+func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (inventory.MoveResult, bool) {
 	if r == nil || count == 0 {
 		return inventory.MoveResult{}, false
 	}
 	result := inventory.MoveResult{From: slot}
 	index := findInventorySlot(r.liveInventory, slot)
 	if index < 0 || r.liveInventory[index].Locked {
+		return inventory.MoveResult{}, false
+	}
+	if template.AntiDrop || template.AntiGive {
 		return inventory.MoveResult{}, false
 	}
 	item := r.liveInventory[index]

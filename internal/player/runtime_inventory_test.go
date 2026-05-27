@@ -68,6 +68,37 @@ func TestDropInventoryItemRejectsLockedOrOversizedDrop(t *testing.T) {
 	}
 }
 
+func TestDropInventoryItemWithTemplateRejectsAntiDropAndAntiGiveWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{
+			name:     "anti drop",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiDrop: true},
+		},
+		{
+			name:     "anti give",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Soulbound Potion", Stackable: true, MaxCount: 200, AntiGive: true},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(loginticket.Character{
+				Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}},
+			}, SessionLink{})
+			before := runtime.LiveInventory()
+
+			if _, ok := runtime.DropInventoryItemWithTemplate(5, 1, tc.template); ok {
+				t.Fatalf("expected %s item drop to be rejected", tc.name)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s drop mutated inventory: got %#v want %#v", tc.name, got, before)
+			}
+		})
+	}
+}
+
 func TestPickupGroundItemFillsCompatibleStacksBeforePlacingRemainder(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{

@@ -1568,7 +1568,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
-			if template, ok := itemDropTemplateForSlot(runtime.itemTemplates, previousSelected, slot); ok && (template.AntiDrop || template.AntiGive) {
+			dropTemplate, hasDropTemplate := itemDropTemplateForSlot(runtime.itemTemplates, previousSelected, slot)
+			if hasDropTemplate && (dropTemplate.AntiDrop || dropTemplate.AntiGive) {
 				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemDropRejectedInfoMessage})}, true
 			}
 			for _, item := range selectedPlayer.LiveInventory() {
@@ -1579,7 +1580,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					break
 				}
 			}
-			result, ok := selectedPlayer.DropInventoryItem(slot, count)
+			var result inventory.MoveResult
+			if hasDropTemplate {
+				result, ok = selectedPlayer.DropInventoryItemWithTemplate(slot, count, dropTemplate)
+			} else {
+				result, ok = selectedPlayer.DropInventoryItem(slot, count)
+			}
 			if !ok || !result.Changed {
 				return nil, false
 			}
