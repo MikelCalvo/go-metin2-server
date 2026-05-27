@@ -390,6 +390,89 @@ func TestGameRuntimeItemUseToItemMergesPartialStackWithUpdateFrames(t *testing.T
 	}
 }
 
+func TestGameRuntimeItemUseToItemRejectsEmptyOrSameSlotWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		login     string
+		loginKey  uint32
+		source    itemproto.Position
+		target    itemproto.Position
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name:      "empty source",
+			login:     "use-to-item-empty-source",
+			loginKey:  0x95959591,
+			source:    itemproto.InventoryPosition(5),
+			target:    itemproto.InventoryPosition(6),
+			inventory: []inventory.ItemInstance{{ID: 1033, Vnum: 27001, Count: 4, Slot: 6}},
+		},
+		{
+			name:      "empty target",
+			login:     "use-to-item-empty-target",
+			loginKey:  0x95959592,
+			source:    itemproto.InventoryPosition(5),
+			target:    itemproto.InventoryPosition(6),
+			inventory: []inventory.ItemInstance{{ID: 1034, Vnum: 27001, Count: 3, Slot: 5}},
+		},
+		{
+			name:      "same source and target",
+			login:     "use-to-item-same-slot",
+			loginKey:  0x95959593,
+			source:    itemproto.InventoryPosition(5),
+			target:    itemproto.InventoryPosition(5),
+			inventory: []inventory.ItemInstance{{ID: 1035, Vnum: 27001, Count: 3, Slot: 5}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseToItemEmpty", 0x01030195, 0x02040195, 1300, 2300, 0, 101, 201)
+			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}, {Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+			issuePeerTicket(t, ticketStore, tc.login, tc.loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed empty use-to-item owner account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+				Vnum:      27001,
+				Name:      "Small Red Potion",
+				Stackable: true,
+				MaxCount:  200,
+				UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+			}})
+
+			runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+			if err != nil {
+				t.Fatalf("unexpected empty use-to-item runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.loginKey)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: tc.source, Target: tc.target})))
+			if err != nil {
+				t.Fatalf("unexpected empty use-to-item error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s use-to-item to emit no frames, got %d", tc.name, len(out))
+			}
+			account, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load empty use-to-item owner account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("expected %s use-to-item inventory to stay unchanged, got %#v", tc.name, account.Characters[0].Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("expected %s use-to-item quickslots to stay unchanged, got %#v", tc.name, account.Characters[0].Quickslots)
+			}
+			if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+				t.Fatalf("expected %s use-to-item to avoid normal use point effect, got %d", tc.name, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemUseToItemRejectsIncompatibleTargetWithoutNormalUseFallback(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

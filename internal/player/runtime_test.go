@@ -376,6 +376,56 @@ func TestRuntimeUseItemOnItemMergesPartialStackWhenTargetHasLimitedRoom(t *testi
 	}
 }
 
+func TestRuntimeUseItemOnItemRejectsEmptySourceOrTargetWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name      string
+		source    inventory.SlotIndex
+		target    inventory.SlotIndex
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name:      "empty source",
+			source:    5,
+			target:    6,
+			inventory: []inventory.ItemInstance{{ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+		},
+		{
+			name:      "empty target",
+			source:    5,
+			target:    6,
+			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+		},
+		{
+			name:      "same source and target",
+			source:    5,
+			target:    5,
+			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "PeerTwo",
+				Points:    [255]int32{1: 700},
+				Inventory: tc.inventory,
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+			if _, ok := runtime.UseItemOnItem(tc.source, tc.target, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")); ok {
+				t.Fatalf("expected use-to-item to reject %s", tc.name)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != 700 {
+				t.Fatalf("expected rejected empty/same-slot use-to-item to leave live state unchanged, got %#v points[1]=%d", got.Inventory, got.Points[1])
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+				t.Fatalf("expected rejected empty/same-slot use-to-item to leave persisted inventory unchanged, got %#v", runtime.PersistedSnapshot().Inventory)
+			}
+		})
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsPointUseTemplateWithoutCompatibleTarget(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,

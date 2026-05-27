@@ -405,7 +405,7 @@ Run this only when the QA character has two compatible carried stacks for the sa
 - [ ] Confirm no normal consumable `PLAYER_POINT_CHANGE` or `CHAT_TYPE_INFO` effect placeholder fires from this drag-to-item path
 - [ ] If the QA setup can temporarily author an otherwise valid stackable template with `max_count > 255`, repeat the drag-to-item request and confirm it fails closed without item refresh frames or inventory mutation because the current owned item refresh packets expose count as one byte
 - [ ] Repeat against an incompatible target stack
-- [ ] Confirm the incompatible target fails closed: no item refresh frames, no point/effect placeholder, and no inventory mutation
+- [ ] Confirm incompatible, empty-source, empty-target, and same-cell requests fail closed: no item refresh frames, no point/effect placeholder, no quickslot changes, and no inventory mutation
 - [ ] Reconnect and confirm the accepted merge persisted while the rejected request did not
 
 Expected result:
