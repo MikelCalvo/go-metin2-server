@@ -909,6 +909,79 @@ func TestGameRuntimeItemUseToItemRejectsMissingOrInvalidTemplateWithoutMutation(
 	}
 }
 
+func TestGameRuntimeItemUseToItemRejectsNonInventoryWindowsBeforeTemplateLookup(t *testing.T) {
+	cases := []struct {
+		name     string
+		login    string
+		loginKey uint32
+		source   itemproto.Position
+		target   itemproto.Position
+	}{
+		{
+			name:     "equipment source",
+			login:    "use-to-item-equipment-source",
+			loginKey: 0xa5a5a5a5,
+			source:   itemproto.Position{WindowType: itemproto.WindowEquipment, Cell: 5},
+			target:   itemproto.InventoryPosition(6),
+		},
+		{
+			name:     "equipment target",
+			login:    "use-to-item-equipment-target",
+			loginKey: 0xa6a6a6a6,
+			source:   itemproto.InventoryPosition(5),
+			target:   itemproto.Position{WindowType: itemproto.WindowEquipment, Cell: 6},
+		},
+		{
+			name:     "safebox source",
+			login:    "use-to-item-safebox-source",
+			loginKey: 0xa7a7a7a7,
+			source:   itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 5},
+			target:   itemproto.InventoryPosition(6),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseToItemWindowGuard", 0x010301a5, 0x020401a5, 1300, 2300, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: 1171, Vnum: 27047, Count: 2, Slot: 5}, {ID: 1172, Vnum: 27047, Count: 3, Slot: 6}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}, {Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+			issuePeerTicket(t, ticketStore, tc.login, tc.loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed window-guard use-to-item owner account: %v", err)
+			}
+			runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, newItemTemplateStore(t, []itemcatalog.Template{{
+				Vnum:      27047,
+				Name:      "Window Guard Potion",
+				Stackable: true,
+				MaxCount:  200,
+			}}))
+			if err != nil {
+				t.Fatalf("unexpected window-guard use-to-item runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.loginKey)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: tc.source, Target: tc.target})))
+			if err != nil {
+				t.Fatalf("unexpected window-guard use-to-item error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s use-to-item to fail closed with no frames, got %d", tc.name, len(out))
+			}
+			account, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load window-guard use-to-item owner account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("expected %s use-to-item inventory to stay unchanged, got %#v", tc.name, account.Characters[0].Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("expected %s use-to-item quickslots to stay unchanged, got %#v", tc.name, account.Characters[0].Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemUseToItemRejectsNonStackableOrAntiTransferTemplatesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
