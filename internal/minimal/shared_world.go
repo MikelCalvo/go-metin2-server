@@ -1049,6 +1049,18 @@ func buildGroundItemVisibilityTransitionFrames(removed []sharedGroundItem, added
 	return frames
 }
 
+func (r *sharedWorldRegistry) GroundItemExists(vid uint32) bool {
+	if r == nil || vid == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	_, ok := r.groundItemsByVID[vid]
+	return ok
+}
+
 func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector loginticket.Character, vid uint32) (inventory.ItemInstance, bool) {
 	if r == nil || collectorID == 0 || vid == 0 {
 		return inventory.ItemInstance{}, false

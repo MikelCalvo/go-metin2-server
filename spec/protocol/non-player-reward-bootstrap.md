@@ -47,6 +47,7 @@ Reward descriptors fail closed when:
 - any `reward_drop_vnums` entry is `0`
 - a runtime-generated ground-item VID for a configured drop would be `0`
 - multiple drops in the same descriptor would collide on the generated ground-item VID
+- a configured drop would reuse an already-live ground-item VID
 
 Malformed reward descriptors must not roll back the already-accepted combat death edge.
 They simply suppress reward mutation and reward frames for that kill.

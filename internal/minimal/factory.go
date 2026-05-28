@@ -2747,6 +2747,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								}
 								seenVIDs[groundVID] = struct{}{}
 								item := inventory.ItemInstance{ID: uint64(groundVID), Vnum: vnum, Count: 1}
+								if sharedWorld != nil && sharedWorld.GroundItemExists(groundVID) {
+									return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
+								}
 								rewardDrops = append(rewardDrops, rewardDrop{vid: groundVID, item: item})
 							}
 						}
