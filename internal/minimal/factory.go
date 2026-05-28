@@ -2096,7 +2096,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						var pointChange *player.PointChangeResult
 						if hasEquipTemplate {
-							result, ok := selectedPlayer.ApplyEquipTemplateEffect(template)
+							result, ok := selectedPlayer.ApplyEquipTemplateEffect(template, equipSlot)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 								refreshLiveCharacterRegistration()
@@ -2134,7 +2134,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						var pointChange *player.PointChangeResult
 						if hasEquipTemplate {
-							result, ok := selectedPlayer.RemoveEquipTemplateEffect(template)
+							result, ok := selectedPlayer.RemoveEquipTemplateEffect(template, equipSlot)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 								refreshLiveCharacterRegistration()
@@ -2407,7 +2407,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						var pointChange *player.PointChangeResult
 						if hasEquipTemplate {
-							result, ok := selectedPlayer.RemoveEquipTemplateEffect(template)
+							result, ok := selectedPlayer.RemoveEquipTemplateEffect(template, equipSlot)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 								refreshLiveCharacterRegistration()
@@ -2441,7 +2441,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 						var pointChange *player.PointChangeResult
 						if hasEquipTemplate {
-							result, ok := selectedPlayer.ApplyEquipTemplateEffect(template)
+							result, ok := selectedPlayer.ApplyEquipTemplateEffect(template, equipSlot)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 								refreshLiveCharacterRegistration()

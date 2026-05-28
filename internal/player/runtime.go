@@ -708,8 +708,8 @@ func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.Sl
 	return item, true
 }
 
-func (r *Runtime) ApplyEquipTemplateEffect(template itemcatalog.Template) (PointChangeResult, bool) {
-	if r == nil || !itemcatalog.ValidTemplate(template) || template.EquipEffect == nil {
+func (r *Runtime) ApplyEquipTemplateEffect(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) (PointChangeResult, bool) {
+	if r == nil || !templateAuthoredForEquipSlot(template, equipSlot) || template.EquipEffect == nil {
 		return PointChangeResult{}, false
 	}
 	effect := *template.EquipEffect
@@ -722,8 +722,8 @@ func (r *Runtime) ApplyEquipTemplateEffect(template itemcatalog.Template) (Point
 	return PointChangeResult{PointType: effect.PointType, PointAmount: effect.PointDelta, PointValue: updatedPointValue}, true
 }
 
-func (r *Runtime) RemoveEquipTemplateEffect(template itemcatalog.Template) (PointChangeResult, bool) {
-	if r == nil || !itemcatalog.ValidTemplate(template) || template.EquipEffect == nil {
+func (r *Runtime) RemoveEquipTemplateEffect(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) (PointChangeResult, bool) {
+	if r == nil || !templateAuthoredForEquipSlot(template, equipSlot) || template.EquipEffect == nil {
 		return PointChangeResult{}, false
 	}
 	effect := *template.EquipEffect
@@ -734,6 +734,14 @@ func (r *Runtime) RemoveEquipTemplateEffect(template itemcatalog.Template) (Poin
 	updatedPointValue := currentPointValue - effect.PointDelta
 	r.livePoints[effect.PointIndex] = updatedPointValue
 	return PointChangeResult{PointType: effect.PointType, PointAmount: -effect.PointDelta, PointValue: updatedPointValue}, true
+}
+
+func templateAuthoredForEquipSlot(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) bool {
+	if !equipSlot.Valid() || !itemcatalog.ValidTemplate(template) {
+		return false
+	}
+	templateSlot, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
+	return ok && templateSlot == equipSlot
 }
 
 func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Template) (ItemUseResult, bool) {

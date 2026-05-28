@@ -813,7 +813,7 @@ func TestRuntimeApplyEquipTemplateEffectAdjustsLivePointsWithoutMutatingPersiste
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	result, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10))
+	result, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10), inventory.EquipmentSlotWeapon)
 	if !ok {
 		t.Fatal("expected equip template effect to succeed")
 	}
@@ -825,6 +825,32 @@ func TestRuntimeApplyEquipTemplateEffectAdjustsLivePointsWithoutMutatingPersiste
 	}
 	if got := runtime.LiveCharacter().Points[1]; got != 710 {
 		t.Fatalf("expected live points[1] to be incremented to 710, got %d", got)
+	}
+}
+
+func TestRuntimeEquipTemplateEffectRejectsAuthoredSlotMismatchWithoutMutatingLivePoints(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10)
+
+	if _, ok := runtime.ApplyEquipTemplateEffect(template, inventory.EquipmentSlotBody); ok {
+		t.Fatal("expected equip effect with mismatched authored slot to fail closed")
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 700 {
+		t.Fatalf("mismatched equip effect mutated live points: got %d want 700", got)
+	}
+	if _, ok := runtime.RemoveEquipTemplateEffect(template, inventory.EquipmentSlotBody); ok {
+		t.Fatal("expected equip effect removal with mismatched authored slot to fail closed")
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 700 {
+		t.Fatalf("mismatched equip effect removal mutated live points: got %d want 700", got)
 	}
 }
 
@@ -865,10 +891,10 @@ func TestRuntimeRemoveEquipTemplateEffectRevertsLivePointsWithoutMutatingPersist
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
-	if _, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10)); !ok {
+	if _, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10), inventory.EquipmentSlotWeapon); !ok {
 		t.Fatal("expected template-backed equip effect application to succeed before removal")
 	}
-	result, ok := runtime.RemoveEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10))
+	result, ok := runtime.RemoveEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10), inventory.EquipmentSlotWeapon)
 	if !ok {
 		t.Fatal("expected template-backed equip effect removal to succeed")
 	}
