@@ -263,6 +263,60 @@ func TestCanonicalizeRejectsDuplicateSpawnGroupRefs(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeKeepsSpawnGroupRewardDescriptor(t *testing.T) {
+	dropVnums := []uint32{27002, 27001}
+	bundle, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
+		Ref:              " practice.reward_mob ",
+		Name:             " Reward Mob ",
+		MapIndex:         42,
+		X:                1775,
+		Y:                2875,
+		RaceNum:          101,
+		CombatProfile:    " training_dummy ",
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  dropVnums,
+	}}})
+	if err != nil {
+		t.Fatalf("canonicalize reward spawn group: %v", err)
+	}
+	want := Bundle{SpawnGroups: []SpawnGroup{{
+		Ref:              "practice.reward_mob",
+		Name:             "Reward Mob",
+		MapIndex:         42,
+		X:                1775,
+		Y:                2875,
+		RaceNum:          101,
+		CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27002, 27001},
+	}}}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected canonical reward spawn group:\n got: %#v\nwant: %#v", bundle, want)
+	}
+	dropVnums[0] = 0
+	if bundle.SpawnGroups[0].RewardDropVnums[0] != 27002 {
+		t.Fatalf("expected reward drop vnums to be cloned, got %#v", bundle.SpawnGroups[0].RewardDropVnums)
+	}
+}
+
+func TestCanonicalizeRejectsInvalidSpawnGroupRewardDescriptor(t *testing.T) {
+	maxPointCarrier := uint64(^uint32(0) >> 1)
+	for name, spawnGroup := range map[string]SpawnGroup{
+		"experience overflow": {Ref: "practice.exp_overflow", Name: "Exp Overflow", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardExperience: maxPointCarrier + 1},
+		"gold overflow":       {Ref: "practice.gold_overflow", Name: "Gold Overflow", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardGold: maxPointCarrier + 1},
+		"zero drop vnum":      {Ref: "practice.zero_drop", Name: "Zero Drop", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardDropVnums: []uint32{27001, 0}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{spawnGroup}})
+			if !errors.Is(err, ErrInvalidBundle) {
+				t.Fatalf("expected ErrInvalidBundle for %s, got %v", name, err)
+			}
+		})
+	}
+}
+
 func TestCanonicalizeAppliesPracticeMobDefaultsToSpawnGroupWithoutCombatProfile(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
 		Ref:      "practice.mob_alpha",
@@ -316,7 +370,7 @@ func TestExampleBootstrapNPCServiceBundleCanonicalizes(t *testing.T) {
 func TestFromSnapshotsSeparatesSpawnGroupsFromStaticActors(t *testing.T) {
 	bundle, err := FromSnapshots(
 		staticstore.Snapshot{StaticActors: []staticstore.StaticActor{
-			{EntityID: 5, Name: "PracticeMobAlpha", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.mob_alpha"},
+			{EntityID: 5, Name: "PracticeMobAlpha", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.mob_alpha", RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001, 27002}},
 			{EntityID: 9, Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
 		}},
 		interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}}},
@@ -326,7 +380,7 @@ func TestFromSnapshotsSeparatesSpawnGroupsFromStaticActors(t *testing.T) {
 	}
 	want := Bundle{
 		StaticActors:           []StaticActor{{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}},
-		SpawnGroups:            []SpawnGroup{{Ref: "practice.mob_alpha", Name: "PracticeMobAlpha", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy}},
+		SpawnGroups:            []SpawnGroup{{Ref: "practice.mob_alpha", Name: "PracticeMobAlpha", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001, 27002}}},
 		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
 	}
 	if !reflect.DeepEqual(bundle, want) {

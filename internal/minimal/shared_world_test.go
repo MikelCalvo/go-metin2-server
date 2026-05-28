@@ -7304,7 +7304,7 @@ func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 		t.Fatalf("new game runtime: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
-	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected occupancy drop reward mob registration to succeed")
 	}
 	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001}}) {
@@ -10942,7 +10942,7 @@ func TestGameRuntimeRegisterStaticActorDoesNotMutateRuntimeWhenSnapshotPersistFa
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 
-	if actor, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300); ok || actor != (StaticActorSnapshot{}) {
+	if actor, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300); ok || actor.EntityID != 0 {
 		t.Fatalf("expected static actor registration to fail closed on snapshot persist error, got actor=%+v ok=%v", actor, ok)
 	}
 	if actors := runtime.StaticActors(); len(actors) != 0 {
@@ -11000,7 +11000,7 @@ func TestGameRuntimeRegisterStaticActorWithInteractionRejectsUnknownInteractionD
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 
-	if actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", 42, 1700, 2800, 20300, "talk", "npc:village_guard"); ok || actor != (StaticActorSnapshot{}) {
+	if actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", 42, 1700, 2800, 20300, "talk", "npc:village_guard"); ok || actor.EntityID != 0 {
 		t.Fatalf("expected static actor interaction registration to fail for missing definition, got actor=%+v ok=%v", actor, ok)
 	}
 	if actors := runtime.StaticActors(); len(actors) != 0 {
@@ -11019,7 +11019,7 @@ func TestGameRuntimeUpdateStaticActorWithInteractionRejectsUnknownInteractionDef
 		t.Fatal("expected base static actor registration to succeed")
 	}
 
-	if updated, ok := runtime.UpdateStaticActorWithInteraction(actor.EntityID, "VillageGuard", 42, 1700, 2800, 20300, "talk", "npc:village_guard"); ok || updated != (StaticActorSnapshot{}) {
+	if updated, ok := runtime.UpdateStaticActorWithInteraction(actor.EntityID, "VillageGuard", 42, 1700, 2800, 20300, "talk", "npc:village_guard"); ok || updated.EntityID != 0 {
 		t.Fatalf("expected static actor interaction update to fail for missing definition, got actor=%+v ok=%v", updated, ok)
 	}
 	actors := runtime.StaticActors()
@@ -11438,7 +11438,7 @@ func TestSharedWorldRegistryUpdateStaticActorReleasesPracticeMobEngagement(t *te
 	}
 	ownerPending.flush()
 	watcherPending.flush()
-	actor, ok := registry.registerStaticActor(0, "PracticeMobAlpha", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.mob_alpha")
+	actor, ok := registry.registerStaticActor(0, "PracticeMobAlpha", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.mob_alpha", worldruntime.StaticActorDeathReward{})
 	if !ok {
 		t.Fatal("expected visible practice-mob registration to succeed")
 	}
@@ -11896,7 +11896,7 @@ func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsInvisibleTarget(
 	if attempt.Failure != StaticActorInteractionFailureTargetNotVisible {
 		t.Fatalf("expected invisible static actor failure %q, got %+v", StaticActorInteractionFailureTargetNotVisible, attempt)
 	}
-	if attempt.Actor != (StaticActorSnapshot{}) {
+	if attempt.Actor.EntityID != 0 {
 		t.Fatalf("expected invisible static actor interaction attempt to keep actor snapshot empty, got %+v", attempt)
 	}
 }
@@ -11965,7 +11965,7 @@ func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsUnknownSubject(t
 	if attempt.Failure != StaticActorInteractionFailureSubjectNotFound {
 		t.Fatalf("expected unknown-subject failure %q, got %+v", StaticActorInteractionFailureSubjectNotFound, attempt)
 	}
-	if attempt.Actor != (StaticActorSnapshot{}) {
+	if attempt.Actor.EntityID != 0 {
 		t.Fatalf("expected unknown-subject interaction attempt to keep actor snapshot empty, got %+v", attempt)
 	}
 }
@@ -11991,7 +11991,7 @@ func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsDeadSubject(t *t
 	if attempt.Failure != StaticActorInteractionFailureSubjectDead {
 		t.Fatalf("expected dead-subject failure %q, got %+v", StaticActorInteractionFailureSubjectDead, attempt)
 	}
-	if attempt.Actor != (StaticActorSnapshot{}) {
+	if attempt.Actor.EntityID != 0 {
 		t.Fatalf("expected dead-subject interaction attempt to keep actor snapshot empty, got %+v", attempt)
 	}
 }
@@ -12146,7 +12146,7 @@ func TestNewGameSessionFactoryAppliesExperienceOnlyPracticeMobDeathReward(t *tes
 		t.Fatalf("new game runtime: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
-	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected experience reward mob registration to succeed")
 	}
 	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 75}) {
@@ -12228,7 +12228,7 @@ func TestNewGameSessionFactoryAppliesGoldOnlyPracticeMobDeathReward(t *testing.T
 		t.Fatalf("new game runtime: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
-	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected reward mob registration to succeed")
 	}
 	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Gold: 75}) {
@@ -12311,7 +12311,7 @@ func TestNewGameSessionFactoryRollsBackGoldOnlyPracticeMobDeathRewardWhenAccount
 		t.Fatalf("new game runtime: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
-	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected reward save-failure mob registration to succeed")
 	}
 	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Gold: 75}) {
@@ -12383,7 +12383,7 @@ func TestNewGameSessionFactoryDropsMultipleItemRewardsForPracticeMobDeath(t *tes
 		t.Fatalf("new game runtime: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
-	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected multi-drop reward mob registration to succeed")
 	}
 	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001, 27002}}) {
@@ -12480,7 +12480,7 @@ func TestNewGameSessionFactoryAppliesMixedScalarAndDropPracticeMobDeathReward(t 
 		t.Fatalf("new game runtime: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
-	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected mixed reward mob registration to succeed")
 	}
 	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001}}) {
@@ -12561,6 +12561,110 @@ func TestNewGameSessionFactoryAppliesMixedScalarAndDropPracticeMobDeathReward(t 
 	}
 }
 
+func TestNewGameSessionFactoryAppliesAuthoredSpawnGroupPracticeMobDeathReward(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("AuthoredRewardKiller", 0x01030117, 0x02040117, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 25
+	killer.Gold = 40
+	issuePeerTicket(t, ticketStore, "authored-reward-killer", 0x17171717, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "authored-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed authored reward killer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticstore.NewFileStore(t.TempDir()+"/static-actors.json"), interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_700, 0)
+	runtime.now = func() time.Time { return currentTime }
+	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:              "practice.authored_reward_mob",
+		Name:             "AuthoredRewardMob",
+		MapIndex:         bootstrapMapIndex,
+		X:                1200,
+		Y:                2200,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001},
+	}}})
+	if err != nil {
+		t.Fatalf("import authored reward spawn group: %v", err)
+	}
+	if len(imported.SpawnGroups) != 1 || imported.SpawnGroups[0].RewardExperience != 75 || imported.SpawnGroups[0].RewardGold != 60 || !reflect.DeepEqual(imported.SpawnGroups[0].RewardDropVnums, []uint32{27001}) {
+		t.Fatalf("expected authored reward descriptor to survive import canonicalization, got %#v", imported.SpawnGroups)
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "authored-reward-killer", 0x17171717)
+	defer closeSessionFlow(t, flow)
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].Name != "AuthoredRewardMob" {
+		t.Fatalf("expected one authored reward actor, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before authored reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected authored reward attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 6 {
+		t.Fatalf("expected authored reward killing hit to return dead, clear target, EXP/gold point changes, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored reward experience point-change: %v", err)
+	}
+	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 75 || experienceChange.Value != 100 {
+		t.Fatalf("unexpected authored reward experience point-change: %+v", experienceChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode authored reward gold point-change: %v", err)
+	}
+	if goldChange.VID != killer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 60 || goldChange.Value != 100 {
+		t.Fatalf("unexpected authored reward gold point-change: %+v", goldChange)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	if err != nil {
+		t.Fatalf("decode authored reward ground add: %v", err)
+	}
+	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
+		t.Fatalf("unexpected authored reward ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	if err != nil {
+		t.Fatalf("decode authored reward ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected authored reward ownership: got %+v want vid %d owner %q", ownership, ground.VID, killer.Name)
+	}
+
+	account, err := accounts.Load("authored-reward-killer")
+	if err != nil {
+		t.Fatalf("load authored rewarded account: %v", err)
+	}
+	if got := account.Characters[0].Points[bootstrapExperiencePointType]; got != 100 {
+		t.Fatalf("expected authored rewarded account experience point 100 after practice mob death, got %d", got)
+	}
+	if got := account.Characters[0].Gold; got != 100 {
+		t.Fatalf("expected authored rewarded account gold 100 after practice mob death, got %d", got)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected authored drop reward not to mutate persisted inventory, got %#v", account.Characters[0].Inventory)
+	}
+}
+
 func TestNewGameSessionFactoryDropsFirstItemRewardForPracticeMobDeath(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
@@ -12584,7 +12688,7 @@ func TestNewGameSessionFactoryDropsFirstItemRewardForPracticeMobDeath(t *testing
 		t.Fatalf("new game runtime: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
-	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected drop reward mob registration to succeed")
 	}
 	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001}}) {
@@ -12713,7 +12817,7 @@ func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobRewardDescrip
 		t.Fatalf("new game runtime: %v", err)
 	}
 	runtime.now = func() time.Time { return currentTime }
-	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected unsupported reward mob registration to succeed")
 	}
 	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 5, DropVnums: []uint32{0}}) {
@@ -12827,7 +12931,7 @@ func assertFirstSpawnHitClearsOtherPreselectedTargetOwnership(t *testing.T, comb
 	if thirdPartyID == 0 {
 		t.Fatal("expected third-party join to return a live shared-world entity ID")
 	}
-	actor, ok := registry.registerStaticActor(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", combatKind, "practice.mob_alpha")
+	actor, ok := registry.registerStaticActor(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", combatKind, "practice.mob_alpha", worldruntime.StaticActorDeathReward{})
 	if !ok {
 		t.Fatalf("expected visible spawn-group combatant registration with profile %q to succeed", combatKind)
 	}
@@ -12874,7 +12978,7 @@ func assertFirstSpawnHitClearsOtherPreselectedTargetOwnership(t *testing.T, comb
 	if thirdPartyAttack.Failure != StaticActorCombatAttackFailureNoActiveTarget {
 		t.Fatalf("expected cleared preselected third-party attack to fail as %q, got %+v", StaticActorCombatAttackFailureNoActiveTarget, thirdPartyAttack)
 	}
-	if thirdPartyAttack.Actor != (StaticActorSnapshot{}) {
+	if thirdPartyAttack.Actor.EntityID != 0 {
 		t.Fatalf("expected cleared preselected third-party attack to keep actor snapshot empty, got %+v", thirdPartyAttack)
 	}
 	thirdPartyRetarget := registry.AttemptStaticActorCombatTarget(thirdPartyID, uint32(actor.EntityID))
@@ -12913,7 +13017,7 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackRejectsWithoutActive
 	if attempt.Failure != StaticActorCombatAttackFailureNoActiveTarget {
 		t.Fatalf("expected no-active-target attack failure %q, got %+v", StaticActorCombatAttackFailureNoActiveTarget, attempt)
 	}
-	if attempt.Actor != (StaticActorSnapshot{}) {
+	if attempt.Actor.EntityID != 0 {
 		t.Fatalf("expected selected attack without active target to keep actor snapshot empty, got %+v", attempt)
 	}
 }
@@ -12946,7 +13050,7 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackRejectsMismatchedReq
 	if attempt.Failure != StaticActorCombatAttackFailureTargetMismatch {
 		t.Fatalf("expected target-mismatch attack failure %q, got %+v", StaticActorCombatAttackFailureTargetMismatch, attempt)
 	}
-	if attempt.Actor != (StaticActorSnapshot{}) {
+	if attempt.Actor.EntityID != 0 {
 		t.Fatalf("expected mismatched selected attack to keep actor snapshot empty, got %+v", attempt)
 	}
 }
@@ -12971,7 +13075,7 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsInvisibleTarget
 	if attempt.Failure != StaticActorCombatTargetFailureTargetNotVisible {
 		t.Fatalf("expected invisible training-dummy failure %q, got %+v", StaticActorCombatTargetFailureTargetNotVisible, attempt)
 	}
-	if attempt.Actor != (StaticActorSnapshot{}) {
+	if attempt.Actor.EntityID != 0 {
 		t.Fatalf("expected invisible training-dummy combat-target attempt to keep actor snapshot empty, got %+v", attempt)
 	}
 }
@@ -13039,7 +13143,7 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsUnknownSubject(
 	if attempt.Failure != StaticActorCombatTargetFailureSubjectNotFound {
 		t.Fatalf("expected unknown-subject failure %q, got %+v", StaticActorCombatTargetFailureSubjectNotFound, attempt)
 	}
-	if attempt.Actor != (StaticActorSnapshot{}) {
+	if attempt.Actor.EntityID != 0 {
 		t.Fatalf("expected unknown-subject combat-target attempt to keep actor snapshot empty, got %+v", attempt)
 	}
 }
@@ -13065,7 +13169,7 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetRejectsDeadSubject(t *
 	if attempt.Failure != StaticActorCombatTargetFailureSubjectDead {
 		t.Fatalf("expected dead-subject combat-target failure %q, got %+v", StaticActorCombatTargetFailureSubjectDead, attempt)
 	}
-	if attempt.Actor != (StaticActorSnapshot{}) {
+	if attempt.Actor.EntityID != 0 {
 		t.Fatalf("expected dead-subject combat-target attempt to keep actor snapshot empty, got %+v", attempt)
 	}
 }
@@ -13098,7 +13202,7 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackRejectsDeadSubject(t
 	if attempt.Failure != StaticActorCombatAttackFailureSubjectDead {
 		t.Fatalf("expected dead-subject selected-attack failure %q, got %+v", StaticActorCombatAttackFailureSubjectDead, attempt)
 	}
-	if attempt.Actor != (StaticActorSnapshot{}) {
+	if attempt.Actor.EntityID != 0 {
 		t.Fatalf("expected dead-subject selected attack attempt to keep actor snapshot empty, got %+v", attempt)
 	}
 }

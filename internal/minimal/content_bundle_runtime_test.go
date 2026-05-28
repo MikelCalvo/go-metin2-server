@@ -221,13 +221,16 @@ func TestGameRuntimeImportContentBundleMaterializesSpawnGroupsAsAttackablePracti
 	}
 
 	wantBundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:           "practice.mob_alpha",
-		Name:          "PracticeMobAlpha",
-		MapIndex:      42,
-		X:             1800,
-		Y:             2900,
-		RaceNum:       101,
-		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		Ref:              "practice.mob_alpha",
+		Name:             "PracticeMobAlpha",
+		MapIndex:         42,
+		X:                1800,
+		Y:                2900,
+		RaceNum:          101,
+		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001},
 	}}}
 	imported, err := runtime.ImportContentBundle(wantBundle)
 	if err != nil {
@@ -242,17 +245,17 @@ func TestGameRuntimeImportContentBundleMaterializesSpawnGroupsAsAttackablePracti
 		t.Fatalf("unexpected re-exported spawn-group bundle:\n got: %#v\nwant: %#v", bundle, wantBundle)
 	}
 	actors := runtime.StaticActors()
-	if len(actors) != 1 || actors[0].Name != "PracticeMobAlpha" || actors[0].SpawnGroupRef != "practice.mob_alpha" || actors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
+	if len(actors) != 1 || actors[0].Name != "PracticeMobAlpha" || actors[0].SpawnGroupRef != "practice.mob_alpha" || actors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) || actors[0].RewardExperience != 75 || actors[0].RewardGold != 60 || !reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001}) {
 		t.Fatalf("unexpected runtime practice-mob actors after import: %#v", actors)
 	}
-	if actor, ok := runtime.sharedWorld.entities.StaticActor(actors[0].EntityID); !ok || actor.SpawnGroupRef != "practice.mob_alpha" || actor.CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
-		t.Fatalf("expected runtime entity to preserve spawn-group combat metadata, got actor=%+v ok=%v", actor, ok)
+	if actor, ok := runtime.sharedWorld.entities.StaticActor(actors[0].EntityID); !ok || actor.SpawnGroupRef != "practice.mob_alpha" || actor.CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) || actor.DeathReward.Experience != 75 || actor.DeathReward.Gold != 60 || !reflect.DeepEqual(actor.DeathReward.DropVnums, []uint32{27001}) {
+		t.Fatalf("expected runtime entity to preserve spawn-group combat/reward metadata, got actor=%+v ok=%v", actor, ok)
 	}
 	persistedActors, err := staticActorStore.Load()
 	if err != nil {
 		t.Fatalf("load persisted spawn-group actors: %v", err)
 	}
-	if len(persistedActors.StaticActors) != 1 || persistedActors.StaticActors[0].SpawnGroupRef != "practice.mob_alpha" || persistedActors.StaticActors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) {
+	if len(persistedActors.StaticActors) != 1 || persistedActors.StaticActors[0].SpawnGroupRef != "practice.mob_alpha" || persistedActors.StaticActors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) || persistedActors.StaticActors[0].RewardExperience != 75 || persistedActors.StaticActors[0].RewardGold != 60 || !reflect.DeepEqual(persistedActors.StaticActors[0].RewardDropVnums, []uint32{27001}) {
 		t.Fatalf("unexpected persisted spawn-group actors after import: %#v", persistedActors)
 	}
 }

@@ -103,7 +103,7 @@ func (d *NonPlayerDirectory) StaticActors() []StaticEntity {
 
 func validStaticEntity(actor StaticEntity) bool {
 	actor = normalizeStaticEntityCombat(actor)
-	if actor.Entity.ID == 0 || actor.Entity.Kind != EntityKindStaticActor || !actor.Position.Valid() || !ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) || !ValidStaticActorCombatProfile(actor.CombatProfile) || !ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) {
+	if actor.Entity.ID == 0 || actor.Entity.Kind != EntityKindStaticActor || !actor.Position.Valid() || !ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) || !ValidStaticActorCombatProfile(actor.CombatProfile) || !ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) || !ValidStaticActorDeathReward(actor.DeathReward) {
 		return false
 	}
 	if actor.SpawnGroupRef != "" {

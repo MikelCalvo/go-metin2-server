@@ -288,5 +288,6 @@ func newStaticEntity(id uint64, actor StaticEntity) StaticEntity {
 		InteractionRef:  actor.InteractionRef,
 		SpawnGroupRef:   actor.SpawnGroupRef,
 		CombatKind:      actor.CombatKind,
+		DeathReward:     actor.DeathReward.Clone(),
 	}
 }

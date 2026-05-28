@@ -52,6 +52,7 @@ type StaticEntity struct {
 	InteractionRef  string
 	SpawnGroupRef   string
 	CombatKind      string
+	DeathReward     StaticActorDeathReward
 }
 
 type StaticActorDeathReward struct {
@@ -70,6 +71,19 @@ func (r StaticActorDeathReward) Clone() StaticActorDeathReward {
 		cloned.DropVnums = append([]uint32(nil), r.DropVnums...)
 	}
 	return cloned
+}
+
+func ValidStaticActorDeathReward(reward StaticActorDeathReward) bool {
+	maxPointCarrier := uint64(^uint32(0) >> 1)
+	if reward.Experience > maxPointCarrier || reward.Gold > maxPointCarrier {
+		return false
+	}
+	for _, vnum := range reward.DropVnums {
+		if vnum == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 type StaticActorCombatProfileDefaults struct {

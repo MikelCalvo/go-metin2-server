@@ -443,6 +443,9 @@ func (r *sharedWorldRegistry) staticActorDeathRewardLocked(actor worldruntime.St
 			return reward.Clone()
 		}
 	}
+	if !actor.DeathReward.Empty() {
+		return actor.DeathReward.Clone()
+	}
 	reward, _ := worldruntime.BootstrapStaticActorDeathReward(actor.CombatKind)
 	return reward
 }
@@ -1306,20 +1309,20 @@ func (r *sharedWorldRegistry) NextStaticActorEntityID() uint64 {
 }
 
 func (r *sharedWorldRegistry) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(0, name, mapIndex, x, y, raceNum, "", "", "", "")
+	return r.registerStaticActor(0, name, mapIndex, x, y, raceNum, "", "", "", "", worldruntime.StaticActorDeathReward{})
 }
 
 func (r *sharedWorldRegistry) RegisterStaticActorWithInteraction(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, "", "")
+	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, "", "", worldruntime.StaticActorDeathReward{})
 }
 
 func (r *sharedWorldRegistry) RegisterStaticActorWithCombatKind(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, combatKind string) (StaticActorSnapshot, bool) {
-	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", combatKind, "")
+	return r.registerStaticActor(entityID, name, mapIndex, x, y, raceNum, "", "", combatKind, "", worldruntime.StaticActorDeathReward{})
 }
 
-func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string) (StaticActorSnapshot, bool) {
+func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string, deathReward worldruntime.StaticActorDeathReward) (StaticActorSnapshot, bool) {
 	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
-	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
+	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) || !worldruntime.ValidStaticActorDeathReward(deathReward) {
 		return StaticActorSnapshot{}, false
 	}
 	if spawnGroupRef != "" && (combatKind == "" || interactionKind != "" || interactionRef != "") {
@@ -1345,6 +1348,7 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 		InteractionRef:  interactionRef,
 		SpawnGroupRef:   spawnGroupRef,
 		CombatKind:      combatKind,
+		DeathReward:     deathReward.Clone(),
 	}
 	if entityID == 0 {
 		registered, ok = r.entities.RegisterStaticActor(candidate)
@@ -1364,7 +1368,11 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 			r.enqueueToEntityLocked(target.Entity.ID, frames)
 		}
 	}
-	return r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, registered)), true
+	stored, ok := r.entities.StaticActor(registered.Entity.ID)
+	if !ok {
+		stored = registered
+	}
+	return r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, stored)), true
 }
 
 func (r *sharedWorldRegistry) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32) (StaticActorSnapshot, bool) {
@@ -1968,16 +1976,19 @@ func connectedCharacterSnapshot(topology worldruntime.BootstrapTopology, charact
 
 func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldruntime.StaticEntity) StaticActorSnapshot {
 	return StaticActorSnapshot{
-		EntityID:        actor.Entity.ID,
-		Name:            actor.Entity.Name,
-		MapIndex:        topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
-		X:               actor.Position.X,
-		Y:               actor.Position.Y,
-		RaceNum:         actor.RaceNum,
-		CombatProfile:   actor.CombatProfile,
-		InteractionKind: actor.InteractionKind,
-		InteractionRef:  actor.InteractionRef,
-		SpawnGroupRef:   actor.SpawnGroupRef,
+		EntityID:         actor.Entity.ID,
+		Name:             actor.Entity.Name,
+		MapIndex:         topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
+		X:                actor.Position.X,
+		Y:                actor.Position.Y,
+		RaceNum:          actor.RaceNum,
+		CombatProfile:    actor.CombatProfile,
+		InteractionKind:  actor.InteractionKind,
+		InteractionRef:   actor.InteractionRef,
+		SpawnGroupRef:    actor.SpawnGroupRef,
+		RewardExperience: actor.DeathReward.Experience,
+		RewardGold:       actor.DeathReward.Gold,
+		RewardDropVnums:  actor.DeathReward.Clone().DropVnums,
 	}
 }
 

@@ -24,13 +24,16 @@ type StaticActor struct {
 }
 
 type SpawnGroup struct {
-	Ref           string `json:"ref"`
-	Name          string `json:"name,omitempty"`
-	MapIndex      uint32 `json:"map_index"`
-	X             int32  `json:"x"`
-	Y             int32  `json:"y"`
-	RaceNum       uint32 `json:"race_num"`
-	CombatProfile string `json:"combat_profile"`
+	Ref              string   `json:"ref"`
+	Name             string   `json:"name,omitempty"`
+	MapIndex         uint32   `json:"map_index"`
+	X                int32    `json:"x"`
+	Y                int32    `json:"y"`
+	RaceNum          uint32   `json:"race_num"`
+	CombatProfile    string   `json:"combat_profile"`
+	RewardExperience uint64   `json:"reward_experience,omitempty"`
+	RewardGold       uint64   `json:"reward_gold,omitempty"`
+	RewardDropVnums  []uint32 `json:"reward_drop_vnums,omitempty"`
 }
 
 type Bundle struct {
@@ -46,13 +49,16 @@ func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionst
 	for _, actor := range staticActors.StaticActors {
 		if actor.SpawnGroupRef != "" {
 			bundle.SpawnGroups = append(bundle.SpawnGroups, SpawnGroup{
-				Ref:           actor.SpawnGroupRef,
-				Name:          actor.Name,
-				MapIndex:      actor.MapIndex,
-				X:             actor.X,
-				Y:             actor.Y,
-				RaceNum:       actor.RaceNum,
-				CombatProfile: actor.CombatProfile,
+				Ref:              actor.SpawnGroupRef,
+				Name:             actor.Name,
+				MapIndex:         actor.MapIndex,
+				X:                actor.X,
+				Y:                actor.Y,
+				RaceNum:          actor.RaceNum,
+				CombatProfile:    actor.CombatProfile,
+				RewardExperience: actor.RewardExperience,
+				RewardGold:       actor.RewardGold,
+				RewardDropVnums:  cloneUint32s(actor.RewardDropVnums),
 			})
 			continue
 		}
@@ -107,7 +113,16 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 					if normalized.SpawnGroups[i].Y == normalized.SpawnGroups[j].Y {
 						if normalized.SpawnGroups[i].RaceNum == normalized.SpawnGroups[j].RaceNum {
 							if normalized.SpawnGroups[i].CombatProfile == normalized.SpawnGroups[j].CombatProfile {
-								return normalized.SpawnGroups[i].Name < normalized.SpawnGroups[j].Name
+								if normalized.SpawnGroups[i].RewardExperience == normalized.SpawnGroups[j].RewardExperience {
+									if normalized.SpawnGroups[i].RewardGold == normalized.SpawnGroups[j].RewardGold {
+										if compareUint32s(normalized.SpawnGroups[i].RewardDropVnums, normalized.SpawnGroups[j].RewardDropVnums) == 0 {
+											return normalized.SpawnGroups[i].Name < normalized.SpawnGroups[j].Name
+										}
+										return compareUint32s(normalized.SpawnGroups[i].RewardDropVnums, normalized.SpawnGroups[j].RewardDropVnums) < 0
+									}
+									return normalized.SpawnGroups[i].RewardGold < normalized.SpawnGroups[j].RewardGold
+								}
+								return normalized.SpawnGroups[i].RewardExperience < normalized.SpawnGroups[j].RewardExperience
 							}
 							return normalized.SpawnGroups[i].CombatProfile < normalized.SpawnGroups[j].CombatProfile
 						}
@@ -192,7 +207,14 @@ func validSpawnGroup(spawnGroup SpawnGroup) bool {
 	if strings.TrimSpace(spawnGroup.Ref) == "" || strings.TrimSpace(spawnGroup.Name) == "" || spawnGroup.MapIndex == 0 || spawnGroup.RaceNum == 0 {
 		return false
 	}
-	return worldruntime.ValidStaticActorCombatProfile(spawnGroup.CombatProfile) && spawnGroup.CombatProfile != ""
+	if !worldruntime.ValidStaticActorCombatProfile(spawnGroup.CombatProfile) || spawnGroup.CombatProfile == "" {
+		return false
+	}
+	return validRewardDescriptor(spawnGroup)
+}
+
+func validRewardDescriptor(spawnGroup SpawnGroup) bool {
+	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: spawnGroup.RewardExperience, Gold: spawnGroup.RewardGold, DropVnums: spawnGroup.RewardDropVnums})
 }
 
 func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
@@ -207,9 +229,41 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
 		if spawnGroup.CombatProfile == "" {
 			spawnGroup.CombatProfile = worldruntime.StaticActorCombatProfilePracticeMob
 		}
+		spawnGroup.RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
 		normalized[i] = spawnGroup
 	}
 	return normalized
+}
+
+func cloneUint32s(values []uint32) []uint32 {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make([]uint32, len(values))
+	copy(cloned, values)
+	return cloned
+}
+
+func compareUint32s(left []uint32, right []uint32) int {
+	limit := len(left)
+	if len(right) < limit {
+		limit = len(right)
+	}
+	for i := 0; i < limit; i++ {
+		if left[i] < right[i] {
+			return -1
+		}
+		if left[i] > right[i] {
+			return 1
+		}
+	}
+	if len(left) < len(right) {
+		return -1
+	}
+	if len(left) > len(right) {
+		return 1
+	}
+	return 0
 }
 
 func interactionDefinitionKey(kind string, ref string) string {

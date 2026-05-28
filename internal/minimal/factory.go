@@ -505,6 +505,10 @@ func (r *gameRuntime) RegisterStaticActorWithInteractionAndCombatProfile(name st
 }
 
 func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileAndSpawnGroupRef(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string, spawnGroupRef string) (StaticActorSnapshot, bool) {
+	return r.registerStaticActorWithInteractionCombatProfileSpawnGroupRefAndReward(name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, spawnGroupRef, worldruntime.StaticActorDeathReward{})
+}
+
+func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupRefAndReward(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string, spawnGroupRef string, deathReward worldruntime.StaticActorDeathReward) (StaticActorSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil {
 		return StaticActorSnapshot{}, false
 	}
@@ -528,11 +532,11 @@ func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileAndSpawnGro
 	if nextEntityID == 0 {
 		return StaticActorSnapshot{}, false
 	}
-	target := appendStaticActorSnapshot(current, StaticActorSnapshot{EntityID: nextEntityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef})
+	target := appendStaticActorSnapshot(current, StaticActorSnapshot{EntityID: nextEntityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef, RewardExperience: deathReward.Experience, RewardGold: deathReward.Gold, RewardDropVnums: append([]uint32(nil), deathReward.DropVnums...)})
 	if !r.persistStaticActorSnapshot(target) {
 		return StaticActorSnapshot{}, false
 	}
-	registered, ok := r.sharedWorld.registerStaticActor(nextEntityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, spawnGroupRef)
+	registered, ok := r.sharedWorld.registerStaticActor(nextEntityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile, spawnGroupRef, deathReward)
 	if !ok {
 		_ = r.persistStaticActorSnapshot(current)
 		return StaticActorSnapshot{}, false
@@ -4479,7 +4483,8 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 		if !r.interactionDefinitionExists(actor.InteractionKind, actor.InteractionRef) {
 			return fmt.Errorf("%w: validate static actor interaction refs", staticstore.ErrInvalidSnapshot)
 		}
-		if _, ok := r.sharedWorld.registerStaticActor(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef); !ok {
+		deathReward := worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: append([]uint32(nil), actor.RewardDropVnums...)}
+		if _, ok := r.sharedWorld.registerStaticActor(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, deathReward); !ok {
 			return fmt.Errorf("%w: apply static actor snapshot", staticstore.ErrInvalidSnapshot)
 		}
 	}
@@ -4822,7 +4827,8 @@ func (r *gameRuntime) replaceStaticActorsFromBundle(bundle contentbundle.Bundle)
 		}
 	}
 	for _, spawnGroup := range bundle.SpawnGroups {
-		if _, ok := r.registerStaticActorWithInteractionCombatProfileAndSpawnGroupRef(spawnGroup.Name, spawnGroup.MapIndex, spawnGroup.X, spawnGroup.Y, spawnGroup.RaceNum, "", "", spawnGroup.CombatProfile, spawnGroup.Ref); !ok {
+		deathReward := worldruntime.StaticActorDeathReward{Experience: spawnGroup.RewardExperience, Gold: spawnGroup.RewardGold, DropVnums: append([]uint32(nil), spawnGroup.RewardDropVnums...)}
+		if _, ok := r.registerStaticActorWithInteractionCombatProfileSpawnGroupRefAndReward(spawnGroup.Name, spawnGroup.MapIndex, spawnGroup.X, spawnGroup.Y, spawnGroup.RaceNum, "", "", spawnGroup.CombatProfile, spawnGroup.Ref, deathReward); !ok {
 			return ErrContentBundleUnavailable
 		}
 	}
@@ -5064,16 +5070,19 @@ func buildStaticActorStoreSnapshot(snapshot []StaticActorSnapshot) staticstore.S
 	actors := make([]staticstore.StaticActor, 0, len(snapshot))
 	for _, actor := range snapshot {
 		actors = append(actors, staticstore.StaticActor{
-			EntityID:        actor.EntityID,
-			Name:            actor.Name,
-			MapIndex:        actor.MapIndex,
-			X:               actor.X,
-			Y:               actor.Y,
-			RaceNum:         actor.RaceNum,
-			CombatProfile:   actor.CombatProfile,
-			InteractionKind: actor.InteractionKind,
-			InteractionRef:  actor.InteractionRef,
-			SpawnGroupRef:   actor.SpawnGroupRef,
+			EntityID:         actor.EntityID,
+			Name:             actor.Name,
+			MapIndex:         actor.MapIndex,
+			X:                actor.X,
+			Y:                actor.Y,
+			RaceNum:          actor.RaceNum,
+			CombatProfile:    actor.CombatProfile,
+			InteractionKind:  actor.InteractionKind,
+			InteractionRef:   actor.InteractionRef,
+			SpawnGroupRef:    actor.SpawnGroupRef,
+			RewardExperience: actor.RewardExperience,
+			RewardGold:       actor.RewardGold,
+			RewardDropVnums:  append([]uint32(nil), actor.RewardDropVnums...),
 		})
 	}
 	return staticstore.Snapshot{StaticActors: actors}

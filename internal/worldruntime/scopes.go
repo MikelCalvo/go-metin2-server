@@ -51,17 +51,20 @@ type CharacterInteractionVisibilitySnapshot struct {
 }
 
 type StaticActorSnapshot struct {
-	EntityID        uint64 `json:"entity_id"`
-	Name            string `json:"name"`
-	MapIndex        uint32 `json:"map_index"`
-	X               int32  `json:"x"`
-	Y               int32  `json:"y"`
-	RaceNum         uint32 `json:"race_num"`
-	Dead            bool   `json:"dead,omitempty"`
-	CombatProfile   string `json:"combat_profile,omitempty"`
-	InteractionKind string `json:"interaction_kind,omitempty"`
-	InteractionRef  string `json:"interaction_ref,omitempty"`
-	SpawnGroupRef   string `json:"spawn_group_ref,omitempty"`
+	EntityID         uint64   `json:"entity_id"`
+	Name             string   `json:"name"`
+	MapIndex         uint32   `json:"map_index"`
+	X                int32    `json:"x"`
+	Y                int32    `json:"y"`
+	RaceNum          uint32   `json:"race_num"`
+	Dead             bool     `json:"dead,omitempty"`
+	CombatProfile    string   `json:"combat_profile,omitempty"`
+	InteractionKind  string   `json:"interaction_kind,omitempty"`
+	InteractionRef   string   `json:"interaction_ref,omitempty"`
+	SpawnGroupRef    string   `json:"spawn_group_ref,omitempty"`
+	RewardExperience uint64   `json:"reward_experience,omitempty"`
+	RewardGold       uint64   `json:"reward_gold,omitempty"`
+	RewardDropVnums  []uint32 `json:"reward_drop_vnums,omitempty"`
 }
 
 type GroundItemSnapshot struct {
@@ -394,16 +397,19 @@ func bootstrapPlayerSnapshotDead(character loginticket.Character) bool {
 
 func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticActorSnapshot {
 	return StaticActorSnapshot{
-		EntityID:        actor.Entity.ID,
-		Name:            actor.Entity.Name,
-		MapIndex:        topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
-		X:               actor.Position.X,
-		Y:               actor.Position.Y,
-		RaceNum:         actor.RaceNum,
-		CombatProfile:   staticActorCombatProfile(actor.CombatProfile, actor.CombatKind),
-		InteractionKind: actor.InteractionKind,
-		InteractionRef:  actor.InteractionRef,
-		SpawnGroupRef:   actor.SpawnGroupRef,
+		EntityID:         actor.Entity.ID,
+		Name:             actor.Entity.Name,
+		MapIndex:         topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
+		X:                actor.Position.X,
+		Y:                actor.Position.Y,
+		RaceNum:          actor.RaceNum,
+		CombatProfile:    staticActorCombatProfile(actor.CombatProfile, actor.CombatKind),
+		InteractionKind:  actor.InteractionKind,
+		InteractionRef:   actor.InteractionRef,
+		SpawnGroupRef:    actor.SpawnGroupRef,
+		RewardExperience: actor.DeathReward.Experience,
+		RewardGold:       actor.DeathReward.Gold,
+		RewardDropVnums:  actor.DeathReward.Clone().DropVnums,
 	}
 }
 

@@ -33,7 +33,7 @@ This contract currently applies only to:
 This contract does **not** yet claim:
 - roaming/wandering/pathing AI
 - pack behaviors or multi-wave encounters
-- loot, EXP, quest rewards, drops, or corpse interactions
+- random loot tables, quest rewards, or corpse interactions
 - spawn conditions, timers authored per player, or scripting hooks
 - hostility/retaliation logic beyond the already-owned combat loop
 - dynamic difficulty, random rolls, or weighted spawn tables
@@ -67,7 +67,10 @@ A spawn group is currently intentionally tiny and can be represented as JSON equ
   "x": 1775,
   "y": 2875,
   "race_num": 20350,
-  "combat_profile": "practice_mob"
+  "combat_profile": "practice_mob",
+  "reward_experience": 0,
+  "reward_gold": 0,
+  "reward_drop_vnums": []
 }
 ```
 
@@ -83,7 +86,10 @@ In bundle form, the future authored surface is therefore:
       "x": 1775,
       "y": 2875,
       "race_num": 20350,
-      "combat_profile": "practice_mob"
+      "combat_profile": "practice_mob",
+      "reward_experience": 0,
+      "reward_gold": 0,
+      "reward_drop_vnums": []
     }
   ]
 }
@@ -110,6 +116,11 @@ The first bootstrap spawn-group contract freezes these fields:
   - omitted values canonicalize to the current spawn-group default `practice_mob`
   - `training_dummy` remains supported for legacy/bootstrap static actors and explicit authored use
   - `practice_mob` currently reuses the same compact HP, damage, respawn, HP-percent refresh, and rewardless defaults as `training_dummy` while giving spawn-loaded combatants their own authored profile name
+- `reward_experience`, `reward_gold`, `reward_drop_vnums`
+  - optional authored death-reward descriptor fields
+  - omitted scalar fields canonicalize to `0`; omitted or empty drop lists canonicalize to an empty reward-drop descriptor
+  - non-zero values use the narrow reward contract in `non-player-reward-bootstrap.md` on the accepted killing hit
+  - reward data belongs to the authored spawn group and round-trips through content bundles, static-actor snapshots, and runtime import/export; it is not live character persistence by itself
 
 ## Why call it a group if it is one actor
 
@@ -132,6 +143,7 @@ This slice freezes a narrow ownership model:
 - map placement (`map_index`, `x`, `y`)
 - visual/template selection (`race_num`, optional `name`)
 - combat-profile selection (`combat_profile`), defaulting to the bootstrap `practice_mob` profile when omitted
+- optional death-reward descriptor (`reward_experience`, `reward_gold`, `reward_drop_vnums`) for the deterministic EXP/gold/drop seam documented in `non-player-reward-bootstrap.md`
 
 ### Combat profile owns
 - combat defaults and rules shared by authored actors using that profile
@@ -169,6 +181,7 @@ The first content contract should fail closed when:
 - `race_num` is `0`
 - `combat_profile` is unknown when provided; an omitted profile is canonicalized to the bootstrap `practice_mob` profile for this first one-spawn-profile contract
 - coordinates are malformed for the current bundle schema
+- reward scalar values overflow the current bootstrap point-change carrier, or `reward_drop_vnums` contains `0`
 
 Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate `ref` values, and preserves the prior authored/runtime snapshot when validation fails.
 
@@ -203,7 +216,7 @@ This slice does **not** yet freeze:
 - patrol routes or idle roaming
 - broader hostile retaliation or aggro-lite behavior beyond the first fresh-third-party `TARGET` gate, the first same-target `250ms` normal-attack cadence window, plus one sustained delayed self-only server-origin retaliation cadence at a time
 - random spawn selection from a pool
-- loot tables, kill rewards, or corpse gameplay
+- random loot tables, broader kill rewards, or corpse gameplay
 - authored interaction metadata on attackable spawn groups
 - migrations from old static-actor records into spawn groups
 
@@ -236,6 +249,6 @@ The first owned hostile post-hit reaction is intentionally tiny:
 After this document lands, the repository should be able to say:
 - there is now one project-owned authored content seam for attackable non-player spawns: `spawn_groups`
 - the first spawn group is intentionally size `1`, stationary, and combat-profile driven
-- authored content now has a stable way to say which combatant should exist, where it should appear, and which `combat_profile` it should use
+- authored content now has a stable way to say which combatant should exist, where it should appear, which `combat_profile` it should use, and which deterministic EXP/gold/drop descriptor should apply on its killing hit
 - respawn ownership is no longer implied to come from ad hoc runtime registration; it is conceptually anchored to the authored spawn-group `ref`
 - one content-authored practice mob can now be imported through `spawn_groups`, fight using the owned `training_dummy` combat profile, rebuild after death through the existing server-driven respawn loop, reject fresh third-party `TARGET` attempts after its first accepted hit while that engaged owner still lives, proactively clear any stale preselected third-party target with one self-only `GC TARGET(0, 0)` when that same first hit establishes or preserves engagement, release that same gate again if retaliation kills the owner before the mob dies, apply one fixed same-target `250ms` normal-attack cadence gate, one immediate self-only owner HP decrement per accepted live hit, one sustained delayed self-only server-origin follow-up cadence at a time, runtime-only retaliation point-loss that does not yet persist across fresh `/phase_select` re-entry or reconnect and now also stays out of later position-only `MOVE` / `SYNC_POSITION` / transfer rebootstrap saves, successful slash `/use_item`, carried-slot `ITEM_USE`, `/equip_item`, and `/unequip_item` saves, plus non-point-bearing slash `/inventory_move` and merchant-buy saves while those helpers still persist coordinates, authored use/equip-effect point delta + consumed or carried/equipped item state, carried-slot state, or purchased item/gold state, self-only `GC DEAD(owner_vid)` plus self-only `GC TARGET(0, 0)` and one visible-peer `GC DEAD(owner_vid)` fanout when that retaliation floor reaches `0` HP, treat same-socket `/quit`, `/logout`, and `/phase_select` plus abrupt session close as immediate owner-disappearance boundaries for queued delayed retaliation + aggro release, also release the abandoned still-live mob immediately when movement / sync clears target intent or a fresh `TARGET` retargets another visible practice mob, close an already-open merchant window there with one self-only `GC::SHOP END`, and fail-closed owner-side combat `TARGET` / `ATTACK`, owner `MOVE` / `SYNC_POSITION`, owner static-actor `INTERACT`, owner merchant-buy attempts, owner carried gold-drop attempts, owner slash `/use_item` and carried-slot `ITEM_USE`, `/inventory_move`, `/equip_item`, and `/unequip_item` attempts, owner pee...

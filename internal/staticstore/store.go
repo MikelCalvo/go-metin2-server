@@ -14,16 +14,19 @@ var (
 )
 
 type StaticActor struct {
-	EntityID        uint64 `json:"entity_id"`
-	Name            string `json:"name"`
-	MapIndex        uint32 `json:"map_index"`
-	X               int32  `json:"x"`
-	Y               int32  `json:"y"`
-	RaceNum         uint32 `json:"race_num"`
-	CombatProfile   string `json:"combat_profile,omitempty"`
-	InteractionKind string `json:"interaction_kind,omitempty"`
-	InteractionRef  string `json:"interaction_ref,omitempty"`
-	SpawnGroupRef   string `json:"spawn_group_ref,omitempty"`
+	EntityID         uint64   `json:"entity_id"`
+	Name             string   `json:"name"`
+	MapIndex         uint32   `json:"map_index"`
+	X                int32    `json:"x"`
+	Y                int32    `json:"y"`
+	RaceNum          uint32   `json:"race_num"`
+	CombatProfile    string   `json:"combat_profile,omitempty"`
+	InteractionKind  string   `json:"interaction_kind,omitempty"`
+	InteractionRef   string   `json:"interaction_ref,omitempty"`
+	SpawnGroupRef    string   `json:"spawn_group_ref,omitempty"`
+	RewardExperience uint64   `json:"reward_experience,omitempty"`
+	RewardGold       uint64   `json:"reward_gold,omitempty"`
+	RewardDropVnums  []uint32 `json:"reward_drop_vnums,omitempty"`
 }
 
 type Snapshot struct {
@@ -63,6 +66,9 @@ func validateSnapshot(snapshot Snapshot) error {
 			if actor.CombatProfile == "" || actor.InteractionKind != "" || actor.InteractionRef != "" {
 				return ErrInvalidSnapshot
 			}
+			if !validRewardDescriptor(actor) {
+				return ErrInvalidSnapshot
+			}
 			if _, ok := spawnGroupRefs[actor.SpawnGroupRef]; ok {
 				return ErrInvalidSnapshot
 			}
@@ -82,12 +88,20 @@ func validInteractionMetadata(kind string, ref string) bool {
 	}
 	return kind != "" && ref != ""
 }
+func validRewardDescriptor(actor StaticActor) bool {
+	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: actor.RewardDropVnums})
+}
 
 func cloneStaticActors(actors []StaticActor) []StaticActor {
 	if len(actors) == 0 {
 		return nil
 	}
 	cloned := make([]StaticActor, len(actors))
-	copy(cloned, actors)
+	for i, actor := range actors {
+		if len(actor.RewardDropVnums) > 0 {
+			actor.RewardDropVnums = append([]uint32(nil), actor.RewardDropVnums...)
+		}
+		cloned[i] = actor
+	}
 	return cloned
 }
