@@ -12131,6 +12131,34 @@ func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsDeadSubject(t *t
 	}
 }
 
+func TestSharedWorldRegistryGroundItemPickupRejectsDeadCollector(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("Collector", 0x01030102, 0x02040102, 1120, 2120, 1, 102, 202)
+	collector.Points[bootstrapPlayerPointValueIndex] = 0
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and dead collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	groundVID := uint32(0x0A0B0C0D)
+	item := inventory.ItemInstance{ID: 1001, Vnum: 27001, Count: 1, Slot: 5}
+	if !registry.RegisterGroundItem(ownerID, "owner-login", owner, groundVID, item) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+
+	if pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok || pickup.Item.Vnum != 0 {
+		t.Fatalf("expected dead collector ground pickup lookup to fail closed, got ok=%v pickup=%+v", ok, pickup)
+	}
+	if removed := registry.RemoveGroundItem(collectorID, collector, groundVID); removed {
+		t.Fatal("expected dead collector ground-item removal to fail closed")
+	}
+	if _, ok := registry.GroundItemPickupFor(ownerID, owner, groundVID); !ok {
+		t.Fatal("expected rejected dead collector pickup to leave ground item available for living owner")
+	}
+}
+
 func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisibleTrainingDummy(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
