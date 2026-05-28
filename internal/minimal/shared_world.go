@@ -940,6 +940,9 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	if _, ok := r.playerCharacter(ownerID); !ok {
 		return false
 	}
+	if _, exists := r.groundItemsByVID[vid]; exists {
+		return false
+	}
 	ground := sharedGroundItem{
 		VID:        vid,
 		OwnerID:    ownerID,

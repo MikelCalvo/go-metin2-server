@@ -116,6 +116,32 @@ func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFr
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundItemRejectsExistingVID(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("DropOwner", 0x01030190, 0x02040190, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+
+	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	if !registry.RegisterGroundItem(ownerID, "drop-owner", owner, 0x07000001, item) {
+		t.Fatal("expected first ground item registration to succeed")
+	}
+	if !registry.GroundItemExists(0x07000001) {
+		t.Fatal("expected first ground item to remain registered")
+	}
+
+	duplicate := inventory.ItemInstance{Vnum: 3002, Count: 1}
+	if registry.RegisterGroundItem(ownerID, "drop-owner", owner, 0x07000001, duplicate) {
+		t.Fatal("expected duplicate ground item VID registration to fail closed")
+	}
+	stored, ok := registry.GroundItemVisibleTo(ownerID, owner, 0x07000001)
+	if !ok {
+		t.Fatal("expected original ground item to remain visible after duplicate rejection")
+	}
+	if stored.Vnum != item.Vnum || stored.Count != item.Count {
+		t.Fatalf("expected original ground item to be preserved, got %+v", stored)
+	}
+}
+
 func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
