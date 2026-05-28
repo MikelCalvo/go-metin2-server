@@ -12196,6 +12196,39 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisiblePractic
 	}
 }
 
+func TestSharedWorldRegistryRegisterSpawnGroupActorWithPracticeMobProfileIsCombatTargetable(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(5, "PracticeMobAlpha", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.mob_alpha", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-group practice mob registration to succeed")
+	}
+	if actor.SpawnGroupRef != "practice.mob_alpha" || actor.CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob {
+		t.Fatalf("expected spawn-group practice mob metadata in snapshot, got %+v", actor)
+	}
+
+	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !attempt.Accepted {
+		t.Fatalf("expected visible spawn-group practice mob target attempt to be accepted, got %+v", attempt)
+	}
+	if attempt.HPPercent != 100 || attempt.SnapshotVersion == 0 {
+		t.Fatalf("unexpected spawn-group practice mob target attempt: %+v", attempt)
+	}
+}
+
+func TestSharedWorldRegistryRegisterSpawnGroupActorRejectsEmptyCombatProfile(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	actor, ok := registry.registerStaticActor(5, "PracticeMobAlpha", bootstrapMapIndex, 1200, 2200, 20350, "", "", "", "practice.mob_alpha", worldruntime.StaticActorDeathReward{})
+	if ok {
+		t.Fatalf("expected spawn-group actor without combat profile to fail closed, got %+v", actor)
+	}
+}
+
 func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisiblePracticeMob(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
