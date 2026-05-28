@@ -39,6 +39,8 @@ The first owned request is:
 - phase: `GAME`
 - payload: little-endian `uint32 target_vid`
 
+This bootstrap header currently overlaps the legacy-aligned `ITEM_USE` header. The owned `GAME` dispatcher therefore routes header `0x0501` by exact payload length: `3` bytes remains `ITEM_USE(TItemPos)`, and `4` bytes remains this temporary `INTERACT(uint32 target_vid)` seam. Broader client-facing interaction choreography remains a later slice.
+
 Owned Go codec boundary:
 - `internal/proto/interact`
   - `RequestPacket { target_vid }`

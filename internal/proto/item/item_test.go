@@ -104,7 +104,7 @@ func TestEncodeClientUseBuildsAFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected carried inventory position error: %v", err)
 	}
-	want := frame.Encode(HeaderClientUse, []byte{WindowInventory, 5, 0})
+	want := frame.Encode(0x0501, []byte{WindowInventory, 5, 0})
 	got := EncodeClientUse(ClientUsePacket{Position: position})
 	if !bytes.Equal(got, want) {
 		t.Fatalf("unexpected item use frame bytes: got %x want %x", got, want)
@@ -112,7 +112,7 @@ func TestEncodeClientUseBuildsAFrame(t *testing.T) {
 }
 
 func TestDecodeClientUseReturnsExpectedFields(t *testing.T) {
-	packet, err := DecodeClientUse(decodeSingleFrame(t, frame.Encode(HeaderClientUse, []byte{WindowInventory, 5, 0})))
+	packet, err := DecodeClientUse(decodeSingleFrame(t, frame.Encode(0x0501, []byte{WindowInventory, 5, 0})))
 	if err != nil {
 		t.Fatalf("unexpected decode error: %v", err)
 	}

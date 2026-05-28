@@ -366,16 +366,6 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 			return nil, nil
 		}
 		return [][]byte{chatproto.EncodeServerWhisper(*result.Delivery)}, nil
-	case interactproto.HeaderRequest:
-		packet, err := interactproto.DecodeRequest(in)
-		if err != nil {
-			return nil, err
-		}
-		result := f.handleInteraction(packet)
-		if !result.Accepted {
-			return nil, nil
-		}
-		return result.Frames, nil
 	case combatproto.HeaderClientTarget:
 		packet, err := combatproto.DecodeClientTarget(in)
 		if err != nil {
@@ -397,7 +387,8 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		}
 		return result.Frames, nil
 	case itemproto.HeaderClientUse:
-		if len(in.Payload) == 3 {
+		switch len(in.Payload) {
+		case 3:
 			packet, err := itemproto.DecodeClientUse(in)
 			if err != nil {
 				return nil, err
@@ -407,7 +398,20 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 				return nil, nil
 			}
 			return result.Frames, nil
+		case 4:
+			packet, err := interactproto.DecodeRequest(in)
+			if err != nil {
+				return nil, err
+			}
+			result := f.handleInteraction(packet)
+			if !result.Accepted {
+				return nil, nil
+			}
+			return result.Frames, nil
+		default:
+			return nil, itemproto.ErrInvalidPayload
 		}
+	case itemproto.HeaderClientDrop:
 		packet, err := itemproto.DecodeClientDrop(in)
 		if err != nil {
 			return nil, err

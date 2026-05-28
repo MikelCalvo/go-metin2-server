@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	HeaderClientUse       uint16 = 0x0502
+	HeaderClientUse       uint16 = 0x0501
 	HeaderClientDrop      uint16 = 0x0502
 	HeaderClientDrop2     uint16 = 0x0503
 	HeaderClientMove      uint16 = 0x0504

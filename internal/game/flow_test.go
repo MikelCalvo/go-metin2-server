@@ -1036,9 +1036,9 @@ func TestHandleClientFrameShopSell2WithoutHandlerIsNoOp(t *testing.T) {
 func TestHandleClientFrameRejectsMalformedInteractionInGame(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	flow := NewFlow(machine, Config{})
-	_, err := flow.HandleClientFrame(frame.Frame{Header: interactproto.HeaderRequest, Length: 7, Payload: []byte{0x01, 0x02, 0x03}})
-	if !errors.Is(err, interactproto.ErrInvalidPayload) {
-		t.Fatalf("expected interactproto.ErrInvalidPayload, got %v", err)
+	_, err := flow.HandleClientFrame(frame.Frame{Header: interactproto.HeaderRequest, Length: 9, Payload: []byte{0x01, 0x02, 0x03, 0x04, 0x05}})
+	if !errors.Is(err, itemproto.ErrInvalidPayload) {
+		t.Fatalf("expected itemproto.ErrInvalidPayload, got %v", err)
 	}
 	if machine.Current() != session.PhaseGame {
 		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
