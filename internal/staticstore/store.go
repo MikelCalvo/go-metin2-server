@@ -62,7 +62,11 @@ func validateSnapshot(snapshot Snapshot) error {
 		if !worldruntime.ValidStaticActorCombatProfile(actor.CombatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) {
 			return ErrInvalidSnapshot
 		}
-		if actor.SpawnGroupRef != "" {
+		if actor.SpawnGroupRef == "" {
+			if hasRewardDescriptor(actor) {
+				return ErrInvalidSnapshot
+			}
+		} else {
 			if actor.CombatProfile == "" || actor.InteractionKind != "" || actor.InteractionRef != "" {
 				return ErrInvalidSnapshot
 			}
@@ -88,6 +92,11 @@ func validInteractionMetadata(kind string, ref string) bool {
 	}
 	return kind != "" && ref != ""
 }
+
+func hasRewardDescriptor(actor StaticActor) bool {
+	return actor.RewardExperience != 0 || actor.RewardGold != 0 || len(actor.RewardDropVnums) != 0
+}
+
 func validRewardDescriptor(actor StaticActor) bool {
 	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: actor.RewardDropVnums})
 }
