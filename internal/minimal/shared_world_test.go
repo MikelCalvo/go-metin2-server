@@ -11659,6 +11659,115 @@ func TestGameRuntimeUpdateStaticActorRefreshReplaysDeadTrainingDummyForVisiblePl
 	}
 }
 
+func TestGameRuntimeFlushReadyStaticActorRespawnsRebuildsVisibleDeadTrainingDummy(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	farPlayer := peerVisibilityCharacter("FarPlayer", 0x01030102, 0x02040102, 1900, 3000, 2, 102, 202)
+	issuePeerTicket(t, store, "near-player", 0x11111111, nearPlayer)
+	issuePeerTicket(t, store, "far-player", 0x22222222, farPlayer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{
+		LegacyAddr:           ":13000",
+		PublicAddr:           "127.0.0.1",
+		VisibilityMode:       "radius",
+		VisibilityRadius:     400,
+		VisibilitySectorSize: 200,
+	}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000301, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+
+	nearFlow, enterOut := enterGameWithLoginTicket(t, factory, "near-player", 0x11111111)
+	defer closeSessionFlow(t, nearFlow)
+	farFlow, _ := enterGameWithLoginTicket(t, factory, "far-player", 0x22222222)
+	defer closeSessionFlow(t, farFlow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for nearby player with visible training dummy, got %d", len(enterOut))
+	}
+	_ = flushServerFrames(t, nearFlow)
+	_ = flushServerFrames(t, farFlow)
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := nearFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before respawn: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before respawn, got %d", len(selectOut))
+	}
+	for attackIndex := 0; attackIndex < 10; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := nearFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on respawn hit %d: %v", attackIndex+1, err)
+		}
+		wantFrames := 1
+		if attackIndex == 9 {
+			wantFrames = 2
+		}
+		if len(attackOut) != wantFrames {
+			t.Fatalf("expected %d attack frames on respawn hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
+		}
+	}
+	if queued := flushServerFrames(t, nearFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued self frames before respawn timer, got %d", len(queued))
+	}
+
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	nearQueued := flushServerFrames(t, nearFlow)
+	if len(nearQueued) != 4 {
+		t.Fatalf("expected delete/add/info/update respawn rebuild for visible training dummy, got %d", len(nearQueued))
+	}
+	actorDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, nearQueued[0]))
+	if err != nil {
+		t.Fatalf("decode respawn training-dummy delete: %v", err)
+	}
+	if actorDelete.VID != targetVID {
+		t.Fatalf("unexpected respawn training-dummy delete: %+v", actorDelete)
+	}
+	actorAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, nearQueued[1]))
+	if err != nil {
+		t.Fatalf("decode respawn training-dummy add: %v", err)
+	}
+	if actorAdd.VID != targetVID || actorAdd.Type != 1 || actorAdd.X != 1200 || actorAdd.Y != 2200 || actorAdd.RaceNum != 20350 {
+		t.Fatalf("unexpected respawn training-dummy add: %+v", actorAdd)
+	}
+	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, nearQueued[2]))
+	if err != nil {
+		t.Fatalf("decode respawn training-dummy additional info: %v", err)
+	}
+	if actorInfo.VID != targetVID || actorInfo.Name != "TrainingDummy" {
+		t.Fatalf("unexpected respawn training-dummy additional info: %+v", actorInfo)
+	}
+	actorUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, nearQueued[3]))
+	if err != nil {
+		t.Fatalf("decode respawn training-dummy update: %v", err)
+	}
+	if actorUpdate.VID != targetVID {
+		t.Fatalf("unexpected respawn training-dummy update: %+v", actorUpdate)
+	}
+	if farQueued := flushServerFrames(t, farFlow); len(farQueued) != 0 {
+		t.Fatalf("expected no respawn rebuild frames for far player, got %d", len(farQueued))
+	}
+
+	postRespawnTargetOut, err := nearFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected post-respawn combat target error: %v", err)
+	}
+	if len(postRespawnTargetOut) != 1 {
+		t.Fatalf("expected fresh target acquisition after respawn, got %d self frames", len(postRespawnTargetOut))
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorRelocateAcrossAOIBoundaryQueuesVisibilityDeltasForOnlinePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
