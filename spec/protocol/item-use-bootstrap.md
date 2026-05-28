@@ -45,7 +45,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - the target stack must have free capacity under that `max_count`
 - the runtime moves as many source items as fit into the target stack
 - if the source stack fits completely, the response burst is `ITEM_DEL(source)`, `ITEM_SET(target)`, then zero or more `QUICKSLOT_DEL` frames for item quickslots referencing the removed source carried cell
-- only item quickslots are removed; skill/command quickslots that happen to carry the same byte slot value stay unchanged
+- only item quickslots are removed and persisted; skill/command quickslots that happen to carry the same byte slot value stay unchanged
 - if the target has only partial room, the source slot is refreshed with its remainder and the target slot is refreshed at its template `max_count`
 - count-only partial refreshes use the existing `ITEM_UPDATE` packet shape for both changed carried cells and do not rewrite source item quickslots
 - the normal `use_effect` path is not executed for this drag-to-item request, even when the source item also has a consumable template
