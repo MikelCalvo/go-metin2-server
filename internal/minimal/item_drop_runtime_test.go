@@ -1325,14 +1325,61 @@ func TestGameRuntimeMapOccupancyIncludesPendingGroundItems(t *testing.T) {
 		t.Fatalf("unexpected ground occupancy summary: %+v", maps[0])
 	}
 	got := maps[0].GroundItems[0]
-	if got.VID != ground.VID || got.Vnum != ground.Vnum || got.OwnerName != owner.Name || got.X != owner.X || got.Y != owner.Y || got.Z != owner.Z {
-		t.Fatalf("unexpected ground occupancy item: got %+v want vid=%d vnum=%d owner=%q pos=(%d,%d,%d)", got, ground.VID, ground.Vnum, owner.Name, owner.X, owner.Y, owner.Z)
+	if got.VID != ground.VID || got.Vnum != ground.Vnum || got.Count != 1 || got.OwnerName != owner.Name || got.X != owner.X || got.Y != owner.Y || got.Z != owner.Z {
+		t.Fatalf("unexpected ground occupancy item: got %+v want vid=%d vnum=%d count=1 owner=%q pos=(%d,%d,%d)", got, ground.VID, ground.Vnum, owner.Name, owner.X, owner.Y, owner.Z)
 	}
 
 	_ = pickupGroundItem(t, ownerFlow, ground.VID)
 	maps = runtime.MapOccupancy()
 	if len(maps) != 1 || maps[0].GroundItemCount != 0 || len(maps[0].GroundItems) != 0 {
 		t.Fatalf("expected ground occupancy to clear after pickup while character remains connected, got %+v", maps)
+	}
+}
+
+func TestGameRuntimeMapOccupancyIncludesPendingGroundGold(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GroundGoldMapOwner", 0x010301ba, 0x020401ba, 1450, 2450, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 1075, Vnum: 27031, Count: 1, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "ground-gold-map-owner", 0xbabababa, owner)
+	if err := accounts.Save(accountstore.Account{Login: "ground-gold-map-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed ground gold map owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected ground gold map runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "ground-gold-map-owner", 0xbabababa)
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(6), Elk: 1200})))
+	if err != nil {
+		t.Fatalf("unexpected gold drop error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected gold drop to emit POINT_CHANGE, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode ground gold add: %v", err)
+	}
+
+	maps := runtime.MapOccupancy()
+	if len(maps) != 1 {
+		t.Fatalf("expected one occupied map after ground gold drop, got %+v", maps)
+	}
+	if maps[0].MapIndex != bootstrapMapIndex || maps[0].GroundItemCount != 1 || len(maps[0].GroundItems) != 1 {
+		t.Fatalf("unexpected ground gold occupancy summary: %+v", maps[0])
+	}
+	got := maps[0].GroundItems[0]
+	if got.VID != ground.VID || got.Vnum != 1 || got.Count != 0 || got.GoldAmount != 1200 || got.OwnerName != owner.Name || got.X != owner.X || got.Y != owner.Y || got.Z != owner.Z {
+		t.Fatalf("unexpected ground gold occupancy item: got %+v want vid=%d vnum=1 gold=1200 owner=%q pos=(%d,%d,%d)", got, ground.VID, owner.Name, owner.X, owner.Y, owner.Z)
+	}
+
+	_ = pickupGroundItem(t, ownerFlow, ground.VID)
+	maps = runtime.MapOccupancy()
+	if len(maps) != 1 || maps[0].GroundItemCount != 0 || len(maps[0].GroundItems) != 0 {
+		t.Fatalf("expected ground gold occupancy to clear after pickup while character remains connected, got %+v", maps)
 	}
 }
 

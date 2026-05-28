@@ -1005,10 +1005,14 @@ func encodeGroundItemAddFrame(ground sharedGroundItem) []byte {
 }
 
 func groundItemSnapshot(ground sharedGroundItem) GroundItemSnapshot {
+	count := ground.Item.Count
+	if ground.GoldAmount != 0 {
+		count = 0
+	}
 	return GroundItemSnapshot{
 		VID:        ground.VID,
 		Vnum:       ground.Item.Vnum,
-		Count:      ground.Item.Count,
+		Count:      count,
 		OwnerName:  ground.OwnerName,
 		GoldAmount: ground.GoldAmount,
 		MapIndex:   ground.MapIndex,
