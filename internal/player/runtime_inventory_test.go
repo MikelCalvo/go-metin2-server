@@ -537,6 +537,29 @@ func TestRuntimeSyncItemQuickslotsForItemRemovalDeletesMatchingItemSlots(t *test
 	}
 }
 
+func TestRuntimeSyncItemQuickslotsForItemRemovalRejectsInvalidSkillOrCommandCellsWithoutMutation(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Quickslots = []loginticket.Quickslot{
+		{Position: 3, Type: 1, Slot: 5},
+		{Position: 4, Type: 2, Slot: 5},
+		{Position: 8, Type: 3, Slot: 5},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	for _, slot := range []inventory.SlotIndex{inventory.CarriedInventorySlotCount, inventory.CarriedInventorySlotCount + 1, ^inventory.SlotIndex(0)} {
+		deleted, ok := runtime.SyncItemQuickslotsForItemRemoval(slot)
+		if ok {
+			t.Fatalf("expected invalid removal slot %d to fail closed, got deleted=%#v", slot, deleted)
+		}
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, persisted.Quickslots) {
+		t.Fatalf("invalid removal slots should not mutate live quickslots, got %#v want %#v", got, persisted.Quickslots)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Quickslots, persisted.Quickslots) {
+		t.Fatalf("invalid removal slots should not mutate persisted quickslots, got %#v", runtime.PersistedSnapshot().Quickslots)
+	}
+}
+
 func TestRuntimeApplyPersistedSnapshotRealignsLiveCurrencyInventoryAndEquipment(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
