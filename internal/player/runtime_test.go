@@ -667,6 +667,30 @@ func TestRuntimeUseItemOnItemRejectsFullTargetStackWithoutMutatingState(t *testi
 	}
 }
 
+func TestRuntimeUseItemOnItemRejectsZeroCountTargetWithoutMutatingSource(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 2, Slot: 5}, {ID: 12, Vnum: 27001, Count: 0, Slot: 6}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
+	template.MaxCount = 200
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.UseItemOnItem(5, 6, template); ok {
+		t.Fatalf("expected use-to-item to reject zero-count target without mutation, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, before.Inventory) || got.Points[1] != before.Points[1] {
+		t.Fatalf("expected rejected zero-count target use-to-item to leave live state unchanged, got %#v points[1]=%d", got.Inventory, got.Points[1])
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, before.Inventory) {
+		t.Fatalf("expected rejected zero-count target use-to-item to leave persisted inventory unchanged, got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsOverMaxTargetStackWithoutMutatingState(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,
