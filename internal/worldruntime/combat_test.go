@@ -139,6 +139,25 @@ func TestBootstrapStaticActorDeathRewardKeepsTrainingDummyRewardless(t *testing.
 	}
 }
 
+func TestValidStaticActorDeathRewardRejectsScalarPointCarrierOverflow(t *testing.T) {
+	maxPointCarrier := uint64(^uint32(0) >> 1)
+	if !ValidStaticActorDeathReward(StaticActorDeathReward{Experience: maxPointCarrier, Gold: maxPointCarrier}) {
+		t.Fatal("expected signed 32-bit scalar reward carrier maximum to be valid")
+	}
+	if ValidStaticActorDeathReward(StaticActorDeathReward{Experience: maxPointCarrier + 1}) {
+		t.Fatal("expected experience reward above signed 32-bit point-change carrier to be rejected")
+	}
+	if ValidStaticActorDeathReward(StaticActorDeathReward{Gold: maxPointCarrier + 1}) {
+		t.Fatal("expected gold reward above signed 32-bit point-change carrier to be rejected")
+	}
+}
+
+func TestValidStaticActorDeathRewardRejectsZeroDropVnum(t *testing.T) {
+	if ValidStaticActorDeathReward(StaticActorDeathReward{DropVnums: []uint32{27001, 0, 27002}}) {
+		t.Fatal("expected zero-valued reward drop vnum to be rejected")
+	}
+}
+
 func TestStaticActorDeathRewardEmptyDetectsAnyRewardChannel(t *testing.T) {
 	if !((StaticActorDeathReward{}).Empty()) {
 		t.Fatal("expected zero-value death reward to be empty")
