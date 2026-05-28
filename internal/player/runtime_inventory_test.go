@@ -218,6 +218,42 @@ func TestUseItemOnItemPartiallyConsolidatesWithoutRemovingSourceQuickslot(t *tes
 	}
 }
 
+func TestUseItemOnItemFailsClosedWhenTargetUpdateValidationFails(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
+			{ID: 42, Vnum: 27001, Count: 1, Slot: 6, EquipSlot: inventory.EquipmentSlotBody},
+		},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if _, ok := runtime.UseItemOnItem(5, 6, template); ok {
+		t.Fatal("expected malformed target stack to fail closed")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("failed target validation mutated live inventory: got %#v want %#v", got, before)
+	}
+}
+
+func TestUseItemOnItemFailsClosedWhenSourceRemainderValidationFails(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 41, Vnum: 27001, Count: 5, Slot: 5, EquipSlot: inventory.EquipmentSlotBody},
+			{ID: 42, Vnum: 27001, Count: 198, Slot: 6},
+		},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if _, ok := runtime.UseItemOnItem(5, 6, template); ok {
+		t.Fatal("expected malformed source remainder to fail closed")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("failed source validation mutated live inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestUseItemOnItemRejectsIncompatibleAndGuardedTargetsWithoutMutation(t *testing.T) {
 	base := loginticket.Character{Inventory: []inventory.ItemInstance{
 		{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
