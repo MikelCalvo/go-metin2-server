@@ -981,20 +981,32 @@ func (r *sharedWorldRegistry) groundItemVisibilityDiffLocked(previous loginticke
 	if r == nil || len(r.groundItemsByVID) == 0 {
 		return sharedGroundItemVisibilityDiff{}
 	}
-	diff := sharedGroundItemVisibilityDiff{}
+	groundItems := make([]worldruntime.GroundItemOccupancy, 0, len(r.groundItemsByVID))
+	groundItemsByVID := make(map[uint32]sharedGroundItem, len(r.groundItemsByVID))
 	for _, ground := range r.groundItemsByVID {
-		wasVisible := r.groundItemVisibleToCharacterLocked(ground, previous)
-		isVisible := r.groundItemVisibleToCharacterLocked(ground, current)
-		switch {
-		case wasVisible && !isVisible:
-			diff.Removed = append(diff.Removed, ground)
-		case !wasVisible && isVisible:
-			diff.Added = append(diff.Added, ground)
-		}
+		groundItems = append(groundItems, sharedGroundItemOccupancy(ground))
+		groundItemsByVID[ground.VID] = ground
+	}
+	visibilityDiff := r.scopesLocked().RelocateGroundItemVisibilityDiff(previous, current, groundItems)
+	diff := sharedGroundItemVisibilityDiff{
+		Removed: sharedGroundItemsFromSnapshots(visibilityDiff.RemovedVisibleItems, groundItemsByVID),
+		Added:   sharedGroundItemsFromSnapshots(visibilityDiff.AddedVisibleItems, groundItemsByVID),
 	}
 	sortSharedGroundItemsByVID(diff.Removed)
 	sortSharedGroundItemsByVID(diff.Added)
 	return diff
+}
+
+func sharedGroundItemsFromSnapshots(snapshots []worldruntime.GroundItemSnapshot, groundItemsByVID map[uint32]sharedGroundItem) []sharedGroundItem {
+	items := make([]sharedGroundItem, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		ground, ok := groundItemsByVID[snapshot.VID]
+		if !ok {
+			continue
+		}
+		items = append(items, ground)
+	}
+	return items
 }
 
 func sortSharedGroundItemsByVID(items []sharedGroundItem) {

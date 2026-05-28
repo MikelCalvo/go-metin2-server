@@ -28,6 +28,13 @@ type StaticActorTargetDiff struct {
 	AddedVisibleTargets    []PlayerEntity
 }
 
+type GroundItemVisibilityDiff struct {
+	CurrentVisibleItems []GroundItemSnapshot
+	TargetVisibleItems  []GroundItemSnapshot
+	RemovedVisibleItems []GroundItemSnapshot
+	AddedVisibleItems   []GroundItemSnapshot
+}
+
 type ConnectedCharacterSnapshot struct {
 	Name     string `json:"name"`
 	VID      uint32 `json:"vid"`
@@ -306,6 +313,10 @@ func (s Scopes) RelocateStaticActorTargetDiff(current, target StaticEntity) Stat
 
 func (s Scopes) RelocateStaticActorVisibilityDiff(current, target loginticket.Character) StaticActorVisibilityDiff {
 	return buildStaticActorVisibilityDiff(s.VisibleStaticActors(current), s.VisibleStaticActors(target))
+}
+
+func (s Scopes) RelocateGroundItemVisibilityDiff(current, target loginticket.Character, groundItems []GroundItemOccupancy) GroundItemVisibilityDiff {
+	return RelocateGroundItemVisibilityDiff(s.Topology, current, target, groundItems)
 }
 
 func (s Scopes) MapOccupancySnapshots() []MapOccupancySnapshot {
@@ -589,6 +600,43 @@ func AppendGroundItemsToMapOccupancySnapshots(topology BootstrapTopology, snapsh
 	return snapshots
 }
 
+func VisibleGroundItems(topology BootstrapTopology, subject loginticket.Character, groundItems []GroundItemOccupancy) []GroundItemSnapshot {
+	if len(groundItems) == 0 {
+		return nil
+	}
+	visible := make([]GroundItemSnapshot, 0, len(groundItems))
+	for _, ground := range groundItems {
+		groundCharacter := loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y}
+		if !topology.SharesVisibleWorld(subject, groundCharacter) {
+			continue
+		}
+		snapshot := ground
+		snapshot.MapIndex = topology.EffectiveMapIndex(groundCharacter)
+		visible = append(visible, snapshot)
+	}
+	sortGroundItemSnapshots(visible)
+	return visible
+}
+
+func BuildGroundItemVisibilityDiff(currentVisibleItems []GroundItemSnapshot, targetVisibleItems []GroundItemSnapshot) GroundItemVisibilityDiff {
+	currentVisibleItems = cloneGroundItemSnapshots(currentVisibleItems)
+	targetVisibleItems = cloneGroundItemSnapshots(targetVisibleItems)
+	removedVisibleItems, addedVisibleItems := diffGroundItemSnapshots(currentVisibleItems, targetVisibleItems)
+	return GroundItemVisibilityDiff{
+		CurrentVisibleItems: currentVisibleItems,
+		TargetVisibleItems:  targetVisibleItems,
+		RemovedVisibleItems: removedVisibleItems,
+		AddedVisibleItems:   addedVisibleItems,
+	}
+}
+
+func RelocateGroundItemVisibilityDiff(topology BootstrapTopology, current loginticket.Character, target loginticket.Character, groundItems []GroundItemOccupancy) GroundItemVisibilityDiff {
+	return BuildGroundItemVisibilityDiff(
+		VisibleGroundItems(topology, current, groundItems),
+		VisibleGroundItems(topology, target, groundItems),
+	)
+}
+
 func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology BootstrapTopology, current loginticket.Character, target loginticket.Character) []MapOccupancySnapshot {
 	byMap := make(map[uint32]MapOccupancySnapshot, len(before)+1)
 	for _, snapshot := range before {
@@ -740,6 +788,44 @@ func sortStaticActorSnapshots(snapshots []StaticActorSnapshot) {
 		}
 		return snapshots[i].Name < snapshots[j].Name
 	})
+}
+
+func cloneGroundItemSnapshots(snapshots []GroundItemSnapshot) []GroundItemSnapshot {
+	if len(snapshots) == 0 {
+		return nil
+	}
+	cloned := append([]GroundItemSnapshot(nil), snapshots...)
+	sortGroundItemSnapshots(cloned)
+	return cloned
+}
+
+func diffGroundItemSnapshots(current []GroundItemSnapshot, target []GroundItemSnapshot) ([]GroundItemSnapshot, []GroundItemSnapshot) {
+	currentByVID := make(map[uint32]GroundItemSnapshot, len(current))
+	for _, snapshot := range current {
+		currentByVID[snapshot.VID] = snapshot
+	}
+	targetByVID := make(map[uint32]GroundItemSnapshot, len(target))
+	for _, snapshot := range target {
+		targetByVID[snapshot.VID] = snapshot
+	}
+
+	removed := make([]GroundItemSnapshot, 0)
+	for vid, snapshot := range currentByVID {
+		if _, ok := targetByVID[vid]; ok {
+			continue
+		}
+		removed = append(removed, snapshot)
+	}
+	added := make([]GroundItemSnapshot, 0)
+	for vid, snapshot := range targetByVID {
+		if _, ok := currentByVID[vid]; ok {
+			continue
+		}
+		added = append(added, snapshot)
+	}
+	sortGroundItemSnapshots(removed)
+	sortGroundItemSnapshots(added)
+	return removed, added
 }
 
 func sortGroundItemSnapshots(snapshots []GroundItemSnapshot) {

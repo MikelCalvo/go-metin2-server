@@ -562,6 +562,54 @@ func TestAppendGroundItemsToMapOccupancySnapshotsPreservesGroundOnlyMapsAndOrder
 	}
 }
 
+func TestVisibleGroundItemsUsesConfiguredVisibilityPolicyAndOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(300, 100)
+	subject := entityRegistryCharacter("Subject", 0x02040101, 42, 1000, 1000)
+	ground := []GroundItemOccupancy{
+		{VID: 30, Vnum: 27003, Count: 1, OwnerName: "Owner", MapIndex: 42, X: 5000, Y: 5000, Z: 0},
+		{VID: 20, Vnum: 27002, Count: 1, OwnerName: "Owner", MapIndex: 99, X: 1000, Y: 1000, Z: 0},
+		{VID: 10, Vnum: 27001, Count: 2, OwnerName: "Owner", MapIndex: 42, X: 1200, Y: 1100, Z: 0},
+		{VID: 5, Vnum: 1, GoldAmount: 250, OwnerName: "Owner", MapIndex: 42, X: 900, Y: 950, Z: 0},
+	}
+
+	visible := VisibleGroundItems(topology, subject, ground)
+	if len(visible) != 2 {
+		t.Fatalf("expected 2 visible ground entries, got %+v", visible)
+	}
+	if visible[0].VID != 5 || visible[1].VID != 10 {
+		t.Fatalf("expected deterministic visible ground ordering by VID [5 10], got %+v", visible)
+	}
+	if visible[0].GoldAmount != 250 || visible[1].Count != 2 {
+		t.Fatalf("expected visible ground snapshots to preserve payload fields, got %+v", visible)
+	}
+}
+
+func TestGroundItemVisibilityDiffUsesConfiguredVisibilityPolicyAndOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(300, 100)
+	current := entityRegistryCharacter("Subject", 0x02040101, 42, 1000, 1000)
+	target := entityRegistryCharacter("Subject", 0x02040101, 42, 5000, 5000)
+	ground := []GroundItemOccupancy{
+		{VID: 30, Vnum: 27003, Count: 1, OwnerName: "Owner", MapIndex: 42, X: 5300, Y: 5000, Z: 0},
+		{VID: 10, Vnum: 27001, Count: 2, OwnerName: "Owner", MapIndex: 42, X: 900, Y: 950, Z: 0},
+		{VID: 20, Vnum: 1, GoldAmount: 250, OwnerName: "Owner", MapIndex: 42, X: 1200, Y: 1100, Z: 0},
+		{VID: 40, Vnum: 27004, Count: 1, OwnerName: "Owner", MapIndex: 99, X: 5000, Y: 5000, Z: 0},
+	}
+
+	diff := RelocateGroundItemVisibilityDiff(topology, current, target, ground)
+	if len(diff.CurrentVisibleItems) != 2 || diff.CurrentVisibleItems[0].VID != 10 || diff.CurrentVisibleItems[1].VID != 20 {
+		t.Fatalf("expected current visible ground [10 20], got %+v", diff.CurrentVisibleItems)
+	}
+	if len(diff.TargetVisibleItems) != 1 || diff.TargetVisibleItems[0].VID != 30 {
+		t.Fatalf("expected target visible ground [30], got %+v", diff.TargetVisibleItems)
+	}
+	if len(diff.RemovedVisibleItems) != 2 || diff.RemovedVisibleItems[0].VID != 10 || diff.RemovedVisibleItems[1].VID != 20 {
+		t.Fatalf("expected removed visible ground [10 20], got %+v", diff.RemovedVisibleItems)
+	}
+	if len(diff.AddedVisibleItems) != 1 || diff.AddedVisibleItems[0].VID != 30 {
+		t.Fatalf("expected added visible ground [30], got %+v", diff.AddedVisibleItems)
+	}
+}
+
 func TestScopesBuildRelocationPreviewPreservesStaticOnlyMapsAndCharacterCountDeltas(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)
