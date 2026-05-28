@@ -380,7 +380,21 @@ Expected result:
 - the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then `CHAT_TYPE_INFO`
 - the selected-character snapshot persists atomically through the current save/rollback boundary
 
-### 5.7.1 Quickslot bootstrap replay
+### 5.7.1 Drag-to-item stack consolidation
+
+Run this when the selected QA character has two carried stacks with the same `vnum` and a stackable template.
+
+- [ ] Drag one carried stack onto another compatible carried stack
+- [ ] Confirm compatible stacks consolidate without triggering the normal consumable point/effect path
+- [ ] Confirm a full-source merge removes any item quickslot that referenced the removed source cell, while skill/command quickslots with the same slot byte stay unchanged
+- [ ] Confirm a partial merge refreshes both changed counts and keeps the source item quickslot
+- [ ] If QA data allows it, repeat with `anti_stack`, `anti_drop`, or `anti_give` template metadata and confirm the request fails closed with no item/quickslot mutation
+
+Expected result:
+- the current `ITEM_USE_TO_ITEM` path only owns stack-on-stack consolidation for carried inventory positions
+- non-stackable templates, locked items, incompatible stacks, full/over-max stacks, zero-count stacks, missing/invalid templates, and anti-transfer templates fail closed with no fallback consumable effect
+
+### 5.7.2 Quickslot bootstrap replay
 
 Run this only when the selected QA character has persisted quickslots in its bootstrap account snapshot.
 

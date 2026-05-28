@@ -909,7 +909,7 @@ func TestGameRuntimeItemUseToItemRejectsMissingOrInvalidTemplateWithoutMutation(
 	}
 }
 
-func TestGameRuntimeItemUseToItemRejectsNonStackableOrAntiStackTemplateWithoutMutation(t *testing.T) {
+func TestGameRuntimeItemUseToItemRejectsNonStackableOrAntiTransferTemplatesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
 		login     string
@@ -943,6 +943,32 @@ func TestGameRuntimeItemUseToItemRejectsNonStackableOrAntiStackTemplateWithoutMu
 				UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27003:+50"},
 			},
 			inventory: []inventory.ItemInstance{{ID: 1121, Vnum: 27003, Count: 2, Slot: 5}, {ID: 1122, Vnum: 27003, Count: 3, Slot: 6}},
+		},
+		{
+			name:     "anti-drop template",
+			login:    "use-to-item-anti-drop",
+			loginKey: 0xa3a3a3a3,
+			template: itemcatalog.Template{
+				Vnum:      27045,
+				Name:      "Anti-drop Potion",
+				Stackable: true,
+				MaxCount:  200,
+				AntiDrop:  true,
+			},
+			inventory: []inventory.ItemInstance{{ID: 1151, Vnum: 27045, Count: 2, Slot: 5}, {ID: 1152, Vnum: 27045, Count: 3, Slot: 6}},
+		},
+		{
+			name:     "anti-give template",
+			login:    "use-to-item-anti-give",
+			loginKey: 0xa4a4a4a4,
+			template: itemcatalog.Template{
+				Vnum:      27046,
+				Name:      "Anti-give Potion",
+				Stackable: true,
+				MaxCount:  200,
+				AntiGive:  true,
+			},
+			inventory: []inventory.ItemInstance{{ID: 1161, Vnum: 27046, Count: 2, Slot: 5}, {ID: 1162, Vnum: 27046, Count: 3, Slot: 6}},
 		},
 	}
 	for _, tc := range cases {
