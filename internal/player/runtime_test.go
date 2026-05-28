@@ -203,6 +203,24 @@ func TestRuntimeRejectsOverflowingGoldDeathRewardWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestRuntimeRejectsGoldDeathRewardAbovePointChangeCarrierWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030104,
+		VID:  0x02040104,
+		Name: "PeerFour",
+		Gold: 25,
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-four", CharacterIndex: 3})
+
+	result, ok := runtime.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Gold: uint64(1 << 31)})
+	if ok {
+		t.Fatalf("expected gold reward above point-change carrier to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveGold(); got != 25 {
+		t.Fatalf("expected live gold to remain unchanged after carrier overflow rejection, got %d", got)
+	}
+}
+
 func TestRuntimeRejectsNegativeExperienceDeathRewardOverflowWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:     0x01030103,

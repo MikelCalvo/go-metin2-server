@@ -193,8 +193,11 @@ func (r *Runtime) ApplyStaticActorDeathReward(reward worldruntime.StaticActorDea
 	goldBefore := r.liveGold
 	goldAfter := goldBefore
 	if reward.Gold != 0 {
+		if reward.Gold > uint64(1<<31-1) {
+			return DeathRewardResult{}, false
+		}
 		goldAfter = goldBefore + reward.Gold
-		if goldAfter < goldBefore {
+		if goldAfter < goldBefore || goldAfter > uint64(1<<31-1) {
 			return DeathRewardResult{}, false
 		}
 	}

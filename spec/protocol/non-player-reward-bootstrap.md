@@ -24,6 +24,7 @@ The selected static-actor attack seam carries that descriptor on the accepted ze
 
 Narrow EXP, gold, and item-drop descriptors are now also owned for bootstrap practice-mob experiments:
 - accepted EXP/gold killing hits apply the descriptor to the selected player only
+- EXP/gold rewards fail closed before mutation if the reward amount or resulting visible value cannot fit the signed bootstrap point-change carrier
 - the account snapshot is persisted before an EXP/gold reward point-change frame is emitted
 - the live player runtime is refreshed to the persisted point/currency value
 - one self-only `PLAYER_POINT_CHANGE` for the EXP point (`POINT_EXP = 3`) and/or gold point (`POINT_GOLD = 11`) is appended after `GC DEAD(vid)` and `GC TARGET(0, 0)`
@@ -65,7 +66,7 @@ For the current bootstrap runtime:
 - the accepted killing attack result exposes the profile or runtime override death-reward descriptor to runtime code
 - the descriptor has an explicit `Empty()` predicate so later EXP/gold/drop work can distinguish a deliberately empty reward from a non-empty reward without duplicating channel checks at each call site
 - the descriptor has an explicit `Clone()` helper that deep-copies the drop-vnum list and normalizes empty drop lists to `nil`, so future non-zero drop-table slices do not accidentally share mutable reward slices across profile-default lookups or attack results
-- the player runtime has a narrow EXP/gold death-reward application helper; it mutates live session EXP/gold only, rejects drop-bearing descriptors, rejects unsigned/signed carrier overflow (including negative current EXP plus an oversized reward), and does not persist the account snapshot or emit any reward packet by itself
+- the player runtime has a narrow EXP/gold death-reward application helper; it mutates live session EXP/gold only, rejects drop-bearing descriptors, rejects unsigned/signed carrier overflow (including negative current EXP plus an oversized reward and gold values that cannot fit the signed point-change carrier), and does not persist the account snapshot or emit any reward packet by itself
 - the integrated game runtime owns the current persistence + packet edge for EXP/gold descriptors: save updated account points/currency, refresh the selected-player persisted snapshot, and append self-only `PLAYER_POINT_CHANGE` frames after the death/target-clear frames
 - if EXP/gold reward persistence fails after an accepted killing edge, the runtime rolls live points/currency back to the previous selected-character snapshot, refreshes shared-world registration, preserves the already-owned death/target-clear frames, and omits reward `PLAYER_POINT_CHANGE` frames plus any later drop frames from that descriptor
 - the integrated game runtime also owns item-drop descriptor edges: each configured drop vnum emits a deterministic ground item at the killer's current location plus an `OWNERSHIP` frame for the killer, registers that ground item in shared-world runtime state, and leaves inventory/account persistence unchanged until an explicit pickup request
