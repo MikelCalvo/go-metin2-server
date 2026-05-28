@@ -260,6 +260,7 @@ func TestUseItemOnItemRejectsIncompatibleAndGuardedTargetsWithoutMutation(t *tes
 		{ID: 42, Vnum: 27001, Count: 3, Slot: 6},
 	}}
 	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	foreignTemplate := itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200}
 	cases := []struct {
 		name      string
 		character loginticket.Character
@@ -271,6 +272,7 @@ func TestUseItemOnItemRejectsIncompatibleAndGuardedTargetsWithoutMutation(t *tes
 		{name: "different vnum target", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27002, Count: 3, Slot: 6}}}},
 		{name: "locked source", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5, Locked: true}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}}},
 		{name: "locked target", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6, Locked: true}}}},
+		{name: "template vnum mismatch", character: base, template: foreignTemplate},
 		{name: "non stackable template", character: base, template: itemcatalog.Template{Vnum: 27001, Name: "Single Potion", Stackable: false, MaxCount: 1}},
 		{name: "anti stack template", character: base, template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiStack: true}},
 		{name: "over max source", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 201, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}}},
