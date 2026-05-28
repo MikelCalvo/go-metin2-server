@@ -1005,11 +1005,15 @@ func encodeGroundItemAddFrame(ground sharedGroundItem) []byte {
 }
 
 func groundItemSnapshot(ground sharedGroundItem) GroundItemSnapshot {
+	return sharedGroundItemOccupancy(ground)
+}
+
+func sharedGroundItemOccupancy(ground sharedGroundItem) worldruntime.GroundItemOccupancy {
 	count := ground.Item.Count
 	if ground.GoldAmount != 0 {
 		count = 0
 	}
-	return GroundItemSnapshot{
+	return worldruntime.GroundItemOccupancy{
 		VID:        ground.VID,
 		Vnum:       ground.Item.Vnum,
 		Count:      count,
@@ -2032,26 +2036,11 @@ func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapsh
 }
 
 func appendGroundItemsToMapOccupancySnapshots(topology worldruntime.BootstrapTopology, snapshots []MapOccupancySnapshot, groundItems map[uint32]sharedGroundItem) []MapOccupancySnapshot {
-	byMap := make(map[uint32]int, len(snapshots)+len(groundItems))
-	for i := range snapshots {
-		byMap[snapshots[i].MapIndex] = i
-	}
+	groundOccupancy := make([]worldruntime.GroundItemOccupancy, 0, len(groundItems))
 	for _, ground := range groundItems {
-		mapIndex := topology.EffectiveMapIndex(loginticket.Character{MapIndex: ground.MapIndex})
-		idx, ok := byMap[mapIndex]
-		if !ok {
-			snapshots = append(snapshots, MapOccupancySnapshot{MapIndex: mapIndex})
-			idx = len(snapshots) - 1
-			byMap[mapIndex] = idx
-		}
-		snapshots[idx].GroundItems = append(snapshots[idx].GroundItems, groundItemSnapshot(ground))
+		groundOccupancy = append(groundOccupancy, sharedGroundItemOccupancy(ground))
 	}
-	for i := range snapshots {
-		sortGroundItemSnapshots(snapshots[i].GroundItems)
-		snapshots[i].GroundItemCount = len(snapshots[i].GroundItems)
-	}
-	sortMapOccupancySnapshots(snapshots)
-	return snapshots
+	return worldruntime.AppendGroundItemsToMapOccupancySnapshots(topology, snapshots, groundOccupancy)
 }
 
 func (r *sharedWorldRegistry) staticActorDeadLocked(entityID uint64) bool {

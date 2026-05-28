@@ -533,6 +533,35 @@ func TestScopesStaticActorSnapshotsReturnDeterministicOrder(t *testing.T) {
 	}
 }
 
+func TestAppendGroundItemsToMapOccupancySnapshotsPreservesGroundOnlyMapsAndOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	snapshots := []MapOccupancySnapshot{
+		{MapIndex: 42, CharacterCount: 1, Characters: []ConnectedCharacterSnapshot{{Name: "Peer", VID: 0x02040101}}},
+	}
+	ground := []GroundItemOccupancy{
+		{VID: 30, Vnum: 27002, Count: 1, OwnerName: "Owner", MapIndex: 99, X: 900, Y: 1200, Z: 0},
+		{VID: 10, Vnum: 27001, Count: 2, OwnerName: "Owner", MapIndex: 42, X: 1700, Y: 2800, Z: 0},
+		{VID: 20, Vnum: 1, GoldAmount: 1200, OwnerName: "Owner", MapIndex: 0, X: 1100, Y: 2100, Z: 0},
+	}
+
+	snapshots = AppendGroundItemsToMapOccupancySnapshots(topology, snapshots, ground)
+	if len(snapshots) != 3 {
+		t.Fatalf("expected existing, bootstrap-only, and ground-only map snapshots, got %+v", snapshots)
+	}
+	if snapshots[0].MapIndex != 1 || snapshots[1].MapIndex != 42 || snapshots[2].MapIndex != 99 {
+		t.Fatalf("expected deterministic map ordering [1 42 99], got %+v", snapshots)
+	}
+	if snapshots[0].GroundItemCount != 1 || len(snapshots[0].GroundItems) != 1 || snapshots[0].GroundItems[0].VID != 20 || snapshots[0].GroundItems[0].GoldAmount != 1200 {
+		t.Fatalf("expected bootstrap effective-map gold ground snapshot, got %+v", snapshots[0])
+	}
+	if snapshots[1].CharacterCount != 1 || snapshots[1].GroundItemCount != 1 || snapshots[1].GroundItems[0].VID != 10 || snapshots[1].GroundItems[0].Count != 2 {
+		t.Fatalf("expected existing map occupancy to retain character and append item ground snapshot, got %+v", snapshots[1])
+	}
+	if snapshots[2].CharacterCount != 0 || snapshots[2].GroundItemCount != 1 || snapshots[2].GroundItems[0].VID != 30 {
+		t.Fatalf("expected ground-only map snapshot, got %+v", snapshots[2])
+	}
+}
+
 func TestScopesBuildRelocationPreviewPreservesStaticOnlyMapsAndCharacterCountDeltas(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)

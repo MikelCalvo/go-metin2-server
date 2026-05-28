@@ -79,6 +79,8 @@ type GroundItemSnapshot struct {
 	Z          int32  `json:"z"`
 }
 
+type GroundItemOccupancy = GroundItemSnapshot
+
 type MapOccupancySnapshot struct {
 	MapIndex         uint32                       `json:"map_index"`
 	CharacterCount   int                          `json:"character_count"`
@@ -554,6 +556,34 @@ func buildMapOccupancySnapshots(topology BootstrapTopology, occupancies []MapOcc
 			StaticActorCount: len(occupancy.StaticActors),
 			StaticActors:     staticActors,
 		})
+	}
+	sortMapOccupancySnapshots(snapshots)
+	return snapshots
+}
+
+func AppendGroundItemsToMapOccupancySnapshots(topology BootstrapTopology, snapshots []MapOccupancySnapshot, groundItems []GroundItemOccupancy) []MapOccupancySnapshot {
+	if len(groundItems) == 0 {
+		return snapshots
+	}
+	byMap := make(map[uint32]int, len(snapshots)+len(groundItems))
+	for i := range snapshots {
+		byMap[snapshots[i].MapIndex] = i
+	}
+	for _, ground := range groundItems {
+		mapIndex := topology.EffectiveMapIndex(loginticket.Character{MapIndex: ground.MapIndex})
+		idx, ok := byMap[mapIndex]
+		if !ok {
+			snapshots = append(snapshots, MapOccupancySnapshot{MapIndex: mapIndex})
+			idx = len(snapshots) - 1
+			byMap[mapIndex] = idx
+		}
+		snapshot := ground
+		snapshot.MapIndex = mapIndex
+		snapshots[idx].GroundItems = append(snapshots[idx].GroundItems, snapshot)
+	}
+	for i := range snapshots {
+		sortGroundItemSnapshots(snapshots[i].GroundItems)
+		snapshots[i].GroundItemCount = len(snapshots[i].GroundItems)
 	}
 	sortMapOccupancySnapshots(snapshots)
 	return snapshots
