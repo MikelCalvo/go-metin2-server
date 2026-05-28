@@ -7281,6 +7281,85 @@ func TestGameRuntimeMapOccupancyIncludesStaticActorsOnStaticOnlyMaps(t *testing.
 	}
 }
 
+func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050215, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050215, Name: "OccupancyDropRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.occupancy_drop_reward_mob",
+	}
+	killer := peerVisibilityCharacter("OccupancyDropKiller", 0x01030115, 0x02040115, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "occupancy-drop-killer", 0x15151515, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "occupancy-drop-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed occupancy drop killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_415, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef); !ok {
+		t.Fatal("expected occupancy drop reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001}}) {
+		t.Fatal("expected occupancy drop reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "occupancy-drop-killer", 0x15151515)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before occupancy drop kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on occupancy drop hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode occupancy drop ground add: %v", err)
+	}
+
+	withDrop := runtime.MapOccupancy()
+	if len(withDrop) != 1 || withDrop[0].MapIndex != bootstrapMapIndex {
+		t.Fatalf("expected one bootstrap map occupancy snapshot after reward drop, got %+v", withDrop)
+	}
+	if withDrop[0].GroundItemCount != 1 || len(withDrop[0].GroundItems) != 1 {
+		t.Fatalf("expected one ground item in map occupancy after reward drop, got %+v", withDrop[0])
+	}
+	if withDrop[0].GroundItems[0].VID != ground.VID || withDrop[0].GroundItems[0].Vnum != 27001 || withDrop[0].GroundItems[0].OwnerName != killer.Name {
+		t.Fatalf("unexpected ground item occupancy snapshot after reward drop: %+v", withDrop[0].GroundItems[0])
+	}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected reward pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	withoutDrop := runtime.MapOccupancy()
+	if len(withoutDrop) != 1 || withoutDrop[0].MapIndex != bootstrapMapIndex {
+		t.Fatalf("expected one bootstrap map occupancy snapshot after reward pickup, got %+v", withoutDrop)
+	}
+	if withoutDrop[0].GroundItemCount != 0 || len(withoutDrop[0].GroundItems) != 0 {
+		t.Fatalf("expected reward pickup to remove ground item from map occupancy, got %+v", withoutDrop[0])
+	}
+}
+
 func TestGameRuntimePreviewRelocationReturnsVisibilityAndMapChanges(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

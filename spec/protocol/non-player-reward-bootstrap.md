@@ -30,7 +30,8 @@ Narrow EXP, gold, and item-drop runtime descriptors are now also owned for boots
 - drop descriptors append one self-only `GROUND_ADD` plus `OWNERSHIP` pair per configured drop vnum after any owned EXP/gold point-change frames
 - mixed scalar+drop descriptors are now owned in one deterministic order: death, clear target, EXP point-change when present, gold point-change when present, then ground-add/ownership pairs in descriptor order
 - the first drop rewards are runtime/world-owned ground presence at the killer's current position; they do not mutate character inventory or account persistence by themselves
-- the killer can pick up a reward drop through the existing bootstrap ground-pickup path; pickup removes the ground item, emits `GROUND_DEL`, inventory `SET`/`UPDATE` frames as needed, emits `ITEM_GET`, persists the item in the selected character inventory, and rejects replayed pickup attempts fail-closed
+- reward drops use the same pending ground-handle snapshot path as player drops, so `/local/maps` and relocation preview/transfer occupancy snapshots show them while they remain pending
+- the killer can pick up a reward drop through the existing bootstrap ground-pickup path; pickup removes the ground item from both gameplay visibility and map-occupancy snapshots, emits `GROUND_DEL`, inventory `SET`/`UPDATE` frames as needed, emits `ITEM_GET`, persists the item in the selected character inventory, and rejects replayed pickup attempts fail-closed
 
 Unknown combat kinds fail closed and produce no reward result.
 
