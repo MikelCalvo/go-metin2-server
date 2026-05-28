@@ -788,7 +788,7 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 }
 
 func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.SlotIndex, template itemcatalog.Template) (inventory.MoveResult, bool) {
-	if r == nil || source == target || !itemcatalog.ValidTemplate(template) || !template.Stackable || template.AntiStack || template.MaxCount == 0 || template.MaxCount > 255 {
+	if r == nil || source == target || !itemcatalog.ValidTemplate(template) || !template.Stackable || template.AntiStack || template.AntiDrop || template.AntiGive || template.MaxCount == 0 || template.MaxCount > 255 {
 		return inventory.MoveResult{}, false
 	}
 	sourceIndex := findInventorySlot(r.liveInventory, source)

@@ -782,6 +782,14 @@ func TestRuntimeUseItemOnItemRejectsTemplateGuardEdgesWithoutMutation(t *testing
 			template: itemcatalog.Template{Vnum: 27001, Name: "Bound Stack", Stackable: true, MaxCount: 200, AntiStack: true},
 		},
 		{
+			name:     "anti-drop",
+			template: itemcatalog.Template{Vnum: 27001, Name: "No Drop Stack", Stackable: true, MaxCount: 200, AntiDrop: true},
+		},
+		{
+			name:     "anti-give",
+			template: itemcatalog.Template{Vnum: 27001, Name: "No Give Stack", Stackable: true, MaxCount: 200, AntiGive: true},
+		},
+		{
 			name:     "over-uint8 max count",
 			template: itemcatalog.Template{Vnum: 27001, Name: "Wide Stack", Stackable: true, MaxCount: 300},
 		},

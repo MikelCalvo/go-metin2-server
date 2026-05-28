@@ -470,26 +470,57 @@ func TestRuntimeUseItemOnItemRejectsNonStackableTemplateWithoutMutatingState(t *
 	}
 }
 
-func TestRuntimeUseItemOnItemRejectsAntiStackTemplateWithoutMutatingState(t *testing.T) {
-	persisted := loginticket.Character{
-		ID:        0x01030102,
-		VID:       0x02040102,
-		Name:      "PeerTwo",
-		Points:    [255]int32{1: 700},
-		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27003, Count: 3, Slot: 5}, {ID: 12, Vnum: 27003, Count: 4, Slot: 6}},
+func TestRuntimeUseItemOnItemRejectsAntiStackDropOrGiveTemplateWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name       string
+		configure  func(*itemcatalog.Template)
+		failureMsg string
+	}{
+		{
+			name: "anti-stack",
+			configure: func(template *itemcatalog.Template) {
+				template.AntiStack = true
+			},
+			failureMsg: "anti-stack templates",
+		},
+		{
+			name: "anti-drop",
+			configure: func(template *itemcatalog.Template) {
+				template.AntiDrop = true
+			},
+			failureMsg: "anti-drop templates",
+		},
+		{
+			name: "anti-give",
+			configure: func(template *itemcatalog.Template) {
+				template.AntiGive = true
+			},
+			failureMsg: "anti-give templates",
+		},
 	}
-	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
-	template := bootstrapConsumableTemplate(27003, 1, 1, 50, "consume:27003:+50")
-	template.AntiStack = true
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "PeerTwo",
+				Points:    [255]int32{1: 700},
+				Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27003, Count: 3, Slot: 5}, {ID: 12, Vnum: 27003, Count: 4, Slot: 6}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			template := bootstrapConsumableTemplate(27003, 1, 1, 50, "consume:27003:+50")
+			tc.configure(&template)
 
-	if _, ok := runtime.UseItemOnItem(5, 6, template); ok {
-		t.Fatal("expected use-to-item to reject anti-stack templates even when source and target are otherwise mergeable")
-	}
-	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != 700 {
-		t.Fatalf("expected rejected anti-stack use-to-item to leave live state unchanged, got %#v points[1]=%d", got.Inventory, got.Points[1])
-	}
-	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
-		t.Fatalf("expected rejected anti-stack use-to-item to leave persisted inventory unchanged, got %#v", runtime.PersistedSnapshot().Inventory)
+			if _, ok := runtime.UseItemOnItem(5, 6, template); ok {
+				t.Fatalf("expected use-to-item to reject %s even when source and target are otherwise mergeable", tc.failureMsg)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != 700 {
+				t.Fatalf("expected rejected %s use-to-item to leave live state unchanged, got %#v points[1]=%d", tc.name, got.Inventory, got.Points[1])
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+				t.Fatalf("expected rejected %s use-to-item to leave persisted inventory unchanged, got %#v", tc.name, runtime.PersistedSnapshot().Inventory)
+			}
+		})
 	}
 }
 

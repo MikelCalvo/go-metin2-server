@@ -40,7 +40,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - empty source, empty target, and same-cell source/target requests fail closed before any ordinary use-effect fallback
 - the source template must resolve to a valid stackable item with non-zero `max_count`
 - the template-authored `max_count` must fit the currently owned one-byte item refresh count range (`<= 255`) because `ITEM_SET` / `ITEM_UPDATE` expose count as `uint8` in this bootstrap packet family
-- templates with authored `anti_stack = true` are rejected for drag-to-item stack consolidation even when the live stacks otherwise match
+- templates with authored `anti_stack = true`, `anti_drop = true`, or `anti_give = true` are rejected for drag-to-item stack consolidation even when the live stacks otherwise match
 - the live source stack must have non-zero count and must not already exceed the template-authored `max_count`
 - the target stack must have free capacity under that `max_count`
 - the runtime moves as many source items as fit into the target stack
@@ -50,9 +50,9 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - count-only partial refreshes use the existing `ITEM_UPDATE` packet shape for both changed carried cells and do not rewrite source item quickslots
 - the normal `use_effect` path is not executed for this drag-to-item request, even when the source item also has a consumable template
 
-Incompatible targets, empty source/target slots, same-cell source/target requests, equipped cells, locked source or target items, non-stackable templates, anti-stack templates, missing templates, over-template-max source stacks, over-template-max target stacks, already-full targets, and templates whose `max_count` exceeds the current one-byte item refresh count range fail closed with no frames and no mutation.
-The runtime also rejects empty source/target slots, same-cell source/target requests, non-stackable templates, authored `anti_stack = true` templates, over-template-max source or target stacks, and template `max_count` values above `255` at the player mutation boundary itself, so these guards do not depend only on the minimal session handler pre-check.
-The minimal session/runtime harness also freezes those template-backed guards through the normal `ITEM_USE_TO_ITEM` packet path: missing and invalid source templates, non-stackable templates, and `anti_stack` templates leave inventory and quickslot snapshots unchanged even when source and target live stacks otherwise share the same `vnum`. Already-full targets and over-`uint8` template `max_count` values are likewise frozen through both the player mutation boundary and minimal session packet path as no-frame/no-mutation rejections.
+Incompatible targets, empty source/target slots, same-cell source/target requests, equipped cells, locked source or target items, non-stackable templates, anti-stack/anti-drop/anti-give templates, missing templates, over-template-max source stacks, over-template-max target stacks, already-full targets, and templates whose `max_count` exceeds the current one-byte item refresh count range fail closed with no frames and no mutation.
+The runtime also rejects empty source/target slots, same-cell source/target requests, non-stackable templates, authored `anti_stack = true`, `anti_drop = true`, or `anti_give = true` templates, over-template-max source or target stacks, and template `max_count` values above `255` at the player mutation boundary itself, so these guards do not depend only on the minimal session handler pre-check.
+The minimal session/runtime harness also freezes those template-backed guards through the normal `ITEM_USE_TO_ITEM` packet path: missing and invalid source templates, non-stackable templates, and anti-stack/anti-drop/anti-give templates leave inventory and quickslot snapshots unchanged even when source and target live stacks otherwise share the same `vnum`. Already-full targets and over-`uint8` template `max_count` values are likewise frozen through both the player mutation boundary and minimal session packet path as no-frame/no-mutation rejections.
 When no runtime handler is installed, the default game-flow handler still rejects the packet silently/fail-closed.
 
 For the first owned packet ingress, the runtime only accepts:
