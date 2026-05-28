@@ -203,6 +203,24 @@ func TestRuntimeRejectsOverflowingGoldDeathRewardWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestRuntimeRejectsNegativeExperienceDeathRewardOverflowWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:     0x01030103,
+		VID:    0x02040103,
+		Name:   "PeerThree",
+		Points: [255]int32{ExperiencePointIndex: -5},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-three", CharacterIndex: 2})
+
+	result, ok := runtime.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: uint64(1 << 63)})
+	if ok {
+		t.Fatalf("expected negative experience overflow reward to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[ExperiencePointIndex]; got != -5 {
+		t.Fatalf("expected live experience point to remain unchanged after negative overflow rejection, got %d", got)
+	}
+}
+
 func bootstrapConsumableTemplate(vnum uint32, pointType uint8, pointIndex uint8, pointDelta int32, message string) itemcatalog.Template {
 	return itemcatalog.Template{
 		Vnum:      vnum,
