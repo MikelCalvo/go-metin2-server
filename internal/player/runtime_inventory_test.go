@@ -1578,6 +1578,60 @@ func TestMerchantSellCreditRejectsAntiSellTemplate(t *testing.T) {
 	}
 }
 
+func TestRuntimeSellMerchantItemWithTemplateRejectsAntiSellAndMismatchedTemplateWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{
+			name:     "anti sell",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiSell: true},
+		},
+		{
+			name:     "template vnum mismatch",
+			template: itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := inventoryRuntimeCharacterFixture()
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			beforeInventory := runtime.LiveInventory()
+			beforeGold := runtime.LiveGold()
+
+			if _, ok := runtime.SellMerchantItemWithTemplate(5, 0, tc.template); ok {
+				t.Fatalf("expected %s template-backed merchant sell to fail", tc.name)
+			}
+			if got := runtime.LiveGold(); got != beforeGold {
+				t.Fatalf("%s template-backed sell mutated gold: got %d want %d", tc.name, got, beforeGold)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+				t.Fatalf("%s template-backed sell mutated inventory: got %#v want %#v", tc.name, got, beforeInventory)
+			}
+		})
+	}
+}
+
+func TestRuntimeSellMerchantItemWithTemplateUsesTemplateCredit(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500}
+
+	result, ok := runtime.SellMerchantItemWithTemplate(5, 2, template)
+	if !ok {
+		t.Fatal("expected template-backed merchant sell to succeed")
+	}
+	if result.ItemRemoved || result.Item.Count != 1 || result.GoldBefore != 125000 || result.Gold != 125194 {
+		t.Fatalf("unexpected template-backed merchant sell result: %+v", result)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after template-backed merchant sell: %#v", runtime.LiveInventory())
+	}
+}
+
 func TestRuntimeSellMerchantItemRejectsInvalidInputWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

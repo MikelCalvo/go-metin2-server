@@ -974,6 +974,25 @@ func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitP
 	return r.SellMerchantItemForCredit(slot, count, unitPrice*uint64(soldCount))
 }
 
+func (r *Runtime) SellMerchantItemWithTemplate(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (MerchantSellResult, bool) {
+	if r == nil || !itemcatalog.ValidTemplate(template) || template.AntiSell {
+		return MerchantSellResult{}, false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 || r.liveInventory[index].Vnum != template.Vnum {
+		return MerchantSellResult{}, false
+	}
+	soldCount, ok := r.MerchantSellCount(slot, count)
+	if !ok {
+		return MerchantSellResult{}, false
+	}
+	credit, ok := MerchantSellCredit(template, soldCount)
+	if !ok {
+		return MerchantSellResult{}, false
+	}
+	return r.SellMerchantItemForCredit(slot, soldCount, credit)
+}
+
 func (r *Runtime) MerchantSellCount(slot inventory.SlotIndex, count uint16) (uint16, bool) {
 	if r == nil {
 		return 0, false
