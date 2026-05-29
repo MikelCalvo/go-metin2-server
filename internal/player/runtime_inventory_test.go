@@ -218,6 +218,52 @@ func TestUseItemOnItemPartiallyConsolidatesWithoutRemovingSourceQuickslot(t *tes
 	}
 }
 
+func TestUseItemOnItemFullConsolidationDoesNotMutateWhenTargetRewriteFails(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
+			{ID: 42, Vnum: 27001, Count: 3, Slot: 6},
+		},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if _, ok := runtime.useItemOnItem(5, 6, template, func(item inventory.ItemInstance) inventory.ItemInstance {
+		if item.Slot == 6 {
+			item.Count = 0
+		}
+		return item
+	}); ok {
+		t.Fatal("expected invalid target rewrite to fail full ITEM_USE_TO_ITEM consolidation")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("failed full consolidation mutated live inventory: got %#v want %#v", got, before)
+	}
+}
+
+func TestUseItemOnItemPartialConsolidationDoesNotMutateWhenSourceRewriteFails(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 41, Vnum: 27001, Count: 5, Slot: 5},
+			{ID: 42, Vnum: 27001, Count: 198, Slot: 6},
+		},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if _, ok := runtime.useItemOnItem(5, 6, template, func(item inventory.ItemInstance) inventory.ItemInstance {
+		if item.Slot == 5 {
+			item.Count = 0
+		}
+		return item
+	}); ok {
+		t.Fatal("expected invalid source rewrite to fail partial ITEM_USE_TO_ITEM consolidation")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("failed partial consolidation mutated live inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestUseItemOnItemFailsClosedWhenTargetUpdateValidationFails(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{

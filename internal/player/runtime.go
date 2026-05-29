@@ -799,6 +799,10 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 }
 
 func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.SlotIndex, template itemcatalog.Template) (inventory.MoveResult, bool) {
+	return r.useItemOnItem(source, target, template, nil)
+}
+
+func (r *Runtime) useItemOnItem(source inventory.SlotIndex, target inventory.SlotIndex, template itemcatalog.Template, rewriteItem func(inventory.ItemInstance) inventory.ItemInstance) (inventory.MoveResult, bool) {
 	if r == nil || source == target || !itemcatalog.ValidTemplate(template) || !template.Stackable || template.AntiStack || template.AntiDrop || template.AntiGive || template.MaxCount == 0 || template.MaxCount > 255 {
 		return inventory.MoveResult{}, false
 	}
@@ -826,35 +830,56 @@ func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.Slo
 	if mergeCount == 0 {
 		return inventory.MoveResult{}, false
 	}
+
+	updatedInventory := cloneItemInstances(r.liveInventory)
+	updatedSourceIndex := findInventorySlot(updatedInventory, source)
+	updatedTargetIndex := findInventorySlot(updatedInventory, target)
+	if updatedSourceIndex < 0 || updatedTargetIndex < 0 {
+		return inventory.MoveResult{}, false
+	}
+	sourceItem = updatedInventory[updatedSourceIndex]
+	targetItem = updatedInventory[updatedTargetIndex]
 	targetItem.Count += mergeCount
+	targetItem = applyItemRewriteHook(targetItem, rewriteItem)
 	if err := targetItem.Validate(); err != nil {
 		return inventory.MoveResult{}, false
 	}
 	result := inventory.MoveResult{Changed: true, From: source, To: target, ToOccupied: true, ToItem: targetItem}
 	if mergeCount == sourceItem.Count {
+		sourceItem = applyItemRewriteHook(sourceItem, rewriteItem)
 		if err := sourceItem.Validate(); err != nil {
 			return inventory.MoveResult{}, false
 		}
-		r.liveInventory = removeInventoryIndex(r.liveInventory, sourceIndex)
-		targetIndex = findInventorySlot(r.liveInventory, target)
-		if targetIndex < 0 {
+		updatedInventory = removeInventoryIndex(updatedInventory, updatedSourceIndex)
+		updatedTargetIndex = findInventorySlot(updatedInventory, target)
+		if updatedTargetIndex < 0 {
 			return inventory.MoveResult{}, false
 		}
-		r.liveInventory[targetIndex] = targetItem
-		sortInventoryItems(r.liveInventory)
+		updatedInventory[updatedTargetIndex] = targetItem
+		sortInventoryItems(updatedInventory)
+		r.liveInventory = updatedInventory
 		return result, true
 	}
 	sourceItem.Count -= mergeCount
+	sourceItem = applyItemRewriteHook(sourceItem, rewriteItem)
 	if err := sourceItem.Validate(); err != nil {
 		return inventory.MoveResult{}, false
 	}
-	r.liveInventory[sourceIndex] = sourceItem
-	r.liveInventory[targetIndex] = targetItem
-	sortInventoryItems(r.liveInventory)
+	updatedInventory[updatedSourceIndex] = sourceItem
+	updatedInventory[updatedTargetIndex] = targetItem
+	sortInventoryItems(updatedInventory)
+	r.liveInventory = updatedInventory
 	result.FromOccupied = true
 	result.FromItem = sourceItem
 	result.CountOnly = true
 	return result, true
+}
+
+func applyItemRewriteHook(item inventory.ItemInstance, rewriteItem func(inventory.ItemInstance) inventory.ItemInstance) inventory.ItemInstance {
+	if rewriteItem != nil {
+		item = rewriteItem(item)
+	}
+	return item
 }
 
 func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint16, price uint64) MerchantBuyFailure {
