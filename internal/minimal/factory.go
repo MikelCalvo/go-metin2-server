@@ -148,6 +148,11 @@ type CharacterCurrencySnapshot struct {
 	Gold uint64 `json:"gold"`
 }
 
+type CharacterPointsSnapshot struct {
+	Name   string     `json:"name"`
+	Points [255]int32 `json:"points"`
+}
+
 const (
 	staticActorInteractionFailureDefinitionNotFound     = "interaction_definition_not_found"
 	staticActorInteractionFailureUnsupportedKind        = "unsupported_interaction_kind"
@@ -222,6 +227,7 @@ type gameRuntime struct {
 type liveCharacterStateSnapshot struct {
 	Name      string
 	Gold      uint64
+	Points    [255]int32
 	Inventory []InventoryItemSnapshot
 	Equipment []EquipmentItemSnapshot
 }
@@ -389,6 +395,14 @@ func (r *gameRuntime) CurrencySnapshot(name string) (CharacterCurrencySnapshot, 
 	return CharacterCurrencySnapshot{Name: state.Name, Gold: state.Gold}, true
 }
 
+func (r *gameRuntime) PointsSnapshot(name string) (CharacterPointsSnapshot, bool) {
+	state, ok := r.liveCharacterState(name)
+	if !ok {
+		return CharacterPointsSnapshot{}, false
+	}
+	return CharacterPointsSnapshot{Name: state.Name, Points: state.Points}, true
+}
+
 func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, snapshotter liveCharacterStateSnapshotter, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier) uint64 {
 	if r == nil || snapshotter == nil {
 		return 0
@@ -470,6 +484,7 @@ func buildLiveCharacterStateSnapshot(character loginticket.Character) liveCharac
 	state := liveCharacterStateSnapshot{
 		Name:      character.Name,
 		Gold:      character.Gold,
+		Points:    character.Points,
 		Inventory: make([]InventoryItemSnapshot, 0, len(character.Inventory)),
 		Equipment: make([]EquipmentItemSnapshot, 0, len(character.Equipment)),
 	}

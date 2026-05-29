@@ -12778,7 +12778,7 @@ func TestNewGameSessionFactoryAppliesGoldOnlyPracticeMobDeathReward(t *testing.T
 	}
 }
 
-func TestNewGameSessionFactoryRollsBackGoldOnlyPracticeMobDeathRewardWhenAccountSaveFails(t *testing.T) {
+func TestNewGameSessionFactoryRollsBackScalarPracticeMobDeathRewardWhenAccountSaveFails(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
 		Entity:        worldruntime.Entity{ID: 0x01050203, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050203, Name: "RewardSaveFailureMob"},
@@ -12789,6 +12789,7 @@ func TestNewGameSessionFactoryRollsBackGoldOnlyPracticeMobDeathRewardWhenAccount
 		SpawnGroupRef: "practice.reward_save_failure_mob",
 	}
 	killer := peerVisibilityCharacter("RewardSaveFailureKiller", 0x01030103, 0x02040103, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 25
 	killer.Gold = 25
 	issuePeerTicket(t, store, "reward-save-failure-killer", 0x33333333, killer)
 
@@ -12802,7 +12803,7 @@ func TestNewGameSessionFactoryRollsBackGoldOnlyPracticeMobDeathRewardWhenAccount
 	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected reward save-failure mob registration to succeed")
 	}
-	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Gold: 75}) {
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 75, Gold: 75}) {
 		t.Fatal("expected test reward override to apply to registered practice mob")
 	}
 
@@ -12828,10 +12829,10 @@ func TestNewGameSessionFactoryRollsBackGoldOnlyPracticeMobDeathRewardWhenAccount
 		}
 	}
 	if err != nil {
-		t.Fatalf("unexpected attack error on gold reward save-failure killing hit: %v", err)
+		t.Fatalf("unexpected attack error on scalar reward save-failure killing hit: %v", err)
 	}
 	if len(killOut) != 2 {
-		t.Fatalf("expected killing hit to preserve dead and clear target frames while omitting gold point-change after save failure, got %d", len(killOut))
+		t.Fatalf("expected killing hit to preserve dead and clear target frames while omitting scalar point-changes after save failure, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
 		t.Fatalf("decode save-failure reward killing hit dead frame: %v", err)
@@ -12843,8 +12844,13 @@ func TestNewGameSessionFactoryRollsBackGoldOnlyPracticeMobDeathRewardWhenAccount
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected save-failure reward killing hit to clear target, got %+v", clearTarget)
 	}
-	if snapshot, ok := runtime.CurrencySnapshot("RewardSaveFailureKiller"); !ok || snapshot.Gold != 25 {
-		t.Fatalf("expected live currency snapshot to roll back to 25 after reward save failure, got %+v ok=%v", snapshot, ok)
+	currencySnapshot, ok := runtime.CurrencySnapshot("RewardSaveFailureKiller")
+	if !ok || currencySnapshot.Gold != 25 {
+		t.Fatalf("expected live currency snapshot to roll back to 25 gold after reward save failure, got %+v ok=%v", currencySnapshot, ok)
+	}
+	pointsSnapshot, ok := runtime.PointsSnapshot("RewardSaveFailureKiller")
+	if !ok || pointsSnapshot.Points[bootstrapExperiencePointType] != 25 {
+		t.Fatalf("expected live points snapshot to roll back to 25 experience after reward save failure, got %+v ok=%v", pointsSnapshot, ok)
 	}
 }
 
