@@ -288,6 +288,34 @@ func TestEntityRegistryRemoveStaticActorClearsMapPresenceWhenDirectoryEntryAlrea
 	}
 }
 
+func TestEntityRegistryRemoveStaticActorClearsDirectoryWhenMapIndexEntryAlreadyMissing(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if _, ok := registry.maps.RemoveStatic(guard.Entity.ID); !ok {
+		t.Fatal("expected direct map-index removal to simulate partial teardown")
+	}
+
+	removed, ok := registry.RemoveStaticActor(guard.Entity.ID)
+	if !ok || removed.Entity.ID != guard.Entity.ID {
+		t.Fatalf("expected tolerant static actor removal after map-index loss, got actor=%+v ok=%v", removed, ok)
+	}
+	if _, ok := registry.StaticActor(guard.Entity.ID); ok {
+		t.Fatal("expected static actor directory lookup to be cleared after tolerant removal")
+	}
+	if _, ok := registry.StaticActorByVID(uint32(guard.Entity.ID)); ok {
+		t.Fatal("expected static actor VID lookup to be cleared after tolerant removal")
+	}
+	if actors := registry.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected map static actor snapshot to stay empty after tolerant removal, got %+v", actors)
+	}
+	if occupancy := registry.MapOccupancy(); len(occupancy) != 0 {
+		t.Fatalf("expected no map occupancy after tolerant static actor removal, got %+v", occupancy)
+	}
+}
+
 func TestEntityRegistryUpdateStaticActorUpdatesLookupAndMapPresence(t *testing.T) {
 	registry := NewEntityRegistry()
 	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
