@@ -7400,6 +7400,85 @@ func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeDropRewardCollisionFailsClosedWithoutDuplicateGroundItem(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050217, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050217, Name: "CollidingRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1150, 2150),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.colliding_reward_mob",
+	}
+	killer := peerVisibilityCharacter("CollidingRewardKiller", 0x01030117, 0x02040117, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "colliding-reward-killer", 0x17171717, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "colliding-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed colliding reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_417, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected colliding reward mob registration to succeed")
+	}
+	const rewardVnum uint32 = 27001
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{rewardVnum}}) {
+		t.Fatal("expected colliding reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "colliding-reward-killer", 0x17171717)
+	defer closeSessionFlow(t, flow)
+	collisionVID := bootstrapRewardGroundItemVID(killer, rewardVnum, 0)
+	playerEntity, ok := runtime.sharedWorld.entities.PlayerByName("CollidingRewardKiller")
+	if !ok {
+		t.Fatal("expected killer to join shared world before pre-registering colliding drop")
+	}
+	sharedWorldID := playerEntity.Entity.ID
+	if !runtime.sharedWorld.RegisterGroundItem(sharedWorldID, "colliding-reward-killer", killer, collisionVID, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+		t.Fatal("expected pre-existing colliding ground item registration to succeed")
+	}
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before colliding reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on colliding reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 2 {
+		t.Fatalf("expected colliding reward kill to return only dead and clear-target frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode colliding reward dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode colliding reward clear-target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("unexpected colliding reward clear target: %+v", clearTarget)
+	}
+	stored, ok := runtime.sharedWorld.GroundItemVisibleTo(sharedWorldID, killer, collisionVID)
+	if !ok {
+		t.Fatal("expected pre-existing colliding ground item to remain visible")
+	}
+	if stored.Vnum != 3001 {
+		t.Fatalf("expected original colliding ground item to remain preserved, got %+v", stored)
+	}
+}
+
 func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{

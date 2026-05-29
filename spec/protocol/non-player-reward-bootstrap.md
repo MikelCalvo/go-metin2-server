@@ -50,6 +50,8 @@ Reward descriptors fail closed when:
 - multiple drops in the same descriptor would collide on the generated ground-item VID
 - a configured drop would reuse an already-live ground-item VID
 
+A live ground-item VID collision is intentionally treated as a reward-only failure, not as a combat rollback: the accepted killing hit still emits `DEAD(target_vid)` and the killer's `TARGET(0, 0)` clear, the pre-existing ground item remains registered, and the colliding reward drop emits no `ITEM_GROUND_ADD` / `ITEM_OWNERSHIP` frames.
+
 The descriptor validator itself owns the static authoring checks before runtime kill handling begins:
 - signed 32-bit scalar carrier maximums are accepted
 - scalar values above that maximum are rejected
