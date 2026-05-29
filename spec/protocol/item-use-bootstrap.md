@@ -150,12 +150,13 @@ This slice still does **not** introduce separate buff-state stores, quest-state 
 
 If a socket already lost live shared-world ownership because another session reclaimed the same selected character:
 - `/use_item <slot>` or `ITEM_USE` may still return the same self-local point/item/info burst to that stale socket
-- that stale mutation must not persist updated `points` or `inventory`
-- that stale mutation must not replace the replacement live owner's exact-name loopback inventory snapshot
-- if that stale socket later closes, a fresh reconnect/bootstrap must still reload the authoritative persisted `points`/`inventory` state rather than the stale socket's local divergence
-- no peer-facing packets are emitted from that stale socket for this bootstrap consumable path
+- `ITEM_USE_TO_ITEM` may still return self-local item/quickslot refresh frames to that stale socket for a compatible stack consolidation request
+- stale item-use mutations must not persist updated `points`, `inventory`, or `quickslots`
+- stale drag-to-item consolidation must not replace the replacement live owner's exact-name loopback inventory snapshot
+- if that stale socket later closes, a fresh reconnect/bootstrap must still reload the authoritative persisted `points`/`inventory`/`quickslots` state rather than the stale socket's local divergence
+- no peer-facing packets are emitted from that stale socket for these bootstrap item-use paths
 
-This keeps the first item-use seam consistent with the current reconnect/reclaim ownership contract without widening it into final duplicate-session gameplay semantics.
+This keeps the first item-use seams consistent with the current reconnect/reclaim ownership contract without widening them into final duplicate-session gameplay semantics.
 
 ## Explicit non-goals
 

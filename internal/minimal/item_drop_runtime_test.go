@@ -1087,6 +1087,81 @@ func TestGameRuntimeItemUseToItemRejectsNonStackableOrAntiTransferTemplatesWitho
 	}
 }
 
+func TestGameRuntimeItemUseToItemStaleSessionEmitsLocalFramesButDoesNotPersist(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemStale", 0x010301b1, 0x020401b1, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1181, Vnum: 27001, Count: 3, Slot: 5}, {ID: 1182, Vnum: 27001, Count: 4, Slot: 6}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "use-to-item-stale", 0xb1b1b1b1, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-stale", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed stale use-to-item owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected stale use-to-item runtime error: %v", err)
+	}
+	staleFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-stale", 0xb1b1b1b1)
+	closeSessionFlow(t, staleFlow)
+	issuePeerTicket(t, ticketStore, "use-to-item-stale", 0xb1b1b1b2, owner)
+	freshFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-stale", 0xb1b1b1b2)
+
+	out, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected stale use-to-item error: %v", err)
+	}
+	if len(out) < 2 {
+		t.Fatalf("expected stale use-to-item to emit local inventory frames, got %d", len(out))
+	}
+	var sawSourceDel, sawTargetSet bool
+	for _, raw := range out {
+		fr := decodeSingleFrame(t, raw)
+		if del, err := itemproto.DecodeDel(fr); err == nil && del.Position == itemproto.InventoryPosition(5) {
+			sawSourceDel = true
+			continue
+		}
+		if set, err := itemproto.DecodeSet(fr); err == nil && set.Position == itemproto.InventoryPosition(6) && set.Vnum == 27001 && set.Count == 7 {
+			sawTargetSet = true
+		}
+	}
+	if !sawSourceDel || !sawTargetSet {
+		t.Fatalf("expected stale use-to-item local frames to include source del and target set, got %d frames", len(out))
+	}
+
+	account, err := accounts.Load("use-to-item-stale")
+	if err != nil {
+		t.Fatalf("load stale use-to-item account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("stale use-to-item persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("stale use-to-item persisted quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+	}
+	players := runtime.ConnectedCharacters()
+	if len(players) != 1 || players[0].Name != owner.Name {
+		t.Fatalf("expected one fresh live owner after stale use-to-item, got %#v", players)
+	}
+	live, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatalf("expected fresh live owner inventory snapshot")
+	}
+	if !reflect.DeepEqual(live.Inventory, []InventoryItemSnapshot{{ID: 1181, Vnum: 27001, Count: 3, Slot: 5}, {ID: 1182, Vnum: 27001, Count: 4, Slot: 6}}) {
+		t.Fatalf("stale use-to-item replaced fresh live inventory: %#v", live.Inventory)
+	}
+	if queued := flushServerFrames(t, freshFlow); len(queued) != 0 {
+		t.Fatalf("stale use-to-item should not queue peer frames, got %d", len(queued))
+	}
+}
+
 func TestGameRuntimeItemDropRejectsAntiDropAndAntiGiveTemplatesWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
