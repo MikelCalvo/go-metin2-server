@@ -14137,6 +14137,70 @@ func TestGameSessionFlowItemMovePacketRejectsPartialMergeAboveTemplateMaxCount(t
 	}
 }
 
+func TestGameSessionFlowItemUseToItemRejectsEquipmentCellWithoutMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemEquipCell", 0x01030515, 0x02040515, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 77, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 78, Vnum: 27001, Count: 3, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, store, "use-to-item-equip-cell", 0x50505055, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-equip-cell", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed use-to-item equipment-cell owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-equip-cell", 0x50505055)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.Position{WindowType: itemproto.WindowInventory, Cell: itemproto.InventoryMaxCell},
+		Target: itemproto.InventoryPosition(8),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected use-to-item equipment source error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected equipment-cell source use-to-item to fail closed without frames, got %d", len(out))
+	}
+
+	out, err = flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.Position{WindowType: itemproto.WindowInventory, Cell: itemproto.InventoryMaxCell},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected use-to-item equipment target error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected equipment-cell target use-to-item to fail closed without frames, got %d", len(out))
+	}
+
+	snapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after rejected use-to-item equipment-cell requests")
+	}
+	if !reflect.DeepEqual(snapshot.Inventory, []InventoryItemSnapshot{
+		{ID: 77, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 78, Vnum: 27001, Count: 3, Slot: 8},
+	}) {
+		t.Fatalf("expected runtime inventory to stay unchanged, got %+v", snapshot.Inventory)
+	}
+	persisted, err := accounts.Load("use-to-item-equip-cell")
+	if err != nil {
+		t.Fatalf("load persisted use-to-item equipment-cell owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged, got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected persisted quickslots to stay unchanged, got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerClose", 0x01040104, 0x02050104, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-close", 0x44444444, buyer)
