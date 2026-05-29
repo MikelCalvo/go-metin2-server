@@ -14167,6 +14167,84 @@ func TestGameSessionFlowItemMovePacketMergesPartialStackWithItemUpdateFrames(t *
 	}
 }
 
+func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlyItemQuickslots(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemFullMergeQS", 0x01030516, 0x02040516, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 87, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 88, Vnum: 27001, Count: 198, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 8},
+	}
+	issuePeerTicket(t, store, "use-to-item-full-merge-qs", 0x50505056, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-full-merge-qs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed use-to-item full-merge owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-full-merge-qs", 0x50505056)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(8),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected use-to-item full merge error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected full use-to-item merge to emit item delete, target set, and source quickslot delete, got %d", len(out))
+	}
+	deleted, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode full-merge source item delete: %v", err)
+	}
+	if deleted.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected full-merge source delete: %+v", deleted)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode full-merge target item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(8) || set.Vnum != 27001 || set.Count != 200 {
+		t.Fatalf("unexpected full-merge target set: %+v", set)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode full-merge source quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("expected only item quickslot at position 2 to be deleted, got %+v", quickslotDel)
+	}
+
+	snapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after full use-to-item merge")
+	}
+	if !reflect.DeepEqual(snapshot.Inventory, []InventoryItemSnapshot{{ID: 88, Vnum: 27001, Count: 200, Slot: 8}}) {
+		t.Fatalf("expected runtime inventory to contain only merged target stack, got %+v", snapshot.Inventory)
+	}
+	persisted, err := accounts.Load("use-to-item-full-merge-qs")
+	if err != nil {
+		t.Fatalf("load persisted use-to-item full-merge owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 88, Vnum: 27001, Count: 200, Slot: 8}}) {
+		t.Fatalf("expected persisted inventory to contain only merged target stack, got %+v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, []loginticket.Quickslot{
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 8},
+	}) {
+		t.Fatalf("expected only source item quickslot to be removed, got %+v", persisted.Characters[0].Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemMovePacketSwapRetargetsSourceQuickslotAndDeletesDestinationQuickslot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
