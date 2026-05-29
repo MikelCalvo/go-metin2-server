@@ -369,6 +369,47 @@ func TestUseItemOnItemRejectsIncompatibleAndGuardedTargetsWithoutMutation(t *tes
 	}
 }
 
+func TestUseItemOnItemRejectsOutOfRangeSourceOrTargetWithoutMutation(t *testing.T) {
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	cases := []struct {
+		name      string
+		character loginticket.Character
+		source    inventory.SlotIndex
+		target    inventory.SlotIndex
+	}{
+		{
+			name: "source outside carried inventory",
+			character: loginticket.Character{Inventory: []inventory.ItemInstance{
+				{ID: 41, Vnum: 27001, Count: 2, Slot: inventory.CarriedInventorySlotCount},
+				{ID: 42, Vnum: 27001, Count: 3, Slot: 6},
+			}},
+			source: inventory.CarriedInventorySlotCount,
+			target: 6,
+		},
+		{
+			name: "target outside carried inventory",
+			character: loginticket.Character{Inventory: []inventory.ItemInstance{
+				{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 42, Vnum: 27001, Count: 3, Slot: inventory.CarriedInventorySlotCount},
+			}},
+			source: 5,
+			target: inventory.CarriedInventorySlotCount,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(tc.character, SessionLink{})
+			before := runtime.LiveInventory()
+			if _, ok := runtime.UseItemOnItem(tc.source, tc.target, template); ok {
+				t.Fatalf("expected %s ITEM_USE_TO_ITEM consolidation to fail", tc.name)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s mutated live inventory: got %#v want %#v", tc.name, got, before)
+			}
+		})
+	}
+}
+
 func TestUseItemOnItemRejectsNilRuntime(t *testing.T) {
 	var runtime *Runtime
 	if _, ok := runtime.UseItemOnItem(5, 6, itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}); ok {
