@@ -116,6 +116,10 @@ type RelocationPreview struct {
 	TargetVisibleStaticActors  []StaticActorSnapshot        `json:"target_visible_static_actors"`
 	RemovedVisibleStaticActors []StaticActorSnapshot        `json:"removed_visible_static_actors"`
 	AddedVisibleStaticActors   []StaticActorSnapshot        `json:"added_visible_static_actors"`
+	CurrentVisibleGroundItems  []GroundItemSnapshot         `json:"current_visible_ground_items,omitempty"`
+	TargetVisibleGroundItems   []GroundItemSnapshot         `json:"target_visible_ground_items,omitempty"`
+	RemovedVisibleGroundItems  []GroundItemSnapshot         `json:"removed_visible_ground_items,omitempty"`
+	AddedVisibleGroundItems    []GroundItemSnapshot         `json:"added_visible_ground_items,omitempty"`
 	MapOccupancyChanges        []MapOccupancyChange         `json:"map_occupancy_changes"`
 	BeforeMapOccupancy         []MapOccupancySnapshot       `json:"before_map_occupancy"`
 	AfterMapOccupancy          []MapOccupancySnapshot       `json:"after_map_occupancy"`
@@ -327,12 +331,18 @@ func (s Scopes) MapOccupancySnapshots() []MapOccupancySnapshot {
 }
 
 func (s Scopes) BuildRelocationPreview(current, target loginticket.Character, applied bool) RelocationPreview {
+	return s.BuildRelocationPreviewWithGroundItems(current, target, applied, nil)
+}
+
+func (s Scopes) BuildRelocationPreviewWithGroundItems(current, target loginticket.Character, applied bool, groundItems []GroundItemOccupancy) RelocationPreview {
 	if s.Entities == nil {
 		return RelocationPreview{Applied: applied, Character: connectedCharacterSnapshot(s.Topology, current), Target: connectedCharacterSnapshot(s.Topology, target)}
 	}
 	visibilityDiff := s.RelocateVisibilityDiff(current, target)
 	staticActorVisibilityDiff := s.RelocateStaticActorVisibilityDiff(current, target)
+	groundItemVisibilityDiff := s.RelocateGroundItemVisibilityDiff(current, target, groundItems)
 	beforeOccupancy := s.MapOccupancySnapshots()
+	beforeOccupancy = AppendGroundItemsToMapOccupancySnapshots(s.Topology, beforeOccupancy, groundItems)
 	afterOccupancy := relocateMapOccupancySnapshots(beforeOccupancy, s.Topology, current, target)
 	return RelocationPreview{
 		Applied:                    applied,
@@ -346,6 +356,10 @@ func (s Scopes) BuildRelocationPreview(current, target loginticket.Character, ap
 		TargetVisibleStaticActors:  staticActorSnapshots(s.Topology, staticActorVisibilityDiff.TargetVisibleActors),
 		RemovedVisibleStaticActors: staticActorSnapshots(s.Topology, staticActorVisibilityDiff.RemovedVisibleActors),
 		AddedVisibleStaticActors:   staticActorSnapshots(s.Topology, staticActorVisibilityDiff.AddedVisibleActors),
+		CurrentVisibleGroundItems:  groundItemVisibilityDiff.CurrentVisibleItems,
+		TargetVisibleGroundItems:   groundItemVisibilityDiff.TargetVisibleItems,
+		RemovedVisibleGroundItems:  groundItemVisibilityDiff.RemovedVisibleItems,
+		AddedVisibleGroundItems:    groundItemVisibilityDiff.AddedVisibleItems,
 		MapOccupancyChanges:        buildMapOccupancyChanges(beforeOccupancy, afterOccupancy),
 		BeforeMapOccupancy:         beforeOccupancy,
 		AfterMapOccupancy:          afterOccupancy,
@@ -664,7 +678,7 @@ func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology Boots
 		}
 		snapshot.Characters = filtered
 		snapshot.CharacterCount = len(filtered)
-		if snapshot.CharacterCount == 0 && snapshot.StaticActorCount == 0 {
+		if snapshot.CharacterCount == 0 && snapshot.StaticActorCount == 0 && snapshot.GroundItemCount == 0 {
 			delete(byMap, currentSnapshot.MapIndex)
 		} else {
 			byMap[currentSnapshot.MapIndex] = snapshot

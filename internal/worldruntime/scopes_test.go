@@ -703,3 +703,38 @@ func TestScopesBuildRelocationPreviewUsesAppliedFlag(t *testing.T) {
 		t.Fatal("expected relocate preview helper to preserve applied=true")
 	}
 }
+
+func TestScopesBuildRelocationPreviewWithGroundItemsIncludesVisibleGroundDeltasAndOccupancy(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(300, 100)
+	registry := NewEntityRegistryWithTopology(topology)
+	current := entityRegistryCharacter("PeerTwo", 0x02040102, 42, 1000, 1000)
+	registry.RegisterPlayer(current)
+	target := current
+	target.X = 5000
+	target.Y = 5000
+	groundItems := []GroundItemOccupancy{
+		{VID: 30, Vnum: 27003, Count: 1, OwnerName: "Owner", MapIndex: 42, X: 5300, Y: 5000, Z: 0},
+		{VID: 10, Vnum: 27001, Count: 2, OwnerName: "Owner", MapIndex: 42, X: 900, Y: 950, Z: 0},
+		{VID: 20, Vnum: 1, GoldAmount: 250, OwnerName: "Owner", MapIndex: 42, X: 1200, Y: 1100, Z: 0},
+	}
+
+	preview := NewScopes(topology, registry).BuildRelocationPreviewWithGroundItems(current, target, false, groundItems)
+	if len(preview.CurrentVisibleGroundItems) != 2 || preview.CurrentVisibleGroundItems[0].VID != 10 || preview.CurrentVisibleGroundItems[1].VID != 20 {
+		t.Fatalf("expected current visible ground [10 20], got %+v", preview.CurrentVisibleGroundItems)
+	}
+	if len(preview.TargetVisibleGroundItems) != 1 || preview.TargetVisibleGroundItems[0].VID != 30 {
+		t.Fatalf("expected target visible ground [30], got %+v", preview.TargetVisibleGroundItems)
+	}
+	if len(preview.RemovedVisibleGroundItems) != 2 || preview.RemovedVisibleGroundItems[0].VID != 10 || preview.RemovedVisibleGroundItems[1].VID != 20 {
+		t.Fatalf("expected removed visible ground [10 20], got %+v", preview.RemovedVisibleGroundItems)
+	}
+	if len(preview.AddedVisibleGroundItems) != 1 || preview.AddedVisibleGroundItems[0].VID != 30 {
+		t.Fatalf("expected added visible ground [30], got %+v", preview.AddedVisibleGroundItems)
+	}
+	if len(preview.BeforeMapOccupancy) != 1 || preview.BeforeMapOccupancy[0].GroundItemCount != 3 {
+		t.Fatalf("expected before occupancy to include all ground items, got %+v", preview.BeforeMapOccupancy)
+	}
+	if len(preview.AfterMapOccupancy) != 1 || preview.AfterMapOccupancy[0].GroundItemCount != 3 {
+		t.Fatalf("expected after occupancy to preserve all ground items, got %+v", preview.AfterMapOccupancy)
+	}
+}

@@ -977,17 +977,19 @@ func (r *sharedWorldRegistry) groundItemReachableByCharacterLocked(ground shared
 	return dx*dx+dy*dy <= bootstrapGroundItemPickupRange*bootstrapGroundItemPickupRange
 }
 
-func (r *sharedWorldRegistry) groundItemVisibilityDiffLocked(previous loginticket.Character, current loginticket.Character) sharedGroundItemVisibilityDiff {
+func (r *sharedWorldRegistry) groundItemVisibilityDiffLocked(previous loginticket.Character, current loginticket.Character, groundItems ...[]worldruntime.GroundItemOccupancy) sharedGroundItemVisibilityDiff {
 	if r == nil || len(r.groundItemsByVID) == 0 {
 		return sharedGroundItemVisibilityDiff{}
 	}
-	groundItems := make([]worldruntime.GroundItemOccupancy, 0, len(r.groundItemsByVID))
+	groundItemOccupancies := r.groundItemOccupanciesLocked()
+	if len(groundItems) > 0 {
+		groundItemOccupancies = groundItems[0]
+	}
 	groundItemsByVID := make(map[uint32]sharedGroundItem, len(r.groundItemsByVID))
 	for _, ground := range r.groundItemsByVID {
-		groundItems = append(groundItems, sharedGroundItemOccupancy(ground))
 		groundItemsByVID[ground.VID] = ground
 	}
-	visibilityDiff := r.scopesLocked().RelocateGroundItemVisibilityDiff(previous, current, groundItems)
+	visibilityDiff := r.scopesLocked().RelocateGroundItemVisibilityDiff(previous, current, groundItemOccupancies)
 	diff := sharedGroundItemVisibilityDiff{
 		Removed: sharedGroundItemsFromSnapshots(visibilityDiff.RemovedVisibleItems, groundItemsByVID),
 		Added:   sharedGroundItemsFromSnapshots(visibilityDiff.AddedVisibleItems, groundItemsByVID),
@@ -995,6 +997,17 @@ func (r *sharedWorldRegistry) groundItemVisibilityDiffLocked(previous loginticke
 	sortSharedGroundItemsByVID(diff.Removed)
 	sortSharedGroundItemsByVID(diff.Added)
 	return diff
+}
+
+func (r *sharedWorldRegistry) groundItemOccupanciesLocked() []worldruntime.GroundItemOccupancy {
+	if r == nil || len(r.groundItemsByVID) == 0 {
+		return nil
+	}
+	groundItems := make([]worldruntime.GroundItemOccupancy, 0, len(r.groundItemsByVID))
+	for _, ground := range r.groundItemsByVID {
+		groundItems = append(groundItems, sharedGroundItemOccupancy(ground))
+	}
+	return groundItems
 }
 
 func sharedGroundItemsFromSnapshots(snapshots []worldruntime.GroundItemSnapshot, groundItemsByVID map[uint32]sharedGroundItem) []sharedGroundItem {
@@ -1259,9 +1272,10 @@ func (r *sharedWorldRegistry) transfer(id uint64, character loginticket.Characte
 	scopes := r.scopesLocked()
 	visibilityDiff := scopes.RelocateVisibilityDiff(previous, character)
 	staticActorVisibilityDiff := scopes.RelocateStaticActorVisibilityDiff(previous, character)
-	result := r.markRelocationPreviewStateLocked(scopes.BuildRelocationPreview(previous, character, true))
+	groundItemOccupancies := r.groundItemOccupanciesLocked()
+	result := r.markRelocationPreviewStateLocked(scopes.BuildRelocationPreviewWithGroundItems(previous, character, true, groundItemOccupancies))
 
-	groundItemVisibilityDiff := r.groundItemVisibilityDiffLocked(previous, character)
+	groundItemVisibilityDiff := r.groundItemVisibilityDiffLocked(previous, character, groundItemOccupancies)
 	originAddedVisiblePeers := visibilityDiff.AddedVisiblePeers
 	originAddedVisibleStaticActors := staticActorVisibilityDiff.AddedVisibleActors
 	originAddedGroundItems := groundItemVisibilityDiff.Added
@@ -1815,7 +1829,8 @@ func (r *sharedWorldRegistry) PreviewRelocation(name string, mapIndex uint32, x 
 	target.X = x
 	target.Y = y
 
-	return r.markRelocationPreviewStateLocked(r.scopesLocked().BuildRelocationPreview(current, target, false)), true
+	groundItemOccupancies := r.groundItemOccupanciesLocked()
+	return r.markRelocationPreviewStateLocked(r.scopesLocked().BuildRelocationPreviewWithGroundItems(current, target, false, groundItemOccupancies)), true
 }
 
 func (r *sharedWorldRegistry) EnqueueToOtherSessions(originID uint64, frames [][]byte) {
@@ -2109,8 +2124,8 @@ func (r *sharedWorldRegistry) markRelocationPreviewStateLocked(preview Relocatio
 	preview.TargetVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.TargetVisibleStaticActors)
 	preview.RemovedVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.RemovedVisibleStaticActors)
 	preview.AddedVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.AddedVisibleStaticActors)
-	preview.BeforeMapOccupancy = r.markMapOccupancySnapshotStateLocked(preview.BeforeMapOccupancy)
-	preview.AfterMapOccupancy = r.markMapOccupancySnapshotStateLocked(preview.AfterMapOccupancy)
+	preview.BeforeMapOccupancy = r.markMapOccupancyStaticActorStateLocked(preview.BeforeMapOccupancy)
+	preview.AfterMapOccupancy = r.markMapOccupancyStaticActorStateLocked(preview.AfterMapOccupancy)
 	return preview
 }
 
