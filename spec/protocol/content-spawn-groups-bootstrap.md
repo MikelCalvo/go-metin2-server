@@ -103,8 +103,9 @@ The first bootstrap spawn-group contract freezes these fields:
   - unique within the bundle
   - this is the authored identity that future runtime respawn ownership binds to
 - `name`
-  - optional/operator-friendly display label
+  - required operator-friendly display label
   - may surface in debugging, QA, or future operator tooling
+  - blank or whitespace-only values fail bundle validation before runtime mutation
 - `map_index`
   - the effective bootstrap map where the combatant should spawn
 - `x`, `y`
