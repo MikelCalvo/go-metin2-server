@@ -42,7 +42,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - the resolved source template `vnum` must match the live source stack `vnum`; a mismatched template is treated like unresolved/malformed metadata and fails closed
 - the template-authored `max_count` must fit the currently owned one-byte item refresh count range (`<= 255`) because `ITEM_SET` / `ITEM_UPDATE` expose count as `uint8` in this bootstrap packet family
 - templates with authored `anti_stack = true`, `anti_drop = true`, or `anti_give = true` are rejected for drag-to-item stack consolidation even when the live stacks otherwise match
-- the live source stack must have non-zero count and must not already exceed the template-authored `max_count`
+- the live source stack must have non-zero count, must not already exceed the template-authored `max_count`, and must validate as a well-formed carried inventory item even when the merge will remove it entirely
 - the target stack must have non-zero count and free capacity under that `max_count`
 - the runtime moves as many source items as fit into the target stack
 - if the source stack fits completely, the response burst is `ITEM_DEL(source)`, `ITEM_SET(target)`, then zero or more `QUICKSLOT_DEL` frames for item quickslots referencing the removed source carried cell

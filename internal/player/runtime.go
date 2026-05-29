@@ -824,6 +824,9 @@ func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.Slo
 	}
 	result := inventory.MoveResult{Changed: true, From: source, To: target, ToOccupied: true, ToItem: targetItem}
 	if mergeCount == sourceItem.Count {
+		if err := sourceItem.Validate(); err != nil {
+			return inventory.MoveResult{}, false
+		}
 		r.liveInventory = removeInventoryIndex(r.liveInventory, sourceIndex)
 		targetIndex = findInventorySlot(r.liveInventory, target)
 		if targetIndex < 0 {
