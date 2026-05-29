@@ -2764,7 +2764,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							persistedSelected.Points[bootstrapExperiencePointType] = updatedSelected.Points[bootstrapExperiencePointType]
 							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
 							if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
-								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								selectedPlayer.SetLiveGold(previousSelected.Gold)
+								selectedPlayer.SetLivePoint(bootstrapExperiencePointType, previousSelected.Points[bootstrapExperiencePointType])
 								refreshLiveCharacterRegistration()
 								return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 							}

@@ -174,6 +174,14 @@ func (r *Runtime) SetLiveGold(gold uint64) {
 	r.liveGold = gold
 }
 
+func (r *Runtime) SetLivePoint(pointIndex uint8, value int32) bool {
+	if r == nil || int(pointIndex) >= len(r.livePoints) {
+		return false
+	}
+	r.livePoints[pointIndex] = value
+	return true
+}
+
 func (r *Runtime) ApplyStaticActorDeathReward(reward worldruntime.StaticActorDeathReward) (DeathRewardResult, bool) {
 	if r == nil || len(reward.DropVnums) != 0 {
 		return DeathRewardResult{}, false

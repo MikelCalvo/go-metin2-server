@@ -203,6 +203,42 @@ func TestRuntimeRejectsOverflowingGoldDeathRewardWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestRuntimeCanRestoreLiveRewardScalarsWithoutClobberingLivePosition(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:       0x01030103,
+		VID:      0x02040103,
+		Name:     "PeerThree",
+		MapIndex: 1,
+		X:        1300,
+		Y:        2300,
+		Gold:     25,
+		Points: [255]int32{
+			ExperiencePointIndex: 75,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-three", CharacterIndex: 2})
+	runtime.SetLivePosition(42, 1700, 2800)
+	if _, ok := runtime.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: 25, Gold: 50}); !ok {
+		t.Fatal("expected death reward to apply before scalar restore")
+	}
+
+	if !runtime.SetLivePoint(ExperiencePointIndex, persisted.Points[ExperiencePointIndex]) {
+		t.Fatal("expected live experience restore to succeed")
+	}
+	runtime.SetLiveGold(persisted.Gold)
+
+	gotLive := runtime.LiveCharacter()
+	if gotLive.Points[ExperiencePointIndex] != 75 || gotLive.Gold != 25 {
+		t.Fatalf("expected live reward scalars to be restored, got exp=%d gold=%d", gotLive.Points[ExperiencePointIndex], gotLive.Gold)
+	}
+	if gotLive.MapIndex != 42 || gotLive.X != 1700 || gotLive.Y != 2800 {
+		t.Fatalf("expected live position to remain unchanged after scalar restore, got %+v", gotLive)
+	}
+	if gotPersisted := runtime.PersistedSnapshot(); gotPersisted.Points[ExperiencePointIndex] != 75 || gotPersisted.Gold != 25 || gotPersisted.MapIndex != 1 {
+		t.Fatalf("expected persisted snapshot to remain unchanged after scalar restore, got %+v", gotPersisted)
+	}
+}
+
 func TestRuntimeRejectsGoldDeathRewardAbovePointChangeCarrierWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030104,
