@@ -16,7 +16,7 @@ Those documents already freeze:
 
 What this document adds is the next narrower question:
 
-**What is the smallest honest client/server contract for zero-HP death, dead-state target rejection, and respawn reset without pretending that loot, EXP, corpse gameplay, or full mob systems already exist?**
+**What is the smallest honest client/server contract for zero-HP death, dead-state target rejection, and respawn reset without mixing in the separate bootstrap reward, corpse gameplay, or full mob-system contracts?**
 
 ## Scope
 
@@ -29,7 +29,8 @@ This contract currently applies only to:
 - one server-driven respawn reset that restores the dummy as a new live combat snapshot at bootstrap HP
 
 This contract does **not** yet claim:
-- non-zero loot, gold, EXP, quest credit, ownership rolls, or drop pickup; the first reward seam is explicitly rewardless and documented in `non-player-reward-bootstrap.md`
+- the deterministic bootstrap EXP/gold/drop reward contract, which is documented separately in `non-player-reward-bootstrap.md`
+- quest credit, party ownership rolls, randomized loot tables, level-up choreography, or broader reward distribution
 - corpse interaction, corpse timers, revive menus, or corpse-specific UI
 - hostile retaliation, aggro, patrol, pathing, or spawn-group AI beyond the later authored seam frozen in `content-spawn-groups-bootstrap.md`
 - player death / respawn semantics
@@ -125,7 +126,8 @@ That dead state freezes these rules:
 What is intentionally **not** frozen here:
 - corpse interaction affordances
 - corpse decay timers as user-facing gameplay
-- non-zero rewards, pickup windows, or kill-credit fanout
+- reward distribution beyond the separate bootstrap `non-player-reward-bootstrap.md` EXP/gold/drop descriptor seam
+- pickup ownership expiry, public loot release, or kill-credit fanout
 
 ## Respawn trigger rule
 
@@ -175,8 +177,9 @@ This document does not open any global broadcast rule for combat lifecycle.
 
 This slice does **not** yet freeze:
 - damage numbers or `DAMAGE_INFO`
-- non-zero loot / EXP / reward fanout beyond the rewardless seam in `non-player-reward-bootstrap.md`
-- corpse interaction or pickup
+- reward behavior beyond the narrow deterministic EXP/gold/drop descriptor contract in `non-player-reward-bootstrap.md`
+- randomized loot, party distribution, quest credit, level-up choreography, public loot release, or broader reward fanout
+- corpse interaction or corpse pickup
 - player resurrection
 - hostile AI wake-up on respawn
 - spawn packs or multi-actor regeneration groups
@@ -194,4 +197,4 @@ After this document lands, the repository should be able to say:
 - the first owned respawn reset reuses visible actor teardown + rebuild (`CHARACTER_DEL` + normal add/info/update burst) instead of inventing a dedicated revive packet
 - the respawned dummy is a new live combat snapshot that requires fresh target acquisition even if the visible `VID` is reused
 - later dummy death / respawn lifecycle fanout now also respects the current bootstrap player-death recipient gate, so an already-dead still-connected owner does not keep receiving those later non-player lifecycle frames
-- non-zero loot, EXP, corpse gameplay, and AI remain deliberately out of scope while the first reward seam remains explicitly rewardless
+- deterministic EXP/gold/drop rewards are kept in the separate bootstrap reward contract, while randomized loot, party distribution, quest credit, corpse gameplay, and AI remain deliberately out of scope
