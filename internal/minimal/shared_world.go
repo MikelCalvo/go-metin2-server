@@ -937,7 +937,7 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.playerCharacter(ownerID); !ok {
+	if _, ok := r.playerCharacter(ownerID); !ok || characterAtBootstrapHPFloor(character) {
 		return false
 	}
 	if _, exists := r.groundItemsByVID[vid]; exists {

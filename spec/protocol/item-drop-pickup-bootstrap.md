@@ -137,7 +137,7 @@ The first gold-drop runtime slice owns the gold amount fields on `CG::ITEM_DROP`
 
 For the first visible-peer pickup runtime slice, accepted pickup is visible-world scoped:
 
-1. Accepted drops are registered as temporary bootstrap ground handles at the dropper's current effective map/position after the selected character mutation is persisted.
+1. Accepted drops are registered as temporary bootstrap ground handles at the dropper's current effective map/position after the selected character mutation is persisted; zero-HP/dead owners are rejected at the shared-world ground-handle seam so death-state races cannot create new visible handles.
 2. The dropper receives the same direct `GC::ITEM_GROUND_ADD` + `GC::ITEM_OWNERSHIP` already owned by the first drop slice, currently visible peers receive one queued add/ownership pair for the same handle, and later visible sessions that enter `GAME` while the handle remains pending receive that same add/ownership pair after self bootstrap, peer-player bootstrap, and visible static-actor bootstrap frames.
 3. `ITEM_PICKUP` is accepted when its `vid` matches a still-pending bootstrap ground handle in the collector's visible world and the collector is within the first owned pickup reach (`300` coordinate units) of the ground handle. Visible-but-out-of-reach attempts fail closed with no frames, no inventory mutation, and the temporary handle left pending.
 4. When the picked item is stackable and a carried compatible, unlocked, non-equipped stack can absorb the full ground count, pickup merges into the lowest such carried slot and refreshes it with `GC::ITEM_UPDATE`.
