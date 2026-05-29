@@ -388,7 +388,7 @@ Run this when the selected QA character has two carried stacks with the same `vn
 - [ ] Confirm compatible stacks consolidate without triggering the normal consumable point/effect path
 - [ ] Confirm a full-source merge removes any item quickslot that referenced the removed source cell, while skill/command quickslots with the same slot byte stay unchanged
 - [ ] Confirm a partial merge refreshes both changed counts and keeps the source item quickslot
-- [ ] If QA data allows it, repeat with `anti_stack`, `anti_drop`, or `anti_give` template metadata and confirm the request fails closed with no item/quickslot mutation
+- [ ] If QA data allows it, repeat with `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` template metadata and confirm the request fails closed with no item/quickslot mutation
 
 Expected result:
 - the current `ITEM_USE_TO_ITEM` path only owns stack-on-stack consolidation for carried inventory positions
@@ -775,7 +775,7 @@ Expected result:
 - accepted drops publish one temporary bootstrap ground handle plus the current ownership label to currently visible peers
 - `anti_drop` / `anti_give` template-flagged carried items reject `ITEM_DROP` / `ITEM_DROP2` before inventory, quickslots, or temporary ground handles mutate
 - if a debug harness can force the dropping character to zero HP before the shared-world ground-handle registration seam, no new visible ground handle should be published
-- `anti_stack` template-flagged carried items, and stackable templates with `max_count > 255` that cannot be represented by the current bootstrap `ITEM_SET` / `ITEM_UPDATE` count fields, reject `ITEM_USE_TO_ITEM` stack consolidation before inventory, quickslots, points, or persisted state mutate
+- `anti_stack` / `anti_sell` template-flagged carried items, and stackable templates with `max_count > 255` that cannot be represented by the current bootstrap `ITEM_SET` / `ITEM_UPDATE` count fields, reject `ITEM_USE_TO_ITEM` stack consolidation before inventory, quickslots, points, or persisted state mutate
 - full `ITEM_USE_TO_ITEM` stack merges delete item quickslots that pointed at the removed source slot while leaving skill/command quickslots with the same byte slot value unchanged
 - visible peers can collect the temporary handle when compatible carried stack capacity and/or a carried destination slot can accept the entire picked count
 - owner-owned visible gold markers restore the owner's gold with party-shaped pickup notices when a visible peer collects them

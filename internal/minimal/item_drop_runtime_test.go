@@ -1043,6 +1043,19 @@ func TestGameRuntimeItemUseToItemRejectsNonStackableOrAntiTransferTemplatesWitho
 			},
 			inventory: []inventory.ItemInstance{{ID: 1161, Vnum: 27046, Count: 2, Slot: 5}, {ID: 1162, Vnum: 27046, Count: 3, Slot: 6}},
 		},
+		{
+			name:     "anti-sell template",
+			login:    "use-to-item-anti-sell",
+			loginKey: 0xa5a5a5a5,
+			template: itemcatalog.Template{
+				Vnum:      27047,
+				Name:      "Anti-sell Potion",
+				Stackable: true,
+				MaxCount:  200,
+				AntiSell:  true,
+			},
+			inventory: []inventory.ItemInstance{{ID: 1171, Vnum: 27047, Count: 2, Slot: 5}, {ID: 1172, Vnum: 27047, Count: 3, Slot: 6}},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
