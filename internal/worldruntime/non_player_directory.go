@@ -25,7 +25,7 @@ func (d *NonPlayerDirectory) Register(actor StaticEntity) bool {
 	if vid, ok := StaticActorVisibilityVID(actor); ok && conflictingEntityID(d.entityIDByVID, vid, actor.Entity.ID) {
 		return false
 	}
-	d.byEntityID[actor.Entity.ID] = actor
+	d.byEntityID[actor.Entity.ID] = cloneStaticEntity(actor)
 	if vid, ok := StaticActorVisibilityVID(actor); ok {
 		d.entityIDByVID[vid] = actor.Entity.ID
 	}
@@ -37,7 +37,7 @@ func (d *NonPlayerDirectory) ByEntityID(entityID uint64) (StaticEntity, bool) {
 		return StaticEntity{}, false
 	}
 	actor, ok := d.byEntityID[entityID]
-	return actor, ok
+	return cloneStaticEntity(actor), ok
 }
 
 func (d *NonPlayerDirectory) ByVID(vid uint32) (StaticEntity, bool) {
@@ -49,7 +49,7 @@ func (d *NonPlayerDirectory) ByVID(vid uint32) (StaticEntity, bool) {
 		return StaticEntity{}, false
 	}
 	actor, ok := d.byEntityID[entityID]
-	return actor, ok
+	return cloneStaticEntity(actor), ok
 }
 
 func (d *NonPlayerDirectory) Update(actor StaticEntity) bool {
@@ -67,7 +67,7 @@ func (d *NonPlayerDirectory) Update(actor StaticEntity) bool {
 	if previousVID, ok := StaticActorVisibilityVID(previous); ok {
 		delete(d.entityIDByVID, previousVID)
 	}
-	d.byEntityID[actor.Entity.ID] = actor
+	d.byEntityID[actor.Entity.ID] = cloneStaticEntity(actor)
 	if vid, ok := StaticActorVisibilityVID(actor); ok {
 		d.entityIDByVID[vid] = actor.Entity.ID
 	}
@@ -86,7 +86,7 @@ func (d *NonPlayerDirectory) Remove(entityID uint64) (StaticEntity, bool) {
 	if vid, ok := StaticActorVisibilityVID(actor); ok {
 		delete(d.entityIDByVID, vid)
 	}
-	return actor, true
+	return cloneStaticEntity(actor), true
 }
 
 func (d *NonPlayerDirectory) StaticActors() []StaticEntity {
@@ -95,10 +95,15 @@ func (d *NonPlayerDirectory) StaticActors() []StaticEntity {
 	}
 	actors := make([]StaticEntity, 0, len(d.byEntityID))
 	for _, actor := range d.byEntityID {
-		actors = append(actors, actor)
+		actors = append(actors, cloneStaticEntity(actor))
 	}
 	sortStaticEntities(actors)
 	return actors
+}
+
+func cloneStaticEntity(actor StaticEntity) StaticEntity {
+	actor.DeathReward = actor.DeathReward.Clone()
+	return actor
 }
 
 func validStaticEntity(actor StaticEntity) bool {

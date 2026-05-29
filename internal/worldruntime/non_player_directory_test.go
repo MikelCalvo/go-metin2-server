@@ -197,3 +197,26 @@ func TestNonPlayerDirectoryPreservesSpawnGroupRefOnRegisterAndUpdate(t *testing.
 		t.Fatalf("expected updated spawn-group ref after update, got %+v", lookup)
 	}
 }
+
+func TestNonPlayerDirectoryUpdateClonesDeathRewardDropVnums(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "PracticeMob"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, DeathReward: StaticActorDeathReward{Experience: 75, Gold: 30, DropVnums: []uint32{27001}}}
+	if !directory.Register(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := actor
+	updated.DeathReward = StaticActorDeathReward{Experience: 80, Gold: 35, DropVnums: []uint32{27002}}
+	if !directory.Update(updated) {
+		t.Fatal("expected static actor update to succeed")
+	}
+	updated.DeathReward.DropVnums[0] = 99999
+
+	lookup, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected updated static actor lookup to succeed")
+	}
+	if lookup.DeathReward.Experience != 80 || lookup.DeathReward.Gold != 35 || len(lookup.DeathReward.DropVnums) != 1 || lookup.DeathReward.DropVnums[0] != 27002 {
+		t.Fatalf("expected update to clone death reward drop vnums, got %+v", lookup.DeathReward)
+	}
+}
