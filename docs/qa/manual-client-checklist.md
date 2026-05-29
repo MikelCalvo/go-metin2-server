@@ -407,7 +407,7 @@ Expected result:
 - persisted selected-character quickslots are replayed as self-only `QUICKSLOT_ADD` bootstrap frames after the selected-character presence/state burst
 - quickslot entries are stable across auth/login-ticket handoff and reconnect
 - client-authored quickslot add/delete/swap edits return the matching self-only quickslot refresh frame, persist to the selected-character snapshot, and survive reconnect
-- automatic item-mutation quickslot synchronization is still pending, so moving or consuming an item may not yet update an existing item quickslot automatically
+- automatic item-mutation quickslot synchronization is now owned for the current bootstrap paths: item moves retarget/delete item quickslots, while last-stack item consume or full-source drag-to-item consolidation deletes item quickslots that referenced the removed carried cell and leaves skill/command quickslots unchanged
 
 ### 5.7.2 Drag-to-item carried-stack merge
 

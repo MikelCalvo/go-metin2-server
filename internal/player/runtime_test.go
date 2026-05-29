@@ -7,6 +7,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -376,6 +377,40 @@ func TestRuntimeItemUseRemovesTheLastConsumableStack(t *testing.T) {
 	}
 	if live.Points[1] != 750 {
 		t.Fatalf("expected live points[1] to be incremented to 750, got %d", live.Points[1])
+	}
+}
+
+func TestRuntimeItemUseLastStackRemovesOnlyItemQuickslotsForConsumedSlot(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 1, Slot: 5}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+			{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.UseItem(5, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50"))
+	if !ok {
+		t.Fatal("expected final-stack consumable use to succeed")
+	}
+	if !result.ItemRemoved {
+		t.Fatal("expected final-stack consumable use to remove the inventory slot")
+	}
+	deletedQuickslots, ok := runtime.SyncItemQuickslotsForItemRemoval(5)
+	if !ok {
+		t.Fatal("expected removed item quickslot sync to succeed")
+	}
+	if !reflect.DeepEqual(deletedQuickslots, []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}) {
+		t.Fatalf("unexpected deleted quickslots after final-stack consume: %#v", deletedQuickslots)
+	}
+	if !reflect.DeepEqual(runtime.LiveQuickslots(), []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}, {Position: 4, Type: quickslotproto.TypeItem, Slot: 6}}) {
+		t.Fatalf("unexpected live quickslots after final-stack consume: %#v", runtime.LiveQuickslots())
 	}
 }
 
