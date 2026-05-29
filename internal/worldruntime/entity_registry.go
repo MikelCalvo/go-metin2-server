@@ -153,6 +153,9 @@ func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bo
 	if !ok {
 		return StaticEntity{}, false
 	}
+	if actor.DeathReward.Empty() && !previous.DeathReward.Empty() {
+		actor.DeathReward = previous.DeathReward.Clone()
+	}
 	updated := newStaticEntity(actor.Entity.ID, actor)
 	if !r.staticActors.Update(updated) {
 		return StaticEntity{}, false

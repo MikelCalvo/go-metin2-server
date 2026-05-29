@@ -347,6 +347,40 @@ func TestEntityRegistryUpdateStaticActorUpdatesLookupAndMapPresence(t *testing.T
 	}
 }
 
+func TestEntityRegistryUpdateStaticActorPreservesDeathReward(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{
+		Entity:      Entity{Name: "RewardGuard"},
+		Position:    NewPosition(42, 1700, 2800),
+		RaceNum:     20300,
+		DeathReward: StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
+	})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+
+	updated := guard
+	updated.Entity.Name = "RewardGuardMoved"
+	updated.Position = NewPosition(99, 900, 1200)
+	updated.RaceNum = 20016
+	result, ok := registry.UpdateStaticActor(updated)
+	if !ok {
+		t.Fatal("expected static actor update to succeed")
+	}
+	if result.DeathReward.Experience != 75 || result.DeathReward.Gold != 60 || len(result.DeathReward.DropVnums) != 2 || result.DeathReward.DropVnums[0] != 27001 || result.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected death reward to survive static actor update, got %+v", result.DeathReward)
+	}
+
+	updated.DeathReward.DropVnums[0] = 99999
+	lookup, ok := registry.StaticActor(guard.Entity.ID)
+	if !ok {
+		t.Fatal("expected updated static actor lookup to succeed")
+	}
+	if len(lookup.DeathReward.DropVnums) != 2 || lookup.DeathReward.DropVnums[0] != 27001 || lookup.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected stored death reward drops to be cloned on update, got %+v", lookup.DeathReward.DropVnums)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,
