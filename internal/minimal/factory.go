@@ -596,7 +596,8 @@ func (r *gameRuntime) updateStaticActorWithInteractionCombatProfileAndSpawnGroup
 		return StaticActorSnapshot{}, false
 	}
 	target := cloneStaticActorSnapshots(current)
-	target[idx] = StaticActorSnapshot{EntityID: entityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef}
+	deathReward := worldruntime.StaticActorDeathReward{Experience: current[idx].RewardExperience, Gold: current[idx].RewardGold, DropVnums: append([]uint32(nil), current[idx].RewardDropVnums...)}
+	target[idx] = StaticActorSnapshot{EntityID: entityID, Name: name, MapIndex: mapIndex, X: x, Y: y, RaceNum: raceNum, CombatProfile: combatProfile, InteractionKind: interactionKind, InteractionRef: interactionRef, SpawnGroupRef: spawnGroupRef, RewardExperience: deathReward.Experience, RewardGold: deathReward.Gold, RewardDropVnums: append([]uint32(nil), deathReward.DropVnums...)}
 	if !r.persistStaticActorSnapshot(target) {
 		return StaticActorSnapshot{}, false
 	}

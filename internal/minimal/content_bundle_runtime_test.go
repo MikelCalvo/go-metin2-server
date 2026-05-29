@@ -344,3 +344,52 @@ func TestGameRuntimeImportContentBundleRejectsDuplicateSpawnGroupRefsWithoutMuta
 		t.Fatalf("expected runtime content bundle to remain unchanged after duplicate spawn-group import:\n got: %#v\nwant: %#v", current, previous)
 	}
 }
+
+func TestGameRuntimeUpdateSpawnGroupStaticActorPreservesRewardDescriptor(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:              "practice.mob_alpha",
+		Name:             "PracticeMobAlpha",
+		MapIndex:         42,
+		X:                1800,
+		Y:                2900,
+		RaceNum:          101,
+		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001},
+	}}}); err != nil {
+		t.Fatalf("import spawn-group content bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one imported spawn actor, got %+v", actors)
+	}
+
+	updated, ok := runtime.updateStaticActorWithInteractionCombatProfileAndSpawnGroupRef(actors[0].EntityID, "PracticeMobAlphaMoved", 42, 1810, 2910, 101, "", "", string(worldruntime.StaticActorCombatProfileTrainingDummy), "practice.mob_alpha")
+	if !ok {
+		t.Fatal("expected spawn-group static actor update to succeed")
+	}
+	if updated.RewardExperience != 75 || updated.RewardGold != 60 || !reflect.DeepEqual(updated.RewardDropVnums, []uint32{27001}) {
+		t.Fatalf("expected update result to preserve reward descriptor, got %+v", updated)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted static actor snapshot: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].RewardExperience != 75 || persisted.StaticActors[0].RewardGold != 60 || !reflect.DeepEqual(persisted.StaticActors[0].RewardDropVnums, []uint32{27001}) {
+		t.Fatalf("expected persisted update to preserve reward descriptor, got %+v", persisted)
+	}
+	reexported, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("re-export content bundle after spawn actor update: %v", err)
+	}
+	if len(reexported.SpawnGroups) != 1 || reexported.SpawnGroups[0].RewardExperience != 75 || reexported.SpawnGroups[0].RewardGold != 60 || !reflect.DeepEqual(reexported.SpawnGroups[0].RewardDropVnums, []uint32{27001}) {
+		t.Fatalf("expected re-export to preserve reward descriptor, got %+v", reexported)
+	}
+}
