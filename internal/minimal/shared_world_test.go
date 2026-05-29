@@ -12778,6 +12778,92 @@ func TestNewGameSessionFactoryAppliesGoldOnlyPracticeMobDeathReward(t *testing.T
 	}
 }
 
+func TestNewGameSessionFactoryOmitsOverflowingScalarPracticeMobDeathReward(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105021A, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105021A, Name: "OverflowRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.overflow_reward_mob",
+	}
+	killer := peerVisibilityCharacter("OverflowRewardKiller", 0x0103011A, 0x0204011A, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 1<<31 - 10
+	killer.Gold = 25
+	issuePeerTicket(t, store, "overflow-reward-killer", 0x1a1a1a1a, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "overflow-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed overflow reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_426, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected overflow reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 75, Gold: 75}) {
+		t.Fatal("expected overflow reward override to apply to registered practice mob")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "overflow-reward-killer", 0x1a1a1a1a)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before overflow reward kill: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target selection frame before overflow reward kill, got %d", len(selectOut))
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on overflow reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 2 {
+		t.Fatalf("expected overflow reward killing hit to preserve dead and clear target frames only, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode overflow reward killing hit dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode overflow reward killing hit clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected overflow reward killing hit to clear target, got %+v", clearTarget)
+	}
+	pointsSnapshot, ok := runtime.PointsSnapshot("OverflowRewardKiller")
+	if !ok || pointsSnapshot.Points[bootstrapExperiencePointType] != killer.Points[bootstrapExperiencePointType] {
+		t.Fatalf("expected live experience to stay unchanged after overflowing reward, got %+v ok=%v", pointsSnapshot, ok)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot("OverflowRewardKiller")
+	if !ok || currencySnapshot.Gold != killer.Gold {
+		t.Fatalf("expected live gold to stay unchanged after overflowing reward, got %+v ok=%v", currencySnapshot, ok)
+	}
+	account, err := accounts.Load("overflow-reward-killer")
+	if err != nil {
+		t.Fatalf("load overflow reward killer account: %v", err)
+	}
+	if got := account.Characters[0].Points[bootstrapExperiencePointType]; got != killer.Points[bootstrapExperiencePointType] {
+		t.Fatalf("expected persisted experience to stay %d after overflowing reward, got %d", killer.Points[bootstrapExperiencePointType], got)
+	}
+	if got := account.Characters[0].Gold; got != killer.Gold {
+		t.Fatalf("expected persisted gold to stay %d after overflowing reward, got %d", killer.Gold, got)
+	}
+}
+
 func TestNewGameSessionFactoryRollsBackScalarPracticeMobDeathRewardWhenAccountSaveFails(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{

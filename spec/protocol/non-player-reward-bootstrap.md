@@ -45,6 +45,7 @@ Default bootstrap `training_dummy` and `practice_mob` profile defaults remain re
 
 Reward descriptors fail closed when:
 - `reward_experience` or `reward_gold` exceeds the current signed 32-bit `PLAYER_POINT_CHANGE` carrier range (`2,147,483,647`)
+- applying `reward_experience` or `reward_gold` would overflow the selected character's current signed 32-bit visible point / gold carrier
 - any `reward_drop_vnums` entry is `0`
 - a runtime-generated ground-item VID for a configured drop would be `0`
 - multiple drops in the same descriptor would collide on the generated ground-item VID
@@ -84,7 +85,7 @@ Current rules:
 - gold uses the bootstrap gold point type
 - each scalar reward is applied to the selected live player runtime first
 - the updated selected-character account snapshot is saved before the corresponding point-change frame is appended
-- if the player runtime rejects the scalar reward or account persistence fails, the accepted death/clear frames remain, but scalar reward frames are omitted and the live EXP/gold scalar mutations are rolled back together to their pre-reward values; other live runtime state such as the current in-world position must not be clobbered
+- if the player runtime rejects the scalar reward because the descriptor or resulting live values would overflow the signed 32-bit visible carriers, or if account persistence fails, the accepted death/clear frames remain, scalar reward frames are omitted, and the live EXP/gold scalar values stay at or roll back to their pre-reward values; other live runtime state such as the current in-world position must not be clobbered
 
 ## Drop rewards
 
