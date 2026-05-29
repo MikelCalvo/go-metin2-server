@@ -7307,6 +7307,99 @@ func TestGameRuntimeMapOccupancyIncludesStaticActorsOnStaticOnlyMaps(t *testing.
 	}
 }
 
+func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050216, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050216, Name: "CombinedRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.combined_reward_mob",
+	}
+	killer := peerVisibilityCharacter("CombinedRewardKiller", 0x01030116, 0x02040116, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 25
+	killer.Gold = 40
+	issuePeerTicket(t, store, "combined-reward-killer", 0x16161616, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "combined-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed combined reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_416, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected combined reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001}}) {
+		t.Fatal("expected combined reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "combined-reward-killer", 0x16161616)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before combined reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on combined reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 6 {
+		t.Fatalf("expected killing hit to return dead, clear target, exp, gold, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode combined reward exp point-change: %v", err)
+	}
+	if expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
+		t.Fatalf("unexpected combined reward exp point-change: %+v", expChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode combined reward gold point-change: %v", err)
+	}
+	if goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 60 || goldChange.Value != 100 {
+		t.Fatalf("unexpected combined reward gold point-change: %+v", goldChange)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	if err != nil {
+		t.Fatalf("decode combined reward ground add: %v", err)
+	}
+	if ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y {
+		t.Fatalf("unexpected combined reward ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	if err != nil {
+		t.Fatalf("decode combined reward ownership: %v", err)
+	}
+	if ownership.VID != ground.VID || ownership.OwnerName != killer.Name {
+		t.Fatalf("unexpected combined reward ownership: %+v", ownership)
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected combined reward drop to be registered as a ground item")
+	}
+
+	account, err := accounts.Load("combined-reward-killer")
+	if err != nil {
+		t.Fatalf("load combined reward account: %v", err)
+	}
+	if len(account.Characters) != 1 || account.Characters[0].Points[bootstrapExperiencePointType] != 100 || account.Characters[0].Gold != 100 {
+		t.Fatalf("expected combined scalar reward to persist, got %+v", account.Characters)
+	}
+}
+
 func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{

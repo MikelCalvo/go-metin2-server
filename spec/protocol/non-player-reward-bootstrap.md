@@ -97,12 +97,24 @@ Current rules:
 - item drops are runtime ground items first; they do not mutate persisted inventory until an explicit pickup succeeds
 - replayed pickup of the same ground VID fails closed after the first successful pickup removes it
 
+## Combined reward descriptor coverage
+
+The current runtime test coverage explicitly freezes the combined descriptor case as one kill-side transaction:
+- one accepted killing hit may carry EXP, gold, and fixed drop-vnum entries together
+- the self-visible frame order stays death/clear first, then EXP point-change, gold point-change, ground-add, and ownership
+- the scalar EXP/gold account snapshot is saved before those scalar point-change frames are emitted
+- the drop is registered as a runtime ground item after the same accepted kill and remains non-persistent until pickup
+
+This regression coverage matters because scalar persistence and drop registration use different runtime seams.
+A combined descriptor must not accidentally suppress one reward family just because the other family is present.
+
 ## Success definition
 
 The repository can now say:
 - non-player rewards are a documented bootstrap seam rather than an implied future system
 - default bootstrap combatants are still rewardless
 - authored spawn groups may carry deterministic EXP, gold, and fixed drop-vnum descriptors
+- a single accepted kill can emit EXP, gold, and owned drop feedback together in documented order
 - accepted non-player death is preserved even when reward application fails
 - scalar rewards persist before their point-change frames are emitted
 - item drops become owned ground items and persist to inventory only through the normal pickup path
