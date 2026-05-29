@@ -482,7 +482,7 @@ Important note:
 
 ### 5.11 Practice-mob reward smoke
 
-Run this only when the target build has authored QA `spawn_groups` practice-mob content loaded with a non-zero bootstrap death-reward descriptor.
+Run this when the target build has authored QA `spawn_groups` practice-mob content loaded with a non-zero bootstrap death-reward descriptor. The repository example bundle at `docs/examples/bootstrap-npc-service-bundle.json` now includes `practice.qa_reward_mob` with EXP, gold, and one fixed drop-vnum reward descriptor for this smoke.
 
 - [ ] Approach and select the visible practice mob
 - [ ] Land accepted normal attacks until the mob reaches the owned zero-HP death edge

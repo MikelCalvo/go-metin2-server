@@ -74,7 +74,7 @@ A spawn group is currently intentionally tiny and can be represented as JSON equ
 }
 ```
 
-In bundle form, the future authored surface is therefore:
+In bundle form, the authored surface is therefore:
 
 ```json
 {
@@ -94,6 +94,8 @@ In bundle form, the future authored surface is therefore:
   ]
 }
 ```
+
+The repository-owned example bundle at `docs/examples/bootstrap-npc-service-bundle.json` now includes one `spawn_groups` practice mob with a deliberately non-zero bootstrap reward descriptor. That example is intended for local QA of the owned target -> hit -> death -> reward-drop loop; broader loot tables and quest/corpse reward systems remain out of scope.
 
 ## Field meanings
 

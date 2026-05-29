@@ -28,6 +28,22 @@
       "interaction_ref": "npc:qa_guide"
     }
   ],
+  "spawn_groups": [
+    {
+      "ref": "practice.qa_reward_mob",
+      "name": "QARewardMob",
+      "map_index": 1,
+      "x": 469800,
+      "y": 964200,
+      "race_num": 20350,
+      "combat_profile": "practice_mob",
+      "reward_experience": 75,
+      "reward_gold": 60,
+      "reward_drop_vnums": [
+        27001
+      ]
+    }
+  ],
   "interaction_definitions": [
     {
       "kind": "shop_preview",
