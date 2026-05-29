@@ -114,7 +114,7 @@ func validStaticEntity(actor StaticEntity) bool {
 	if actor.SpawnGroupRef != "" {
 		return actor.CombatProfile != "" && actor.InteractionKind == "" && actor.InteractionRef == ""
 	}
-	return true
+	return actor.DeathReward.Empty()
 }
 
 func ValidStaticActorInteractionMetadata(kind string, ref string) bool {

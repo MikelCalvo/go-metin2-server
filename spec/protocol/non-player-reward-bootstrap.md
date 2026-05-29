@@ -34,7 +34,7 @@ It does **not** yet claim:
 ## Descriptor ownership
 
 Reward descriptors can come from authored `spawn_groups` or from the live static-actor snapshot that was materialized from that authored content.
-Standalone static actors that are not backed by a non-empty `spawn_group_ref` must remain rewardless; the static snapshot store rejects reward metadata on those actors so rewards do not become a generic static-actor feature by accident.
+Standalone static actors that are not backed by a non-empty `spawn_group_ref` must remain rewardless; both the static snapshot store and the in-memory non-player directory reject reward metadata on those actors so rewards do not become a generic static-actor feature by accident.
 
 The descriptor is not character persistence by itself.
 It becomes player state only after the already-accepted death edge tries to apply the reward through the selected live session.

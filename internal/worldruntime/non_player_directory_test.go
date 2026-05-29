@@ -198,9 +198,23 @@ func TestNonPlayerDirectoryPreservesSpawnGroupRefOnRegisterAndUpdate(t *testing.
 	}
 }
 
+func TestNonPlayerDirectoryRejectsStandaloneStaticActorDeathReward(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:        Entity{ID: 14, Kind: EntityKindStaticActor, Name: "RewardedStandaloneDummy"},
+		Position:      NewPosition(42, 1800, 2900),
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfileTrainingDummy,
+		DeathReward:   StaticActorDeathReward{Experience: 75},
+	}
+	if directory.Register(actor) {
+		t.Fatal("expected standalone static actor reward metadata to be rejected")
+	}
+}
+
 func TestNonPlayerDirectoryUpdateClonesDeathRewardDropVnums(t *testing.T) {
 	directory := NewNonPlayerDirectory()
-	actor := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "PracticeMob"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, DeathReward: StaticActorDeathReward{Experience: 75, Gold: 30, DropVnums: []uint32{27001}}}
+	actor := StaticEntity{Entity: Entity{ID: 15, Kind: EntityKindStaticActor, Name: "PracticeMob"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.mob", DeathReward: StaticActorDeathReward{Experience: 75, Gold: 30, DropVnums: []uint32{27001}}}
 	if !directory.Register(actor) {
 		t.Fatal("expected static actor registration to succeed")
 	}

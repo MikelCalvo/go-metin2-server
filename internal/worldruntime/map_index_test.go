@@ -257,10 +257,12 @@ func TestMapIndexUpdateStaticMovesActorsBetweenMapBuckets(t *testing.T) {
 func TestMapIndexRegisterStaticClonesDeathRewardDropVnums(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	guard := StaticEntity{
-		Entity:      Entity{ID: 9, Kind: EntityKindStaticActor, Name: "PracticeMob"},
-		Position:    NewPosition(42, 1700, 2800),
-		RaceNum:     20300,
-		DeathReward: StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
+		Entity:        Entity{ID: 9, Kind: EntityKindStaticActor, Name: "PracticeMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.mob_alpha",
+		DeathReward:   StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
 	}
 	if !index.RegisterStatic(guard) {
 		t.Fatal("expected static actor registration to succeed")
@@ -278,7 +280,7 @@ func TestMapIndexRegisterStaticClonesDeathRewardDropVnums(t *testing.T) {
 
 func TestMapIndexUpdateStaticClonesDeathRewardDropVnums(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
-	guard := StaticEntity{Entity: Entity{ID: 10, Kind: EntityKindStaticActor, Name: "PracticeMob"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	guard := StaticEntity{Entity: Entity{ID: 10, Kind: EntityKindStaticActor, Name: "PracticeMob"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.mob_beta"}
 	if !index.RegisterStatic(guard) {
 		t.Fatal("expected static actor registration to succeed")
 	}
@@ -302,10 +304,12 @@ func TestMapIndexUpdateStaticClonesDeathRewardDropVnums(t *testing.T) {
 func TestMapIndexStaticActorSnapshotsCloneDeathRewardDropVnums(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	guard := StaticEntity{
-		Entity:      Entity{ID: 11, Kind: EntityKindStaticActor, Name: "PracticeMob"},
-		Position:    NewPosition(42, 1700, 2800),
-		RaceNum:     20300,
-		DeathReward: StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
+		Entity:        Entity{ID: 11, Kind: EntityKindStaticActor, Name: "PracticeMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.mob_gamma",
+		DeathReward:   StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
 	}
 	if !index.RegisterStatic(guard) {
 		t.Fatal("expected static actor registration to succeed")

@@ -350,10 +350,12 @@ func TestEntityRegistryUpdateStaticActorUpdatesLookupAndMapPresence(t *testing.T
 func TestEntityRegistryUpdateStaticActorPreservesDeathReward(t *testing.T) {
 	registry := NewEntityRegistry()
 	guard, ok := registry.RegisterStaticActor(StaticEntity{
-		Entity:      Entity{Name: "RewardGuard"},
-		Position:    NewPosition(42, 1700, 2800),
-		RaceNum:     20300,
-		DeathReward: StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
+		Entity:        Entity{Name: "RewardGuard"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.reward_guard",
+		DeathReward:   StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
 	})
 	if !ok {
 		t.Fatal("expected guard registration to succeed")
