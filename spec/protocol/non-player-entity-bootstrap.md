@@ -96,6 +96,7 @@ This slice does not yet freeze:
 - shops, drops, loot, or item generation
 - client-visible spawn/update/delete packet choreography beyond the first enter-game bootstrap burst, the first live operator-seed add burst, the first live operator-delete teardown for already-visible sessions, the first same-visible-set operator update refresh, the first operator-triggered map/AOI visibility rebuild for static-actor edits, and the first self-facing AOI add/delete rebuild for already-seeded static actors
 - damage, targeting, or death state beyond the currently documented training-dummy/death/reward bootstrap slices; in-place static-actor updates preserve the actor's authored/bootstrap death reward unless a later explicit reward-editing slice changes it
+  - runtime directories and map indexes must clone reward drop-vnum slices on register, update, removal, and snapshot/read paths so callers cannot mutate authored/bootstrap reward descriptors by holding an old slice alias
 - inter-channel ownership
 
 ## Success definition for the next slice

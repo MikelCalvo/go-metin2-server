@@ -197,7 +197,7 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 
 		actors := make([]StaticEntity, 0, len(m.staticByMapIndex[mapIndex]))
 		for _, actor := range m.staticByMapIndex[mapIndex] {
-			actors = append(actors, actor)
+			actors = append(actors, cloneStaticEntity(actor))
 		}
 		sortStaticEntities(actors)
 
@@ -218,6 +218,7 @@ func (m *MapIndex) RegisterStatic(actor StaticEntity) bool {
 	if _, ok := m.staticByEntityID[actor.Entity.ID]; ok {
 		return false
 	}
+	actor = cloneStaticEntity(actor)
 	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
 	m.staticByEntityID[actor.Entity.ID] = actor
 	bucket := m.staticByMapIndex[mapIndex]
@@ -247,6 +248,7 @@ func (m *MapIndex) UpdateStatic(actor StaticEntity) bool {
 			delete(m.staticByMapIndex, previousMapIndex)
 		}
 	}
+	actor = cloneStaticEntity(actor)
 	m.staticByEntityID[actor.Entity.ID] = actor
 	bucket := m.staticByMapIndex[nextMapIndex]
 	if bucket == nil {
@@ -273,7 +275,7 @@ func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
 				delete(m.staticByMapIndex, mapIndex)
 			}
 		}
-		return actor, true
+		return cloneStaticEntity(actor), true
 	}
 	for mapIndex, bucket := range m.staticByMapIndex {
 		actor, ok := bucket[entityID]
@@ -285,7 +287,7 @@ func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
 			delete(m.staticByMapIndex, mapIndex)
 		}
 		delete(m.staticByEntityID, entityID)
-		return actor, true
+		return cloneStaticEntity(actor), true
 	}
 	return StaticEntity{}, false
 }
@@ -303,7 +305,7 @@ func (m *MapIndex) StaticActors(mapIndex uint32) []StaticEntity {
 	}
 	actors := make([]StaticEntity, 0, len(bucket))
 	for _, actor := range bucket {
-		actors = append(actors, actor)
+		actors = append(actors, cloneStaticEntity(actor))
 	}
 	sortStaticEntities(actors)
 	return actors

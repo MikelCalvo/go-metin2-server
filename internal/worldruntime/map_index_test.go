@@ -253,3 +253,74 @@ func TestMapIndexUpdateStaticMovesActorsBetweenMapBuckets(t *testing.T) {
 		t.Fatalf("expected updated actor in new map bucket, got %+v", actors)
 	}
 }
+
+func TestMapIndexRegisterStaticClonesDeathRewardDropVnums(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{
+		Entity:      Entity{ID: 9, Kind: EntityKindStaticActor, Name: "PracticeMob"},
+		Position:    NewPosition(42, 1700, 2800),
+		RaceNum:     20300,
+		DeathReward: StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
+	}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	guard.DeathReward.DropVnums[0] = 99999
+
+	actors := index.StaticActors(42)
+	if len(actors) != 1 {
+		t.Fatalf("expected one static actor in map bucket, got %+v", actors)
+	}
+	if len(actors[0].DeathReward.DropVnums) != 2 || actors[0].DeathReward.DropVnums[0] != 27001 || actors[0].DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected registered reward drops to be cloned, got %+v", actors[0].DeathReward.DropVnums)
+	}
+}
+
+func TestMapIndexUpdateStaticClonesDeathRewardDropVnums(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 10, Kind: EntityKindStaticActor, Name: "PracticeMob"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := guard
+	updated.DeathReward = StaticActorDeathReward{Experience: 80, Gold: 65, DropVnums: []uint32{27003, 27004}}
+	if !index.UpdateStatic(updated) {
+		t.Fatal("expected static actor update to succeed")
+	}
+	updated.DeathReward.DropVnums[0] = 99999
+
+	actors := index.StaticActors(42)
+	if len(actors) != 1 {
+		t.Fatalf("expected one static actor in map bucket, got %+v", actors)
+	}
+	if len(actors[0].DeathReward.DropVnums) != 2 || actors[0].DeathReward.DropVnums[0] != 27003 || actors[0].DeathReward.DropVnums[1] != 27004 {
+		t.Fatalf("expected updated reward drops to be cloned, got %+v", actors[0].DeathReward.DropVnums)
+	}
+}
+
+func TestMapIndexStaticActorSnapshotsCloneDeathRewardDropVnums(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{
+		Entity:      Entity{ID: 11, Kind: EntityKindStaticActor, Name: "PracticeMob"},
+		Position:    NewPosition(42, 1700, 2800),
+		RaceNum:     20300,
+		DeathReward: StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
+	}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	actors := index.StaticActors(42)
+	actors[0].DeathReward.DropVnums[0] = 99999
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || len(snapshots[0].StaticActors) != 1 {
+		t.Fatalf("expected one static actor snapshot, got %+v", snapshots)
+	}
+	snapshots[0].StaticActors[0].DeathReward.DropVnums[1] = 88888
+
+	actors = index.StaticActors(42)
+	if len(actors[0].DeathReward.DropVnums) != 2 || actors[0].DeathReward.DropVnums[0] != 27001 || actors[0].DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected static actor reward snapshots to be isolated from callers, got %+v", actors[0].DeathReward.DropVnums)
+	}
+}
