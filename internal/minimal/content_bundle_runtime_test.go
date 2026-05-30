@@ -345,6 +345,51 @@ func TestGameRuntimeImportContentBundleRejectsDuplicateSpawnGroupRefsWithoutMuta
 	}
 }
 
+func TestGameRuntimeImportContentBundleRestoresPreviousContentWhenStaticActorPersistenceFails(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	initial := contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."}},
+	}
+	if _, err := runtime.ImportContentBundle(initial); err != nil {
+		t.Fatalf("import initial content bundle: %v", err)
+	}
+	previous, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export previous content bundle: %v", err)
+	}
+
+	runtime.staticStore = &failingStaticActorStore{}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20301}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:forge", Text: "The forge is cold."}},
+	})
+	if err == nil {
+		t.Fatal("expected content bundle import to fail when static actor persistence fails")
+	}
+
+	runtime.staticStore = staticActorStore
+	current, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("re-export content bundle after failed persistence import: %v", err)
+	}
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatalf("expected runtime content bundle to restore previous content after static actor persistence failure:\n got: %#v\nwant: %#v", current, previous)
+	}
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load restored static actor snapshot: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].Name != "VillageGuide" || persisted.StaticActors[0].InteractionRef != "npc:guide" {
+		t.Fatalf("expected previous static actor snapshot to be restored after failed import, got %#v", persisted)
+	}
+}
+
 func TestGameRuntimeUpdateSpawnGroupStaticActorPreservesRewardDescriptor(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
