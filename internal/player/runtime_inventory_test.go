@@ -592,8 +592,6 @@ func TestRuntimeCanSetDeleteAndSwapQuickslots(t *testing.T) {
 
 func TestRuntimeSetQuickslotRejectsInvalidInputs(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
-	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
-
 	invalid := []struct {
 		name     string
 		position uint8
@@ -602,17 +600,79 @@ func TestRuntimeSetQuickslotRejectsInvalidInputs(t *testing.T) {
 		{name: "quickslot position", position: 36, slot: loginticket.Quickslot{Type: 1, Slot: 5}},
 		{name: "type", position: 3, slot: loginticket.Quickslot{Type: 4, Slot: 5}},
 		{name: "item slot", position: 3, slot: loginticket.Quickslot{Type: 1, Slot: 90}},
+		{name: "nil runtime", position: 3, slot: loginticket.Quickslot{Type: 1, Slot: 5}},
 	}
 	for _, tc := range invalid {
 		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			if tc.name == "nil runtime" {
+				runtime = nil
+			}
 			if _, ok := runtime.SetQuickslot(tc.position, tc.slot); ok {
 				t.Fatalf("expected invalid %s quickslot to fail closed", tc.name)
 			}
+			if runtime != nil {
+				if got := runtime.LiveQuickslots(); len(got) != 0 {
+					t.Fatalf("expected rejected %s quickslot to leave live state empty, got %#v", tc.name, got)
+				}
+			}
 		})
 	}
-	if got := runtime.LiveQuickslots(); len(got) != 0 {
-		t.Fatalf("expected rejected quickslots to leave live state empty, got %#v", got)
+}
+
+func TestRuntimeQuickslotDeletionAndSwapRejectInvalidInputsWithoutMutation(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Quickslots = []loginticket.Quickslot{
+		{Position: 3, Type: 1, Slot: 5},
+		{Position: 7, Type: 2, Slot: 9},
 	}
+
+	t.Run("delete invalid position", func(t *testing.T) {
+		runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+		before := runtime.LiveQuickslots()
+		if _, ok := runtime.DeleteQuickslot(36); ok {
+			t.Fatal("expected invalid quickslot delete to fail closed")
+		}
+		if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, before) {
+			t.Fatalf("invalid quickslot delete mutated live state: got %#v want %#v", got, before)
+		}
+	})
+
+	t.Run("delete nil runtime", func(t *testing.T) {
+		var runtime *Runtime
+		if _, ok := runtime.DeleteQuickslot(3); ok {
+			t.Fatal("expected nil runtime quickslot delete to fail closed")
+		}
+	})
+
+	t.Run("swap invalid source position", func(t *testing.T) {
+		runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+		before := runtime.LiveQuickslots()
+		if _, ok := runtime.SwapQuickslots(36, 7); ok {
+			t.Fatal("expected invalid quickslot source swap to fail closed")
+		}
+		if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, before) {
+			t.Fatalf("invalid source quickslot swap mutated live state: got %#v want %#v", got, before)
+		}
+	})
+
+	t.Run("swap invalid target position", func(t *testing.T) {
+		runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+		before := runtime.LiveQuickslots()
+		if _, ok := runtime.SwapQuickslots(3, 36); ok {
+			t.Fatal("expected invalid quickslot target swap to fail closed")
+		}
+		if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, before) {
+			t.Fatalf("invalid target quickslot swap mutated live state: got %#v want %#v", got, before)
+		}
+	})
+
+	t.Run("swap nil runtime", func(t *testing.T) {
+		var runtime *Runtime
+		if _, ok := runtime.SwapQuickslots(3, 7); ok {
+			t.Fatal("expected nil runtime quickslot swap to fail closed")
+		}
+	})
 }
 
 func TestRuntimeSyncItemQuickslotsForInventoryMoveUpdatesMatchingItemSlots(t *testing.T) {
