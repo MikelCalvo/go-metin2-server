@@ -577,7 +577,7 @@ func TestRuntimeUseItemOnItemRejectsNonStackableTemplateWithoutMutatingState(t *
 	}
 }
 
-func TestRuntimeUseItemOnItemRejectsAntiStackDropOrGiveTemplateWithoutMutatingState(t *testing.T) {
+func TestRuntimeUseItemOnItemRejectsAntiStackTransferTemplatesWithoutMutatingState(t *testing.T) {
 	cases := []struct {
 		name       string
 		configure  func(*itemcatalog.Template)
@@ -603,6 +603,13 @@ func TestRuntimeUseItemOnItemRejectsAntiStackDropOrGiveTemplateWithoutMutatingSt
 				template.AntiGive = true
 			},
 			failureMsg: "anti-give templates",
+		},
+		{
+			name: "anti-sell",
+			configure: func(template *itemcatalog.Template) {
+				template.AntiSell = true
+			},
+			failureMsg: "anti-sell templates",
 		},
 	}
 	for _, tc := range cases {
@@ -750,6 +757,47 @@ func TestRuntimeUseItemOnItemRejectsZeroCountSourceOrTargetWithoutMutatingState(
 		{
 			name:      "zero-count target",
 			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 2, Slot: 5}, {ID: 12, Vnum: 27001, Count: 0, Slot: 6}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "PeerTwo",
+				Points:    [255]int32{1: 700},
+				Inventory: tc.inventory,
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
+			template.MaxCount = 200
+			before := runtime.LiveCharacter()
+
+			if result, ok := runtime.UseItemOnItem(5, 6, template); ok {
+				t.Fatalf("expected use-to-item to reject %s without mutation, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, before.Inventory) || got.Points[1] != before.Points[1] {
+				t.Fatalf("expected rejected %s use-to-item to leave live state unchanged, got %#v points[1]=%d", tc.name, got.Inventory, got.Points[1])
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, before.Inventory) {
+				t.Fatalf("expected rejected %s use-to-item to leave persisted inventory unchanged, got %#v", tc.name, runtime.PersistedSnapshot().Inventory)
+			}
+		})
+	}
+}
+
+func TestRuntimeUseItemOnItemRejectsMalformedSourceOrTargetWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name:      "malformed source",
+			inventory: []inventory.ItemInstance{{ID: 0, Vnum: 27001, Count: 2, Slot: 5}, {ID: 12, Vnum: 27001, Count: 3, Slot: 6}},
+		},
+		{
+			name:      "malformed target",
+			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 2, Slot: 5}, {ID: 0, Vnum: 27001, Count: 3, Slot: 6}},
 		},
 	}
 	for _, tc := range cases {
