@@ -94,6 +94,10 @@ Drop rewards reuse the existing bootstrap ground-item families:
 - `ITEM_OWNERSHIP`
 - later pickup still uses the normal owned `ITEM_PICKUP` path, producing `ITEM_GROUND_DEL`, `ITEM_SET`, and `ITEM_GET` as appropriate
 
+Ground reward registration is guarded by the same live-owner rule for both item-shaped and gold-shaped ground entries.
+If the would-be owner is already at the current bootstrap `0` HP floor, registering either a ground item or ground gold fails closed and leaves no live ground occupancy behind.
+This keeps death/restart cleanup from leaking new pickup surfaces for owners that are already dead.
+
 Current rules:
 - each configured drop spawns at the killer's current position
 - each drop has count `1`

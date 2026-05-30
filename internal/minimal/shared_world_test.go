@@ -160,6 +160,23 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsDeadOwner(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundGoldRejectsDeadOwner(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("DeadGoldDropOwner", 0x01030192, 0x02040192, 1200, 2200, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected dead gold-drop owner join to allocate a shared-world entity id")
+	}
+
+	if registry.RegisterGroundGold(ownerID, "dead-gold-drop-owner", owner, 0x07000003, 250) {
+		t.Fatal("expected dead owner ground-gold registration to fail closed")
+	}
+	if registry.GroundItemExists(0x07000003) {
+		t.Fatal("expected rejected dead-owner ground-gold item to stay absent")
+	}
+}
+
 func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
