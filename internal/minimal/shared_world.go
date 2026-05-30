@@ -958,6 +958,9 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	r.groundItemsByVID[vid] = ground
 	frames := encodeGroundItemVisibleFrames(ground)
 	for _, target := range r.scopesLocked().VisibleTargets(ownerID, character) {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 	return true

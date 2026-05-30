@@ -141,14 +141,14 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsExistingVID(t *testing.T) {
 		t.Fatalf("expected original ground item to be preserved, got %+v", stored)
 	}
 }
-
 func TestSharedWorldRegistryRegisterGroundItemRejectsDeadOwner(t *testing.T) {
 	registry := newSharedWorldRegistry()
-	owner := peerVisibilityCharacter("DeadDropOwner", 0x01030191, 0x02040191, 1200, 2200, 0, 101, 201)
+	owner := peerVisibilityCharacter("DeadDropOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	owner.Points[bootstrapPlayerPointValueIndex] = 0
-	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	ownerPending := newPendingServerFrames()
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
 	if ownerID == 0 {
-		t.Fatal("expected dead owner join to allocate a shared-world entity id")
+		t.Fatal("expected dead owner join to return a live shared-world entity ID")
 	}
 
 	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
@@ -157,6 +157,58 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsDeadOwner(t *testing.T) {
 	}
 	if registry.GroundItemExists(0x07000002) {
 		t.Fatal("expected rejected dead-owner ground item to stay absent")
+	}
+}
+
+func TestSharedWorldRegistryRegisterGroundItemSkipsDeadVisiblePeers(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("DropOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	livingPeer := peerVisibilityCharacter("LivingPeer", 0x01030102, 0x02040102, 1200, 2200, 0, 102, 202)
+	deadPeer := peerVisibilityCharacter("DeadPeer", 0x01030103, 0x02040103, 1250, 2250, 0, 103, 203)
+	deadPeer.Points[bootstrapPlayerPointValueIndex] = 0
+
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	livingPending := newPendingServerFrames()
+	livingID, _ := registry.Join(livingPeer, livingPending, nil)
+	if livingID == 0 {
+		t.Fatal("expected living peer join to return a live shared-world entity ID")
+	}
+	deadPending := newPendingServerFrames()
+	deadID, _ := registry.Join(deadPeer, deadPending, nil)
+	if deadID == 0 {
+		t.Fatal("expected dead peer join to return a live shared-world entity ID")
+	}
+	livingPending.flush()
+	deadPending.flush()
+
+	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	if !registry.RegisterGroundItem(ownerID, "drop-owner", owner, 0x07000004, item) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+
+	livingQueued := livingPending.flush()
+	if len(livingQueued) != 2 {
+		t.Fatalf("expected living visible peer to receive 2 ground-item visibility frames, got %d", len(livingQueued))
+	}
+	groundAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, livingQueued[0]))
+	if err != nil {
+		t.Fatalf("decode living peer ground-item add: %v", err)
+	}
+	if groundAdd.VID != 0x07000004 || groundAdd.Vnum != 3001 || groundAdd.X != owner.X || groundAdd.Y != owner.Y {
+		t.Fatalf("unexpected living peer ground-item add: %+v", groundAdd)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, livingQueued[1]))
+	if err != nil {
+		t.Fatalf("decode living peer ground-item ownership: %v", err)
+	}
+	if ownership.VID != 0x07000004 || ownership.OwnerName != owner.Name {
+		t.Fatalf("unexpected living peer ground-item ownership: %+v", ownership)
+	}
+	if deadQueued := deadPending.flush(); len(deadQueued) != 0 {
+		t.Fatalf("expected dead visible peer to receive no ground-item visibility frames, got %d", len(deadQueued))
 	}
 }
 
