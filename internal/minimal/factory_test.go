@@ -3022,6 +3022,67 @@ func TestNewGameRuntimeExposesSelectedCharacterItemStateSnapshotsAfterSelect(t *
 	}
 }
 
+func TestNewGameSessionFactoryItemMovePartialMergeKeepsSourceQuickslotStable(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 12, Vnum: 27001, Count: 198, Slot: 8},
+	}
+	characters[1].Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	flow := newStartedGameFlow(t, store, accounts)
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(8),
+		Count:       2,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected item move error: %v", err)
+	}
+	if len(moveOut) != 2 {
+		t.Fatalf("expected source and destination ITEM_UPDATE frames without quickslot mutation, got %d frames", len(moveOut))
+	}
+	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, moveOut[0]))
+	if err != nil {
+		t.Fatalf("decode source update: %v", err)
+	}
+	if sourceUpdate.Position != itemproto.InventoryPosition(5) || sourceUpdate.Count != 3 {
+		t.Fatalf("expected source slot 5 count 3 update, got %+v", sourceUpdate)
+	}
+	destinationUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, moveOut[1]))
+	if err != nil {
+		t.Fatalf("decode destination update: %v", err)
+	}
+	if destinationUpdate.Position != itemproto.InventoryPosition(8) || destinationUpdate.Count != 200 {
+		t.Fatalf("expected destination slot 8 count 200 update, got %+v", destinationUpdate)
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if got := account.Characters[1].Quickslots; !reflect.DeepEqual(got, characters[1].Quickslots) {
+		t.Fatalf("partial merge should keep source quickslot stable, got %#v", got)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Inventory, []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 27001, Count: 200, Slot: 8},
+	}) {
+		t.Fatalf("unexpected persisted inventory after partial counted merge: %#v", account.Characters[1].Inventory)
+	}
+}
+
 func TestNewGameSessionFactoryItemMoveExactCountMergesFullStackIntoCompatibleDestination(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accountDir := t.TempDir()

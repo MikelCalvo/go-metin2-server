@@ -159,7 +159,7 @@ The current owned synchronization is intentionally narrow:
 - removal synchronization applies to accepted carried-to-equipment `ITEM_MOVE` equips, accepted last-stack carried-inventory `ITEM_USE` paths, full-source `ITEM_USE_TO_ITEM` merges, and accepted whole-stack merchant sell paths where the carried item slot becomes empty;
 - removal synchronization rejects non-carried source cells fail-closed before live or persisted quickslot mutation;
 - it does not rewrite or delete skill or command quickslots that happen to carry the same byte value;
-- move/removal synchronization does not run for partial merges or partial-stack splits where the original item still remains at the source cell, including partial `ITEM_USE_TO_ITEM` stack consolidation;
+- move/removal synchronization does not run for partial merges or partial-stack splits where the original item still remains at the source cell, including partial `ITEM_MOVE` counted merges and partial `ITEM_USE_TO_ITEM` stack consolidation;
 - merchant partial-stack `SELL2` does not delete quickslots, because the original item still remains at the source cell;
 - it does not yet delete item quickslots when safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths clear an item cell.
 
