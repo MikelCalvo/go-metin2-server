@@ -503,6 +503,40 @@ Important note:
 - default `training_dummy` / `practice_mob` content remains rewardless unless the QA setup deliberately overrides or authors a non-zero descriptor
 - level progression, party distribution, loot ownership expiry, quest credit, and corpse gameplay are still out of scope for this bootstrap smoke
 
+### 5.12 Practice-mob retaliation death and restart-here smoke
+
+Run this when the target build has authored QA `spawn_groups` practice-mob content loaded with the current bootstrap retaliation behavior.
+
+- [ ] Approach and select the visible practice mob
+- [ ] Land accepted normal attacks and wait through delayed retaliation beats until the player reaches the owned zero-HP floor
+- [ ] Confirm the owner receives the final `PLAYER_POINT_CHANGE` to `0`, then `DEAD(owner_vid)`, then `TARGET(0, 0)`
+- [ ] Try a fresh target or attack while still at `0` HP
+- [ ] Confirm the attempt fails closed with no new combat-visible frames
+- [ ] Issue `/restart_here` on the same socket
+- [ ] Confirm the character rebuilds in place with the ordinary self bootstrap burst and restored persisted HP
+- [ ] Confirm a stale attack still fails until the practice mob is selected again
+- [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
+
+Expected result:
+- owner-side retaliation death uses `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`
+- `/restart_here` is accepted only after the zero-HP floor and keeps the session in `GAME`
+- player HP is rebuilt from persisted state, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition
+
+### 5.13 Practice-mob retaliation restart-town smoke
+
+Run this when the QA character can safely exercise the bootstrap town-return recovery after the retaliation-owned zero-HP floor.
+
+- [ ] Drive the selected player to `0` HP through the current practice-mob retaliation loop
+- [ ] Issue `/restart_town` on the same socket
+- [ ] Confirm the character stays in `GAME` and receives the ordinary self bootstrap burst at the owned empire town-return position
+- [ ] Confirm later movement/interaction works from the town-return position after recovery
+- [ ] Reconnect and confirm the town-return position persisted, while the retaliation HP loss itself did not persist
+
+Expected result:
+- `/restart_town` is accepted only after the zero-HP floor
+- the selected player rebuilds from persisted state and moves to the currently owned empire create-position fallback
+- the recovery does not invent a separate revive packet or claim final map-specific death-return rules
+
 ---
 
 ## 6. Two-client shared-world checks
