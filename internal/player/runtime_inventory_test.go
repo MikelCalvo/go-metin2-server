@@ -369,26 +369,39 @@ func TestUseItemOnItemRejectsIncompatibleAndGuardedTargetsWithoutMutation(t *tes
 	}
 }
 
-func TestUseItemOnItemRejectsAntiSellTemplateWithoutMutation(t *testing.T) {
-	runtime := NewRuntime(loginticket.Character{
-		Inventory: []inventory.ItemInstance{
-			{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
-			{ID: 42, Vnum: 27001, Count: 3, Slot: 6},
-		},
-		Quickslots: []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}},
-	}, SessionLink{})
-	beforeInventory := runtime.LiveInventory()
-	beforeQuickslots := runtime.LiveQuickslots()
-	template := itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiSell: true}
+func TestUseItemOnItemRejectsAntiFlagTemplatesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{name: "anti sell", template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiSell: true}},
+		{name: "anti drop", template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiDrop: true}},
+		{name: "anti give", template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiGive: true}},
+		{name: "anti stack", template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiStack: true}},
+	}
 
-	if _, ok := runtime.UseItemOnItem(5, 6, template); ok {
-		t.Fatal("expected anti-sell ITEM_USE_TO_ITEM consolidation to fail closed")
-	}
-	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
-		t.Fatalf("anti-sell use-to-item mutated inventory: got %#v want %#v", got, beforeInventory)
-	}
-	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, beforeQuickslots) {
-		t.Fatalf("anti-sell use-to-item mutated quickslots: got %#v want %#v", got, beforeQuickslots)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(loginticket.Character{
+				Inventory: []inventory.ItemInstance{
+					{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
+					{ID: 42, Vnum: 27001, Count: 3, Slot: 6},
+				},
+				Quickslots: []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}},
+			}, SessionLink{})
+			beforeInventory := runtime.LiveInventory()
+			beforeQuickslots := runtime.LiveQuickslots()
+
+			if _, ok := runtime.UseItemOnItem(5, 6, tc.template); ok {
+				t.Fatalf("expected %s ITEM_USE_TO_ITEM consolidation to fail closed", tc.name)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+				t.Fatalf("%s use-to-item mutated inventory: got %#v want %#v", tc.name, got, beforeInventory)
+			}
+			if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, beforeQuickslots) {
+				t.Fatalf("%s use-to-item mutated quickslots: got %#v want %#v", tc.name, got, beforeQuickslots)
+			}
+		})
 	}
 }
 
