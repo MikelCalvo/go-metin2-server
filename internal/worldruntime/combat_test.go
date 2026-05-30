@@ -149,6 +149,16 @@ func TestBootstrapStaticActorDeathRewardKeepsTrainingDummyRewardless(t *testing.
 	}
 }
 
+func TestBootstrapStaticActorDeathRewardKeepsPracticeMobRewardless(t *testing.T) {
+	reward, ok := BootstrapStaticActorDeathReward(StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected bootstrap practice-mob death reward to be supported")
+	}
+	if !reward.Empty() {
+		t.Fatalf("expected rewardless practice-mob death reward, got %+v", reward)
+	}
+}
+
 func TestValidStaticActorDeathRewardRejectsScalarPointCarrierOverflow(t *testing.T) {
 	maxPointCarrier := uint64(^uint32(0) >> 1)
 	if !ValidStaticActorDeathReward(StaticActorDeathReward{Experience: maxPointCarrier, Gold: maxPointCarrier}) {

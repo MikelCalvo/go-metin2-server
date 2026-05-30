@@ -40,6 +40,7 @@ The descriptor is not character persistence by itself.
 It becomes player state only after the already-accepted death edge tries to apply the reward through the selected live session.
 
 Default bootstrap `training_dummy` and `practice_mob` profile defaults remain rewardless unless content or tests explicitly author a non-zero descriptor.
+Both profile-level default helpers are covered directly so a later combat-profile broadening cannot accidentally turn either bootstrap profile into an implicit reward source.
 
 ## Validation
 
