@@ -679,6 +679,17 @@ func (r *Runtime) moveInventoryItemFullStack(from inventory.SlotIndex, to invent
 }
 
 func (r *Runtime) EquipItem(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (inventory.ItemInstance, bool) {
+	return r.equipItem(from, equipSlot)
+}
+
+func (r *Runtime) EquipItemWithTemplate(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot, template itemcatalog.Template) (inventory.ItemInstance, bool) {
+	if !templateAuthoredForEquipSlot(template, equipSlot) {
+		return inventory.ItemInstance{}, false
+	}
+	return r.equipItem(from, equipSlot)
+}
+
+func (r *Runtime) equipItem(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (inventory.ItemInstance, bool) {
 	if r == nil || !equipSlot.Valid() || equipmentSlotOccupied(r.liveEquipment, equipSlot) {
 		return inventory.ItemInstance{}, false
 	}
@@ -748,7 +759,7 @@ func (r *Runtime) RemoveEquipTemplateEffect(template itemcatalog.Template, equip
 }
 
 func templateAuthoredForEquipSlot(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) bool {
-	if !equipSlot.Valid() || !itemcatalog.ValidTemplate(template) {
+	if !equipSlot.Valid() || !itemcatalog.ValidTemplate(template) || template.EquipSlot == "" {
 		return false
 	}
 	templateSlot, ok := inventory.ParseEquipmentSlot(template.EquipSlot)

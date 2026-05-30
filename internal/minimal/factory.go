@@ -2458,6 +2458,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						template, hasEquipTemplate := runtime.resolveRuntimeEquipTemplate(selectedPlayer, inventory.SlotIndex(packet.Source.Cell), equipSlot)
+						if hasEquipTemplate && !templateAuthoredForRuntimeEquipSlot(template, equipSlot) {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
 						equippedItem, ok := selectedPlayer.EquipItem(inventory.SlotIndex(packet.Source.Cell), equipSlot)
 						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
@@ -4597,7 +4600,11 @@ func (r *gameRuntime) resolveRuntimeEquipTemplate(selectedPlayer *player.Runtime
 		if item.Equipped || item.Slot != slot {
 			continue
 		}
-		return r.resolveRuntimeTemplateBackedEquipEffect(item.Vnum, equipSlot)
+		template, ok := r.itemTemplates[item.Vnum]
+		if !ok || !itemcatalog.ValidTemplate(template) || template.EquipSlot == "" {
+			return itemcatalog.Template{}, false
+		}
+		return template, true
 	}
 	return itemcatalog.Template{}, false
 }
@@ -4623,11 +4630,18 @@ func (r *gameRuntime) resolveRuntimeTemplateBackedEquipEffect(vnum uint32, equip
 	if !ok || !itemcatalog.ValidTemplate(template) || template.EquipEffect == nil {
 		return itemcatalog.Template{}, false
 	}
-	templateSlot, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
-	if !ok || templateSlot != equipSlot {
+	if !templateAuthoredForRuntimeEquipSlot(template, equipSlot) {
 		return itemcatalog.Template{}, false
 	}
 	return template, true
+}
+
+func templateAuthoredForRuntimeEquipSlot(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) bool {
+	if !equipSlot.Valid() || !itemcatalog.ValidTemplate(template) || template.EquipSlot == "" {
+		return false
+	}
+	templateSlot, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
+	return ok && templateSlot == equipSlot
 }
 
 func (r *gameRuntime) validateInteractionDefinitions(snapshot interactionstore.Snapshot) error {

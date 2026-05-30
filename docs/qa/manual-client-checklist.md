@@ -619,12 +619,13 @@ Expected result:
 ### 6.11 Reconnect-driven peer appearance after runtime mutation
 
 - [ ] Put client A and client B in the same bootstrap visibility scope and keep them mutually visible
-- [ ] Equip or unequip a supported `body`, `weapon`, or `head` item on client A
+- [ ] Equip or unequip a supported `body`, `weapon`, or `head` item on client A; when testing packet `ITEM_MOVE` equip, confirm the source item's loaded template authors the requested `equip_slot` because mismatched template metadata now fails closed without item/point mutation
 - [ ] Disconnect client A while client B stays in-world
 - [ ] Reconnect client A through a fresh login/select/enter-game flow
 - [ ] Confirm client B sees A re-enter with the latest visible body/weapon/head appearance in the normal peer-entry burst
 
 Expected result:
+- valid template-backed equips/unequips mutate self inventory/equipment and visible appearance; mismatched template-backed equip attempts emit no frames and leave live/persisted state unchanged
 - client B first sees A disappear cleanly on disconnect
 - the reconnect peer-entry burst carries A's latest projected appearance in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
 - no stale duplicate actor or manual refresh is needed after the reconnect

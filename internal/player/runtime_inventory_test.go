@@ -1273,6 +1273,47 @@ func TestRuntimeRejectsLockedInventoryItemMutationWithoutMutatingState(t *testin
 	}
 }
 
+func TestRuntimeEquipItemWithTemplateRejectsMismatchedAuthoredSlotWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "TemplateGuard",
+		Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "template-guard", CharacterIndex: 0})
+	template := itemcatalog.Template{Vnum: 0x11223344, Name: "Practice Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()}
+
+	if _, ok := runtime.EquipItemWithTemplate(8, inventory.EquipmentSlotBody, template); ok {
+		t.Fatal("expected mismatched authored equip slot to reject equip")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, character.Inventory) {
+		t.Fatalf("expected inventory unchanged after mismatched template equip, got %#v want %#v", got, character.Inventory)
+	}
+	if got := runtime.LiveEquipment(); len(got) != 0 {
+		t.Fatalf("expected no live equipment after mismatched template equip, got %#v", got)
+	}
+}
+
+func TestRuntimeEquipItemWithTemplateAcceptsMatchingAuthoredSlot(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "TemplateGuard",
+		Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "template-guard", CharacterIndex: 0})
+	template := itemcatalog.Template{Vnum: 0x11223344, Name: "Practice Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+
+	equipped, ok := runtime.EquipItemWithTemplate(8, inventory.EquipmentSlotBody, template)
+	if !ok {
+		t.Fatal("expected matching authored equip slot to allow equip")
+	}
+	if equipped.Vnum != 0x11223344 || !equipped.Equipped || equipped.EquipSlot != inventory.EquipmentSlotBody {
+		t.Fatalf("unexpected equipped item after matching template equip: %#v", equipped)
+	}
+	if got := runtime.LiveInventory(); len(got) != 0 {
+		t.Fatalf("expected source inventory item removed after matching template equip, got %#v", got)
+	}
+}
+
 func TestRuntimeRejectsLockedEquippedItemUnequipWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = nil

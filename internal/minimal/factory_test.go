@@ -12,6 +12,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	authproto "github.com/MikelCalvo/go-metin2-server/internal/proto/auth"
@@ -28,6 +29,42 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
+
+type staticItemTemplateStore struct {
+	snapshot itemcatalog.Snapshot
+}
+
+func (s staticItemTemplateStore) Load() (itemcatalog.Snapshot, error) {
+	return s.snapshot, nil
+}
+
+func (s staticItemTemplateStore) Save(itemcatalog.Snapshot) error {
+	return nil
+}
+
+func newStartedGameFlowWithItemStore(t *testing.T, store loginticket.Store, accounts accountstore.Store, itemTemplates itemcatalog.Store) service.SessionFlow {
+	t.Helper()
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, itemTemplates)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow := runtime.SessionFactory()()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+	return flow
+}
 
 func TestNewAuthSessionFactoryAcceptsStubCredentials(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
@@ -1411,6 +1448,47 @@ func TestNewGameSessionFactoryItemMovePacketRejectsIncompatiblePartialStackDesti
 	}
 }
 
+func TestNewGameSessionFactoryItemMovePacketRejectsTemplateMismatchedEquipSlotWithoutMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemTemplates := staticItemTemplateStore{snapshot: itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      0x11223344,
+		Name:      "Practice Sword",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: inventory.EquipmentSlotWeapon.String(),
+	}}}}
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	flow := newStartedGameFlowWithItemStore(t, store, accounts, itemTemplates)
+
+	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(8), Destination: mustEquipmentPosition(t, 0)})))
+	if err != nil {
+		t.Fatalf("unexpected mismatched equip-slot item-move error: %v", err)
+	}
+	if len(equipOut) != 0 {
+		t.Fatalf("expected mismatched equip-slot item move to fail closed with no frames, got %d", len(equipOut))
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if !sameItemInstances(account.Characters[1].Inventory, characters[1].Inventory) {
+		t.Fatalf("expected mismatched equip-slot item move to leave inventory unchanged, got %#v want %#v", account.Characters[1].Inventory, characters[1].Inventory)
+	}
+	if len(account.Characters[1].Equipment) != 0 {
+		t.Fatalf("expected mismatched equip-slot item move to leave equipment empty, got %#v", account.Characters[1].Equipment)
+	}
+}
+
 func TestNewGameSessionFactoryItemMovePacketEquipsInventoryItem(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -1954,14 +2032,13 @@ func TestNewGameSessionFactoryEquipAppendsPlayerPointChangeForTemplateBackedEffe
 	}
 }
 
-func TestNewGameSessionFactoryEquipSkipsPlayerPointChangeForTemplateBackedEffectOnMismatchedSlot(t *testing.T) {
+func TestNewGameSessionFactoryItemMovePacketRejectsTemplateMismatchedEffectSlotWithoutMutation(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	characters := stubCharacters()
 	characters[1].Points[bootstrapPlayerPointValueIndex] = 700
 	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 12200, Count: 1, Slot: 8}}
 	characters[1].Equipment = []inventory.ItemInstance{}
-	wantVID := characters[1].VID
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
 	}
@@ -1989,29 +2066,25 @@ func TestNewGameSessionFactoryEquipSkipsPlayerPointChangeForTemplateBackedEffect
 		t.Fatalf("unexpected entergame error: %v", err)
 	}
 
-	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(8), Destination: mustEquipmentPosition(t, 0)})))
 	if err != nil {
-		t.Fatalf("unexpected mismatched-slot equip error: %v", err)
+		t.Fatalf("unexpected mismatched-slot packet equip error: %v", err)
 	}
-	if len(equipOut) != 3 {
-		t.Fatalf("expected delete+set+update frames without point-change for mismatched-slot equip, got %d", len(equipOut))
-	}
-	if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, equipOut[2])); err == nil {
-		t.Fatal("expected mismatched-slot equip to skip PLAYER_POINT_CHANGE")
-	}
-	update, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[2]))
-	if err != nil {
-		t.Fatalf("decode mismatched-slot equip character update: %v", err)
-	}
-	if update.VID != wantVID || update.Parts != [worldproto.CharacterEquipmentPartCount]uint16{12200, 0, 0, 202} {
-		t.Fatalf("unexpected mismatched-slot equip appearance update packet: %+v", update)
+	if len(equipOut) != 0 {
+		t.Fatalf("expected mismatched-slot packet equip to fail closed with no frames, got %d", len(equipOut))
 	}
 	account, err := accounts.Load(StubLogin)
 	if err != nil {
 		t.Fatalf("load persisted account: %v", err)
 	}
 	if got := account.Characters[1].Points[bootstrapPlayerPointValueIndex]; got != 700 {
-		t.Fatalf("expected persisted points[1] to stay 700 after mismatched-slot equip, got %d", got)
+		t.Fatalf("expected persisted points[1] to stay 700 after mismatched-slot packet equip, got %d", got)
+	}
+	if !sameItemInstances(account.Characters[1].Inventory, characters[1].Inventory) {
+		t.Fatalf("expected mismatched-slot packet equip to leave inventory unchanged, got %#v want %#v", account.Characters[1].Inventory, characters[1].Inventory)
+	}
+	if len(account.Characters[1].Equipment) != 0 {
+		t.Fatalf("expected mismatched-slot packet equip to leave equipment empty, got %#v", account.Characters[1].Equipment)
 	}
 }
 
