@@ -12183,6 +12183,83 @@ func TestGameRuntimeFlushReadyStaticActorRespawnsRebuildsVisibleDeadTrainingDumm
 	}
 }
 
+func TestGameRuntimePracticeMobRespawnPreservesAuthoredSpawnRewardSnapshot(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	nearPlayer := peerVisibilityCharacter("RewardRespawnNear", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "reward-respawn-near", 0x11111111, nearPlayer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000601, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:              "practice.reward_respawn",
+		Name:             "RewardRespawnMob",
+		MapIndex:         bootstrapMapIndex,
+		X:                1200,
+		Y:                2200,
+		RaceNum:          20350,
+		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		RewardExperience: 7,
+		RewardGold:       13,
+		RewardDropVnums:  []uint32{3001, 3002},
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import reward respawn spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 reward respawn actor after import, got %#v", actors)
+	}
+	actor := actors[0]
+	if actor.RewardExperience != 7 || actor.RewardGold != 13 || !reflect.DeepEqual(actor.RewardDropVnums, []uint32{3001, 3002}) {
+		t.Fatalf("unexpected imported reward respawn actor snapshot: %+v", actor)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "reward-respawn-near", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for nearby player with reward respawn actor, got %d", len(enterOut))
+	}
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before reward respawn: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before reward respawn, got %d", len(selectOut))
+	}
+	for attackIndex := 0; attackIndex < 10; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on reward respawn hit %d: %v", attackIndex+1, err)
+		}
+		if len(attackOut) == 0 {
+			t.Fatalf("expected accepted attack frames on reward respawn hit %d", attackIndex+1)
+		}
+	}
+
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	respawnFrames := flushServerFrames(t, flow)
+	if len(respawnFrames) != 4 {
+		t.Fatalf("expected delete/add/info/update reward respawn rebuild, got %d frames", len(respawnFrames))
+	}
+	postRespawn := runtime.StaticActors()
+	if len(postRespawn) != 1 {
+		t.Fatalf("expected 1 reward respawn actor after respawn, got %#v", postRespawn)
+	}
+	if postRespawn[0].EntityID != actor.EntityID || postRespawn[0].SpawnGroupRef != "practice.reward_respawn" || postRespawn[0].RewardExperience != 7 || postRespawn[0].RewardGold != 13 || !reflect.DeepEqual(postRespawn[0].RewardDropVnums, []uint32{3001, 3002}) {
+		t.Fatalf("expected respawn to preserve authored reward snapshot, got %+v", postRespawn[0])
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorRelocateAcrossAOIBoundaryQueuesVisibilityDeltasForOnlinePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
