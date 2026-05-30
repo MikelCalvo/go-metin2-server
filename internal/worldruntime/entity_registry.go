@@ -161,8 +161,10 @@ func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bo
 		return StaticEntity{}, false
 	}
 	if !r.maps.UpdateStatic(updated) {
-		_ = r.staticActors.Update(previous)
-		return StaticEntity{}, false
+		if !r.maps.RegisterStatic(updated) {
+			_ = r.staticActors.Update(previous)
+			return StaticEntity{}, false
+		}
 	}
 	return updated, true
 }

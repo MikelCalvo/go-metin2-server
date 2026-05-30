@@ -383,6 +383,50 @@ func TestEntityRegistryUpdateStaticActorPreservesDeathReward(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryUpdateStaticActorRebuildsMissingMapPresence(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{
+		Entity:        Entity{Name: "MaplessRewardGuard"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.mapless_reward_guard",
+		DeathReward:   StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
+	})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+
+	registry.maps.mu.Lock()
+	delete(registry.maps.staticByEntityID, guard.Entity.ID)
+	for mapIndex, bucket := range registry.maps.staticByMapIndex {
+		delete(bucket, guard.Entity.ID)
+		if len(bucket) == 0 {
+			delete(registry.maps.staticByMapIndex, mapIndex)
+		}
+	}
+	registry.maps.mu.Unlock()
+
+	updated := guard
+	updated.Entity.Name = "MaplessRewardGuardMoved"
+	updated.Position = NewPosition(99, 900, 1200)
+	updated.RaceNum = 20016
+	result, ok := registry.UpdateStaticActor(updated)
+	if !ok {
+		t.Fatal("expected static actor update to rebuild missing map presence")
+	}
+	if result.Entity.ID != guard.Entity.ID || result.Entity.Name != "MaplessRewardGuardMoved" || result.Position != NewPosition(99, 900, 1200) || result.RaceNum != 20016 {
+		t.Fatalf("unexpected rebuilt static actor update result: %+v", result)
+	}
+	if result.DeathReward.Experience != 75 || result.DeathReward.Gold != 60 || len(result.DeathReward.DropVnums) != 2 || result.DeathReward.DropVnums[0] != 27001 || result.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected rebuilt map presence update to preserve death reward, got %+v", result.DeathReward)
+	}
+	actors := registry.StaticActors(99)
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != "MaplessRewardGuardMoved" {
+		t.Fatalf("expected rebuilt static actor in map 99 snapshot, got %+v", actors)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,
