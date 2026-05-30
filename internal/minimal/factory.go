@@ -1727,7 +1727,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if template.AntiGive {
 							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 						}
-						if template.Stackable {
+						if template.Stackable && !template.AntiStack {
 							pickupMaxCount = template.MaxCount
 						}
 					}
@@ -1804,7 +1804,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			pickupMaxCount := uint16(0)
 			if runtime != nil {
-				if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.Stackable {
+				if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.Stackable && !template.AntiStack {
 					pickupMaxCount = template.MaxCount
 				}
 			}

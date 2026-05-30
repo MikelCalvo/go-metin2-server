@@ -1982,6 +1982,61 @@ func TestGameRuntimeItemPickupMergesOwnedVisibleDropIntoCompatibleStack(t *testi
 	}
 }
 
+func TestGameRuntimeItemPickupAntiStackTemplateRestoresFreshSlotWithoutMerging(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupAntiStackOwner", 0x0103018f, 0x0204018f, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 2019, Vnum: 27003, Count: 3, Slot: 0},
+		{ID: 1019, Vnum: 27003, Count: 2, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "pickup-anti-stack-owner", 0x8f8f8f8f, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-anti-stack-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup anti-stack owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27003,
+		Name:      "Anti-stack Potion",
+		Stackable: true,
+		MaxCount:  200,
+		AntiStack: true,
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected item-pickup anti-stack runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-anti-stack-owner", 0x8f8f8f8f)
+	flushServerFrames(t, flow)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(6))
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected anti-stack pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode anti-stack pickup item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27003 || set.Count != 2 {
+		t.Fatalf("expected anti-stack pickup to restore dropped stack into fresh slot 6 without merging, got %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode anti-stack pickup get: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: 27003, Count: 2, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected anti-stack pickup get: %+v", get)
+	}
+	account, err := accounts.Load("pickup-anti-stack-owner")
+	if err != nil {
+		t.Fatalf("load pickup anti-stack owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected anti-stack pickup to preserve separate stacks, got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+}
+
 func TestGameRuntimeItemPickupSplitsStackableDropAcrossPartialStacksAndFreshSlot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

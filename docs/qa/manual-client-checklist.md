@@ -319,6 +319,7 @@ Run this when two QA clients can enter the same visible bootstrap world.
 - [ ] On client A, drop one ordinary carried item stack using the normal client inventory drop path
 - [ ] Confirm client A sees a ground item plus ownership label
 - [ ] Confirm visible client B sees the same ground item plus ownership label
+- [ ] If QA data allows it, drop and reclaim an `anti_stack` authored item while client A already carries another compatible stack; confirm pickup restores the dropped stack into a fresh carried slot instead of merging it into the existing stack
 - [ ] On client B, pick up client A's still-owned ground item
 
 Expected result:
