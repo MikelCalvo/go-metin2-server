@@ -105,6 +105,16 @@ Current rules:
 - item drops are runtime ground items first; they do not mutate persisted inventory until an explicit pickup succeeds
 - replayed pickup of the same ground VID fails closed after the first successful pickup removes it
 
+## Respawn / lifecycle ownership
+
+Reward descriptors belong to the authored spawn snapshot, not to the transient live HP/dead state.
+
+Current rules:
+- killing a rewarded practice mob may apply that descriptor once for the accepted death edge
+- the timed respawn rebuild restores the same authored actor identity and preserves `spawn_group_ref`, `reward_experience`, `reward_gold`, and `reward_drop_vnums`
+- preserving the descriptor across respawn does **not** mean rewards are automatically granted on respawn; the descriptor is only applied again after a later accepted killing hit in a fresh live loop
+- dead/live HP state remains runtime-owned and separate from account or content persistence
+
 ## Combined reward descriptor coverage
 
 The current runtime test coverage explicitly freezes the combined descriptor case as one kill-side transaction:
@@ -126,5 +136,6 @@ The repository can now say:
 - accepted non-player death is preserved even when reward application fails
 - scalar rewards persist before their point-change frames are emitted
 - item drops become owned ground items and persist to inventory only through the normal pickup path
+- timed respawn rebuild preserves authored reward descriptor metadata so later kills continue to use the same content contract
 
 Broader reward, loot-table, party, quest, and level-up systems remain future work.

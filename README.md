@@ -28,10 +28,10 @@ Legend:
   - Inventory, equipment, item movement, item use, quickslots, merchant buy/sell, carried drops, ground visibility, pickup, and early appearance refreshes exist as narrow compatibility slices. Full legacy item semantics are still ahead.
 
 - `[~]` **M4 — Combat vertical slice**
-  - Target selection, normal attack ingress, cadence gating, runtime-owned HP, practice mob death/respawn, retaliation-owned player death, and restart bootstrap seams exist. Real combat formulas, skills, rewards, PvP, and broader death policy remain future work.
+  - Target selection, normal attack ingress, cadence gating, runtime-owned HP, practice mob death/respawn, deterministic bootstrap rewards, retaliation-owned player death, and restart bootstrap seams exist. Real combat formulas, skills, PvP, and broader death/reward policy remain future work.
 
 - `[~]` **M5 — Content runtime**
-  - Static actors, authored interactions, basic NPC/shop services, warp-style interactions, and stationary practice mobs loaded from spawn groups are available. Rich NPC services, mob AI, loot, quest runtime, and content scripting are not yet compatibility-grade.
+  - Static actors, authored interactions, basic NPC/shop services, warp-style interactions, and stationary practice mobs loaded from spawn groups with fixed bootstrap reward descriptors are available. Rich NPC services, mob AI, loot tables, quest runtime, and content scripting are not yet compatibility-grade.
 
 - `[ ]` **M6 — Persistence, operations, and production readiness**
   - Current persistence is sufficient for bootstrap slices, but DB-backed storage, migrations, production deployment, richer GM/admin tooling, and release operations remain major roadmap items.
@@ -43,7 +43,7 @@ The next challenge is no longer only owning packet formats; it is turning the ex
 Near-term priorities:
 
 1. **Items and inventory parity** — finish the nearby item-use, stack, lock, anti-flag, ground ownership, and pickup edge cases.
-2. **Combat and rewards** — move from practice-mob combat toward real damage, EXP, gold, drops, mob lifecycle, and player recovery rules.
+2. **Combat and rewards** — move from the current practice-mob death/respawn and deterministic EXP/gold/drop seams toward real damage formulas, loot policy, mob lifecycle depth, and player recovery rules.
 3. **World runtime depth** — harden AOI, map transfer, reconnect, spawn lifecycle, static/non-player entity updates, and visibility replay.
 4. **Content systems** — grow NPC services, shop variants, authored spawn groups, and the first quest/script seams.
 5. **Social systems** — replace bootstrap party/guild/chat fanout with real membership, persistence, permissions, and gameplay effects.
