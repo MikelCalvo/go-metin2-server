@@ -1568,6 +1568,89 @@ func TestNewGameSessionFactoryItemMovePacketUnequipsEquipmentItem(t *testing.T) 
 	}
 }
 
+func TestNewGameSessionFactoryItemMovePacketRejectsCountedEquipOrUnequipWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+		equipment []inventory.ItemInstance
+		packet    itemproto.ClientMovePacket
+	}{
+		{
+			name:      "counted equip",
+			inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}},
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.InventoryPosition(8),
+				Destination: mustEquipmentPosition(t, 0),
+				Count:       1,
+			},
+		},
+		{
+			name:      "counted unequip",
+			equipment: []inventory.ItemInstance{{ID: 1002, Vnum: 0x55667788, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+			packet: itemproto.ClientMovePacket{
+				Source:      mustEquipmentPosition(t, 0),
+				Destination: itemproto.InventoryPosition(8),
+				Count:       1,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			characters := stubCharacters()
+			characters[1].Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			characters[1].Equipment = append([]inventory.ItemInstance(nil), tc.equipment...)
+			if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+				t.Fatalf("issue login ticket: %v", err)
+			}
+			if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+				t.Fatalf("seed account store: %v", err)
+			}
+
+			flow := newStartedGameFlow(t, store, accounts)
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(tc.packet)))
+			if err != nil {
+				t.Fatalf("unexpected counted equipment item move error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s to fail closed with no frames, got %d", tc.name, len(out))
+			}
+			account, err := accounts.Load(StubLogin)
+			if err != nil {
+				t.Fatalf("load account after counted equipment item move: %v", err)
+			}
+			if !sameItemInstances(account.Characters[1].Inventory, tc.inventory) {
+				t.Fatalf("expected %s to leave inventory unchanged, got %#v want %#v", tc.name, account.Characters[1].Inventory, tc.inventory)
+			}
+			if !sameItemInstances(account.Characters[1].Equipment, tc.equipment) {
+				t.Fatalf("expected %s to leave equipment unchanged, got %#v want %#v", tc.name, account.Characters[1].Equipment, tc.equipment)
+			}
+		})
+	}
+}
+
+func mustEquipmentPosition(t *testing.T, wearCell uint16) itemproto.Position {
+	t.Helper()
+	position, err := itemproto.EquipmentPosition(wearCell)
+	if err != nil {
+		t.Fatalf("resolve equipment position: %v", err)
+	}
+	return position
+}
+
+func sameItemInstances(a, b []inventory.ItemInstance) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestNewGameSessionFactoryEquipPersistsAndEmitsInventoryDeleteThenEquipmentSet(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

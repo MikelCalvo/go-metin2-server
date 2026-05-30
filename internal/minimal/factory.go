@@ -2414,6 +2414,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
+					if packet.Count != 0 && (packet.Source.Cell >= itemproto.InventoryMaxCell || packet.Destination.Cell >= itemproto.InventoryMaxCell) {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
 					if packet.Source.Cell >= itemproto.InventoryMaxCell && packet.Destination.WindowType == itemproto.WindowInventory && inventory.SlotIndex(packet.Destination.Cell) < inventory.CarriedInventorySlotCount {
 						equipWearCell := packet.Source.Cell - itemproto.InventoryMaxCell
 						equipSlot, ok := equipmentBootstrapSlot(equipWearCell)
