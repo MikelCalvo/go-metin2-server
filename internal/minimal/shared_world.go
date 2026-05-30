@@ -1157,6 +1157,9 @@ func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector log
 	delete(r.groundItemsByVID, vid)
 	frames := [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid})}
 	for _, target := range r.scopesLocked().VisibleTargets(collectorID, collector) {
+		if characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 	return true

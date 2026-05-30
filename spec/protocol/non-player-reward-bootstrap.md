@@ -96,7 +96,8 @@ Drop rewards reuse the existing bootstrap ground-item families:
 
 Ground reward registration is guarded by the same live-owner rule for both item-shaped and gold-shaped ground entries.
 If the would-be owner is already at the current bootstrap `0` HP floor, registering either a ground item or ground gold fails closed and leaves no live ground occupancy behind.
-This keeps death/restart cleanup from leaking new pickup surfaces for owners that are already dead.
+Ground reward visibility fanout is also live-recipient guarded: dead visible peers do not receive `ITEM_GROUND_ADD` / `ITEM_OWNERSHIP` on registration and do not receive `ITEM_GROUND_DEL` when the ground entry is later removed.
+This keeps death/restart cleanup from leaking new pickup surfaces or stale delete noise for recipients that are already dead.
 
 Current rules:
 - each configured drop spawns at the killer's current position

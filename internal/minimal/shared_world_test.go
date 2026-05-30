@@ -229,6 +229,51 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsDeadOwner(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRemoveGroundItemSkipsDeadVisiblePeers(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("DropOwner", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)
+	livingPeer := peerVisibilityCharacter("LivingPeer", 0x01030112, 0x02040112, 1200, 2200, 0, 102, 202)
+	deadPeer := peerVisibilityCharacter("DeadPeer", 0x01030113, 0x02040113, 1250, 2250, 0, 103, 203)
+	deadPeer.Points[bootstrapPlayerPointValueIndex] = 0
+
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	livingPending := newPendingServerFrames()
+	livingID, _ := registry.Join(livingPeer, livingPending, nil)
+	deadPending := newPendingServerFrames()
+	deadID, _ := registry.Join(deadPeer, deadPending, nil)
+	if ownerID == 0 || livingID == 0 || deadID == 0 {
+		t.Fatalf("expected owner, living peer, and dead peer to join shared world, got owner=%d living=%d dead=%d", ownerID, livingID, deadID)
+	}
+	livingPending.flush()
+	deadPending.flush()
+
+	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	const groundVID uint32 = 0x07000005
+	if !registry.RegisterGroundItem(ownerID, "drop-owner", owner, groundVID, item) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+	livingPending.flush()
+	deadPending.flush()
+
+	if !registry.RemoveGroundItem(ownerID, owner, groundVID) {
+		t.Fatal("expected owner ground item removal to succeed")
+	}
+	livingQueued := livingPending.flush()
+	if len(livingQueued) != 1 {
+		t.Fatalf("expected living visible peer to receive 1 ground-item delete frame, got %d", len(livingQueued))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, livingQueued[0]))
+	if err != nil {
+		t.Fatalf("decode living peer ground-item delete: %v", err)
+	}
+	if groundDel.VID != groundVID {
+		t.Fatalf("unexpected living peer ground-item delete: %+v", groundDel)
+	}
+	if deadQueued := deadPending.flush(); len(deadQueued) != 0 {
+		t.Fatalf("expected dead visible peer to receive no ground-item delete frame, got %d", len(deadQueued))
+	}
+}
+
 func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
