@@ -47,6 +47,7 @@ Reward descriptors fail closed when:
 - `reward_experience` or `reward_gold` exceeds the current signed 32-bit `PLAYER_POINT_CHANGE` carrier range (`2,147,483,647`)
 - applying `reward_experience` or `reward_gold` would overflow the selected character's current signed 32-bit visible point / gold carrier
 - any `reward_drop_vnums` entry is `0`
+- any `reward_drop_vnums` entry is duplicated in the same descriptor
 - a runtime-generated ground-item VID for a configured drop would be `0`
 - multiple drops in the same descriptor would collide on the generated ground-item VID
 - a configured drop would reuse an already-live ground-item VID
@@ -58,6 +59,7 @@ The descriptor validator itself owns the static authoring checks before runtime 
 - signed 32-bit scalar carrier maximums are accepted
 - scalar values above that maximum are rejected
 - zero-valued drop vnums are rejected
+- duplicate drop vnums in one descriptor are rejected
 
 Malformed reward descriptors must not roll back the already-accepted combat death edge.
 They simply suppress reward mutation and reward frames for that kill.

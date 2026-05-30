@@ -78,10 +78,15 @@ func ValidStaticActorDeathReward(reward StaticActorDeathReward) bool {
 	if reward.Experience > maxPointCarrier || reward.Gold > maxPointCarrier {
 		return false
 	}
+	seenDropVnums := make(map[uint32]struct{}, len(reward.DropVnums))
 	for _, vnum := range reward.DropVnums {
 		if vnum == 0 {
 			return false
 		}
+		if _, exists := seenDropVnums[vnum]; exists {
+			return false
+		}
+		seenDropVnums[vnum] = struct{}{}
 	}
 	return true
 }
