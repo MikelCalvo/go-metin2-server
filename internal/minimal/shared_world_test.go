@@ -7514,6 +7514,86 @@ func TestGameRuntimeDropRewardCollisionFailsClosedWithoutDuplicateGroundItem(t *
 	}
 }
 
+func TestGameRuntimeDropRewardDescriptorCollisionFailsClosedWithoutRegisteringAnyDrop(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105021A, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105021A, Name: "DescriptorCollisionRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1150, 2150),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.descriptor_collision_reward_mob",
+	}
+	killer := peerVisibilityCharacter("DescriptorCollisionKiller", 0x0103011A, 0x0204011A, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "descriptor-collision-killer", 0x1A1A1A1A, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "descriptor-collision-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed descriptor collision reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_420, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected descriptor collision reward mob registration to succeed")
+	}
+
+	// bootstrapRewardGroundItemVID intentionally mixes the drop index into the
+	// low bits.  The first and 257th entries below collide because
+	// (27001 << 8) ^ 1 == (27000 << 8) ^ 257.
+	dropVnums := make([]uint32, 257)
+	dropVnums[0] = 27001
+	for i := 1; i < len(dropVnums)-1; i++ {
+		dropVnums[i] = 28000 + uint32(i)
+	}
+	dropVnums[256] = 27000
+	if bootstrapRewardGroundItemVID(killer, dropVnums[0], 0) != bootstrapRewardGroundItemVID(killer, dropVnums[256], 256) {
+		t.Fatal("test fixture must generate an intra-descriptor ground reward VID collision")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: dropVnums}) {
+		t.Fatal("expected descriptor collision reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "descriptor-collision-killer", 0x1A1A1A1A)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before descriptor collision reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on descriptor collision reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 2 {
+		t.Fatalf("expected descriptor-colliding reward kill to return only dead and clear-target frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode descriptor collision reward dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode descriptor collision reward clear-target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("unexpected descriptor collision reward clear target: %+v", clearTarget)
+	}
+	for index, vnum := range dropVnums {
+		if runtime.sharedWorld.GroundItemExists(bootstrapRewardGroundItemVID(killer, vnum, index)) {
+			t.Fatalf("expected descriptor collision to suppress all reward ground registrations, but drop index %d vnum %d is live", index, vnum)
+		}
+	}
+}
+
 func TestGameRuntimeScalarRewardSurvivesCollidingDropReward(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
