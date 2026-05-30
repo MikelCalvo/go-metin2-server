@@ -61,6 +61,16 @@ func TestBootstrapStaticActorRespawnDelayReturnsTrainingDummyBootstrapDelay(t *t
 	}
 }
 
+func TestBootstrapStaticActorRespawnDelayReturnsPracticeMobBootstrapDelay(t *testing.T) {
+	delay, ok := BootstrapStaticActorRespawnDelay(StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected bootstrap practice-mob respawn delay to be supported")
+	}
+	if delay != PracticeMobBootstrapRespawnDelay {
+		t.Fatalf("expected practice-mob respawn delay %v, got %v", PracticeMobBootstrapRespawnDelay, delay)
+	}
+}
+
 func TestBootstrapStaticActorCombatProfileDefaultsSupportsTrainingDummyProfile(t *testing.T) {
 	defaults, ok := BootstrapStaticActorCombatProfileDefaults(StaticActorCombatProfileTrainingDummy)
 	if !ok {
