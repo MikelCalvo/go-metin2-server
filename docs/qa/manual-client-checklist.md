@@ -387,6 +387,7 @@ Run this when the selected QA character has two carried stacks with the same `vn
 - [ ] Drag one carried stack onto another compatible carried stack
 - [ ] Confirm compatible stacks consolidate without triggering the normal consumable point/effect path
 - [ ] Confirm a full-source merge removes any item quickslot that referenced the removed source cell, while skill/command quickslots with the same slot byte stay unchanged
+- [ ] Relog after a full-source merge and confirm the merged inventory plus item-quickslot cleanup persisted
 - [ ] Confirm a partial merge refreshes both changed counts and keeps the source item quickslot
 - [ ] If QA data allows it, repeat with `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` template metadata and confirm the request fails closed with no item/quickslot mutation
 

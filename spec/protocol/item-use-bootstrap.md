@@ -46,6 +46,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - the target stack must have non-zero count and free capacity under that `max_count`
 - the runtime moves as many source items as fit into the target stack
 - if the source stack fits completely, the response burst is `ITEM_DEL(source)`, `ITEM_SET(target)`, then zero or more `QUICKSLOT_DEL` frames for item quickslots referencing the removed source carried cell
+- the minimal session/runtime packet path now freezes that full-merge burst and the persisted account snapshot: source stack removed, target stack refreshed with the merged count, item quickslots for the removed source cell deleted, and non-item quickslots with the same byte slot preserved
 - only item quickslots are removed and persisted; skill/command quickslots that happen to carry the same byte slot value stay unchanged
 - if the target has only partial room, the source slot is refreshed with its remainder and the target slot is refreshed at its template `max_count`
 - count-only partial refreshes use the existing `ITEM_UPDATE` packet shape for both changed carried cells and do not rewrite source item quickslots
