@@ -183,7 +183,7 @@ func (r *Runtime) SetLivePoint(pointIndex uint8, value int32) bool {
 }
 
 func (r *Runtime) ApplyStaticActorDeathReward(reward worldruntime.StaticActorDeathReward) (DeathRewardResult, bool) {
-	if r == nil || len(reward.DropVnums) != 0 {
+	if r == nil {
 		return DeathRewardResult{}, false
 	}
 	experienceBefore := r.livePoints[ExperiencePointIndex]

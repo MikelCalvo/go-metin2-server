@@ -125,6 +125,7 @@ The current runtime test coverage explicitly freezes the combined descriptor cas
 - one accepted killing hit may carry EXP, gold, and fixed drop-vnum entries together
 - the self-visible frame order stays death/clear first, then EXP point-change, gold point-change, ground-add, and ownership
 - the scalar EXP/gold account snapshot is saved before those scalar point-change frames are emitted
+- the player runtime's scalar reward helper intentionally ignores `reward_drop_vnums` while applying EXP/gold, so combined descriptors are not rejected merely because a separate drop channel is present
 - the drop is registered as a runtime ground item after the same accepted kill and remains non-persistent until pickup
 
 This regression coverage matters because scalar persistence and drop registration use different runtime seams.

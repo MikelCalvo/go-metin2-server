@@ -276,6 +276,32 @@ func TestRuntimeRejectsNegativeExperienceDeathRewardOverflowWithoutMutation(t *t
 	}
 }
 
+func TestRuntimeAppliesScalarDeathRewardWhenDropVnumsArePresent(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:     0x01030105,
+		VID:    0x02040105,
+		Name:   "PeerFive",
+		Gold:   25,
+		Points: [255]int32{ExperiencePointIndex: 40},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-five", CharacterIndex: 4})
+
+	result, ok := runtime.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: 35, Gold: 60, DropVnums: []uint32{27001}})
+	if !ok {
+		t.Fatal("expected scalar death reward to apply even when fixed drops are present")
+	}
+	if result.ExperienceBefore != 40 || result.ExperienceAfter != 75 || result.Experience != 35 {
+		t.Fatalf("unexpected experience reward result: %+v", result)
+	}
+	if result.GoldBefore != 25 || result.GoldAfter != 85 || result.Gold != 60 {
+		t.Fatalf("unexpected gold reward result: %+v", result)
+	}
+	live := runtime.LiveCharacter()
+	if live.Points[ExperiencePointIndex] != 75 || live.Gold != 85 {
+		t.Fatalf("expected live scalar reward state exp=75 gold=85, got exp=%d gold=%d", live.Points[ExperiencePointIndex], live.Gold)
+	}
+}
+
 func bootstrapConsumableTemplate(vnum uint32, pointType uint8, pointIndex uint8, pointDelta int32, message string) itemcatalog.Template {
 	return itemcatalog.Template{
 		Vnum:      vnum,
