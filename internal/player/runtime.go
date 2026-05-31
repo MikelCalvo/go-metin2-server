@@ -921,7 +921,7 @@ func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint1
 	if r.liveGold < price {
 		return MerchantBuyFailureInsufficientGold
 	}
-	if template.Stackable {
+	if template.Stackable && !template.AntiStack {
 		if findMergeableInventoryIndex(r.liveInventory, template.Vnum, count, template.MaxCount) >= 0 {
 			return ""
 		}
@@ -949,7 +949,7 @@ func (r *Runtime) BuyMerchantItem(template itemcatalog.Template, count uint16, p
 	changedItems := make([]inventory.ItemInstance, 0, 2)
 	changedExistingSlots := map[inventory.SlotIndex]bool{}
 	remaining := count
-	if template.Stackable {
+	if template.Stackable && !template.AntiStack {
 		if mergeIndex := findMergeableInventoryIndex(inventoryItems, template.Vnum, remaining, template.MaxCount); mergeIndex >= 0 {
 			item := inventoryItems[mergeIndex]
 			item.Count += remaining

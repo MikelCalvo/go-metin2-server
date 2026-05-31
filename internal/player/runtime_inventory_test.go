@@ -1444,6 +1444,57 @@ func TestRuntimeBuyMerchantItemMergesIntoExistingCompatibleStackBeforeAllocating
 	}
 }
 
+func TestRuntimeBuyMerchantItemAntiStackTemplateUsesFreshSlotInsteadOfMerging(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, AntiStack: true}
+
+	if failure := runtime.ValidateMerchantBuy(template, 2, 50); failure != "" {
+		t.Fatalf("expected anti-stack merchant buy to use a fresh slot, got validation failure %q", failure)
+	}
+	result, ok := runtime.BuyMerchantItem(template, 2, 50)
+	if !ok {
+		t.Fatal("expected anti-stack merchant buy to succeed through fresh-slot placement")
+	}
+	if len(result.ItemChanges) != 1 || !result.ItemChanges[0].Created || result.ItemChanges[0].Item.Slot != 0 || result.ItemChanges[0].Item.Count != 2 {
+		t.Fatalf("expected anti-stack grant to create a fresh stack instead of merging, got %+v", result.ItemChanges)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 22, Vnum: 27001, Count: 2, Slot: 0},
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}) {
+		t.Fatalf("unexpected live inventory after anti-stack fresh-slot merchant buy: %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected persisted inventory to stay unchanged after anti-stack merchant buy, got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
+func TestRuntimeValidateMerchantBuyAntiStackTemplateRejectsFullInventoryWithoutFreshSlot(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = make([]inventory.ItemInstance, 0, int(inventory.CarriedInventorySlotCount))
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		item := inventory.ItemInstance{ID: 1000 + uint64(slot), Vnum: 40000 + uint32(slot), Count: 1, Slot: slot}
+		if slot == 5 {
+			item = inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 3, Slot: slot}
+		}
+		persisted.Inventory = append(persisted.Inventory, item)
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, AntiStack: true}
+
+	if failure := runtime.ValidateMerchantBuy(template, 2, 50); failure != MerchantBuyFailureNoValidPlacement {
+		t.Fatalf("expected anti-stack merchant buy without a free slot to fail placement, got %q", failure)
+	}
+	if _, ok := runtime.BuyMerchantItem(template, 2, 50); ok {
+		t.Fatal("expected anti-stack merchant buy without a free slot to fail")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, persisted.Inventory) {
+		t.Fatalf("expected anti-stack failed buy to leave live inventory unchanged, got %#v want %#v", got, persisted.Inventory)
+	}
+}
+
 func TestRuntimeBuyMerchantItemPartiallyMergesThenUsesFreshSlot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory[0].Count = 199

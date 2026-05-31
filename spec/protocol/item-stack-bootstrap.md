@@ -57,8 +57,12 @@ If any of these fail, the grant must fail closed.
 
 ### 2. Prefer one fully compatible carried stack
 
+A merchant grant may only consider existing-stack merge or fan-out paths when the template is stackable and not marked `anti_stack`.
+If `anti_stack` is set, the runtime must skip all existing-stack merge/fan-out paths and either place the grant as a fresh carried stack or fail closed when no fresh slot is available.
+
 A carried stack is an eligible merge target only when all of these are true:
 - it is an existing carried inventory item for the selected character
+- the template is not marked `anti_stack`
 - it has the same `vnum`
 - it is not equipped
 - it is not runtime-locked
@@ -135,6 +139,7 @@ The first stack contract must fail closed when any of these are true:
 - grant `count` exceeds `max_count`
 - a non-stackable template is asked to grant `count != 1`
 - the grant cannot be placed through any allowed full-merge, existing-stack fan-out, existing-stack-plus-fresh-slot, or fresh-slot path
+- the template is marked `anti_stack` and no fresh carried slot is available for the whole grant
 - snapshot persistence/writeback fails
 
 Failure behavior in this bootstrap contract:
@@ -166,6 +171,5 @@ This first stack contract does **not** yet freeze:
 
 After this slice, the repository should be able to say:
 - the first carried-item stack contract is no longer implicit runtime behavior
-- merchant grants now have a frozen order of decisions: validate, prefer one full merge into a non-locked stack, otherwise allow full fan-out across existing compatible non-locked stacks, otherwise allow deterministic existing-stack fan-out plus one fresh slot, otherwise use one fresh slot, otherwise fail closed
-- template metadata (`stackable`, `max_count`) now explicitly controls carried merchant-grant placement
-- stackable merchant grants can now consume several compatible carried stacks before claiming one deterministic fresh-slot remainder instead of leaving that hybrid case ambiguous
+- merchant grants now have a frozen order of decisions: validate, when not `anti_stack` prefer one full merge into a non-locked stack, otherwise allow full fan-out across existing compatible non-locked stacks, otherwise allow deterministic existing-stack fan-out plus one fresh-slot remainder; `anti_stack` grants skip those merge/fan-out paths and go directly to fresh-slot placement; otherwise fail closed
+- template metadata (`stackable`, `max_count`, `anti_stack`) now explicitly controls carried merchant-grant placement

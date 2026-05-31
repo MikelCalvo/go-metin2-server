@@ -133,7 +133,7 @@ When a gated `BUY` request arrives, the runtime must validate all of the followi
 - the entry `price` is greater than zero
 - the entry `count` is greater than zero
 - the selected character has at least that much gold available
-- the selected character has a valid carried-inventory placement for that template/count under `item-stack-bootstrap.md`
+- the selected character has a valid carried-inventory placement for that template/count under `item-stack-bootstrap.md`, including `anti_stack` templates skipping existing-stack merge/fan-out paths
 - persistence/writeback can succeed before the new live state is committed
 
 The first buy contract intentionally remains single-entry and immediate:
