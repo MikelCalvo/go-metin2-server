@@ -36,6 +36,29 @@ import (
 
 const defaultMerchantPreview = "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g; [2] Small Red Potion x2 @ 100g"
 
+type loadableFailingAccountStore struct {
+	account accountstore.Account
+	saveErr error
+}
+
+func (s loadableFailingAccountStore) Load(login string) (accountstore.Account, error) {
+	if s.account.Login != login {
+		return accountstore.Account{}, accountstore.ErrAccountNotFound
+	}
+	return accountstore.Account{
+		Login:      s.account.Login,
+		Empire:     s.account.Empire,
+		Characters: cloneCharacters(s.account.Characters),
+	}, nil
+}
+
+func (s loadableFailingAccountStore) Save(accountstore.Account) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	return errors.New("account save failed")
+}
+
 func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFrames(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -7529,6 +7552,80 @@ func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
 	}
 	if len(account.Characters) != 1 || account.Characters[0].Points[bootstrapExperiencePointType] != 100 || account.Characters[0].Gold != 100 {
 		t.Fatalf("expected combined scalar reward to persist, got %+v", account.Characters)
+	}
+}
+
+func TestGameRuntimeScalarRewardPersistenceFailureRollsBackLiveScalarsWithoutClobberingPosition(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105021B, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105021B, Name: "SaveFailRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.save_fail_reward_mob",
+	}
+	killer := peerVisibilityCharacter("SaveFailRewardKiller", 0x0103011B, 0x0204011B, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 25
+	killer.Gold = 40
+	issuePeerTicket(t, store, "save-fail-reward-killer", 0x1B1B1B1B, killer)
+
+	accounts := loadableFailingAccountStore{
+		account: accountstore.Account{Login: "save-fail-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}},
+		saveErr: errors.New("forced reward save failure"),
+	}
+	currentTime := time.Unix(1_700_000_421, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected save-fail reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 75, Gold: 60}) {
+		t.Fatal("expected save-fail reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "save-fail-reward-killer", 0x1B1B1B1B)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before save-fail reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on save-fail reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 2 {
+		t.Fatalf("expected save-fail reward kill to return only dead and clear-target frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode save-fail reward dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode save-fail reward clear-target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("unexpected save-fail reward clear target: %+v", clearTarget)
+	}
+	playerEntity, ok := runtime.sharedWorld.entities.PlayerByName("SaveFailRewardKiller")
+	if !ok {
+		t.Fatal("expected save-fail killer to remain in shared world")
+	}
+	if playerEntity.Character.MapIndex != killer.MapIndex || playerEntity.Character.X != killer.X || playerEntity.Character.Y != killer.Y {
+		t.Fatalf("expected scalar rollback to keep live position, got %+v", playerEntity.Character)
+	}
+	if playerEntity.Character.Points[bootstrapExperiencePointType] != 25 || playerEntity.Character.Gold != 40 {
+		t.Fatalf("expected failed scalar reward persistence to roll back live scalars, got exp=%d gold=%d", playerEntity.Character.Points[bootstrapExperiencePointType], playerEntity.Character.Gold)
 	}
 }
 
