@@ -10044,6 +10044,7 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleQuickslotMutationNonAuthoritative(
 	accounts := accountstore.NewFileStore(t.TempDir())
 	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Inventory = append(owner.Inventory, inventory.ItemInstance{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 7})
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1}}
 	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
@@ -10067,8 +10068,8 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleQuickslotMutationNonAuthoritative(
 		t.Fatalf("expected 5 bootstrap frames for watcher, got %d", len(watcherEnter))
 	}
 	flowOwnerOld, ownerOldEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
-	if len(ownerOldEnter) != 9 {
-		t.Fatalf("expected 9 bootstrap frames for original owner with quickslot and watcher already visible, got %d", len(ownerOldEnter))
+	if len(ownerOldEnter) != 10 {
+		t.Fatalf("expected 10 bootstrap frames for original owner with inventory, quickslot, and watcher already visible, got %d", len(ownerOldEnter))
 	}
 	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
 		t.Fatalf("expected 3 queued peer-entry frames for watcher after original owner join, got %d", len(queued))
@@ -10083,8 +10084,8 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleQuickslotMutationNonAuthoritative(
 	}
 
 	flowOwnerNew, ownerNewEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
-	if len(ownerNewEnter) != 9 {
-		t.Fatalf("expected 9 bootstrap frames for replacement owner after reclaim, got %d", len(ownerNewEnter))
+	if len(ownerNewEnter) != 10 {
+		t.Fatalf("expected 10 bootstrap frames for replacement owner after reclaim, got %d", len(ownerNewEnter))
 	}
 	_ = flushServerFrames(t, flowWatcher)
 	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {

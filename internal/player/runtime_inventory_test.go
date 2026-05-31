@@ -544,6 +544,7 @@ func TestRuntimeAccessorsDeepCopyLivePersistedAndQuickslotState(t *testing.T) {
 
 func TestRuntimeCanSetDeleteAndSwapQuickslots(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = append(persisted.Inventory, inventory.ItemInstance{ID: 13, Vnum: 27002, Count: 1, Slot: 6})
 	persisted.Quickslots = []loginticket.Quickslot{
 		{Position: 3, Type: 1, Slot: 5},
 		{Position: 7, Type: 2, Slot: 9},
@@ -613,6 +614,7 @@ func TestRuntimeSetQuickslotRejectsInvalidInputs(t *testing.T) {
 		{name: "quickslot position", position: 36, slot: loginticket.Quickslot{Type: 1, Slot: 5}},
 		{name: "type", position: 3, slot: loginticket.Quickslot{Type: 4, Slot: 5}},
 		{name: "item slot", position: 3, slot: loginticket.Quickslot{Type: 1, Slot: 90}},
+		{name: "missing item", position: 3, slot: loginticket.Quickslot{Type: 1, Slot: 6}},
 		{name: "nil runtime", position: 3, slot: loginticket.Quickslot{Type: 1, Slot: 5}},
 	}
 	for _, tc := range invalid {

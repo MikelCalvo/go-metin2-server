@@ -792,6 +792,7 @@ func TestNewGameSessionFactoryQuickslotAddPersistsAndEmitsAdd(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	characters := stubCharacters()
+	characters[1].Inventory = append(characters[1].Inventory, inventory.ItemInstance{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 7})
 	characters[1].Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1}}
 	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
@@ -825,6 +826,38 @@ func TestNewGameSessionFactoryQuickslotAddPersistsAndEmitsAdd(t *testing.T) {
 		{Position: 5, Type: quickslotproto.TypeItem, Slot: 7},
 	}) {
 		t.Fatalf("unexpected persisted quickslots after add: %#v", got)
+	}
+}
+
+func TestNewGameSessionFactoryQuickslotAddRejectsItemSlotWithoutInventoryItem(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 3, Slot: 5}}
+	characters[1].Equipment = nil
+	characters[1].Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1}}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	flow := newStartedGameFlow(t, store, accounts)
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 5, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 7}})))
+	if err != nil {
+		t.Fatalf("unexpected rejected quickslot add error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected missing-item quickslot add to emit no frames, got %d", len(out))
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load account after rejected missing-item quickslot add: %v", err)
+	}
+	if got := account.Characters[1].Quickslots; !reflect.DeepEqual(got, characters[1].Quickslots) {
+		t.Fatalf("expected missing-item quickslot add to preserve snapshot, got %#v", got)
 	}
 }
 
