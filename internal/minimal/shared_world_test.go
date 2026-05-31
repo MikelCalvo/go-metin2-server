@@ -12823,6 +12823,36 @@ func TestSharedWorldRegistryGroundItemPickupRejectsDeadCollector(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryGroundItemPickupSkipsDeadOwnerDelivery(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("DeadOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("Collector", 0x01030102, 0x02040102, 1120, 2120, 1, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	groundVID := uint32(0x0A0B0C0E)
+	item := inventory.ItemInstance{ID: 1002, Vnum: 27002, Count: 1, Slot: 6}
+	if !registry.RegisterGroundItem(ownerID, "dead-owner-login", owner, groundVID, item) {
+		t.Fatal("expected owner ground item registration to succeed before owner reaches HP floor")
+	}
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	registry.UpdateCharacter(ownerID, owner)
+
+	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
+	if !ok {
+		t.Fatal("expected living collector to still resolve visible ground item after owner reached HP floor")
+	}
+	if pickup.OwnerID != ownerID || pickup.OwnerName != owner.Name || pickup.OwnerLogin != "dead-owner-login" {
+		t.Fatalf("expected pickup to preserve ownership metadata for display, got %+v", pickup)
+	}
+	if pickup.Owner.ID != 0 {
+		t.Fatalf("expected pickup to skip dead owner delivery target, got owner snapshot %+v", pickup.Owner)
+	}
+}
+
 func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisibleTrainingDummy(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)

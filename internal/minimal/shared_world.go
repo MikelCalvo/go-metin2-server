@@ -1129,7 +1129,7 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 	var ownerCharacter loginticket.Character
 	if ground.OwnerID != 0 && ground.OwnerID != collectorID {
 		owner, ok := r.entities.Player(ground.OwnerID)
-		if ok && r.topology.SharesVisibleWorld(collector, owner.Character) {
+		if ok && !characterAtBootstrapHPFloor(owner.Character) && r.topology.SharesVisibleWorld(collector, owner.Character) {
 			ownerCharacter = owner.Character
 			if ownerName == "" {
 				ownerName = owner.Character.Name
