@@ -154,6 +154,21 @@ func TestPickupGroundItemFailsWhenCompatibleStacksCannotFitRemainderAndNoFreshSl
 	}
 }
 
+func TestPickupGroundItemRejectsMismatchedTemplateMetadataWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200}
+
+	if _, ok := runtime.PickupGroundItemWithTemplate(inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 2, Slot: 6}, 6, template); ok {
+		t.Fatal("expected pickup to reject template metadata whose vnum does not match the ground item")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), before) {
+		t.Fatalf("mismatched-template pickup mutated inventory: got %#v want %#v", runtime.LiveInventory(), before)
+	}
+}
+
 func TestUseItemOnItemConsolidatesFullSourceAndKeepsTargetQuickslotStable(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{

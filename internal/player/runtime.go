@@ -404,6 +404,17 @@ func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, temp
 	return result, true
 }
 
+func (r *Runtime) PickupGroundItemWithTemplate(item inventory.ItemInstance, preferred inventory.SlotIndex, template itemcatalog.Template) (GroundItemPickupResult, bool) {
+	if !itemcatalog.ValidTemplate(template) || item.Vnum != template.Vnum {
+		return GroundItemPickupResult{}, false
+	}
+	maxCount := uint16(0)
+	if template.Stackable && !template.AntiStack {
+		maxCount = template.MaxCount
+	}
+	return r.PickupGroundItem(item, preferred, maxCount)
+}
+
 func (r *Runtime) PickupGroundItem(item inventory.ItemInstance, preferred inventory.SlotIndex, maxCount uint16) (GroundItemPickupResult, bool) {
 	if r == nil || item.ID == 0 || item.Vnum == 0 || item.Count == 0 || preferred >= inventory.CarriedInventorySlotCount {
 		return GroundItemPickupResult{}, false
