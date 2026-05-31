@@ -382,6 +382,9 @@ func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, temp
 		return inventory.MoveResult{}, false
 	}
 	item := r.liveInventory[index]
+	if template.Vnum != 0 && item.Vnum != template.Vnum {
+		return inventory.MoveResult{}, false
+	}
 	if count > item.Count {
 		return inventory.MoveResult{}, false
 	}

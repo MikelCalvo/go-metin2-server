@@ -99,6 +99,21 @@ func TestDropInventoryItemWithTemplateRejectsAntiDropAndAntiGiveWithoutMutation(
 	}
 }
 
+func TestDropInventoryItemWithTemplateRejectsMismatchedTemplateWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200}
+
+	if _, ok := runtime.DropInventoryItemWithTemplate(5, 1, template); ok {
+		t.Fatal("expected item drop to reject template metadata whose vnum does not match the carried item")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("mismatched-template drop mutated inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestPickupGroundItemFillsCompatibleStacksBeforePlacingRemainder(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{
