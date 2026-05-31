@@ -604,6 +604,33 @@ func TestRuntimeCanSetDeleteAndSwapQuickslots(t *testing.T) {
 	}
 }
 
+func TestRuntimeSetQuickslotRejectsOutOfRangeSkillAndCommandSlots(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Quickslots = []loginticket.Quickslot{{Position: 7, Type: 2, Slot: 9}}
+	invalid := []struct {
+		name string
+		slot loginticket.Quickslot
+	}{
+		{name: "skill", slot: loginticket.Quickslot{Type: 2, Slot: 255}},
+		{name: "command", slot: loginticket.Quickslot{Type: 3, Slot: 255}},
+	}
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			before := runtime.LiveQuickslots()
+			if _, ok := runtime.SetQuickslot(3, tc.slot); ok {
+				t.Fatalf("expected out-of-range %s quickslot to fail closed", tc.name)
+			}
+			if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("rejected %s quickslot mutated live state: got %#v want %#v", tc.name, got, before)
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Quickslots, persisted.Quickslots) {
+				t.Fatalf("rejected %s quickslot mutated persisted state: got %#v want %#v", tc.name, runtime.PersistedSnapshot().Quickslots, persisted.Quickslots)
+			}
+		})
+	}
+}
+
 func TestRuntimeSetQuickslotRejectsInvalidInputs(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	invalid := []struct {

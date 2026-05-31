@@ -10,7 +10,11 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
-const quickslotMaxNum uint8 = 36
+const (
+	quickslotMaxNum         uint8 = 36
+	quickslotSkillSlotMax   uint8 = 200
+	quickslotCommandSlotMax uint8 = 60
+)
 
 type SessionLink struct {
 	Login          string
@@ -1353,9 +1357,9 @@ func validQuickslotTuple(slot loginticket.Quickslot) bool {
 	case quickslotproto.TypeItem:
 		return slot.Slot < uint8(inventory.CarriedInventorySlotCount)
 	case quickslotproto.TypeSkill:
-		return true
+		return slot.Slot < quickslotSkillSlotMax
 	case quickslotproto.TypeCommand:
-		return true
+		return slot.Slot < quickslotCommandSlotMax
 	default:
 		return false
 	}

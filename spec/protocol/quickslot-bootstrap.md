@@ -43,7 +43,7 @@ Payload:
 
 Total frame length: `7` bytes.
 
-Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid edits for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_ADD`. Item-type quickslots are valid only when their `slot.pos` points at an occupied carried inventory item for the selected live character. Invalid edits fail closed with no frames.
+Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid edits for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_ADD`. Item-type quickslots are valid only when their `slot.pos` points at an occupied carried inventory item for the selected live character. Skill quickslots are limited to slots `0..199`, and command quickslots are limited to slots `0..59`; out-of-range edits fail closed with no frames or snapshot mutation. Invalid edits fail closed with no frames.
 
 ### Client `QUICKSLOT_DEL` (`0x050A`)
 
@@ -180,10 +180,9 @@ Implemented now:
 - automatic item quickslot deletion synchronization after accepted last-stack carried-inventory `ITEM_USE` packets.
 - automatic item quickslot deletion synchronization after full-source `ITEM_USE_TO_ITEM` stack consolidations, while partial consolidations keep source-slot item quickslots unchanged.
 - automatic item quickslot deletion synchronization after accepted whole-stack merchant `SHOP SELL` / `SELL2` packets.
-- validation of bootstrap quickslot positions (`0..35`), item quickslot cells (`0..89`), and supported tuple types (`item`, `skill`, `command`).
+- validation of bootstrap quickslot positions (`0..35`), item quickslot cells (`0..89`), skill quickslot slots (`0..199`), command quickslot slots (`0..59`), and supported tuple types (`item`, `skill`, `command`).
 
 Not implemented yet:
 
 - automatic item quickslot deletion after safebox, exchange, item timeout, destruction, trade, movement to non-carried storage, or other item-removal paths
 - automatic item quickslot synchronization for belt inventory cells beyond the current carried inventory bootstrap range
-- stricter skill/command range policy beyond accepting byte-sized `skill` / `command` tuple positions
