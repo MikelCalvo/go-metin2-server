@@ -3116,6 +3116,74 @@ func TestNewGameSessionFactoryItemMovePartialMergeKeepsSourceQuickslotStable(t *
 	}
 }
 
+func TestNewGameSessionFactoryItemUseToItemFullMergeDeletesSourceQuickslotAndPersists(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 27001, Count: 2, Slot: 8},
+	}
+	characters[1].Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+
+	flow := newStartedGameFlow(t, store, accounts)
+	mergeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(8),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected item use-to-item error: %v", err)
+	}
+	if len(mergeOut) != 3 {
+		t.Fatalf("expected source delete, target set, and source quickslot delete, got %d frames", len(mergeOut))
+	}
+	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, mergeOut[0]))
+	if err != nil {
+		t.Fatalf("decode source delete: %v", err)
+	}
+	if sourceDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("expected source slot 5 delete, got %+v", sourceDel.Position)
+	}
+	targetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, mergeOut[1]))
+	if err != nil {
+		t.Fatalf("decode target set: %v", err)
+	}
+	if targetSet.Position != itemproto.InventoryPosition(8) || targetSet.Vnum != 27001 || targetSet.Count != 5 {
+		t.Fatalf("expected target slot 8 count 5 set, got %+v", targetSet)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, mergeOut[2]))
+	if err != nil {
+		t.Fatalf("decode source quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("expected source item quickslot position 2 delete, got %+v", quickslotDel)
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Inventory, []inventory.ItemInstance{{ID: 12, Vnum: 27001, Count: 5, Slot: 8}}) {
+		t.Fatalf("unexpected persisted inventory after use-to-item full merge: %#v", account.Characters[1].Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Quickslots, []loginticket.Quickslot{
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}) {
+		t.Fatalf("unexpected persisted quickslots after use-to-item full merge: %#v", account.Characters[1].Quickslots)
+	}
+}
+
 func TestNewGameSessionFactoryItemMoveExactCountMergesFullStackIntoCompatibleDestination(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accountDir := t.TempDir()
