@@ -12809,6 +12809,9 @@ func TestSharedWorldRegistryGroundItemPickupRejectsDeadCollector(t *testing.T) {
 		t.Fatal("expected owner ground item registration to succeed")
 	}
 
+	if item, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); ok || item.Vnum != 0 {
+		t.Fatalf("expected dead collector ground visibility lookup to fail closed, got ok=%v item=%+v", ok, item)
+	}
 	if pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok || pickup.Item.Vnum != 0 {
 		t.Fatalf("expected dead collector ground pickup lookup to fail closed, got ok=%v pickup=%+v", ok, pickup)
 	}

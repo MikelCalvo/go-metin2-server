@@ -1100,7 +1100,7 @@ func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.playerCharacter(collectorID); !ok {
+	if _, ok := r.playerCharacter(collectorID); !ok || characterAtBootstrapHPFloor(collector) {
 		return inventory.ItemInstance{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
