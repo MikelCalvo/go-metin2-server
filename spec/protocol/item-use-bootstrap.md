@@ -9,6 +9,8 @@ The goal is intentionally narrow:
 
 It does **not** yet define the full legacy item-use surface.
 
+The authored item-template snapshot boundary that feeds this runtime path is documented separately in `item-template-store-bootstrap.md`. In particular, malformed snapshots and snapshots with unknown JSON fields fail closed rather than booting while silently ignoring unowned item metadata.
+
 ## Scope
 
 This first contract applies only to:

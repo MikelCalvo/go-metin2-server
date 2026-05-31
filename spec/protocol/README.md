@@ -59,6 +59,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `character-update-bootstrap.md` — first self-only state refresh after entering `GAME`
 - `player-point-change-bootstrap.md` — first self-only point refresh after entering `GAME`
 - `inventory-equipment-bootstrap.md` — first owned self-only inventory/equipment bootstrap surface and item-family boundary for M3 character state
+- `item-template-store-bootstrap.md` — current authored item-template snapshot boundary, validation rules, missing-file fallback, and fail-closed unknown-field hardening
 - `item-use-bootstrap.md` — first owned self-only consumable item-use bootstrap contract, now covering both the slash harness and the first tiny client-originated `ITEM_USE` ingress for carried inventory, plus the wire-only `ITEM_USE_TO_ITEM` drag-to-item codec
 - `item-move-bootstrap.md` — first owned client-originated carried-inventory `ITEM_MOVE` contract for GAME-phase moves, counted splits/merges, zero-count and exact-count incompatible occupied-destination swaps, and self-only slot refreshes
 - `item-drop-pickup-bootstrap.md` — frozen ground-item drop/pickup packet codecs and `GAME` dispatch seams, now with carried-slot drop mutation, shared temporary ground handles, visible-world pickup, and the first party-shaped owner-delivery pickup notices while durable ownership timers and real party membership remain pending

@@ -1,9 +1,11 @@
 package itemstore
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -30,7 +32,7 @@ func (s *FileStore) Load() (Snapshot, error) {
 	}
 
 	var snapshot Snapshot
-	if err := json.Unmarshal(raw, &snapshot); err != nil {
+	if err := decodeSnapshotStrict(raw, &snapshot); err != nil {
 		return Snapshot{}, fmt.Errorf("%w: decode item template snapshot: %v", ErrInvalidSnapshot, err)
 	}
 	normalized := normalizeSnapshot(snapshot)
@@ -81,6 +83,18 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	}
 	if err := syncDir(filepath.Dir(s.path)); err != nil {
 		return fmt.Errorf("sync item template store dir: %w", err)
+	}
+	return nil
+}
+
+func decodeSnapshotStrict(raw []byte, snapshot *Snapshot) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(snapshot); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return err
 	}
 	return nil
 }
