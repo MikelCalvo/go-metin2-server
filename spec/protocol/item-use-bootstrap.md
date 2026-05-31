@@ -28,7 +28,8 @@ The first owned item-use ingress remains bootstrap-scoped and deliberately narro
 - the older bootstrap slash seam `/use_item <slot>` through the existing `CHAT(TALKING)` command path still remains valid
 - the first owned client-originated item-use request packet is now `ITEM_USE` with framed header `0x0501`
 - `ITEM_USE` currently carries only one packed `TItemPos` payload: `window_type:uint8`, `cell:uint16` (little-endian)
-- only carried inventory slots are valid live runtime inputs
+- only carried inventory slots are valid live runtime inputs (`cell < 90`)
+- the player mutation boundary also rejects slots outside that carried-inventory range before template effects are applied, so equipment/extended cells cannot mutate points or stacks even if a stale or direct runtime caller has an item snapshot there
 - equipped items remain out of scope even though equipment still uses the legacy combined inventory/equipment cell namespace elsewhere in the bootstrap item family
 
 The client source also exposes a separate drag-to-item packet family, `ITEM_USE_TO_ITEM`:

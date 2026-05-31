@@ -483,6 +483,26 @@ func TestUseItemOnItemRejectsNilRuntime(t *testing.T) {
 	}
 }
 
+func TestUseItemRejectsOutOfRangeSlotWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: inventory.CarriedInventorySlotCount}},
+		Points:    [255]int32{1: 25},
+	}, SessionLink{})
+	beforeInventory := runtime.LiveInventory()
+	beforePoints := runtime.LiveCharacter().Points
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}}
+
+	if result, ok := runtime.UseItem(inventory.CarriedInventorySlotCount, template); ok {
+		t.Fatalf("expected out-of-range ITEM_USE slot to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+		t.Fatalf("out-of-range ITEM_USE mutated inventory: got %#v want %#v", got, beforeInventory)
+	}
+	if got := runtime.LiveCharacter().Points; got != beforePoints {
+		t.Fatalf("out-of-range ITEM_USE mutated points: got %#v want %#v", got, beforePoints)
+	}
+}
+
 func TestRuntimeKeepsLiveCurrencyAndItemStateSeparateFromPersistedSnapshot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

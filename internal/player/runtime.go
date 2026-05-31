@@ -788,7 +788,7 @@ func templateAuthoredForEquipSlot(template itemcatalog.Template, equipSlot inven
 }
 
 func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Template) (ItemUseResult, bool) {
-	if r == nil || !itemcatalog.ValidTemplate(template) || template.UseEffect == nil {
+	if r == nil || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) || template.UseEffect == nil {
 		return ItemUseResult{}, false
 	}
 	index := findInventorySlot(r.liveInventory, slot)
