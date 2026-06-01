@@ -54,6 +54,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - the minimal session/runtime packet path now freezes that full-merge burst and the persisted account snapshot: source stack removed, target stack refreshed with the merged count, item quickslots for the removed source cell deleted, and non-item quickslots with the same byte slot preserved
 - only item quickslots are removed and persisted; skill/command quickslots that happen to carry the same byte slot value stay unchanged
 - if the target has only partial room, the source slot is refreshed with its remainder and the target slot is refreshed at its template `max_count`
+- the minimal session/runtime packet path now freezes that partial-merge burst and persisted account snapshot too: source and target counts are updated, both cells emit `ITEM_UPDATE`, and the source item quickslot is preserved because the source stack remains occupied
 - count-only partial refreshes use the existing `ITEM_UPDATE` packet shape for both changed carried cells and do not rewrite source item quickslots
 - the normal `use_effect` path is not executed for this drag-to-item request, even when the source item also has a consumable template
 

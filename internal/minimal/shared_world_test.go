@@ -14908,6 +14908,68 @@ func TestGameSessionFlowItemMovePacketRejectsPartialMergeAboveTemplateMaxCount(t
 	}
 }
 
+func TestGameSessionFlowItemUseToItemPartiallyMergesStacksWithUpdateFrames(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemPartial", 0x01030517, 0x02040517, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 89, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 90, Vnum: 27001, Count: 198, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, store, "use-to-item-partial", 0x50505057, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed use-to-item partial owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-partial", 0x50505057)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(8),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected use-to-item partial merge error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected partial use-to-item merge to emit source and target ITEM_UPDATE frames only, got %d", len(out))
+	}
+	if update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0])); err != nil || update.Position != itemproto.InventoryPosition(5) || update.Count != 3 {
+		t.Fatalf("unexpected partial-merge source update: %+v err=%v", update, err)
+	}
+	if update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1])); err != nil || update.Position != itemproto.InventoryPosition(8) || update.Count != 200 {
+		t.Fatalf("unexpected partial-merge target update: %+v err=%v", update, err)
+	}
+
+	snapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after partial use-to-item merge")
+	}
+	if !reflect.DeepEqual(snapshot.Inventory, []InventoryItemSnapshot{
+		{ID: 89, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 90, Vnum: 27001, Count: 200, Slot: 8},
+	}) {
+		t.Fatalf("expected runtime inventory to reflect partial merge, got %+v", snapshot.Inventory)
+	}
+	persisted, err := accounts.Load("use-to-item-partial")
+	if err != nil {
+		t.Fatalf("load persisted use-to-item partial owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{
+		{ID: 89, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 90, Vnum: 27001, Count: 200, Slot: 8},
+	}) {
+		t.Fatalf("expected persisted inventory to reflect partial merge, got %+v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected partial merge to preserve source item quickslot, got %+v", persisted.Characters[0].Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemRejectsEquipmentCellWithoutMutation(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
