@@ -41,6 +41,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - source and target must both be carried inventory positions (`cell < 90`)
 - source and target must be different occupied slots with the same `vnum`
 - empty source, empty target, and same-cell source/target requests fail closed before any ordinary use-effect fallback
+- the minimal session/runtime packet path freezes same-cell `ITEM_USE_TO_ITEM` as a no-frame/no-mutation rejection, including unchanged persisted inventory and quickslots
 - the source template must resolve to a valid stackable carried-item template with non-zero `max_count`
 - equippable templates with an authored `equip_slot` are rejected for drag-to-item stack consolidation even when the live source and target stacks otherwise match
 - the resolved source template `vnum` must match the live source stack `vnum`; a mismatched template is treated like unresolved/malformed metadata and fails closed

@@ -15138,6 +15138,55 @@ func TestGameSessionFlowItemUseToItemPartiallyMergesStacksWithUpdateFrames(t *te
 	}
 }
 
+func TestGameSessionFlowItemUseToItemRejectsSameCellRequestWithoutMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemSameCell", 0x01030519, 0x02040519, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 95, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, store, "use-to-item-same-cell", 0x50505059, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-same-cell", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed same-cell use-to-item owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected use-to-item same-cell runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-same-cell", 0x50505059)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected same-cell use-to-item error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected same-cell use-to-item request to fail closed without frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after same-cell use-to-item rejection, got %d", len(queued))
+	}
+	snapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after same-cell use-to-item rejection")
+	}
+	if !reflect.DeepEqual(snapshot.Inventory, []InventoryItemSnapshot{{ID: 95, Vnum: 27001, Count: 2, Slot: 5}}) {
+		t.Fatalf("expected same-cell use-to-item rejection to leave runtime inventory unchanged, got %+v", snapshot.Inventory)
+	}
+	persisted, err := accounts.Load("use-to-item-same-cell")
+	if err != nil {
+		t.Fatalf("load persisted same-cell use-to-item account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected same-cell use-to-item rejection to leave persisted inventory unchanged, got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected same-cell use-to-item rejection to leave persisted quickslots unchanged, got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemRejectsOverMaxTargetStackWithoutMutation(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

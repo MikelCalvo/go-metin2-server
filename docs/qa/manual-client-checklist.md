@@ -791,6 +791,7 @@ Expected result:
 - [ ] Repeat with a target stack that has only partial room under the authored `max_count`
 - [ ] Confirm the selected session receives count-only refreshes for both carried cells and the source item quickslot remains
 - [ ] Repeat with incompatible `vnum`, missing/invalid template metadata, `anti_stack`, non-stackable, locked, empty, same-cell, already-full, and over-template-max setups where available
+- [ ] For the same-cell case specifically, send `ITEM_USE_TO_ITEM` with identical source and target carried cells and confirm no item, quickslot, point, or persisted-state change occurs
 
 Expected result:
 - accepted drag-to-item consolidation is self-only, persists the merged inventory, and never runs the normal consumable `use_effect`
