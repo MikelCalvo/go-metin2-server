@@ -15138,6 +15138,59 @@ func TestGameSessionFlowItemUseToItemPartiallyMergesStacksWithUpdateFrames(t *te
 	}
 }
 
+func TestGameSessionFlowItemUseToItemRejectsOverMaxTargetStackWithoutMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemOverTarget", 0x01030518, 0x02040518, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 93, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 94, Vnum: 27001, Count: 201, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, store, "use-to-item-over-target", 0x50505058, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-over-target", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed use-to-item over-target owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Bounded Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected use-to-item over-target runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-over-target", 0x50505058)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(8),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected over-target use-to-item error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected over-target use-to-item request to fail closed without frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after over-target use-to-item rejection, got %d", len(queued))
+	}
+	snapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after over-target use-to-item rejection")
+	}
+	if !reflect.DeepEqual(snapshot.Inventory, []InventoryItemSnapshot{{ID: 93, Vnum: 27001, Count: 2, Slot: 5}, {ID: 94, Vnum: 27001, Count: 201, Slot: 8}}) {
+		t.Fatalf("expected over-target use-to-item rejection to leave runtime inventory unchanged, got %+v", snapshot.Inventory)
+	}
+	persisted, err := accounts.Load("use-to-item-over-target")
+	if err != nil {
+		t.Fatalf("load persisted use-to-item over-target account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected over-target use-to-item rejection to leave persisted inventory unchanged, got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected over-target use-to-item rejection to leave persisted quickslots unchanged, got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemRejectsJobAndSexAntiFlagTemplatesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string
