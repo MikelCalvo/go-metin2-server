@@ -111,6 +111,9 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	}
 	staticActorCombatProfileRegistry.Lock()
 	defer staticActorCombatProfileRegistry.Unlock()
+	if _, exists := staticActorCombatProfileRegistry.profiles[profile]; exists {
+		return false
+	}
 	staticActorCombatProfileRegistry.profiles[profile] = cloneStaticActorCombatProfileDefaults(defaults)
 	return true
 }

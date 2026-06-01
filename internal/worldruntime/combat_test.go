@@ -145,6 +145,33 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 	}
 }
 
+func TestRegisterStaticActorCombatProfileRejectsDuplicateName(t *testing.T) {
+	const profile = "practice_boar"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected initial %q profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 99,
+		DamagePerNormalAttack: 9,
+		RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected duplicate %q profile registration to fail closed", profile)
+	}
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected original registered profile defaults to remain available")
+	}
+	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 3 || defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
+		t.Fatalf("expected duplicate registration to preserve original defaults, got %+v", defaults)
+	}
+}
+
 func TestBootstrapStaticActorCurrentHPSupportsTrainingDummyCombatProfile(t *testing.T) {
 	currentHP, ok := BootstrapStaticActorCurrentHP(StaticActorCombatProfileTrainingDummy)
 	if !ok {
