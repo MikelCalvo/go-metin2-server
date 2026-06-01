@@ -139,6 +139,77 @@ func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFr
 	}
 }
 
+func TestGameRuntimeUpdateSpawnGroupActorPreservesRewardDescriptor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		accounts,
+		staticActorStore,
+		interactionStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:              "practice.mob_alpha",
+		Name:             "Practice Mob Alpha",
+		MapIndex:         42,
+		X:                1700,
+		Y:                2800,
+		RaceNum:          20350,
+		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardExperience: 125,
+		RewardGold:       75,
+		RewardDropVnums:  []uint32{3001, 3002},
+	}}})
+	if err != nil {
+		t.Fatalf("import spawn group bundle: %v", err)
+	}
+	if len(imported.SpawnGroups) != 1 {
+		t.Fatalf("expected one imported spawn group, got %d", len(imported.SpawnGroups))
+	}
+
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one runtime actor after import, got %d", len(actors))
+	}
+	actor := actors[0]
+	updated, ok := runtime.UpdateStaticActor(actor.EntityID, "Practice Mob Alpha Moved", 43, 1800, 2900, 20351)
+	if !ok {
+		t.Fatal("expected spawn-backed actor update to succeed")
+	}
+	if updated.SpawnGroupRef != "practice.mob_alpha" {
+		t.Fatalf("expected spawn group ref to be preserved, got %q", updated.SpawnGroupRef)
+	}
+	if updated.CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob {
+		t.Fatalf("expected combat profile to be preserved, got %q", updated.CombatProfile)
+	}
+	if updated.RewardExperience != 125 || updated.RewardGold != 75 || !reflect.DeepEqual(updated.RewardDropVnums, []uint32{3001, 3002}) {
+		t.Fatalf("expected reward descriptor to be preserved in update snapshot, got %+v", updated)
+	}
+
+	exported, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export content bundle: %v", err)
+	}
+	if len(exported.SpawnGroups) != 1 {
+		t.Fatalf("expected one exported spawn group, got %d", len(exported.SpawnGroups))
+	}
+	spawn := exported.SpawnGroups[0]
+	if spawn.Ref != "practice.mob_alpha" || spawn.Name != "Practice Mob Alpha Moved" || spawn.MapIndex != 43 || spawn.X != 1800 || spawn.Y != 2900 || spawn.RaceNum != 20351 {
+		t.Fatalf("unexpected exported moved spawn group: %+v", spawn)
+	}
+	if spawn.RewardExperience != 125 || spawn.RewardGold != 75 || !reflect.DeepEqual(spawn.RewardDropVnums, []uint32{3001, 3002}) {
+		t.Fatalf("expected exported reward descriptor to be preserved, got %+v", spawn)
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsExistingVID(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DropOwner", 0x01030190, 0x02040190, 1200, 2200, 0, 101, 201)

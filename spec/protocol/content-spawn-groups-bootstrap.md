@@ -124,7 +124,8 @@ The first bootstrap spawn-group contract freezes these fields:
   - omitted scalar fields canonicalize to `0`; omitted or empty drop lists canonicalize to an empty reward-drop descriptor
   - non-zero values use the narrow reward contract in `non-player-reward-bootstrap.md` on the accepted killing hit
   - reward data belongs to the authored spawn group and round-trips through content bundles, static-actor snapshots, and runtime import/export; it is not live character persistence by itself
-- operator/runtime edits that preserve the same `spawn_group_ref` must preserve the authored reward descriptor while changing mutable actor presentation/placement fields; delete/recreate or bundle replacement remains the explicit way to replace reward metadata
+- operator/runtime edits that preserve the same `spawn_group_ref` must preserve the authored `combat_profile` and reward descriptor while changing mutable actor presentation/placement fields; delete/recreate or bundle replacement remains the explicit way to replace reward metadata
+- when a spawn-backed actor is updated through the generic static-actor edit path without specifying a new combat profile, the runtime keeps the existing spawn-group combat profile instead of downgrading the actor to non-combat static content
 
 ## Why call it a group if it is one actor
 
