@@ -16,7 +16,8 @@ Those documents already freeze:
 - fail-closed owner-side static-actor `INTERACT` rejection at that same retaliation floor before talk/info, merchant preview, or warp-side effects can run
 - fail-closed owner-side merchant-buy attempts at that same retaliation floor before inventory / gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
 - fail-closed owner-side merchant-sell attempts at that same retaliation floor before inventory / gold / quickslot mutation can run through packet `SHOP SELL` / `SHOP SELL2`
-- fail-closed owner-side client/slash item-use attempts at that same retaliation floor before inventory consumption or point restoration can run through the local `/use_item` harness path or carried-slot `ITEM_USE`
+- fail-closed owner-side client/slash item-use attempts at that same retaliation floor before inventory consumption, carried-item stacking, or point restoration can run through the local `/use_item` harness path, carried-slot `ITEM_USE`, or `ITEM_USE_TO_ITEM`
+- fail-closed owner-side item/gold drop attempts at that same retaliation floor before ground-item registration, currency debit, or inventory persistence can run through `ITEM_DROP` / `ITEM_DROP2`
 - fail-closed owner-side slash carried-inventory move attempts at that same retaliation floor before runtime or persisted slot mutation can run through the local `/inventory_move` harness path
 - fail-closed owner-side slash equipment mutation attempts at that same retaliation floor before carried/equipped item movement, appearance refresh, or template-backed point mutation can run through the local `/equip_item` and `/unequip_item` harness paths
 - fail-closed owner-side quickslot add/delete/swap attempts at that same retaliation floor before quickslot mutation can run through packet `QUICKSLOT_ADD` / `QUICKSLOT_DEL` / `QUICKSLOT_SWAP`
@@ -51,7 +52,7 @@ This contract currently applies only to:
 This contract does **not** yet claim:
 - corpse state, knockdown animations, or corpse interaction
 - broader player respawn, revive menus, or compatibility-grade death return rules beyond the currently owned same-socket `/restart_here` and `/restart_town` bootstrap recovery seams
-- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy / merchant-sell rejection, client/slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, quickslot mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
+- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy / merchant-sell rejection, client/slash item-use / use-to-item rejection, item/gold drop rejection, slash inventory-move rejection, slash equipment-mutation rejection, quickslot mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
 - PvP death semantics or non-combat causes of player death
 
 ## Current implementation status
@@ -68,6 +69,8 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side merchant-buy attempts also fail closed with no item-set success burst and no inventory / gold mutation, even if a merchant preview had already been opened earlier in that session
 - once this floor is reached, later owner-side packet merchant-sell attempts also fail closed with no item-delete / item-update / quickslot-delete / point-change success burst and no runtime or persisted inventory / gold / quickslot mutation, including both whole-stack `SHOP SELL` and partial-stack `SHOP SELL2`
 - once this floor is reached, later owner-side client/slash item-use attempts also fail closed with no point-change / item-set success burst and no runtime or persisted inventory / point mutation
+- once this floor is reached, later owner-side `ITEM_USE_TO_ITEM` attempts also fail closed with no item-set / item-del / quickslot success burst and no runtime or persisted carried-item stacking mutation
+- once this floor is reached, later owner-side `ITEM_DROP` / `ITEM_DROP2` attempts also fail closed with no point-change, ground-add, ownership, quickslot, or item-set/delete success burst and no runtime or persisted inventory / gold mutation
 - once this floor is reached, later owner-side slash `/inventory_move` attempts also fail closed with no item-set success burst and no runtime or persisted carried-slot mutation
 - once this floor is reached, later owner-side slash `/equip_item` and `/unequip_item` attempts also fail closed with no item-delete / item-set / point-change / character-update success burst and no runtime or persisted inventory / equipment / point mutation
 - once this floor is reached, later owner-side packet quickslot add/delete/swap attempts also fail closed with no quickslot refresh frames and no runtime or persisted quickslot mutation
@@ -236,16 +239,18 @@ Why this is the current owned boundary:
 - once post-floor merchant buys already failed closed, an already-open merchant window became the next smallest stale UI/runtime context still surviving the same retaliation-owned death edge
 - reusing the existing `GC::SHOP END` close companion keeps the teardown honest without inventing a second death-specific merchant packet family
 
-## First owned post-floor client/slash item-use denial
+## First owned post-floor client/slash item-use and item-drop denial
 
-The current bootstrap player-death contract now also owns one narrow post-floor item-use rule for that same selected live owner session:
+The current bootstrap player-death contract now also owns narrow post-floor item-use and item-drop rules for that same selected live owner session:
 - once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later slash `/use_item <slot>` attempts fail closed
-- once that same floor has been reached, later carried-slot `ITEM_USE` attempts also fail closed
-- the denial happens before inventory consumption, point restoration, or persistence mutation can run
-- the denial stays intentionally quiet in this slice: no synthetic failure info chat, no fallback revive packet, and no broader consumable UI contract change are claimed yet
+- once that same floor has been reached, later carried-slot `ITEM_USE` and `ITEM_USE_TO_ITEM` attempts also fail closed
+- the item-use denial happens before inventory consumption, carried-item stacking, point restoration, or persistence mutation can run
+- once that same floor has been reached, later `ITEM_DROP` / `ITEM_DROP2` attempts also fail closed for both inventory items and gold
+- the item-drop denial happens before inventory mutation, gold debit, ground-item registration, ownership delivery, quickslot sync, or persistence mutation can run
+- the denial stays intentionally quiet in this slice: no synthetic failure info chat, no fallback revive packet, and no broader consumable/drop UI contract change are claimed yet
 
 This keeps the next post-floor expansion small and honest too:
-- after merchant-buy denial, client/slash item use was the next dangerous already-open gameplay context because it could still mutate runtime and persisted inventory or restore points even if the owner had already died in the current bootstrap retaliation loop
+- after merchant-buy denial, client/slash item use and item drop were the next dangerous already-open gameplay contexts because they could still mutate runtime and persisted inventory/gold, restore points, stack carried items, or register visible ground items even if the owner had already died in the current bootstrap retaliation loop
 - the repo still does **not** yet claim revive policy or a broader general post-death action-lock contract at `0` HP
 
 ## First owned post-floor peer-facing chat / whisper denial
