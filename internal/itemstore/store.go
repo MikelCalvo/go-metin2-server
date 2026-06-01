@@ -25,6 +25,12 @@ type Template struct {
 	AntiDrop         bool         `json:"anti_drop,omitempty"`
 	AntiGive         bool         `json:"anti_give,omitempty"`
 	AntiStack        bool         `json:"anti_stack,omitempty"`
+	AntiMale         bool         `json:"anti_male,omitempty"`
+	AntiFemale       bool         `json:"anti_female,omitempty"`
+	AntiWarrior      bool         `json:"anti_warrior,omitempty"`
+	AntiAssassin     bool         `json:"anti_assassin,omitempty"`
+	AntiSura         bool         `json:"anti_sura,omitempty"`
+	AntiShaman       bool         `json:"anti_shaman,omitempty"`
 	EquipSlot        string       `json:"equip_slot,omitempty"`
 	UseEffect        *UseEffect   `json:"use_effect,omitempty"`
 	EquipEffect      *PointEffect `json:"equip_effect,omitempty"`

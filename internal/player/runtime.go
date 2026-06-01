@@ -787,8 +787,33 @@ func templateAuthoredForEquipSlot(template itemcatalog.Template, equipSlot inven
 	return ok && templateSlot == equipSlot
 }
 
+func (r *Runtime) CanUseTemplate(template itemcatalog.Template) bool {
+	if r == nil || !itemcatalog.ValidTemplate(template) {
+		return false
+	}
+	if r.persisted.Job == 0 && template.AntiWarrior {
+		return false
+	}
+	if r.persisted.Job == 1 && template.AntiAssassin {
+		return false
+	}
+	if r.persisted.Job == 2 && template.AntiSura {
+		return false
+	}
+	if r.persisted.Job == 3 && template.AntiShaman {
+		return false
+	}
+	if r.persisted.RaceNum%2 == 0 && template.AntiMale {
+		return false
+	}
+	if r.persisted.RaceNum%2 == 1 && template.AntiFemale {
+		return false
+	}
+	return true
+}
+
 func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Template) (ItemUseResult, bool) {
-	if r == nil || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) || template.UseEffect == nil {
+	if r == nil || slot >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || template.UseEffect == nil {
 		return ItemUseResult{}, false
 	}
 	index := findInventorySlot(r.liveInventory, slot)
@@ -835,7 +860,7 @@ func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.Slo
 }
 
 func (r *Runtime) useItemOnItem(source inventory.SlotIndex, target inventory.SlotIndex, template itemcatalog.Template, rewriteItem func(inventory.ItemInstance) inventory.ItemInstance) (inventory.MoveResult, bool) {
-	if r == nil || source == target || source >= inventory.CarriedInventorySlotCount || target >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) || !template.Stackable || template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || template.MaxCount == 0 || template.MaxCount > 255 {
+	if r == nil || source == target || source >= inventory.CarriedInventorySlotCount || target >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || !template.Stackable || template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || template.MaxCount == 0 || template.MaxCount > 255 {
 		return inventory.MoveResult{}, false
 	}
 	sourceIndex := findInventorySlot(r.liveInventory, source)

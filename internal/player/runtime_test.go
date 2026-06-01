@@ -317,6 +317,12 @@ func bootstrapConsumableTemplate(vnum uint32, pointType uint8, pointIndex uint8,
 	}
 }
 
+func antiFlaggedConsumableTemplate(vnum uint32, mutate func(*itemcatalog.Template)) itemcatalog.Template {
+	template := bootstrapConsumableTemplate(vnum, 1, 1, 50, "consume:27001:+50")
+	mutate(&template)
+	return template
+}
+
 func bootstrapEquipmentPointTemplate(vnum uint32, equipSlot inventory.EquipmentSlot, pointType uint8, pointIndex uint8, pointDelta int32) itemcatalog.Template {
 	return itemcatalog.Template{
 		Vnum:      vnum,
@@ -437,6 +443,84 @@ func TestRuntimeItemUseLastStackRemovesOnlyItemQuickslotsForConsumedSlot(t *test
 	}
 	if !reflect.DeepEqual(runtime.LiveQuickslots(), []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}, {Position: 4, Type: quickslotproto.TypeItem, Slot: 6}}) {
 		t.Fatalf("unexpected live quickslots after final-stack consume: %#v", runtime.LiveQuickslots())
+	}
+}
+
+func TestRuntimeItemUseRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		job      uint8
+		raceNum  uint16
+		template itemcatalog.Template
+	}{
+		{name: "anti warrior", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiWarrior = true })},
+		{name: "anti assassin", job: 1, raceNum: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiAssassin = true })},
+		{name: "anti sura", job: 2, raceNum: 2, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiSura = true })},
+		{name: "anti shaman", job: 3, raceNum: 3, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiShaman = true })},
+		{name: "anti male", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiMale = true })},
+		{name: "anti female", job: 1, raceNum: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiFemale = true })},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "RestrictedPeer",
+				Job:       tc.job,
+				RaceNum:   tc.raceNum,
+				Points:    [255]int32{1: 700},
+				Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "restricted-peer", CharacterIndex: 1})
+			before := runtime.LiveCharacter()
+
+			if _, ok := runtime.UseItem(5, tc.template); ok {
+				t.Fatalf("expected %s item use to fail closed", tc.name)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s item use mutated live character: got %#v want %#v", tc.name, got, before)
+			}
+		})
+	}
+}
+
+func TestRuntimeUseItemOnItemRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		job      uint8
+		raceNum  uint16
+		template itemcatalog.Template
+	}{
+		{name: "anti warrior", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiWarrior = true })},
+		{name: "anti assassin", job: 1, raceNum: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiAssassin = true })},
+		{name: "anti sura", job: 2, raceNum: 2, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiSura = true })},
+		{name: "anti shaman", job: 3, raceNum: 3, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiShaman = true })},
+		{name: "anti male", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiMale = true })},
+		{name: "anti female", job: 1, raceNum: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiFemale = true })},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:      0x01030102,
+				VID:     0x02040102,
+				Name:    "RestrictedPeer",
+				Job:     tc.job,
+				RaceNum: tc.raceNum,
+				Inventory: []inventory.ItemInstance{
+					{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+					{ID: 12, Vnum: 27001, Count: 2, Slot: 8},
+				},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "restricted-peer", CharacterIndex: 1})
+			before := runtime.LiveCharacter()
+
+			if _, ok := runtime.UseItemOnItem(5, 8, tc.template); ok {
+				t.Fatalf("expected %s item use-to-item to fail closed", tc.name)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s item use-to-item mutated live character: got %#v want %#v", tc.name, got, before)
+			}
+		})
 	}
 }
 

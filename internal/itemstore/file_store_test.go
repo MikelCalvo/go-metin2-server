@@ -211,14 +211,20 @@ func TestFileStoreSaveThenLoadRoundTripPreservesAntiFlagMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
 	want := Snapshot{Templates: []Template{{
-		Vnum:      27003,
-		Name:      "Bound Practice Potion",
-		Stackable: true,
-		MaxCount:  200,
-		AntiSell:  true,
-		AntiDrop:  true,
-		AntiGive:  true,
-		AntiStack: true,
+		Vnum:         27003,
+		Name:         "Bound Practice Potion",
+		Stackable:    true,
+		MaxCount:     200,
+		AntiSell:     true,
+		AntiDrop:     true,
+		AntiGive:     true,
+		AntiStack:    true,
+		AntiMale:     true,
+		AntiFemale:   true,
+		AntiWarrior:  true,
+		AntiAssassin: true,
+		AntiSura:     true,
+		AntiShaman:   true,
 	}}}
 
 	if err := store.Save(want); err != nil {
@@ -236,7 +242,7 @@ func TestFileStoreSaveThenLoadRoundTripPreservesAntiFlagMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read persisted snapshot with anti-flag metadata: %v", err)
 	}
-	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27003,\n      \"name\": \"Bound Practice Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_sell\": true,\n      \"anti_drop\": true,\n      \"anti_give\": true,\n      \"anti_stack\": true\n    }\n  ]\n}\n"
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27003,\n      \"name\": \"Bound Practice Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_sell\": true,\n      \"anti_drop\": true,\n      \"anti_give\": true,\n      \"anti_stack\": true,\n      \"anti_male\": true,\n      \"anti_female\": true,\n      \"anti_warrior\": true,\n      \"anti_assassin\": true,\n      \"anti_sura\": true,\n      \"anti_shaman\": true\n    }\n  ]\n}\n"
 	if string(raw) != wantJSON {
 		t.Fatalf("unexpected deterministic snapshot with anti-flag metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
 	}

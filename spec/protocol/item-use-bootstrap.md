@@ -45,6 +45,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - the resolved source template `vnum` must match the live source stack `vnum`; a mismatched template is treated like unresolved/malformed metadata and fails closed
 - the template-authored `max_count` must fit the currently owned one-byte item refresh count range (`<= 255`) because `ITEM_SET` / `ITEM_UPDATE` expose count as `uint8` in this bootstrap packet family
 - templates with authored `anti_stack = true`, `anti_drop = true`, `anti_give = true`, or `anti_sell = true` are rejected for drag-to-item stack consolidation even when the live stacks otherwise match
+- templates with authored job/sex restrictions for the selected character (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`) are rejected for drag-to-item stack consolidation even when the live stacks otherwise match
 - the live source stack must have non-zero count, must not already exceed the template-authored `max_count`, and must validate as a well-formed carried inventory item even when the merge will remove it entirely
 - the target stack must have non-zero count and free capacity under that `max_count`
 - the runtime moves as many source items as fit into the target stack
@@ -55,9 +56,9 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - count-only partial refreshes use the existing `ITEM_UPDATE` packet shape for both changed carried cells and do not rewrite source item quickslots
 - the normal `use_effect` path is not executed for this drag-to-item request, even when the source item also has a consumable template
 
-Incompatible targets, empty source/target slots, out-of-carried-range source or target cells, same-cell source/target requests, equipped cells, locked source or target items, zero-count source or target stacks, non-stackable templates, anti-stack/anti-drop/anti-give/anti-sell templates, missing templates, template/source-`vnum` mismatches, over-template-max source stacks, over-template-max target stacks, already-full targets, and templates whose `max_count` exceeds the current one-byte item refresh count range fail closed with no frames and no mutation.
-The runtime also rejects empty source/target slots, source/target cells outside the carried inventory range, same-cell source/target requests, zero-count source or target stacks, template/source-`vnum` mismatches, non-stackable templates, authored `anti_stack = true`, `anti_drop = true`, `anti_give = true`, or `anti_sell = true` templates, over-template-max source or target stacks, and template `max_count` values above `255` at the player mutation boundary itself, so these guards do not depend only on the minimal session handler pre-check. The player mutation boundary applies drag-to-item consolidation against a cloned carried-inventory snapshot and only swaps it into live state after both the source-side and target-side updates validate, so late validation failures cannot leave a partially removed source or partially incremented target stack behind.
-The minimal session/runtime harness also freezes those template-backed guards through the normal `ITEM_USE_TO_ITEM` packet path: missing and invalid source templates, non-stackable templates, and anti-stack/anti-drop/anti-give/anti-sell templates leave inventory and quickslot snapshots unchanged even when source and target live stacks otherwise share the same `vnum`. Already-full targets and over-`uint8` template `max_count` values are likewise frozen through both the player mutation boundary and minimal session packet path as no-frame/no-mutation rejections.
+Incompatible targets, empty source/target slots, out-of-carried-range source or target cells, same-cell source/target requests, equipped cells, locked source or target items, zero-count source or target stacks, non-stackable templates, anti-stack/anti-drop/anti-give/anti-sell templates, selected-character job/sex anti-flag templates, missing templates, template/source-`vnum` mismatches, over-template-max source stacks, over-template-max target stacks, already-full targets, and templates whose `max_count` exceeds the current one-byte item refresh count range fail closed with no frames and no mutation.
+The runtime also rejects empty source/target slots, source/target cells outside the carried inventory range, same-cell source/target requests, zero-count source or target stacks, template/source-`vnum` mismatches, non-stackable templates, authored `anti_stack = true`, `anti_drop = true`, `anti_give = true`, or `anti_sell = true` templates, authored job/sex restrictions for the selected character, over-template-max source or target stacks, and template `max_count` values above `255` at the player mutation boundary itself, so these guards do not depend only on the minimal session handler pre-check. The player mutation boundary applies drag-to-item consolidation against a cloned carried-inventory snapshot and only swaps it into live state after both the source-side and target-side updates validate, so late validation failures cannot leave a partially removed source or partially incremented target stack behind.
+The minimal session/runtime harness also freezes those template-backed guards through the normal `ITEM_USE_TO_ITEM` packet path: missing and invalid source templates, non-stackable templates, anti-stack/anti-drop/anti-give/anti-sell templates, and selected-character job/sex anti-flag templates leave inventory and quickslot snapshots unchanged even when source and target live stacks otherwise share the same `vnum`. Already-full targets and over-`uint8` template `max_count` values are likewise frozen through both the player mutation boundary and minimal session packet path as no-frame/no-mutation rejections.
 When no runtime handler is installed, the default game-flow handler still rejects the packet silently/fail-closed.
 
 For the first owned packet ingress, the runtime only accepts:
@@ -71,7 +72,8 @@ Any other `TItemPos` currently fails closed.
 Exactly one consumable shape is frozen here:
 - supported source surface: carried inventory only
 - the runtime resolves the consumed slot through file-backed item-template metadata keyed by that item's `vnum`
-- only templates with a valid `use_effect` payload are currently eligible for `/use_item <slot>`
+- only templates with a valid `use_effect` payload are currently eligible for `/use_item <slot>` or `ITEM_USE`
+- templates with authored job/sex restrictions for the selected character (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`) are rejected before point effects or stack mutations are applied
 - that `use_effect` payload currently owns:
   - the point target index (`point_index`)
   - the point-change packet `type` (`point_type`)
@@ -130,6 +132,7 @@ This effect placeholder exists only because there is not yet an owned visual-eff
 The first consumable path must fail closed when any of these are true:
 - the slot is empty
 - the slot's `vnum` does not resolve to a valid item template with a valid `use_effect`
+- the resolved template carries an authored job/sex anti flag for the selected character
 - the item is not in carried inventory
 - the request uses any `TItemPos` outside the current carried-inventory-only subset
 - frame construction fails
