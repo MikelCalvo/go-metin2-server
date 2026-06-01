@@ -13647,6 +13647,103 @@ func TestNewGameSessionFactoryAppliesAuthoredSpawnGroupPracticeMobDeathReward(t 
 	}
 }
 
+func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobScalarRewardSaveFails(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050206, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050206, Name: "ScalarSaveFailRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.scalar_save_fail_reward_mob",
+	}
+	killer := peerVisibilityCharacter("ScalarSaveFailKiller", 0x01030106, 0x02040106, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 40
+	killer.Gold = 70
+	issuePeerTicket(t, store, "scalar-save-fail-killer", 0x66666666, killer)
+
+	accounts := loadableFailingAccountStore{
+		account: accountstore.Account{Login: "scalar-save-fail-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}},
+		saveErr: errors.New("forced scalar reward save failure"),
+	}
+	currentTime := time.Unix(1_700_000_600, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected scalar-save-fail reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 7, Gold: 9}) {
+		t.Fatal("expected scalar-save-fail reward override to apply to registered practice mob")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "scalar-save-fail-killer", 0x66666666)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before scalar-save-fail reward kill: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target selection frame before scalar-save-fail reward kill, got %d", len(selectOut))
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on scalar-save-fail reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 2 {
+		t.Fatalf("expected scalar reward save failure to preserve only dead + clear target frames, got %d", len(killOut))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0]))
+	if err != nil {
+		t.Fatalf("decode scalar-save-fail killing hit dead frame: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("unexpected scalar-save-fail dead frame: %+v", dead)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode scalar-save-fail clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected scalar-save-fail killing hit to clear target, got %+v", clearTarget)
+	}
+
+	connected := runtime.ConnectedCharacters()
+	var killerSnapshot *ConnectedCharacterSnapshot
+	for i := range connected {
+		if connected[i].Name == killer.Name {
+			killerSnapshot = &connected[i]
+			break
+		}
+	}
+	if killerSnapshot == nil {
+		t.Fatalf("expected connected snapshots to keep killer after scalar reward save failure, got %+v", connected)
+	}
+	if killerSnapshot.MapIndex != killer.MapIndex || killerSnapshot.X != killer.X || killerSnapshot.Y != killer.Y {
+		t.Fatalf("expected scalar reward save failure not to clobber live killer location, got %+v", killerSnapshot)
+	}
+	account, err := accounts.Load("scalar-save-fail-killer")
+	if err != nil {
+		t.Fatalf("load scalar-save-fail rewarded account: %v", err)
+	}
+	if got := account.Characters[0].Points[bootstrapExperiencePointType]; got != killer.Points[bootstrapExperiencePointType] {
+		t.Fatalf("expected failed scalar reward save to leave account experience %d, got %d", killer.Points[bootstrapExperiencePointType], got)
+	}
+	if got := account.Characters[0].Gold; got != killer.Gold {
+		t.Fatalf("expected failed scalar reward save to leave account gold %d, got %d", killer.Gold, got)
+	}
+}
+
 func TestNewGameSessionFactoryDropsFirstItemRewardForPracticeMobDeath(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
