@@ -1209,10 +1209,10 @@ func TestGameRuntimeItemUseToItemStaleSessionEmitsLocalFramesButDoesNotPersist(t
 	if err != nil {
 		t.Fatalf("unexpected stale use-to-item error: %v", err)
 	}
-	if len(out) < 2 {
-		t.Fatalf("expected stale use-to-item to emit local inventory frames, got %d", len(out))
+	if len(out) != 3 {
+		t.Fatalf("expected stale use-to-item to emit local ITEM_DEL, ITEM_SET, and QUICKSLOT_DEL frames, got %d", len(out))
 	}
-	var sawSourceDel, sawTargetSet bool
+	var sawSourceDel, sawTargetSet, sawQuickslotDel bool
 	for _, raw := range out {
 		fr := decodeSingleFrame(t, raw)
 		if del, err := itemproto.DecodeDel(fr); err == nil && del.Position == itemproto.InventoryPosition(5) {
@@ -1221,10 +1221,14 @@ func TestGameRuntimeItemUseToItemStaleSessionEmitsLocalFramesButDoesNotPersist(t
 		}
 		if set, err := itemproto.DecodeSet(fr); err == nil && set.Position == itemproto.InventoryPosition(6) && set.Vnum == 27001 && set.Count == 7 {
 			sawTargetSet = true
+			continue
+		}
+		if del, err := quickslotproto.DecodeDel(fr); err == nil && del.Position == 2 {
+			sawQuickslotDel = true
 		}
 	}
-	if !sawSourceDel || !sawTargetSet {
-		t.Fatalf("expected stale use-to-item local frames to include source del and target set, got %d frames", len(out))
+	if !sawSourceDel || !sawTargetSet || !sawQuickslotDel {
+		t.Fatalf("expected stale use-to-item local frames to include source del, target set, and source quickslot del, got %d frames", len(out))
 	}
 
 	account, err := accounts.Load("use-to-item-stale")
