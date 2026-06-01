@@ -136,6 +136,7 @@ This effect placeholder exists only because there is not yet an owned visual-eff
 The first consumable path must fail closed when any of these are true:
 - the slot is empty
 - the slot's `vnum` does not resolve to a valid item template with a valid `use_effect`
+- the carried live item snapshot is malformed under the bootstrap item-instance validation rules
 - the resolved template carries an authored job/sex anti flag for the selected character
 - the item is not in carried inventory
 - the request uses any `TItemPos` outside the current carried-inventory-only subset

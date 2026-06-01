@@ -484,6 +484,28 @@ func TestRuntimeItemUseRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testi
 	}
 }
 
+func TestRuntimeUseItemRejectsMalformedLiveItemWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 0, Vnum: 27001, Count: 1, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.UseItem(5, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")); ok {
+		t.Fatalf("expected malformed live item use to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, before.Inventory) || got.Points[1] != before.Points[1] {
+		t.Fatalf("malformed live item use mutated live state: got inventory=%#v points[1]=%d want inventory=%#v points[1]=%d", got.Inventory, got.Points[1], before.Inventory, before.Points[1])
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("malformed live item use mutated persisted inventory: got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string

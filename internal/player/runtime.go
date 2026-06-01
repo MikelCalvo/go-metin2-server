@@ -825,6 +825,9 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 {
 		return ItemUseResult{}, false
 	}
+	if err := item.Validate(); err != nil {
+		return ItemUseResult{}, false
+	}
 	currentPointValue := r.livePoints[effect.PointIndex]
 	if currentPointValue > (1<<31-1)-effect.PointDelta {
 		return ItemUseResult{}, false
