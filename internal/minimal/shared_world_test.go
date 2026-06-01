@@ -15138,6 +15138,79 @@ func TestGameSessionFlowItemUseToItemPartiallyMergesStacksWithUpdateFrames(t *te
 	}
 }
 
+func TestGameSessionFlowItemUseToItemRejectsJobAndSexAntiFlagTemplatesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		job      uint8
+		raceNum  uint16
+		template itemcatalog.Template
+	}{
+		{name: "anti warrior", job: 0, raceNum: 0, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiWarrior = true })},
+		{name: "anti assassin", job: 1, raceNum: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiAssassin = true })},
+		{name: "anti sura", job: 2, raceNum: 2, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiSura = true })},
+		{name: "anti shaman", job: 3, raceNum: 3, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiShaman = true })},
+		{name: "anti male", job: 0, raceNum: 0, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiMale = true })},
+		{name: "anti female", job: 1, raceNum: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiFemale = true })},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseToItemRestricted", 0x01030516, 0x02040516, 1100, 2100, tc.raceNum, 101, 201)
+			owner.Job = tc.job
+			owner.RaceNum = tc.raceNum
+			owner.Inventory = []inventory.ItemInstance{
+				{ID: 91, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 92, Vnum: 27001, Count: 3, Slot: 8},
+			}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, store, "use-to-item-restricted", 0x50505056, owner)
+			if err := accounts.Save(accountstore.Account{Login: "use-to-item-restricted", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s use-to-item restricted owner account: %v", tc.name, err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{tc.template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s use-to-item restricted runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-restricted", 0x50505056)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+				Source: itemproto.InventoryPosition(5),
+				Target: itemproto.InventoryPosition(8),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected %s use-to-item anti-flag error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s use-to-item anti-flag request to fail closed without frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s use-to-item anti-flag rejection, got %d", tc.name, len(queued))
+			}
+			snapshot, ok := runtime.InventorySnapshot(owner.Name)
+			if !ok {
+				t.Fatalf("expected inventory snapshot after %s use-to-item anti-flag rejection", tc.name)
+			}
+			if !reflect.DeepEqual(snapshot.Inventory, []InventoryItemSnapshot{{ID: 91, Vnum: 27001, Count: 2, Slot: 5}, {ID: 92, Vnum: 27001, Count: 3, Slot: 8}}) {
+				t.Fatalf("expected %s use-to-item anti-flag rejection to leave runtime inventory unchanged, got %+v", tc.name, snapshot.Inventory)
+			}
+			persisted, err := accounts.Load("use-to-item-restricted")
+			if err != nil {
+				t.Fatalf("load persisted %s use-to-item restricted account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("expected %s use-to-item anti-flag rejection to leave persisted inventory unchanged, got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("expected %s use-to-item anti-flag rejection to leave persisted quickslots unchanged, got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowItemUseToItemRejectsEquipmentCellWithoutMutation(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -27122,6 +27195,12 @@ func newInteractionDefinitionStore(t *testing.T, definitions []interactionstore.
 		t.Fatalf("save interaction definitions: %v", err)
 	}
 	return store
+}
+
+func antiFlaggedUseToItemTemplate(mutate func(*itemcatalog.Template)) itemcatalog.Template {
+	template := itemcatalog.Template{Vnum: 27001, Name: "Restricted Small Red Potion", Stackable: true, MaxCount: 200}
+	mutate(&template)
+	return template
 }
 
 func newItemTemplateStore(t *testing.T, templates []itemcatalog.Template) itemcatalog.Store {
