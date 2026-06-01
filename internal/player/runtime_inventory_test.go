@@ -438,6 +438,62 @@ func TestUseItemOnItemRejectsAntiFlagTemplatesWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestUseItemOnItemRejectsSelectedCharacterAntiFlagTemplatesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		character loginticket.Character
+		template  itemcatalog.Template
+	}{
+		{
+			name:      "anti warrior",
+			character: loginticket.Character{Job: 0, Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiWarrior: true},
+		},
+		{
+			name:      "anti assassin",
+			character: loginticket.Character{Job: 1, Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiAssassin: true},
+		},
+		{
+			name:      "anti sura",
+			character: loginticket.Character{Job: 2, Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiSura: true},
+		},
+		{
+			name:      "anti shaman",
+			character: loginticket.Character{Job: 3, Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiShaman: true},
+		},
+		{
+			name:      "anti male",
+			character: loginticket.Character{RaceNum: 0, Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiMale: true},
+		},
+		{
+			name:      "anti female",
+			character: loginticket.Character{RaceNum: 1, Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiFemale: true},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(tc.character, SessionLink{})
+			beforeInventory := runtime.LiveInventory()
+			beforeQuickslots := runtime.LiveQuickslots()
+
+			if _, ok := runtime.UseItemOnItem(5, 6, tc.template); ok {
+				t.Fatalf("expected %s ITEM_USE_TO_ITEM consolidation to fail closed", tc.name)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+				t.Fatalf("%s use-to-item mutated inventory: got %#v want %#v", tc.name, got, beforeInventory)
+			}
+			if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, beforeQuickslots) {
+				t.Fatalf("%s use-to-item mutated quickslots: got %#v want %#v", tc.name, got, beforeQuickslots)
+			}
+		})
+	}
+}
+
 func TestUseItemOnItemRejectsOutOfRangeSourceOrTargetWithoutMutation(t *testing.T) {
 	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
 	cases := []struct {

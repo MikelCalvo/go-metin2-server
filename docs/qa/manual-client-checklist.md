@@ -214,6 +214,23 @@ Expected result:
 
 ---
 
+## 4.5 Bootstrap item use / inventory smoke
+
+Run this only with a disposable QA character and known seeded item-template data.
+
+### 4.5.1 Drag stack onto stack (`ITEM_USE_TO_ITEM`)
+
+- [ ] Put two compatible stackable carried items with the same `vnum` into separate inventory cells
+- [ ] Drag one stack onto the other stack
+
+Expected result:
+- compatible stacks consolidate up to the template-authored `max_count`
+- the consumed source cell disappears only on a full merge
+- item quickslots for a removed source cell are cleared, while unrelated skill/command quickslots remain
+- restricted templates (`anti_stack`, transfer anti-flags, or selected-character job/sex anti-flags) fail closed with no visible mutation
+
+---
+
 ## 5. Single-client movement
 
 ### 5.1 Basic movement
