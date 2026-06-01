@@ -226,6 +226,7 @@ Run this only with a disposable QA character and known seeded item-template data
 Expected result:
 - compatible stacks consolidate up to the template-authored `max_count`
 - the consumed source cell disappears only on a full merge
+- if the target has only partial room, both source and target counts refresh and the source item quickslot remains
 - item quickslots for a removed source cell are cleared, while unrelated skill/command quickslots remain
 - restricted templates (`anti_stack`, transfer anti-flags, or selected-character job/sex anti-flags) fail closed with no visible mutation
 
