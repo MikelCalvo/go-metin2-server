@@ -446,6 +446,9 @@ func (r *sharedWorldRegistry) staticActorDeathRewardLocked(actor worldruntime.St
 	if !actor.DeathReward.Empty() {
 		return actor.DeathReward.Clone()
 	}
+	if actor.SpawnGroupRef == "" {
+		return worldruntime.StaticActorDeathReward{}
+	}
 	reward, _ := worldruntime.BootstrapStaticActorDeathReward(actor.CombatKind)
 	return reward
 }

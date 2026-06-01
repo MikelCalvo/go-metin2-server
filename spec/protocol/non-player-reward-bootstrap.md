@@ -42,6 +42,9 @@ It becomes player state only after the already-accepted death edge tries to appl
 Default bootstrap `training_dummy` and `practice_mob` profile defaults remain rewardless unless content or tests explicitly author a non-zero descriptor.
 Both profile-level default helpers are covered directly so a later combat-profile broadening cannot accidentally turn either bootstrap profile into an implicit reward source.
 
+Registered bootstrap combat profiles may carry a validated death-reward default for authored spawn-group use, and lookup returns cloned descriptor slices so callers cannot mutate the registry by editing returned defaults.
+That profile-level default still does **not** make standalone runtime static actors reward-bearing: without a non-empty `spawn_group_ref` or explicit authored live snapshot descriptor, the shared-world death attempt returns a rewardless descriptor.
+
 ## Validation
 
 Reward descriptors fail closed when:
