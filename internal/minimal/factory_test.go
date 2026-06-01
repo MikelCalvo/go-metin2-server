@@ -2526,6 +2526,89 @@ func TestNewGameSessionFactoryItemUseConsumesTheLastStackAndEmitsDelete(t *testi
 	}
 }
 
+func TestNewGameSessionFactoryItemUsePacketConsumesLastStackAndDeletesOnlyItemQuickslots(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Points[bootstrapPlayerPointValueIndex] = 700
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 1, Slot: 5}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	characters[1].Quickslots = []loginticket.Quickslot{
+		{Position: 1, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+	flow := newStartedGameFlowWithItemStore(t, store, accounts, staticItemTemplateStore{snapshot: itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  bootstrapPlayerPointType,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 50,
+			Message:    "consume:27001:+50",
+		},
+	}}}})
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected packet item-use last-stack error: %v", err)
+	}
+	if len(useOut) != 5 {
+		t.Fatalf("expected point-change, item-del, two quickslot-del frames, and info for packet last-stack item use, got %d", len(useOut))
+	}
+	if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0])); err != nil {
+		t.Fatalf("decode packet last-stack point-change: %v", err)
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, useOut[1]))
+	if err != nil {
+		t.Fatalf("decode packet last-stack item del: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected packet last-stack item del: %+v", del)
+	}
+	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[2]))
+	if err != nil {
+		t.Fatalf("decode first packet last-stack quickslot del: %v", err)
+	}
+	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[3]))
+	if err != nil {
+		t.Fatalf("decode second packet last-stack quickslot del: %v", err)
+	}
+	if firstQuickslotDel.Position != 1 || secondQuickslotDel.Position != 2 {
+		t.Fatalf("unexpected packet last-stack quickslot deletes: %+v %+v", firstQuickslotDel, secondQuickslotDel)
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[4]))
+	if err != nil {
+		t.Fatalf("decode packet last-stack info: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != "consume:27001:+50" {
+		t.Fatalf("unexpected packet last-stack info: %+v", info)
+	}
+
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load account after packet last-stack item use: %v", err)
+	}
+	if got := account.Characters[1].Points[bootstrapPlayerPointValueIndex]; got != 750 {
+		t.Fatalf("expected persisted points[1] to be 750 after packet last-stack item use, got %d", got)
+	}
+	if len(account.Characters[1].Inventory) != 0 {
+		t.Fatalf("expected packet last-stack item use to clear inventory, got %#v", account.Characters[1].Inventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}}
+	if !reflect.DeepEqual(account.Characters[1].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted quickslots after packet last-stack item use: got %#v want %#v", account.Characters[1].Quickslots, wantQuickslots)
+	}
+}
+
 func TestNewGameSessionFactoryItemUseOnlyExecutesThroughTalkingChat(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
