@@ -524,6 +524,29 @@ func TestRuntimeUseItemOnItemRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t 
 	}
 }
 
+func TestRuntimeUseItemOnItemRejectsEquippableTemplateWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Equippable Stack", Stackable: true, MaxCount: 200, EquipSlot: inventory.EquipmentSlotBody.String()}
+
+	if _, ok := runtime.UseItemOnItem(5, 6, template); ok {
+		t.Fatal("expected use-to-item to reject equippable templates even when stacks otherwise match")
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("equippable-template use-to-item mutated live character: got %#v want %#v", got, before)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("equippable-template use-to-item mutated persisted inventory: got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeUseItemOnItemMergesCompatibleStacksWithoutPointEffect(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,
