@@ -857,11 +857,12 @@ func TestRuntimeSyncItemQuickslotsForInventoryMoveUpdatesMatchingItemSlots(t *te
 	}
 }
 
-func TestRuntimeSyncItemQuickslotsForInventoryMoveDeletesConflictingDestinationItemSlots(t *testing.T) {
+func TestRuntimeSyncItemQuickslotsForInventoryMoveDeletesOnlyDestinationItemSlots(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Quickslots = []loginticket.Quickslot{
-		{Position: 3, Type: 1, Slot: 5},
+		{Position: 6, Type: 1, Slot: 8},
 		{Position: 4, Type: 1, Slot: 6},
+		{Position: 3, Type: 1, Slot: 5},
 		{Position: 5, Type: 2, Slot: 6},
 		{Position: 7, Type: 1, Slot: 8},
 	}
@@ -880,6 +881,7 @@ func TestRuntimeSyncItemQuickslotsForInventoryMoveDeletesConflictingDestinationI
 	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
 		{Position: 3, Type: 1, Slot: 6},
 		{Position: 5, Type: 2, Slot: 6},
+		{Position: 6, Type: 1, Slot: 8},
 		{Position: 7, Type: 1, Slot: 8},
 	}) {
 		t.Fatalf("unexpected live quickslots after item sync: %#v", got)
