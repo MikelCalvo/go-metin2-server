@@ -240,7 +240,8 @@ The codec now owns the exact wire shape, but the gameplay contract is still inte
 
 This slice does **not** yet freeze:
 - the final gameplay meaning of every `attack_type` value
-- final damage formulas beyond the current bootstrap `1` HP decrement
+- final damage formulas beyond registered bootstrap combat-profile defaults (`max_hp`, `damage_per_normal_attack`, `respawn_delay`, and optional death reward)
+- broad authored combat-profile fields beyond the current runtime registry seam
 - broader session-wide attack-speed rules beyond the first fixed same-target `250ms` cadence window
 - miss/crit/block results
 - the broader server-driven respawn/delete-readd choreography details beyond the already-owned fixed timed rebuild that the separate death / respawn doc now freezes

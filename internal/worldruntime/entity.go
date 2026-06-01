@@ -2,6 +2,7 @@ package worldruntime
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -98,6 +99,33 @@ type StaticActorCombatProfileDefaults struct {
 	DeathReward           StaticActorDeathReward
 }
 
+var staticActorCombatProfileRegistry = struct {
+	sync.RWMutex
+	profiles map[string]StaticActorCombatProfileDefaults
+}{profiles: make(map[string]StaticActorCombatProfileDefaults)}
+
+func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombatProfileDefaults) bool {
+	profile = strings.TrimSpace(profile)
+	if profile == "" || profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || defaults.DamagePerNormalAttack == 0 || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
+		return false
+	}
+	staticActorCombatProfileRegistry.Lock()
+	defer staticActorCombatProfileRegistry.Unlock()
+	staticActorCombatProfileRegistry.profiles[profile] = cloneStaticActorCombatProfileDefaults(defaults)
+	return true
+}
+
+func UnregisterStaticActorCombatProfileForTest(profile string) {
+	staticActorCombatProfileRegistry.Lock()
+	defer staticActorCombatProfileRegistry.Unlock()
+	delete(staticActorCombatProfileRegistry.profiles, strings.TrimSpace(profile))
+}
+
+func cloneStaticActorCombatProfileDefaults(defaults StaticActorCombatProfileDefaults) StaticActorCombatProfileDefaults {
+	defaults.DeathReward = defaults.DeathReward.Clone()
+	return defaults
+}
+
 func staticActorCombatProfile(profile string, kind string) string {
 	if profile != "" {
 		return profile
@@ -137,7 +165,13 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 			DeathReward:           StaticActorDeathReward{},
 		}, true
 	default:
-		return StaticActorCombatProfileDefaults{}, false
+		staticActorCombatProfileRegistry.RLock()
+		defer staticActorCombatProfileRegistry.RUnlock()
+		defaults, ok := staticActorCombatProfileRegistry.profiles[combatKind]
+		if !ok {
+			return StaticActorCombatProfileDefaults{}, false
+		}
+		return cloneStaticActorCombatProfileDefaults(defaults), true
 	}
 }
 

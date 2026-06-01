@@ -119,6 +119,32 @@ func TestBootstrapStaticActorCombatProfileDefaultsRejectsUnknownProfile(t *testi
 	}
 }
 
+func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
+	const profile = "practice_wolf"
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected %q to start unregistered", profile)
+	}
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	if !ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected %q to become a valid static actor combat profile", profile)
+	}
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected registered profile defaults to resolve")
+	}
+	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 3 || defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
+		t.Fatalf("unexpected registered profile defaults: %+v", defaults)
+	}
+}
+
 func TestBootstrapStaticActorCurrentHPSupportsTrainingDummyCombatProfile(t *testing.T) {
 	currentHP, ok := BootstrapStaticActorCurrentHP(StaticActorCombatProfileTrainingDummy)
 	if !ok {

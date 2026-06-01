@@ -133,7 +133,8 @@ func ValidStaticActorCombatProfile(profile string) bool {
 	case "", StaticActorCombatKindTrainingDummy, StaticActorCombatProfilePracticeMob:
 		return true
 	default:
-		return false
+		_, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+		return ok
 	}
 }
 
