@@ -19,6 +19,7 @@ Those documents already freeze:
 - fail-closed owner-side client/slash item-use attempts at that same retaliation floor before inventory consumption or point restoration can run through the local `/use_item` harness path or carried-slot `ITEM_USE`
 - fail-closed owner-side slash carried-inventory move attempts at that same retaliation floor before runtime or persisted slot mutation can run through the local `/inventory_move` harness path
 - fail-closed owner-side slash equipment mutation attempts at that same retaliation floor before carried/equipped item movement, appearance refresh, or template-backed point mutation can run through the local `/equip_item` and `/unequip_item` harness paths
+- fail-closed owner-side quickslot add/delete/swap attempts at that same retaliation floor before quickslot mutation can run through packet `QUICKSLOT_ADD` / `QUICKSLOT_DEL` / `QUICKSLOT_SWAP`
 
 What this document adds is the next narrower question:
 
@@ -50,7 +51,7 @@ This contract currently applies only to:
 This contract does **not** yet claim:
 - corpse state, knockdown animations, or corpse interaction
 - broader player respawn, revive menus, or compatibility-grade death return rules beyond the currently owned same-socket `/restart_here` and `/restart_town` bootstrap recovery seams
-- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy / merchant-sell rejection, client/slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
+- broader full input gating after death beyond the now-owned combat `TARGET` / `ATTACK`, relocation `MOVE` / `SYNC_POSITION`, static-actor `INTERACT`, merchant-buy / merchant-sell rejection, client/slash item-use rejection, slash inventory-move rejection, slash equipment-mutation rejection, quickslot mutation rejection, peer-facing `CHAT` / `WHISPER` rejection, self-only `CHAT_TYPE_INFO` rejection, and recipient-side server-origin `CHAT_TYPE_NOTICE` skip at `0` HP
 - PvP death semantics or non-combat causes of player death
 
 ## Current implementation status
@@ -69,6 +70,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side client/slash item-use attempts also fail closed with no point-change / item-set success burst and no runtime or persisted inventory / point mutation
 - once this floor is reached, later owner-side slash `/inventory_move` attempts also fail closed with no item-set success burst and no runtime or persisted carried-slot mutation
 - once this floor is reached, later owner-side slash `/equip_item` and `/unequip_item` attempts also fail closed with no item-delete / item-set / point-change / character-update success burst and no runtime or persisted inventory / equipment / point mutation
+- once this floor is reached, later owner-side packet quickslot add/delete/swap attempts also fail closed with no quickslot refresh frames and no runtime or persisted quickslot mutation
 - once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name target lookup can run
 - once this floor is reached, later peer-originated `WHISPER` requests targeting that same exact owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once this floor is reached, later peer-originated local `CHAT` requests with `type = TALKING` from still-visible sessions continue to return the live sender's ordinary self echo, but queued peer delivery skips that zero-HP owner recipient entirely

@@ -23491,6 +23491,97 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationQueuesVisiblePeerDeadAtOwne
 	}
 }
 
+func TestGameSessionFlowPracticeMobImmediateRetaliationRejectsQuickslotMutationsAtOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("QuickslotOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeSkill, Slot: 1}}
+	issuePeerTicket(t, store, "quickslot-owner", 0x11111111, owner)
+	if err := accounts.Save(accountstore.Account{Login: "quickslot-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed quickslot owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle for quickslot floor denial: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice mob before quickslot floor denial, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quickslot-owner", 0x11111111)
+	if len(enterOut) != 10 {
+		t.Fatalf("expected 10 bootstrap frames for owner with item, quickslot, and visible practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before quickslot floor denial: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before quickslot floor denial, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before quickslot floor denial: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before quickslot denial, got %d", len(attackOut))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no delayed retaliation frames after immediate quickslot denial setup, got %d", len(queued))
+	}
+
+	mutations := []struct {
+		name  string
+		frame []byte
+	}{
+		{name: "add", frame: quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 4, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}})},
+		{name: "delete", frame: quickslotproto.EncodeClientDel(quickslotproto.ClientDelPacket{Position: 2})},
+		{name: "swap", frame: quickslotproto.EncodeClientSwap(quickslotproto.ClientSwapPacket{Position: 2, TargetPosition: 3})},
+	}
+	for _, mutation := range mutations {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, mutation.frame))
+		if err != nil {
+			t.Fatalf("unexpected quickslot %s error after owner HP floor: %v", mutation.name, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected quickslot %s after owner HP floor to fail closed with no frames, got %d", mutation.name, len(out))
+		}
+		if queued := flushServerFrames(t, flow); len(queued) != 0 {
+			t.Fatalf("expected quickslot %s after owner HP floor not to queue frames, got %d", mutation.name, len(queued))
+		}
+	}
+
+	persisted, err := accounts.Load("quickslot-owner")
+	if err != nil {
+		t.Fatalf("load persisted quickslot owner account after floor denials: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected quickslot floor denials to keep persisted quickslots unchanged, got %#v want %#v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameSessionFlowPracticeMobCadenceWindowDeniedRepeatDoesNotAppendRetaliationOrResetDelayedBeat(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
