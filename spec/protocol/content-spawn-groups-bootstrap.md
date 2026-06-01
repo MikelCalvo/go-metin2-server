@@ -189,7 +189,7 @@ The first content contract should fail closed when:
 - `race_num` is `0`
 - `combat_profile` is unknown when provided; an omitted profile is canonicalized to the bootstrap `practice_mob` profile for this first one-spawn-profile contract
 - coordinates are malformed for the current bundle schema
-- reward scalar values overflow the current bootstrap point-change carrier, or `reward_drop_vnums` contains `0`
+- reward scalar values overflow the current bootstrap point-change carrier, or `reward_drop_vnums` contains `0` or duplicate drop vnums
 
 Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate `ref` values, and preserves the prior authored/runtime snapshot when validation fails.
 
