@@ -15523,6 +15523,132 @@ func TestGameSessionFlowItemUseToItemRejectsEquipmentCellWithoutMutation(t *test
 	}
 }
 
+func TestGameSessionFlowItemUseToItemRejectsLockedSourceOrTargetWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name: "locked source",
+			inventory: []inventory.ItemInstance{
+				{ID: 101, Vnum: 27001, Count: 2, Slot: 5, Locked: true},
+				{ID: 102, Vnum: 27001, Count: 3, Slot: 8},
+			},
+		},
+		{
+			name: "locked target",
+			inventory: []inventory.ItemInstance{
+				{ID: 101, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 102, Vnum: 27001, Count: 3, Slot: 8, Locked: true},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseToItemLocked", 0x0103051a, 0x0204051a, 1100, 2100, 0, 101, 201)
+			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, store, "use-to-item-locked", 0x5050505a, owner)
+			if err := accounts.Save(accountstore.Account{Login: "use-to-item-locked", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s use-to-item owner account: %v", tc.name, err)
+			}
+			runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+			if err != nil {
+				t.Fatalf("unexpected %s use-to-item runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-locked", 0x5050505a)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+				Source: itemproto.InventoryPosition(5),
+				Target: itemproto.InventoryPosition(8),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected %s use-to-item error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s use-to-item request to fail closed without frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s use-to-item rejection, got %d", tc.name, len(queued))
+			}
+			snapshot, ok := runtime.InventorySnapshot(owner.Name)
+			if !ok {
+				t.Fatalf("expected inventory snapshot after %s use-to-item rejection", tc.name)
+			}
+			if len(snapshot.Inventory) != 2 || snapshot.Inventory[0].Count != tc.inventory[0].Count || snapshot.Inventory[1].Count != tc.inventory[1].Count {
+				t.Fatalf("expected %s rejection to leave runtime inventory counts unchanged, got %+v", tc.name, snapshot.Inventory)
+			}
+			persisted, err := accounts.Load("use-to-item-locked")
+			if err != nil {
+				t.Fatalf("load persisted %s use-to-item account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("expected %s rejection to leave persisted inventory unchanged, got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("expected %s rejection to leave persisted quickslots unchanged, got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
+func TestGameSessionFlowItemUseToItemRejectsNonStackableTemplateWithoutMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemNonStackable", 0x0103051b, 0x0204051b, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 103, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 104, Vnum: 27001, Count: 1, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, store, "use-to-item-non-stackable", 0x5050505b, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-non-stackable", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed non-stackable use-to-item owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Single Potion", Stackable: false, MaxCount: 1}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected non-stackable use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-non-stackable", 0x5050505b)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(8),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected non-stackable use-to-item error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected non-stackable use-to-item request to fail closed without frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after non-stackable use-to-item rejection, got %d", len(queued))
+	}
+	snapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after non-stackable use-to-item rejection")
+	}
+	if len(snapshot.Inventory) != 2 || snapshot.Inventory[0].Count != 1 || snapshot.Inventory[1].Count != 1 {
+		t.Fatalf("expected non-stackable rejection to leave runtime inventory unchanged, got %+v", snapshot.Inventory)
+	}
+	persisted, err := accounts.Load("use-to-item-non-stackable")
+	if err != nil {
+		t.Fatalf("load persisted non-stackable use-to-item account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected non-stackable rejection to leave persisted inventory unchanged, got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected non-stackable rejection to leave persisted quickslots unchanged, got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerClose", 0x01040104, 0x02050104, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-close", 0x44444444, buyer)
