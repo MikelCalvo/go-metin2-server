@@ -112,6 +112,17 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(invalidStaticActorWithReward); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for non-spawn static actor carrying reward metadata, got %v", err)
 	}
+	invalidSpawnGroupRewardCases := map[string]StaticActor{
+		"experience overflow": {EntityID: 18, Name: "RewardOverflowExp", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_overflow_exp", RewardExperience: uint64(^uint32(0)>>1) + 1},
+		"gold overflow":       {EntityID: 19, Name: "RewardOverflowGold", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_overflow_gold", RewardGold: uint64(^uint32(0)>>1) + 1},
+		"zero drop vnum":      {EntityID: 20, Name: "RewardZeroDrop", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_zero_drop", RewardDropVnums: []uint32{27001, 0}},
+		"duplicate drop vnum": {EntityID: 21, Name: "RewardDuplicateDrop", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_duplicate_drop", RewardDropVnums: []uint32{27001, 27001}},
+	}
+	for name, actor := range invalidSpawnGroupRewardCases {
+		if err := store.Save(Snapshot{StaticActors: []StaticActor{actor}}); !errors.Is(err, ErrInvalidSnapshot) {
+			t.Fatalf("expected ErrInvalidSnapshot for spawn-group reward descriptor with %s, got %v", name, err)
+		}
+	}
 	duplicateSpawnGroupRef := Snapshot{StaticActors: []StaticActor{
 		{EntityID: 15, Name: "PracticeMobAlpha", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.mob_alpha"},
 		{EntityID: 16, Name: "PracticeMobBeta", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.mob_alpha"},
