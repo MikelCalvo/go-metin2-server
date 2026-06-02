@@ -336,6 +336,7 @@ Expected result:
 Run this when two QA clients can enter the same visible bootstrap world.
 
 - [ ] On client A, drop one ordinary carried item stack using the normal client inventory drop path
+- [ ] If QA tooling can force the newer counted-drop path with count `0`, confirm it behaves as a whole-stack drop: the carried cell disappears, the ground item appears, item quickslots for that cell clear, and unrelated skill/command quickslots remain
 - [ ] Confirm client A sees a ground item plus ownership label
 - [ ] Confirm visible client B sees the same ground item plus ownership label
 - [ ] If QA data allows it, attempt to drop a locked or malformed/guarded carried test item and confirm the inventory, quickslots, and visible ground handles remain unchanged

@@ -90,6 +90,74 @@ func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemDrop2NormalizesZeroCountToWholeStackAndClearsItemQuickslot(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DropZeroOwner", 0x01030193, 0x02040193, 1250, 2250, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1021, Vnum: 27001, Count: 5, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "drop-zero-owner", 0x39393939, owner)
+	if err := accounts.Save(accountstore.Account{Login: "drop-zero-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed zero-count drop owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected zero-count item-drop2 runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-zero-owner", 0x39393939)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 0})))
+	if err != nil {
+		t.Fatalf("unexpected zero-count item drop2 error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected zero-count drop to emit ITEM_DEL, QUICKSLOT_DEL, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode zero-count item drop2 del: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected zero-count item drop2 del: %+v", del)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode zero-count item drop2 quickslot del: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("unexpected zero-count item drop2 quickslot del: %+v", quickslotDel)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode zero-count item drop2 ground add: %v", err)
+	}
+	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != owner.X || ground.Y != owner.Y || ground.Z != owner.Z {
+		t.Fatalf("unexpected zero-count item drop2 ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode zero-count item drop2 ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: owner.Name}) {
+		t.Fatalf("unexpected zero-count item drop2 ownership: got %+v want vid %d owner %q", ownership, ground.VID, owner.Name)
+	}
+
+	account, err := accounts.Load("drop-zero-owner")
+	if err != nil {
+		t.Fatalf("load zero-count drop owner account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected zero-count drop to remove the whole stack, got %#v", account.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}}) {
+		t.Fatalf("expected zero-count drop to clear only the item quickslot, got %#v", account.Characters[0].Quickslots)
+	}
+}
+
 func TestGameRuntimeItemDrop2NormalizesOversizedCountToWholeStack(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
