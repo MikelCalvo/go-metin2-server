@@ -106,7 +106,7 @@ var staticActorCombatProfileRegistry = struct {
 
 func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombatProfileDefaults) bool {
 	profile = strings.TrimSpace(profile)
-	if profile == "" || profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || defaults.DamagePerNormalAttack == 0 || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
+	if profile == "" || profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
 		return false
 	}
 	staticActorCombatProfileRegistry.Lock()

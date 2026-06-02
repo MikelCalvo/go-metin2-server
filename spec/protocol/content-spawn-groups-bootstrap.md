@@ -155,7 +155,7 @@ This slice freezes a narrow ownership model:
 - for the current bootstrap profiles, that includes the existing training-dummy HP/death/respawn semantics already frozen elsewhere
 - the current profile-default seam is deliberately compact: `max_hp`, `damage_per_normal_attack`, `respawn_delay`, and the reward descriptor documented in `non-player-reward-bootstrap.md`
 - runtime code now has a narrow registration seam for additional bootstrap combat profiles with those same defaults, so later authored profiles can be introduced without hard-coding every new name into target/attack/respawn validation
-- registered profile names are immutable for the lifetime of the current process: registration fails closed when the name is blank, names a built-in bootstrap profile, already exists, has invalid HP/damage/respawn defaults, or carries an invalid reward descriptor
+- registered profile names are immutable for the lifetime of the current process: registration fails closed when the name is blank, names a built-in bootstrap profile, already exists, has invalid HP/damage/respawn defaults, has `damage_per_normal_attack > max_hp`, or carries an invalid reward descriptor
 - that registration seam is not yet a content-bundle schema for arbitrary formulas; authored bundle import still accepts only currently registered profile names and the built-in bootstrap profiles
 
 ### Runtime owns

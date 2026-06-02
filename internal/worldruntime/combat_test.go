@@ -177,6 +177,20 @@ func TestRegisterStaticActorCombatProfileAddsDeathRewardDefaults(t *testing.T) {
 	}
 }
 
+func TestRegisterStaticActorCombatProfileRejectsDamageAboveMaxHP(t *testing.T) {
+	const profile = "practice_overkill_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 2,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with damage above max HP to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected over-damage profile %q not to become valid", profile)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileRejectsInvalidDeathReward(t *testing.T) {
 	const profile = "practice_invalid_reward_wolf"
 	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
