@@ -385,21 +385,29 @@ func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, temp
 	if template.Vnum != 0 && item.Vnum != template.Vnum {
 		return inventory.MoveResult{}, false
 	}
+	if err := item.Validate(); err != nil {
+		return inventory.MoveResult{}, false
+	}
 	if count > item.Count {
 		return inventory.MoveResult{}, false
 	}
 	if count == item.Count {
-		r.liveInventory = removeInventoryIndex(r.liveInventory, index)
-		sortInventoryItems(r.liveInventory)
+		updatedInventory := cloneItemInstances(r.liveInventory)
+		updatedInventory = removeInventoryIndex(updatedInventory, index)
+		sortInventoryItems(updatedInventory)
+		r.liveInventory = updatedInventory
 		result.Changed = true
 		return result, true
 	}
+	updatedInventory := cloneItemInstances(r.liveInventory)
+	item = updatedInventory[index]
 	item.Count -= count
 	if err := item.Validate(); err != nil {
 		return inventory.MoveResult{}, false
 	}
-	r.liveInventory[index] = item
-	sortInventoryItems(r.liveInventory)
+	updatedInventory[index] = item
+	sortInventoryItems(updatedInventory)
+	r.liveInventory = updatedInventory
 	result.Changed = true
 	result.FromOccupied = true
 	result.FromItem = item

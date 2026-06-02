@@ -114,6 +114,22 @@ func TestDropInventoryItemWithTemplateRejectsMismatchedTemplateWithoutMutation(t
 	}
 }
 
+func TestDropInventoryItemRejectsMalformedLiveItemWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+
+	runtime.liveInventory[0].ID = 0
+	if result, ok := runtime.DropInventoryItem(5, 2); ok {
+		t.Fatalf("expected malformed drop to be rejected, got %+v", result)
+	}
+	runtime.liveInventory[0].ID = 1
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("malformed drop mutated inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestPickupGroundItemFillsCompatibleStacksBeforePlacingRemainder(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{
