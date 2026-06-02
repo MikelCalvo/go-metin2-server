@@ -593,6 +593,50 @@ func TestUseItemRejectsOutOfRangeSlotWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestUseItemRejectsMalformedTemplateUseEffectWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{
+			name:     "zero point type",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Broken Red Potion", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 0, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}},
+		},
+		{
+			name:     "out-of-range point index",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Broken Red Potion", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 255, PointDelta: 50, Message: "consume:27001:+50"}},
+		},
+		{
+			name:     "zero point delta",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Broken Red Potion", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 0, Message: "consume:27001:+0"}},
+		},
+		{
+			name:     "empty effect message",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Broken Red Potion", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: ""}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(loginticket.Character{
+				Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}},
+				Points:    [255]int32{1: 25},
+			}, SessionLink{})
+			beforeInventory := runtime.LiveInventory()
+			beforePoints := runtime.LiveCharacter().Points
+
+			if result, ok := runtime.UseItem(5, tc.template); ok {
+				t.Fatalf("expected malformed %s ITEM_USE template to fail closed, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+				t.Fatalf("malformed %s ITEM_USE mutated inventory: got %#v want %#v", tc.name, got, beforeInventory)
+			}
+			if got := runtime.LiveCharacter().Points; got != beforePoints {
+				t.Fatalf("malformed %s ITEM_USE mutated points: got %#v want %#v", tc.name, got, beforePoints)
+			}
+		})
+	}
+}
+
 func TestRuntimeKeepsLiveCurrencyAndItemStateSeparateFromPersistedSnapshot(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
