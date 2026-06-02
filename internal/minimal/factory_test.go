@@ -1522,6 +1522,49 @@ func TestNewGameSessionFactoryItemMovePacketRejectsTemplateMismatchedEquipSlotWi
 	}
 }
 
+func TestNewGameSessionFactoryItemMovePacketRejectsTemplateAntiFlagWithoutMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemTemplates := staticItemTemplateStore{snapshot: itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:        0x11223344,
+		Name:        "Restricted Practice Armor",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   inventory.EquipmentSlotBody.String(),
+		AntiWarrior: true,
+	}}}}
+	characters := stubCharacters()
+	characters[1].Job = 0
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	flow := newStartedGameFlowWithItemStore(t, store, accounts, itemTemplates)
+
+	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: itemproto.InventoryPosition(8), Destination: mustEquipmentPosition(t, 0)})))
+	if err != nil {
+		t.Fatalf("unexpected anti-flagged item-move error: %v", err)
+	}
+	if len(equipOut) != 0 {
+		t.Fatalf("expected anti-flagged item move to fail closed with no frames, got %d", len(equipOut))
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if !sameItemInstances(account.Characters[1].Inventory, characters[1].Inventory) {
+		t.Fatalf("expected anti-flagged item move to leave inventory unchanged, got %#v want %#v", account.Characters[1].Inventory, characters[1].Inventory)
+	}
+	if len(account.Characters[1].Equipment) != 0 {
+		t.Fatalf("expected anti-flagged item move to leave equipment empty, got %#v", account.Characters[1].Equipment)
+	}
+}
+
 func TestNewGameSessionFactoryItemMovePacketEquipsInventoryItem(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

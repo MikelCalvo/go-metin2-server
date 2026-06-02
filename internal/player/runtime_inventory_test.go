@@ -1467,6 +1467,47 @@ func TestRuntimeEquipItemWithTemplateAcceptsMatchingAuthoredSlot(t *testing.T) {
 	}
 }
 
+func TestRuntimeEquipItemWithTemplateRejectsSelectedCharacterAntiFlagsWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "TemplateGuard",
+		Job:       0,
+		RaceNum:   0,
+		Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}},
+	}
+	cases := []struct {
+		name      string
+		template  itemcatalog.Template
+		equipSlot inventory.EquipmentSlot
+	}{
+		{
+			name:      "job restricted",
+			template:  itemcatalog.Template{Vnum: 0x11223344, Name: "Warrior-Banned Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AntiWarrior: true},
+			equipSlot: inventory.EquipmentSlotBody,
+		},
+		{
+			name:      "sex restricted",
+			template:  itemcatalog.Template{Vnum: 0x11223344, Name: "Male-Banned Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AntiMale: true},
+			equipSlot: inventory.EquipmentSlotBody,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(character, SessionLink{Login: "template-guard", CharacterIndex: 0})
+			if _, ok := runtime.EquipItemWithTemplate(8, tc.equipSlot, tc.template); ok {
+				t.Fatalf("expected %s authored equip template to fail closed", tc.name)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, character.Inventory) {
+				t.Fatalf("expected inventory unchanged after %s template equip, got %#v want %#v", tc.name, got, character.Inventory)
+			}
+			if got := runtime.LiveEquipment(); len(got) != 0 {
+				t.Fatalf("expected no live equipment after %s template equip, got %#v", tc.name, got)
+			}
+		})
+	}
+}
+
 func TestRuntimeRejectsLockedEquippedItemUnequipWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = nil

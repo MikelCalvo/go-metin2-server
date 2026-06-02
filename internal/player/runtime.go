@@ -704,7 +704,7 @@ func (r *Runtime) EquipItem(from inventory.SlotIndex, equipSlot inventory.Equipm
 }
 
 func (r *Runtime) EquipItemWithTemplate(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot, template itemcatalog.Template) (inventory.ItemInstance, bool) {
-	if !templateAuthoredForEquipSlot(template, equipSlot) {
+	if !templateAuthoredForEquipSlot(template, equipSlot) || !r.CanUseTemplate(template) {
 		return inventory.ItemInstance{}, false
 	}
 	return r.equipItem(from, equipSlot)
