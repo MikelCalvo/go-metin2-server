@@ -105,7 +105,7 @@ func validTemplate(template Template) bool {
 	if strings.TrimSpace(template.Name) == "" {
 		return false
 	}
-	if template.MaxCount == 0 {
+	if template.MaxCount == 0 || template.MaxCount > 255 {
 		return false
 	}
 	if !template.Stackable && template.MaxCount != 1 {

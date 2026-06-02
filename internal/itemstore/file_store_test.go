@@ -104,6 +104,10 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(zeroMaxCount); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for zero max count, got %v", err)
 	}
+	overClientCountRange := Snapshot{Templates: []Template{{Vnum: 27001, Name: "Huge Red Potion Stack", Stackable: true, MaxCount: 256}}}
+	if err := store.Save(overClientCountRange); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for max_count beyond bootstrap client count range, got %v", err)
+	}
 	nonStackableMultiCount := Snapshot{Templates: []Template{{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 2, EquipSlot: "weapon"}}}
 	if err := store.Save(nonStackableMultiCount); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for non-stackable max_count != 1, got %v", err)

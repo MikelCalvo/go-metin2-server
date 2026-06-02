@@ -28,7 +28,7 @@ Each template must pass the current `internal/itemstore` validation before the r
 
 - `vnum` must be non-zero
 - `name` must be non-empty after trimming
-- `max_count` must be non-zero
+- `max_count` must be non-zero and fit the current bootstrap client-facing count field (`<= 255`)
 - non-stackable templates must use `max_count = 1`
 - authored `equip_slot`, when present, must be one of the owned equipment slot names
 - `use_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, positive `point_delta`, and non-empty trimmed `message`
