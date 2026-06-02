@@ -366,6 +366,9 @@ func (r *Runtime) DropInventoryItem(slot inventory.SlotIndex, count uint16) (inv
 }
 
 func (r *Runtime) DropInventoryItemWithTemplate(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (inventory.MoveResult, bool) {
+	if !itemcatalog.ValidTemplate(template) {
+		return inventory.MoveResult{}, false
+	}
 	return r.dropInventoryItem(slot, count, template)
 }
 

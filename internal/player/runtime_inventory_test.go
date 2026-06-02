@@ -114,6 +114,21 @@ func TestDropInventoryItemWithTemplateRejectsMismatchedTemplateWithoutMutation(t
 	}
 }
 
+func TestDropInventoryItemWithTemplateRejectsMalformedTemplateWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Broken Potion", Stackable: true, MaxCount: 0}
+
+	if _, ok := runtime.DropInventoryItemWithTemplate(5, 1, template); ok {
+		t.Fatal("expected item drop to reject malformed template metadata")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("malformed-template drop mutated inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestDropInventoryItemRejectsMalformedLiveItemWithoutMutation(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}},

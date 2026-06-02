@@ -118,7 +118,7 @@ For the first live runtime slice, accepted drops are self-facing and persistence
 
 1. `ITEM_DROP` uses the current full carried stack count.
 2. `ITEM_DROP2` uses the requested non-zero count when it fits the current stack; a zero or oversized count is normalized to the whole stack before inventory mutation, matching the observed legacy `DropItem` count normalization.
-3. If a loaded template is present, its `vnum` must match the carried item's live `vnum`; mismatched template metadata fails closed before live inventory, quickslots, ground handles, or persistence are mutated.
+3. If a loaded template is present, it must validate under the item-template bootstrap contract and its `vnum` must match the carried item's live `vnum`; malformed or mismatched template metadata fails closed before live inventory, quickslots, ground handles, or persistence are mutated.
 4. If the selected carried item is locked or would become malformed while applying the drop mutation, the drop fails closed before live inventory, quickslots, ground handles, or persistence are mutated.
 5. If the carried item's loaded template is marked `anti_drop` or `anti_give`, the drop is rejected before live inventory, quickslots, ground handles, or persistence are mutated, and the selected session receives one self-only `CHAT_TYPE_INFO` system message (`"You cannot drop this item."`). This mirrors the legacy oracle's early visible rejection for player-requested drops of bound/non-giveable items while keeping forced system-drop, localization text catalogs, and death-drop policy out of scope.
 6. The selected player's live inventory is removed or decremented, then the selected character snapshot is persisted through the existing account-store path.
