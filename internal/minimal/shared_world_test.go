@@ -13173,6 +13173,103 @@ func TestSharedWorldRegistryAttemptSelectedStaticActorAttackAcceptsMatchingVisib
 	}
 }
 
+func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDeathReward(t *testing.T) {
+	const profile = "rewarded_profile_runtime"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 4,
+		DamagePerNormalAttack: 2,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:           worldruntime.StaticActorDeathReward{Experience: 33, Gold: 44},
+	}) {
+		t.Fatalf("expected registered reward profile %q to be accepted", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105022A, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105022A, Name: "RegisteredRewardProfileMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: profile,
+		CombatKind:    profile,
+		SpawnGroupRef: "practice.registered_reward_profile_mob",
+	}
+	killer := peerVisibilityCharacter("RegisteredRewardKiller", 0x0103012A, 0x0204012A, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 10
+	killer.Gold = 20
+	issuePeerTicket(t, store, "registered-reward-killer", 0x2a2a2a2a, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "registered-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed registered reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_725, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected registered-profile reward mob registration to succeed")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "registered-reward-killer", 0x2a2a2a2a)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before registered-profile reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= 2; hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on registered-profile reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear target, experience, and gold point-change frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode registered-profile reward killing hit dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode registered-profile reward killing hit clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected registered-profile reward killing hit to clear target, got %+v", clearTarget)
+	}
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode registered-profile experience reward point change: %v", err)
+	}
+	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 33 || experienceChange.Value != 43 {
+		t.Fatalf("unexpected registered-profile experience reward point change: %+v", experienceChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode registered-profile gold reward point change: %v", err)
+	}
+	if goldChange.VID != killer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 44 || goldChange.Value != 64 {
+		t.Fatalf("unexpected registered-profile gold reward point change: %+v", goldChange)
+	}
+
+	account, err := accounts.Load("registered-reward-killer")
+	if err != nil {
+		t.Fatalf("load registered-profile rewarded account: %v", err)
+	}
+	if got := account.Characters[0].Points[bootstrapExperiencePointType]; got != 43 {
+		t.Fatalf("expected registered-profile rewarded account experience point 43 after mob death, got %d", got)
+	}
+	if got := account.Characters[0].Gold; got != 64 {
+		t.Fatalf("expected registered-profile rewarded account gold 64 after mob death, got %d", got)
+	}
+}
+
 func TestNewGameSessionFactoryAppliesExperienceOnlyPracticeMobDeathReward(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
