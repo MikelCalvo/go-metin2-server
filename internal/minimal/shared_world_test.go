@@ -14142,6 +14142,59 @@ func TestSharedWorldRegistrySelectedStaticActorAttackReturnsRewardlessDeathDescr
 	}
 }
 
+func TestSharedWorldRegistryRegisteredProfileStaticActorUsesCustomDamageDefaults(t *testing.T) {
+	const profile = "practice_damage_profile_wolf"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 12,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with custom damage defaults to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "RegisteredProfileMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", profile, "practice.damage_profile", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed registered-profile static actor to register")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected target selection before registered-profile attack to succeed, got %+v", targetAttempt)
+	}
+	if targetAttempt.HPPercent != 100 {
+		t.Fatalf("expected registered-profile target selection to start at 100%% HP, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target selection to be recorded before selected attack")
+	}
+
+	firstHit := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+	if !firstHit.Accepted {
+		t.Fatalf("expected first registered-profile hit to be accepted, got %+v", firstHit)
+	}
+	if firstHit.Died {
+		t.Fatalf("expected first registered-profile hit to leave actor alive, got %+v", firstHit)
+	}
+	if firstHit.HPPercent != 75 {
+		t.Fatalf("expected 12 HP / 3 damage registered-profile hit to report 75%% HP, got %+v", firstHit)
+	}
+
+	refresh := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !refresh.Accepted {
+		t.Fatalf("expected registered-profile target refresh after first hit to succeed, got %+v", refresh)
+	}
+	if refresh.HPPercent != 75 {
+		t.Fatalf("expected registered-profile target refresh to preserve 75%% HP, got %+v", refresh)
+	}
+}
+
 func TestSharedWorldRegistryStandaloneRegisteredProfileStaticActorStaysRewardless(t *testing.T) {
 	const profile = "practice_rewardless_standalone_wolf"
 	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
@@ -14185,6 +14238,53 @@ func TestSharedWorldRegistryStandaloneRegisteredProfileStaticActorStaysRewardles
 	}
 	if !killingHit.DeathReward.Empty() {
 		t.Fatalf("expected standalone registered-profile static actor to stay rewardless without spawn_group_ref, got %+v", killingHit.DeathReward)
+	}
+}
+
+func TestSharedWorldRegistrySpawnBackedRegisteredProfileUsesProfileRewardDefaults(t *testing.T) {
+	const profile = "practice_reward_profile_wolf"
+	reward := worldruntime.StaticActorDeathReward{Experience: 25, Gold: 7, DropVnums: []uint32{27001}}
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 2,
+		DamagePerNormalAttack: 1,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:           reward,
+	}) {
+		t.Fatalf("expected %q profile registration with death reward defaults to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "SpawnRewardProfileMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", profile, "practice.reward_profile", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed registered-profile static actor to register")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected target selection before spawn-backed registered-profile attack to succeed, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target selection to be recorded before selected attack")
+	}
+
+	var killingHit StaticActorCombatAttackAttempt
+	for hit := 1; hit <= 2; hit++ {
+		killingHit = registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+		if !killingHit.Accepted {
+			t.Fatalf("expected hit %d to be accepted before spawn-backed registered-profile death, got %+v", hit, killingHit)
+		}
+	}
+	if !killingHit.Died {
+		t.Fatalf("expected final accepted hit to mark spawn-backed registered-profile actor dead, got %+v", killingHit)
+	}
+	if killingHit.DeathReward.Experience != reward.Experience || killingHit.DeathReward.Gold != reward.Gold || len(killingHit.DeathReward.DropVnums) != 1 || killingHit.DeathReward.DropVnums[0] != reward.DropVnums[0] {
+		t.Fatalf("expected spawn-backed registered-profile death to use profile reward defaults, got %+v", killingHit.DeathReward)
 	}
 }
 
