@@ -44,7 +44,8 @@ The repository now implements this full bootstrap contract for the authored/runt
 - visible sessions receive `GC DEAD(vid)` on the death edge
 - sessions that still had that dummy selected receive the existing self-only `GC TARGET(0, 0)` clear companion in the same transition window
 - post-death `TARGET` / `ATTACK` requests fail closed while the dummy remains dead
-- the first server-driven dead timer is now live as one fixed `2s` bootstrap delay
+- the first server-driven dead timer is now live as one fixed `2s` bootstrap delay for built-in bootstrap profiles
+- registered bootstrap combat profiles use their registered `respawn_delay` in the same pending server-frame path, and the respawn rebuild restores the actor to that profile's registered full HP
 - if a live session is shown that same still-dead dummy again before the timer expires through any later add-style visibility presentation — fresh bootstrap, visibility re-entry, or a retained delete-plus-rebootstrap refresh — it first receives the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` burst and then one `GC DEAD(vid)` replay so the actor does not silently look alive again
 - once that timer expires, currently visible sessions receive the respawn rebuild burst: `CHARACTER_DEL` + `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE`
 - if a still-connected visible player had already reached the current retaliation-owned `0`-HP floor, that zero-HP recipient is skipped from later dummy `GC DEAD(vid)` fanout and from that later respawn rebuild burst while other live viewers still receive the ordinary lifecycle frames
@@ -137,9 +138,9 @@ What is frozen now:
 - a dummy respawns only because the server-owned dead timer/cooldown expires
 - the timer starts when the authoritative zero-HP death transition commits
 - the client does not request respawn through `TARGET`, `ATTACK`, `INTERACT`, movement, reconnect, or any corpse action
-- the first bootstrap respawn uses one deterministic fixed-delay rule for the dummy runtime, not per-player custom timing
-- the exact bootstrap delay constant is `2s`
-- the pending respawn is tracked as runtime-owned shared-world state and is checked through the existing `FlushServerFrames()` server-push seam between legacy-client reads
+- the first built-in bootstrap profiles use one deterministic fixed-delay rule, not per-player custom timing
+- the built-in bootstrap delay constant is `2s`
+- registered bootstrap combat profiles use the `respawn_delay` accepted by `RegisterStaticActorCombatProfile(...)`; the pending respawn still uses the same runtime-owned shared-world state and `FlushServerFrames()` server-push seam between legacy-client reads
 
 For future content-loaded attackable actors, the authored identity that tells the runtime what to recreate and where to recreate it is now documented separately in `content-spawn-groups-bootstrap.md`.
 

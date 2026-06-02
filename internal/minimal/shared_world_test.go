@@ -12526,6 +12526,96 @@ func TestGameRuntimePracticeMobRespawnPreservesAuthoredSpawnRewardSnapshot(t *te
 	}
 }
 
+func TestGameRuntimeRegisteredProfileRespawnUsesRegisteredDelayAndFullHP(t *testing.T) {
+	const profile = "practice_respawn_profile_wolf"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 4,
+		DamagePerNormalAttack: 2,
+		RespawnDelay:          1500 * time.Millisecond,
+	}) {
+		t.Fatalf("expected %q profile registration with custom respawn defaults to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	nearPlayer := peerVisibilityCharacter("RegisteredRespawnNear", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "registered-respawn-near", 0x11111121, nearPlayer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000602, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.registerStaticActor(0, "RegisteredRespawnMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", profile, "practice.registered_respawn", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed registered-profile actor registration to succeed")
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "registered-respawn-near", 0x11111121)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for nearby player with registered-profile actor, got %d", len(enterOut))
+	}
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected registered-profile combat target error before respawn: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before registered-profile respawn, got %d", len(selectOut))
+	}
+
+	firstHit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected registered-profile first attack error: %v", err)
+	}
+	if len(firstHit) != 1 {
+		t.Fatalf("expected first registered-profile hit to return one HP refresh, got %d frames", len(firstHit))
+	}
+	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHit[0]))
+	if err != nil {
+		t.Fatalf("decode first registered-profile HP refresh: %v", err)
+	}
+	if firstRefresh.TargetVID != targetVID || firstRefresh.HPPercent != 50 {
+		t.Fatalf("expected registered profile 4 HP / 2 damage hit to report 50%% HP, got %+v", firstRefresh)
+	}
+
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	killingHit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected registered-profile killing attack error: %v", err)
+	}
+	if len(killingHit) != 2 {
+		t.Fatalf("expected registered-profile killing hit to return death + clear, got %d frames", len(killingHit))
+	}
+
+	currentTime = currentTime.Add(1499 * time.Millisecond)
+	if early := flushServerFrames(t, flow); len(early) != 0 {
+		t.Fatalf("expected no registered-profile respawn frames before custom delay expires, got %d", len(early))
+	}
+	currentTime = currentTime.Add(time.Millisecond)
+	respawnFrames := flushServerFrames(t, flow)
+	if len(respawnFrames) != 4 {
+		t.Fatalf("expected delete/add/info/update registered-profile respawn rebuild, got %d frames", len(respawnFrames))
+	}
+
+	postRespawnTargetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected post-respawn registered-profile target error: %v", err)
+	}
+	if len(postRespawnTargetOut) != 1 {
+		t.Fatalf("expected fresh registered-profile target acquisition after respawn, got %d self frames", len(postRespawnTargetOut))
+	}
+	postRespawnRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, postRespawnTargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-respawn registered-profile target refresh: %v", err)
+	}
+	if postRespawnRefresh.TargetVID != targetVID || postRespawnRefresh.HPPercent != 100 {
+		t.Fatalf("expected registered-profile respawn to restore full HP, got %+v", postRespawnRefresh)
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorRelocateAcrossAOIBoundaryQueuesVisibilityDeltasForOnlinePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
