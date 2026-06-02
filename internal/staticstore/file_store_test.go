@@ -112,6 +112,17 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(invalidStaticActorWithReward); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for non-spawn static actor carrying reward metadata, got %v", err)
 	}
+	validMultiDropReward := Snapshot{StaticActors: []StaticActor{{EntityID: 22, Name: "RewardMultiDrop", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_multi_drop", RewardDropVnums: []uint32{27001, 27002, 27003}}}}
+	if err := store.Save(validMultiDropReward); err != nil {
+		t.Fatalf("expected valid spawn-group reward descriptor with multiple distinct drop vnums to save, got %v", err)
+	}
+	loadedMultiDropReward, err := store.Load()
+	if err != nil {
+		t.Fatalf("load multi-drop reward snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(loadedMultiDropReward, validMultiDropReward) {
+		t.Fatalf("expected multi-drop reward snapshot to round-trip, got %#v want %#v", loadedMultiDropReward, validMultiDropReward)
+	}
 	invalidSpawnGroupRewardCases := map[string]StaticActor{
 		"experience overflow": {EntityID: 18, Name: "RewardOverflowExp", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_overflow_exp", RewardExperience: uint64(^uint32(0)>>1) + 1},
 		"gold overflow":       {EntityID: 19, Name: "RewardOverflowGold", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_overflow_gold", RewardGold: uint64(^uint32(0)>>1) + 1},

@@ -65,6 +65,7 @@ The descriptor validator itself owns the static authoring checks before runtime 
 - scalar values above that maximum are rejected
 - zero-valued drop vnums are rejected
 - duplicate drop vnums in one descriptor are rejected
+- multiple distinct fixed drop vnums in one descriptor are accepted and preserve authored order
 - file-backed static actor snapshots reject malformed spawn-group reward descriptors before loading or saving runtime state
 
 Malformed reward descriptors must not roll back the already-accepted combat death edge.

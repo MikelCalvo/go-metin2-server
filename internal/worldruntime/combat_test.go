@@ -298,6 +298,13 @@ func TestValidStaticActorDeathRewardRejectsDuplicateDropVnum(t *testing.T) {
 	}
 }
 
+func TestValidStaticActorDeathRewardAcceptsMultipleDistinctDropVnums(t *testing.T) {
+	reward := StaticActorDeathReward{DropVnums: []uint32{27001, 27002, 27003}}
+	if !ValidStaticActorDeathReward(reward) {
+		t.Fatalf("expected multiple distinct reward drop vnums to be accepted, got %+v", reward)
+	}
+}
+
 func TestStaticActorDeathRewardEmptyDetectsAnyRewardChannel(t *testing.T) {
 	if !((StaticActorDeathReward{}).Empty()) {
 		t.Fatal("expected zero-value death reward to be empty")
