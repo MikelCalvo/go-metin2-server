@@ -506,6 +506,36 @@ func TestRuntimeUseItemRejectsMalformedLiveItemWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestRuntimeUseItemRejectsEquippableTemplateWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 11200, Count: 1, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+	template := itemcatalog.Template{
+		Vnum:      11200,
+		Name:      "Equippable Consumable-Like Sword",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: inventory.EquipmentSlotWeapon.String(),
+		UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:11200:+50"},
+	}
+
+	if result, ok := runtime.UseItem(5, template); ok {
+		t.Fatalf("expected equippable-template item use to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("equippable-template item use mutated live character: got %#v want %#v", got, before)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("equippable-template item use mutated persisted inventory: got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string

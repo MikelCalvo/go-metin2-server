@@ -76,7 +76,8 @@ Any other `TItemPos` currently fails closed.
 Exactly one consumable shape is frozen here:
 - supported source surface: carried inventory only
 - the runtime resolves the consumed slot through file-backed item-template metadata keyed by that item's `vnum`
-- only templates with a valid `use_effect` payload are currently eligible for `/use_item <slot>` or `ITEM_USE`
+- only non-equippable templates with a valid `use_effect` payload are currently eligible for `/use_item <slot>` or `ITEM_USE`
+- templates with an authored `equip_slot` are rejected for direct consumable use even if they also carry a valid `use_effect`, so equipment metadata cannot accidentally execute the consumable point-effect path
 - templates with authored job/sex restrictions for the selected character (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`) are rejected before point effects or stack mutations are applied
 - that `use_effect` payload currently owns:
   - the point target index (`point_index`)
@@ -135,7 +136,8 @@ This effect placeholder exists only because there is not yet an owned visual-eff
 
 The first consumable path must fail closed when any of these are true:
 - the slot is empty
-- the slot's `vnum` does not resolve to a valid item template with a valid `use_effect`
+- the slot's `vnum` does not resolve to a valid non-equippable item template with a valid `use_effect`
+- the resolved template carries an authored `equip_slot`
 - the carried live item snapshot is malformed under the bootstrap item-instance validation rules
 - the resolved template carries an authored job/sex anti flag for the selected character
 - the item is not in carried inventory
