@@ -660,12 +660,8 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjec
 }
 
 func staticActorSpawnGroupAggroLiteCombatKind(combatKind string) bool {
-	switch combatKind {
-	case worldruntime.StaticActorCombatKindTrainingDummy, worldruntime.StaticActorCombatProfilePracticeMob:
-		return true
-	default:
-		return false
-	}
+	_, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatKind)
+	return ok
 }
 
 func (r *sharedWorldRegistry) SetSessionCombatTarget(entityID uint64, targetVID uint32) bool {

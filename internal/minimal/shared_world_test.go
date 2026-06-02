@@ -18760,6 +18760,96 @@ func TestGameSessionFlowPracticeMobAggroLiteRejectsFreshThirdPartyTargetAfterFir
 	}
 }
 
+func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTargetAfterFirstAcceptedHit(t *testing.T) {
+	const profile = "practice_custom_aggro_gate"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 12,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected test combat profile %q registration to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_custom_aggro_gate",
+		Name:          "PracticeCustomAggroGate",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: profile,
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import custom-profile content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime custom-profile actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flowOne, enterOne := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOne) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for first player with visible custom-profile mob, got %d", len(enterOne))
+	}
+	defer closeSessionFlow(t, flowOne)
+	flowTwo, enterTwo := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(enterTwo) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for second player with visible peer and custom-profile mob, got %d", len(enterTwo))
+	}
+	defer closeSessionFlow(t, flowTwo)
+	if queued := flushServerFrames(t, flowOne); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for first player after second player joins, got %d", len(queued))
+	}
+
+	selectOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected custom-profile target-selection error before first aggro-lite hit: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before first custom-profile aggro-lite hit, got %d", len(selectOut))
+	}
+
+	attackOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first accepted custom-profile aggro-lite attack error: %v", err)
+	}
+	if len(attackOut) != 1 {
+		t.Fatalf("expected one target-refresh frame on first accepted custom-profile aggro-lite hit, got %d", len(attackOut))
+	}
+	refreshed, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode first custom-profile aggro-lite target-refresh frame: %v", err)
+	}
+	if refreshed.TargetVID != targetVID || refreshed.HPPercent != 75 {
+		t.Fatalf("unexpected custom-profile aggro-lite target-refresh packet: %+v", refreshed)
+	}
+
+	thirdPartyTarget, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected third-party target-selection error after first custom-profile aggro-lite hit: %v", err)
+	}
+	if len(thirdPartyTarget) != 0 {
+		t.Fatalf("expected fresh third-party target selection to fail closed once the custom-profile mob is engaged, got %d frames", len(thirdPartyTarget))
+	}
+}
+
 func TestGameSessionFlowPracticeMobFirstHostileRetaliationAppliesSelfOnlyPointLossOnAcceptedOwnerHit(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
