@@ -1283,6 +1283,19 @@ func TestGameRuntimeItemUseToItemRejectsNonStackableOrAntiTransferTemplatesWitho
 			inventory: []inventory.ItemInstance{{ID: 1111, Vnum: 11200, Count: 1, Slot: 5}, {ID: 1112, Vnum: 11200, Count: 1, Slot: 6}},
 		},
 		{
+			name:     "stackable equippable template",
+			login:    "use-to-item-equippable-stack",
+			loginKey: 0xa8a8a8a8,
+			template: itemcatalog.Template{
+				Vnum:      11201,
+				Name:      "Stackable Weapon Token",
+				Stackable: true,
+				MaxCount:  200,
+				EquipSlot: inventory.EquipmentSlotWeapon.String(),
+			},
+			inventory: []inventory.ItemInstance{{ID: 1181, Vnum: 11201, Count: 2, Slot: 5}, {ID: 1182, Vnum: 11201, Count: 3, Slot: 6}},
+		},
+		{
 			name:     "anti-stack template",
 			login:    "use-to-item-anti-stack",
 			loginKey: 0x9e9e9e9e,
