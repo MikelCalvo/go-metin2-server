@@ -323,6 +323,58 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsDeadOwner(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundGoldSkipsDeadVisiblePeers(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030191, 0x02040191, 1100, 2100, 0, 101, 201)
+	livingPeer := peerVisibilityCharacter("LivingGoldPeer", 0x01030192, 0x02040192, 1200, 2200, 0, 102, 202)
+	deadPeer := peerVisibilityCharacter("DeadGoldPeer", 0x01030193, 0x02040193, 1250, 2250, 0, 103, 203)
+	deadPeer.Points[bootstrapPlayerPointValueIndex] = 0
+
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected gold-drop owner join to return a live shared-world entity ID")
+	}
+	livingPending := newPendingServerFrames()
+	livingID, _ := registry.Join(livingPeer, livingPending, nil)
+	if livingID == 0 {
+		t.Fatal("expected living gold peer join to return a live shared-world entity ID")
+	}
+	deadPending := newPendingServerFrames()
+	deadID, _ := registry.Join(deadPeer, deadPending, nil)
+	if deadID == 0 {
+		t.Fatal("expected dead gold peer join to return a live shared-world entity ID")
+	}
+	livingPending.flush()
+	deadPending.flush()
+
+	const groundVID uint32 = 0x07000006
+	if !registry.RegisterGroundGold(ownerID, "gold-drop-owner", owner, groundVID, 250) {
+		t.Fatal("expected owner ground-gold registration to succeed")
+	}
+
+	livingQueued := livingPending.flush()
+	if len(livingQueued) != 2 {
+		t.Fatalf("expected living visible peer to receive 2 ground-gold visibility frames, got %d", len(livingQueued))
+	}
+	groundAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, livingQueued[0]))
+	if err != nil {
+		t.Fatalf("decode living peer ground-gold add: %v", err)
+	}
+	if groundAdd.VID != groundVID || groundAdd.Vnum != 1 || groundAdd.X != owner.X || groundAdd.Y != owner.Y {
+		t.Fatalf("unexpected living peer ground-gold add: %+v", groundAdd)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, livingQueued[1]))
+	if err != nil {
+		t.Fatalf("decode living peer ground-gold ownership: %v", err)
+	}
+	if ownership.VID != groundVID || ownership.OwnerName != owner.Name {
+		t.Fatalf("unexpected living peer ground-gold ownership: %+v", ownership)
+	}
+	if deadQueued := deadPending.flush(); len(deadQueued) != 0 {
+		t.Fatalf("expected dead visible peer to receive no ground-gold visibility frames, got %d", len(deadQueued))
+	}
+}
+
 func TestSharedWorldRegistryRemoveGroundItemSkipsDeadVisiblePeers(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DropOwner", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)
