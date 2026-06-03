@@ -114,6 +114,8 @@ Current rules:
 - each drop has count `1`
 - each drop is owned by the killer's character name
 - item drops are runtime ground items first; they do not mutate persisted inventory until an explicit pickup succeeds
+- the killer receives the drop's `ITEM_GROUND_ADD` / `ITEM_OWNERSHIP` pair inline after the killing-hit death and scalar-reward frames
+- currently visible, live peers receive the same ground-add / ownership pair through the queued server-frame path after the already-owned `DEAD(target_vid)` visibility notification
 - replayed pickup of the same ground VID fails closed after the first successful pickup removes it
 
 ## Respawn / lifecycle ownership
