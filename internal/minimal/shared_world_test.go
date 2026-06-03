@@ -2997,6 +2997,44 @@ func TestGameSessionFlowRejectsInfoChatAfterDelayedRetaliationReachesOwnerHPFloo
 	}
 }
 
+func TestGameSessionFlowRejectsQuickslotMutationsAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	quickslotAttempts := []struct {
+		name  string
+		frame []byte
+	}{
+		{
+			name:  "add",
+			frame: quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 3, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 0}}),
+		},
+		{
+			name:  "del",
+			frame: quickslotproto.EncodeClientDel(quickslotproto.ClientDelPacket{Position: 3}),
+		},
+		{
+			name:  "swap",
+			frame: quickslotproto.EncodeClientSwap(quickslotproto.ClientSwapPacket{Position: 3, TargetPosition: 4}),
+		},
+	}
+	for _, attempt := range quickslotAttempts {
+		out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, attempt.frame))
+		if err != nil {
+			t.Fatalf("unexpected zero-HP owner quickslot %s error: %v", attempt.name, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected zero-HP owner quickslot %s to fail closed, got %d frames", attempt.name, len(out))
+		}
+		if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+			t.Fatalf("expected zero-HP owner quickslot %s to queue no peer frames, got %d", attempt.name, len(queued))
+		}
+	}
+}
+
 func TestNewGameSessionFactoryRejectsClientOriginatedNoticeChat(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
