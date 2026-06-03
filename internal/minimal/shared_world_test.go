@@ -16967,29 +16967,77 @@ func TestGameSessionFlowShopSellRejectsAntiSellTemplateWithoutMutation(t *testin
 	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
 		t.Fatalf("decode anti-sell packet shop sell2 invalid-pos frame: %v", err)
 	}
-	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	assertMerchantStateUnchanged(t, runtime, accounts, login, buyer, "anti-sell packet shop sell2")
+}
+
+func TestGameSessionFlowShopBuyAndSellRejectSelectedCharacterAntiFlagTemplatesWithoutMutation(t *testing.T) {
+	buyBuyer := merchantBuyerCharacter("MerchantBuyerPacketAntiFlag", 0x01040128, 0x02050128, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	buyBuyer.Job = 0
+	buyRuntime, buyAccounts, buyFlow, buyActorID, buyLogin := setupMerchantBuySession(t, "merchant-anti-flag-buy", 0x28282828, buyBuyer)
+	defer closeSessionFlow(t, buyFlow)
+	buyRuntime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiWarrior: true}
+
+	interactWithMerchantForBuy(t, buyFlow, buyActorID)
+	buyOut, err := buyFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected anti-flag packet shop buy error: %v", err)
+	}
+	if len(buyOut) != 1 {
+		t.Fatalf("expected anti-flag packet shop buy to emit 1 invalid-pos frame, got %d", len(buyOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode anti-flag packet shop buy invalid-pos frame: %v", err)
+	}
+	assertMerchantStateUnchanged(t, buyRuntime, buyAccounts, buyLogin, buyBuyer, "anti-flag packet shop buy")
+
+	sellBuyer := merchantBuyerCharacter("MerchantSellerPacketAntiFlag", 0x01040129, 0x02050129, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	sellBuyer.Job = 0
+	sellRuntime, sellAccounts, sellFlow, sellActorID, sellLogin := setupMerchantBuySession(t, "merchant-anti-flag-sell", 0x29292929, sellBuyer)
+	defer closeSessionFlow(t, sellFlow)
+	sellRuntime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiWarrior: true}
+
+	interactWithMerchantForBuy(t, sellFlow, sellActorID)
+	sellOut, err := sellFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected anti-flag packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected anti-flag packet shop sell2 to emit 1 invalid-pos frame, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode anti-flag packet shop sell2 invalid-pos frame: %v", err)
+	}
+	assertMerchantStateUnchanged(t, sellRuntime, sellAccounts, sellLogin, sellBuyer, "anti-flag packet shop sell2")
+}
+
+func assertMerchantStateUnchanged(t *testing.T, runtime *gameRuntime, accounts accountstore.Store, login string, want loginticket.Character, context string) {
+	t.Helper()
+	currencySnapshot, ok := runtime.CurrencySnapshot(want.Name)
 	if !ok {
-		t.Fatal("expected currency snapshot after anti-sell packet shop sell2")
+		t.Fatalf("expected currency snapshot after %s", context)
 	}
-	if currencySnapshot.Gold != 125 {
-		t.Fatalf("expected anti-sell packet shop sell2 to keep gold at 125, got %+v", currencySnapshot)
+	if currencySnapshot.Gold != want.Gold {
+		t.Fatalf("expected %s to keep gold at %d, got %+v", context, want.Gold, currencySnapshot)
 	}
-	inventorySnapshot, ok := runtime.InventorySnapshot(buyer.Name)
+	inventorySnapshot, ok := runtime.InventorySnapshot(want.Name)
 	if !ok {
-		t.Fatal("expected inventory snapshot after anti-sell packet shop sell2")
+		t.Fatalf("expected inventory snapshot after %s", context)
 	}
-	if len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != 77 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 3 || inventorySnapshot.Inventory[0].Slot != 5 {
-		t.Fatalf("expected anti-sell packet shop sell2 to keep live inventory unchanged, got %+v", inventorySnapshot.Inventory)
+	if len(inventorySnapshot.Inventory) != len(want.Inventory) {
+		t.Fatalf("expected %s to keep live inventory unchanged, got %+v want %+v", context, inventorySnapshot.Inventory, want.Inventory)
+	}
+	for i, item := range want.Inventory {
+		got := inventorySnapshot.Inventory[i]
+		if got.ID != item.ID || got.Vnum != item.Vnum || got.Count != item.Count || got.Slot != uint16(item.Slot) {
+			t.Fatalf("expected %s to keep live inventory unchanged, got %+v want %+v", context, inventorySnapshot.Inventory, want.Inventory)
+		}
 	}
 	account, err := accounts.Load(login)
 	if err != nil {
-		t.Fatalf("load persisted anti-sell merchant seller account: %v", err)
+		t.Fatalf("load persisted account after %s: %v", context, err)
 	}
-	if account.Characters[0].Gold != 125 {
-		t.Fatalf("expected anti-sell merchant seller gold to stay 125, got %+v", account.Characters[0])
-	}
-	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].ID != 77 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 3 || account.Characters[0].Inventory[0].Slot != 5 || account.Characters[0].Inventory[0].Equipped || account.Characters[0].Inventory[0].EquipSlot != inventory.EquipmentSlotNone {
-		t.Fatalf("expected anti-sell packet shop sell2 to keep persisted inventory unchanged, got %+v", account.Characters[0].Inventory)
+	if account.Characters[0].Gold != want.Gold || !reflect.DeepEqual(account.Characters[0].Inventory, want.Inventory) {
+		t.Fatalf("expected %s to keep persisted state unchanged, got %+v want gold=%d inventory=%+v", context, account.Characters[0], want.Gold, want.Inventory)
 	}
 }
 

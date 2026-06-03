@@ -492,6 +492,69 @@ func TestUseItemOnItemRejectsAntiFlagTemplatesWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestMerchantTemplateMutationsRejectSelectedCharacterAntiFlagTemplates(t *testing.T) {
+	cases := []struct {
+		name      string
+		character loginticket.Character
+		template  itemcatalog.Template
+	}{
+		{
+			name:      "anti warrior",
+			character: loginticket.Character{Job: 0},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiWarrior: true},
+		},
+		{
+			name:      "anti assassin",
+			character: loginticket.Character{Job: 1},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiAssassin: true},
+		},
+		{
+			name:      "anti sura",
+			character: loginticket.Character{Job: 2},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiSura: true},
+		},
+		{
+			name:      "anti shaman",
+			character: loginticket.Character{Job: 3},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiShaman: true},
+		},
+		{
+			name:      "anti male",
+			character: loginticket.Character{RaceNum: 0},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiMale: true},
+		},
+		{
+			name:      "anti female",
+			character: loginticket.Character{RaceNum: 1},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiFemale: true},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.character.Gold = 100
+			tc.character.Inventory = []inventory.ItemInstance{{ID: 41, Vnum: tc.template.Vnum, Count: 2, Slot: 5}}
+			runtime := NewRuntime(tc.character, SessionLink{})
+			beforeInventory := runtime.LiveInventory()
+			if failure := runtime.ValidateMerchantBuy(tc.template, 1, 50); failure != MerchantBuyFailureInvalid {
+				t.Fatalf("expected restricted merchant buy to be invalid, got %q", failure)
+			}
+			if result, ok := runtime.BuyMerchantItem(tc.template, 1, 50); ok {
+				t.Fatalf("expected restricted merchant buy mutation to fail, got %+v", result)
+			}
+			if result, ok := runtime.SellMerchantItemWithTemplate(5, 1, tc.template); ok {
+				t.Fatalf("expected restricted merchant sell mutation to fail, got %+v", result)
+			}
+			if got := runtime.LiveCharacter().Gold; got != 100 {
+				t.Fatalf("restricted merchant mutation changed gold: got %d want 100", got)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+				t.Fatalf("restricted merchant mutation changed inventory: got %#v want %#v", got, beforeInventory)
+			}
+		})
+	}
+}
+
 func TestUseItemOnItemRejectsSelectedCharacterAntiFlagTemplatesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string

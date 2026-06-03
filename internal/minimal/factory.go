@@ -1423,7 +1423,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				}
 				return frames, true
 			}
-			credit, ok := merchantSellCreditForSlot(runtime.itemTemplates, selectedPlayer, slot, soldCount)
+			template, ok := merchantSellTemplateForSlot(runtime.itemTemplates, selectedPlayer, slot)
+			if !ok || !selectedPlayer.CanUseTemplate(template) || template.AntiSell {
+				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
+				if !ok {
+					return nil, false
+				}
+				return frames, true
+			}
+			credit, ok := player.MerchantSellCredit(template, soldCount)
 			if !ok {
 				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
 				if !ok {
@@ -3738,9 +3746,9 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 	return frames, nil
 }
 
-func merchantSellCreditForSlot(templates map[uint32]itemcatalog.Template, selectedPlayer *player.Runtime, slot inventory.SlotIndex, soldCount uint16) (uint64, bool) {
-	if selectedPlayer == nil || soldCount == 0 {
-		return 0, false
+func merchantSellTemplateForSlot(templates map[uint32]itemcatalog.Template, selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {
+	if selectedPlayer == nil {
+		return itemcatalog.Template{}, false
 	}
 	for _, item := range selectedPlayer.LiveInventory() {
 		if item.Equipped || item.Slot != slot {
@@ -3748,11 +3756,11 @@ func merchantSellCreditForSlot(templates map[uint32]itemcatalog.Template, select
 		}
 		template, ok := templates[item.Vnum]
 		if !ok {
-			return 0, false
+			return itemcatalog.Template{}, false
 		}
-		return player.MerchantSellCredit(template, soldCount)
+		return template, true
 	}
-	return 0, false
+	return itemcatalog.Template{}, false
 }
 
 func merchantSellResultFrames(character loginticket.Character, result player.MerchantSellResult) ([][]byte, error) {

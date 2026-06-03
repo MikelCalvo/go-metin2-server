@@ -134,6 +134,7 @@ When a gated `BUY` request arrives, the runtime must validate all of the followi
 - the entry `count` is greater than zero
 - the selected character has at least that much gold available
 - the selected character has a valid carried-inventory placement for that template/count under `item-stack-bootstrap.md`, including `anti_stack` templates skipping existing-stack merge/fan-out paths
+- the resolved template does not carry a selected-character job/sex restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`)
 - persistence/writeback can succeed before the new live state is committed
 
 The first buy contract intentionally remains single-entry and immediate:
@@ -189,6 +190,7 @@ The first buy path must fail closed when any of these are true:
 - the catalog/template resolution fails
 - the player has insufficient gold
 - no valid carried inventory placement exists
+- the resolved template carries a selected-character job/sex restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`)
 - persistence/writeback fails
 
 The first sell/sell2 path must fail closed when any of these are true:
@@ -199,6 +201,7 @@ The first sell/sell2 path must fail closed when any of these are true:
 - the item is currently equipped or otherwise not in a plain carried state
 - the carried item is marked runtime-locked
 - the template is marked `anti_sell`
+- the resolved template carries a selected-character job/sex restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`)
 - the template has no sell price
 - persistence/writeback fails
 

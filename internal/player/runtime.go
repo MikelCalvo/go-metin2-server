@@ -954,7 +954,7 @@ func applyItemRewriteHook(item inventory.ItemInstance, rewriteItem func(inventor
 }
 
 func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint16, price uint64) MerchantBuyFailure {
-	if r == nil || !itemcatalog.ValidTemplate(template) || count == 0 || count > template.MaxCount || price == 0 {
+	if r == nil || !r.CanUseTemplate(template) || count == 0 || count > template.MaxCount || price == 0 {
 		return MerchantBuyFailureInvalid
 	}
 	if !template.Stackable && count != 1 {
@@ -1046,7 +1046,7 @@ func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitP
 }
 
 func (r *Runtime) SellMerchantItemWithTemplate(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (MerchantSellResult, bool) {
-	if r == nil || !itemcatalog.ValidTemplate(template) || template.AntiSell {
+	if r == nil || !r.CanUseTemplate(template) || template.AntiSell {
 		return MerchantSellResult{}, false
 	}
 	index := findInventorySlot(r.liveInventory, slot)
