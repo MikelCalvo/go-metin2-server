@@ -2005,6 +2005,84 @@ func TestGameRuntimeItemPickupRejectsDeadCollectorWithoutRemovingGroundHandle(t 
 	}
 }
 
+func TestGameRuntimeItemPickupRemovesHandleButSkipsDeadOwnerDeliveryFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DeadOwnerFallback", 0x010301be, 0x020401be, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1077, Vnum: 27033, Count: 1, Slot: 5}}
+	collector := peerVisibilityCharacter("DeadOwnerCollector", 0x010301bf, 0x020401bf, owner.X, owner.Y, 1, 101, 201)
+	issuePeerTicket(t, ticketStore, "dead-owner-fallback", 0xbebebebe, owner)
+	issuePeerTicket(t, ticketStore, "dead-owner-collector", 0xbfbfbfbf, collector)
+	if err := accounts.Save(accountstore.Account{Login: "dead-owner-fallback", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed dead-owner fallback account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "dead-owner-collector", Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
+		t.Fatalf("seed dead-owner collector account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected dead-owner fallback runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "dead-owner-fallback", 0xbebebebe)
+	defer closeSessionFlow(t, ownerFlow)
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "dead-owner-collector", 0xbfbfbfbf)
+	defer closeSessionFlow(t, collectorFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, collectorFlow)
+
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(5))
+	if queued := flushServerFrames(t, collectorFlow); len(queued) != 2 {
+		t.Fatalf("expected collector to see owner ground add and ownership before owner death, got %d queued frames", len(queued))
+	}
+	deadOwner := owner
+	deadOwner.Points[bootstrapPlayerPointValueIndex] = 0
+	if !runtime.applyLiveCharacterPersistedSnapshot(owner.Name, deadOwner) {
+		t.Fatal("expected owner live snapshot update to mark owner dead")
+	}
+	runtime.sharedWorld.UpdateCharacterWithVisibilityTransition(1, owner, deadOwner, nil)
+	_ = flushServerFrames(t, ownerFlow)
+
+	collectorOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(collectorOut) != 3 {
+		t.Fatalf("expected collector fallback pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(collectorOut))
+	}
+	if _, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, collectorOut[0])); err != nil {
+		t.Fatalf("decode collector fallback ground del: %v", err)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, collectorOut[1]))
+	if err != nil {
+		t.Fatalf("decode collector fallback item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(5) || set.Vnum != 27033 || set.Count != 1 {
+		t.Fatalf("unexpected collector fallback item set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, collectorOut[2]))
+	if err != nil {
+		t.Fatalf("decode collector fallback item get: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: 27033, Count: 1, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("expected normal collector pickup notice after dead-owner fallback, got %+v", get)
+	}
+	if ownerQueued := flushServerFrames(t, ownerFlow); len(ownerQueued) != 0 {
+		t.Fatalf("expected dead owner not to receive owner-delivery frames after collector fallback, got %d", len(ownerQueued))
+	}
+	ownerAccount, err := accounts.Load("dead-owner-fallback")
+	if err != nil {
+		t.Fatalf("load owner after dead-owner fallback: %v", err)
+	}
+	if len(ownerAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected dead owner inventory to remain dropped/empty, got %#v", ownerAccount.Characters[0].Inventory)
+	}
+	collectorAccount, err := accounts.Load("dead-owner-collector")
+	if err != nil {
+		t.Fatalf("load collector after dead-owner fallback: %v", err)
+	}
+	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1077, Vnum: 27033, Count: 1, Slot: 5}}) {
+		t.Fatalf("unexpected collector inventory after dead-owner fallback: %#v", collectorAccount.Characters[0].Inventory)
+	}
+}
+
 func TestGameRuntimeMapOccupancyIncludesPendingGroundItems(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

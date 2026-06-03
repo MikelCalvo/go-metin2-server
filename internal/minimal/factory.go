@@ -1722,11 +1722,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				}
 				return frames, true
 			}
-			if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID {
+			if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID && pickup.Owner.ID != 0 {
 				ownerSelected := pickup.Owner
-				if ownerSelected.ID == 0 {
-					return nil, false
-				}
 				pickupMaxCount := uint16(0)
 				if runtime != nil {
 					if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok && itemcatalog.ValidTemplate(template) {
