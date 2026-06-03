@@ -1911,6 +1911,54 @@ func TestGameRuntimeItemPickupRestoresSelfDroppedWholeStack(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemPickupRejectsDeadCollectorWithoutRemovingGroundHandle(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DeadPickupOwner", 0x010301bc, 0x020401bc, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1076, Vnum: 27032, Count: 1, Slot: 5}}
+	collector := peerVisibilityCharacter("DeadPickupCollector", 0x010301bd, 0x020401bd, owner.X, owner.Y, 1, 101, 201)
+	collector.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, ticketStore, "dead-pickup-owner", 0xbcbcbcbc, owner)
+	issuePeerTicket(t, ticketStore, "dead-pickup-collector", 0xbdbdbdbd, collector)
+	if err := accounts.Save(accountstore.Account{Login: "dead-pickup-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed dead-pickup owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "dead-pickup-collector", Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})}); err != nil {
+		t.Fatalf("seed dead-pickup collector account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected dead-pickup runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "dead-pickup-owner", 0xbcbcbcbc)
+	defer closeSessionFlow(t, ownerFlow)
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "dead-pickup-collector", 0xbdbdbdbd)
+	defer closeSessionFlow(t, collectorFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, collectorFlow)
+
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(5))
+	if queued := flushServerFrames(t, collectorFlow); len(queued) != 0 {
+		t.Fatalf("expected dead collector not to receive queued ground visibility frames, got %d", len(queued))
+	}
+	if deadOut := pickupGroundItem(t, collectorFlow, ground.VID); len(deadOut) != 0 {
+		t.Fatalf("expected dead collector pickup to fail closed, got %d frames", len(deadOut))
+	}
+
+	ownerPickup := pickupGroundItem(t, ownerFlow, ground.VID)
+	if len(ownerPickup) != 3 {
+		t.Fatalf("expected rejected dead pickup to leave ground item available for owner, got %d owner pickup frames", len(ownerPickup))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerPickup[0]))
+	if err != nil {
+		t.Fatalf("decode owner pickup ground del after dead collector rejection: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected owner pickup ground del after dead collector rejection: got %d want %d", groundDel.VID, ground.VID)
+	}
+}
+
 func TestGameRuntimeMapOccupancyIncludesPendingGroundItems(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
