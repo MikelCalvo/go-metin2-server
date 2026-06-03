@@ -547,6 +547,8 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] Confirm the owner receives the final `PLAYER_POINT_CHANGE` to `0`, then `DEAD(owner_vid)`, then `TARGET(0, 0)`
 - [ ] Try a fresh target or attack while still at `0` HP
 - [ ] Confirm the attempt fails closed with no new combat-visible frames
+- [ ] Try one carried-inventory `ITEM_MOVE` drag while still at `0` HP
+- [ ] Confirm the move fails closed: no item cells change and no item refresh frames are visible
 - [ ] Issue `/restart_here` on the same socket
 - [ ] Confirm the character rebuilds in place with the ordinary self bootstrap burst and restored persisted HP
 - [ ] Confirm a stale attack still fails until the practice mob is selected again
@@ -556,6 +558,7 @@ Expected result:
 - owner-side retaliation death uses `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`
 - `/restart_here` is accepted only after the zero-HP floor and keeps the session in `GAME`
 - player HP is rebuilt from persisted state, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition
+- post-floor `ITEM_MOVE` is silent and non-mutating until a restart/recovery seam is used
 
 ### 5.13 Practice-mob retaliation restart-town smoke
 

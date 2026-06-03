@@ -18,7 +18,7 @@ Those documents already freeze:
 - fail-closed owner-side merchant-sell attempts at that same retaliation floor before inventory / gold / quickslot mutation can run through packet `SHOP SELL` / `SHOP SELL2`
 - fail-closed owner-side client/slash item-use attempts at that same retaliation floor before inventory consumption, carried-item stacking, or point restoration can run through the local `/use_item` harness path, carried-slot `ITEM_USE`, or `ITEM_USE_TO_ITEM`
 - fail-closed owner-side item/gold drop attempts at that same retaliation floor before ground-item registration, currency debit, or inventory persistence can run through `ITEM_DROP` / `ITEM_DROP2`
-- fail-closed owner-side slash carried-inventory move attempts at that same retaliation floor before runtime or persisted slot mutation can run through the local `/inventory_move` harness path
+- fail-closed owner-side carried-inventory move attempts at that same retaliation floor before runtime or persisted slot mutation can run through packet `ITEM_MOVE` or the local `/inventory_move` harness path
 - fail-closed owner-side slash equipment mutation attempts at that same retaliation floor before carried/equipped item movement, appearance refresh, or template-backed point mutation can run through the local `/equip_item` and `/unequip_item` harness paths
 - fail-closed owner-side quickslot add/delete/swap attempts at that same retaliation floor before quickslot mutation can run through packet `QUICKSLOT_ADD` / `QUICKSLOT_DEL` / `QUICKSLOT_SWAP`
 
@@ -71,7 +71,7 @@ The repository now implements this narrow bootstrap contract:
 - once this floor is reached, later owner-side client/slash item-use attempts also fail closed with no point-change / item-set success burst and no runtime or persisted inventory / point mutation
 - once this floor is reached, later owner-side `ITEM_USE_TO_ITEM` attempts also fail closed with no item-set / item-del / quickslot success burst and no runtime or persisted carried-item stacking mutation
 - once this floor is reached, later owner-side `ITEM_DROP` / `ITEM_DROP2` attempts also fail closed with no point-change, ground-add, ownership, quickslot, or item-set/delete success burst and no runtime or persisted inventory / gold mutation
-- once this floor is reached, later owner-side slash `/inventory_move` attempts also fail closed with no item-set success burst and no runtime or persisted carried-slot mutation
+- once this floor is reached, later owner-side carried-inventory move attempts also fail closed with no item-set success burst and no runtime or persisted carried-slot mutation; this applies to both packet `ITEM_MOVE` and the local `/inventory_move` harness path
 - once this floor is reached, later owner-side slash `/equip_item` and `/unequip_item` attempts also fail closed with no item-delete / item-set / point-change / character-update success burst and no runtime or persisted inventory / equipment / point mutation
 - once this floor is reached, later owner-side packet quickslot add/delete/swap attempts also fail closed with no quickslot refresh frames and no runtime or persisted quickslot mutation
 - once this floor is reached, later owner-side peer-facing `CHAT` requests with `type = TALKING`, `PARTY`, `GUILD`, or `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, queued peer delivery, or exact-name target lookup can run
@@ -239,18 +239,19 @@ Why this is the current owned boundary:
 - once post-floor merchant buys already failed closed, an already-open merchant window became the next smallest stale UI/runtime context still surviving the same retaliation-owned death edge
 - reusing the existing `GC::SHOP END` close companion keeps the teardown honest without inventing a second death-specific merchant packet family
 
-## First owned post-floor client/slash item-use and item-drop denial
+## First owned post-floor client/slash item-use, item-drop, and item-move denial
 
-The current bootstrap player-death contract now also owns narrow post-floor item-use and item-drop rules for that same selected live owner session:
+The current bootstrap player-death contract now also owns narrow post-floor item-use, item-drop, and item-move rules for that same selected live owner session:
 - once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, later slash `/use_item <slot>` attempts fail closed
 - once that same floor has been reached, later carried-slot `ITEM_USE` and `ITEM_USE_TO_ITEM` attempts also fail closed
 - the item-use denial happens before inventory consumption, carried-item stacking, point restoration, or persistence mutation can run
 - once that same floor has been reached, later `ITEM_DROP` / `ITEM_DROP2` attempts also fail closed for both inventory items and gold
 - the item-drop denial happens before inventory mutation, gold debit, ground-item registration, ownership delivery, quickslot sync, or persistence mutation can run
-- the denial stays intentionally quiet in this slice: no synthetic failure info chat, no fallback revive packet, and no broader consumable/drop UI contract change are claimed yet
+- once that same floor has been reached, later packet `ITEM_MOVE` attempts also fail closed for carried-inventory moves before runtime slot mutation, persistence, item-set frames, or quickslot sync can run
+- the denial stays intentionally quiet in this slice: no synthetic failure info chat, no fallback revive packet, and no broader consumable/drop/move UI contract change are claimed yet
 
 This keeps the next post-floor expansion small and honest too:
-- after merchant-buy denial, client/slash item use and item drop were the next dangerous already-open gameplay contexts because they could still mutate runtime and persisted inventory/gold, restore points, stack carried items, or register visible ground items even if the owner had already died in the current bootstrap retaliation loop
+- after merchant-buy denial, client/slash item use, item drop, and packet item move were the next dangerous already-open gameplay contexts because they could still mutate runtime and persisted inventory/gold, restore points, stack or move carried items, or register visible ground items even if the owner had already died in the current bootstrap retaliation loop
 - the repo still does **not** yet claim revive policy or a broader general post-death action-lock contract at `0` HP
 
 ## First owned post-floor peer-facing chat / whisper denial
@@ -342,7 +343,7 @@ Why this is the current owned boundary:
 This slice does **not** yet freeze:
 - a player respawn timer or revive request packet
 - broader self-bootstrap or transfer choreography after death beyond the currently owned persisted `/phase_select` re-entry / reconnect rebuild semantics plus dead-owner destination peer/static-actor burst suppression on the current loopback/operator transfer path
-- broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, client/slash item-use, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
+- broader self-only chat/command surfaces or full action-lock semantics at `0` HP beyond the now-owned combat, relocation, static-actor interaction, merchant-buy, client/slash item-use, packet item-move, slash inventory/equipment mutation, peer-facing chat / whisper, and self-only `CHAT_TYPE_INFO` rejection seams above
 - broader recipient-side communication or world-visibility policy beyond the now-owned exact-name whisper denial, queued `CHAT_TYPE_TALKING` / `PARTY` / `GUILD` / `SHOUT` recipient skips, queued peer-entry visibility recipient skips on join plus movement/sync/transfer visibility rebuilds, queued peer-teardown `CHARACTER_DEL` recipient skips on leave plus relocate-away transfer plus AOI move/sync out-of-range teardown, queued static-actor visibility recipient skips on register/update/remove, queued practice-mob death/respawn lifecycle recipient skips, and server-origin `CHAT_TYPE_NOTICE` recipient skip for connected zero-HP owners
 - death penalties, EXP loss, inventory drops, or corpse recovery
 
@@ -359,6 +360,7 @@ After this document lands, the repository should be able to say:
 - once that same floor is reached, later owner-side merchant-buy attempts also fail closed before runtime/persisted inventory or gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
 - if that same floor is reached while the owner already had a merchant preview open, the same floor transition now also appends one self-only `GC::SHOP END` after self `GC DEAD(owner_vid)` plus self `GC TARGET(0, 0)` and clears the active merchant context so later client `SHOP END` fails closed too
 - once that same floor is reached, later owner-side slash `/use_item` and carried-slot `ITEM_USE` attempts also fail closed before runtime/persisted inventory consumption or point restoration can run
+- once that same floor is reached, later owner-side packet `ITEM_MOVE` attempts also fail closed before runtime/persisted carried-inventory slot mutation or item-set success frames can run
 - once that same floor is reached, later owner-side peer-facing `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` plus later owner-side `WHISPER` requests also fail closed before sender echo, peer delivery, or exact-name lookup can run
 - once that same floor is reached, later peer-originated `WHISPER` requests aimed at that same exact connected owner name also fail closed before queued target delivery or a synthetic `WHISPER_TYPE_NOT_EXIST` fallback can run
 - once retaliation has already driven the owning character to `0` HP, later peer-originated `CHAT` requests with types `TALKING`, `PARTY`, `GUILD`, and `SHOUT` continue to return the live sender's ordinary self echo, but queued peer delivery skips that same zero-HP owner recipient under the current bootstrap routing rules
