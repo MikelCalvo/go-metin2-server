@@ -890,7 +890,7 @@ func (r *Runtime) useItemOnItem(source inventory.SlotIndex, target inventory.Slo
 		return inventory.MoveResult{}, false
 	}
 	targetItem := r.liveInventory[targetIndex]
-	if targetItem.Equipped || targetItem.Locked || targetItem.Vnum != sourceItem.Vnum || targetItem.Count == 0 || targetItem.Count >= template.MaxCount {
+	if targetItem.Equipped || targetItem.Locked || targetItem.ID == sourceItem.ID || targetItem.Vnum != sourceItem.Vnum || targetItem.Count == 0 || targetItem.Count >= template.MaxCount {
 		return inventory.MoveResult{}, false
 	}
 	mergeCount := sourceItem.Count

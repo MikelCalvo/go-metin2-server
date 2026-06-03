@@ -343,6 +343,29 @@ func TestUseItemOnItemFailsClosedWhenTargetUpdateValidationFails(t *testing.T) {
 	}
 }
 
+func TestUseItemOnItemRejectsDuplicateInstanceIDsWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
+			{ID: 41, Vnum: 27001, Count: 3, Slot: 6},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}},
+	}, SessionLink{})
+	beforeInventory := runtime.LiveInventory()
+	beforeQuickslots := runtime.LiveQuickslots()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if _, ok := runtime.UseItemOnItem(5, 6, template); ok {
+		t.Fatal("expected duplicate item instance IDs to fail closed")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+		t.Fatalf("duplicate-instance use-to-item mutated live inventory: got %#v want %#v", got, beforeInventory)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, beforeQuickslots) {
+		t.Fatalf("duplicate-instance use-to-item mutated quickslots: got %#v want %#v", got, beforeQuickslots)
+	}
+}
+
 func TestUseItemOnItemFailsClosedWhenSourceRemainderValidationFails(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{

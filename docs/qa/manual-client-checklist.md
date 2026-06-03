@@ -220,7 +220,7 @@ Run this only with a disposable QA character and known seeded item-template data
 
 ### 4.5.1 Drag stack onto stack (`ITEM_USE_TO_ITEM`)
 
-- [ ] Put two compatible stackable carried items with the same `vnum` into separate inventory cells
+- [ ] Put two compatible stackable carried items with the same `vnum` and different item instance IDs into separate inventory cells
 - [ ] Drag one stack onto the other stack
 
 Expected result:
@@ -229,7 +229,7 @@ Expected result:
 - the consumed source cell disappears only on a full merge
 - if the target has only partial room, both source and target counts refresh and the source item quickslot remains
 - item quickslots for a removed source cell are cleared, while unrelated skill/command quickslots remain
-- restricted templates (`anti_stack`, transfer anti-flags, non-stackable or malformed templates, locked source/target stacks, or selected-character job/sex anti-flags) fail closed with no visible mutation
+- restricted templates (`anti_stack`, transfer anti-flags, non-stackable or malformed templates, locked source/target stacks, selected-character job/sex anti-flags, or duplicate source/target item instance IDs) fail closed with no visible mutation
 
 ---
 
