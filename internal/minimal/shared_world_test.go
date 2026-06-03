@@ -420,6 +420,46 @@ func TestSharedWorldRegistryRemoveGroundItemSkipsDeadVisiblePeers(t *testing.T) 
 	}
 }
 
+func TestSharedWorldRegistryTransferSkipsDestinationGroundItemsForDeadRecipient(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("GroundOwner", 0x01030121, 0x02040121, 5000, 6000, 0, 101, 201)
+	owner.MapIndex = 42
+	deadRecipient := peerVisibilityCharacter("DeadGroundRecipient", 0x01030122, 0x02040122, 1100, 2100, 1, 102, 202)
+	deadRecipient.Points[bootstrapPlayerPointValueIndex] = 0
+
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	deadPending := newPendingServerFrames()
+	deadID, _ := registry.Join(deadRecipient, deadPending, nil)
+	if ownerID == 0 || deadID == 0 {
+		t.Fatalf("expected owner and dead recipient to join shared world, got owner=%d dead=%d", ownerID, deadID)
+	}
+	deadPending.flush()
+
+	groundVID := uint32(0x07000007)
+	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	if !registry.RegisterGroundItem(ownerID, "ground-owner", owner, groundVID, item) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+	if queued := deadPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected dead recipient to receive no initial ground item frames, got %d", len(queued))
+	}
+
+	movedDeadRecipient := deadRecipient
+	movedDeadRecipient.MapIndex = owner.MapIndex
+	movedDeadRecipient.X = owner.X + 20
+	movedDeadRecipient.Y = owner.Y + 20
+	if _, ok := registry.Transfer(deadID, movedDeadRecipient); !ok {
+		t.Fatal("expected dead recipient transfer to be applied")
+	}
+	if queued := deadPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected dead recipient transfer to skip destination ground item frames, got %d", len(queued))
+	}
+	if visible, ok := registry.GroundItemVisibleTo(ownerID, owner, groundVID); !ok || visible.Vnum != item.Vnum {
+		t.Fatalf("expected destination ground item to remain visible to living owner, got ok=%v item=%+v", ok, visible)
+	}
+}
+
 func TestNewGameSessionFactoryIncludesExistingPeerInSecondPlayerBootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
