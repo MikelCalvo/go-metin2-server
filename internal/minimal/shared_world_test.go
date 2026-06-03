@@ -2978,6 +2978,25 @@ func TestNewGameSessionFactoryReturnsInfoChatOnlyToSenderAsSystemMessage(t *test
 	}
 }
 
+func TestGameSessionFlowRejectsInfoChatAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	infoOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeInfo, Message: "mensaje info"})))
+	if err != nil {
+		t.Fatalf("unexpected zero-HP owner info chat error: %v", err)
+	}
+	if len(infoOut) != 0 {
+		t.Fatalf("expected zero-HP owner info chat to fail closed, got %d frames", len(infoOut))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected zero-HP owner info chat to queue no peer frames, got %d", len(queued))
+	}
+}
+
 func TestNewGameSessionFactoryRejectsClientOriginatedNoticeChat(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
