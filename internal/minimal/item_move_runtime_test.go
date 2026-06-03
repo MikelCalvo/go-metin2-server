@@ -92,57 +92,99 @@ func TestGameRuntimeItemUseToItemRejectsLockedStacksWithoutMutation(t *testing.T
 	}
 }
 
-func TestGameRuntimeItemUseToItemRejectsNonStackableTemplateWithoutMutation(t *testing.T) {
-	ticketStore := loginticket.NewFileStore(t.TempDir())
-	accounts := accountstore.NewFileStore(t.TempDir())
-	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
-	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
-		Vnum:      27001,
-		Name:      "Practice Relic",
-		Stackable: false,
-		MaxCount:  1,
-	}}}); err != nil {
-		t.Fatalf("seed non-stackable item template: %v", err)
+func TestGameRuntimeItemUseToItemRejectsTemplateGuardEdgesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		template  itemcatalog.Template
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name:     "non-stackable template",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Practice Relic", Stackable: false, MaxCount: 1},
+			inventory: []inventory.ItemInstance{
+				{ID: 1301, Vnum: 27001, Count: 1, Slot: 5},
+				{ID: 1302, Vnum: 27001, Count: 1, Slot: 6},
+			},
+		},
+		{
+			name:     "anti-stack template",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Bound Practice Potion", Stackable: true, MaxCount: 200, AntiStack: true},
+			inventory: []inventory.ItemInstance{
+				{ID: 1301, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1302, Vnum: 27001, Count: 3, Slot: 6},
+			},
+		},
+		{
+			name:     "anti-drop template",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Undroppable Practice Potion", Stackable: true, MaxCount: 200, AntiDrop: true},
+			inventory: []inventory.ItemInstance{
+				{ID: 1301, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1302, Vnum: 27001, Count: 3, Slot: 6},
+			},
+		},
+		{
+			name:     "anti-give template",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Soulbound Practice Potion", Stackable: true, MaxCount: 200, AntiGive: true},
+			inventory: []inventory.ItemInstance{
+				{ID: 1301, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1302, Vnum: 27001, Count: 3, Slot: 6},
+			},
+		},
+		{
+			name:     "anti-sell template",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Unsellable Practice Potion", Stackable: true, MaxCount: 200, AntiSell: true},
+			inventory: []inventory.ItemInstance{
+				{ID: 1301, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1302, Vnum: 27001, Count: 3, Slot: 6},
+			},
+		},
 	}
-	owner := peerVisibilityCharacter("UseToItemNonStack", 0x01030212, 0x02040212, 1300, 2300, 0, 101, 201)
-	owner.Inventory = []inventory.ItemInstance{
-		{ID: 1301, Vnum: 27001, Count: 1, Slot: 5},
-		{ID: 1302, Vnum: 27001, Count: 1, Slot: 6},
-	}
-	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}
-	issuePeerTicket(t, ticketStore, "use-to-item-nonstack", 0x62626262, owner)
-	if err := accounts.Save(accountstore.Account{Login: "use-to-item-nonstack", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-		t.Fatalf("seed non-stackable use-to-item owner account: %v", err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+			if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{tc.template}}); err != nil {
+				t.Fatalf("seed guarded item template: %v", err)
+			}
+			owner := peerVisibilityCharacter("UseToItemGuard", 0x01030212, 0x02040212, 1300, 2300, 0, 101, 201)
+			owner.Inventory = tc.inventory
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}
+			issuePeerTicket(t, ticketStore, "use-to-item-guard", 0x62626262, owner)
+			if err := accounts.Save(accountstore.Account{Login: "use-to-item-guard", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed guarded use-to-item owner account: %v", err)
+			}
 
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
-	if err != nil {
-		t.Fatalf("unexpected non-stackable use-to-item runtime error: %v", err)
-	}
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-nonstack", 0x62626262)
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected guarded use-to-item runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-guard", 0x62626262)
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
-		Source: itemproto.InventoryPosition(5),
-		Target: itemproto.InventoryPosition(6),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected non-stackable use-to-item error: %v", err)
-	}
-	if len(out) != 0 {
-		t.Fatalf("expected non-stackable use-to-item to emit no frames, got %d", len(out))
-	}
-	account, err := accounts.Load("use-to-item-nonstack")
-	if err != nil {
-		t.Fatalf("load non-stackable use-to-item owner account: %v", err)
-	}
-	if len(account.Characters) != 1 {
-		t.Fatalf("expected one persisted non-stackable use-to-item owner, got %+v", account)
-	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("non-stackable use-to-item mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
-	}
-	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
-		t.Fatalf("non-stackable use-to-item mutated persisted quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+				Source: itemproto.InventoryPosition(5),
+				Target: itemproto.InventoryPosition(6),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected guarded use-to-item error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected guarded use-to-item to emit no frames, got %d", len(out))
+			}
+			account, err := accounts.Load("use-to-item-guard")
+			if err != nil {
+				t.Fatalf("load guarded use-to-item owner account: %v", err)
+			}
+			if len(account.Characters) != 1 {
+				t.Fatalf("expected one persisted guarded use-to-item owner, got %+v", account)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("guarded use-to-item mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("guarded use-to-item mutated persisted quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
 	}
 }
 
