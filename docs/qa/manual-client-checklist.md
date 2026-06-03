@@ -231,6 +231,16 @@ Expected result:
 - item quickslots for a removed source cell are cleared, while unrelated skill/command quickslots remain
 - restricted templates (`anti_stack`, transfer anti-flags, non-stackable or malformed templates, locked source/target stacks, selected-character job/sex anti-flags, or duplicate source/target item instance IDs) fail closed with no visible mutation
 
+### 4.5.2 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
+
+- [ ] Put two carried stacks with the same `vnum` into separate inventory cells
+- [ ] Confirm their loaded item template is stackable and not `anti_stack`, then drag one stack onto the other through normal inventory movement
+- [ ] Repeat with an otherwise matching template that is marked `anti_stack`
+
+Expected result:
+- stackable, non-`anti_stack` items merge only up to the template-authored `max_count`
+- `anti_stack` templates fail closed for same-`vnum` `ITEM_MOVE` merges: no item counts change, no source cell disappears, and no item refresh frames are visible
+
 ---
 
 ## 5. Single-client movement

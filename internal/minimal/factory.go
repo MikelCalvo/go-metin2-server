@@ -2505,8 +2505,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if sourceItem.Slot != inventory.SlotIndex(packet.Source.Cell) {
 							continue
 						}
-						if template, ok := runtime.itemTemplates[sourceItem.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.MaxCount > 0 {
-							maxCount = template.MaxCount
+						if template, ok := runtime.itemTemplates[sourceItem.Vnum]; ok && itemcatalog.ValidTemplate(template) {
+							if template.AntiStack || !template.Stackable {
+								maxCount = 0
+							} else if template.MaxCount > 0 {
+								maxCount = template.MaxCount
+							}
 						}
 						break
 					}
