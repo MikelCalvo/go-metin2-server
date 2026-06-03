@@ -14,6 +14,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -185,6 +186,76 @@ func TestGameRuntimeItemUseToItemRejectsTemplateGuardEdgesWithoutMutation(t *tes
 				t.Fatalf("guarded use-to-item mutated persisted quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
 			}
 		})
+	}
+}
+
+func TestGameRuntimeItemUseToItemPartialMergePreservesSourceQuickslot(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  10,
+	}}}); err != nil {
+		t.Fatalf("seed partial use-to-item template: %v", err)
+	}
+	owner := peerVisibilityCharacter("UseToItemPartial", 0x01030213, 0x02040213, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1401, Vnum: 27001, Count: 7, Slot: 5},
+		{ID: 1402, Vnum: 27001, Count: 8, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "use-to-item-partial", 0x63636363, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partial use-to-item owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected partial use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-partial", 0x63636363)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partial use-to-item error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected partial use-to-item to emit source and target item updates only, got %d", len(out))
+	}
+	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode partial use-to-item source update: %v", err)
+	}
+	if sourceUpdate.Position != itemproto.InventoryPosition(5) || sourceUpdate.Count != 5 {
+		t.Fatalf("unexpected partial use-to-item source update: %+v", sourceUpdate)
+	}
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode partial use-to-item target update: %v", err)
+	}
+	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 10 {
+		t.Fatalf("unexpected partial use-to-item target update: %+v", targetUpdate)
+	}
+	account, err := accounts.Load("use-to-item-partial")
+	if err != nil {
+		t.Fatalf("load persisted partial use-to-item owner account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 1401, Vnum: 27001, Count: 5, Slot: 5}, {ID: 1402, Vnum: 27001, Count: 10, Slot: 6}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("partial use-to-item persisted inventory mismatch: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("partial use-to-item should preserve source item quickslots, got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
 	}
 }
 
