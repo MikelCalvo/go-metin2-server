@@ -13943,6 +13943,115 @@ func TestNewGameSessionFactoryDropsMultipleItemRewardsForPracticeMobDeath(t *tes
 	}
 }
 
+func TestNewGameSessionFactoryQueuesPracticeMobDeathDropRewardToVisiblePeer(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050237, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050237, Name: "PeerDropRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.peer_drop_reward_mob",
+	}
+	killer := peerVisibilityCharacter("PeerDropKiller", 0x01030137, 0x02040137, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("PeerDropWatcher", 0x01030138, 0x02040138, 1150, 2150, 1, 102, 202)
+	issuePeerTicket(t, store, "peer-drop-reward-killer", 0x37373737, killer)
+	issuePeerTicket(t, store, "peer-drop-reward-watcher", 0x38383838, watcher)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "peer-drop-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed peer drop reward killer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "peer-drop-reward-watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}}); err != nil {
+		t.Fatalf("seed peer drop reward watcher account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_650, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected peer drop reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001}}) {
+		t.Fatal("expected test peer drop reward override to apply to registered practice mob")
+	}
+
+	killerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-drop-reward-killer", 0x37373737)
+	defer closeSessionFlow(t, killerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-drop-reward-watcher", 0x38383838)
+	defer closeSessionFlow(t, watcherFlow)
+	if len(watcherEnter) < 8 {
+		t.Fatalf("expected watcher bootstrap to include killer and mob visibility frames, got %d", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, killerFlow); len(queued) == 0 {
+		t.Fatal("expected killer to receive queued watcher-entry frames before reward kill")
+	}
+
+	targetVID := uint32(actor.Entity.ID)
+	if selectOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before peer drop reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected target selection to stay self-only before peer drop reward kill, got %d queued watcher frames", len(queued))
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected peer drop reward attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode killer peer drop reward ground add: %v", err)
+	}
+	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
+		t.Fatalf("unexpected killer peer drop reward ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode killer peer drop reward ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected killer peer drop reward ownership: got %+v want vid %d owner %q", ownership, ground.VID, killer.Name)
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 3 {
+		t.Fatalf("expected watcher to receive DEAD plus ground-add/ownership reward frames, got %d", len(watcherQueued))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode watcher peer drop reward dead frame: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("expected watcher dead frame for target vid %d, got %+v", targetVID, dead)
+	}
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, watcherQueued[1]))
+	if err != nil {
+		t.Fatalf("decode watcher peer drop reward ground add: %v", err)
+	}
+	if peerGround != ground {
+		t.Fatalf("expected watcher ground reward to match killer frame, got peer=%+v self=%+v", peerGround, ground)
+	}
+	peerOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, watcherQueued[2]))
+	if err != nil {
+		t.Fatalf("decode watcher peer drop reward ownership: %v", err)
+	}
+	if peerOwnership != ownership {
+		t.Fatalf("expected watcher ownership reward to match killer frame, got peer=%+v self=%+v", peerOwnership, ownership)
+	}
+}
+
 func TestNewGameSessionFactoryAppliesMixedScalarAndDropPracticeMobDeathReward(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
