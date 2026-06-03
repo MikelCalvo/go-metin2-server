@@ -13,6 +13,80 @@ import (
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 )
 
+func TestGameRuntimeItemUseToItemRejectsLockedStacksWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name: "locked source",
+			inventory: []inventory.ItemInstance{
+				{ID: 1201, Vnum: 27001, Count: 2, Slot: 5, Locked: true},
+				{ID: 1202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+		},
+		{
+			name: "locked target",
+			inventory: []inventory.ItemInstance{
+				{ID: 1201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1202, Vnum: 27001, Count: 3, Slot: 6, Locked: true},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+			if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+				Vnum:      27001,
+				Name:      "Small Red Potion",
+				Stackable: true,
+				MaxCount:  200,
+			}}}); err != nil {
+				t.Fatalf("seed item template: %v", err)
+			}
+			owner := peerVisibilityCharacter("UseToItemLocked", 0x01030211, 0x02040211, 1300, 2300, 0, 101, 201)
+			owner.Inventory = tc.inventory
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}
+			issuePeerTicket(t, ticketStore, "use-to-item-locked", 0x61616161, owner)
+			if err := accounts.Save(accountstore.Account{Login: "use-to-item-locked", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed locked use-to-item owner account: %v", err)
+			}
+
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected locked use-to-item runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-locked", 0x61616161)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+				Source: itemproto.InventoryPosition(5),
+				Target: itemproto.InventoryPosition(6),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected locked use-to-item error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected locked use-to-item to emit no frames, got %d", len(out))
+			}
+			account, err := accounts.Load("use-to-item-locked")
+			if err != nil {
+				t.Fatalf("load locked use-to-item owner account: %v", err)
+			}
+			if len(account.Characters) != 1 {
+				t.Fatalf("expected one persisted locked use-to-item owner, got %+v", account)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("locked use-to-item mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("locked use-to-item mutated persisted quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemMoveRejectsAntiStackTemplateCompatibleMergeWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
