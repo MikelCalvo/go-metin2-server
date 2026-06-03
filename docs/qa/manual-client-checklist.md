@@ -218,7 +218,19 @@ Expected result:
 
 Run this only with a disposable QA character and known seeded item-template data.
 
-### 4.5.1 Drag stack onto stack (`ITEM_USE_TO_ITEM`)
+### 4.5.1 Consume a carried item (`ITEM_USE`)
+
+- [ ] Put a known template-backed consumable in one carried inventory cell
+- [ ] Bind that carried cell to an item quickslot and also keep an unrelated skill/command quickslot that uses the same byte slot value if the client setup allows it
+- [ ] Use the item once from inventory or the quickslot
+
+Expected result:
+- the client receives a `PLAYER_POINT_CHANGE` from the template-authored `use_effect`
+- if more than one item remains in the stack, the carried cell refreshes with the decremented count
+- if the consumed stack reaches zero, the carried cell disappears and only item quickslots referencing that cell are cleared; unrelated skill/command quickslots remain
+- the placeholder `CHAT_TYPE_INFO` message uses the template-authored `use_effect.message`
+
+### 4.5.2 Drag stack onto stack (`ITEM_USE_TO_ITEM`)
 
 - [ ] Put two compatible stackable carried items with the same `vnum` and different item instance IDs into separate inventory cells
 - [ ] Drag one stack onto the other stack
@@ -231,7 +243,7 @@ Expected result:
 - item quickslots for a removed source cell are cleared, while unrelated skill/command quickslots remain
 - restricted templates (`anti_stack`, transfer anti-flags, non-stackable or malformed templates, locked source/target stacks, selected-character job/sex anti-flags, or duplicate source/target item instance IDs) fail closed with no visible mutation
 
-### 4.5.2 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
+### 4.5.3 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
 
 - [ ] Put two carried stacks with the same `vnum` into separate inventory cells
 - [ ] Confirm their loaded item template is stackable and not `anti_stack`, then drag one stack onto the other through normal inventory movement

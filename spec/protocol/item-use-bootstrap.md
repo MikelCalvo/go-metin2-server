@@ -121,6 +121,8 @@ The item refresh for the consumed slot must use the existing owned item family:
 - if the stack remains non-zero after consume, emit `ITEM_SET(slot)` with the decremented `count`
 - if the consumed stack reaches zero, emit `ITEM_DEL(slot)`
 
+The minimal session/runtime packet path now freezes last-stack `ITEM_USE` with template-authored output: `PLAYER_POINT_CHANGE`, `ITEM_DEL`, item-only `QUICKSLOT_DEL`, then the template-authored `CHAT_TYPE_INFO` placeholder. The persisted account snapshot removes the consumed stack, persists the updated point value, and deletes only item quickslots that referenced the removed carried cell.
+
 If the consumed stack reaches zero, any selected-character item quickslots referencing that carried inventory cell are removed and refreshed with self-only `QUICKSLOT_DEL` frames immediately after `ITEM_DEL` and before the placeholder info chat. Skill and command quickslots that carry the same byte value are not affected. This ordering is frozen for both the older `/use_item <slot>` chat seam and the owned `ITEM_USE` packet ingress.
 
 The temporary self-facing effect placeholder is intentionally text-backed in this slice:
