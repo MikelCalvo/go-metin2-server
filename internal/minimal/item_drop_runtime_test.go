@@ -894,6 +894,52 @@ func TestGameRuntimeItemUseToItemRejectsOverMaxSourceStackWithoutMutation(t *tes
 	}
 }
 
+func TestGameRuntimeItemUseToItemRejectsSameCellWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemSameCell", 0x0103019e, 0x0204019e, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1121, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "use-to-item-same-cell", 0x9e9e9e9e, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-same-cell", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed same-cell use-to-item owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected same-cell use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-same-cell", 0x9e9e9e9e)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected same-cell use-to-item error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected same-cell use-to-item to emit no frames, got %d", len(out))
+	}
+	account, err := accounts.Load("use-to-item-same-cell")
+	if err != nil {
+		t.Fatalf("load same-cell use-to-item owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected same-cell use-to-item inventory to stay unchanged, got %#v", account.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected same-cell use-to-item quickslots to stay unchanged, got %#v", account.Characters[0].Quickslots)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected same-cell use-to-item to avoid normal use point effect, got %d", account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameRuntimeItemUseToItemRejectsFullTargetStackWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
