@@ -212,11 +212,15 @@ func TestGameRuntimeItemDrop2NormalizesOversizedCountToWholeStack(t *testing.T) 
 	}
 }
 
-func TestGameRuntimeItemDrop2DecrementsStackAndEmitsGroundAdd(t *testing.T) {
+func TestGameRuntimeItemDrop2DecrementsStackAndPreservesItemQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("DropCountOwner", 0x01030172, 0x02040172, 1200, 2200, 0, 101, 201)
 	owner.Inventory = []inventory.ItemInstance{{ID: 1002, Vnum: 27001, Count: 5, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
 	issuePeerTicket(t, ticketStore, "drop-count-owner", 0x27272727, owner)
 	if err := accounts.Save(accountstore.Account{Login: "drop-count-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed counted drop owner account: %v", err)
@@ -264,6 +268,13 @@ func TestGameRuntimeItemDrop2DecrementsStackAndEmitsGroundAdd(t *testing.T) {
 	wantInventory := []inventory.ItemInstance{{ID: 1002, Vnum: 27001, Count: 3, Slot: 5}}
 	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
 		t.Fatalf("unexpected persisted inventory after counted drop: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted quickslots after counted drop: got %#v want %#v", account.Characters[0].Quickslots, wantQuickslots)
 	}
 }
 
