@@ -259,7 +259,7 @@ func TestGameRuntimeItemUseToItemPartialMergePreservesSourceQuickslot(t *testing
 	}
 }
 
-func TestGameRuntimeItemUseToItemRejectsFullAndOverMaxTargetsWithoutMutation(t *testing.T) {
+func TestGameRuntimeItemUseToItemRejectsTargetGuardEdgesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
 		template  itemcatalog.Template
@@ -279,6 +279,14 @@ func TestGameRuntimeItemUseToItemRejectsFullAndOverMaxTargetsWithoutMutation(t *
 			inventory: []inventory.ItemInstance{
 				{ID: 1501, Vnum: 27001, Count: 2, Slot: 5},
 				{ID: 1502, Vnum: 27001, Count: 201, Slot: 6},
+			},
+		},
+		{
+			name:     "duplicate source and target item id",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			inventory: []inventory.ItemInstance{
+				{ID: 1501, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1501, Vnum: 27001, Count: 3, Slot: 6},
 			},
 		},
 	}
