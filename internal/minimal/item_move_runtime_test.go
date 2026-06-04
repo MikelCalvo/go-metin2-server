@@ -259,6 +259,79 @@ func TestGameRuntimeItemUseToItemPartialMergePreservesSourceQuickslot(t *testing
 	}
 }
 
+func TestGameRuntimeItemUseToItemRejectsFullAndOverMaxTargetsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		template  itemcatalog.Template
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name:     "already full target",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			inventory: []inventory.ItemInstance{
+				{ID: 1501, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1502, Vnum: 27001, Count: 200, Slot: 6},
+			},
+		},
+		{
+			name:     "over-template-max target",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			inventory: []inventory.ItemInstance{
+				{ID: 1501, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1502, Vnum: 27001, Count: 201, Slot: 6},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+			if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{tc.template}}); err != nil {
+				t.Fatalf("seed target guard item template: %v", err)
+			}
+			owner := peerVisibilityCharacter("UseToItemTargetGuard", 0x01030215, 0x02040215, 1300, 2300, 0, 101, 201)
+			owner.Inventory = tc.inventory
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}, {Position: 3, Type: quickslotproto.TypeItem, Slot: 6}}
+			issuePeerTicket(t, ticketStore, "use-to-item-target-guard", 0x65656565, owner)
+			if err := accounts.Save(accountstore.Account{Login: "use-to-item-target-guard", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed target guard use-to-item owner account: %v", err)
+			}
+
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected target guard use-to-item runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-target-guard", 0x65656565)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+				Source: itemproto.InventoryPosition(5),
+				Target: itemproto.InventoryPosition(6),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected target guard use-to-item error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s use-to-item to emit no frames, got %d", tc.name, len(out))
+			}
+			account, err := accounts.Load("use-to-item-target-guard")
+			if err != nil {
+				t.Fatalf("load target guard use-to-item owner account: %v", err)
+			}
+			if len(account.Characters) != 1 {
+				t.Fatalf("expected one persisted target guard use-to-item owner, got %+v", account)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s use-to-item mutated persisted inventory: got %#v want %#v", tc.name, account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s use-to-item mutated persisted quickslots: got %#v want %#v", tc.name, account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemUseToItemFullMergeDeletesOnlySourceItemQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
