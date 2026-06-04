@@ -259,6 +259,85 @@ func TestGameRuntimeItemUseToItemPartialMergePreservesSourceQuickslot(t *testing
 	}
 }
 
+func TestGameRuntimeItemUseToItemFullMergeDeletesOnlySourceItemQuickslot(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  10,
+	}}}); err != nil {
+		t.Fatalf("seed full use-to-item template: %v", err)
+	}
+	owner := peerVisibilityCharacter("UseToItemFull", 0x01030214, 0x02040214, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1501, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 1502, Vnum: 27001, Count: 7, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "use-to-item-full", 0x64646464, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-full", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed full use-to-item owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected full use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-full", 0x64646464)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected full use-to-item error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected full use-to-item to emit source delete, target set, and source quickslot delete, got %d", len(out))
+	}
+	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode full use-to-item source delete: %v", err)
+	}
+	if sourceDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected full use-to-item source delete: %+v", sourceDel)
+	}
+	targetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode full use-to-item target set: %v", err)
+	}
+	if targetSet.Position != itemproto.InventoryPosition(6) || targetSet.Vnum != 27001 || targetSet.Count != 9 {
+		t.Fatalf("unexpected full use-to-item target set: %+v", targetSet)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode full use-to-item quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("expected full use-to-item to delete only source item quickslot position 2, got %+v", quickslotDel)
+	}
+	account, err := accounts.Load("use-to-item-full")
+	if err != nil {
+		t.Fatalf("load persisted full use-to-item owner account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 1502, Vnum: 27001, Count: 9, Slot: 6}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("full use-to-item persisted inventory mismatch: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}, {Position: 4, Type: quickslotproto.TypeItem, Slot: 6}}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("full use-to-item persisted quickslots mismatch: got %#v want %#v", account.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
 func TestGameRuntimeItemMoveRejectsAntiStackTemplateCompatibleMergeWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
