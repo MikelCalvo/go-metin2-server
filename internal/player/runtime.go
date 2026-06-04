@@ -419,7 +419,7 @@ func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, temp
 }
 
 func (r *Runtime) PickupGroundItemWithTemplate(item inventory.ItemInstance, preferred inventory.SlotIndex, template itemcatalog.Template) (GroundItemPickupResult, bool) {
-	if !itemcatalog.ValidTemplate(template) || item.Vnum != template.Vnum {
+	if !itemcatalog.ValidTemplate(template) || item.Vnum != template.Vnum || template.AntiGive {
 		return GroundItemPickupResult{}, false
 	}
 	maxCount := uint16(0)

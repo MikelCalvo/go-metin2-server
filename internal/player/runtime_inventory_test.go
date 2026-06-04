@@ -200,6 +200,21 @@ func TestPickupGroundItemFailsWhenCompatibleStacksCannotFitRemainderAndNoFreshSl
 	}
 }
 
+func TestPickupGroundItemWithTemplateRejectsAntiGiveWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27002, Name: "Bound Blue Potion", Stackable: true, MaxCount: 200, AntiGive: true}
+
+	if _, ok := runtime.PickupGroundItemWithTemplate(inventory.ItemInstance{ID: 31, Vnum: 27002, Count: 2, Slot: 6}, 6, template); ok {
+		t.Fatal("expected pickup to reject anti-give template metadata")
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), before) {
+		t.Fatalf("anti-give pickup mutated inventory: got %#v want %#v", runtime.LiveInventory(), before)
+	}
+}
+
 func TestPickupGroundItemRejectsMismatchedTemplateMetadataWithoutMutation(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
