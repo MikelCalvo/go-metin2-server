@@ -259,6 +259,97 @@ func TestGameRuntimeItemUseToItemPartialMergePreservesSourceQuickslot(t *testing
 	}
 }
 
+func TestGameRuntimeItemMoveCountedFullStackMergeSyncsItemQuickslots(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}}}); err != nil {
+		t.Fatalf("seed counted item-move template: %v", err)
+	}
+	owner := peerVisibilityCharacter("ItemMoveCountQS", 0x01030219, 0x02040219, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1701, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1702, Vnum: 27001, Count: 2, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "item-move-count-qs", 0x67676767, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-move-count-qs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed counted item-move owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected counted item-move runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-move-count-qs", 0x67676767)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(8),
+		Count:       3,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected counted item-move error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected counted full-stack item move to emit item del/update and quickslot del/add, got %d", len(out))
+	}
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode counted item-move source delete: %v", err)
+	}
+	if itemDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected counted item-move source delete: %+v", itemDel)
+	}
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode counted item-move target update: %v", err)
+	}
+	if targetUpdate.Position != itemproto.InventoryPosition(8) || targetUpdate.Count != 5 {
+		t.Fatalf("unexpected counted item-move target update: %+v", targetUpdate)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode counted item-move stale destination quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 3 {
+		t.Fatalf("expected stale destination item quickslot position 3 to be deleted, got %+v", quickslotDel)
+	}
+	quickslotAdd, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode counted item-move source quickslot retarget: %v", err)
+	}
+	if quickslotAdd.Position != 2 || quickslotAdd.Slot.Type != quickslotproto.TypeItem || quickslotAdd.Slot.Position != 8 {
+		t.Fatalf("unexpected counted item-move source quickslot retarget: %+v", quickslotAdd)
+	}
+
+	account, err := accounts.Load("item-move-count-qs")
+	if err != nil {
+		t.Fatalf("load counted item-move account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 1702, Vnum: 27001, Count: 5, Slot: 8}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("counted item-move persisted inventory mismatch: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("counted item-move persisted quickslots mismatch: got %#v want %#v", account.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
 func TestGameRuntimeItemUseToItemRejectsSelectedCharacterAntiFlagsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string

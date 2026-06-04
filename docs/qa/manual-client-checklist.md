@@ -251,6 +251,7 @@ Expected result:
 
 Expected result:
 - stackable, non-`anti_stack` items merge only up to the template-authored `max_count`
+- an exact counted full-stack merge removes the source cell, refreshes the destination count, retargets source item quickslots to the destination cell, deletes stale destination item quickslots, and leaves unrelated skill/command quickslots unchanged
 - `anti_stack` templates fail closed for same-`vnum` `ITEM_MOVE` merges: no item counts change, no source cell disappears, and no item refresh frames are visible
 
 ---
