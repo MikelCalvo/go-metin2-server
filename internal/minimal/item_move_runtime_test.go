@@ -259,6 +259,96 @@ func TestGameRuntimeItemUseToItemPartialMergePreservesSourceQuickslot(t *testing
 	}
 }
 
+func TestGameRuntimeItemUseToItemRejectsSelectedCharacterAntiFlagsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		race     uint16
+		template itemcatalog.Template
+	}{
+		{
+			name:     "anti warrior",
+			race:     0,
+			template: itemcatalog.Template{Vnum: 27001, Name: "Warrior Restricted Practice Potion", Stackable: true, MaxCount: 200, AntiWarrior: true},
+		},
+		{
+			name:     "anti male",
+			race:     0,
+			template: itemcatalog.Template{Vnum: 27001, Name: "Male Restricted Practice Potion", Stackable: true, MaxCount: 200, AntiMale: true},
+		},
+		{
+			name:     "anti assassin",
+			race:     1,
+			template: itemcatalog.Template{Vnum: 27001, Name: "Assassin Restricted Practice Potion", Stackable: true, MaxCount: 200, AntiAssassin: true},
+		},
+		{
+			name:     "anti female",
+			race:     1,
+			template: itemcatalog.Template{Vnum: 27001, Name: "Female Restricted Practice Potion", Stackable: true, MaxCount: 200, AntiFemale: true},
+		},
+		{
+			name:     "anti sura",
+			race:     2,
+			template: itemcatalog.Template{Vnum: 27001, Name: "Sura Restricted Practice Potion", Stackable: true, MaxCount: 200, AntiSura: true},
+		},
+		{
+			name:     "anti shaman",
+			race:     3,
+			template: itemcatalog.Template{Vnum: 27001, Name: "Shaman Restricted Practice Potion", Stackable: true, MaxCount: 200, AntiShaman: true},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+			if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{tc.template}}); err != nil {
+				t.Fatalf("seed selected-character anti-flag template: %v", err)
+			}
+			owner := peerVisibilityCharacter("UseToItemAntiFlag", 0x01030216, 0x02040216, 1300, 2300, tc.race, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{
+				{ID: 1601, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1602, Vnum: 27001, Count: 3, Slot: 6},
+			}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, ticketStore, "use-to-item-selected-anti-flag", 0x66666666, owner)
+			if err := accounts.Save(accountstore.Account{Login: "use-to-item-selected-anti-flag", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed selected-character anti-flag owner account: %v", err)
+			}
+
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected selected-character anti-flag runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-selected-anti-flag", 0x66666666)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+				Source: itemproto.InventoryPosition(5),
+				Target: itemproto.InventoryPosition(6),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected selected-character anti-flag use-to-item error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s use-to-item to emit no frames, got %d", tc.name, len(out))
+			}
+			account, err := accounts.Load("use-to-item-selected-anti-flag")
+			if err != nil {
+				t.Fatalf("load selected-character anti-flag owner account: %v", err)
+			}
+			if len(account.Characters) != 1 {
+				t.Fatalf("expected one persisted selected-character anti-flag owner, got %+v", account)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s use-to-item mutated persisted inventory: got %#v want %#v", tc.name, account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s use-to-item mutated persisted quickslots: got %#v want %#v", tc.name, account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemUseToItemRejectsTargetGuardEdgesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
