@@ -48,6 +48,46 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			template: itemcatalog.Template{Vnum: 27001, Name: "Single Potion", Stackable: false, MaxCount: 1},
 		},
 		{
+			name: "equippable template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Equippable Stack", Stackable: true, MaxCount: 200, EquipSlot: inventory.EquipmentSlotBody.String()},
+		},
+		{
+			name: "anti-stack template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Anti Stack Potion", Stackable: true, MaxCount: 200, AntiStack: true},
+		},
+		{
+			name: "anti-drop template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Anti Drop Potion", Stackable: true, MaxCount: 200, AntiDrop: true},
+		},
+		{
+			name: "anti-give template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Anti Give Potion", Stackable: true, MaxCount: 200, AntiGive: true},
+		},
+		{
+			name: "anti-sell template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Anti Sell Potion", Stackable: true, MaxCount: 200, AntiSell: true},
+		},
+		{
 			name:      "same source and target cell",
 			inventory: []inventory.ItemInstance{{ID: 201, Vnum: 27001, Count: 2, Slot: 5}},
 			template:  itemcatalog.Template{Vnum: 27001, Name: "Same Cell Potion", Stackable: true, MaxCount: 200},
