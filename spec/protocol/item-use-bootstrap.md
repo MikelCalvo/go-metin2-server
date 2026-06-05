@@ -169,6 +169,7 @@ If a socket already lost live shared-world ownership because another session rec
 - `ITEM_USE_TO_ITEM` may still return self-local item/quickslot refresh frames to that stale socket for a compatible stack consolidation request
 - stale item-use mutations must not persist updated `points`, `inventory`, or `quickslots`
 - stale drag-to-item consolidation must not replace the replacement live owner's exact-name loopback inventory snapshot
+- the minimal session/runtime harness now freezes stale full-stack `ITEM_USE_TO_ITEM` after ownership reclaim as self-local only: the stale socket can still receive its own `ITEM_DEL`, `ITEM_SET`, and source item `QUICKSLOT_DEL` frames, while persisted inventory/quickslots and the replacement live owner's loopback inventory snapshot remain unchanged
 - if that stale socket later closes, a fresh reconnect/bootstrap must still reload the authoritative persisted `points`/`inventory`/`quickslots` state rather than the stale socket's local divergence
 - no peer-facing packets are emitted from that stale socket for these bootstrap item-use paths
 
