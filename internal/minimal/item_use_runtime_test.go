@@ -15,11 +15,13 @@ import (
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
 
-func TestGameSessionFlowItemUseToItemRejectsLockedAndNonStackableEdgesWithoutMutation(t *testing.T) {
+func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
 		inventory []inventory.ItemInstance
 		template  itemcatalog.Template
+		source    uint16
+		target    uint16
 	}{
 		{
 			name: "locked source",
@@ -45,6 +47,37 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndNonStackableEdgesWithoutMut
 			},
 			template: itemcatalog.Template{Vnum: 27001, Name: "Single Potion", Stackable: false, MaxCount: 1},
 		},
+		{
+			name:      "same source and target cell",
+			inventory: []inventory.ItemInstance{{ID: 201, Vnum: 27001, Count: 2, Slot: 5}},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Same Cell Potion", Stackable: true, MaxCount: 200},
+			source:    5,
+			target:    5,
+		},
+		{
+			name: "duplicate source and target item ids",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 201, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Duplicate ID Potion", Stackable: true, MaxCount: 200},
+		},
+		{
+			name: "already full target",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 200, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Full Target Potion", Stackable: true, MaxCount: 200},
+		},
+		{
+			name: "source count above template max",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 201, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Over Max Source Potion", Stackable: true, MaxCount: 200},
+		},
 	}
 
 	for index, tc := range cases {
@@ -67,7 +100,15 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndNonStackableEdgesWithoutMut
 			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x5050506c)
 			defer closeSessionFlow(t, flow)
 
-			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+			source := tc.source
+			if source == 0 {
+				source = 5
+			}
+			target := tc.target
+			if target == 0 {
+				target = 6
+			}
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(source), Target: itemproto.InventoryPosition(target)})))
 			if err != nil {
 				t.Fatalf("unexpected item-use-to-item guard packet error: %v", err)
 			}
