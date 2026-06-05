@@ -169,6 +169,69 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 	}
 }
 
+func TestGameSessionFlowItemUseToItemPartialMergePreservesSourceQuickslot(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemPartial", 0x0103053c, 0x0204053c, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 201, Vnum: 27001, Count: 7, Slot: 5},
+		{ID: 202, Vnum: 27001, Count: 8, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-use-to-item-partial", 0x5050507c, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-to-item-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-use-to-item partial account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  10,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-use-to-item partial runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-to-item-partial", 0x5050507c)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected item-use-to-item partial packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected partial item-use-to-item to emit source and target updates only, got %d", len(out))
+	}
+	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode partial item-use-to-item source update: %v", err)
+	}
+	if sourceUpdate.Position != itemproto.InventoryPosition(5) || sourceUpdate.Count != 5 {
+		t.Fatalf("unexpected partial item-use-to-item source update: %+v", sourceUpdate)
+	}
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode partial item-use-to-item target update: %v", err)
+	}
+	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 10 {
+		t.Fatalf("unexpected partial item-use-to-item target update: %+v", targetUpdate)
+	}
+	persisted, err := accounts.Load("item-use-to-item-partial")
+	if err != nil {
+		t.Fatalf("load persisted item-use-to-item partial account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 201, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 202, Vnum: 27001, Count: 10, Slot: 6},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted partial item-use-to-item inventory: got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected partial item-use-to-item to preserve source quickslot, got %+v", persisted.Characters[0].Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemUseLastStackDeletesOnlyItemQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
