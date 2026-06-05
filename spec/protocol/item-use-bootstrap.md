@@ -79,6 +79,7 @@ Exactly one consumable shape is frozen here:
 - only non-equippable templates with a valid `use_effect` payload are currently eligible for `/use_item <slot>` or `ITEM_USE`
 - templates with an authored `equip_slot` are rejected for direct consumable use even if they also carry a valid `use_effect`, so equipment metadata cannot accidentally execute the consumable point-effect path
 - templates with authored job/sex restrictions for the selected character (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`) are rejected before point effects or stack mutations are applied
+- locked carried stacks are rejected before point effects or stack mutations are applied; the minimal session/runtime packet path now freezes locked `ITEM_USE` as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - that `use_effect` payload currently owns:
   - the point target index (`point_index`)
   - the point-change packet `type` (`point_type`)
@@ -141,6 +142,7 @@ The first consumable path must fail closed when any of these are true:
 - the slot's `vnum` does not resolve to a valid non-equippable item template with a valid `use_effect`
 - the resolved template carries an authored `equip_slot`
 - the carried live item snapshot is malformed under the bootstrap item-instance validation rules
+- the carried live item is locked
 - the carried live item stack count already exceeds the resolved template-authored `max_count`
 - the resolved template carries an authored job/sex anti flag for the selected character
 - the item is not in carried inventory
