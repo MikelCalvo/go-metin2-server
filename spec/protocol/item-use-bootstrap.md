@@ -52,7 +52,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - the target stack must have non-zero count and free capacity under that `max_count`
 - the runtime moves as many source items as fit into the target stack
 - if the source stack fits completely, the response burst is `ITEM_DEL(source)`, `ITEM_SET(target)`, then zero or more `QUICKSLOT_DEL` frames for item quickslots referencing the removed source carried cell
-- the minimal session/runtime packet path now freezes that full-merge burst and the persisted account snapshot: source stack removed, target stack refreshed with the merged count, item quickslots for the removed source cell deleted, and non-item quickslots with the same byte slot preserved
+- the minimal session/runtime packet path now freezes that full-merge burst and the persisted account snapshot: source stack removed, target stack refreshed with the merged count, item quickslots for the removed source cell deleted, non-item quickslots with the same byte slot preserved, and target item quickslots left stable
 - selected-character job/sex anti-flag templates are frozen through the normal minimal session/runtime packet path as no-frame/no-mutation rejections, so these template-authored restrictions are enforced before any stack consolidation or normal `use_effect` fallback
 - only item quickslots are removed and persisted; skill/command quickslots that happen to carry the same byte slot value stay unchanged
 - if the target has only partial room, the source slot is refreshed with its remainder and the target slot is refreshed at its template `max_count`

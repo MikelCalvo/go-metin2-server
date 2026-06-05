@@ -216,6 +216,86 @@ func TestGameSessionFlowItemUseRejectsLockedStackWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlySourceItemQuickslotAndSkipsUseEffect(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemFull", 0x0103055c, 0x0204055c, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 201, Vnum: 27001, Count: 7, Slot: 5},
+		{ID: 202, Vnum: 27001, Count: 8, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-to-item-full", 0x5050509c, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-to-item-full", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-use-to-item full account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  15,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not run"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-use-to-item full runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-to-item-full", 0x5050509c)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected item-use-to-item full packet error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected full item-use-to-item to emit source delete, target set, and source quickslot delete only, got %d", len(out))
+	}
+	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode full item-use-to-item source delete: %v", err)
+	}
+	if sourceDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected full item-use-to-item source delete: %+v", sourceDel)
+	}
+	targetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode full item-use-to-item target set: %v", err)
+	}
+	if targetSet.Position != itemproto.InventoryPosition(6) || targetSet.Vnum != 27001 || targetSet.Count != 15 {
+		t.Fatalf("unexpected full item-use-to-item target set: %+v", targetSet)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode full item-use-to-item quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("expected full item-use-to-item to delete only source item quickslot position 2, got %+v", quickslotDel)
+	}
+	persisted, err := accounts.Load("item-use-to-item-full")
+	if err != nil {
+		t.Fatalf("load persisted item-use-to-item full account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 202, Vnum: 27001, Count: 15, Slot: 6}}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted full item-use-to-item inventory: got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("expected full item-use-to-item to delete only source item quickslot, got %+v", persisted.Characters[0].Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected drag-to-item to skip use_effect point mutation, got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameSessionFlowItemUseToItemPartialMergePreservesSourceQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
