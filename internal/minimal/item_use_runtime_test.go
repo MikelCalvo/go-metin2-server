@@ -118,6 +118,14 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			},
 			template: itemcatalog.Template{Vnum: 27001, Name: "Over Max Source Potion", Stackable: true, MaxCount: 200},
 		},
+		{
+			name: "target count above template max",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 201, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Over Max Target Potion", Stackable: true, MaxCount: 200},
+		},
 	}
 
 	for index, tc := range cases {

@@ -242,7 +242,7 @@ Expected result:
 - the consumed source cell disappears only on a full merge
 - if the target has only partial room, both source and target counts refresh and the source item quickslot remains
 - item quickslots for a removed source cell are cleared, target item quickslots remain stable, and unrelated skill/command quickslots remain
-- restricted templates (`anti_stack`, transfer anti-flags, non-stackable or malformed templates, locked source/target stacks, selected-character job/sex anti-flags, or duplicate source/target item instance IDs) fail closed with no visible mutation
+- restricted or invalid states (`anti_stack`, transfer anti-flags, non-stackable or malformed templates, locked source/target stacks, selected-character job/sex anti-flags, duplicate source/target item instance IDs, or source/target counts already above template `max_count`) fail closed with no visible mutation
 
 ### 4.5.3 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
 
