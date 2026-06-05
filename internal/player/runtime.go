@@ -833,7 +833,7 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	}
 	effect := *template.UseEffect
 	item := r.liveInventory[index]
-	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 {
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
 		return ItemUseResult{}, false
 	}
 	if err := item.Validate(); err != nil {

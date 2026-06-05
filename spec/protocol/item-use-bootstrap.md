@@ -141,6 +141,7 @@ The first consumable path must fail closed when any of these are true:
 - the slot's `vnum` does not resolve to a valid non-equippable item template with a valid `use_effect`
 - the resolved template carries an authored `equip_slot`
 - the carried live item snapshot is malformed under the bootstrap item-instance validation rules
+- the carried live item stack count already exceeds the resolved template-authored `max_count`
 - the resolved template carries an authored job/sex anti flag for the selected character
 - the item is not in carried inventory
 - the request uses any `TItemPos` outside the current carried-inventory-only subset
