@@ -244,7 +244,17 @@ Expected result:
 - item quickslots for a removed source cell are cleared, target item quickslots remain stable, and unrelated skill/command quickslots remain
 - restricted or invalid states (`anti_stack`, transfer anti-flags, non-stackable or malformed templates, locked source/target stacks, selected-character job/sex anti-flags, duplicate source/target item instance IDs, or source/target counts already above template `max_count`) fail closed with no visible mutation
 
-### 4.5.3 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
+### 4.5.3 Drop and pick up a carried item (`ITEM_DROP` / `ITEM_PICKUP`)
+
+- [ ] Drop a known template-backed carried item stack in a safe visible location
+- [ ] Pick up the same temporary ground handle while still in range
+- [ ] If possible in the QA fixture, repeat with a deliberately malformed or mismatched loaded item-template entry for that `vnum`
+
+Expected result:
+- valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, and shows the normal pickup notice
+- malformed or mismatched loaded pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
+
+### 4.5.4 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
 
 - [ ] Put two carried stacks with the same `vnum` into separate inventory cells
 - [ ] Confirm their loaded item template is stackable and not `anti_stack`, then drag one stack onto the other through normal inventory movement

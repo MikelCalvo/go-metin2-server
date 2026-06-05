@@ -1734,7 +1734,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				ownerSelected := pickup.Owner
 				pickupMaxCount := uint16(0)
 				if runtime != nil {
-					if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok && itemcatalog.ValidTemplate(template) {
+					if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok {
+						if !itemcatalog.ValidTemplate(template) || template.Vnum != pickup.Item.Vnum {
+							return nil, false
+						}
 						if template.AntiGive {
 							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 						}
@@ -1815,8 +1818,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			pickupMaxCount := uint16(0)
 			if runtime != nil {
-				if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok && itemcatalog.ValidTemplate(template) && template.Stackable && !template.AntiStack {
-					pickupMaxCount = template.MaxCount
+				if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok {
+					if !itemcatalog.ValidTemplate(template) || template.Vnum != pickup.Item.Vnum {
+						return nil, false
+					}
+					if template.Stackable && !template.AntiStack {
+						pickupMaxCount = template.MaxCount
+					}
 				}
 			}
 			pickupResult, ok := selectedPlayer.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)

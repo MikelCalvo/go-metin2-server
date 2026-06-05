@@ -2519,6 +2519,53 @@ func TestGameRuntimeItemPickupMergesOwnedVisibleDropIntoCompatibleStack(t *testi
 	}
 }
 
+func TestGameRuntimeItemPickupRejectsMismatchedLoadedTemplateWithoutRemovingGroundItem(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupTemplateMismatchOwner", 0x01030191, 0x02040191, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1021, Vnum: 27004, Count: 2, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "pickup-template-mismatch-owner", 0x91919191, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-template-mismatch-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup template-mismatch owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27004,
+		Name:      "Wrong Ground Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected item-pickup template-mismatch runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-template-mismatch-owner", 0x91919191)
+	flushServerFrames(t, flow)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(6))
+	// Mutate the loaded runtime template after drop so the ground item's vnum still
+	// has an entry, but the authored template no longer matches that vnum at pickup.
+	runtime.itemTemplates[27004] = itemcatalog.Template{Vnum: 27005, Name: "Mismatched Ground Potion", Stackable: true, MaxCount: 200}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 0 {
+		t.Fatalf("expected mismatched pickup template to reject without frames, got %d", len(pickupOut))
+	}
+	account, err := accounts.Load("pickup-template-mismatch-owner")
+	if err != nil {
+		t.Fatalf("load pickup template-mismatch owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{}) {
+		t.Fatalf("expected rejected pickup to leave owner inventory dropped, got %#v", account.Characters[0].Inventory)
+	}
+
+	// Restore a valid matching template before retrying so the pending handle can
+	// prove it was not removed by the failed metadata guard.
+	runtime.itemTemplates[27004] = itemcatalog.Template{Vnum: 27004, Name: "Wrong Ground Potion", Stackable: true, MaxCount: 200}
+	retryOut := pickupGroundItem(t, flow, ground.VID)
+	if len(retryOut) != 3 {
+		t.Fatalf("expected ground handle to remain pending after metadata rejection, got %d frames", len(retryOut))
+	}
+}
+
 func TestGameRuntimeItemPickupAntiStackTemplateRestoresFreshSlotWithoutMerging(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
