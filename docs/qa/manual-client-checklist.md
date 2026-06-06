@@ -432,11 +432,13 @@ Expected result:
 - [ ] Confirm the consumed slot decrements by exactly one stack item or clears entirely if it was the last item
 - [ ] Confirm one self-only `CHAT_TYPE_INFO` placeholder effect arrives using the template-authored message
 - [ ] Reconnect and confirm the consumed stack and updated point value persisted
+- [ ] If QA data allows it, repeat with the selected character restricted by the consumable template's authored job/sex anti flags; confirm no item, point, quickslot, or info-chat mutation is visible
 
 Expected result:
 - the current carried-slot client item-use path resolves through item-template metadata rather than a runtime-only hardcoded consumable switch
 - the current seeded bootstrap template still yields `type = 1`, `amount = 50`, `value = updated Points[1]`, and `consume:27001:+50`
 - the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then `CHAT_TYPE_INFO`
+- selected-character job/sex anti-flag templates fail closed before the consumable point/effect path runs
 - the selected-character snapshot persists atomically through the current save/rollback boundary
 
 ### 5.7.1 Drag-to-item stack consolidation
