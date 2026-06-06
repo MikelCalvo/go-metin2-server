@@ -1465,6 +1465,26 @@ func TestRuntimeUseItemOnItemRejectsLockedSourceOrTargetWithoutMutation(t *testi
 	}
 }
 
+func TestRuntimeUseItemOnItemRejectsTargetAlreadyAtTemplateMaxWithoutMutation(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 51, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 52, Vnum: 27001, Count: 200, Slot: 6},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Template Potion", Stackable: true, MaxCount: 200}
+
+	if result, ok := runtime.UseItemOnItem(5, 6, template); ok {
+		t.Fatalf("expected already-full target use-to-item to fail closed, got %+v", result)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected already-full target rejection to leave live inventory unchanged, got %#v", runtime.LiveInventory())
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("expected already-full target rejection to leave persisted inventory unchanged, got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+}
+
 func TestRuntimeMoveInventoryItemCountMergesPartialStackIntoCompatibleDestination(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{
