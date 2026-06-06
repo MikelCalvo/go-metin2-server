@@ -1077,6 +1077,29 @@ func TestRuntimeUseItemOnItemRejectsOverMaxSourceStackWithoutMutatingState(t *te
 	}
 }
 
+func TestRuntimeUseItemRejectsMaxCountBeyondClientCountRangeWithoutMutatingState(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 299, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
+	template.MaxCount = 300
+
+	if result, ok := runtime.UseItem(5, template); ok {
+		t.Fatalf("expected item use to reject template max_count values that cannot be represented by owned item refresh packets, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != 700 {
+		t.Fatalf("expected rejected oversized-template item use to leave live state unchanged, got %#v points[1]=%d", got.Inventory, got.Points[1])
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != persisted.Points[1] {
+		t.Fatalf("expected rejected oversized-template item use to leave persisted state unchanged, got inventory=%#v points[1]=%d", got.Inventory, got.Points[1])
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsMaxCountBeyondClientCountRangeWithoutMutatingState(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,
