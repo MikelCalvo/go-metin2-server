@@ -1844,6 +1844,52 @@ func TestGameRuntimeItemDrop2WithGoldDropsCurrencyInsteadOfCountedItem(t *testin
 	}
 }
 
+func TestGameRuntimeItemPickupRejectsRestrictedSelfPickupWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RestrictedPickupOwner", 0x0103019a, 0x0204019a, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1101, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.RaceNum = 0
+	owner.Job = 0
+	issuePeerTicket(t, ticketStore, "restricted-pickup-owner", 0x9a9a9a9a, owner)
+	if err := accounts.Save(accountstore.Account{Login: "restricted-pickup-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed restricted pickup owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected restricted pickup runtime error: %v", err)
+	}
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "restricted potion", Stackable: true, MaxCount: 200}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "restricted-pickup-owner", 0x9a9a9a9a)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(5))
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "restricted potion", Stackable: true, MaxCount: 200, AntiWarrior: true}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 1 {
+		t.Fatalf("expected restricted pickup to emit one info rejection, got %d frames", len(pickupOut))
+	}
+	rejection, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode restricted pickup rejection: %v", err)
+	}
+	if rejection.Type != chatproto.ChatTypeInfo || rejection.VID != 0 || rejection.Message != itemPickupInventoryFullInfoMessage {
+		t.Fatalf("unexpected restricted pickup rejection: %+v", rejection)
+	}
+	account, err := accounts.Load("restricted-pickup-owner")
+	if err != nil {
+		t.Fatalf("load restricted pickup owner account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected restricted item to remain out of owner inventory after drop, got %#v", account.Characters[0].Inventory)
+	}
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "restricted potion", Stackable: true, MaxCount: 200}
+	ownerRetry := pickupGroundItem(t, flow, ground.VID)
+	if len(ownerRetry) != 3 {
+		t.Fatalf("expected unrestricted owner retry to pick pending ground item back up after template relax, got %d frames", len(ownerRetry))
+	}
+}
+
 func TestGameRuntimeItemPickupRejectsAntiGiveOwnerDeliveryWithoutCollectorMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

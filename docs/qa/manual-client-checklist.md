@@ -253,6 +253,7 @@ Expected result:
 Expected result:
 - valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, and shows the normal pickup notice
 - malformed or mismatched loaded pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
+- loaded pickup template metadata restricted by the selected character's job/sex anti-flags also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
 
 ### 4.5.4 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
 

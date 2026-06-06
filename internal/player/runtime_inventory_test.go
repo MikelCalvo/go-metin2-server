@@ -230,6 +230,35 @@ func TestPickupGroundItemRejectsMismatchedTemplateMetadataWithoutMutation(t *tes
 	}
 }
 
+func TestPickupGroundItemWithTemplateRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		character loginticket.Character
+		template  itemcatalog.Template
+	}{
+		{name: "anti warrior", character: loginticket.Character{Job: 0, RaceNum: 0}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiWarrior: true}},
+		{name: "anti assassin", character: loginticket.Character{Job: 1, RaceNum: 1}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiAssassin: true}},
+		{name: "anti sura", character: loginticket.Character{Job: 2, RaceNum: 2}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiSura: true}},
+		{name: "anti shaman", character: loginticket.Character{Job: 3, RaceNum: 3}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiShaman: true}},
+		{name: "anti male", character: loginticket.Character{Job: 0, RaceNum: 0}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiMale: true}},
+		{name: "anti female", character: loginticket.Character{Job: 1, RaceNum: 1}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiFemale: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.character.Inventory = []inventory.ItemInstance{{ID: 11, Vnum: 27002, Count: 3, Slot: 5}}
+			runtime := NewRuntime(tc.character, SessionLink{})
+			before := runtime.LiveInventory()
+
+			if _, ok := runtime.PickupGroundItemWithTemplate(inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 2, Slot: 6}, 6, tc.template); ok {
+				t.Fatalf("expected %s pickup to reject authored restriction metadata", tc.name)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s restricted pickup mutated inventory: got %#v want %#v", tc.name, got, before)
+			}
+		})
+	}
+}
+
 func TestUseItemOnItemConsolidatesFullSourceAndKeepsTargetQuickslotStable(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{

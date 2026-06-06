@@ -1822,6 +1822,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !itemcatalog.ValidTemplate(template) || template.Vnum != pickup.Item.Vnum {
 						return nil, false
 					}
+					if !selectedPlayer.CanUseTemplate(template) {
+						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
+					}
 					if template.Stackable && !template.AntiStack {
 						pickupMaxCount = template.MaxCount
 					}
