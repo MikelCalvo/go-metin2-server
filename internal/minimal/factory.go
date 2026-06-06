@@ -1732,13 +1732,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID && pickup.Owner.ID != 0 {
 				ownerSelected := pickup.Owner
+				ownerRuntime := player.NewRuntime(ownerSelected, player.SessionLink{Login: pickup.OwnerLogin})
 				pickupMaxCount := uint16(0)
 				if runtime != nil {
 					if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok {
 						if !itemcatalog.ValidTemplate(template) || template.Vnum != pickup.Item.Vnum {
 							return nil, false
 						}
-						if template.AntiGive {
+						if template.AntiGive || !ownerRuntime.CanUseTemplate(template) {
 							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 						}
 						if template.Stackable && !template.AntiStack {
@@ -1746,7 +1747,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						}
 					}
 				}
-				ownerRuntime := player.NewRuntime(ownerSelected, player.SessionLink{Login: pickup.OwnerLogin})
 				pickupResult, ok := ownerRuntime.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
 				if !ok {
 					collectorResult, collectorOK := selectedPlayer.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
