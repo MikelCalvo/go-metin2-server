@@ -266,6 +266,17 @@ Expected result:
 - an exact counted full-stack merge removes the source cell, refreshes the destination count, retargets source item quickslots to the destination cell, deletes stale destination item quickslots, and leaves unrelated skill/command quickslots unchanged
 - `anti_stack` templates fail closed for same-`vnum` `ITEM_MOVE` merges: no item counts change, no source cell disappears, and no item refresh frames are visible
 
+### 4.5.5 Equip a carried item (`ITEM_MOVE` to equipment cell)
+
+- [ ] Put a known template-backed equipment item in a carried inventory cell
+- [ ] Confirm the template's authored `equip_slot` matches the destination equipment cell and has no selected-character job/sex anti-flag
+- [ ] Drag the carried item into its matching equipment cell
+- [ ] Repeat with the same item shape but a selected-character job/sex anti-flag that should reject the character
+
+Expected result:
+- allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, and applies the template-authored `equip_effect` point change when present
+- anti-flagged equipment fails closed: no item refresh, no point change, no carried/equipment mutation, and no persistence change
+
 ---
 
 ## 5. Single-client movement

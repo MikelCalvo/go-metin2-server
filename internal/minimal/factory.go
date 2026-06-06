@@ -2480,6 +2480,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						template, hasEquipTemplate := runtime.resolveRuntimeEquipTemplate(selectedPlayer, inventory.SlotIndex(packet.Source.Cell), equipSlot)
+						if hasEquipTemplate && !selectedPlayer.CanUseTemplate(template) {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
 						if hasEquipTemplate && !templateAuthoredForRuntimeEquipSlot(template, equipSlot) {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}

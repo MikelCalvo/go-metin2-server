@@ -15,9 +15,168 @@ import (
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
+
+func TestGameRuntimeItemMoveEquipRejectsTemplateAntiFlagsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{
+			name: "anti warrior",
+			template: itemcatalog.Template{
+				Vnum:        11500,
+				Name:        "Warrior-Restricted Test Armor",
+				Stackable:   false,
+				MaxCount:    1,
+				AntiWarrior: true,
+				EquipSlot:   inventory.EquipmentSlotBody.String(),
+				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
+		{
+			name: "anti male",
+			template: itemcatalog.Template{
+				Vnum:        11500,
+				Name:        "Male-Restricted Test Armor",
+				Stackable:   false,
+				MaxCount:    1,
+				AntiMale:    true,
+				EquipSlot:   inventory.EquipmentSlotBody.String(),
+				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+			if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{tc.template}}); err != nil {
+				t.Fatalf("seed anti-flag equip template: %v", err)
+			}
+			owner := peerVisibilityCharacter("AntiEquipOwner", 0x01030251, 0x02040251, 1300, 2300, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: 5101, Vnum: tc.template.Vnum, Count: 1, Slot: 5}}
+			owner.Equipment = nil
+			owner.Points[1] = 750
+			issuePeerTicket(t, ticketStore, "anti-equip-owner", 0x51515151, owner)
+			if err := accounts.Save(accountstore.Account{Login: "anti-equip-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed anti-flag equip owner account: %v", err)
+			}
+
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected anti-flag equip runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "anti-equip-owner", 0x51515151)
+			defer closeSessionFlow(t, flow)
+			bodyPosition, err := itemproto.EquipmentPosition(0)
+			if err != nil {
+				t.Fatalf("build body equipment position: %v", err)
+			}
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+				Source:      itemproto.InventoryPosition(5),
+				Destination: bodyPosition,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected anti-flag equip error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected anti-flag equip to emit no frames, got %d", len(out))
+			}
+			account, err := accounts.Load("anti-equip-owner")
+			if err != nil {
+				t.Fatalf("load anti-flag equip owner account: %v", err)
+			}
+			if len(account.Characters) != 1 {
+				t.Fatalf("expected one persisted anti-flag equip owner, got %+v", account)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("anti-flag equip mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+			}
+			if len(account.Characters[0].Equipment) != 0 {
+				t.Fatalf("anti-flag equip mutated persisted equipment: got %#v", account.Characters[0].Equipment)
+			}
+			if account.Characters[0].Points[1] != owner.Points[1] {
+				t.Fatalf("anti-flag equip mutated persisted point: got %d want %d", account.Characters[0].Points[1], owner.Points[1])
+			}
+		})
+	}
+}
+
+func TestGameRuntimeItemMoveEquipAppliesTemplateEffectWhenAllowed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	template := itemcatalog.Template{
+		Vnum:        11500,
+		Name:        "Allowed Test Armor",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   inventory.EquipmentSlotBody.String(),
+		EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+	}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("seed allowed equip template: %v", err)
+	}
+	owner := peerVisibilityCharacter("AllowedEquipOwner", 0x01030252, 0x02040252, 1300, 2300, 2, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 5201, Vnum: template.Vnum, Count: 1, Slot: 5}}
+	owner.Equipment = nil
+	owner.Points[1] = 750
+	issuePeerTicket(t, ticketStore, "allowed-equip-owner", 0x52525252, owner)
+	if err := accounts.Save(accountstore.Account{Login: "allowed-equip-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed allowed equip owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected allowed equip runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "allowed-equip-owner", 0x52525252)
+	defer closeSessionFlow(t, flow)
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: bodyPosition,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected allowed equip error: %v", err)
+	}
+	if len(out) < 4 {
+		t.Fatalf("expected allowed equip refresh frames, got %d", len(out))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode allowed equip point change: %v", err)
+	}
+	if pointChange.Type != 1 || pointChange.Amount != 50 || pointChange.Value != 800 {
+		t.Fatalf("unexpected allowed equip point change: %+v", pointChange)
+	}
+	account, err := accounts.Load("allowed-equip-owner")
+	if err != nil {
+		t.Fatalf("load allowed equip owner account: %v", err)
+	}
+	if len(account.Characters) != 1 {
+		t.Fatalf("expected one persisted allowed equip owner, got %+v", account)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected allowed equip to remove carried item, got %#v", account.Characters[0].Inventory)
+	}
+	if len(account.Characters[0].Equipment) != 1 || account.Characters[0].Equipment[0].Vnum != template.Vnum || account.Characters[0].Equipment[0].EquipSlot != inventory.EquipmentSlotBody {
+		t.Fatalf("expected allowed equip to persist worn item, got %#v", account.Characters[0].Equipment)
+	}
+	if account.Characters[0].Points[1] != 800 {
+		t.Fatalf("expected allowed equip to persist point effect, got %d", account.Characters[0].Points[1])
+	}
+}
 
 func TestGameRuntimeItemUseToItemRejectsLockedStacksWithoutMutation(t *testing.T) {
 	cases := []struct {
