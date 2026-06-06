@@ -560,6 +560,49 @@ func TestRuntimeUseItemRejectsEquippableTemplateWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestRuntimeUseItemRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		job      uint8
+		raceNum  uint16
+		template itemcatalog.Template
+	}{
+		{name: "anti warrior", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiWarrior = true })},
+		{name: "anti assassin", job: 1, raceNum: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiAssassin = true })},
+		{name: "anti sura", job: 2, raceNum: 2, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiSura = true })},
+		{name: "anti shaman", job: 3, raceNum: 3, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiShaman = true })},
+		{name: "anti male", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiMale = true })},
+		{name: "anti female", job: 1, raceNum: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiFemale = true })},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:      0x01030102,
+				VID:     0x02040102,
+				Name:    "RestrictedUsePeer",
+				Job:     tc.job,
+				RaceNum: tc.raceNum,
+				Points:  [255]int32{1: 700},
+				Inventory: []inventory.ItemInstance{
+					{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+				},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "restricted-use-peer", CharacterIndex: 1})
+			before := runtime.LiveCharacter()
+
+			if result, ok := runtime.UseItem(5, tc.template); ok {
+				t.Fatalf("expected %s item use to fail closed, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s item use mutated live character: got %#v want %#v", tc.name, got, before)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != persisted.Points[1] {
+				t.Fatalf("%s item use mutated persisted state: inventory=%#v points[1]=%d", tc.name, got.Inventory, got.Points[1])
+			}
+		})
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string
