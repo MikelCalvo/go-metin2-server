@@ -16318,19 +16318,21 @@ func TestGameSessionFlowItemUseToItemRejectsOverMaxTargetStackWithoutMutation(t 
 	}
 }
 
-func TestGameSessionFlowItemUseToItemRejectsJobAndSexAntiFlagTemplatesWithoutMutation(t *testing.T) {
+func TestGameSessionFlowItemUseToItemRejectsJobSexAndLevelRestrictedTemplatesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string
 		job      uint8
 		raceNum  uint16
+		level    uint8
 		template itemcatalog.Template
 	}{
-		{name: "anti warrior", job: 0, raceNum: 0, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiWarrior = true })},
-		{name: "anti assassin", job: 1, raceNum: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiAssassin = true })},
-		{name: "anti sura", job: 2, raceNum: 2, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiSura = true })},
-		{name: "anti shaman", job: 3, raceNum: 3, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiShaman = true })},
-		{name: "anti male", job: 0, raceNum: 0, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiMale = true })},
-		{name: "anti female", job: 1, raceNum: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiFemale = true })},
+		{name: "anti warrior", job: 0, raceNum: 0, level: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiWarrior = true })},
+		{name: "anti assassin", job: 1, raceNum: 1, level: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiAssassin = true })},
+		{name: "anti sura", job: 2, raceNum: 2, level: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiSura = true })},
+		{name: "anti shaman", job: 3, raceNum: 3, level: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiShaman = true })},
+		{name: "anti male", job: 0, raceNum: 0, level: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiMale = true })},
+		{name: "anti female", job: 1, raceNum: 1, level: 1, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.AntiFemale = true })},
+		{name: "min level", job: 0, raceNum: 0, level: 9, template: antiFlaggedUseToItemTemplate(func(template *itemcatalog.Template) { template.MinLevel = 10 })},
 	}
 
 	for _, tc := range cases {
@@ -16340,6 +16342,7 @@ func TestGameSessionFlowItemUseToItemRejectsJobAndSexAntiFlagTemplatesWithoutMut
 			owner := peerVisibilityCharacter("UseToItemRestricted", 0x01030516, 0x02040516, 1100, 2100, tc.raceNum, 101, 201)
 			owner.Job = tc.job
 			owner.RaceNum = tc.raceNum
+			owner.Level = tc.level
 			owner.Inventory = []inventory.ItemInstance{
 				{ID: 91, Vnum: 27001, Count: 2, Slot: 5},
 				{ID: 92, Vnum: 27001, Count: 3, Slot: 8},
