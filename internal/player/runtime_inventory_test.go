@@ -145,6 +145,34 @@ func TestDropInventoryItemRejectsMalformedLiveItemWithoutMutation(t *testing.T) 
 	}
 }
 
+func TestPickupGroundItemSkipsLockedCompatibleStacks(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 198, Slot: 2, Locked: true},
+			{ID: 12, Vnum: 27001, Count: 199, Slot: 5},
+		},
+	}, SessionLink{})
+
+	ground := inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 2, Slot: 9}
+	result, ok := runtime.PickupGroundItem(ground, 9, 200)
+	if !ok {
+		t.Fatal("expected compatible ground pickup to skip locked stacks and fill an unlocked stack")
+	}
+	if !result.Split || result.Merged || result.Placed.ID != 31 || result.Placed.Count != 1 || result.Placed.Slot != 9 {
+		t.Fatalf("unexpected locked-stack pickup split result: %+v", result)
+	}
+	if !reflect.DeepEqual(result.UpdatedItems, []inventory.ItemInstance{{ID: 12, Vnum: 27001, Count: 200, Slot: 5}}) {
+		t.Fatalf("unexpected locked-stack pickup updates: %#v", result.UpdatedItems)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 198, Slot: 2, Locked: true},
+		{ID: 12, Vnum: 27001, Count: 200, Slot: 5},
+		{ID: 31, Vnum: 27001, Count: 1, Slot: 9},
+	}) {
+		t.Fatalf("unexpected inventory after locked-stack pickup: %#v", runtime.LiveInventory())
+	}
+}
+
 func TestPickupGroundItemFillsCompatibleStacksBeforePlacingRemainder(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{
