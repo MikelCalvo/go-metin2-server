@@ -560,7 +560,7 @@ func TestRuntimeUseItemRejectsEquippableTemplateWithoutMutation(t *testing.T) {
 	}
 }
 
-func TestRuntimeUseItemRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testing.T) {
+func TestRuntimeUseItemRejectsAuthoredJobSexAndTransferAntiFlagsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string
 		job      uint8
@@ -573,6 +573,10 @@ func TestRuntimeUseItemRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testi
 		{name: "anti shaman", job: 3, raceNum: 3, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiShaman = true })},
 		{name: "anti male", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiMale = true })},
 		{name: "anti female", job: 1, raceNum: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiFemale = true })},
+		{name: "anti stack", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiStack = true })},
+		{name: "anti drop", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiDrop = true })},
+		{name: "anti give", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiGive = true })},
+		{name: "anti sell", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiSell = true })},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

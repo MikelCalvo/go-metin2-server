@@ -246,6 +246,10 @@ func TestGameSessionFlowItemUseRejectsJobAndSexAntiFlagTemplatesWithoutMutation(
 		{name: "anti shaman", login: "item-use-anti-shaman", job: 3, raceNum: 3, mutate: func(template *itemcatalog.Template) { template.AntiShaman = true }},
 		{name: "anti male", login: "item-use-anti-male", job: 0, raceNum: 0, mutate: func(template *itemcatalog.Template) { template.AntiMale = true }},
 		{name: "anti female", login: "item-use-anti-female", job: 1, raceNum: 1, mutate: func(template *itemcatalog.Template) { template.AntiFemale = true }},
+		{name: "anti stack", login: "item-use-anti-stack", job: 0, raceNum: 0, mutate: func(template *itemcatalog.Template) { template.AntiStack = true }},
+		{name: "anti drop", login: "item-use-anti-drop", job: 0, raceNum: 0, mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }},
+		{name: "anti give", login: "item-use-anti-give", job: 0, raceNum: 0, mutate: func(template *itemcatalog.Template) { template.AntiGive = true }},
+		{name: "anti sell", login: "item-use-anti-sell", job: 0, raceNum: 0, mutate: func(template *itemcatalog.Template) { template.AntiSell = true }},
 	}
 
 	for index, tc := range cases {
