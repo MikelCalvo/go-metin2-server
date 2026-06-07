@@ -246,7 +246,18 @@ Expected result:
 - item quickslots for a removed source cell are cleared, target item quickslots remain stable, and unrelated skill/command quickslots remain
 - restricted or invalid states (`anti_stack`, transfer anti-flags, non-stackable or malformed templates, locked source/target stacks, selected-character job/sex/min-level restrictions, duplicate source/target item instance IDs, or source/target counts already above template `max_count`) fail closed with no visible mutation
 
-### 4.5.3 Drop and pick up a carried item (`ITEM_DROP` / `ITEM_PICKUP`)
+### 4.5.3 Retarget an item quickslot (`QUICKSLOT_ADD`)
+
+- [ ] Bind a carried inventory item cell to an item quickslot
+- [ ] Bind the same carried item cell to a different item quickslot position
+- [ ] If the client setup allows it, keep an unrelated skill or command quickslot whose byte slot value matches the carried item cell
+
+Expected result:
+- the older item quickslot for that carried cell is cleared
+- the new item quickslot binding is added and persists after reconnect
+- unrelated skill/command quickslots with the same byte slot value remain unchanged
+
+### 4.5.4 Drop and pick up a carried item (`ITEM_DROP` / `ITEM_PICKUP`)
 
 - [ ] Drop a known template-backed carried item stack in a safe visible location
 - [ ] Pick up the same temporary ground handle while still in range
@@ -257,7 +268,7 @@ Expected result:
 - malformed or mismatched loaded pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
 - loaded pickup template metadata marked `anti_give` or restricted by the selected character's job/sex anti-flags also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
 
-### 4.5.4 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
+### 4.5.5 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
 
 - [ ] Put two carried stacks with the same `vnum` into separate inventory cells
 - [ ] Confirm their loaded item template is stackable and not `anti_stack`, then drag one stack onto the other through normal inventory movement
@@ -268,7 +279,7 @@ Expected result:
 - an exact counted full-stack merge removes the source cell, refreshes the destination count, retargets source item quickslots to the destination cell, deletes stale destination item quickslots, and leaves unrelated skill/command quickslots unchanged
 - `anti_stack` templates fail closed for same-`vnum` `ITEM_MOVE` merges: no item counts change, no source cell disappears, and no item refresh frames are visible
 
-### 4.5.5 Equip a carried item (`ITEM_MOVE` to equipment cell)
+### 4.5.6 Equip a carried item (`ITEM_MOVE` to equipment cell)
 
 - [ ] Put a known template-backed equipment item in a carried inventory cell
 - [ ] Confirm the template's authored `equip_slot` matches the destination equipment cell and has no selected-character job/sex anti-flag

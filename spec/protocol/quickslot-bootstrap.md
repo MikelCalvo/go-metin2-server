@@ -43,7 +43,7 @@ Payload:
 
 Total frame length: `7` bytes.
 
-Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid edits for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_ADD`. Item-type quickslots are valid only when their `slot.pos` points at an occupied carried inventory item for the selected live character. Skill quickslots are limited to slots `0..199`, and command quickslots are limited to slots `0..59`; out-of-range edits fail closed with no frames or snapshot mutation. Invalid edits fail closed with no frames.
+Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid edits for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_ADD`. Item-type quickslots are valid only when their `slot.pos` points at an occupied carried inventory item for the selected live character. When a new item quickslot targets an item cell already referenced by another item quickslot, the older item quickslot is deleted first with `GC::QUICKSLOT_DEL`, then the new binding is returned with `GC::QUICKSLOT_ADD`; skill/command quickslots that happen to carry the same byte value are not deleted by this item retarget path. Skill quickslots are limited to slots `0..199`, and command quickslots are limited to slots `0..59`; out-of-range edits fail closed with no frames or snapshot mutation. Invalid edits fail closed with no frames.
 
 ### Client `QUICKSLOT_DEL` (`0x050A`)
 
@@ -173,7 +173,7 @@ Implemented now:
 - `GAME`-phase dispatch hooks for client quickslot edit packets.
 - file-backed account and login-ticket snapshot round trips for bootstrap quickslot arrays.
 - loading-time selected-character `QUICKSLOT_ADD` bootstrap frames for persisted quickslot arrays, emitted after the selected-character presence/state burst and before trailing peer/static-actor visibility frames.
-- accepted self-only runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`; item quickslot adds must target an occupied carried inventory item.
+- accepted self-only runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`; item quickslot adds must target an occupied carried inventory item, and retargeting the same item cell to a new quickslot position deletes the older item quickslot first.
 - accepted runtime updates to persisted quickslot state.
 - automatic item quickslot update synchronization after accepted carried-inventory `ITEM_MOVE` packets that empty the source cell, including destination-cell stale quickslot deletion when needed.
 - automatic item quickslot deletion synchronization after accepted carried-to-equipment `ITEM_MOVE` equips.
