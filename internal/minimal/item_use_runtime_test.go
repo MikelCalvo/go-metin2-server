@@ -22,6 +22,9 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 		template  itemcatalog.Template
 		source    uint16
 		target    uint16
+		level     uint8
+		job       uint8
+		raceNum   uint16
 	}{
 		{
 			name: "locked source",
@@ -154,13 +157,47 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			source:   5,
 			target:   uint16(inventory.CarriedInventorySlotCount),
 		},
+		{
+			name: "anti warrior template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Warrior Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiWarrior: true},
+			job:      0,
+			raceNum:  0,
+		},
+		{
+			name: "anti male template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Male Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiMale: true},
+			job:      0,
+			raceNum:  0,
+		},
+		{
+			name: "min-level template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Veteran Stack Potion", Stackable: true, MaxCount: 200, MinLevel: 10},
+			level:    5,
+		},
 	}
 
 	for index, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ticketStore := loginticket.NewFileStore(t.TempDir())
 			accounts := accountstore.NewFileStore(t.TempDir())
-			owner := peerVisibilityCharacter("UseToItemGuard", 0x0103052c, 0x0204052c, 1100, 2100, 0, 101, 201)
+			owner := peerVisibilityCharacter("UseToItemGuard", 0x0103052c, 0x0204052c, 1100, 2100, tc.raceNum, 101, 201)
+			owner.Job = tc.job
+			owner.RaceNum = tc.raceNum
+			if tc.level != 0 {
+				owner.Level = tc.level
+			}
 			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
 			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 			login := "uitguard" + string(rune('a'+index))
