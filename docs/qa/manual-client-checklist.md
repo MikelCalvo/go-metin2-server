@@ -266,7 +266,7 @@ Expected result:
 Expected result:
 - valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, and shows the normal pickup notice
 - malformed or mismatched loaded pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
-- loaded pickup template metadata marked `anti_give` or restricted by the selected character's job/sex anti-flags also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
+- loaded pickup template metadata marked `anti_give` or restricted by the selected character's job/sex/min-level metadata also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
 
 ### 4.5.5 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
 
@@ -906,7 +906,7 @@ Expected result:
 - full `ITEM_USE_TO_ITEM` stack merges delete item quickslots that pointed at the removed source slot while leaving skill/command quickslots with the same byte slot value unchanged
 - visible peers can collect the temporary handle when compatible carried stack capacity and/or a carried destination slot can accept the entire picked count
 - owner-owned visible gold markers restore the owner's gold with party-shaped pickup notices when a visible peer collects them
-- `anti_give` owner-owned item pickup by a visible peer rejects before owner/collector inventory mutation while leaving the pending handle available for owner reclaim
+- `anti_give` or recipient-restricted owner-owned item pickup by a visible peer rejects before owner/collector inventory mutation while leaving the pending handle available for owner reclaim
 - the recipient mutation persists before the temporary handle is removed
 - ground-item delete fanout reaches other visible sessions after successful pickup
 - replayed, unknown, invisible, no-merge-capacity, or no-free-slot pickup attempts fail closed

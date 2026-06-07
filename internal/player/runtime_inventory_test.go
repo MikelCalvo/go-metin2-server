@@ -230,7 +230,7 @@ func TestPickupGroundItemRejectsMismatchedTemplateMetadataWithoutMutation(t *tes
 	}
 }
 
-func TestPickupGroundItemWithTemplateRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testing.T) {
+func TestPickupGroundItemWithTemplateRejectsAuthoredRestrictionsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
 		character loginticket.Character
@@ -242,6 +242,7 @@ func TestPickupGroundItemWithTemplateRejectsAuthoredJobAndSexAntiFlagsWithoutMut
 		{name: "anti shaman", character: loginticket.Character{Job: 3, RaceNum: 3}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiShaman: true}},
 		{name: "anti male", character: loginticket.Character{Job: 0, RaceNum: 0}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiMale: true}},
 		{name: "anti female", character: loginticket.Character{Job: 1, RaceNum: 1}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiFemale: true}},
+		{name: "min level", character: loginticket.Character{Job: 0, RaceNum: 0, Level: 9}, template: itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, MinLevel: 10}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
