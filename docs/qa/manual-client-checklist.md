@@ -230,6 +230,7 @@ Expected result:
 - if the consumed stack reaches zero, the carried cell disappears and only item quickslots referencing that cell are cleared; unrelated skill/command quickslots remain
 - locked carried stacks fail closed: no point change, item refresh, quickslot change, or placeholder chat is visible
 - templates marked `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` also fail closed for direct consumable use: no point change, item refresh, quickslot change, or placeholder chat is visible
+- templates with authored `min_level` above the selected character's current level fail closed the same way
 - the placeholder `CHAT_TYPE_INFO` message uses the template-authored `use_effect.message`
 
 ### 4.5.2 Drag stack onto stack (`ITEM_USE_TO_ITEM`)

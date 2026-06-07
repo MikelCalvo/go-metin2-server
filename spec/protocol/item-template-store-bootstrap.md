@@ -7,7 +7,7 @@ This note freezes the current authored item-template snapshot boundary for the b
 The item-template store is intentionally narrow. It currently owns only the metadata needed by the existing item slices:
 
 - stack behavior: `stackable`, `max_count`, and `anti_stack`
-- item restriction guards: `anti_sell`, `anti_drop`, `anti_give`, `anti_male`, `anti_female`, `anti_warrior`, `anti_assassin`, `anti_sura`, and `anti_shaman`
+- item restriction guards: `anti_sell`, `anti_drop`, `anti_give`, `anti_male`, `anti_female`, `anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, and `min_level`
 - merchant pricing helpers: `shop_buy_price` and `sell_count_per_gold`
 - equipment routing/effects: `equip_slot` and `equip_effect`
 - consumable point effects: `use_effect`
@@ -31,6 +31,7 @@ Each template must pass the current `internal/itemstore` validation before the r
 - `max_count` must be non-zero and fit the current bootstrap client-facing count field (`<= 255`)
 - non-stackable templates must use `max_count = 1`
 - authored `equip_slot`, when present, must be one of the owned equipment slot names
+- `min_level`, when present and non-zero, requires the selected character's persisted `level` to be at least that value before template-driven item actions are accepted
 - `use_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, positive `point_delta`, and non-empty trimmed `message`
 - `equip_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, and positive `point_delta`
 - `equip_effect` is only valid on templates that also author a valid `equip_slot`

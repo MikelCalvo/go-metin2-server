@@ -723,6 +723,38 @@ func TestUseItemRejectsOutOfRangeSlotWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestRuntimeUseItemRejectsMinLevelTemplateBeforeMutation(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Level = 5
+	persisted.Points[1] = 25
+	persisted.Inventory = []inventory.ItemInstance{{ID: 71, Vnum: 27004, Count: 2, Slot: 5}}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:      27004,
+		Name:      "Veteran Practice Potion",
+		Stackable: true,
+		MaxCount:  200,
+		MinLevel:  10,
+		UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "must not consume"},
+	}
+
+	if result, ok := runtime.UseItem(5, template); ok {
+		t.Fatalf("expected min-level restricted item use to fail closed, got %+v", result)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("min-level item-use rejection mutated inventory: got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	}
+	if runtime.LiveCharacter().Points[1] != 25 {
+		t.Fatalf("min-level item-use rejection mutated points: got %d want 25", runtime.LiveCharacter().Points[1])
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("min-level item-use rejection mutated persisted inventory: got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+	if runtime.PersistedSnapshot().Points[1] != 25 {
+		t.Fatalf("min-level item-use rejection mutated persisted points: got %d want 25", runtime.PersistedSnapshot().Points[1])
+	}
+}
+
 func TestUseItemRejectsMalformedTemplateUseEffectWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string

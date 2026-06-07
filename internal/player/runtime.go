@@ -820,6 +820,9 @@ func (r *Runtime) CanUseTemplate(template itemcatalog.Template) bool {
 	if r.persisted.RaceNum%2 == 1 && template.AntiFemale {
 		return false
 	}
+	if template.MinLevel != 0 && r.persisted.Level < template.MinLevel {
+		return false
+	}
 	return true
 }
 
