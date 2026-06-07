@@ -1962,6 +1962,50 @@ func TestGameRuntimeItemPickupRejectsRestrictedOwnerDeliveryWithoutCollectorMuta
 	}
 }
 
+func TestGameRuntimeItemPickupRejectsAntiGiveSelfPickupWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AntiGiveSelfPickupOwner", 0x010301aa, 0x020401aa, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1104, Vnum: 27001, Count: 2, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "anti-give-self-pickup", 0xaaaaaaaa, owner)
+	if err := accounts.Save(accountstore.Account{Login: "anti-give-self-pickup", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed anti-give self-pickup account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected anti-give self-pickup runtime error: %v", err)
+	}
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "anti-give self potion", Stackable: true, MaxCount: 200}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "anti-give-self-pickup", 0xaaaaaaaa)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(5))
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "anti-give self potion", Stackable: true, MaxCount: 200, AntiGive: true}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 1 {
+		t.Fatalf("expected anti-give self-pickup to emit one info rejection, got %d frames", len(pickupOut))
+	}
+	rejection, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode anti-give self-pickup rejection: %v", err)
+	}
+	if rejection.Type != chatproto.ChatTypeInfo || rejection.VID != 0 || rejection.Message != itemPickupInventoryFullInfoMessage {
+		t.Fatalf("unexpected anti-give self-pickup rejection: %+v", rejection)
+	}
+	account, err := accounts.Load("anti-give-self-pickup")
+	if err != nil {
+		t.Fatalf("load anti-give self-pickup account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected anti-give item to remain out of owner inventory after drop, got %#v", account.Characters[0].Inventory)
+	}
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "anti-give self potion", Stackable: true, MaxCount: 200}
+	ownerRetry := pickupGroundItem(t, flow, ground.VID)
+	if len(ownerRetry) != 3 {
+		t.Fatalf("expected unrestricted self retry to pick pending ground item back up after anti-give relax, got %d frames", len(ownerRetry))
+	}
+}
+
 func TestGameRuntimeItemPickupRejectsAntiGiveOwnerDeliveryWithoutCollectorMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -2023,9 +2067,10 @@ func TestGameRuntimeItemPickupRejectsAntiGiveOwnerDeliveryWithoutCollectorMutati
 	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, collector.Inventory) {
 		t.Fatalf("expected rejected anti-give pickup to leave collector inventory unchanged, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
 	}
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "anti-give potion", Stackable: true, MaxCount: 200}
 	ownerRetry := pickupGroundItem(t, ownerFlow, ground.VID)
 	if len(ownerRetry) != 3 {
-		t.Fatalf("expected anti-give owner retry to pick pending ground item back up, got %d frames", len(ownerRetry))
+		t.Fatalf("expected owner retry after relaxing anti-give to pick pending ground item back up, got %d frames", len(ownerRetry))
 	}
 }
 

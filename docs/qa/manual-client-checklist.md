@@ -253,7 +253,7 @@ Expected result:
 Expected result:
 - valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, and shows the normal pickup notice
 - malformed or mismatched loaded pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
-- loaded pickup template metadata restricted by the selected character's job/sex anti-flags also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
+- loaded pickup template metadata marked `anti_give` or restricted by the selected character's job/sex anti-flags also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
 
 ### 4.5.4 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
 
@@ -394,7 +394,7 @@ Expected result:
 - client A receives the ground delete plus a party-shaped pickup notice naming client B
 - the item is delivered back to client A's owned account/runtime rather than being added to client B
 - client A can immediately use another normal item action against the delivered/updated carried slot, proving the live owner runtime was refreshed and not only the account file
-- if the dropped item's loaded template becomes job/sex-restricted for client A before client B picks it up, client B sees the bootstrap inventory-full info rejection, neither inventory mutates, no owner notice is queued, and the ground handle remains available for a later valid retry
+- if the dropped item's loaded template becomes `anti_give` or job/sex-restricted for client A before client B picks it up, client B sees the bootstrap inventory-full info rejection, neither inventory mutates, no owner notice is queued, and the ground handle remains available for a later valid retry
 - `anti_drop` / `anti_give` template-flagged items fail closed when dropped through the normal client inventory path and leave carried inventory plus quickslots unchanged
 - this remains a bootstrap party approximation; real party membership, ownership timers, and public ownership release are still not owned
 
