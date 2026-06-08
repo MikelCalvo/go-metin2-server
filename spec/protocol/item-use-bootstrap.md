@@ -43,6 +43,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - empty source, empty target, and same-cell source/target requests fail closed before any ordinary use-effect fallback
 - the minimal session/runtime packet path freezes same-cell `ITEM_USE_TO_ITEM` as a no-frame/no-mutation rejection, including unchanged persisted inventory and quickslots
 - the source template must resolve to a valid stackable carried-item template with non-zero `max_count`
+- the minimal session/runtime packet path now freezes missing source-template metadata as a no-frame/no-mutation rejection for drag-to-item stack consolidation, leaving persisted inventory and quickslots unchanged even when the live source/target stacks otherwise match
 - the minimal session/runtime packet path now freezes equippable templates with an authored `equip_slot` as no-frame/no-mutation rejections for drag-to-item stack consolidation, matching the existing player mutation boundary guard
 - the resolved source template `vnum` must match the live source stack `vnum`; a mismatched template is treated like unresolved/malformed metadata and fails closed
 - the template-authored `max_count` must fit the currently owned one-byte item refresh count range (`<= 255`) because `ITEM_SET` / `ITEM_UPDATE` expose count as `uint8` in this bootstrap packet family
