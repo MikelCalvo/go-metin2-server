@@ -2734,6 +2734,43 @@ func TestGameRuntimeItemPickupMergesOwnedVisibleDropIntoCompatibleStack(t *testi
 	}
 }
 
+func TestGameRuntimeItemPickupRejectsMissingTemplateWithoutRemovingGroundItem(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupTemplateMissingOwner", 0x010301a3, 0x020401a3, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1041, Vnum: 27006, Count: 2, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "pickup-template-missing-owner", 0xa3a3a3a3, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-template-missing-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup template-missing owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected item-pickup template-missing runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-template-missing-owner", 0xa3a3a3a3)
+	flushServerFrames(t, flow)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(6))
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 0 {
+		t.Fatalf("expected missing pickup template to reject without frames, got %d", len(pickupOut))
+	}
+	account, err := accounts.Load("pickup-template-missing-owner")
+	if err != nil {
+		t.Fatalf("load pickup template-missing owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{}) {
+		t.Fatalf("expected rejected missing-template pickup to leave owner inventory dropped, got %#v", account.Characters[0].Inventory)
+	}
+
+	runtime.itemTemplates[27006] = itemcatalog.Template{Vnum: 27006, Name: "Recovered Ground Potion", Stackable: true, MaxCount: 200}
+	retryOut := pickupGroundItem(t, flow, ground.VID)
+	if len(retryOut) != 3 {
+		t.Fatalf("expected ground handle to remain pending after missing-template rejection, got %d frames", len(retryOut))
+	}
+}
+
 func TestGameRuntimeItemPickupRejectsMismatchedLoadedTemplateWithoutRemovingGroundItem(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

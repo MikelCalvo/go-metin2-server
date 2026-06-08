@@ -215,6 +215,7 @@ type gameRuntime struct {
 	itemStore               itemcatalog.Store
 	interactionStore        interactionstore.Store
 	itemTemplates           map[uint32]itemcatalog.Template
+	itemTemplatesAuthored   bool
 	liveCharacterMu         sync.RWMutex
 	liveCharacterNextID     uint64
 	liveCharactersByName    map[string]liveCharacterRegistration
@@ -1745,6 +1746,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if template.Stackable && !template.AntiStack {
 							pickupMaxCount = template.MaxCount
 						}
+					} else if runtime.itemTemplatesAuthored {
+						return nil, false
 					}
 				}
 				pickupResult, ok := ownerRuntime.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
@@ -1828,6 +1831,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if template.Stackable && !template.AntiStack {
 						pickupMaxCount = template.MaxCount
 					}
+				} else if runtime.itemTemplatesAuthored {
+					return nil, false
 				}
 			}
 			pickupResult, ok := selectedPlayer.PickupGroundItem(pickup.Item, pickup.Item.Slot, pickupMaxCount)
@@ -4525,11 +4530,13 @@ func (r *gameRuntime) loadItemTemplates() error {
 	if err != nil {
 		if errors.Is(err, itemcatalog.ErrSnapshotNotFound) {
 			r.itemTemplates = buildItemTemplateIndex(defaultBootstrapItemTemplateSnapshot())
+			r.itemTemplatesAuthored = false
 			return nil
 		}
 		return err
 	}
 	r.itemTemplates = buildItemTemplateIndex(snapshot)
+	r.itemTemplatesAuthored = true
 	return nil
 }
 
