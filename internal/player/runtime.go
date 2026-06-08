@@ -883,6 +883,9 @@ func (r *Runtime) useItemOnItem(source inventory.SlotIndex, target inventory.Slo
 	if r == nil || source == target || source >= inventory.CarriedInventorySlotCount || target >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || !template.Stackable || template.EquipSlot != "" || template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || template.MaxCount == 0 || template.MaxCount > 255 {
 		return inventory.MoveResult{}, false
 	}
+	if countInventorySlotOccupancy(r.liveInventory, source) != 1 || countInventorySlotOccupancy(r.liveInventory, target) != 1 {
+		return inventory.MoveResult{}, false
+	}
 	sourceIndex := findInventorySlot(r.liveInventory, source)
 	if sourceIndex < 0 {
 		return inventory.MoveResult{}, false
@@ -1246,6 +1249,16 @@ func findInventorySlot(items []inventory.ItemInstance, slot inventory.SlotIndex)
 		}
 	}
 	return -1
+}
+
+func countInventorySlotOccupancy(items []inventory.ItemInstance, slot inventory.SlotIndex) int {
+	count := 0
+	for _, item := range items {
+		if !item.Equipped && item.Slot == slot {
+			count++
+		}
+	}
+	return count
 }
 
 func findEquipmentSlot(items []inventory.ItemInstance, slot inventory.EquipmentSlot) int {

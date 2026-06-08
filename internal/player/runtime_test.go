@@ -891,6 +891,14 @@ func TestRuntimeUseItemOnItemRejectsPointUseTemplateWithoutCompatibleTarget(t *t
 			name:      "duplicate source and target item id",
 			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 11, Vnum: 27001, Count: 4, Slot: 6}},
 		},
+		{
+			name:      "duplicate source slot occupancy",
+			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 13, Vnum: 27001, Count: 2, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+		},
+		{
+			name:      "duplicate target slot occupancy",
+			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}, {ID: 13, Vnum: 27001, Count: 2, Slot: 6}},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
