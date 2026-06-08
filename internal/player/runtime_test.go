@@ -484,6 +484,25 @@ func TestRuntimeItemUseRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testi
 	}
 }
 
+func TestRuntimeUseItemRejectsPointOverflowWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}},
+	}
+	persisted.Points[1] = 1<<31 - 10
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.UseItem(5, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")); ok {
+		t.Fatalf("expected overflowing item use to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("overflowing item use mutated live character: got %#v want %#v", got, before)
+	}
+}
+
 func TestRuntimeUseItemRejectsMalformedLiveItemWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,

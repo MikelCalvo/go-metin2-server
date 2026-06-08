@@ -231,6 +231,7 @@ Expected result:
 - locked carried stacks fail closed: no point change, item refresh, quickslot change, or placeholder chat is visible
 - templates marked `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` also fail closed for direct consumable use: no point change, item refresh, quickslot change, or placeholder chat is visible
 - templates with authored `min_level` above the selected character's current level fail closed the same way
+- a consumable whose template-authored point delta would overflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, or point mutation
 - the placeholder `CHAT_TYPE_INFO` message uses the template-authored `use_effect.message`
 
 ### 4.5.2 Drag stack onto stack (`ITEM_USE_TO_ITEM`)
