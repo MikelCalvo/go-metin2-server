@@ -388,6 +388,9 @@ func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, temp
 	if template.Vnum != 0 && item.Vnum != template.Vnum {
 		return inventory.MoveResult{}, false
 	}
+	if template.MaxCount != 0 && item.Count > template.MaxCount {
+		return inventory.MoveResult{}, false
+	}
 	if err := item.Validate(); err != nil {
 		return inventory.MoveResult{}, false
 	}

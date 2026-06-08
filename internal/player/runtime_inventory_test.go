@@ -114,6 +114,21 @@ func TestDropInventoryItemWithTemplateRejectsMismatchedTemplateWithoutMutation(t
 	}
 }
 
+func TestDropInventoryItemWithTemplateRejectsOverTemplateMaxStackWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 201, Slot: 5}},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if _, ok := runtime.DropInventoryItemWithTemplate(5, 1, template); ok {
+		t.Fatal("expected item drop to reject carried stacks above the template-authored max_count")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("over-template-max drop mutated inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestDropInventoryItemWithTemplateRejectsMalformedTemplateWithoutMutation(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}},
