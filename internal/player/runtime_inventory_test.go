@@ -258,6 +258,21 @@ func TestPickupGroundItemRejectsMismatchedTemplateMetadataWithoutMutation(t *tes
 	}
 }
 
+func TestPickupGroundItemRejectsMalformedGroundStackBeforeMergeWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	malformedGround := inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 2, Slot: 6, EquipSlot: inventory.EquipmentSlotBody}
+
+	if result, ok := runtime.PickupGroundItem(malformedGround, 6, 200); ok {
+		t.Fatalf("expected malformed ground pickup to fail closed before merge, got %+v", result)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("malformed ground pickup mutated inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestPickupGroundItemWithTemplateRejectsAuthoredRestrictionsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string

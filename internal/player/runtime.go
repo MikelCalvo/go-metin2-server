@@ -433,6 +433,9 @@ func (r *Runtime) PickupGroundItem(item inventory.ItemInstance, preferred invent
 	if r == nil || item.ID == 0 || item.Vnum == 0 || item.Count == 0 || preferred >= inventory.CarriedInventorySlotCount {
 		return GroundItemPickupResult{}, false
 	}
+	if err := item.Validate(); err != nil {
+		return GroundItemPickupResult{}, false
+	}
 	updatedInventory := cloneItemInstances(r.liveInventory)
 	if maxCount > 0 {
 		if mergeIndex := findMergeableInventoryIndex(updatedInventory, item.Vnum, item.Count, maxCount); mergeIndex >= 0 {
