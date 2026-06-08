@@ -854,6 +854,7 @@ Expected result:
 - [ ] Send one real client `ITEM_MOVE` request from `A` to `B` (`source TItemPos`, `destination TItemPos`, `count = 0`) to exercise full-stack drag/drop semantics
 - [ ] Confirm the selected session receives `ITEM_DEL(A)` followed by `ITEM_SET(B)`
 - [ ] Confirm loopback inventory snapshots or reconnect state show the item persisted in slot `B`
+- [ ] Send one real client `ITEM_MOVE` request that attempts to equip a carried item whose explicitly loaded item-template snapshot omits that source `vnum`; confirm the request fails closed with no item frames, no point change, and no persisted inventory/equipment mutation
 - [ ] Repeat with an incompatible destination occupied by another carried item if the QA setup has two disposable carried items, and confirm the runtime swaps the two carried items; if an item quickslot points at the source slot, confirm it is retargeted to the destination slot and any stale destination item quickslot is deleted
 - [ ] Reset to two compatible carried stacks, then send `ITEM_MOVE` from `A` into occupied compatible stack slot `C` with `count = 0`
 - [ ] Confirm the selected session receives self-only count refreshes: `ITEM_UPDATE(A)` if a source remainder survives or `ITEM_DEL(A)` if the source is fully consumed, followed by `ITEM_UPDATE(C)` capped at the authored template `max_count`

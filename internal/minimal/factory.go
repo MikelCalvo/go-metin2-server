@@ -2136,13 +2136,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()
-						template, hasEquipTemplate := runtime.resolveRuntimeEquipTemplate(selectedPlayer, fromSlot, equipSlot)
+						template, requiresTemplate, ok := runtime.resolveRuntimeEquipTemplate(selectedPlayer, fromSlot, equipSlot)
+						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						if requiresTemplate && (!selectedPlayer.CanUseTemplate(template) || !templateAuthoredForRuntimeEquipSlot(template, equipSlot)) {
+							return gameflow.ChatResult{Accepted: false}
+						}
 						equippedItem, ok := selectedPlayer.EquipItem(fromSlot, equipSlot)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						var pointChange *player.PointChangeResult
-						if hasEquipTemplate {
+						if template.EquipEffect != nil {
 							result, ok := selectedPlayer.ApplyEquipTemplateEffect(template, equipSlot)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -2484,11 +2490,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
-						template, hasEquipTemplate := runtime.resolveRuntimeEquipTemplate(selectedPlayer, inventory.SlotIndex(packet.Source.Cell), equipSlot)
-						if hasEquipTemplate && !selectedPlayer.CanUseTemplate(template) {
+						template, requiresTemplate, ok := runtime.resolveRuntimeEquipTemplate(selectedPlayer, inventory.SlotIndex(packet.Source.Cell), equipSlot)
+						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
-						if hasEquipTemplate && !templateAuthoredForRuntimeEquipSlot(template, equipSlot) {
+						if requiresTemplate && !selectedPlayer.CanUseTemplate(template) {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						if requiresTemplate && !templateAuthoredForRuntimeEquipSlot(template, equipSlot) {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						equippedItem, ok := selectedPlayer.EquipItem(inventory.SlotIndex(packet.Source.Cell), equipSlot)
@@ -2496,7 +2505,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						var pointChange *player.PointChangeResult
-						if hasEquipTemplate {
+						if requiresTemplate && template.EquipEffect != nil {
 							result, ok := selectedPlayer.ApplyEquipTemplateEffect(template, equipSlot)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -4637,9 +4646,9 @@ func (r *gameRuntime) resolveRuntimeItemTemplate(selectedPlayer *player.Runtime,
 	return itemcatalog.Template{}, false
 }
 
-func (r *gameRuntime) resolveRuntimeEquipTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool) {
+func (r *gameRuntime) resolveRuntimeEquipTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool, bool) {
 	if r == nil || selectedPlayer == nil || !equipSlot.Valid() {
-		return itemcatalog.Template{}, false
+		return itemcatalog.Template{}, false, false
 	}
 	for _, item := range selectedPlayer.LiveInventory() {
 		if item.Equipped || item.Slot != slot {
@@ -4647,11 +4656,11 @@ func (r *gameRuntime) resolveRuntimeEquipTemplate(selectedPlayer *player.Runtime
 		}
 		template, ok := r.itemTemplates[item.Vnum]
 		if !ok || !itemcatalog.ValidTemplate(template) || template.EquipSlot == "" {
-			return itemcatalog.Template{}, false
+			return itemcatalog.Template{}, false, !r.itemTemplatesAuthored
 		}
-		return template, true
+		return template, true, true
 	}
-	return itemcatalog.Template{}, false
+	return itemcatalog.Template{}, false, false
 }
 
 func (r *gameRuntime) resolveRuntimeUnequipTemplate(selectedPlayer *player.Runtime, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool) {
