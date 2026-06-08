@@ -1875,6 +1875,66 @@ func TestNewGameSessionFactoryEquipPersistsAndEmitsInventoryDeleteThenEquipmentS
 	}
 }
 
+func TestNewGameSessionFactoryEquipDeletesOnlySourceItemQuickslot(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}}
+	characters[1].Equipment = []inventory.ItemInstance{}
+	characters[1].Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 8},
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	factory, err := newGameSessionFactoryWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+	flow := factory()
+	_ = mustCompleteSecureHandshake(t, flow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("unexpected login2 encode error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("unexpected login error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("unexpected character select error: %v", err)
+	}
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("unexpected entergame error: %v", err)
+	}
+
+	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	if err != nil {
+		t.Fatalf("unexpected equip quickslot sync error: %v", err)
+	}
+	if len(equipOut) != 4 {
+		t.Fatalf("expected delete+set+update+quickslot delete frames for equip, got %d", len(equipOut))
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, equipOut[3]))
+	if err != nil {
+		t.Fatalf("decode equip quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("expected equip to delete only item quickslot position 2, got %+v", quickslotDel)
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if got := account.Characters[1].Quickslots; !reflect.DeepEqual(got, []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 8}}) {
+		t.Fatalf("expected equip to preserve only non-item source quickslot, got %#v", got)
+	}
+}
+
 func TestNewGameSessionFactoryUnequipPersistsAndEmitsEquipmentDeleteThenInventorySet(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

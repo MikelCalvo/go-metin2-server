@@ -2163,6 +2163,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							refreshLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: false}
 						}
+						if quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, fromSlot); !ok {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.ChatResult{Accepted: false}
+						} else {
+							frames = append(frames, quickslotFrames...)
+						}
 						if !ownsLiveSharedWorldSession() {
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}

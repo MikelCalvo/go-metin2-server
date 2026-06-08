@@ -287,8 +287,8 @@ Expected result:
 - [ ] Repeat with the same item shape but a selected-character job/sex anti-flag that should reject the character
 
 Expected result:
-- allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, and applies the template-authored `equip_effect` point change when present
-- anti-flagged equipment fails closed: no item refresh, no point change, no carried/equipment mutation, and no persistence change
+- allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, deletes item quickslots bound to the cleared carried source cell, leaves unrelated skill/command quickslots with the same byte slot value unchanged, and applies the template-authored `equip_effect` point change when present
+- anti-flagged equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
 
 ---
 

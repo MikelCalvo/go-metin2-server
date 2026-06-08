@@ -23,7 +23,7 @@ It also uses three server packets for quickslot refreshes:
 - `GC::QUICKSLOT_DEL = 0x051A`
 - `GC::QUICKSLOT_SWAP = 0x051B`
 
-`SyncQuickslot(QUICKSLOT_TYPE_ITEM, old_cell, new_cell)` updates item quickslots when carried inventory items move between carried inventory cells, and deletes matching item quickslots when `new_cell = 255`. The current Go slices own the first update half of that behavior for accepted carried-inventory `ITEM_MOVE` packets, including deletion of stale item quickslots that already pointed at an occupied destination cell before the source quickslot is retargeted there, plus deletion for accepted carried-to-equipment `ITEM_MOVE` equips, accepted last-stack carried-inventory `ITEM_USE` packets, and accepted whole-stack merchant sell packets.
+`SyncQuickslot(QUICKSLOT_TYPE_ITEM, old_cell, new_cell)` updates item quickslots when carried inventory items move between carried inventory cells, and deletes matching item quickslots when `new_cell = 255`. The current Go slices own the first update half of that behavior for accepted carried-inventory `ITEM_MOVE` packets, including deletion of stale item quickslots that already pointed at an occupied destination cell before the source quickslot is retargeted there, plus deletion for accepted carried-to-equipment `ITEM_MOVE` equips, the bootstrap `/equip_item` command seam, accepted last-stack carried-inventory `ITEM_USE` packets, and accepted whole-stack merchant sell packets.
 
 ## Packet layouts
 
@@ -148,6 +148,8 @@ When an accepted carried-inventory `ITEM_MOVE` leaves the source cell empty and 
 
 When an accepted carried-to-equipment `ITEM_MOVE` equips a carried item and clears the source carried cell, the minimal runtime now applies the same item-removal quickslot synchronization. Each matching item quickslot is deleted, persisted with the same selected-character point-bearing item mutation as the equip, and appended to the self response as `GC::QUICKSLOT_DEL(position)` after the item/equipment/appearance refresh frames.
 
+The bootstrap `/equip_item <from> <equip_slot>` command seam uses the same source-slot item quickslot deletion rule as packet-originated equip. Matching item quickslots for the cleared carried source cell are deleted and persisted with the equip mutation; skill or command quickslots that happen to carry the same byte value are left unchanged.
+
 When an accepted carried-inventory `ITEM_USE` consumes the last item in a stack and the carried slot becomes empty, the minimal runtime scans the selected character's live quickslots for item tuples matching that removed cell. Each matching item quickslot is deleted, persisted with the same selected-character snapshot mutation as the item use, and appended to the self response as `GC::QUICKSLOT_DEL(position)` after the `ITEM_DEL` for the removed stack and before the temporary `CHAT_TYPE_INFO` effect placeholder.
 
 When an accepted merchant `SHOP SELL` / `SELL2` removes a whole carried-inventory stack, the minimal runtime now applies the same item-removal quickslot synchronization. Each matching item quickslot is deleted, persisted with the merchant sell selected-character mutation, and appended to the self response as `GC::QUICKSLOT_DEL(position)` after the `ITEM_DEL` for the sold stack and before the gold `PLAYER_POINT_CHANGE`.
@@ -156,7 +158,7 @@ The current owned synchronization is intentionally narrow:
 
 - move synchronization applies to accepted carried-inventory mutations where the source cell becomes empty and the moved item now lives at a different carried cell, including exact counted full-stack compatible merges;
 - when that destination carried cell already has matching item quickslots, only those destination quickslots are deleted before the moved source quickslot is retargeted so one carried cell does not retain multiple stale item quickslot bindings; unrelated item quickslots for other carried cells stay unchanged;
-- removal synchronization applies to accepted carried-to-equipment `ITEM_MOVE` equips, accepted last-stack carried-inventory `ITEM_USE` paths, full-source `ITEM_USE_TO_ITEM` merges, and accepted whole-stack merchant sell paths where the carried item slot becomes empty;
+- removal synchronization applies to accepted carried-to-equipment `ITEM_MOVE` equips, the bootstrap `/equip_item` command seam, accepted last-stack carried-inventory `ITEM_USE` paths, full-source `ITEM_USE_TO_ITEM` merges, and accepted whole-stack merchant sell paths where the carried item slot becomes empty;
 - removal synchronization rejects non-carried source cells fail-closed before live or persisted quickslot mutation;
 - it does not rewrite or delete skill or command quickslots that happen to carry the same byte value;
 - move/removal synchronization does not run for partial merges or partial-stack splits where the original item still remains at the source cell, including partial `ITEM_MOVE` counted merges, partial counted `ITEM_DROP2`, and partial `ITEM_USE_TO_ITEM` stack consolidation;
@@ -176,7 +178,7 @@ Implemented now:
 - accepted self-only runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`; item quickslot adds must target an occupied carried inventory item, and retargeting the same item cell to a new quickslot position deletes the older item quickslot first.
 - accepted runtime updates to persisted quickslot state.
 - automatic item quickslot update synchronization after accepted carried-inventory `ITEM_MOVE` packets that empty the source cell, including destination-cell stale quickslot deletion when needed.
-- automatic item quickslot deletion synchronization after accepted carried-to-equipment `ITEM_MOVE` equips.
+- automatic item quickslot deletion synchronization after accepted carried-to-equipment `ITEM_MOVE` equips and the bootstrap `/equip_item` command seam.
 - automatic item quickslot deletion synchronization after accepted last-stack carried-inventory `ITEM_USE` packets.
 - automatic item quickslot deletion synchronization after full-source `ITEM_USE_TO_ITEM` stack consolidations, while partial consolidations keep source-slot item quickslots unchanged.
 - automatic item quickslot deletion synchronization after accepted whole-stack carried-inventory `ITEM_DROP` / `ITEM_DROP2` packets, while partial counted drops keep source-slot item quickslots unchanged.
