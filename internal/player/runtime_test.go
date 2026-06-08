@@ -853,6 +853,24 @@ func TestRuntimeUseItemOnItemRejectsEmptySourceOrTargetWithoutMutatingState(t *t
 			target:    5,
 			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
 		},
+		{
+			name:   "zero-count source",
+			source: 5,
+			target: 6,
+			inventory: []inventory.ItemInstance{
+				{ID: 11, Vnum: 27001, Count: 0, Slot: 5},
+				{ID: 12, Vnum: 27001, Count: 4, Slot: 6},
+			},
+		},
+		{
+			name:   "zero-count target",
+			source: 5,
+			target: 6,
+			inventory: []inventory.ItemInstance{
+				{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 12, Vnum: 27001, Count: 0, Slot: 6},
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
