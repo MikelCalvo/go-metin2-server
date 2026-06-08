@@ -290,6 +290,7 @@ Expected result:
 Expected result:
 - allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, deletes item quickslots bound to the cleared carried source cell, leaves unrelated skill/command quickslots with the same byte slot value unchanged, and applies the template-authored `equip_effect` point change when present
 - anti-flagged equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
+- equipment whose template-authored `equip_effect` point delta would overflow the bootstrap signed 32-bit point value also fails closed before item, quickslot, point, or persistence mutation
 
 ---
 

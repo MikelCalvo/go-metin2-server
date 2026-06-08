@@ -1511,6 +1511,26 @@ func TestRuntimeEquipTemplateEffectRejectsAuthoredSlotMismatchWithoutMutatingLiv
 	}
 }
 
+func TestRuntimeApplyEquipTemplateEffectRejectsPointOverflowWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 1<<31 - 5,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10), inventory.EquipmentSlotWeapon); ok {
+		t.Fatalf("expected overflowing equip template effect to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("overflowing equip template effect mutated live character: got %#v want %#v", got, before)
+	}
+}
+
 func TestRuntimeApplyPointDeltaAdjustsLivePointsWithoutMutatingPersistedSnapshot(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

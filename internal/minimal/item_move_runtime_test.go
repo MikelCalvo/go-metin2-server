@@ -108,6 +108,66 @@ func TestGameRuntimeItemMoveEquipRejectsTemplateAntiFlagsWithoutMutation(t *test
 	}
 }
 
+func TestGameRuntimeItemMoveEquipRejectsPointOverflowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	template := itemcatalog.Template{
+		Vnum:        11500,
+		Name:        "Overflowing Test Armor",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   inventory.EquipmentSlotBody.String(),
+		EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+	}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("seed overflowing equip template: %v", err)
+	}
+	owner := peerVisibilityCharacter("OverflowEquipOwner", 0x01030254, 0x02040254, 1300, 2300, 2, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 5401, Vnum: template.Vnum, Count: 1, Slot: 5}}
+	owner.Equipment = nil
+	owner.Points[1] = 1<<31 - 5
+	issuePeerTicket(t, ticketStore, "overflow-equip-owner", 0x54545454, owner)
+	if err := accounts.Save(accountstore.Account{Login: "overflow-equip-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed overflowing equip owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected overflowing equip runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "overflow-equip-owner", 0x54545454)
+	defer closeSessionFlow(t, flow)
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: bodyPosition,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected overflowing equip error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected overflowing equip to emit no frames, got %d", len(out))
+	}
+	account, err := accounts.Load("overflow-equip-owner")
+	if err != nil {
+		t.Fatalf("load overflowing equip owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("overflowing equip mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+	if len(account.Characters[0].Equipment) != 0 {
+		t.Fatalf("overflowing equip mutated persisted equipment: got %#v", account.Characters[0].Equipment)
+	}
+	if account.Characters[0].Points[1] != owner.Points[1] {
+		t.Fatalf("overflowing equip mutated persisted point: got %d want %d", account.Characters[0].Points[1], owner.Points[1])
+	}
+}
+
 func TestGameRuntimeItemMoveEquipRejectsMissingTemplateWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

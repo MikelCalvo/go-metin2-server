@@ -66,8 +66,9 @@ The minimal runtime accepts an item move only when all of these are true:
 16. packet equip succeeds only when the destination equipment slot is empty, the source stack exists and is not locked, a valid loaded item template exists for the source `vnum`, that template authors the same `equip_slot` as the destination equipment cell, the selected character is allowed by that template's job/sex anti flags, and the runtime can encode the destination equipment cell;
 17. when an item-template snapshot is explicitly authored/loaded, missing or invalid template metadata for the source `vnum` is authoritative and fails closed before equipment mutation;
 18. the template-authored `equip_slot` and anti-flag guards are fail-closed for both the equipment mutation and any template-backed point side effect, so missing metadata, a mismatched slot, or a restricted selected character emits no frames and leaves live/persisted item state unchanged;
-19. packet unequip succeeds only when the equipment source exists and is not locked, the destination carried slot is empty, and the runtime can encode both touched cells;
-20. equipment-cell equip or unequip requests require `count = 0`; non-zero counted equipment requests fail closed before mutation.
+19. applying a template-backed equip point side effect must also fit the bootstrap signed 32-bit `PLAYER_POINT_CHANGE` value range; overflow fails closed before the point effect is committed;
+20. packet unequip succeeds only when the equipment source exists and is not locked, the destination carried slot is empty, and the runtime can encode both touched cells;
+21. equipment-cell equip or unequip requests require `count = 0`; non-zero counted equipment requests fail closed before mutation.
 
 Rejected requests fail closed and emit no frames.
 
