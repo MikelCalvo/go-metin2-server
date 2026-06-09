@@ -603,6 +603,87 @@ func TestGameSessionFlowItemUseToItemRejectsMissingSourceTemplateWithoutMutation
 	}
 }
 
+func TestGameSessionFlowItemUseToItemFullMergeDeletesAllSourceItemQuickslots(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemMultiQS", 0x0103059c, 0x0204059c, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 201, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 202, Vnum: 27001, Count: 10, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 5, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 6, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "item-use-to-item-multi-qs", 0x5050509c, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-to-item-multi-qs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed multi-quickslot item-use-to-item account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  15,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected multi-quickslot item-use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-to-item-multi-qs", 0x5050509c)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected multi-quickslot item-use-to-item packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected full item-use-to-item merge to emit source delete, target set, and two source quickslot deletes, got %d", len(out))
+	}
+	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode multi-quickslot item-use-to-item source delete: %v", err)
+	}
+	if sourceDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected multi-quickslot item-use-to-item source delete: %+v", sourceDel)
+	}
+	targetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode multi-quickslot item-use-to-item target set: %v", err)
+	}
+	if targetSet.Position != itemproto.InventoryPosition(6) || targetSet.Vnum != 27001 || targetSet.Count != 15 {
+		t.Fatalf("unexpected multi-quickslot item-use-to-item target set: %+v", targetSet)
+	}
+	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode first multi-quickslot item-use-to-item quickslot delete: %v", err)
+	}
+	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode second multi-quickslot item-use-to-item quickslot delete: %v", err)
+	}
+	if firstQuickslotDel.Position != 2 || secondQuickslotDel.Position != 4 {
+		t.Fatalf("expected source item quickslot positions 2 and 4 to be deleted in order, got %+v and %+v", firstQuickslotDel, secondQuickslotDel)
+	}
+
+	persisted, err := accounts.Load("item-use-to-item-multi-qs")
+	if err != nil {
+		t.Fatalf("load multi-quickslot item-use-to-item account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 202, Vnum: 27001, Count: 15, Slot: 6}}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted multi-quickslot item-use-to-item inventory: got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 5, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 6, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted multi-quickslot item-use-to-item quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemStaleAfterReclaimIsSelfLocalOnly(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
