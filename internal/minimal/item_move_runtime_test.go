@@ -536,6 +536,58 @@ func TestGameRuntimeItemUseToItemPartialMergePreservesSourceQuickslot(t *testing
 	}
 }
 
+func TestGameRuntimeItemMoveCompatibleMergeRejectsMissingAuthoredTemplateWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27002,
+		Name:      "Unrelated Small Blue Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}}}); err != nil {
+		t.Fatalf("seed unrelated item-move template: %v", err)
+	}
+	owner := peerVisibilityCharacter("ItemMoveMissingTemplate", 0x0103021a, 0x0204021a, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1801, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1802, Vnum: 27001, Count: 2, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-move-missing-template", 0x68686868, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-move-missing-template", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed missing-template item-move owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected missing-template item-move runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-move-missing-template", 0x68686868)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(8),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected missing-template item-move error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected missing-template compatible item move to emit no frames, got %d", len(out))
+	}
+	account, err := accounts.Load("item-move-missing-template")
+	if err != nil {
+		t.Fatalf("load missing-template item-move account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("missing-template item-move mutated inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("missing-template item-move mutated quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameRuntimeItemMoveCountedFullStackMergeSyncsItemQuickslots(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

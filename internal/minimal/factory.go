@@ -2544,7 +2544,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					var moveResult inventory.MoveResult
 					maxCount := ^uint16(0)
-					for _, sourceItem := range selectedPlayer.LiveInventory() {
+					liveInventory := selectedPlayer.LiveInventory()
+					for _, sourceItem := range liveInventory {
 						if sourceItem.Slot != inventory.SlotIndex(packet.Source.Cell) {
 							continue
 						}
@@ -2553,6 +2554,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								maxCount = 0
 							} else if template.MaxCount > 0 {
 								maxCount = template.MaxCount
+							}
+						} else if runtime.itemTemplatesAuthored {
+							for _, targetItem := range liveInventory {
+								if targetItem.Slot == inventory.SlotIndex(packet.Destination.Cell) && targetItem.Vnum == sourceItem.Vnum {
+									maxCount = 0
+									break
+								}
 							}
 						}
 						break
