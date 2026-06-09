@@ -1419,6 +1419,48 @@ func TestRuntimeMoveInventoryItemBoundedZeroCountMergesCompatibleOccupiedDestina
 	}
 }
 
+func TestRuntimeUseItemOnItemRejectsDuplicateSourceOrTargetOccupancyWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name: "duplicate source occupancy",
+			inventory: []inventory.ItemInstance{
+				{ID: 1701, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1702, Vnum: 27001, Count: 1, Slot: 5},
+				{ID: 1703, Vnum: 27001, Count: 3, Slot: 8},
+			},
+		},
+		{
+			name: "duplicate target occupancy",
+			inventory: []inventory.ItemInstance{
+				{ID: 1701, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 1702, Vnum: 27001, Count: 1, Slot: 8},
+				{ID: 1703, Vnum: 27001, Count: 3, Slot: 8},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := inventoryRuntimeCharacterFixture()
+			persisted.Inventory = tc.inventory
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+			if _, ok := runtime.UseItemOnItem(5, 8, template); ok {
+				t.Fatalf("expected %s use-to-item stack consolidation to fail closed", tc.name)
+			}
+			if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+				t.Fatalf("expected %s use-to-item to leave live inventory unchanged, got %#v want %#v", tc.name, runtime.LiveInventory(), persisted.Inventory)
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+				t.Fatalf("expected %s use-to-item to leave persisted inventory unchanged, got %#v want %#v", tc.name, runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+			}
+		})
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsZeroCountStacksWithoutMutatingState(t *testing.T) {
 	cases := []struct {
 		name      string
