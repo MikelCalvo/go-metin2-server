@@ -51,7 +51,7 @@ The first owned live `ITEM_USE_TO_ITEM` use case is intentionally only stack-on-
 - templates with authored job/sex restrictions for the selected character (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`) are rejected for drag-to-item stack consolidation even when the live stacks otherwise match
 - templates with authored `min_level` above the selected character's current persisted `level` are rejected for drag-to-item stack consolidation even when the live stacks otherwise match
 - the live source stack must have non-zero count, must not already exceed the template-authored `max_count`, and must validate as a well-formed carried inventory item even when the merge will remove it entirely
-- the target stack must have non-zero count and free capacity under that `max_count`
+- the target stack must have non-zero count and free capacity under that `max_count`; already-full targets fail closed without source, target, quickslot, or persisted-state mutation
 - the runtime moves as many source items as fit into the target stack
 - if the source stack fits completely, the response burst is `ITEM_DEL(source)`, `ITEM_SET(target)`, then zero or more `QUICKSLOT_DEL` frames for item quickslots referencing the removed source carried cell
 - the minimal session/runtime packet path now freezes that full-merge burst and the persisted account snapshot: source stack removed, target stack refreshed with the merged count, item quickslots for the removed source cell deleted, non-item quickslots with the same byte slot preserved, and target item quickslots left stable
