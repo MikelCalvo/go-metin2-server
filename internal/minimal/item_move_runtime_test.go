@@ -769,6 +769,64 @@ func TestGameRuntimeItemUseToItemRejectsSelectedCharacterAntiFlagsWithoutMutatio
 	}
 }
 
+func TestGameRuntimeItemUseToItemRejectsMinLevelTemplateWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	template := itemcatalog.Template{
+		Vnum:      27001,
+		Name:      "Level Restricted Practice Potion",
+		Stackable: true,
+		MaxCount:  200,
+		MinLevel:  2,
+	}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("seed min-level use-to-item template: %v", err)
+	}
+	owner := peerVisibilityCharacter("UseToItemMinLevel", 0x01030218, 0x02040218, 1300, 2300, 0, 101, 201)
+	owner.Level = 1
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1801, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 1802, Vnum: 27001, Count: 3, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "use-to-item-min-level", 0x68686868, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-min-level", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed min-level use-to-item owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected min-level use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-min-level", 0x68686868)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected min-level use-to-item error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected min-level use-to-item to emit no frames, got %d", len(out))
+	}
+	account, err := accounts.Load("use-to-item-min-level")
+	if err != nil {
+		t.Fatalf("load min-level use-to-item owner account: %v", err)
+	}
+	if len(account.Characters) != 1 {
+		t.Fatalf("expected one persisted min-level use-to-item owner, got %+v", account)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("min-level use-to-item mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("min-level use-to-item mutated persisted quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameRuntimeItemUseToItemRejectsTargetGuardEdgesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
