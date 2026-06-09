@@ -1743,6 +1743,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if template.AntiGive || !ownerRuntime.CanUseTemplate(template) {
 							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 						}
+						if pickup.Item.Count > template.MaxCount {
+							return nil, false
+						}
 						if template.Stackable && !template.AntiStack {
 							pickupMaxCount = template.MaxCount
 						}
@@ -1827,6 +1830,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					if template.AntiGive || !selectedPlayer.CanUseTemplate(template) {
 						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
+					}
+					if pickup.Item.Count > template.MaxCount {
+						return nil, false
 					}
 					if template.Stackable && !template.AntiStack {
 						pickupMaxCount = template.MaxCount

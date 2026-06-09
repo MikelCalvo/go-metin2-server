@@ -262,12 +262,12 @@ Expected result:
 
 - [ ] Drop a known template-backed carried item stack in a safe visible location
 - [ ] Pick up the same temporary ground handle while still in range
-- [ ] If possible in the QA fixture, repeat with a deliberately missing, malformed, mismatched, or over-template-max authored item-template/state fixture for that `vnum`
+- [ ] If possible in the QA fixture, repeat with a deliberately missing, malformed, mismatched, or ground-count-over-template-`max_count` authored item-template/state fixture for that `vnum`
 
 Expected result:
 - valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, and shows the normal pickup notice
 - loaded drop template metadata whose carried stack already exceeds the authored `max_count` fails closed: no ground actor, no carried-slot deletion/update, and no quickslot mutation is visible
-- missing, malformed, mismatched, or over-template-max authored pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
+- missing, malformed, mismatched, or ground-count-over-template-`max_count` authored pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
 - loaded pickup template metadata marked `anti_give` or restricted by the selected character's job/sex/min-level metadata also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
 
 ### 4.5.5 Drag inventory stack onto inventory stack (`ITEM_MOVE`)

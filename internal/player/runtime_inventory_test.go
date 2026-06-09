@@ -288,6 +288,22 @@ func TestPickupGroundItemRejectsMalformedGroundStackBeforeMergeWithoutMutation(t
 	}
 }
 
+func TestPickupGroundItemWithTemplateRejectsGroundStackAboveTemplateMaxWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27002, Count: 1, Slot: 5}},
+	}, SessionLink{})
+	before := runtime.LiveInventory()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Single Pickup", Stackable: false, MaxCount: 1}
+	ground := inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 2, Slot: 6}
+
+	if result, ok := runtime.PickupGroundItemWithTemplate(ground, 6, template); ok {
+		t.Fatalf("expected over-template-max ground pickup to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("over-template-max ground pickup mutated inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestPickupGroundItemWithTemplateRejectsAuthoredRestrictionsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string

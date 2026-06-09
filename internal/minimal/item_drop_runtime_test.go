@@ -2808,6 +2808,49 @@ func TestGameRuntimeItemPickupRejectsMissingTemplateWithoutRemovingGroundItem(t 
 	}
 }
 
+func TestGameRuntimeItemPickupRejectsOverTemplateMaxGroundStackWithoutRemovingGroundItem(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupOverMaxOwner", 0x01030195, 0x02040195, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1023, Vnum: 27007, Count: 2, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "pickup-over-max-owner", 0x95959595, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-over-max-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup over-template-max owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27007,
+		Name:      "Tiny Stack Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}})
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected item-pickup over-template-max runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-over-max-owner", 0x95959595)
+	flushServerFrames(t, flow)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(6))
+	runtime.itemTemplates[27007] = itemcatalog.Template{Vnum: 27007, Name: "Tiny Stack Potion", Stackable: true, MaxCount: 1}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 0 {
+		t.Fatalf("expected over-template-max pickup to reject without frames, got %d", len(pickupOut))
+	}
+	account, err := accounts.Load("pickup-over-max-owner")
+	if err != nil {
+		t.Fatalf("load pickup over-template-max owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{}) {
+		t.Fatalf("expected rejected pickup to leave owner inventory dropped, got %#v", account.Characters[0].Inventory)
+	}
+
+	runtime.itemTemplates[27007] = itemcatalog.Template{Vnum: 27007, Name: "Tiny Stack Potion", Stackable: true, MaxCount: 200}
+	retryOut := pickupGroundItem(t, flow, ground.VID)
+	if len(retryOut) != 3 {
+		t.Fatalf("expected ground handle to remain pending after over-template-max rejection, got %d frames", len(retryOut))
+	}
+}
+
 func TestGameRuntimeItemPickupRejectsMismatchedLoadedTemplateWithoutRemovingGroundItem(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
