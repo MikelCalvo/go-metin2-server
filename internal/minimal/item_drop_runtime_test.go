@@ -212,6 +212,54 @@ func TestGameRuntimeItemDrop2NormalizesOversizedCountToWholeStack(t *testing.T) 
 	}
 }
 
+func TestGameRuntimeItemDropRejectsMissingTemplateWhenCatalogAuthoredWithoutMutation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		packet []byte
+	}{
+		{name: "drop", packet: itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})},
+		{name: "drop2", packet: itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 1})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("DropMissingTemplate", 0x01030195, 0x02040195, 1250, 2250, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: 1023, Vnum: 27001, Count: 5, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			login := "drop-missing-template-" + tc.name
+			issuePeerTicket(t, ticketStore, login, 0x59595959, owner)
+			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed missing-template drop account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27002, Name: "Unrelated Template", Stackable: true, MaxCount: 200}})
+
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected missing-template item-drop runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x59595959)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, tc.packet))
+			if err != nil {
+				t.Fatalf("unexpected missing-template item drop error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected missing-template item drop to emit no frames, got %d", len(out))
+			}
+			account, err := accounts.Load(login)
+			if err != nil {
+				t.Fatalf("load missing-template drop account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("missing-template drop mutated inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("missing-template drop mutated quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemDropRejectsOverTemplateMaxCarriedStackWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -2780,7 +2828,7 @@ func TestGameRuntimeItemPickupRejectsMissingTemplateWithoutRemovingGroundItem(t 
 	if err := accounts.Save(accountstore.Account{Login: "pickup-template-missing-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed pickup template-missing owner account: %v", err)
 	}
-	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27006, Name: "Ground Potion", Stackable: true, MaxCount: 200}})
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
 	if err != nil {
 		t.Fatalf("unexpected item-pickup template-missing runtime error: %v", err)
@@ -2788,6 +2836,7 @@ func TestGameRuntimeItemPickupRejectsMissingTemplateWithoutRemovingGroundItem(t 
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-template-missing-owner", 0xa3a3a3a3)
 	flushServerFrames(t, flow)
 	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(6))
+	delete(runtime.itemTemplates, 27006)
 
 	pickupOut := pickupGroundItem(t, flow, ground.VID)
 	if len(pickupOut) != 0 {

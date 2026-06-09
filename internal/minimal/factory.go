@@ -1606,6 +1606,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			previousSelected := selectedPlayer.LiveCharacter()
 			dropTemplate, hasDropTemplate := itemDropTemplateForSlot(runtime.itemTemplates, previousSelected, slot)
+			if runtime.itemTemplatesAuthored && !hasDropTemplate {
+				return nil, false
+			}
 			if hasDropTemplate && (dropTemplate.AntiDrop || dropTemplate.AntiGive) {
 				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemDropRejectedInfoMessage})}, true
 			}
