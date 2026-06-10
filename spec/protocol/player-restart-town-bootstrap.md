@@ -84,6 +84,7 @@ When accepted, `/restart_town`:
 For this bootstrap slice, the recovery stays intentionally asymmetric with the engaged practice mob:
 - the player rebuilds from persisted player state and moves to the owned town-return target
 - a still-live practice mob keeps its current runtime-owned HP and its current engagement-reset rules instead of resetting because the owner used `/restart_town`
+- source-map live sessions that still see that practice mob after the restarting owner leaves can reselect it and observe the current runtime-owned HP percentage instead of a full-HP reset
 
 ## Peer-visible result
 
