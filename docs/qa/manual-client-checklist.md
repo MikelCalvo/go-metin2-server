@@ -277,13 +277,13 @@ Expected result:
 ### 4.5.5 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
 
 - [ ] Put two carried stacks with the same `vnum` into separate inventory cells
-- [ ] Confirm their loaded item template is stackable and not `anti_stack`, then drag one stack onto the other through normal inventory movement
-- [ ] Repeat with an otherwise matching template that is marked `anti_stack`
+- [ ] Confirm their loaded item template is stackable and not `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`, then drag one stack onto the other through normal inventory movement
+- [ ] Repeat with an otherwise matching template that is marked `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`
 
 Expected result:
 - stackable, non-`anti_stack` items merge only up to the template-authored `max_count`
 - an exact counted full-stack merge removes the source cell, refreshes the destination count, retargets source item quickslots to the destination cell, deletes stale destination item quickslots, and leaves unrelated skill/command quickslots unchanged
-- `anti_stack` templates and same-`vnum` merge attempts with missing source-template metadata in an explicitly authored item-template snapshot fail closed: no item counts change, no source cell disappears, and no item refresh frames are visible
+- `anti_stack`, `anti_drop`, `anti_give`, and `anti_sell` templates, plus same-`vnum` merge attempts with missing source-template metadata in an explicitly authored item-template snapshot, fail closed: no item counts change, no source cell disappears, no quickslot change is persisted, and no item refresh frames are visible
 
 ### 4.5.6 Equip a carried item (`ITEM_MOVE` to equipment cell)
 

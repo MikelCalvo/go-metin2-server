@@ -2559,7 +2559,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							continue
 						}
 						if template, ok := runtime.itemTemplates[sourceItem.Vnum]; ok && itemcatalog.ValidTemplate(template) {
-							if template.AntiStack || !template.Stackable {
+							if template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || !template.Stackable {
 								maxCount = 0
 							} else if template.MaxCount > 0 {
 								maxCount = template.MaxCount
