@@ -260,6 +260,59 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 	}
 }
 
+func TestGameSessionFlowItemUseRejectsDuplicateSlotOccupancyWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseDuplicateSlot", 0x0103057e, 0x0204057e, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 351, Vnum: 27004, Count: 2, Slot: 5},
+		{ID: 352, Vnum: 27004, Count: 3, Slot: 5},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-duplicate-slot", 0x5050507e, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-duplicate-slot", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed duplicate-slot item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27004,
+		Name:      "Duplicate Slot Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected duplicate-slot item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-duplicate-slot", 0x5050507e)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected duplicate-slot item-use packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected duplicate-slot item-use to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after duplicate-slot item-use rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("item-use-duplicate-slot")
+	if err != nil {
+		t.Fatalf("load persisted duplicate-slot item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("duplicate-slot item-use mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("duplicate-slot item-use mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("duplicate-slot item-use mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameSessionFlowItemUseRejectsMinLevelTemplateWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

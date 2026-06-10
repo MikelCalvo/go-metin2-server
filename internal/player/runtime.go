@@ -836,6 +836,9 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	if r == nil || slot >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil || template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell {
 		return ItemUseResult{}, false
 	}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return ItemUseResult{}, false
+	}
 	index := findInventorySlot(r.liveInventory, slot)
 	if index < 0 {
 		return ItemUseResult{}, false

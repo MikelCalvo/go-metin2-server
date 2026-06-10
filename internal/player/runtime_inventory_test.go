@@ -798,6 +798,34 @@ func TestUseItemRejectsOutOfRangeSlotWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestUseItemRejectsDuplicateSlotOccupancyWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
+			{ID: 42, Vnum: 27001, Count: 3, Slot: 5},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}},
+		Points:     [255]int32{1: 25},
+	}, SessionLink{})
+	beforeInventory := runtime.LiveInventory()
+	beforeQuickslots := runtime.LiveQuickslots()
+	beforePoints := runtime.LiveCharacter().Points
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}}
+
+	if result, ok := runtime.UseItem(5, template); ok {
+		t.Fatalf("expected duplicate-slot ITEM_USE to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+		t.Fatalf("duplicate-slot ITEM_USE mutated inventory: got %#v want %#v", got, beforeInventory)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, beforeQuickslots) {
+		t.Fatalf("duplicate-slot ITEM_USE mutated quickslots: got %#v want %#v", got, beforeQuickslots)
+	}
+	if got := runtime.LiveCharacter().Points; got != beforePoints {
+		t.Fatalf("duplicate-slot ITEM_USE mutated points: got %#v want %#v", got, beforePoints)
+	}
+}
+
 func TestRuntimeUseItemRejectsMinLevelTemplateBeforeMutation(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Level = 5

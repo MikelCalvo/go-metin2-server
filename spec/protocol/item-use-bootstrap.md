@@ -85,6 +85,7 @@ Exactly one consumable shape is frozen here:
 - templates with authored `min_level` above the selected character's current persisted `level` are rejected before point effects or stack mutations are applied
 - templates with authored transfer/trade guards (`anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`) are rejected for this direct consumable path too, so bound/untransferable bootstrap templates cannot be consumed through `ITEM_USE` while other item mutation paths treat them as restricted
 - locked carried stacks are rejected before point effects or stack mutations are applied; the minimal session/runtime packet path now freezes locked `ITEM_USE` as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
+- duplicate live occupancy of the requested carried cell is rejected before point effects or stack mutations are applied; the player mutation boundary and minimal session/runtime packet path now freeze duplicate-slot `ITEM_USE` as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - that `use_effect` payload currently owns:
   - the point target index (`point_index`)
   - the point-change packet `type` (`point_type`)
@@ -148,6 +149,7 @@ The first consumable path must fail closed when any of these are true:
 - the resolved template carries an authored `equip_slot`
 - the carried live item snapshot is malformed under the bootstrap item-instance validation rules
 - the carried live item is locked
+- the requested carried cell has duplicate live item occupancy
 - the carried live item stack count already exceeds the resolved template-authored `max_count`; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - applying the template-authored `use_effect.point_delta` would overflow the current signed 32-bit point-value range exposed by the bootstrap `PLAYER_POINT_CHANGE` path; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - the resolved template carries an authored job/sex anti flag for the selected character

@@ -229,6 +229,7 @@ Expected result:
 - if more than one item remains in the stack, the carried cell refreshes with the decremented count
 - if the consumed stack reaches zero, the carried cell disappears and only item quickslots referencing that cell are cleared; unrelated skill/command quickslots remain
 - locked carried stacks fail closed: no point change, item refresh, quickslot change, or placeholder chat is visible
+- if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_USE` fails closed with no point change, item refresh, quickslot change, placeholder chat, or persisted-state mutation
 - templates marked `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` also fail closed for direct consumable use: no point change, item refresh, quickslot change, or placeholder chat is visible
 - templates with authored `min_level` above the selected character's current level fail closed the same way
 - a carried stack whose live count already exceeds its loaded template-authored `max_count` fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
