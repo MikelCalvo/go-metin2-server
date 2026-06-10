@@ -233,6 +233,7 @@ Expected result:
 - templates marked `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` also fail closed for direct consumable use: no point change, item refresh, quickslot change, or placeholder chat is visible
 - templates with authored `min_level` above the selected character's current level fail closed the same way
 - a carried stack whose live count already exceeds its loaded template-authored `max_count` fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
+- a consumable whose resolved template `max_count` cannot fit the current one-byte item refresh count range fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose template-authored point delta would overflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - the placeholder `CHAT_TYPE_INFO` message uses the template-authored `use_effect.message`
 
