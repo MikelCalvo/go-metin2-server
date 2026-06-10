@@ -212,6 +212,59 @@ func TestGameRuntimeItemDrop2NormalizesOversizedCountToWholeStack(t *testing.T) 
 	}
 }
 
+func TestGameRuntimeItemDropRejectsDuplicateSlotOccupancyWithoutMutation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		packet []byte
+	}{
+		{name: "drop", packet: itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})},
+		{name: "drop2", packet: itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 1})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("DropDuplicateSlot", 0x0103019a, 0x0204019a, 1250, 2250, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{
+				{ID: 1030, Vnum: 27001, Count: 5, Slot: 5},
+				{ID: 1031, Vnum: 27002, Count: 1, Slot: 5},
+			}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			login := "drop-duplicate-slot-" + tc.name
+			issuePeerTicket(t, ticketStore, login, 0x6a6a6a6a, owner)
+			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed duplicate-slot drop account: %v", err)
+			}
+
+			runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+			if err != nil {
+				t.Fatalf("unexpected duplicate-slot item-drop runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x6a6a6a6a)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, tc.packet))
+			if err != nil {
+				t.Fatalf("unexpected duplicate-slot item drop error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected duplicate-slot item drop to emit no frames, got %d", len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after duplicate-slot drop rejection, got %d", len(queued))
+			}
+			account, err := accounts.Load(login)
+			if err != nil {
+				t.Fatalf("load duplicate-slot drop account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("duplicate-slot drop mutated inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("duplicate-slot drop mutated quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemDropRejectsMissingTemplateWhenCatalogAuthoredWithoutMutation(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -3115,12 +3168,12 @@ func TestGameRuntimeItemPickupSplitsStackableDropAcrossPartialStacksAndFreshSlot
 	}
 }
 
-func TestGameRuntimeItemPickupPlacesOwnedVisibleDropIntoFirstEmptySlotWhenOriginalSlotOccupied(t *testing.T) {
+func TestGameRuntimeItemPickupRestoresOwnedVisibleDropToOriginalSlotWhenOriginalSlotIsFree(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PickupFirstEmptyOwner", 0x0103017b, 0x0204017b, 1400, 2400, 0, 101, 201)
 	owner.Inventory = []inventory.ItemInstance{{ID: 1008, Vnum: 27007, Count: 2, Slot: 6}}
-	owner.Inventory = append(owner.Inventory, inventory.ItemInstance{ID: 2008, Vnum: 27008, Count: 1, Slot: 6})
+	owner.Inventory = append(owner.Inventory, inventory.ItemInstance{ID: 2008, Vnum: 27008, Count: 1, Slot: 0})
 	issuePeerTicket(t, ticketStore, "pickup-first-empty-owner", 0x7b7b7b7b, owner)
 	if err := accounts.Save(accountstore.Account{Login: "pickup-first-empty-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed pickup first-empty owner account: %v", err)
@@ -3143,8 +3196,8 @@ func TestGameRuntimeItemPickupPlacesOwnedVisibleDropIntoFirstEmptySlotWhenOrigin
 	if err != nil {
 		t.Fatalf("decode occupied-original pickup item set: %v", err)
 	}
-	if set.Position != itemproto.InventoryPosition(0) || set.Vnum != 27007 || set.Count != 2 {
-		t.Fatalf("expected pickup to choose first empty slot 0, got %+v", set)
+	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27007 || set.Count != 2 {
+		t.Fatalf("expected pickup to restore original slot 6, got %+v", set)
 	}
 	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
 	if err != nil {
@@ -3158,8 +3211,8 @@ func TestGameRuntimeItemPickupPlacesOwnedVisibleDropIntoFirstEmptySlotWhenOrigin
 		t.Fatalf("load pickup first-empty owner account: %v", err)
 	}
 	wantOwnerInventory := []inventory.ItemInstance{
-		{ID: 1008, Vnum: 27007, Count: 2, Slot: 0},
-		{ID: 2008, Vnum: 27008, Count: 1, Slot: 6},
+		{ID: 2008, Vnum: 27008, Count: 1, Slot: 0},
+		{ID: 1008, Vnum: 27007, Count: 2, Slot: 6},
 	}
 	if !reflect.DeepEqual(ownerAccount.Characters[0].Inventory, wantOwnerInventory) {
 		t.Fatalf("unexpected persisted owner inventory after occupied-original pickup: got %#v want %#v", ownerAccount.Characters[0].Inventory, wantOwnerInventory)

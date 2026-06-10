@@ -629,6 +629,28 @@ func TestRuntimeUseItemRejectsAuthoredJobSexLevelAndTransferAntiFlagsWithoutMuta
 	}
 }
 
+func TestRuntimeDropInventoryItemRejectsDuplicateSlotOccupancyWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "DropDuplicateSlot",
+		Inventory: []inventory.ItemInstance{
+			{ID: 901, Vnum: 27001, Count: 5, Slot: 5},
+			{ID: 902, Vnum: 27002, Count: 1, Slot: 5},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "drop-duplicate-slot", CharacterIndex: 0})
+	before := runtime.LiveCharacter()
+
+	if _, ok := runtime.DropInventoryItem(5, 1); ok {
+		t.Fatal("expected item drop to reject duplicate carried-slot occupancy")
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("duplicate-slot drop mutated live state:\n got: %#v\nwant: %#v", got, before)
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsAuthoredJobSexAndLevelRestrictionsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string

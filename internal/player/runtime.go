@@ -377,6 +377,9 @@ func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, temp
 		return inventory.MoveResult{}, false
 	}
 	result := inventory.MoveResult{From: slot}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return inventory.MoveResult{}, false
+	}
 	index := findInventorySlot(r.liveInventory, slot)
 	if index < 0 || r.liveInventory[index].Locked {
 		return inventory.MoveResult{}, false

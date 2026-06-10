@@ -270,6 +270,7 @@ Expected result:
 Expected result:
 - valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, and shows the normal pickup notice
 - loaded drop template metadata whose carried stack already exceeds the authored `max_count` fails closed: no ground actor, no carried-slot deletion/update, and no quickslot mutation is visible
+- if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_DROP` / `ITEM_DROP2` fails closed with no ground actor, no carried-slot deletion/update, no quickslot mutation, and no persisted-state mutation
 - missing, malformed, mismatched, or ground-count-over-template-`max_count` authored pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
 - loaded pickup template metadata marked `anti_give` or restricted by the selected character's job/sex/min-level metadata also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
 
