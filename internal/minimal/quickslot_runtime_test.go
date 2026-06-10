@@ -54,3 +54,42 @@ func TestGameSessionFlowQuickslotAddRetargetsDuplicateItemQuickslot(t *testing.T
 		t.Fatalf("unexpected persisted quickslots after retarget: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
 	}
 }
+
+func TestGameSessionFlowQuickslotAddRejectsDuplicateItemSlotOccupancyWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("QuickslotDuplicateSlot", 0x0103058d, 0x0204058d, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 411, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 412, Vnum: 27002, Count: 1, Slot: 5},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "quickslot-duplicate-slot", 0x5050508d, owner)
+	if err := accounts.Save(accountstore.Account{Login: "quickslot-duplicate-slot", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed quickslot duplicate-slot account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected quickslot duplicate-slot runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quickslot-duplicate-slot", 0x5050508d)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 4, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot duplicate-slot packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected duplicate-slot quickslot add to emit no frames, got %d", len(out))
+	}
+	persisted, err := accounts.Load("quickslot-duplicate-slot")
+	if err != nil {
+		t.Fatalf("load quickslot duplicate-slot account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("duplicate-slot quickslot add mutated persisted quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("duplicate-slot quickslot add mutated persisted inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+}

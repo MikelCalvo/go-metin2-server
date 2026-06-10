@@ -7,6 +7,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 )
 
 func TestDropInventoryItemRemovesWholeStack(t *testing.T) {
@@ -1077,6 +1078,24 @@ func TestRuntimeSetQuickslotRejectsOutOfRangeSkillAndCommandSlots(t *testing.T) 
 				t.Fatalf("rejected %s quickslot mutated persisted state: got %#v want %#v", tc.name, runtime.PersistedSnapshot().Quickslots, persisted.Quickslots)
 			}
 		})
+	}
+}
+
+func TestRuntimeSetQuickslotRejectsDuplicateItemSlotOccupancyWithoutMutation(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 101, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 102, Vnum: 27002, Count: 1, Slot: 5},
+	}
+	persisted.Quickslots = []loginticket.Quickslot{{Position: 7, Type: quickslotproto.TypeSkill, Slot: 9}}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveQuickslots()
+
+	if _, ok := runtime.SetQuickslot(3, loginticket.Quickslot{Type: quickslotproto.TypeItem, Slot: 5}); ok {
+		t.Fatal("expected item quickslot add to reject duplicate carried-slot occupancy")
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("duplicate item-slot quickslot add mutated quickslots: got %#v want %#v", got, before)
 	}
 }
 

@@ -251,7 +251,7 @@ func (r *Runtime) SetQuickslot(position uint8, slot loginticket.Quickslot) (logi
 	if r == nil || !validQuickslotPosition(position) || !validQuickslotTuple(slot) {
 		return loginticket.Quickslot{}, false
 	}
-	if slot.Type == quickslotproto.TypeItem && findInventorySlot(r.liveInventory, inventory.SlotIndex(slot.Slot)) < 0 {
+	if slot.Type == quickslotproto.TypeItem && countInventorySlotOccupancy(r.liveInventory, inventory.SlotIndex(slot.Slot)) != 1 {
 		return loginticket.Quickslot{}, false
 	}
 	updated := cloneQuickslots(r.liveQuickslots)
