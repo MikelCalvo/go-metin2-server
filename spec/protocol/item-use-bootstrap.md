@@ -149,7 +149,7 @@ The first consumable path must fail closed when any of these are true:
 - the carried live item snapshot is malformed under the bootstrap item-instance validation rules
 - the carried live item is locked
 - the carried live item stack count already exceeds the resolved template-authored `max_count`
-- applying the template-authored `use_effect.point_delta` would overflow the current signed 32-bit point-value range exposed by the bootstrap `PLAYER_POINT_CHANGE` path
+- applying the template-authored `use_effect.point_delta` would overflow the current signed 32-bit point-value range exposed by the bootstrap `PLAYER_POINT_CHANGE` path; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - the resolved template carries an authored job/sex anti flag for the selected character
 - the resolved template carries an authored `min_level` above the selected character's current persisted `level`
 - the resolved template carries an authored `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` guard
