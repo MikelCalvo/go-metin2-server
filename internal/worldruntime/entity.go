@@ -109,10 +109,10 @@ var staticActorCombatProfileRegistry = struct {
 }{profiles: make(map[string]StaticActorCombatProfileDefaults)}
 
 func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombatProfileDefaults) bool {
-	if profile != strings.TrimSpace(profile) {
+	if !validStaticActorCombatProfileName(profile) {
 		return false
 	}
-	if profile == "" || profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
+	if profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
 		return false
 	}
 	staticActorCombatProfileRegistry.Lock()
@@ -128,6 +128,24 @@ func UnregisterStaticActorCombatProfileForTest(profile string) {
 	staticActorCombatProfileRegistry.Lock()
 	defer staticActorCombatProfileRegistry.Unlock()
 	delete(staticActorCombatProfileRegistry.profiles, strings.TrimSpace(profile))
+}
+
+func validStaticActorCombatProfileName(profile string) bool {
+	if profile == "" || profile != strings.TrimSpace(profile) {
+		return false
+	}
+	first := profile[0]
+	if first < 'a' || first > 'z' {
+		return false
+	}
+	for i := 1; i < len(profile); i++ {
+		c := profile[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func cloneStaticActorCombatProfileDefaults(defaults StaticActorCombatProfileDefaults) StaticActorCombatProfileDefaults {
