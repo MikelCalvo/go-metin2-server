@@ -713,7 +713,41 @@ func TestRuntimeUseItemOnItemRejectsEquippableTemplateWithoutMutation(t *testing
 		t.Fatalf("equippable-template use-to-item mutated live character: got %#v want %#v", got, before)
 	}
 	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
-		t.Fatalf("equippable-template use-to-item mutated persisted inventory: got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+		t.Fatalf("equippable-template use-to-item mutated persisted inventory: got %#v", runtime.PersistedSnapshot().Inventory)
+	}
+}
+
+func TestRuntimeUseItemOnItemRejectsOutOfRangeSourceOrTargetWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name   string
+		source inventory.SlotIndex
+		target inventory.SlotIndex
+	}{
+		{name: "source out of carried range", source: inventory.CarriedInventorySlotCount, target: 6},
+		{name: "target out of carried range", source: 5, target: inventory.CarriedInventorySlotCount},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "PeerTwo",
+				Points:    [255]int32{1: 700},
+				Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			before := runtime.LiveCharacter()
+
+			if result, ok := runtime.UseItemOnItem(tc.source, tc.target, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")); ok {
+				t.Fatalf("expected use-to-item to reject %s, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("expected rejected %s use-to-item to leave live state unchanged, got %#v want %#v", tc.name, got, before)
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+				t.Fatalf("expected rejected %s use-to-item to leave persisted inventory unchanged, got %#v", tc.name, runtime.PersistedSnapshot().Inventory)
+			}
+		})
 	}
 }
 
