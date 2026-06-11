@@ -82,6 +82,12 @@ func TestBootstrapStaticActorCombatProfileDefaultsSupportsTrainingDummyProfile(t
 	if defaults.DamagePerNormalAttack != TrainingDummyBootstrapDamagePerNormalAttack {
 		t.Fatalf("expected training-dummy normal attack damage %d, got %d", TrainingDummyBootstrapDamagePerNormalAttack, defaults.DamagePerNormalAttack)
 	}
+	if defaults.AttackValue != TrainingDummyBootstrapAttackValue {
+		t.Fatalf("expected training-dummy attack value %d, got %d", TrainingDummyBootstrapAttackValue, defaults.AttackValue)
+	}
+	if defaults.DefenseValue != TrainingDummyBootstrapDefenseValue {
+		t.Fatalf("expected training-dummy defense value %d, got %d", TrainingDummyBootstrapDefenseValue, defaults.DefenseValue)
+	}
 	if defaults.RespawnDelay != TrainingDummyBootstrapRespawnDelay {
 		t.Fatalf("expected training-dummy respawn delay %v, got %v", TrainingDummyBootstrapRespawnDelay, defaults.RespawnDelay)
 	}
@@ -100,6 +106,12 @@ func TestBootstrapStaticActorCombatProfileDefaultsSupportsPracticeMobProfile(t *
 	}
 	if defaults.DamagePerNormalAttack != PracticeMobBootstrapDamagePerNormalAttack {
 		t.Fatalf("expected practice-mob normal attack damage %d, got %d", PracticeMobBootstrapDamagePerNormalAttack, defaults.DamagePerNormalAttack)
+	}
+	if defaults.AttackValue != PracticeMobBootstrapAttackValue {
+		t.Fatalf("expected practice-mob attack value %d, got %d", PracticeMobBootstrapAttackValue, defaults.AttackValue)
+	}
+	if defaults.DefenseValue != PracticeMobBootstrapDefenseValue {
+		t.Fatalf("expected practice-mob defense value %d, got %d", PracticeMobBootstrapDefenseValue, defaults.DefenseValue)
 	}
 	if defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
 		t.Fatalf("expected practice-mob respawn delay %v, got %v", PracticeMobBootstrapRespawnDelay, defaults.RespawnDelay)
@@ -127,6 +139,8 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
 		MaxHP:                 24,
 		DamagePerNormalAttack: 3,
+		AttackValue:           8,
+		DefenseValue:          2,
 		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
 	}) {
 		t.Fatalf("expected %q profile registration to succeed", profile)
@@ -140,7 +154,7 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected registered profile defaults to resolve")
 	}
-	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 3 || defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
+	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 3 || defaults.AttackValue != 8 || defaults.DefenseValue != 2 || defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
 		t.Fatalf("unexpected registered profile defaults: %+v", defaults)
 	}
 }

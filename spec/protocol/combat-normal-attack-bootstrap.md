@@ -138,6 +138,9 @@ What this still freezes about the **visible state carrier** for later slices:
 - when subject movement or sync updates make the selected dummy leave current visibility or the bootstrap combat band, the runtime should proactively clear the active target with one self-only `TARGET(0, 0)` companion
 - when the zero-HP death transition is reached, it keeps death-triggered target clear on the same `TARGET(0, 0)` surface while `GC DEAD(vid)` and respawn rebuild stay owned by `non-player-death-respawn-bootstrap.md`
 
+The profile-stat preparation slice now also freezes that combat-profile defaults can carry `attack_value` and `defense_value` alongside the already-owned fixed `damage_per_normal_attack`.
+Those stat fields are validated and preserved as authored defaults for later formula work, but the current normal-attack HP mutation deliberately remains the fixed bootstrap decrement path until a dedicated damage-formula slice owns the replacement behavior.
+
 If future captures or tests prove this carrier insufficient, the repository may add a richer combat packet family later.
 But the next slices should begin from this smaller contract first.
 

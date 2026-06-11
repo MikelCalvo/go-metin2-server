@@ -19,14 +19,18 @@ const (
 	StaticActorCombatProfileTrainingDummy = StaticActorCombatKindTrainingDummy
 	StaticActorCombatProfilePracticeMob   = "practice_mob"
 
-	TrainingDummyBootstrapMaxHP                 uint8 = 10
-	TrainingDummyBootstrapMinLiveHP             uint8 = 1
-	TrainingDummyBootstrapDamagePerNormalAttack uint8 = 1
-	TrainingDummyBootstrapRespawnDelay                = 2 * time.Second
+	TrainingDummyBootstrapMaxHP                 uint8  = 10
+	TrainingDummyBootstrapMinLiveHP             uint8  = 1
+	TrainingDummyBootstrapDamagePerNormalAttack uint8  = 1
+	TrainingDummyBootstrapAttackValue           uint16 = 1
+	TrainingDummyBootstrapDefenseValue          uint16 = 0
+	TrainingDummyBootstrapRespawnDelay                 = 2 * time.Second
 
-	PracticeMobBootstrapMaxHP                 uint8 = 10
-	PracticeMobBootstrapDamagePerNormalAttack uint8 = 1
-	PracticeMobBootstrapRespawnDelay                = 2 * time.Second
+	PracticeMobBootstrapMaxHP                 uint8  = 10
+	PracticeMobBootstrapDamagePerNormalAttack uint8  = 1
+	PracticeMobBootstrapAttackValue           uint16 = 1
+	PracticeMobBootstrapDefenseValue          uint16 = 0
+	PracticeMobBootstrapRespawnDelay                 = 2 * time.Second
 )
 
 type Entity struct {
@@ -99,6 +103,8 @@ func ValidStaticActorDeathReward(reward StaticActorDeathReward) bool {
 type StaticActorCombatProfileDefaults struct {
 	MaxHP                 uint8
 	DamagePerNormalAttack uint8
+	AttackValue           uint16
+	DefenseValue          uint16
 	RespawnDelay          time.Duration
 	DeathReward           StaticActorDeathReward
 }
@@ -149,6 +155,9 @@ func validStaticActorCombatProfileName(profile string) bool {
 }
 
 func cloneStaticActorCombatProfileDefaults(defaults StaticActorCombatProfileDefaults) StaticActorCombatProfileDefaults {
+	if defaults.AttackValue == 0 {
+		defaults.AttackValue = uint16(defaults.DamagePerNormalAttack)
+	}
 	defaults.DeathReward = defaults.DeathReward.Clone()
 	return defaults
 }
@@ -181,6 +190,8 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 		return StaticActorCombatProfileDefaults{
 			MaxHP:                 TrainingDummyBootstrapMaxHP,
 			DamagePerNormalAttack: TrainingDummyBootstrapDamagePerNormalAttack,
+			AttackValue:           TrainingDummyBootstrapAttackValue,
+			DefenseValue:          TrainingDummyBootstrapDefenseValue,
 			RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
 			DeathReward:           StaticActorDeathReward{},
 		}, true
@@ -188,6 +199,8 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 		return StaticActorCombatProfileDefaults{
 			MaxHP:                 PracticeMobBootstrapMaxHP,
 			DamagePerNormalAttack: PracticeMobBootstrapDamagePerNormalAttack,
+			AttackValue:           PracticeMobBootstrapAttackValue,
+			DefenseValue:          PracticeMobBootstrapDefenseValue,
 			RespawnDelay:          PracticeMobBootstrapRespawnDelay,
 			DeathReward:           StaticActorDeathReward{},
 		}, true
