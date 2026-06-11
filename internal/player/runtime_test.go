@@ -1512,25 +1512,48 @@ func TestRuntimePickupGroundItemMergesIntoCompatibleStackBeforeFreshSlot(t *test
 		ID:   0x01030102,
 		VID:  0x02040102,
 		Name: "PeerTwo",
-		Inventory: []inventory.ItemInstance{
-			{ID: 11, Vnum: 27001, Count: 4, Slot: 0},
-		},
 	}
+	persisted.Inventory = []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 4, Slot: 0}}
+	persisted.Inventory = append(persisted.Inventory, occupiedInventorySlotsExcept(0, 6)...)
+	persisted.Inventory = append(persisted.Inventory, inventory.ItemInstance{ID: 12, Vnum: 27002, Count: 1, Slot: 6})
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
 	result, ok := runtime.PickupGroundItem(inventory.ItemInstance{ID: 13, Vnum: 27001, Count: 3, Slot: 6}, 6, 200)
 	if !ok {
 		t.Fatal("expected pickup to merge into the compatible stack")
 	}
-	if !result.Merged || result.Split || result.Placed.ID != 0 {
-		t.Fatalf("expected pure merge result, got %+v", result)
+	if !result.Merged || result.Updated.Slot != 0 || result.Updated.Count != 7 || result.Placed.ID != 0 {
+		t.Fatalf("unexpected merge pickup result: %+v", result)
 	}
-	if result.Updated != (inventory.ItemInstance{ID: 11, Vnum: 27001, Count: 7, Slot: 0}) {
-		t.Fatalf("unexpected merged item: %+v", result.Updated)
+	inventoryItems := runtime.LiveInventory()
+	if got := inventoryItems[0]; got.Slot != 0 || got.Count != 7 {
+		t.Fatalf("expected slot 0 stack count 7 after pickup, got %+v", got)
 	}
-	wantLive := []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 7, Slot: 0}}
-	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, wantLive) {
-		t.Fatalf("unexpected live inventory after merge pickup: got %#v want %#v", got, wantLive)
+	if len(inventoryItems) != len(persisted.Inventory) {
+		t.Fatalf("expected no fresh slot placement, got inventory len %d want %d", len(inventoryItems), len(persisted.Inventory))
+	}
+}
+
+func TestRuntimePickupGroundItemRejectsDuplicateMergeSlotOccupancyWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+	}
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 4, Slot: 0},
+		{ID: 12, Vnum: 27001, Count: 5, Slot: 0},
+	}
+	persisted.Inventory = append(persisted.Inventory, occupiedInventorySlotsExcept(0, 6)...)
+	persisted.Inventory = append(persisted.Inventory, inventory.ItemInstance{ID: 13, Vnum: 27002, Count: 1, Slot: 6})
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.PickupGroundItem(inventory.ItemInstance{ID: 14, Vnum: 27001, Count: 3, Slot: 6}, 6, 200); ok {
+		t.Fatalf("expected duplicate merge-slot pickup to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("duplicate merge-slot pickup mutated live state:\ngot:  %+v\nwant: %+v", got, before)
 	}
 }
 
@@ -1677,6 +1700,23 @@ func TestRuntimeApplyEquipTemplateEffectRejectsPointOverflowWithoutMutation(t *t
 	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
 		t.Fatalf("overflowing equip template effect mutated live character: got %#v want %#v", got, before)
 	}
+}
+
+func occupiedInventorySlotsExcept(skip ...inventory.SlotIndex) []inventory.ItemInstance {
+	skipped := make(map[inventory.SlotIndex]bool, len(skip))
+	for _, slot := range skip {
+		skipped[slot] = true
+	}
+	items := make([]inventory.ItemInstance, 0, int(inventory.CarriedInventorySlotCount)-len(skipped))
+	var id uint64 = 1000
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		if skipped[slot] {
+			continue
+		}
+		items = append(items, inventory.ItemInstance{ID: id, Vnum: 28000 + uint32(slot), Count: 1, Slot: slot})
+		id++
+	}
+	return items
 }
 
 func TestRuntimeApplyPointDeltaAdjustsLivePointsWithoutMutatingPersistedSnapshot(t *testing.T) {

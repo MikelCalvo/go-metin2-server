@@ -442,6 +442,9 @@ func (r *Runtime) PickupGroundItem(item inventory.ItemInstance, preferred invent
 	if err := item.Validate(); err != nil {
 		return GroundItemPickupResult{}, false
 	}
+	if hasDuplicateInventorySlotOccupancy(r.liveInventory) {
+		return GroundItemPickupResult{}, false
+	}
 	updatedInventory := cloneItemInstances(r.liveInventory)
 	if maxCount > 0 {
 		if mergeIndex := findMergeableInventoryIndex(updatedInventory, item.Vnum, item.Count, maxCount); mergeIndex >= 0 {
@@ -1271,6 +1274,20 @@ func countInventorySlotOccupancy(items []inventory.ItemInstance, slot inventory.
 		}
 	}
 	return count
+}
+
+func hasDuplicateInventorySlotOccupancy(items []inventory.ItemInstance) bool {
+	seen := make(map[inventory.SlotIndex]bool, len(items))
+	for _, item := range items {
+		if item.Equipped {
+			continue
+		}
+		if seen[item.Slot] {
+			return true
+		}
+		seen[item.Slot] = true
+	}
+	return false
 }
 
 func findEquipmentSlot(items []inventory.ItemInstance, slot inventory.EquipmentSlot) int {
