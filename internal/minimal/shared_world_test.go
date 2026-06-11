@@ -16143,7 +16143,7 @@ func TestGameSessionFlowItemMovePacketSwapRetargetsSourceQuickslotAndDeletesDest
 	}
 }
 
-func TestGameSessionFlowItemMovePacketExactFullStackMergeSyncsSourceQuickslotToDestination(t *testing.T) {
+func TestGameSessionFlowItemMovePacketExactFullStackMergeDeletesSourceQuickslot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PacketMoveExactMergeQuickslot", 0x01030513, 0x02040513, 1100, 2100, 0, 101, 201)
@@ -16179,12 +16179,12 @@ func TestGameSessionFlowItemMovePacketExactFullStackMergeSyncsSourceQuickslotToD
 	if update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1])); err != nil || update.Position != itemproto.InventoryPosition(8) || update.Count != 200 {
 		t.Fatalf("unexpected exact-merge destination update: %+v err=%v", update, err)
 	}
-	quickslotAdd, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, out[2]))
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {
-		t.Fatalf("decode exact-merge quickslot sync: %v", err)
+		t.Fatalf("decode exact-merge source quickslot delete: %v", err)
 	}
-	if quickslotAdd.Position != 2 || quickslotAdd.Slot.Type != quickslotproto.TypeItem || quickslotAdd.Slot.Position != 8 {
-		t.Fatalf("expected exact merge to update only item quickslot to destination slot 8, got %+v", quickslotAdd)
+	if quickslotDel.Position != 2 {
+		t.Fatalf("expected exact merge to delete source item quickslot position 2, got %+v", quickslotDel)
 	}
 
 	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
@@ -16199,7 +16199,6 @@ func TestGameSessionFlowItemMovePacketExactFullStackMergeSyncsSourceQuickslotToD
 		t.Fatalf("load persisted exact-merge item-move owner account: %v", err)
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, []loginticket.Quickslot{
-		{Position: 2, Type: quickslotproto.TypeItem, Slot: 8},
 		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
 	}) {
 		t.Fatalf("unexpected persisted quickslots after exact merge: %+v", persisted.Characters[0].Quickslots)

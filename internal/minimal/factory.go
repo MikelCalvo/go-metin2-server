@@ -3571,8 +3571,11 @@ func itemMoveQuickslotSyncFrames(selectedPlayer *player.Runtime, result inventor
 	if selectedPlayer == nil || !result.Changed || result.From == result.To {
 		return nil, true
 	}
-	if result.CountOnly && result.FromOccupied {
-		return nil, true
+	if result.CountOnly {
+		if result.FromOccupied {
+			return nil, true
+		}
+		return itemRemovalQuickslotSyncFrames(selectedPlayer, result.From)
 	}
 	return inventoryMoveQuickslotSyncFrames(selectedPlayer, result.From, result.To)
 }
