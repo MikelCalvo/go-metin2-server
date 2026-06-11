@@ -191,6 +191,20 @@ func TestRegisterStaticActorCombatProfileRejectsDamageAboveMaxHP(t *testing.T) {
 	}
 }
 
+func TestRegisterStaticActorCombatProfileRejectsNonCanonicalName(t *testing.T) {
+	const profile = " practice_whitespace_wolf "
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected whitespace-padded profile name %q to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile("practice_whitespace_wolf") {
+		t.Fatalf("expected trimmed form of rejected whitespace-padded profile not to become valid")
+	}
+}
+
 func TestRegisterStaticActorCombatProfileRejectsInvalidDeathReward(t *testing.T) {
 	const profile = "practice_invalid_reward_wolf"
 	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
