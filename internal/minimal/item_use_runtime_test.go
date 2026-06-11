@@ -1051,6 +1051,7 @@ func TestGameSessionFlowItemUseLastStackDeletesOnlyItemQuickslot(t *testing.T) {
 	owner.Quickslots = []loginticket.Quickslot{
 		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
 		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 5},
 	}
 	owner.Points[bootstrapPlayerPointValueIndex] = 25
 	issuePeerTicket(t, ticketStore, "item-use-last-stack-qs", 0x5050505c, owner)
@@ -1075,8 +1076,8 @@ func TestGameSessionFlowItemUseLastStackDeletesOnlyItemQuickslot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected item-use last-stack packet error: %v", err)
 	}
-	if len(out) != 4 {
-		t.Fatalf("expected item-use last stack to emit point change, item delete, quickslot delete, and info chat, got %d", len(out))
+	if len(out) != 5 {
+		t.Fatalf("expected item-use last stack to emit point change, item delete, two quickslot deletes, and info chat, got %d", len(out))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -1094,12 +1095,19 @@ func TestGameSessionFlowItemUseLastStackDeletesOnlyItemQuickslot(t *testing.T) {
 	}
 	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {
-		t.Fatalf("decode item-use quickslot del: %v", err)
+		t.Fatalf("decode first item-use quickslot del: %v", err)
 	}
 	if quickslotDel.Position != 2 {
-		t.Fatalf("expected only item quickslot position 2 to be deleted, got %+v", quickslotDel)
+		t.Fatalf("expected first item quickslot position 2 to be deleted, got %+v", quickslotDel)
 	}
-	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[3]))
+	quickslotDel, err = quickslotproto.DecodeDel(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode second item-use quickslot del: %v", err)
+	}
+	if quickslotDel.Position != 4 {
+		t.Fatalf("expected second item quickslot position 4 to be deleted, got %+v", quickslotDel)
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[4]))
 	if err != nil {
 		t.Fatalf("decode item-use info chat: %v", err)
 	}
@@ -1118,6 +1126,6 @@ func TestGameSessionFlowItemUseLastStackDeletesOnlyItemQuickslot(t *testing.T) {
 		t.Fatalf("expected persisted template-authored point value 75, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}}) {
-		t.Fatalf("expected consumed last stack to delete only item quickslot, got %+v", persisted.Characters[0].Quickslots)
+		t.Fatalf("expected consumed last stack to delete only item quickslots, got %+v", persisted.Characters[0].Quickslots)
 	}
 }
