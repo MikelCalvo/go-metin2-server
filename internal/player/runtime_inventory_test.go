@@ -1406,6 +1406,47 @@ func TestRuntimeMoveInventoryItemRejectsSameSlotMovesWithoutMutatingState(t *tes
 	}
 }
 
+func TestRuntimeMoveInventoryItemBoundedRejectsDuplicateSourceOrTargetOccupancyWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name: "duplicate source occupancy",
+			inventory: []inventory.ItemInstance{
+				{ID: 2101, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 2102, Vnum: 27001, Count: 1, Slot: 5},
+				{ID: 2103, Vnum: 27001, Count: 3, Slot: 8},
+			},
+		},
+		{
+			name: "duplicate target occupancy",
+			inventory: []inventory.ItemInstance{
+				{ID: 2101, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 2102, Vnum: 27001, Count: 1, Slot: 8},
+				{ID: 2103, Vnum: 27001, Count: 3, Slot: 8},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := inventoryRuntimeCharacterFixture()
+			persisted.Inventory = tc.inventory
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+			if _, ok := runtime.MoveInventoryItemBounded(5, 8, 200); ok {
+				t.Fatalf("expected %s bounded item move to fail closed", tc.name)
+			}
+			if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+				t.Fatalf("expected %s bounded item move to leave live inventory unchanged, got %#v want %#v", tc.name, runtime.LiveInventory(), persisted.Inventory)
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+				t.Fatalf("expected %s bounded item move to leave persisted inventory unchanged, got %#v want %#v", tc.name, runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+			}
+		})
+	}
+}
+
 func TestRuntimeMoveInventoryItemSwapsIncompatibleOccupiedDestinationWithoutCount(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
