@@ -383,6 +383,54 @@ func TestEntityRegistryUpdateStaticActorPreservesDeathReward(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryRegisterStaticActorSortsDeathRewardDrops(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActor(StaticEntity{
+		Entity:        Entity{Name: "SortedRewardGuard"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.sorted_reward_guard",
+		DeathReward:   StaticActorDeathReward{DropVnums: []uint32{27003, 27001, 27002}},
+	})
+	if !ok {
+		t.Fatal("expected actor registration with unordered reward drops to succeed")
+	}
+
+	lookup, ok := registry.StaticActor(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected static actor lookup to succeed")
+	}
+	if len(lookup.DeathReward.DropVnums) != 3 || lookup.DeathReward.DropVnums[0] != 27001 || lookup.DeathReward.DropVnums[1] != 27002 || lookup.DeathReward.DropVnums[2] != 27003 {
+		t.Fatalf("expected registered death reward drops to be sorted, got %+v", lookup.DeathReward.DropVnums)
+	}
+}
+
+func TestEntityRegistryUpdateStaticActorSortsDeathRewardDrops(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActor(StaticEntity{
+		Entity:        Entity{Name: "UpdatedRewardGuard"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.updated_reward_guard",
+		DeathReward:   StaticActorDeathReward{DropVnums: []uint32{27001}},
+	})
+	if !ok {
+		t.Fatal("expected actor registration to succeed")
+	}
+
+	updated := actor
+	updated.DeathReward = StaticActorDeathReward{DropVnums: []uint32{27003, 27001, 27002}}
+	result, ok := registry.UpdateStaticActor(updated)
+	if !ok {
+		t.Fatal("expected actor update with unordered reward drops to succeed")
+	}
+	if len(result.DeathReward.DropVnums) != 3 || result.DeathReward.DropVnums[0] != 27001 || result.DeathReward.DropVnums[1] != 27002 || result.DeathReward.DropVnums[2] != 27003 {
+		t.Fatalf("expected updated death reward drops to be sorted, got %+v", result.DeathReward.DropVnums)
+	}
+}
+
 func TestEntityRegistryUpdateStaticActorRebuildsMissingMapPresence(t *testing.T) {
 	registry := NewEntityRegistry()
 	guard, ok := registry.RegisterStaticActor(StaticEntity{

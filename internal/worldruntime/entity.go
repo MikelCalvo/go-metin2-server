@@ -1,6 +1,7 @@
 package worldruntime
 
 import (
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -70,6 +71,9 @@ func (r StaticActorDeathReward) Clone() StaticActorDeathReward {
 	cloned := StaticActorDeathReward{Experience: r.Experience, Gold: r.Gold}
 	if len(r.DropVnums) > 0 {
 		cloned.DropVnums = append([]uint32(nil), r.DropVnums...)
+		sort.Slice(cloned.DropVnums, func(i int, j int) bool {
+			return cloned.DropVnums[i] < cloned.DropVnums[j]
+		})
 	}
 	return cloned
 }

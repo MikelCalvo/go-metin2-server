@@ -65,7 +65,8 @@ The descriptor validator itself owns the static authoring checks before runtime 
 - scalar values above that maximum are rejected
 - zero-valued drop vnums are rejected
 - duplicate drop vnums in one descriptor are rejected
-- multiple distinct fixed drop vnums in one descriptor are accepted and preserve authored order
+- multiple distinct fixed drop vnums in one descriptor are accepted
+- validated drop-vnum lists are normalized into ascending deterministic order when cloned into runtime/default snapshots, so later registration, lookup, update, respawn, and preview paths do not depend on authored JSON/list ordering
 - file-backed static actor snapshots reject malformed spawn-group reward descriptors before loading or saving runtime state
 
 Malformed reward descriptors must not roll back the already-accepted combat death edge.
@@ -81,7 +82,7 @@ Reward frames are appended only after:
 After those frames, successful reward feedback is ordered as:
 1. optional EXP `GC PLAYER_POINT_CHANGE`
 2. optional gold `GC PLAYER_POINT_CHANGE`
-3. one `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` pair per configured drop, in descriptor order
+3. one `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` pair per configured drop, in normalized ascending drop-vnum order
 
 This ordering keeps combat lifecycle visible before reward side effects.
 

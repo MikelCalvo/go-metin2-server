@@ -8055,7 +8055,7 @@ func TestGameRuntimeDropRewardCollisionFailsClosedWithoutDuplicateGroundItem(t *
 	}
 }
 
-func TestGameRuntimeDropRewardDescriptorCollisionFailsClosedWithoutRegisteringAnyDrop(t *testing.T) {
+func TestGameRuntimeNormalizesDropRewardOrderBeforeGroundVIDGeneration(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
 		Entity:        worldruntime.Entity{ID: 0x0105021A, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105021A, Name: "DescriptorCollisionRewardMob"},
@@ -8082,20 +8082,9 @@ func TestGameRuntimeDropRewardDescriptorCollisionFailsClosedWithoutRegisteringAn
 		t.Fatal("expected descriptor collision reward mob registration to succeed")
 	}
 
-	// bootstrapRewardGroundItemVID intentionally mixes the drop index into the
-	// low bits.  The first and 257th entries below collide because
-	// (27001 << 8) ^ 1 == (27000 << 8) ^ 257.
-	dropVnums := make([]uint32, 257)
-	dropVnums[0] = 27001
-	for i := 1; i < len(dropVnums)-1; i++ {
-		dropVnums[i] = 28000 + uint32(i)
-	}
-	dropVnums[256] = 27000
-	if bootstrapRewardGroundItemVID(killer, dropVnums[0], 0) != bootstrapRewardGroundItemVID(killer, dropVnums[256], 256) {
-		t.Fatal("test fixture must generate an intra-descriptor ground reward VID collision")
-	}
+	dropVnums := []uint32{27003, 27001, 27002}
 	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: dropVnums}) {
-		t.Fatal("expected descriptor collision reward override to apply")
+		t.Fatal("expected unordered reward override to apply")
 	}
 
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "descriptor-collision-killer", 0x1A1A1A1A)
@@ -8115,22 +8104,30 @@ func TestGameRuntimeDropRewardDescriptorCollisionFailsClosedWithoutRegisteringAn
 			t.Fatalf("unexpected attack error on descriptor collision reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 2 {
-		t.Fatalf("expected descriptor-colliding reward kill to return only dead and clear-target frames, got %d", len(killOut))
+	if len(killOut) != 8 {
+		t.Fatalf("expected normalized three-drop reward kill to return dead, clear-target, and three ground-add/ownership pairs, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
-		t.Fatalf("decode descriptor collision reward dead frame: %v", err)
+		t.Fatalf("decode normalized reward dead frame: %v", err)
 	}
 	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
 	if err != nil {
-		t.Fatalf("decode descriptor collision reward clear-target frame: %v", err)
+		t.Fatalf("decode normalized reward clear-target frame: %v", err)
 	}
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
-		t.Fatalf("unexpected descriptor collision reward clear target: %+v", clearTarget)
+		t.Fatalf("unexpected normalized reward clear target: %+v", clearTarget)
 	}
-	for index, vnum := range dropVnums {
-		if runtime.sharedWorld.GroundItemExists(bootstrapRewardGroundItemVID(killer, vnum, index)) {
-			t.Fatalf("expected descriptor collision to suppress all reward ground registrations, but drop index %d vnum %d is live", index, vnum)
+	normalizedDropVnums := []uint32{27001, 27002, 27003}
+	for index, vnum := range normalizedDropVnums {
+		add, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2+index*2]))
+		if err != nil {
+			t.Fatalf("decode normalized reward ground add %d: %v", index, err)
+		}
+		if add.Vnum != vnum || add.VID != bootstrapRewardGroundItemVID(killer, vnum, index) {
+			t.Fatalf("expected normalized reward drop %d to use vnum %d and deterministic index VID, got %+v", index, vnum, add)
+		}
+		if !runtime.sharedWorld.GroundItemExists(add.VID) {
+			t.Fatalf("expected normalized reward ground item %d to be registered", add.VID)
 		}
 	}
 }
