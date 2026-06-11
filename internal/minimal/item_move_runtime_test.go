@@ -863,6 +863,74 @@ func TestGameRuntimeItemMoveCompatibleMergeRejectsMissingAuthoredTemplateWithout
 	}
 }
 
+func TestGameRuntimeItemMoveCountedPartialSplitPreservesSourceItemQuickslot(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}}}); err != nil {
+		t.Fatalf("seed counted split item-move template: %v", err)
+	}
+	owner := peerVisibilityCharacter("ItemMoveSplitQS", 0x01030229, 0x02040229, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1901, Vnum: 27001, Count: 5, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "item-move-split-qs", 0x69696969, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-move-split-qs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed counted split item-move owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected counted split item-move runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-move-split-qs", 0x69696969)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(8),
+		Count:       2,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected counted split item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected counted split item move to emit only source and destination item refreshes, got %d", len(out))
+	}
+	sourceSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode counted split source set: %v", err)
+	}
+	if sourceSet.Position != itemproto.InventoryPosition(5) || sourceSet.Count != 3 {
+		t.Fatalf("unexpected counted split source refresh: %+v", sourceSet)
+	}
+	destinationSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode counted split destination set: %v", err)
+	}
+	if destinationSet.Position != itemproto.InventoryPosition(8) || destinationSet.Count != 2 {
+		t.Fatalf("unexpected counted split destination refresh: %+v", destinationSet)
+	}
+
+	account, err := accounts.Load("item-move-split-qs")
+	if err != nil {
+		t.Fatalf("load counted split item-move account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 2 {
+		t.Fatalf("expected split item-move to persist two carried stacks, got %#v", account.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("counted split item-move should preserve source quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameRuntimeItemMoveCountedFullStackMergeDeletesSourceItemQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
