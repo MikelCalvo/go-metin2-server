@@ -67,6 +67,24 @@ func TestFileStoreSaveWritesDeterministicSortedSnapshotAndReplacesPreviousConten
 	}
 }
 
+func TestFileStoreSaveNormalizesRewardDropOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	input := Snapshot{StaticActors: []StaticActor{{EntityID: 22, Name: "RewardMultiDrop", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_multi_drop", RewardDropVnums: []uint32{27003, 27001, 27002}}}}
+
+	if err := store.Save(input); err != nil {
+		t.Fatalf("save reward-drop snapshot: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load reward-drop snapshot: %v", err)
+	}
+	want := Snapshot{StaticActors: []StaticActor{{EntityID: 22, Name: "RewardMultiDrop", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_multi_drop", RewardDropVnums: []uint32{27001, 27002, 27003}}}}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("expected reward drop vnums to be persisted in canonical order:\n got: %#v\nwant: %#v", loaded, want)
+	}
+}
+
 func TestFileStoreLoadReturnsNotFoundForMissingSnapshot(t *testing.T) {
 	store := NewFileStore(filepath.Join(t.TempDir(), "state", "static-actors.json"))
 	_, err := store.Load()

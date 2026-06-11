@@ -294,13 +294,13 @@ func TestCanonicalizeKeepsSpawnGroupRewardDescriptor(t *testing.T) {
 		CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
 		RewardExperience: 75,
 		RewardGold:       60,
-		RewardDropVnums:  []uint32{27002, 27001},
+		RewardDropVnums:  []uint32{27001, 27002},
 	}}}
 	if !reflect.DeepEqual(bundle, want) {
 		t.Fatalf("unexpected canonical reward spawn group:\n got: %#v\nwant: %#v", bundle, want)
 	}
 	dropVnums[0] = 0
-	if bundle.SpawnGroups[0].RewardDropVnums[0] != 27002 {
+	if bundle.SpawnGroups[0].RewardDropVnums[0] != 27001 {
 		t.Fatalf("expected reward drop vnums to be cloned, got %#v", bundle.SpawnGroups[0].RewardDropVnums)
 	}
 }

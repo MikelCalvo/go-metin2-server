@@ -109,6 +109,9 @@ func cloneStaticActors(actors []StaticActor) []StaticActor {
 	for i, actor := range actors {
 		if len(actor.RewardDropVnums) > 0 {
 			actor.RewardDropVnums = append([]uint32(nil), actor.RewardDropVnums...)
+			sort.Slice(actor.RewardDropVnums, func(i int, j int) bool {
+				return actor.RewardDropVnums[i] < actor.RewardDropVnums[j]
+			})
 		}
 		cloned[i] = actor
 	}

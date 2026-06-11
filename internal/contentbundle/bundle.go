@@ -241,6 +241,9 @@ func cloneUint32s(values []uint32) []uint32 {
 	}
 	cloned := make([]uint32, len(values))
 	copy(cloned, values)
+	sort.Slice(cloned, func(i int, j int) bool {
+		return cloned[i] < cloned[j]
+	})
 	return cloned
 }
 
