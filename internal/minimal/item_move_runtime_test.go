@@ -79,6 +79,81 @@ func TestGameRuntimeItemMoveRejectsTransferGuardedStackTemplatesWithoutMutation(
 	}
 }
 
+func TestGameRuntimeItemMoveRejectsSelectedCharacterRestrictedStackTemplatesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+		job      uint8
+		raceNum  uint16
+		level    uint8
+	}{
+		{
+			name:     "anti warrior",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Warrior Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiWarrior: true},
+			job:      0, raceNum: 0, level: 1,
+		},
+		{
+			name:     "anti male",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Male Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiMale: true},
+			job:      0, raceNum: 0, level: 1,
+		},
+		{
+			name:     "min level",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Veteran Stack Potion", Stackable: true, MaxCount: 200, MinLevel: 10},
+			job:      0, raceNum: 0, level: 5,
+		},
+	}
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("MoveRestrictedStack", 0x01030690+uint32(index), 0x02040690+uint32(index), 1300, 2300, tc.raceNum, 101, 201)
+			owner.Job = tc.job
+			owner.RaceNum = tc.raceNum
+			owner.Level = tc.level
+			owner.Inventory = []inventory.ItemInstance{
+				{ID: 6201, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 6202, Vnum: 27001, Count: 4, Slot: 6},
+			}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			login := "move-restricted-stack-" + string(rune('a'+index))
+			issuePeerTicket(t, ticketStore, login, 0x60606090+uint32(index), owner)
+			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed selected-character-restricted item-move account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{tc.template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected selected-character-restricted item-move runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x60606090+uint32(index))
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+				Source:      itemproto.InventoryPosition(5),
+				Destination: itemproto.InventoryPosition(6),
+				Count:       0,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected selected-character-restricted item-move packet error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s item-move stack merge to emit no frames, got %d", tc.name, len(out))
+			}
+			persisted, err := accounts.Load(login)
+			if err != nil {
+				t.Fatalf("load selected-character-restricted item-move account: %v", err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s item-move stack merge mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s item-move stack merge mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemMoveEquipRejectsTemplateAntiFlagsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string
