@@ -1048,6 +1048,49 @@ func TestRuntimeUseItemOnItemRejectsAntiStackTransferTemplatesWithoutMutatingSta
 	}
 }
 
+func TestRuntimeUseItemOnItemFullMergeDeletesAllSourceItemQuickslots(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "PeerTwo",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 4, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 5, Type: quickslotproto.TypeSkill, Slot: 5},
+			{Position: 6, Type: quickslotproto.TypeItem, Slot: 6},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.UseItemOnItem(5, 6, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50"))
+	if !ok {
+		t.Fatal("expected full use-to-item merge to succeed")
+	}
+	if !result.Changed || result.FromOccupied || result.CountOnly {
+		t.Fatalf("unexpected full use-to-item result metadata: %+v", result)
+	}
+	deletedQuickslots, ok := runtime.SyncItemQuickslotsForItemRemoval(5)
+	if !ok {
+		t.Fatal("expected full use-to-item source quickslot sync to succeed")
+	}
+	wantDeleted := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 5},
+	}
+	if !reflect.DeepEqual(deletedQuickslots, wantDeleted) {
+		t.Fatalf("unexpected deleted quickslots after full use-to-item merge: got %#v want %#v", deletedQuickslots, wantDeleted)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 5, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 6, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	if !reflect.DeepEqual(runtime.LiveQuickslots(), wantQuickslots) {
+		t.Fatalf("unexpected live quickslots after full use-to-item merge: got %#v want %#v", runtime.LiveQuickslots(), wantQuickslots)
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsLockedSourceOrTargetWithoutMutatingState(t *testing.T) {
 	cases := []struct {
 		name      string
