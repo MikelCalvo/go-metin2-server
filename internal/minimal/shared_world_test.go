@@ -13573,6 +13573,34 @@ func TestSharedWorldRegistryGroundGoldPickupRejectsDeadCollector(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryGroundGoldRemovalRejectsOutOfRangeCollector(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(4000, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("RangeGoldOwner", 0x01030124, 0x02040124, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("FarGoldCollector", 0x01030125, 0x02040125, 2500, 3500, 1, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and far collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	groundVID := uint32(0x0A0B0C1B)
+	if !registry.RegisterGroundGold(ownerID, "range-gold-owner-login", owner, groundVID, 275) {
+		t.Fatal("expected owner ground gold registration to succeed")
+	}
+	if visible, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); !ok || visible.Vnum != 1 {
+		t.Fatalf("expected far collector to see visible ground gold before range-gated pickup, got ok=%v item=%+v", ok, visible)
+	}
+	if pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok || pickup.GoldAmount != 0 {
+		t.Fatalf("expected far collector ground-gold pickup lookup to fail closed, got ok=%v pickup=%+v", ok, pickup)
+	}
+	if removed := registry.RemoveGroundItem(collectorID, collector, groundVID); removed {
+		t.Fatal("expected far collector ground-gold removal to fail closed")
+	}
+	if pickup, ok := registry.GroundItemPickupFor(ownerID, owner, groundVID); !ok || pickup.GoldAmount != 275 {
+		t.Fatalf("expected rejected far collector removal to leave ground gold available for owner, got ok=%v pickup=%+v", ok, pickup)
+	}
+}
+
 func TestSharedWorldRegistryGroundGoldPickupSkipsDeadOwnerDelivery(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
