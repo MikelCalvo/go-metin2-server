@@ -2558,8 +2558,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if sourceItem.Slot != inventory.SlotIndex(packet.Source.Cell) {
 							continue
 						}
-						if template, ok := runtime.itemTemplates[sourceItem.Vnum]; ok && itemcatalog.ValidTemplate(template) {
-							if template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || !template.Stackable || !selectedPlayer.CanUseTemplate(template) {
+						if template, ok := runtime.itemTemplates[sourceItem.Vnum]; ok {
+							if !itemcatalog.ValidTemplate(template) {
+								for _, targetItem := range liveInventory {
+									if targetItem.Slot == inventory.SlotIndex(packet.Destination.Cell) && targetItem.Vnum == sourceItem.Vnum {
+										maxCount = 0
+										break
+									}
+								}
+							} else if template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || !template.Stackable || !selectedPlayer.CanUseTemplate(template) {
 								maxCount = 0
 							} else if template.MaxCount > 0 {
 								maxCount = template.MaxCount

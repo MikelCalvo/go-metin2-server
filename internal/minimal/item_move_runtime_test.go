@@ -146,6 +146,50 @@ func TestGameRuntimeItemMoveRejectsTransferGuardedStackTemplatesWithoutMutation(
 	}
 }
 
+func TestGameRuntimeItemMoveRejectsOverUint8TemplateMaxWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MoveWideMaxStack", 0x0103068f, 0x0204068f, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 6151, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 6152, Vnum: 27001, Count: 4, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "move-wide-max-stack", 0x6060608f, owner)
+	if err := accounts.Save(accountstore.Account{Login: "move-wide-max-stack", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed over-uint8 item-move account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected over-uint8 item-move runtime error: %v", err)
+	}
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Runtime Wide Max Stack Potion", Stackable: true, MaxCount: 256}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "move-wide-max-stack", 0x6060608f)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(6),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected over-uint8 item-move packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected over-uint8 item-move stack merge to emit no frames, got %d", len(out))
+	}
+	persisted, err := accounts.Load("move-wide-max-stack")
+	if err != nil {
+		t.Fatalf("load over-uint8 item-move account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("over-uint8 item-move stack merge mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("over-uint8 item-move stack merge mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameRuntimeItemMoveRejectsSelectedCharacterRestrictedStackTemplatesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string
