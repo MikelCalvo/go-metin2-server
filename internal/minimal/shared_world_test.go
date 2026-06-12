@@ -36,6 +36,30 @@ import (
 
 const defaultMerchantPreview = "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g; [2] Small Red Potion x2 @ 100g"
 
+func TestLegacyCreatePositionForEmpireCoversOwnedTownRestartTable(t *testing.T) {
+	tests := []struct {
+		name         string
+		empire       uint8
+		wantMapIndex uint32
+		wantX        int32
+		wantY        int32
+	}{
+		{name: "empire one", empire: 1, wantMapIndex: bootstrapMapIndex, wantX: 459800, wantY: 953900},
+		{name: "empire two", empire: 2, wantMapIndex: 21, wantX: 52070, wantY: 166600},
+		{name: "empire three", empire: 3, wantMapIndex: 41, wantX: 957300, wantY: 255200},
+		{name: "unknown falls back to empire one", empire: 0, wantMapIndex: bootstrapMapIndex, wantX: 459800, wantY: 953900},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMapIndex, gotX, gotY := legacyCreatePositionForEmpire(tt.empire)
+			if gotMapIndex != tt.wantMapIndex || gotX != tt.wantX || gotY != tt.wantY {
+				t.Fatalf("legacyCreatePositionForEmpire(%d) = map=%d x=%d y=%d, want map=%d x=%d y=%d", tt.empire, gotMapIndex, gotX, gotY, tt.wantMapIndex, tt.wantX, tt.wantY)
+			}
+		})
+	}
+}
+
 func TestStaticActorCharacterAdditionalInfoUsesCombatProfileLevel(t *testing.T) {
 	actor := worldruntime.StaticEntity{
 		Entity: worldruntime.Entity{
