@@ -4422,6 +4422,95 @@ func TestGameSessionFlowPracticeMobRestartTownTransfersDeadOwnerToEmpireCreatePo
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartTownFallsBackToTicketEmpireWhenCharacterEmpireIsUnset(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("EmpireFallbackOwner", 0x01030181, 0x02040181, 1100, 2100, 0, 101, 201)
+	owner.Empire = 0
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	watcher := peerVisibilityCharacter("EmpireFallbackWatcher", 0x01030182, 0x02040182, 1300, 2300, 2, 102, 202)
+	if err := store.Issue(loginticket.Ticket{Login: "empire-fallback-owner", LoginKey: 0x81818181, Empire: 2, Characters: []loginticket.Character{owner}}); err != nil {
+		t.Fatalf("issue owner ticket with ticket-level empire fallback: %v", err)
+	}
+	issuePeerTicket(t, store, "empire-fallback-watcher", 0x82828282, watcher)
+	if err := accounts.Save(accountstore.Account{Login: "empire-fallback-owner", Empire: 2, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed owner account before /restart_town empire fallback test: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "empire-fallback-watcher", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed watcher account before /restart_town empire fallback test: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error in /restart_town empire fallback test: %v", err)
+	}
+	currentTime := time.Unix(1700000491, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_empire_fallback",
+		Name:          "PracticeMobEmpireFallback",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle for /restart_town empire fallback test: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import for /restart_town empire fallback test, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "empire-fallback-owner", 0x81818181)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner in /restart_town empire fallback test, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "empire-fallback-watcher", 0x82828282)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher in /restart_town empire fallback test, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins in /restart_town empire fallback test, got %d", len(queued))
+	}
+
+	advance := func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	}
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town error in empire fallback test: %v", err)
+	}
+	if len(restartOut) != 6 {
+		t.Fatalf("expected 6 self frames from /restart_town empire fallback test, got %d", len(restartOut))
+	}
+	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, restartOut[0]))
+	if err != nil {
+		t.Fatalf("decode self character add after /restart_town empire fallback: %v", err)
+	}
+	if selfAdd.VID != owner.VID || selfAdd.X != 52070 || selfAdd.Y != 166600 {
+		t.Fatalf("expected /restart_town to fall back to ticket empire 2 town position, got %+v", selfAdd)
+	}
+	persisted, err := accounts.Load("empire-fallback-owner")
+	if err != nil {
+		t.Fatalf("load persisted owner account after /restart_town empire fallback: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted owner after /restart_town empire fallback, got %+v", persisted)
+	}
+	if persisted.Characters[0].MapIndex != 21 || persisted.Characters[0].X != 52070 || persisted.Characters[0].Y != 166600 {
+		t.Fatalf("expected /restart_town to persist ticket-empire fallback town position map=21 x=52070 y=166600, got %+v", persisted.Characters[0])
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartTownPreservesSourcePracticeMobHPForOtherVisibleSessions(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
