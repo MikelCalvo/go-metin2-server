@@ -124,6 +124,7 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	if !validStaticActorCombatProfileName(profile) {
 		return false
 	}
+	defaults = cloneStaticActorCombatProfileDefaults(defaults)
 	if profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
 		return false
 	}
@@ -132,7 +133,7 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	if _, exists := staticActorCombatProfileRegistry.profiles[profile]; exists {
 		return false
 	}
-	staticActorCombatProfileRegistry.profiles[profile] = cloneStaticActorCombatProfileDefaults(defaults)
+	staticActorCombatProfileRegistry.profiles[profile] = defaults
 	return true
 }
 
@@ -163,6 +164,9 @@ func validStaticActorCombatProfileName(profile string) bool {
 func cloneStaticActorCombatProfileDefaults(defaults StaticActorCombatProfileDefaults) StaticActorCombatProfileDefaults {
 	if defaults.AttackValue == 0 {
 		defaults.AttackValue = uint16(defaults.DamagePerNormalAttack)
+	}
+	if defaults.DamagePerNormalAttack == 0 && defaults.MaxHP > 0 {
+		defaults.DamagePerNormalAttack = bootstrapStaticActorNormalAttackDamage(defaults)
 	}
 	if defaults.Level == 0 {
 		defaults.Level = TrainingDummyBootstrapLevel

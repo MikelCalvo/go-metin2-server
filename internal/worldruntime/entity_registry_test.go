@@ -2,9 +2,36 @@ package worldruntime
 
 import (
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
+
+func TestRegisteredStaticActorCombatProfileAllowsExplicitFormulaWithoutLegacyDamage(t *testing.T) {
+	const profile = "formula_only_profile"
+	UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        10,
+		AttackValue:  7,
+		DefenseValue: 4,
+		RespawnDelay: time.Second,
+	}) {
+		t.Fatal("expected explicit attack/defense profile to register without legacy damage_per_normal_attack")
+	}
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatal("expected registered combat profile defaults")
+	}
+	if defaults.DamagePerNormalAttack != 3 {
+		t.Fatalf("expected legacy damage fallback to be canonicalized from formula, got %d", defaults.DamagePerNormalAttack)
+	}
+	if nextHP, hpPercent, ok := ApplyBootstrapStaticActorNormalAttack(profile, 10); !ok || nextHP != 7 || hpPercent != 70 {
+		t.Fatalf("expected formula-only profile to apply 3 damage, got nextHP=%d hpPercent=%d ok=%v", nextHP, hpPercent, ok)
+	}
+}
 
 func TestEntityRegistryRegistersLooksUpUpdatesAndRemovesPlayerEntities(t *testing.T) {
 	registry := NewEntityRegistry()
