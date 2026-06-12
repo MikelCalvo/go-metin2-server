@@ -51,6 +51,56 @@ func TestApplyBootstrapStaticActorNormalAttackSupportsPracticeMobProfile(t *test
 	}
 }
 
+func TestApplyBootstrapStaticActorNormalAttackUsesRegisteredAttackDefenseFormula(t *testing.T) {
+	const profile = "practice_formula_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 20,
+		DamagePerNormalAttack: 1,
+		AttackValue:           7,
+		DefenseValue:          3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with formula stats to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	nextHP, hpPercent, ok := ApplyBootstrapStaticActorNormalAttack(profile, 20)
+	if !ok {
+		t.Fatal("expected registered formula profile normal attack to be supported")
+	}
+	if nextHP != 16 {
+		t.Fatalf("expected attack 7 minus defense 3 to deal 4 damage, got next HP %d", nextHP)
+	}
+	if hpPercent != 80 {
+		t.Fatalf("expected formula profile HP percent 80 after one hit, got %d", hpPercent)
+	}
+}
+
+func TestApplyBootstrapStaticActorNormalAttackClampsFormulaDamageToMinimumOne(t *testing.T) {
+	const profile = "practice_armored_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 20,
+		DamagePerNormalAttack: 5,
+		AttackValue:           2,
+		DefenseValue:          9,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with armored formula stats to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	nextHP, hpPercent, ok := ApplyBootstrapStaticActorNormalAttack(profile, 20)
+	if !ok {
+		t.Fatal("expected registered armored profile normal attack to be supported")
+	}
+	if nextHP != 19 {
+		t.Fatalf("expected attack lower than defense to clamp to 1 damage, got next HP %d", nextHP)
+	}
+	if hpPercent != 95 {
+		t.Fatalf("expected formula profile HP percent 95 after minimum hit, got %d", hpPercent)
+	}
+}
+
 func TestBootstrapStaticActorRespawnDelayReturnsTrainingDummyBootstrapDelay(t *testing.T) {
 	delay, ok := BootstrapStaticActorRespawnDelay(StaticActorCombatKindTrainingDummy)
 	if !ok {

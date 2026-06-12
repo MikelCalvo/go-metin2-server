@@ -255,14 +255,29 @@ func ApplyBootstrapStaticActorNormalAttack(combatKind string, currentHP uint8) (
 	if currentHP > defaults.MaxHP {
 		currentHP = defaults.MaxHP
 	}
+	damage := bootstrapStaticActorNormalAttackDamage(defaults)
 	nextHP := currentHP
-	if nextHP <= defaults.DamagePerNormalAttack {
+	if nextHP <= damage {
 		nextHP = 0
 	} else {
-		nextHP -= defaults.DamagePerNormalAttack
+		nextHP -= damage
 	}
 	hpPercent := bootstrapStaticActorHPPercent(nextHP, defaults.MaxHP)
 	return nextHP, hpPercent, true
+}
+
+func bootstrapStaticActorNormalAttackDamage(defaults StaticActorCombatProfileDefaults) uint8 {
+	if defaults.AttackValue <= defaults.DefenseValue {
+		return 1
+	}
+	damage := defaults.AttackValue - defaults.DefenseValue
+	if damage == 0 {
+		return 1
+	}
+	if damage > uint16(defaults.MaxHP) {
+		return defaults.MaxHP
+	}
+	return uint8(damage)
 }
 
 func bootstrapStaticActorHPPercent(currentHP uint8, maxHP uint8) uint8 {
