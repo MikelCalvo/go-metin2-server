@@ -66,6 +66,8 @@ type StaticActorSnapshot struct {
 	RaceNum          uint32   `json:"race_num"`
 	Dead             bool     `json:"dead,omitempty"`
 	CombatProfile    string   `json:"combat_profile,omitempty"`
+	CombatLevel      uint16   `json:"combat_level,omitempty"`
+	CombatRank       uint8    `json:"combat_rank,omitempty"`
 	InteractionKind  string   `json:"interaction_kind,omitempty"`
 	InteractionRef   string   `json:"interaction_ref,omitempty"`
 	SpawnGroupRef    string   `json:"spawn_group_ref,omitempty"`
@@ -423,6 +425,13 @@ func bootstrapPlayerSnapshotDead(character loginticket.Character) bool {
 }
 
 func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticActorSnapshot {
+	combatProfile := staticActorCombatProfile(actor.CombatProfile, actor.CombatKind)
+	var combatLevel uint16
+	var combatRank uint8
+	if defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatProfile); ok {
+		combatLevel = defaults.Level
+		combatRank = defaults.Rank
+	}
 	return StaticActorSnapshot{
 		EntityID:         actor.Entity.ID,
 		Name:             actor.Entity.Name,
@@ -430,7 +439,9 @@ func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticA
 		X:                actor.Position.X,
 		Y:                actor.Position.Y,
 		RaceNum:          actor.RaceNum,
-		CombatProfile:    staticActorCombatProfile(actor.CombatProfile, actor.CombatKind),
+		CombatProfile:    combatProfile,
+		CombatLevel:      combatLevel,
+		CombatRank:       combatRank,
 		InteractionKind:  actor.InteractionKind,
 		InteractionRef:   actor.InteractionRef,
 		SpawnGroupRef:    actor.SpawnGroupRef,

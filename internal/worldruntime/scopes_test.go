@@ -533,6 +533,47 @@ func TestScopesStaticActorSnapshotsReturnDeterministicOrder(t *testing.T) {
 	}
 }
 
+func TestScopesStaticActorSnapshotsExposeCombatProfilePresentationMetadata(t *testing.T) {
+	profile := "rank_probe"
+	UnregisterStaticActorCombatProfileForTest(profile)
+	defer UnregisterStaticActorCombatProfileForTest(profile)
+	if ok := RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 12,
+		DamagePerNormalAttack: 2,
+		AttackValue:           5,
+		DefenseValue:          1,
+		Level:                 7,
+		Rank:                  3,
+		RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+	}); !ok {
+		t.Fatal("expected registered rank probe profile")
+	}
+
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	actor, ok := registry.RegisterStaticActor(StaticEntity{
+		Entity:        Entity{Name: "Rank Probe"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: profile,
+		SpawnGroupRef: "practice.rank_probe",
+	})
+	if !ok {
+		t.Fatal("expected rank probe registration to succeed")
+	}
+
+	snapshots := NewScopes(topology, registry).StaticActorSnapshots()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one static actor snapshot, got %+v", snapshots)
+	}
+	if snapshots[0].EntityID != actor.Entity.ID || snapshots[0].CombatProfile != profile {
+		t.Fatalf("unexpected static actor snapshot identity: %+v", snapshots[0])
+	}
+	if snapshots[0].CombatLevel != 7 || snapshots[0].CombatRank != 3 {
+		t.Fatalf("expected combat presentation metadata level=7 rank=3, got level=%d rank=%d in %+v", snapshots[0].CombatLevel, snapshots[0].CombatRank, snapshots[0])
+	}
+}
+
 func TestAppendGroundItemsToMapOccupancySnapshotsPreservesGroundOnlyMapsAndOrder(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	snapshots := []MapOccupancySnapshot{
