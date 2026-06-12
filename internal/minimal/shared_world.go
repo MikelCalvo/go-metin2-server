@@ -2284,11 +2284,19 @@ func staticActorCharacterAdditionalInfoPacket(actor worldruntime.StaticEntity, v
 		Parts:     [worldproto.CharacterEquipmentPartCount]uint16{},
 		Empire:    0,
 		GuildID:   0,
-		Level:     0,
+		Level:     staticActorCharacterAdditionalInfoLevel(actor),
 		Alignment: 0,
 		PKMode:    0,
 		MountVnum: 0,
 	}
+}
+
+func staticActorCharacterAdditionalInfoLevel(actor worldruntime.StaticEntity) uint32 {
+	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(actor.CombatKind)
+	if !ok {
+		return 0
+	}
+	return uint32(defaults.Level)
 }
 
 func staticActorCharacterUpdatePacket(actor worldruntime.StaticEntity, vid uint32) worldproto.CharacterUpdatePacket {

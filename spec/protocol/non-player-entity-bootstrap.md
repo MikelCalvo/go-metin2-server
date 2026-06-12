@@ -32,7 +32,7 @@ This contract applies only to:
 - the first live operator-update visibility rebuild for in-place edits that move the actor across map/AOI boundaries and therefore change which already-connected players can see it
 
 This slice now claims only seven narrow client-visible behaviors for non-player actors:
-- when a player enters `GAME`, already-visible bootstrap static actors can be appended to that enter-game result with deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` frames
+- when a player enters `GAME`, already-visible bootstrap static actors can be appended to that enter-game result with deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` frames; combat-profile actors copy their resolved profile `level` into `CHAR_ADDITIONAL_INFO.level`
 - when an operator seeds a new static actor while players are already online, sessions that already share visible world with that actor can immediately receive the same deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst
 - when an operator removes a static actor while players are already online, sessions that currently share visible world with that actor can immediately receive a deterministic `CHARACTER_DEL`
 - when an operator updates a static actor while players are already online and the actor remains in the same visible world set for those sessions, those already-visible sessions can immediately receive a deterministic `CHARACTER_DEL` followed by the actor's refreshed `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst

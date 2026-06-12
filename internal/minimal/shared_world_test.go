@@ -36,6 +36,27 @@ import (
 
 const defaultMerchantPreview = "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g; [2] Small Red Potion x2 @ 100g"
 
+func TestStaticActorCharacterAdditionalInfoUsesCombatProfileLevel(t *testing.T) {
+	actor := worldruntime.StaticEntity{
+		Entity: worldruntime.Entity{
+			ID:   0x07000001,
+			Kind: worldruntime.EntityKindStaticActor,
+			VID:  0x07000001,
+			Name: "Practice Mob Level Probe",
+		},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob,
+		CombatKind:    worldruntime.StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.mob_level_probe",
+	}
+
+	packet := staticActorCharacterAdditionalInfoPacket(actor, uint32(actor.Entity.ID))
+	if packet.Level != uint32(worldruntime.PracticeMobBootstrapLevel) {
+		t.Fatalf("expected static actor additional info level %d from combat profile, got %d", worldruntime.PracticeMobBootstrapLevel, packet.Level)
+	}
+}
+
 type loadableFailingAccountStore struct {
 	account accountstore.Account
 	saveErr error
