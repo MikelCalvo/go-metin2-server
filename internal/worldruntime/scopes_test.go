@@ -533,6 +533,34 @@ func TestScopesStaticActorSnapshotsReturnDeterministicOrder(t *testing.T) {
 	}
 }
 
+func TestScopesStaticActorSnapshotsExposeCombatProfileRank(t *testing.T) {
+	const profile = "practice_ranked_wolf_snapshot"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		Rank:                  4,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "RankedWolf"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, CombatProfile: profile})
+	if !ok {
+		t.Fatal("expected ranked combat actor registration to succeed")
+	}
+
+	snapshots := NewScopes(topology, registry).StaticActorSnapshots()
+	if len(snapshots) != 1 || snapshots[0].EntityID != actor.Entity.ID {
+		t.Fatalf("expected one ranked actor snapshot, got %+v", snapshots)
+	}
+	if snapshots[0].CombatRank != 4 {
+		t.Fatalf("expected registered combat profile rank 4 in runtime snapshot, got %+v", snapshots[0])
+	}
+}
+
 func TestAppendGroundItemsToMapOccupancySnapshotsPreservesGroundOnlyMapsAndOrder(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	snapshots := []MapOccupancySnapshot{

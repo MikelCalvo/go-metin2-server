@@ -66,6 +66,7 @@ type StaticActorSnapshot struct {
 	RaceNum          uint32   `json:"race_num"`
 	Dead             bool     `json:"dead,omitempty"`
 	CombatProfile    string   `json:"combat_profile,omitempty"`
+	CombatRank       uint8    `json:"combat_rank,omitempty"`
 	InteractionKind  string   `json:"interaction_kind,omitempty"`
 	InteractionRef   string   `json:"interaction_ref,omitempty"`
 	SpawnGroupRef    string   `json:"spawn_group_ref,omitempty"`
@@ -431,6 +432,7 @@ func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticA
 		Y:                actor.Position.Y,
 		RaceNum:          actor.RaceNum,
 		CombatProfile:    staticActorCombatProfile(actor.CombatProfile, actor.CombatKind),
+		CombatRank:       staticActorCombatRank(actor),
 		InteractionKind:  actor.InteractionKind,
 		InteractionRef:   actor.InteractionRef,
 		SpawnGroupRef:    actor.SpawnGroupRef,
@@ -438,6 +440,18 @@ func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticA
 		RewardGold:       actor.DeathReward.Gold,
 		RewardDropVnums:  actor.DeathReward.Clone().DropVnums,
 	}
+}
+
+func staticActorCombatRank(actor StaticEntity) uint8 {
+	profile := staticActorCombatProfile(actor.CombatProfile, actor.CombatKind)
+	if profile == "" {
+		return 0
+	}
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		return 0
+	}
+	return defaults.Rank
 }
 
 func connectedCharacterSnapshots(topology BootstrapTopology, characters []loginticket.Character) []ConnectedCharacterSnapshot {
