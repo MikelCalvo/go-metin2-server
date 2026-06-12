@@ -1437,11 +1437,14 @@ func TestRuntimeMoveInventoryItemBoundedRejectsDuplicateSourceOrTargetOccupancyW
 			if _, ok := runtime.MoveInventoryItemBounded(5, 8, 200); ok {
 				t.Fatalf("expected %s bounded item move to fail closed", tc.name)
 			}
+			if _, ok := runtime.MoveInventoryItemCountBounded(5, 8, 1, 200); ok {
+				t.Fatalf("expected %s counted bounded item move to fail closed", tc.name)
+			}
 			if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
-				t.Fatalf("expected %s bounded item move to leave live inventory unchanged, got %#v want %#v", tc.name, runtime.LiveInventory(), persisted.Inventory)
+				t.Fatalf("expected %s bounded item moves to leave live inventory unchanged, got %#v want %#v", tc.name, runtime.LiveInventory(), persisted.Inventory)
 			}
 			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
-				t.Fatalf("expected %s bounded item move to leave persisted inventory unchanged, got %#v want %#v", tc.name, runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+				t.Fatalf("expected %s bounded item moves to leave persisted inventory unchanged, got %#v want %#v", tc.name, runtime.PersistedSnapshot().Inventory, persisted.Inventory)
 			}
 		})
 	}

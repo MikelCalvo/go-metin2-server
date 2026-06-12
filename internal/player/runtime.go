@@ -592,6 +592,9 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 	if maxCount == 0 || count > maxCount || from == to {
 		return inventory.MoveResult{}, false
 	}
+	if countInventorySlotOccupancy(r.liveInventory, from) != 1 || countInventorySlotOccupancy(r.liveInventory, to) > 1 {
+		return inventory.MoveResult{}, false
+	}
 	result := inventory.MoveResult{From: from, To: to}
 	fromIndex := findInventorySlot(r.liveInventory, from)
 	if fromIndex < 0 || r.liveInventory[fromIndex].Locked {
