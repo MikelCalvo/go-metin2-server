@@ -72,7 +72,7 @@ Payload:
 
 Total frame length: `6` bytes.
 
-Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid swaps for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_SWAP`. Invalid positions fail closed with no frames.
+Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid swaps for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_SWAP`. Invalid positions and same-position no-op swaps fail closed with no frames or snapshot mutation.
 
 ### Server `QUICKSLOT_ADD` (`0x0519`)
 

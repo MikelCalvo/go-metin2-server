@@ -286,7 +286,7 @@ func (r *Runtime) DeleteQuickslot(position uint8) (loginticket.Quickslot, bool) 
 }
 
 func (r *Runtime) SwapQuickslots(position uint8, targetPosition uint8) (QuickslotSwapResult, bool) {
-	if r == nil || !validQuickslotPosition(position) || !validQuickslotPosition(targetPosition) {
+	if r == nil || position == targetPosition || !validQuickslotPosition(position) || !validQuickslotPosition(targetPosition) {
 		return QuickslotSwapResult{}, false
 	}
 	updated := cloneQuickslots(r.liveQuickslots)
