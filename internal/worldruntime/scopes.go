@@ -451,6 +451,18 @@ func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticA
 	}
 }
 
+func staticActorCombatRank(actor StaticEntity) uint8 {
+	profile := staticActorCombatProfile(actor.CombatProfile, actor.CombatKind)
+	if profile == "" {
+		return 0
+	}
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		return 0
+	}
+	return defaults.Rank
+}
+
 func connectedCharacterSnapshots(topology BootstrapTopology, characters []loginticket.Character) []ConnectedCharacterSnapshot {
 	snapshots := make([]ConnectedCharacterSnapshot, 0, len(characters))
 	for _, character := range characters {

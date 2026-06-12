@@ -23,7 +23,7 @@ This contract applies only to:
 - runtime-owned boot-time restore plus successful create/update/delete persistence for that full static-actor snapshot on `gamed`
 - runtime-owned in-place edits of those static actors across non-player directories and map indexes while preserving entity identity
 - optional interaction-ready metadata (`interaction_kind` / `interaction_ref`) persisted and exposed through those same bootstrap actor seams without claiming interaction behavior yet
-- operator/runtime map-occupancy and static-actor snapshots that can now surface those actors through `internal/worldruntime/scopes.go`
+- operator/runtime map-occupancy and static-actor snapshots that can now surface those actors through `internal/worldruntime/scopes.go`, including resolved combat profile rank metadata for combat-profile actors
 - the first loopback-only operator seed/snapshot/update/remove surface used to create, inspect, edit, and delete those runtime actors on `gamed`
 - the first client-visible enter-game bootstrap burst for static actors that already share the entering player's visible world under the current bootstrap topology/AOI policy
 - the first live operator-seed visibility burst for newly created static actors that already share some connected player's visible world under those same bootstrap topology/AOI rules
@@ -32,7 +32,7 @@ This contract applies only to:
 - the first live operator-update visibility rebuild for in-place edits that move the actor across map/AOI boundaries and therefore change which already-connected players can see it
 
 This slice now claims only seven narrow client-visible behaviors for non-player actors:
-- when a player enters `GAME`, already-visible bootstrap static actors can be appended to that enter-game result with deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` frames; combat-profile actors copy their resolved profile `level` into `CHAR_ADDITIONAL_INFO.level`
+- when a player enters `GAME`, already-visible bootstrap static actors can be appended to that enter-game result with deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` frames; combat-profile actors copy their resolved profile `level` into `CHAR_ADDITIONAL_INFO.level`, while runtime/operator snapshots expose the resolved profile `rank` as descriptor metadata only
 - when an operator seeds a new static actor while players are already online, sessions that already share visible world with that actor can immediately receive the same deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst
 - when an operator removes a static actor while players are already online, sessions that currently share visible world with that actor can immediately receive a deterministic `CHARACTER_DEL`
 - when an operator updates a static actor while players are already online and the actor remains in the same visible world set for those sessions, those already-visible sessions can immediately receive a deterministic `CHARACTER_DEL` followed by the actor's refreshed `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst
@@ -111,6 +111,7 @@ The next runtime checkpoint after this document should be able to say:
 - those bootstrap static actors can now also carry optional paired `interaction_kind` / `interaction_ref` metadata through runtime state, snapshots, and operator create/update surfaces without claiming the interaction behavior itself yet
 - runtime/operator map-occupancy snapshots can now surface those static actors on their effective maps
 - relocate-preview and transfer results can now also expose explicit added/removed visible static actors beside the before/after occupancy snapshots
+- runtime/operator static-actor, visibility, map-occupancy, relocate-preview, and transfer snapshots can now expose resolved `combat_rank` for combat-profile actors without changing current packet output or combat math
 - `gamed` can seed, inspect, update, and remove those bootstrap static actors through loopback-only operator paths
 - entering players can now receive a first deterministic bootstrap burst for static actors that already share their visible world, reusing `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`
 - newly seeded static actors can now also enqueue that same deterministic visibility burst to already-visible online players without requiring those players to relog or move first
