@@ -223,6 +223,29 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 	}
 }
 
+func TestRegisterStaticActorCombatProfileCanonicalizesOmittedLevelToBootstrapDefault(t *testing.T) {
+	const profile = "practice_level_default_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with omitted level to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected registered profile defaults to resolve")
+	}
+	if defaults.Level != TrainingDummyBootstrapLevel {
+		t.Fatalf("expected omitted registered profile level to canonicalize to bootstrap level %d, got %d", TrainingDummyBootstrapLevel, defaults.Level)
+	}
+	if defaults.Rank != 0 {
+		t.Fatalf("expected omitted registered profile rank to remain bootstrap rank 0, got %d", defaults.Rank)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileAddsDeathRewardDefaults(t *testing.T) {
 	const profile = "practice_reward_wolf"
 	reward := StaticActorDeathReward{Experience: 25, Gold: 7, DropVnums: []uint32{27001, 27002}}

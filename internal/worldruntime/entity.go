@@ -164,6 +164,9 @@ func cloneStaticActorCombatProfileDefaults(defaults StaticActorCombatProfileDefa
 	if defaults.AttackValue == 0 {
 		defaults.AttackValue = uint16(defaults.DamagePerNormalAttack)
 	}
+	if defaults.Level == 0 {
+		defaults.Level = TrainingDummyBootstrapLevel
+	}
 	defaults.DeathReward = defaults.DeathReward.Clone()
 	return defaults
 }
