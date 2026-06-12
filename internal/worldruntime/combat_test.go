@@ -141,6 +141,12 @@ func TestBootstrapStaticActorCombatProfileDefaultsSupportsTrainingDummyProfile(t
 	if defaults.RespawnDelay != TrainingDummyBootstrapRespawnDelay {
 		t.Fatalf("expected training-dummy respawn delay %v, got %v", TrainingDummyBootstrapRespawnDelay, defaults.RespawnDelay)
 	}
+	if defaults.Level != TrainingDummyBootstrapLevel {
+		t.Fatalf("expected training-dummy level %d, got %d", TrainingDummyBootstrapLevel, defaults.Level)
+	}
+	if defaults.Rank != TrainingDummyBootstrapRank {
+		t.Fatalf("expected training-dummy rank %d, got %d", TrainingDummyBootstrapRank, defaults.Rank)
+	}
 	if defaults.DeathReward.Experience != 0 || defaults.DeathReward.Gold != 0 || len(defaults.DeathReward.DropVnums) != 0 {
 		t.Fatalf("expected rewardless training-dummy profile defaults, got %+v", defaults.DeathReward)
 	}
@@ -165,6 +171,12 @@ func TestBootstrapStaticActorCombatProfileDefaultsSupportsPracticeMobProfile(t *
 	}
 	if defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
 		t.Fatalf("expected practice-mob respawn delay %v, got %v", PracticeMobBootstrapRespawnDelay, defaults.RespawnDelay)
+	}
+	if defaults.Level != PracticeMobBootstrapLevel {
+		t.Fatalf("expected practice-mob level %d, got %d", PracticeMobBootstrapLevel, defaults.Level)
+	}
+	if defaults.Rank != PracticeMobBootstrapRank {
+		t.Fatalf("expected practice-mob rank %d, got %d", PracticeMobBootstrapRank, defaults.Rank)
 	}
 	if !defaults.DeathReward.Empty() {
 		t.Fatalf("expected rewardless practice-mob profile defaults, got %+v", defaults.DeathReward)
@@ -191,6 +203,8 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 		DamagePerNormalAttack: 3,
 		AttackValue:           8,
 		DefenseValue:          2,
+		Level:                 12,
+		Rank:                  3,
 		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
 	}) {
 		t.Fatalf("expected %q profile registration to succeed", profile)
@@ -204,7 +218,7 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected registered profile defaults to resolve")
 	}
-	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 3 || defaults.AttackValue != 8 || defaults.DefenseValue != 2 || defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
+	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 3 || defaults.AttackValue != 8 || defaults.DefenseValue != 2 || defaults.Level != 12 || defaults.Rank != 3 || defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
 		t.Fatalf("unexpected registered profile defaults: %+v", defaults)
 	}
 }

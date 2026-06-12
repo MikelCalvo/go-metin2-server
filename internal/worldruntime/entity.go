@@ -24,12 +24,16 @@ const (
 	TrainingDummyBootstrapDamagePerNormalAttack uint8  = 1
 	TrainingDummyBootstrapAttackValue           uint16 = 1
 	TrainingDummyBootstrapDefenseValue          uint16 = 0
+	TrainingDummyBootstrapLevel                 uint16 = 1
+	TrainingDummyBootstrapRank                  uint8  = 0
 	TrainingDummyBootstrapRespawnDelay                 = 2 * time.Second
 
 	PracticeMobBootstrapMaxHP                 uint8  = 10
 	PracticeMobBootstrapDamagePerNormalAttack uint8  = 1
 	PracticeMobBootstrapAttackValue           uint16 = 1
 	PracticeMobBootstrapDefenseValue          uint16 = 0
+	PracticeMobBootstrapLevel                 uint16 = 1
+	PracticeMobBootstrapRank                  uint8  = 0
 	PracticeMobBootstrapRespawnDelay                 = 2 * time.Second
 )
 
@@ -105,6 +109,8 @@ type StaticActorCombatProfileDefaults struct {
 	DamagePerNormalAttack uint8
 	AttackValue           uint16
 	DefenseValue          uint16
+	Level                 uint16
+	Rank                  uint8
 	RespawnDelay          time.Duration
 	DeathReward           StaticActorDeathReward
 }
@@ -192,6 +198,8 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 			DamagePerNormalAttack: TrainingDummyBootstrapDamagePerNormalAttack,
 			AttackValue:           TrainingDummyBootstrapAttackValue,
 			DefenseValue:          TrainingDummyBootstrapDefenseValue,
+			Level:                 TrainingDummyBootstrapLevel,
+			Rank:                  TrainingDummyBootstrapRank,
 			RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
 			DeathReward:           StaticActorDeathReward{},
 		}, true
@@ -201,6 +209,8 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 			DamagePerNormalAttack: PracticeMobBootstrapDamagePerNormalAttack,
 			AttackValue:           PracticeMobBootstrapAttackValue,
 			DefenseValue:          PracticeMobBootstrapDefenseValue,
+			Level:                 PracticeMobBootstrapLevel,
+			Rank:                  PracticeMobBootstrapRank,
 			RespawnDelay:          PracticeMobBootstrapRespawnDelay,
 			DeathReward:           StaticActorDeathReward{},
 		}, true
