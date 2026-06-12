@@ -2574,6 +2574,34 @@ func TestRuntimeSellMerchantItemRejectsLockedCarriedSlotWithoutMutatingState(t *
 	}
 }
 
+func TestRuntimeSellMerchantItemRejectsDuplicateSlotOccupancyWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 31, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 32, Vnum: 27001, Count: 2, Slot: 5},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if result, ok := runtime.SellMerchantItem(5, 1, 10); ok {
+		t.Fatalf("expected duplicate carried-slot merchant sell to fail closed, got %+v", result)
+	}
+	if _, ok := runtime.MerchantSellCount(5, 1); ok {
+		t.Fatal("expected duplicate carried-slot merchant sell count resolution to fail")
+	}
+	if _, ok := runtime.SellMerchantItemWithTemplate(5, 1, itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500}); ok {
+		t.Fatal("expected duplicate carried-slot template-backed merchant sell to fail closed")
+	}
+	if got := runtime.LiveGold(); got != persisted.Gold {
+		t.Fatalf("expected live gold to stay unchanged after duplicate-slot sell attempt, got %d", got)
+	}
+	if !reflect.DeepEqual(runtime.LiveInventory(), persisted.Inventory) {
+		t.Fatalf("expected live inventory to stay unchanged after duplicate-slot sell attempt, got %#v want %#v", runtime.LiveInventory(), persisted.Inventory)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) || runtime.PersistedSnapshot().Gold != persisted.Gold {
+		t.Fatalf("expected persisted state to stay unchanged after duplicate-slot sell attempt, got %+v", runtime.PersistedSnapshot())
+	}
+}
+
 func TestNilRuntimeInventoryEquipmentAndCurrencyHelpersAreSafe(t *testing.T) {
 	var runtime *Runtime
 

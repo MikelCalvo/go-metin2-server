@@ -1092,7 +1092,7 @@ func (r *Runtime) SellMerchantItemWithTemplate(slot inventory.SlotIndex, count u
 }
 
 func (r *Runtime) MerchantSellCount(slot inventory.SlotIndex, count uint16) (uint16, bool) {
-	if r == nil {
+	if r == nil || countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
 		return 0, false
 	}
 	index := findInventorySlot(r.liveInventory, slot)
@@ -1114,7 +1114,7 @@ func (r *Runtime) MerchantSellCount(slot inventory.SlotIndex, count uint16) (uin
 }
 
 func (r *Runtime) SellMerchantItemForCredit(slot inventory.SlotIndex, count uint16, credit uint64) (MerchantSellResult, bool) {
-	if r == nil || credit == 0 {
+	if r == nil || credit == 0 || countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
 		return MerchantSellResult{}, false
 	}
 	index := findInventorySlot(r.liveInventory, slot)

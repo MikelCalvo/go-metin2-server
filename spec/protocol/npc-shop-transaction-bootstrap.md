@@ -199,6 +199,7 @@ The first sell/sell2 path must fail closed when any of these are true:
 - explicit `SELL` / `SELL2` counts larger than the carried stack fail closed instead of silently selling the whole stack
 - the legacy whole-stack sentinel remains `count = 0` for the currently owned sell-back path
 - the item is currently equipped or otherwise not in a plain carried state
+- the requested carried cell has duplicate live item occupancy
 - the carried item is marked runtime-locked
 - the template is marked `anti_sell`
 - the resolved template carries a selected-character job/sex restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`)
