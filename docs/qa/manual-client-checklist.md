@@ -262,7 +262,16 @@ Expected result:
 - the new item quickslot binding is added and persists after reconnect
 - unrelated skill/command quickslots with the same byte slot value remain unchanged
 
-### 4.5.4 Drop and pick up a carried item (`ITEM_DROP` / `ITEM_PICKUP`)
+### 4.5.4 Delete an occupied quickslot (`QUICKSLOT_DEL`)
+
+- [ ] Delete a quickslot position that currently contains an item, skill, or command binding
+- [ ] Delete a different quickslot bar position that is currently empty
+
+Expected result:
+- deleting the occupied position clears that binding and persists after reconnect
+- deleting the empty position fails closed: no quickslot refresh frame is visible, existing quickslot bindings remain, and reconnect shows no persisted change
+
+### 4.5.5 Drop and pick up a carried item (`ITEM_DROP` / `ITEM_PICKUP`)
 
 - [ ] Drop a known template-backed carried item stack in a safe visible location
 - [ ] Pick up the same temporary ground handle while still in range
@@ -275,7 +284,7 @@ Expected result:
 - missing, malformed, mismatched, or ground-count-over-template-`max_count` authored pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
 - loaded pickup template metadata marked `anti_give` or restricted by the selected character's job/sex/min-level metadata also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
 
-### 4.5.5 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
+### 4.5.6 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
 
 - [ ] Put two carried stacks with the same `vnum` into separate inventory cells
 - [ ] Confirm their loaded item template is stackable and not `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`, then drag one stack onto the other through normal inventory movement
@@ -286,7 +295,7 @@ Expected result:
 - an exact counted or zero-count full-stack merge removes the source cell, refreshes the destination count, deletes source item quickslots, leaves target item quickslots stable, and leaves unrelated skill/command quickslots unchanged
 - `anti_stack`, `anti_drop`, `anti_give`, and `anti_sell` templates, same-`vnum` merge attempts with missing source-template metadata in an explicitly authored item-template snapshot, and duplicate source/target cell occupancy fixtures fail closed: no item counts change, no source cell disappears, no quickslot change is persisted, and no item refresh frames are visible
 
-### 4.5.6 Equip a carried item (`ITEM_MOVE` to equipment cell)
+### 4.5.7 Equip a carried item (`ITEM_MOVE` to equipment cell)
 
 - [ ] Put a known template-backed equipment item in a carried inventory cell
 - [ ] Confirm the template's authored `equip_slot` matches the destination equipment cell and has no selected-character job/sex anti-flag

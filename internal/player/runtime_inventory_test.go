@@ -1148,6 +1148,17 @@ func TestRuntimeQuickslotDeletionAndSwapRejectInvalidInputsWithoutMutation(t *te
 		}
 	})
 
+	t.Run("delete empty position", func(t *testing.T) {
+		runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+		before := runtime.LiveQuickslots()
+		if _, ok := runtime.DeleteQuickslot(4); ok {
+			t.Fatal("expected empty quickslot delete to fail closed")
+		}
+		if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, before) {
+			t.Fatalf("empty quickslot delete mutated live state: got %#v want %#v", got, before)
+		}
+	})
+
 	t.Run("delete nil runtime", func(t *testing.T) {
 		var runtime *Runtime
 		if _, ok := runtime.DeleteQuickslot(3); ok {

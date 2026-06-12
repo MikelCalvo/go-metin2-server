@@ -278,9 +278,11 @@ func (r *Runtime) DeleteQuickslot(position uint8) (loginticket.Quickslot, bool) 
 		return loginticket.Quickslot{}, false
 	}
 	updated := cloneQuickslots(r.liveQuickslots)
-	if index := findQuickslotPosition(updated, position); index >= 0 {
-		updated = append(updated[:index], updated[index+1:]...)
+	index := findQuickslotPosition(updated, position)
+	if index < 0 {
+		return loginticket.Quickslot{}, false
 	}
+	updated = append(updated[:index], updated[index+1:]...)
 	r.liveQuickslots = updated
 	return loginticket.Quickslot{Position: position}, true
 }
