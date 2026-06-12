@@ -147,15 +147,17 @@ Already present:
 - visible mob death and respawn,
 - aggro-lite ownership gate,
 - immediate and delayed retaliation ticks,
+- bootstrap combat-profile defaults with attack/defense formula metadata,
+- deterministic authored EXP/gold/fixed-drop reward descriptors for accepted non-player deaths,
 - retaliation-owned player death floor,
 - restart-here and restart-town bootstrap seams,
 - dead-player recipient and visibility gating for several owned paths.
 
 Still needed:
 
-- real damage formulas,
+- compatibility-grade damage formulas beyond the current bootstrap combat-profile defaults,
 - attack types and animations beyond the first normal attack path,
-- EXP/gold/drop rewards,
+- broader EXP/gold/drop reward policy beyond the current deterministic descriptor seam,
 - mob AI, aggro, leash, chase, and return behavior,
 - skill combat,
 - PvP and duel policy,
