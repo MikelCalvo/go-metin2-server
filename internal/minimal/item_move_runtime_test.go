@@ -368,6 +368,54 @@ func TestGameRuntimeItemMoveEquipRejectsTemplateAntiFlagsWithoutMutation(t *test
 				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
 			},
 		},
+		{
+			name: "anti stack",
+			template: itemcatalog.Template{
+				Vnum:        11500,
+				Name:        "Anti-Stack Test Armor",
+				Stackable:   false,
+				MaxCount:    1,
+				AntiStack:   true,
+				EquipSlot:   inventory.EquipmentSlotBody.String(),
+				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
+		{
+			name: "anti drop",
+			template: itemcatalog.Template{
+				Vnum:        11500,
+				Name:        "Anti-Drop Test Armor",
+				Stackable:   false,
+				MaxCount:    1,
+				AntiDrop:    true,
+				EquipSlot:   inventory.EquipmentSlotBody.String(),
+				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
+		{
+			name: "anti give",
+			template: itemcatalog.Template{
+				Vnum:        11500,
+				Name:        "Anti-Give Test Armor",
+				Stackable:   false,
+				MaxCount:    1,
+				AntiGive:    true,
+				EquipSlot:   inventory.EquipmentSlotBody.String(),
+				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
+		{
+			name: "anti sell",
+			template: itemcatalog.Template{
+				Vnum:        11500,
+				Name:        "Anti-Sell Test Armor",
+				Stackable:   false,
+				MaxCount:    1,
+				AntiSell:    true,
+				EquipSlot:   inventory.EquipmentSlotBody.String(),
+				EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
