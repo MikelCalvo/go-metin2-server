@@ -524,7 +524,7 @@ func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventor
 		return inventory.MoveResult{}, false
 	}
 	sourceItem := r.liveInventory[fromIndex]
-	if sourceItem.Count > maxCount {
+	if sourceItem.Count == 0 || sourceItem.Count > maxCount {
 		return inventory.MoveResult{}, false
 	}
 	toIndex := findInventorySlot(r.liveInventory, to)
@@ -532,7 +532,7 @@ func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventor
 		return r.moveInventoryItemFullStack(from, to, result)
 	}
 	destinationItem := r.liveInventory[toIndex]
-	if destinationItem.Locked {
+	if destinationItem.Locked || destinationItem.Count == 0 {
 		return inventory.MoveResult{}, false
 	}
 	if destinationItem.Vnum != sourceItem.Vnum {
