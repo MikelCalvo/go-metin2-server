@@ -54,11 +54,10 @@ func TestApplyBootstrapStaticActorNormalAttackSupportsPracticeMobProfile(t *test
 func TestApplyBootstrapStaticActorNormalAttackUsesRegisteredAttackDefenseFormula(t *testing.T) {
 	const profile = "practice_formula_wolf"
 	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
-		MaxHP:                 20,
-		DamagePerNormalAttack: 1,
-		AttackValue:           7,
-		DefenseValue:          3,
-		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		MaxHP:        20,
+		AttackValue:  7,
+		DefenseValue: 3,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
 	}) {
 		t.Fatalf("expected %q profile registration with formula stats to succeed", profile)
 	}
@@ -79,11 +78,10 @@ func TestApplyBootstrapStaticActorNormalAttackUsesRegisteredAttackDefenseFormula
 func TestApplyBootstrapStaticActorNormalAttackClampsFormulaDamageToMinimumOne(t *testing.T) {
 	const profile = "practice_armored_wolf"
 	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
-		MaxHP:                 20,
-		DamagePerNormalAttack: 5,
-		AttackValue:           2,
-		DefenseValue:          9,
-		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		MaxHP:        20,
+		AttackValue:  2,
+		DefenseValue: 9,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
 	}) {
 		t.Fatalf("expected %q profile registration with armored formula stats to succeed", profile)
 	}
@@ -199,13 +197,12 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 		t.Fatalf("expected %q to start unregistered", profile)
 	}
 	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
-		MaxHP:                 24,
-		DamagePerNormalAttack: 3,
-		AttackValue:           8,
-		DefenseValue:          2,
-		Level:                 12,
-		Rank:                  3,
-		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		Level:        12,
+		Rank:         3,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
 	}) {
 		t.Fatalf("expected %q profile registration to succeed", profile)
 	}
@@ -218,7 +215,7 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected registered profile defaults to resolve")
 	}
-	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 3 || defaults.AttackValue != 8 || defaults.DefenseValue != 2 || defaults.Level != 12 || defaults.Rank != 3 || defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
+	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 6 || defaults.AttackValue != 8 || defaults.DefenseValue != 2 || defaults.Level != 12 || defaults.Rank != 3 || defaults.RespawnDelay != PracticeMobBootstrapRespawnDelay {
 		t.Fatalf("unexpected registered profile defaults: %+v", defaults)
 	}
 }
@@ -272,6 +269,44 @@ func TestRegisterStaticActorCombatProfileCanonicalizesOmittedAttackValueWithDefe
 	}
 	if nextHP != 15 || hpPercent != 62 {
 		t.Fatalf("expected legacy damage 5 to be preserved through defense canonicalization, got nextHP=%d hpPercent=%d", nextHP, hpPercent)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileRejectsContradictoryLegacyDamageAndFormula(t *testing.T) {
+	const profile = "practice_contradictory_damage_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 5,
+		AttackValue:           2,
+		DefenseValue:          9,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with contradictory legacy damage and attack/defense formula to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected contradictory profile %q not to become valid", profile)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileAcceptsConsistentLegacyDamageAndFormula(t *testing.T) {
+	const profile = "practice_consistent_damage_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 5,
+		AttackValue:           8,
+		DefenseValue:          3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with consistent legacy damage and attack/defense formula to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected consistent registered profile defaults to resolve")
+	}
+	if defaults.DamagePerNormalAttack != 5 || defaults.AttackValue != 8 || defaults.DefenseValue != 3 {
+		t.Fatalf("expected consistent profile defaults to preserve both damage surfaces, got %+v", defaults)
 	}
 }
 

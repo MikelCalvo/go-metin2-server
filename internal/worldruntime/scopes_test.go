@@ -538,13 +538,12 @@ func TestScopesStaticActorSnapshotsExposeCombatProfilePresentationMetadata(t *te
 	UnregisterStaticActorCombatProfileForTest(profile)
 	defer UnregisterStaticActorCombatProfileForTest(profile)
 	if ok := RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
-		MaxHP:                 12,
-		DamagePerNormalAttack: 2,
-		AttackValue:           5,
-		DefenseValue:          1,
-		Level:                 7,
-		Rank:                  3,
-		RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+		MaxHP:        12,
+		AttackValue:  5,
+		DefenseValue: 1,
+		Level:        7,
+		Rank:         3,
+		RespawnDelay: TrainingDummyBootstrapRespawnDelay,
 	}); !ok {
 		t.Fatal("expected registered rank probe profile")
 	}
