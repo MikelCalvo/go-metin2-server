@@ -124,8 +124,10 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	if !validStaticActorCombatProfileName(profile) {
 		return false
 	}
+	hasLegacyDamage := defaults.DamagePerNormalAttack != 0
+	hasExplicitFormula := defaults.AttackValue != 0
 	defaults = cloneStaticActorCombatProfileDefaults(defaults)
-	if profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
+	if profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
 		return false
 	}
 	staticActorCombatProfileRegistry.Lock()

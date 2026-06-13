@@ -292,6 +292,19 @@ func TestRegisterStaticActorCombatProfileRejectsDamageAboveMaxHP(t *testing.T) {
 	}
 }
 
+func TestRegisterStaticActorCombatProfileRejectsMissingDamageAndFormula(t *testing.T) {
+	const profile = "practice_missing_damage_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration without legacy damage or explicit attack formula to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected missing-damage profile %q not to become valid", profile)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileRejectsNonCanonicalName(t *testing.T) {
 	for _, profile := range []string{
 		" practice_whitespace_wolf ",
