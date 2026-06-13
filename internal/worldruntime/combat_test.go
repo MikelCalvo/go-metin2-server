@@ -272,6 +272,21 @@ func TestRegisterStaticActorCombatProfileCanonicalizesOmittedAttackValueWithDefe
 	}
 }
 
+func TestRegisterStaticActorCombatProfileRejectsLegacyDamageDefenseOverflow(t *testing.T) {
+	const profile = "practice_legacy_damage_overflow_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 5,
+		DefenseValue:          ^uint16(0),
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with legacy damage plus overflowing defense canonicalization to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected overflow profile %q not to become valid", profile)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileRejectsContradictoryLegacyDamageAndFormula(t *testing.T) {
 	const profile = "practice_contradictory_damage_wolf"
 	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{

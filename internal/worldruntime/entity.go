@@ -126,6 +126,9 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	}
 	hasLegacyDamage := defaults.DamagePerNormalAttack != 0
 	hasExplicitFormula := defaults.AttackValue != 0
+	if hasLegacyDamage && !hasExplicitFormula && uint32(defaults.DamagePerNormalAttack)+uint32(defaults.DefenseValue) > uint32(^uint16(0)) {
+		return false
+	}
 	defaults = cloneStaticActorCombatProfileDefaults(defaults)
 	if hasLegacyDamage && hasExplicitFormula && defaults.DamagePerNormalAttack != bootstrapStaticActorNormalAttackDamage(defaults) {
 		return false
