@@ -16204,6 +16204,7 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlyItemQuickslots(t *testi
 		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
 		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
 		{Position: 4, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 7, Type: quickslotproto.TypeItem, Slot: 5},
 	}
 	issuePeerTicket(t, store, "use-to-item-full-merge-qs", 0x50505056, owner)
 	if err := accounts.Save(accountstore.Account{Login: "use-to-item-full-merge-qs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
@@ -16223,8 +16224,8 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlyItemQuickslots(t *testi
 	if err != nil {
 		t.Fatalf("unexpected use-to-item full merge error: %v", err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("expected full use-to-item merge to emit item delete, target set, and source quickslot delete, got %d", len(out))
+	if len(out) != 4 {
+		t.Fatalf("expected full use-to-item merge to emit item delete, target set, and two source quickslot deletes, got %d", len(out))
 	}
 	deleted, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -16240,12 +16241,14 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlyItemQuickslots(t *testi
 	if set.Position != itemproto.InventoryPosition(8) || set.Vnum != 27001 || set.Count != 200 {
 		t.Fatalf("unexpected full-merge target set: %+v", set)
 	}
-	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
-	if err != nil {
-		t.Fatalf("decode full-merge source quickslot delete: %v", err)
-	}
-	if quickslotDel.Position != 2 {
-		t.Fatalf("expected only item quickslot at position 2 to be deleted, got %+v", quickslotDel)
+	for index, wantPosition := range []uint8{2, 7} {
+		quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2+index]))
+		if err != nil {
+			t.Fatalf("decode full-merge source quickslot delete %d: %v", index, err)
+		}
+		if quickslotDel.Position != wantPosition {
+			t.Fatalf("expected source item quickslot delete %d at position %d, got %+v", index, wantPosition, quickslotDel)
+		}
 	}
 
 	snapshot, ok := runtime.InventorySnapshot(owner.Name)
@@ -16266,7 +16269,7 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlyItemQuickslots(t *testi
 		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
 		{Position: 4, Type: quickslotproto.TypeItem, Slot: 8},
 	}) {
-		t.Fatalf("expected only source item quickslot to be removed, got %+v", persisted.Characters[0].Quickslots)
+		t.Fatalf("expected only source item quickslots to be removed, got %+v", persisted.Characters[0].Quickslots)
 	}
 }
 
