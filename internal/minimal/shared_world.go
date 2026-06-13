@@ -2292,7 +2292,11 @@ func staticActorCharacterAdditionalInfoPacket(actor worldruntime.StaticEntity, v
 }
 
 func staticActorCharacterAdditionalInfoLevel(actor worldruntime.StaticEntity) uint32 {
-	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(actor.CombatKind)
+	combatProfile := actor.CombatProfile
+	if combatProfile == "" {
+		combatProfile = actor.CombatKind
+	}
+	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatProfile)
 	if !ok {
 		return 0
 	}

@@ -71,7 +71,6 @@ func TestStaticActorCharacterAdditionalInfoUsesCombatProfileLevel(t *testing.T) 
 		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
 		RaceNum:       20350,
 		CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob,
-		CombatKind:    worldruntime.StaticActorCombatProfilePracticeMob,
 		SpawnGroupRef: "practice.mob_level_probe",
 	}
 
