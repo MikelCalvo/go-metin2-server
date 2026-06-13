@@ -127,7 +127,7 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	hasLegacyDamage := defaults.DamagePerNormalAttack != 0
 	hasExplicitFormula := defaults.AttackValue != 0
 	defaults = cloneStaticActorCombatProfileDefaults(defaults)
-	if profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
+	if profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || defaults.AttackValue == 0 || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
 		return false
 	}
 	staticActorCombatProfileRegistry.Lock()
@@ -164,8 +164,8 @@ func validStaticActorCombatProfileName(profile string) bool {
 }
 
 func cloneStaticActorCombatProfileDefaults(defaults StaticActorCombatProfileDefaults) StaticActorCombatProfileDefaults {
-	if defaults.AttackValue == 0 {
-		defaults.AttackValue = uint16(defaults.DamagePerNormalAttack)
+	if defaults.AttackValue == 0 && defaults.DamagePerNormalAttack != 0 {
+		defaults.AttackValue = uint16(defaults.DamagePerNormalAttack) + defaults.DefenseValue
 	}
 	if defaults.DamagePerNormalAttack == 0 && defaults.MaxHP > 0 {
 		defaults.DamagePerNormalAttack = bootstrapStaticActorNormalAttackDamage(defaults)

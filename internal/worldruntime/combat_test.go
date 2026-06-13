@@ -246,6 +246,35 @@ func TestRegisterStaticActorCombatProfileCanonicalizesOmittedLevelToBootstrapDef
 	}
 }
 
+func TestRegisterStaticActorCombatProfileCanonicalizesOmittedAttackValueWithDefenseFromLegacyDamage(t *testing.T) {
+	const profile = "practice_legacy_damage_armored_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 5,
+		DefenseValue:          3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with legacy damage plus defense to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected registered profile defaults to resolve")
+	}
+	if defaults.AttackValue != 8 || defaults.DefenseValue != 3 || defaults.DamagePerNormalAttack != 5 {
+		t.Fatalf("expected omitted attack value to preserve legacy damage through attack-defense formula, got %+v", defaults)
+	}
+
+	nextHP, hpPercent, ok := ApplyBootstrapStaticActorNormalAttack(profile, 20)
+	if !ok {
+		t.Fatal("expected legacy-damage armored profile normal attack to be supported")
+	}
+	if nextHP != 15 || hpPercent != 62 {
+		t.Fatalf("expected legacy damage 5 to be preserved through defense canonicalization, got nextHP=%d hpPercent=%d", nextHP, hpPercent)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileAddsDeathRewardDefaults(t *testing.T) {
 	const profile = "practice_reward_wolf"
 	reward := StaticActorDeathReward{Experience: 25, Gold: 7, DropVnums: []uint32{27001, 27002}}

@@ -141,7 +141,7 @@ What this still freezes about the **visible state carrier** for later slices:
 The profile-stat formula slice now freezes that combat-profile defaults can carry `attack_value` and `defense_value` alongside the legacy `damage_per_normal_attack` fallback.
 Registered combat profiles use the first deterministic formula for normal-attack HP mutation: `max(1, attack_value - defense_value)`, capped by the profile's max HP for the current bootstrap carrier.
 Built-in bootstrap profiles keep their current one-point behavior because their owned defaults are `attack_value = 1` and `defense_value = 0`.
-If a registered profile omits `attack_value`, registration canonicalizes it from `damage_per_normal_attack` so older tests/content keep the same damage until they opt into explicit formula stats.
+If a registered profile omits `attack_value` but supplies legacy `damage_per_normal_attack`, registration canonicalizes `attack_value = damage_per_normal_attack + defense_value` so older tests/content keep the same visible damage even after adding defense metadata.
 If a registered profile instead omits legacy `damage_per_normal_attack` but provides explicit non-zero `attack_value` / `defense_value`, registration now canonicalizes the legacy fallback from the same deterministic formula (`max(1, attack_value - defense_value)`, capped by `max_hp`) so formula-first authored profiles can be accepted without carrying two duplicate damage fields.
 Profiles that omit both legacy damage and explicit attack formula input fail closed instead of silently becoming one-damage combatants.
 Combat-profile defaults now also carry presentation metadata: `level` and descriptor-only `rank`. The built-in bootstrap `training_dummy` and `practice_mob` profiles both currently freeze `level = 1` and `rank = 0`, and registered profile lookups preserve explicit level/rank values for later mob presentation, reward, or formula slices. Visible static-actor bootstrap now copies the resolved combat-profile `level` into the actor's `CHAR_ADDITIONAL_INFO.level` field, while `rank` remains runtime metadata only for now. These fields do not yet change the current normal-attack formula, target HP carrier, reward payout, or respawn timing.
@@ -248,7 +248,7 @@ The codec now owns the exact wire shape, but the gameplay contract is still inte
 
 This slice does **not** yet freeze:
 - the final gameplay meaning of every `attack_type` value
-- final damage formulas beyond registered bootstrap combat-profile defaults (`max_hp`, `damage_per_normal_attack`, `respawn_delay`, and optional death reward)
+- final damage formulas beyond registered bootstrap combat-profile defaults (`max_hp`, `damage_per_normal_attack`, `attack_value`, `defense_value`, `level`, `rank`, `respawn_delay`, and optional death reward)
 - broad authored combat-profile fields beyond the current runtime registry seam
 - broader session-wide attack-speed rules beyond the first fixed same-target `250ms` cadence window
 - miss/crit/block results
