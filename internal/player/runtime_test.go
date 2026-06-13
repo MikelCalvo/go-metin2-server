@@ -549,6 +549,33 @@ func TestRuntimeUseItemRejectsOverTemplateMaxStackWithoutMutation(t *testing.T) 
 	}
 }
 
+func TestRuntimeUseItemRejectsOverUint8TemplateMaxWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "WideMaxPeer",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 12, Vnum: 27001, Count: 2, Slot: 5}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "wide-max-peer", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
+	template.MaxCount = 256
+
+	if result, ok := runtime.UseItem(5, template); ok {
+		t.Fatalf("expected over-uint8 template max item use to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("over-uint8 template max item use mutated live character: got %#v want %#v", got, before)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
+		t.Fatalf("over-uint8 template max item use mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", got.Inventory, got.Quickslots, got.Points[1])
+	}
+}
+
 func TestRuntimeUseItemRejectsEquippableTemplateWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,
