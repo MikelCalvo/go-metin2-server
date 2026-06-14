@@ -95,6 +95,7 @@ func TestGameRuntimeItemMoveRejectsTransferGuardedStackTemplatesWithoutMutation(
 		{name: "anti drop", mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }},
 		{name: "anti give", mutate: func(template *itemcatalog.Template) { template.AntiGive = true }},
 		{name: "anti sell", mutate: func(template *itemcatalog.Template) { template.AntiSell = true }},
+		{name: "authored equip slot", mutate: func(template *itemcatalog.Template) { template.EquipSlot = inventory.EquipmentSlotBody.String() }},
 	}
 	for index, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

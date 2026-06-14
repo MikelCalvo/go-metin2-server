@@ -2563,7 +2563,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 										break
 									}
 								}
-							} else if template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || !template.Stackable || !selectedPlayer.CanUseTemplate(template) {
+							} else if template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || template.EquipSlot != "" || !template.Stackable || !selectedPlayer.CanUseTemplate(template) {
 								maxCount = 0
 							} else if template.MaxCount > 0 {
 								maxCount = template.MaxCount
