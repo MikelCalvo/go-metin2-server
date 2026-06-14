@@ -371,6 +371,21 @@ func TestRegisterStaticActorCombatProfileRejectsDamageAboveMaxHP(t *testing.T) {
 	}
 }
 
+func TestRegisterStaticActorCombatProfileRejectsExplicitFormulaDamageAboveMaxHP(t *testing.T) {
+	const profile = "practice_formula_overkill_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        2,
+		AttackValue:  5,
+		DefenseValue: 1,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with explicit formula damage above max HP to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected explicit over-damage profile %q not to become valid", profile)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileRejectsMissingDamageAndFormula(t *testing.T) {
 	const profile = "practice_missing_damage_wolf"
 	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{

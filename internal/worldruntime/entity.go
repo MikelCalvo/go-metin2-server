@@ -133,6 +133,9 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	if hasLegacyDamage && hasExplicitFormula && defaults.DamagePerNormalAttack != bootstrapStaticActorNormalAttackDamage(defaults) {
 		return false
 	}
+	if defaults.AttackValue > defaults.DefenseValue && defaults.AttackValue-defaults.DefenseValue > uint16(defaults.MaxHP) {
+		return false
+	}
 	if profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || defaults.AttackValue == 0 || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
 		return false
 	}
