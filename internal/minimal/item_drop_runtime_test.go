@@ -212,6 +212,58 @@ func TestGameRuntimeItemDrop2NormalizesOversizedCountToWholeStack(t *testing.T) 
 	}
 }
 
+func TestGameRuntimeItemDropRejectsAntiSellTemplateWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DropAntiSell", 0x01030194, 0x02040194, 1250, 2250, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1022, Vnum: 27003, Count: 4, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "drop-anti-sell", 0x49494949, owner)
+	if err := accounts.Save(accountstore.Account{Login: "drop-anti-sell", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed anti-sell drop owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		nil,
+		newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27003, Name: "Bound Sell Potion", Stackable: true, MaxCount: 200, AntiSell: true}}),
+	)
+	if err != nil {
+		t.Fatalf("unexpected anti-sell item-drop runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-anti-sell", 0x49494949)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 1})))
+	if err != nil {
+		t.Fatalf("unexpected anti-sell item drop2 error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected anti-sell item drop to emit one rejection info frame, got %d", len(out))
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode anti-sell drop info chat: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != itemDropRejectedInfoMessage {
+		t.Fatalf("unexpected anti-sell drop rejection chat: %+v", info)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after anti-sell drop rejection, got %d", len(queued))
+	}
+	account, err := accounts.Load("drop-anti-sell")
+	if err != nil {
+		t.Fatalf("load anti-sell drop account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("anti-sell drop mutated inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("anti-sell drop mutated quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameRuntimeItemDropRejectsDuplicateSlotOccupancyWithoutMutation(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

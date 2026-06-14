@@ -69,7 +69,7 @@ func TestDropInventoryItemRejectsLockedOrOversizedDrop(t *testing.T) {
 	}
 }
 
-func TestDropInventoryItemWithTemplateRejectsAntiDropAndAntiGiveWithoutMutation(t *testing.T) {
+func TestDropInventoryItemWithTemplateRejectsDropTransferGuardsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string
 		template itemcatalog.Template
@@ -81,6 +81,10 @@ func TestDropInventoryItemWithTemplateRejectsAntiDropAndAntiGiveWithoutMutation(
 		{
 			name:     "anti give",
 			template: itemcatalog.Template{Vnum: 27001, Name: "Soulbound Potion", Stackable: true, MaxCount: 200, AntiGive: true},
+		},
+		{
+			name:     "anti sell",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Unsellable Potion", Stackable: true, MaxCount: 200, AntiSell: true},
 		},
 	}
 	for _, tc := range cases {

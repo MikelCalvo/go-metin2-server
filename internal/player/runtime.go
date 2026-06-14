@@ -386,7 +386,7 @@ func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, temp
 	if index < 0 || r.liveInventory[index].Locked {
 		return inventory.MoveResult{}, false
 	}
-	if template.AntiDrop || template.AntiGive {
+	if template.AntiDrop || template.AntiGive || template.AntiSell {
 		return inventory.MoveResult{}, false
 	}
 	item := r.liveInventory[index]

@@ -1609,7 +1609,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if runtime.itemTemplatesAuthored && !hasDropTemplate {
 				return nil, false
 			}
-			if hasDropTemplate && (dropTemplate.AntiDrop || dropTemplate.AntiGive) {
+			if hasDropTemplate && (dropTemplate.AntiDrop || dropTemplate.AntiGive || dropTemplate.AntiSell) {
 				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemDropRejectedInfoMessage})}, true
 			}
 			for _, item := range selectedPlayer.LiveInventory() {
