@@ -1521,6 +1521,26 @@ func TestRuntimeMoveInventoryItemBoundedZeroCountMergesCompatibleOccupiedDestina
 	}
 }
 
+func TestRuntimeMoveInventoryItemCountBoundedRejectsZeroCountCompatibleDestinationWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 12, Vnum: 27001, Count: 0, Slot: 8},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.MoveInventoryItemCountBounded(5, 8, 1, 200); ok {
+		t.Fatalf("expected counted compatible move into a zero-count destination to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("expected rejected counted zero-count-destination merge to leave live state unchanged, got %#v want %#v", got, before)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+		t.Fatalf("expected rejected counted zero-count-destination merge to leave persisted inventory unchanged, got %#v want %#v", got.Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeMoveInventoryItemBoundedRejectsZeroCountStacksWithoutMutatingState(t *testing.T) {
 	cases := []struct {
 		name      string

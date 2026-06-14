@@ -646,7 +646,7 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 	sourceRemainder.Count -= count
 	if toIndex >= 0 {
 		destinationItem := r.liveInventory[toIndex]
-		if destinationItem.Locked || destinationItem.Vnum != sourceItem.Vnum {
+		if destinationItem.Locked || destinationItem.Vnum != sourceItem.Vnum || destinationItem.Count == 0 {
 			return inventory.MoveResult{}, false
 		}
 		mergedCount := uint32(destinationItem.Count) + uint32(count)
