@@ -1396,6 +1396,75 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeBootstrapsStaticActorVisibil
 	}
 }
 
+func TestNewGameSessionFactoryNormalAttackCadenceRejectsImmediateRepeatWithoutMutatingDummyHP(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("Attacker", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "attacker", 0x11111111, attacker)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000500, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "attacker", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for attacker with visible training dummy, got %d", len(enterOut))
+	}
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before cadence test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before cadence test, got %d", len(selectOut))
+	}
+
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error in cadence test: %v", err)
+	}
+	if len(firstAttack) != 1 {
+		t.Fatalf("expected first accepted attack to return 1 target refresh, got %d", len(firstAttack))
+	}
+	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstAttack[0]))
+	if err != nil {
+		t.Fatalf("decode first cadence target refresh: %v", err)
+	}
+	if firstRefresh.TargetVID != targetVID || firstRefresh.HPPercent != 90 {
+		t.Fatalf("expected first cadence hit to move target to 90%% HP, got %+v", firstRefresh)
+	}
+
+	immediateRepeat, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected decode/dispatch error for immediate repeated attack inside cadence window: %v", err)
+	}
+	if len(immediateRepeat) != 0 {
+		t.Fatalf("expected immediate repeated attack inside cadence window to fail closed with no frames, got %d", len(immediateRepeat))
+	}
+
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	secondAccepted, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected second accepted attack error after cadence window: %v", err)
+	}
+	if len(secondAccepted) != 1 {
+		t.Fatalf("expected second accepted attack after cadence window to return 1 target refresh, got %d", len(secondAccepted))
+	}
+	secondRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, secondAccepted[0]))
+	if err != nil {
+		t.Fatalf("decode second cadence target refresh: %v", err)
+	}
+	if secondRefresh.TargetVID != targetVID || secondRefresh.HPPercent != 80 {
+		t.Fatalf("expected second accepted cadence hit to move target from 90%% to 80%% HP, got %+v", secondRefresh)
+	}
+}
+
 func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeReplaysDeadTrainingDummyVisibility(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
