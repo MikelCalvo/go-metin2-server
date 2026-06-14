@@ -66,6 +66,39 @@ func newStartedGameFlowWithItemStore(t *testing.T, store loginticket.Store, acco
 	return flow
 }
 
+func TestSlashGameCommandRejectsArgumentsForOwnedRestartAndLeaveCommands(t *testing.T) {
+	for _, message := range []string{
+		"/quit now",
+		"/logout later",
+		"/phase_select 1",
+		"/restart_here please",
+		"/restart_town 2",
+	} {
+		t.Run(message, func(t *testing.T) {
+			if command, ok := slashGameCommand(message); ok {
+				t.Fatalf("expected %q with arguments to stay outside owned slash-command ingress, got command %q", message, command)
+			}
+		})
+	}
+}
+
+func TestSlashGameCommandAcceptsExactOwnedRestartAndLeaveCommands(t *testing.T) {
+	for _, message := range []string{
+		"/quit",
+		"/logout",
+		"/phase_select",
+		"/restart_here",
+		"/restart_town",
+	} {
+		t.Run(message, func(t *testing.T) {
+			command, ok := slashGameCommand(message)
+			if !ok || command != strings.TrimPrefix(message, "/") {
+				t.Fatalf("expected exact command %q to parse, got command=%q ok=%v", message, command, ok)
+			}
+		})
+	}
+}
+
 func TestNewAuthSessionFactoryAcceptsStubCredentials(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	flow := newAuthSessionFactory(store, func() (uint32, error) { return 0x01020304, nil })()

@@ -25,6 +25,11 @@ Normal talking chat still uses `CLIENT_CHAT` and may be echoed/fanned out as vis
 The supported slash commands are intercepted before normal talking-chat delivery.
 They are **not** echoed back as `CHAT_TYPE_TALKING`.
 
+The current parser is deliberately exact for the owned command family:
+- the input must contain exactly one slash command token
+- `/quit`, `/logout`, `/phase_select`, `/restart_here`, and `/restart_town` are accepted as standalone tokens only
+- argument-bearing forms such as `/restart_town 2` or `/quit now` stay outside the owned slash-command ingress and fall through to the ordinary chat policy instead of partially executing the leading token
+
 ## Current owned behavior
 
 ### `/quit`

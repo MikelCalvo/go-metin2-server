@@ -3292,7 +3292,7 @@ func slashGameCommand(message string) (string, bool) {
 		return "", false
 	}
 	fields := strings.Fields(strings.TrimSpace(message[1:]))
-	if len(fields) == 0 {
+	if len(fields) != 1 {
 		return "", false
 	}
 	switch fields[0] {
