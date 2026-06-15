@@ -313,6 +313,81 @@ func TestGameSessionFlowItemUseRejectsDuplicateSlotOccupancyWithoutMutation(t *t
 	}
 }
 
+func TestGameSessionFlowItemUseRejectsTransferGuardTemplatesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		login    string
+		template itemcatalog.Template
+	}{
+		{
+			name:     "anti-stack",
+			login:    "item-use-anti-stack",
+			template: itemcatalog.Template{Vnum: 27004, Name: "Anti Stack Template Potion", Stackable: true, MaxCount: 200, AntiStack: true, UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"}},
+		},
+		{
+			name:     "anti-drop",
+			login:    "item-use-anti-drop",
+			template: itemcatalog.Template{Vnum: 27004, Name: "Anti Drop Template Potion", Stackable: true, MaxCount: 200, AntiDrop: true, UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"}},
+		},
+		{
+			name:     "anti-give",
+			login:    "item-use-anti-give",
+			template: itemcatalog.Template{Vnum: 27004, Name: "Anti Give Template Potion", Stackable: true, MaxCount: 200, AntiGive: true, UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"}},
+		},
+		{
+			name:     "anti-sell",
+			login:    "item-use-anti-sell",
+			template: itemcatalog.Template{Vnum: 27004, Name: "Anti Sell Template Potion", Stackable: true, MaxCount: 200, AntiSell: true, UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume"}},
+		},
+	}
+
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseTransferGuard", 0x0103059e+uint32(index), 0x0204059e+uint32(index), 1100, 2100, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: uint64(451 + index), Vnum: 27004, Count: 2, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			owner.Points[bootstrapPlayerPointValueIndex] = 25
+			issuePeerTicket(t, ticketStore, tc.login, 0x5050509e+uint32(index), owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s item-use account: %v", tc.name, err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{tc.template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s item-use runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x5050509e+uint32(index))
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+			if err != nil {
+				t.Fatalf("unexpected %s item-use packet error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s item-use to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s item-use rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load persisted %s item-use account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s item-use mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s item-use mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+			if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+				t.Fatalf("%s item-use mutated point value: got %d want %d", tc.name, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowItemUseRejectsMinLevelTemplateWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
