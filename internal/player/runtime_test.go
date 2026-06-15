@@ -744,12 +744,13 @@ func TestRuntimeUseItemOnItemRejectsEquippableTemplateWithoutMutation(t *testing
 	}
 }
 
-func TestRuntimeUseItemOnItemRejectsOutOfRangeSourceOrTargetWithoutMutation(t *testing.T) {
+func TestRuntimeUseItemOnItemRejectsInvalidSourceOrTargetWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name   string
 		source inventory.SlotIndex
 		target inventory.SlotIndex
 	}{
+		{name: "same source and target slot", source: 5, target: 5},
 		{name: "source out of carried range", source: inventory.CarriedInventorySlotCount, target: 6},
 		{name: "target out of carried range", source: 5, target: inventory.CarriedInventorySlotCount},
 	}
@@ -761,6 +762,10 @@ func TestRuntimeUseItemOnItemRejectsOutOfRangeSourceOrTargetWithoutMutation(t *t
 				Name:      "PeerTwo",
 				Points:    [255]int32{1: 700},
 				Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+				Quickslots: []loginticket.Quickslot{
+					{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+					{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+				},
 			}
 			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 			before := runtime.LiveCharacter()
@@ -773,6 +778,9 @@ func TestRuntimeUseItemOnItemRejectsOutOfRangeSourceOrTargetWithoutMutation(t *t
 			}
 			if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
 				t.Fatalf("expected rejected %s use-to-item to leave persisted inventory unchanged, got %#v", tc.name, runtime.PersistedSnapshot().Inventory)
+			}
+			if !reflect.DeepEqual(runtime.PersistedSnapshot().Quickslots, persisted.Quickslots) {
+				t.Fatalf("expected rejected %s use-to-item to leave persisted quickslots unchanged, got %#v", tc.name, runtime.PersistedSnapshot().Quickslots)
 			}
 		})
 	}
