@@ -464,6 +464,67 @@ func TestSharedWorldRegistryRemoveGroundItemSkipsDeadVisiblePeers(t *testing.T) 
 	}
 }
 
+func TestSharedWorldRegistryLeaveRemovesOwnedGroundItemsAndSkipsDeadVisiblePeers(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("LeavingDropOwner", 0x01030131, 0x02040131, 1100, 2100, 0, 101, 201)
+	livingPeer := peerVisibilityCharacter("LivingLeavePeer", 0x01030132, 0x02040132, 1200, 2200, 0, 102, 202)
+	deadPeer := peerVisibilityCharacter("DeadLeavePeer", 0x01030133, 0x02040133, 1250, 2250, 0, 103, 203)
+	deadPeer.Points[bootstrapPlayerPointValueIndex] = 0
+
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	livingPending := newPendingServerFrames()
+	livingID, _ := registry.Join(livingPeer, livingPending, nil)
+	deadPending := newPendingServerFrames()
+	deadID, _ := registry.Join(deadPeer, deadPending, nil)
+	if ownerID == 0 || livingID == 0 || deadID == 0 {
+		t.Fatalf("expected owner, living peer, and dead peer to join shared world, got owner=%d living=%d dead=%d", ownerID, livingID, deadID)
+	}
+	livingPending.flush()
+	deadPending.flush()
+
+	const firstGroundVID uint32 = 0x07000009
+	const secondGroundVID uint32 = 0x0700000A
+	if !registry.RegisterGroundItem(ownerID, "leaving-drop-owner", owner, firstGroundVID, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+		t.Fatal("expected first owner ground item registration to succeed")
+	}
+	if !registry.RegisterGroundGold(ownerID, "leaving-drop-owner", owner, secondGroundVID, 500) {
+		t.Fatal("expected second owner ground gold registration to succeed")
+	}
+	livingPending.flush()
+	deadPending.flush()
+
+	registry.Leave(ownerID)
+
+	livingQueued := livingPending.flush()
+	if len(livingQueued) != 3 {
+		t.Fatalf("expected living visible peer to receive owner delete plus 2 owned-ground deletes, got %d", len(livingQueued))
+	}
+	ownerDel, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, livingQueued[0]))
+	if err != nil {
+		t.Fatalf("decode living peer owner delete: %v", err)
+	}
+	if ownerDel.VID != owner.VID {
+		t.Fatalf("unexpected living peer owner delete: %+v", ownerDel)
+	}
+	firstGroundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, livingQueued[1]))
+	if err != nil {
+		t.Fatalf("decode first owned ground delete: %v", err)
+	}
+	secondGroundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, livingQueued[2]))
+	if err != nil {
+		t.Fatalf("decode second owned ground delete: %v", err)
+	}
+	if firstGroundDel.VID != firstGroundVID || secondGroundDel.VID != secondGroundVID {
+		t.Fatalf("expected owned ground deletes sorted by VID, got first=%+v second=%+v", firstGroundDel, secondGroundDel)
+	}
+	if deadQueued := deadPending.flush(); len(deadQueued) != 0 {
+		t.Fatalf("expected dead visible peer to receive no owner leave or ground delete frames, got %d", len(deadQueued))
+	}
+	if registry.GroundItemExists(firstGroundVID) || registry.GroundItemExists(secondGroundVID) {
+		t.Fatal("expected owned ground entries to be removed when owner leaves")
+	}
+}
+
 func TestSharedWorldRegistryTransferSkipsDestinationGroundItemsForDeadRecipient(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
