@@ -240,6 +240,31 @@ func TestRuntimeCanRestoreLiveRewardScalarsWithoutClobberingLivePosition(t *test
 	}
 }
 
+func TestRuntimeAcceptsDeathRewardAtPointChangeCarrierMaximum(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030104,
+		VID:  0x02040104,
+		Name: "PeerFour",
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-four", CharacterIndex: 3})
+	maxPointCarrier := uint64(1<<31 - 1)
+
+	result, ok := runtime.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: maxPointCarrier, Gold: maxPointCarrier})
+	if !ok {
+		t.Fatal("expected death reward at point-change carrier maximum to apply")
+	}
+	if result.ExperienceBefore != 0 || result.ExperienceAfter != int32(maxPointCarrier) || result.Experience != maxPointCarrier {
+		t.Fatalf("unexpected maximum experience reward result: %+v", result)
+	}
+	if result.GoldBefore != 0 || result.GoldAfter != maxPointCarrier || result.Gold != maxPointCarrier {
+		t.Fatalf("unexpected maximum gold reward result: %+v", result)
+	}
+	live := runtime.LiveCharacter()
+	if live.Points[ExperiencePointIndex] != int32(maxPointCarrier) || live.Gold != maxPointCarrier {
+		t.Fatalf("expected live reward scalars at carrier max, got exp=%d gold=%d", live.Points[ExperiencePointIndex], live.Gold)
+	}
+}
+
 func TestRuntimeRejectsGoldDeathRewardAbovePointChangeCarrierWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030104,
