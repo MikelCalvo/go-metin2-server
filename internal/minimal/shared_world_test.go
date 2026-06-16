@@ -8663,6 +8663,109 @@ func TestGameRuntimeDropRewardSkipsDeadVisiblePeers(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeDropRewardOwnerCloseRemovesPendingGroundHandleForVisiblePeers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050220, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050220, Name: "RewardOwnerCloseMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.reward_owner_close_mob",
+	}
+	killer := peerVisibilityCharacter("RewardOwnerCloseKiller", 0x01030120, 0x02040120, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("RewardOwnerCloseWatcher", 0x01030121, 0x02040121, 1125, 2125, 1, 101, 201)
+	issuePeerTicket(t, store, "reward-owner-close-killer", 0x20202020, killer)
+	issuePeerTicket(t, store, "reward-owner-close-watcher", 0x21212121, watcher)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "reward-owner-close-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed reward-owner-close killer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "reward-owner-close-watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}}); err != nil {
+		t.Fatalf("seed reward-owner-close watcher account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_426, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected reward-owner-close mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001}}) {
+		t.Fatal("expected reward-owner-close reward override to apply")
+	}
+
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "reward-owner-close-watcher", 0x21212121)
+	defer closeSessionFlow(t, watcherFlow)
+	killerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "reward-owner-close-killer", 0x20202020)
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 3 {
+		t.Fatalf("expected watcher to receive killer peer-entry bootstrap before reward owner close, got %d frames", len(queued))
+	}
+
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before reward owner close kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected reward owner close attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killer to receive dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	killerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode reward owner close ground add: %v", err)
+	}
+	peerFrames := flushServerFrames(t, watcherFlow)
+	if len(peerFrames) != 3 {
+		t.Fatalf("expected watcher to receive mob dead, ground-add, and ownership before owner close, got %d", len(peerFrames))
+	}
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, peerFrames[1]))
+	if err != nil {
+		t.Fatalf("decode watcher reward owner close ground add: %v", err)
+	}
+	if peerGround.VID != killerGround.VID {
+		t.Fatalf("expected watcher reward ground vid %d, got %+v", killerGround.VID, peerGround)
+	}
+
+	closeSessionFlow(t, killerFlow)
+	ownerCloseQueued := flushServerFrames(t, watcherFlow)
+	if len(ownerCloseQueued) != 2 {
+		t.Fatalf("expected reward owner close to queue owner character delete and reward ground delete, got %d frames", len(ownerCloseQueued))
+	}
+	ownerDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, ownerCloseQueued[0]))
+	if err != nil {
+		t.Fatalf("decode reward owner close character delete: %v", err)
+	}
+	if ownerDelete.VID != killer.VID {
+		t.Fatalf("expected reward owner close character delete for vid %d, got %+v", killer.VID, ownerDelete)
+	}
+	groundDelete, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerCloseQueued[1]))
+	if err != nil {
+		t.Fatalf("decode reward ground delete after owner close: %v", err)
+	}
+	if groundDelete.VID != killerGround.VID {
+		t.Fatalf("expected owner close to remove pending reward ground vid %d, got %+v", killerGround.VID, groundDelete)
+	}
+	if runtime.sharedWorld.GroundItemExists(killerGround.VID) {
+		t.Fatal("expected reward owner close to remove pending reward ground item")
+	}
+	if pickupOut := pickupGroundItem(t, watcherFlow, killerGround.VID); len(pickupOut) != 0 {
+		t.Fatalf("expected removed reward ground handle to reject pickup after owner close, got %d frames", len(pickupOut))
+	}
+}
+
 func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
