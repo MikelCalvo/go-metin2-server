@@ -8830,6 +8830,124 @@ func TestGameRuntimeDeadCollectorCannotPickupPracticeMobDropReward(t *testing.T)
 	}
 }
 
+func TestGameRuntimeLivingCollectorTakesPracticeMobDropRewardWhenOwnerIsDead(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105023C, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105023C, Name: "DeadOwnerRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.dead_owner_reward_mob",
+	}
+	killer := peerVisibilityCharacter("DeadOwnerRewardKiller", 0x0103013C, 0x0204013C, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("LivingRewardCollector", 0x0103013D, 0x0204013D, 1120, 2120, 1, 102, 202)
+	issuePeerTicket(t, store, "dead-owner-reward-killer", 0x3C3C3C3C, killer)
+	issuePeerTicket(t, store, "living-reward-collector", 0x3D3D3D3D, collector)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "dead-owner-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed dead owner reward killer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "living-reward-collector", Empire: collector.Empire, Characters: []loginticket.Character{collector}}); err != nil {
+		t.Fatalf("seed living reward collector account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_44, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected dead-owner reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001}}) {
+		t.Fatal("expected dead-owner reward override to apply")
+	}
+
+	killerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "dead-owner-reward-killer", 0x3C3C3C3C)
+	defer closeSessionFlow(t, killerFlow)
+	collectorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "living-reward-collector", 0x3D3D3D3D)
+	defer closeSessionFlow(t, collectorFlow)
+	flushServerFrames(t, killerFlow)
+	flushServerFrames(t, collectorFlow)
+
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before dead-owner reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected dead-owner reward attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode dead-owner reward ground add: %v", err)
+	}
+	flushServerFrames(t, collectorFlow)
+
+	killerEntity, ok := runtime.sharedWorld.entities.PlayerByName(killer.Name)
+	if !ok {
+		t.Fatal("expected killer to remain registered before marking dead")
+	}
+	deadKiller := killerEntity.Character
+	deadKiller.Points[bootstrapPlayerPointValueIndex] = 0
+	runtime.sharedWorld.UpdateCharacter(killerEntity.Entity.ID, deadKiller)
+
+	pickupOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected living collector pickup from dead owner to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	if del, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0])); err != nil || del.VID != ground.VID {
+		t.Fatalf("unexpected dead-owner reward ground delete: del=%+v err=%v", del, err)
+	}
+	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode dead-owner reward collector item set: %v", err)
+	}
+	if setPacket.Vnum != 27001 || setPacket.Count != 1 {
+		t.Fatalf("unexpected dead-owner reward collector item set: %+v", setPacket)
+	}
+	getPacket, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode dead-owner reward collector item get: %v", err)
+	}
+	if getPacket.Vnum != 27001 || getPacket.Count != 1 || getPacket.Arg != itemproto.GetArgNormal || getPacket.FromName != "" {
+		t.Fatalf("expected dead-owner reward pickup to use ordinary collector get feedback, got %+v", getPacket)
+	}
+	if runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected living collector pickup to remove dead-owner reward ground item")
+	}
+	if queued := flushServerFrames(t, killerFlow); len(queued) != 0 {
+		t.Fatalf("expected dead owner to receive no queued party-style pickup feedback, got %d frames", len(queued))
+	}
+
+	collectorAccount, err := accounts.Load("living-reward-collector")
+	if err != nil {
+		t.Fatalf("load living reward collector account: %v", err)
+	}
+	if len(collectorAccount.Characters) != 1 || len(collectorAccount.Characters[0].Inventory) != 1 || collectorAccount.Characters[0].Inventory[0].Vnum != 27001 {
+		t.Fatalf("expected collector inventory to persist picked reward drop, got %#v", collectorAccount.Characters)
+	}
+	killerAccount, err := accounts.Load("dead-owner-reward-killer")
+	if err != nil {
+		t.Fatalf("load dead owner reward killer account: %v", err)
+	}
+	if len(killerAccount.Characters) != 1 || len(killerAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected dead owner inventory to remain unchanged after collector pickup, got %#v", killerAccount.Characters)
+	}
+}
+
 func TestGameRuntimePreviewRelocationReturnsVisibilityAndMapChanges(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
