@@ -132,6 +132,20 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			template: itemcatalog.Template{Vnum: 27001, Name: "Different Target Potion", Stackable: true, MaxCount: 200},
 		},
 		{
+			name: "empty source slot",
+			inventory: []inventory.ItemInstance{
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Empty Source Potion", Stackable: true, MaxCount: 200},
+		},
+		{
+			name: "empty target slot",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Empty Target Potion", Stackable: true, MaxCount: 200},
+		},
+		{
 			name: "already full target",
 			inventory: []inventory.ItemInstance{
 				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
