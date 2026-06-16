@@ -8532,6 +8532,76 @@ func TestGameRuntimeDropRewardQueuesGroundVisibilityForLivePeers(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeDropRewardSkipsDeadVisiblePeers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105021E, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105021E, Name: "DeadPeerDropRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.dead_peer_drop_reward_mob",
+	}
+	killer := peerVisibilityCharacter("DeadPeerDropKiller", 0x0103011E, 0x0204011E, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("DeadPeerDropWatcher", 0x0103011F, 0x0204011F, 1125, 2125, 1, 101, 201)
+	watcher.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "dead-peer-drop-killer", 0x1E1E1E1E, killer)
+	issuePeerTicket(t, store, "dead-peer-drop-watcher", 0x1F1F1F1F, watcher)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "dead-peer-drop-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed dead-peer drop killer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "dead-peer-drop-watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}}); err != nil {
+		t.Fatalf("seed dead-peer drop watcher account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_424, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected dead-peer drop reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001}}) {
+		t.Fatal("expected dead-peer drop reward override to apply")
+	}
+
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "dead-peer-drop-watcher", 0x1F1F1F1F)
+	defer closeSessionFlow(t, watcherFlow)
+	killerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "dead-peer-drop-killer", 0x1E1E1E1E)
+	defer closeSessionFlow(t, killerFlow)
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected dead watcher to receive no peer-entry bootstrap before reward kill, got %d frames", len(queued))
+	}
+
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before dead-peer drop kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on dead-peer drop hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killer to receive dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	if _, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2])); err != nil {
+		t.Fatalf("decode killer reward ground add for dead-peer test: %v", err)
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected dead watcher to receive no mob-death or reward-ground frames, got %d", len(queued))
+	}
+}
+
 func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
