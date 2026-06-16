@@ -20,6 +20,84 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
+func TestGameRuntimeItemMoveRetargetsSourceItemQuickslotAndDeletesStaleDestinationBinding(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MoveQuickslotRetarget", 0x0103065f, 0x0204065f, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 6001, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "move-quickslot-retarget", 0x6060605f, owner)
+	if err := accounts.Save(accountstore.Account{Login: "move-quickslot-retarget", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed quickslot-retarget item-move account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Retarget Stack Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected quickslot-retarget item-move runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "move-quickslot-retarget", 0x6060605f)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(6),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot-retarget item-move packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected item move to emit item delete, item set, quickslot delete, quickslot add; got %d frames", len(out))
+	}
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode item delete frame: %v", err)
+	}
+	if itemDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected item delete position: %+v", itemDel.Position)
+	}
+	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode item set frame: %v", err)
+	}
+	if itemSet.Position != itemproto.InventoryPosition(6) || itemSet.Vnum != 27001 || itemSet.Count != 3 {
+		t.Fatalf("unexpected item set frame: %+v", itemSet)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode quickslot delete frame: %v", err)
+	}
+	if quickslotDel.Position != 3 {
+		t.Fatalf("expected stale destination quickslot position 3 to be deleted, got %d", quickslotDel.Position)
+	}
+	quickslotAdd, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode quickslot add frame: %v", err)
+	}
+	if quickslotAdd.Position != 2 || quickslotAdd.Slot.Type != quickslotproto.TypeItem || quickslotAdd.Slot.Position != 6 {
+		t.Fatalf("expected source item quickslot position 2 to retarget to item cell 6, got %+v", quickslotAdd)
+	}
+
+	persisted, err := accounts.Load("move-quickslot-retarget")
+	if err != nil {
+		t.Fatalf("load quickslot-retarget item-move account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 6001, Vnum: 27001, Count: 3, Slot: 6}}) {
+		t.Fatalf("unexpected persisted inventory after quickslot-retarget item move: %+v", persisted.Characters[0].Inventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted quickslots after quickslot-retarget item move: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
 func TestGameRuntimeItemMoveRejectsDuplicateSourceOrTargetOccupancyWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
