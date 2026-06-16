@@ -17,14 +17,16 @@ import (
 
 func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t *testing.T) {
 	cases := []struct {
-		name      string
-		inventory []inventory.ItemInstance
-		template  itemcatalog.Template
-		source    uint16
-		target    uint16
-		level     uint8
-		job       uint8
-		raceNum   uint16
+		name         string
+		inventory    []inventory.ItemInstance
+		template     itemcatalog.Template
+		source       uint16
+		target       uint16
+		sourceWindow uint8
+		targetWindow uint8
+		level        uint8
+		job          uint8
+		raceNum      uint16
 	}{
 		{
 			name: "locked source",
@@ -170,6 +172,24 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			template: itemcatalog.Template{Vnum: 27001, Name: "Over Max Target Potion", Stackable: true, MaxCount: 200},
 		},
 		{
+			name: "source position outside inventory window",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template:     itemcatalog.Template{Vnum: 27001, Name: "Source Window Potion", Stackable: true, MaxCount: 200},
+			sourceWindow: itemproto.WindowEquipment,
+		},
+		{
+			name: "target position outside inventory window",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template:     itemcatalog.Template{Vnum: 27001, Name: "Target Window Potion", Stackable: true, MaxCount: 200},
+			targetWindow: itemproto.WindowEquipment,
+		},
+		{
 			name: "source outside carried inventory range",
 			inventory: []inventory.ItemInstance{
 				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
@@ -253,7 +273,15 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			if target == 0 {
 				target = 6
 			}
-			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(source), Target: itemproto.InventoryPosition(target)})))
+			sourceWindow := tc.sourceWindow
+			if sourceWindow == 0 {
+				sourceWindow = itemproto.WindowInventory
+			}
+			targetWindow := tc.targetWindow
+			if targetWindow == 0 {
+				targetWindow = itemproto.WindowInventory
+			}
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.Position{WindowType: sourceWindow, Cell: source}, Target: itemproto.Position{WindowType: targetWindow, Cell: target}})))
 			if err != nil {
 				t.Fatalf("unexpected item-use-to-item guard packet error: %v", err)
 			}
