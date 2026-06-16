@@ -204,6 +204,49 @@ func TestRuntimeRejectsOverflowingGoldDeathRewardWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestRuntimeRejectsCombinedDeathRewardAtomicallyWhenOneScalarOverflows(t *testing.T) {
+	tests := map[string]struct {
+		persisted loginticket.Character
+		reward    worldruntime.StaticActorDeathReward
+	}{
+		"experience overflow keeps gold unchanged": {
+			persisted: loginticket.Character{
+				ID:     0x01030105,
+				VID:    0x02040105,
+				Name:   "PeerFive",
+				Gold:   25,
+				Points: [255]int32{ExperiencePointIndex: 1<<31 - 10},
+			},
+			reward: worldruntime.StaticActorDeathReward{Experience: 20, Gold: 75},
+		},
+		"gold overflow keeps experience unchanged": {
+			persisted: loginticket.Character{
+				ID:     0x01030106,
+				VID:    0x02040106,
+				Name:   "PeerSix",
+				Gold:   1<<31 - 10,
+				Points: [255]int32{ExperiencePointIndex: 25},
+			},
+			reward: worldruntime.StaticActorDeathReward{Experience: 75, Gold: 20},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			runtime := NewRuntime(tc.persisted, SessionLink{Login: "peer-reward", CharacterIndex: 0})
+
+			result, ok := runtime.ApplyStaticActorDeathReward(tc.reward)
+			if ok {
+				t.Fatalf("expected combined death reward to fail closed atomically, got %+v", result)
+			}
+			gotLive := runtime.LiveCharacter()
+			if gotLive.Points[ExperiencePointIndex] != tc.persisted.Points[ExperiencePointIndex] || gotLive.Gold != tc.persisted.Gold {
+				t.Fatalf("expected live scalar rewards to stay unchanged after partial overflow rejection, got exp=%d gold=%d", gotLive.Points[ExperiencePointIndex], gotLive.Gold)
+			}
+		})
+	}
+}
+
 func TestRuntimeCanRestoreLiveRewardScalarsWithoutClobberingLivePosition(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:       0x01030103,
