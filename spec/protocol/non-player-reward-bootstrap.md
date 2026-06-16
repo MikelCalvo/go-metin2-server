@@ -121,6 +121,7 @@ Current rules:
 - currently visible peers that are already at the bootstrap `0`-HP floor receive neither the non-player `DEAD(target_vid)` fanout nor the reward ground-add / ownership pair for that kill; the killer still receives the ordinary self-visible reward frames
 - replayed pickup of the same ground VID fails closed after the first successful pickup removes it
 - ground pickup removal now uses the same bootstrap reachability gate as pickup lookup: a collector who can see the ground reward but is outside the current pickup radius cannot remove it, and the ground entry remains available to reachable living sessions
+- when a connected owner leaves the shared world, currently owned reward ground entries are removed with deterministic `ITEM_GROUND_DEL` fanout to living visible peers; connected peers already at the bootstrap `0`-HP floor are skipped for both the owner leave visibility delete and owned-ground delete noise
 
 ## Respawn / lifecycle ownership
 

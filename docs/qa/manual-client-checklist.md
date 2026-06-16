@@ -600,6 +600,8 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] If the QA mob grants gold, confirm one self-only `PLAYER_POINT_CHANGE(POINT_GOLD)` arrives after death/clear and that reconnect keeps the updated gold value
 - [ ] If the QA mob drops items, confirm one self-visible `GROUND_ADD` + `OWNERSHIP` pair appears per configured drop, at the killer's current position
 - [ ] Pick up one reward drop and confirm the normal bootstrap pickup path removes the ground item, adds it to carried inventory, persists it, and rejects a replayed pickup
+- [ ] With a second living visible client watching, disconnect the reward-drop owner before pickup and confirm the watcher sees deterministic ground-delete cleanup for the owner's still-owned reward drops
+- [ ] If a second watcher is already at the bootstrap `0`-HP floor, confirm that dead watcher receives neither the owner leave delete nor the owned-ground delete noise
 
 Expected result:
 - reward frames are ordered after `DEAD` and `TARGET(0, 0)`
