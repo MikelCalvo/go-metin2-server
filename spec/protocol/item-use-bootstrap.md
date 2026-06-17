@@ -146,6 +146,7 @@ This effect placeholder exists only because there is not yet an owned visual-eff
 The first consumable path must fail closed when any of these are true:
 - the slot is empty
 - the slot's `vnum` does not resolve to a valid non-equippable item template with a valid `use_effect`
+- the resolved template `vnum` does not match the live carried item `vnum`; the player mutation boundary treats mismatched template metadata as fail-closed for both direct `ITEM_USE` and `ITEM_USE_TO_ITEM`
 - the resolved template carries an authored `equip_slot`
 - the carried live item snapshot is malformed under the bootstrap item-instance validation rules
 - the carried live item is locked

@@ -900,6 +900,58 @@ func TestRuntimeUseItemOnItemRejectsZeroCountSourceOrTargetWithoutMutation(t *te
 	}
 }
 
+func TestRuntimeUseItemRejectsTemplateVnumMismatchWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "MismatchPeer",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 2, Slot: 5}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "mismatch-peer", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+	template := bootstrapConsumableTemplate(27002, 1, 1, 50, "consume:27002:+50")
+
+	if result, ok := runtime.UseItem(5, template); ok {
+		t.Fatalf("expected template/source-vnum mismatch item use to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("template/source-vnum mismatch item use mutated live character: got %#v want %#v", got, before)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
+		t.Fatalf("template/source-vnum mismatch item use mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", got.Inventory, got.Quickslots, got.Points[1])
+	}
+}
+
+func TestRuntimeUseItemOnItemRejectsTemplateVnumMismatchWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "UseToItemMismatchPeer",
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "use-to-item-mismatch-peer", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+	template := bootstrapConsumableTemplate(27002, 1, 1, 50, "consume:27002:+50")
+
+	if result, ok := runtime.UseItemOnItem(5, 6, template); ok {
+		t.Fatalf("expected template/source-vnum mismatch use-to-item to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("template/source-vnum mismatch use-to-item mutated live character: got %#v want %#v", got, before)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
+		t.Fatalf("template/source-vnum mismatch use-to-item mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", got.Inventory, got.Quickslots, got.Points[1])
+	}
+}
+
 func TestRuntimeUseItemOnItemMergesCompatibleStacksWithoutPointEffect(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,
