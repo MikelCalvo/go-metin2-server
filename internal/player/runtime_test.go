@@ -1004,32 +1004,54 @@ func TestRuntimeUseItemOnItemMergesPartialStackWhenTargetHasLimitedRoom(t *testi
 }
 
 func TestRuntimeUseItemOnItemLatePartialMergeValidationFailureLeavesSourceAndTargetUnchanged(t *testing.T) {
-	persisted := loginticket.Character{
-		ID:        0x01030102,
-		VID:       0x02040102,
-		Name:      "PeerTwo",
-		Points:    [255]int32{1: 700},
-		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 7, Slot: 5}, {ID: 12, Vnum: 27001, Count: 8, Slot: 6}},
+	cases := []struct {
+		name        string
+		rewriteItem func(inventory.ItemInstance) inventory.ItemInstance
+	}{
+		{
+			name: "source validation failure",
+			rewriteItem: func(item inventory.ItemInstance) inventory.ItemInstance {
+				if item.Slot == 5 {
+					item.ID = 0
+				}
+				return item
+			},
+		},
+		{
+			name: "target validation failure",
+			rewriteItem: func(item inventory.ItemInstance) inventory.ItemInstance {
+				if item.Slot == 6 {
+					item.ID = 0
+				}
+				return item
+			},
+		},
 	}
-	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
-	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
-	template.MaxCount = 10
-	before := runtime.LiveCharacter()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "PeerTwo",
+				Points:    [255]int32{1: 700},
+				Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 7, Slot: 5}, {ID: 12, Vnum: 27001, Count: 8, Slot: 6}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
+			template.MaxCount = 10
+			before := runtime.LiveCharacter()
 
-	result, ok := runtime.useItemOnItem(5, 6, template, func(item inventory.ItemInstance) inventory.ItemInstance {
-		if item.Slot == 5 {
-			item.ID = 0
-		}
-		return item
-	})
-	if ok {
-		t.Fatalf("expected late source validation failure to reject partial use-to-item merge, got %+v", result)
-	}
-	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
-		t.Fatalf("expected late source validation failure to leave live character unchanged, got %#v want %#v", got, before)
-	}
-	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != persisted.Points[1] {
-		t.Fatalf("expected late source validation failure to leave persisted inventory/points unchanged, got inventory=%#v points[1]=%d", got.Inventory, got.Points[1])
+			result, ok := runtime.useItemOnItem(5, 6, template, tc.rewriteItem)
+			if ok {
+				t.Fatalf("expected late %s to reject partial use-to-item merge, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("expected late %s to leave live character unchanged, got %#v want %#v", tc.name, got, before)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || got.Points[1] != persisted.Points[1] {
+				t.Fatalf("expected late %s to leave persisted inventory/points unchanged, got inventory=%#v points[1]=%d", tc.name, got.Inventory, got.Points[1])
+			}
+		})
 	}
 }
 
