@@ -16013,6 +16013,53 @@ func TestSharedWorldRegistrySpawnBackedRegisteredProfileUsesProfileRewardDefault
 	}
 }
 
+func TestSharedWorldRegistrySpawnBackedRegisteredProfileUsesAuthoredRewardOverProfileDefaults(t *testing.T) {
+	const profile = "practice_authored_reward_override_wolf"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 2,
+		DamagePerNormalAttack: 1,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:           worldruntime.StaticActorDeathReward{Experience: 25, Gold: 7, DropVnums: []uint32{27001}},
+	}) {
+		t.Fatalf("expected %q profile registration with death reward defaults to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	authoredReward := worldruntime.StaticActorDeathReward{Experience: 90, Gold: 30, DropVnums: []uint32{27003, 27002}}
+	actor, ok := registry.registerStaticActor(0, "AuthoredRewardProfileMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", profile, "practice.authored_reward_override", authoredReward)
+	if !ok {
+		t.Fatal("expected spawn-backed registered-profile static actor with authored reward to register")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected target selection before authored-reward registered-profile attack to succeed, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target selection to be recorded before selected attack")
+	}
+
+	var killingHit StaticActorCombatAttackAttempt
+	for hit := 1; hit <= 2; hit++ {
+		killingHit = registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+		if !killingHit.Accepted {
+			t.Fatalf("expected hit %d to be accepted before authored-reward registered-profile death, got %+v", hit, killingHit)
+		}
+	}
+	if !killingHit.Died {
+		t.Fatalf("expected final accepted hit to mark authored-reward registered-profile actor dead, got %+v", killingHit)
+	}
+	if killingHit.DeathReward.Experience != authoredReward.Experience || killingHit.DeathReward.Gold != authoredReward.Gold || !reflect.DeepEqual(killingHit.DeathReward.DropVnums, []uint32{27002, 27003}) {
+		t.Fatalf("expected authored spawn reward descriptor to override profile defaults, got %+v", killingHit.DeathReward)
+	}
+}
+
 func TestSharedWorldRegistryFirstTrainingDummySpawnHitClearsOtherPreselectedTargetOwnership(t *testing.T) {
 	assertFirstSpawnHitClearsOtherPreselectedTargetOwnership(t, worldruntime.StaticActorCombatKindTrainingDummy)
 }

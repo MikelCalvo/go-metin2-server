@@ -43,7 +43,8 @@ Default bootstrap `training_dummy` and `practice_mob` profile defaults remain re
 Both profile-level default helpers are covered directly so a later combat-profile broadening cannot accidentally turn either bootstrap profile into an implicit reward source.
 
 Registered bootstrap combat profiles may carry a validated death-reward default for authored spawn-group use, and lookup returns cloned descriptor slices so callers cannot mutate the registry by editing returned defaults.
-Runtime coverage freezes that a spawn-backed actor using such a registered profile can apply the profile's default EXP/gold descriptor on the accepted killing hit.
+Runtime coverage freezes that a spawn-backed actor using such a registered profile can apply the profile's default EXP/gold/drop descriptor on the accepted killing hit.
+If the authored spawn-group snapshot also carries an explicit reward descriptor, that authored descriptor wins over the profile-level default for the current actor life; profile defaults are only the fallback for spawn-backed actors whose live/authored snapshot has no explicit reward descriptor.
 That profile-level default still does **not** make standalone runtime static actors reward-bearing: without a non-empty `spawn_group_ref` or explicit authored live snapshot descriptor, the shared-world death attempt returns a rewardless descriptor.
 
 ## Validation
