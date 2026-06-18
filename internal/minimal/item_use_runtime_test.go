@@ -953,7 +953,7 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlySourceItemQuickslotAndS
 	}
 }
 
-func TestGameSessionFlowItemUseToItemPartialMergePreservesSourceQuickslot(t *testing.T) {
+func TestGameSessionFlowItemUseToItemPartialMergePreservesSourceQuickslotAndDeletesTargetQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("UseToItemPartial", 0x0103053c, 0x0204053c, 1100, 2100, 0, 101, 201)
@@ -961,7 +961,11 @@ func TestGameSessionFlowItemUseToItemPartialMergePreservesSourceQuickslot(t *tes
 		{ID: 201, Vnum: 27001, Count: 7, Slot: 5},
 		{ID: 202, Vnum: 27001, Count: 8, Slot: 6},
 	}
-	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 5, Type: quickslotproto.TypeSkill, Slot: 6},
+	}
 	issuePeerTicket(t, ticketStore, "item-use-to-item-partial", 0x5050507c, owner)
 	if err := accounts.Save(accountstore.Account{Login: "item-use-to-item-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed item-use-to-item partial account: %v", err)
@@ -983,8 +987,8 @@ func TestGameSessionFlowItemUseToItemPartialMergePreservesSourceQuickslot(t *tes
 	if err != nil {
 		t.Fatalf("unexpected item-use-to-item partial packet error: %v", err)
 	}
-	if len(out) != 2 {
-		t.Fatalf("expected partial item-use-to-item to emit source and target updates only, got %d", len(out))
+	if len(out) != 3 {
+		t.Fatalf("expected partial item-use-to-item to emit source update, target update, and target item quickslot delete only, got %d", len(out))
 	}
 	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -1000,6 +1004,13 @@ func TestGameSessionFlowItemUseToItemPartialMergePreservesSourceQuickslot(t *tes
 	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 10 {
 		t.Fatalf("unexpected partial item-use-to-item target update: %+v", targetUpdate)
 	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode partial item-use-to-item target quickslot del: %v", err)
+	}
+	if quickslotDel.Position != 4 {
+		t.Fatalf("expected partial item-use-to-item to delete target item quickslot position 4, got %+v", quickslotDel)
+	}
 	persisted, err := accounts.Load("item-use-to-item-partial")
 	if err != nil {
 		t.Fatalf("load persisted item-use-to-item partial account: %v", err)
@@ -1011,8 +1022,12 @@ func TestGameSessionFlowItemUseToItemPartialMergePreservesSourceQuickslot(t *tes
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
 		t.Fatalf("unexpected persisted partial item-use-to-item inventory: got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
 	}
-	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
-		t.Fatalf("expected partial item-use-to-item to preserve source quickslot, got %+v", persisted.Characters[0].Quickslots)
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 5, Type: quickslotproto.TypeSkill, Slot: 6},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("expected partial item-use-to-item to preserve source quickslot and delete target item quickslot, got %+v", persisted.Characters[0].Quickslots)
 	}
 }
 
