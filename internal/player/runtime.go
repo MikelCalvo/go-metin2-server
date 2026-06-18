@@ -294,6 +294,9 @@ func (r *Runtime) SwapQuickslots(position uint8, targetPosition uint8) (Quickslo
 	updated := cloneQuickslots(r.liveQuickslots)
 	leftIndex := findQuickslotPosition(updated, position)
 	rightIndex := findQuickslotPosition(updated, targetPosition)
+	if leftIndex < 0 && rightIndex < 0 {
+		return QuickslotSwapResult{}, false
+	}
 	if leftIndex >= 0 {
 		updated[leftIndex].Position = targetPosition
 	}

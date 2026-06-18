@@ -616,6 +616,43 @@ func TestUseItemOnItemRejectsAntiFlagTemplatesWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestSwapQuickslotsRejectsBothEmptyPositionsWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		},
+	}, SessionLink{})
+	before := runtime.LiveQuickslots()
+
+	if result, ok := runtime.SwapQuickslots(4, 5); ok {
+		t.Fatalf("expected swapping two empty quickslot positions to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("empty quickslot swap mutated live quickslots: got %+v want %+v", got, before)
+	}
+}
+
+func TestSwapQuickslotsAllowsOccupiedPositionWithEmptyTarget(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory:  []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}},
+	}, SessionLink{})
+
+	result, ok := runtime.SwapQuickslots(2, 4)
+	if !ok {
+		t.Fatal("expected occupied quickslot to move into empty target position")
+	}
+	if result.Position != 2 || result.TargetPosition != 4 {
+		t.Fatalf("unexpected quickslot swap result: %+v", result)
+	}
+	want := []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 5}}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected quickslots after occupied-to-empty swap: got %+v want %+v", got, want)
+	}
+}
+
 func TestMerchantTemplateMutationsRejectSelectedCharacterAntiFlagTemplates(t *testing.T) {
 	cases := []struct {
 		name      string
