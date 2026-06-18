@@ -325,6 +325,35 @@ func TestRegisterStaticActorCombatProfileAcceptsConsistentLegacyDamageAndFormula
 	}
 }
 
+func TestRegisterStaticActorCombatProfileAcceptsFormulaWithoutLegacyDamage(t *testing.T) {
+	const profile = "practice_formula_only_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  9,
+		DefenseValue: 4,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with formula-only damage to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected formula-only registered profile defaults to resolve")
+	}
+	if defaults.DamagePerNormalAttack != 5 || defaults.AttackValue != 9 || defaults.DefenseValue != 4 {
+		t.Fatalf("expected formula-only profile to canonicalize legacy damage from attack-defense stats, got %+v", defaults)
+	}
+
+	nextHP, hpPercent, ok := ApplyBootstrapStaticActorNormalAttack(profile, 24)
+	if !ok {
+		t.Fatal("expected formula-only profile normal attack to be supported")
+	}
+	if nextHP != 19 || hpPercent != 79 {
+		t.Fatalf("expected formula-only profile to deal 5 damage, got nextHP=%d hpPercent=%d", nextHP, hpPercent)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileAddsDeathRewardDefaults(t *testing.T) {
 	const profile = "practice_reward_wolf"
 	reward := StaticActorDeathReward{Experience: 25, Gold: 7, DropVnums: []uint32{27001, 27002}}
