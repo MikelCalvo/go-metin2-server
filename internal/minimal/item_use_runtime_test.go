@@ -15,6 +15,76 @@ import (
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
 
+func TestGameSessionFlowItemUseToItemRejectsRuntimeWideMaxWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name            string
+		login           string
+		inventory       []inventory.ItemInstance
+		template        itemcatalog.Template
+		runtimeTemplate *itemcatalog.Template
+	}{
+		{
+			name:  "runtime max-count exceeds item refresh byte",
+			login: "uit-wide-max",
+			inventory: []inventory.ItemInstance{
+				{ID: 195, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 196, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Wide Max Store Potion", Stackable: true, MaxCount: 255},
+			runtimeTemplate: &itemcatalog.Template{
+				Vnum:      27001,
+				Name:      "Wide Max Runtime Potion",
+				Stackable: true,
+				MaxCount:  256,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseToItemEdge", 0x0103051b, 0x0204051b, 1100, 2100, 0, 101, 201)
+			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, ticketStore, tc.login, 0x5050501b, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s item-use-to-item account: %v", tc.name, err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{tc.template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s item-use-to-item runtime error: %v", tc.name, err)
+			}
+			if tc.runtimeTemplate != nil {
+				runtime.itemTemplates[tc.runtimeTemplate.Vnum] = *tc.runtimeTemplate
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x5050501b)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+			if err != nil {
+				t.Fatalf("unexpected %s item-use-to-item packet error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s ITEM_USE_TO_ITEM to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s ITEM_USE_TO_ITEM rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load persisted %s item-use-to-item account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s ITEM_USE_TO_ITEM mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s ITEM_USE_TO_ITEM mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowItemUseToItemRejectsMissingAuthoredTemplateWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
