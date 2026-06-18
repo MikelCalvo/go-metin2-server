@@ -367,6 +367,30 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsDeadOwner(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundGoldRejectsExistingVID(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030194, 0x02040194, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected gold-drop owner join to allocate a shared-world entity id")
+	}
+
+	const groundVID uint32 = 0x0700000B
+	if !registry.RegisterGroundGold(ownerID, "gold-drop-owner", owner, groundVID, 250) {
+		t.Fatal("expected first ground-gold registration to succeed")
+	}
+	if registry.RegisterGroundGold(ownerID, "gold-drop-owner", owner, groundVID, 500) {
+		t.Fatal("expected duplicate ground-gold VID registration to fail closed")
+	}
+	pickup, ok := registry.GroundItemPickupFor(ownerID, owner, groundVID)
+	if !ok {
+		t.Fatal("expected original ground-gold entry to remain available after duplicate rejection")
+	}
+	if pickup.GoldAmount != 250 {
+		t.Fatalf("expected duplicate rejection to preserve original gold amount 250, got %d", pickup.GoldAmount)
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundGoldSkipsDeadVisiblePeers(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030191, 0x02040191, 1100, 2100, 0, 101, 201)
