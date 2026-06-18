@@ -447,6 +447,9 @@ func (r *Runtime) PickupGroundItem(item inventory.ItemInstance, preferred invent
 	if err := item.Validate(); err != nil {
 		return GroundItemPickupResult{}, false
 	}
+	if item.Equipped {
+		return GroundItemPickupResult{}, false
+	}
 	if hasDuplicateInventorySlotOccupancy(r.liveInventory) {
 		return GroundItemPickupResult{}, false
 	}
