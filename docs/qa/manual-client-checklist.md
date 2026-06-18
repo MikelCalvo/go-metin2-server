@@ -613,12 +613,14 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] Pick up one reward drop and confirm the normal bootstrap pickup path removes the ground item, adds it to carried inventory, persists it, and rejects a replayed pickup
 - [ ] With a second living visible client watching, disconnect the reward-drop owner before pickup and confirm the watcher sees deterministic ground-delete cleanup for the owner's still-owned reward drops
 - [ ] If a second watcher is already at the bootstrap `0`-HP floor, confirm that dead watcher receives neither the owner leave delete nor the owned-ground delete noise
+- [ ] If using a debug/fixture harness that deliberately pre-seeds one colliding reward-drop `VID`, confirm the colliding drop is omitted while the accepted death edge, scalar rewards, and any non-colliding drop entries still succeed
 
 Expected result:
 - reward frames are ordered after `DEAD` and `TARGET(0, 0)`
 - scalar EXP/gold rewards persist to the selected character before their point-change frame is emitted
 - item drops are runtime ground items first; they do not mutate inventory until an explicit pickup succeeds
 - invalid or unsupported reward descriptors preserve the accepted death/clear edge while omitting reward mutation and reward frames
+- a live ground-drop `VID` collision suppresses only that colliding drop; it does not roll back death/clear, scalar rewards, or independent non-colliding drops
 
 Important note:
 - default `training_dummy` / `practice_mob` content remains rewardless unless the QA setup deliberately overrides or authors a non-zero descriptor
