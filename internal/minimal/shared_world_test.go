@@ -8383,6 +8383,99 @@ func TestGameRuntimeDropRewardCollisionFailsClosedWithoutDuplicateGroundItem(t *
 	}
 }
 
+func TestGameRuntimeDropRewardCollisionSkipsOnlyCollidingDrop(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105021B, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105021B, Name: "PartialCollisionRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1150, 2150),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.partial_collision_reward_mob",
+	}
+	killer := peerVisibilityCharacter("PartialCollisionKiller", 0x0103011B, 0x0204011B, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "partial-collision-killer", 0x1B1B1B1B, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "partial-collision-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed partial collision reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_421, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected partial collision reward mob registration to succeed")
+	}
+	dropVnums := []uint32{27001, 27002}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: dropVnums}) {
+		t.Fatal("expected partial collision reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "partial-collision-killer", 0x1B1B1B1B)
+	defer closeSessionFlow(t, flow)
+	collidingVID := bootstrapRewardGroundItemVID(killer, 27001, 0)
+	playerEntity, ok := runtime.sharedWorld.entities.PlayerByName("PartialCollisionKiller")
+	if !ok {
+		t.Fatal("expected killer to join shared world before pre-registering colliding drop")
+	}
+	sharedWorldID := playerEntity.Entity.ID
+	if !runtime.sharedWorld.RegisterGroundItem(sharedWorldID, "partial-collision-killer", killer, collidingVID, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+		t.Fatal("expected pre-existing partial-collision ground item registration to succeed")
+	}
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before partial collision reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on partial collision reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected partial collision reward kill to return dead, clear-target, and the non-colliding drop frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode partial collision reward dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode partial collision reward clear-target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("unexpected partial collision reward clear target: %+v", clearTarget)
+	}
+	if stored, ok := runtime.sharedWorld.GroundItemVisibleTo(sharedWorldID, killer, collidingVID); !ok || stored.Vnum != 3001 {
+		t.Fatalf("expected pre-existing colliding ground item to remain preserved, got %+v ok=%v", stored, ok)
+	}
+	nonCollidingAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode non-colliding reward ground add: %v", err)
+	}
+	expectedVID := bootstrapRewardGroundItemVID(killer, 27002, 1)
+	if nonCollidingAdd.Vnum != 27002 || nonCollidingAdd.VID != expectedVID {
+		t.Fatalf("expected only non-colliding reward drop to be emitted, got %+v want vid=%d vnum=27002", nonCollidingAdd, expectedVID)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode non-colliding reward ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: expectedVID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected non-colliding reward ownership: %+v", ownership)
+	}
+	if !runtime.sharedWorld.GroundItemExists(expectedVID) {
+		t.Fatalf("expected non-colliding reward ground item %d to be registered", expectedVID)
+	}
+}
+
 func TestGameRuntimeNormalizesDropRewardOrderBeforeGroundVIDGeneration(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
@@ -15896,8 +15989,8 @@ func TestNewGameSessionFactoryRejectsPracticeMobDropRewardVIDCollisionWithoutGro
 			t.Fatalf("unexpected attack error on collision reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 2 {
-		t.Fatalf("expected collision reward killing hit to preserve dead + clear target frames only, got %d", len(killOut))
+	if len(killOut) != 4 {
+		t.Fatalf("expected collision reward killing hit to preserve dead, clear target, and non-colliding drop frames, got %d", len(killOut))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0]))
 	if err != nil {
@@ -15921,8 +16014,22 @@ func TestNewGameSessionFactoryRejectsPracticeMobDropRewardVIDCollisionWithoutGro
 	if len(account.Characters[0].Inventory) != 0 {
 		t.Fatalf("expected rejected collision reward not to mutate persisted inventory, got %#v", account.Characters[0].Inventory)
 	}
-	if pickupOut := pickupGroundItem(t, flow, secondVID); len(pickupOut) != 0 {
-		t.Fatalf("expected rejected collision reward not to register the second reward ground item, got %d frames", len(pickupOut))
+	nonCollidingAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode non-colliding collision reward ground add: %v", err)
+	}
+	if nonCollidingAdd.VID != secondVID || nonCollidingAdd.Vnum != 0x00050101 {
+		t.Fatalf("expected only second non-colliding reward ground add, got %+v", nonCollidingAdd)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode non-colliding collision reward ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: secondVID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected non-colliding collision reward ownership: %+v", ownership)
+	}
+	if pickupOut := pickupGroundItem(t, flow, secondVID); len(pickupOut) == 0 {
+		t.Fatal("expected second non-colliding reward ground item to be registered and pickable")
 	}
 }
 

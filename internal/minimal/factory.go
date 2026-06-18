@@ -2850,8 +2850,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								seenVIDs[groundVID] = struct{}{}
 								item := inventory.ItemInstance{ID: uint64(groundVID), Vnum: vnum, Count: 1}
 								if sharedWorld != nil && sharedWorld.GroundItemExists(groundVID) {
-									rewardDrops = rewardDrops[:0]
-									break
+									continue
 								}
 								rewardDrops = append(rewardDrops, rewardDrop{vid: groundVID, item: item})
 							}
