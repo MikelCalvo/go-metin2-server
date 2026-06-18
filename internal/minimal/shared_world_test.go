@@ -391,6 +391,23 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsExistingVID(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundGoldRejectsPointChangeCarrierOverflow(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("OverflowGoldDropOwner", 0x01030195, 0x02040195, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected overflow gold-drop owner join to allocate a shared-world entity id")
+	}
+
+	const abovePointChangeCarrierMax uint32 = 1 << 31
+	if registry.RegisterGroundGold(ownerID, "overflow-gold-drop-owner", owner, 0x0700000D, abovePointChangeCarrierMax) {
+		t.Fatal("expected ground-gold amount above signed point-change carrier max to fail closed")
+	}
+	if registry.GroundItemExists(0x0700000D) {
+		t.Fatal("expected rejected overflow ground-gold entry to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundGoldSkipsDeadVisiblePeers(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030191, 0x02040191, 1100, 2100, 0, 101, 201)

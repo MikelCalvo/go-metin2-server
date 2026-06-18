@@ -922,7 +922,8 @@ func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, ownerLogin stri
 }
 
 func (r *sharedWorldRegistry) RegisterGroundGold(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32) bool {
-	if amount == 0 {
+	const maxPointChangeCarrier = uint32(1<<31 - 1)
+	if amount == 0 || amount > maxPointChangeCarrier {
 		return false
 	}
 	return r.registerGroundItem(ownerID, ownerLogin, character, vid, inventory.ItemInstance{Vnum: 1, Count: 1}, amount)
