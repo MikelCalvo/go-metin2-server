@@ -1101,7 +1101,8 @@ func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.playerCharacter(collectorID); !ok || characterAtBootstrapHPFloor(collector) {
+	registeredCollector, ok := r.playerCharacter(collectorID)
+	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) {
 		return inventory.ItemInstance{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
@@ -1119,7 +1120,8 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.playerCharacter(collectorID); !ok || characterAtBootstrapHPFloor(collector) {
+	registeredCollector, ok := r.playerCharacter(collectorID)
+	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) {
 		return sharedGroundItemPickup{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
@@ -1148,7 +1150,8 @@ func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector log
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if _, ok := r.playerCharacter(collectorID); !ok || characterAtBootstrapHPFloor(collector) {
+	registeredCollector, ok := r.playerCharacter(collectorID)
+	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) {
 		return false
 	}
 	ground, ok := r.groundItemsByVID[vid]

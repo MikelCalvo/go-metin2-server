@@ -14323,6 +14323,39 @@ func TestSharedWorldRegistryGroundItemPickupRejectsDeadCollector(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryGroundItemPickupRejectsStaleLiveCollectorSnapshotAfterCollectorDeath(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030141, 0x02040141, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("StaleLiveCollector", 0x01030142, 0x02040142, 1120, 2120, 1, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	groundVID := uint32(0x0A0B0C1C)
+	item := inventory.ItemInstance{ID: 1011, Vnum: 27001, Count: 1, Slot: 5}
+	if !registry.RegisterGroundItem(ownerID, "owner-login", owner, groundVID, item) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+	deadCollector := collector
+	deadCollector.Points[bootstrapPlayerPointValueIndex] = 0
+	registry.UpdateCharacter(collectorID, deadCollector)
+
+	if item, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); ok || item.Vnum != 0 {
+		t.Fatalf("expected stale live collector visibility lookup to fail after registered collector death, got ok=%v item=%+v", ok, item)
+	}
+	if pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok || pickup.Item.Vnum != 0 {
+		t.Fatalf("expected stale live collector pickup lookup to fail after registered collector death, got ok=%v pickup=%+v", ok, pickup)
+	}
+	if removed := registry.RemoveGroundItem(collectorID, collector, groundVID); removed {
+		t.Fatal("expected stale live collector removal to fail after registered collector death")
+	}
+	if _, ok := registry.GroundItemPickupFor(ownerID, owner, groundVID); !ok {
+		t.Fatal("expected rejected stale collector pickup to leave ground item available for living owner")
+	}
+}
+
 func TestSharedWorldRegistryGroundItemRemovalRejectsOutOfRangeCollector(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(4000, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
