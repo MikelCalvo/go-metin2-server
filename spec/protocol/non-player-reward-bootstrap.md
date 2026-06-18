@@ -44,6 +44,7 @@ Both profile-level default helpers are covered directly so a later combat-profil
 
 Registered bootstrap combat profiles may carry a validated death-reward default for authored spawn-group use, and lookup returns cloned descriptor slices so callers cannot mutate the registry by editing returned defaults.
 Runtime coverage freezes that a spawn-backed actor using such a registered profile can apply the profile's default EXP/gold/drop descriptor on the accepted killing hit.
+That runtime coverage now also includes formula-only registered profiles whose `damage_per_normal_attack` is canonicalized from `attack_value - defense_value`, so the profile can both drive deterministic HP mutation and apply its reward descriptor on the same death edge.
 If the authored spawn-group snapshot also carries an explicit reward descriptor, that authored descriptor wins over the profile-level default for the current actor life; profile defaults are only the fallback for spawn-backed actors whose live/authored snapshot has no explicit reward descriptor.
 That profile-level default still does **not** make standalone runtime static actors reward-bearing: without a non-empty `spawn_group_ref` or explicit authored live snapshot descriptor, the shared-world death attempt returns a rewardless descriptor.
 
@@ -153,6 +154,7 @@ The repository can now say:
 - non-player rewards are a documented bootstrap seam rather than an implied future system
 - default bootstrap combatants are still rewardless
 - authored spawn groups may carry deterministic EXP, gold, and fixed drop-vnum descriptors
+- registered formula-only combat profiles can drive both deterministic HP mutation and profile-default EXP/gold reward payout on the same accepted death edge
 - a single accepted kill can emit EXP, gold, and owned drop feedback together in documented order
 - accepted non-player death is preserved even when reward application fails
 - scalar rewards persist before their point-change frames are emitted

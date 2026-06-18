@@ -14528,6 +14528,114 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDeathRew
 	}
 }
 
+func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileDeathReward(t *testing.T) {
+	const profile = "formula_only_reward_profile_runtime"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        6,
+		AttackValue:  5,
+		DefenseValue: 2,
+		RespawnDelay: worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:  worldruntime.StaticActorDeathReward{Experience: 55, Gold: 66},
+	}) {
+		t.Fatalf("expected registered formula-only reward profile %q to be accepted", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105022B, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105022B, Name: "FormulaOnlyRewardProfileMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: profile,
+		CombatKind:    profile,
+		SpawnGroupRef: "practice.formula_only_reward_profile_mob",
+	}
+	killer := peerVisibilityCharacter("FormulaRewardKiller", 0x0103012B, 0x0204012B, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 5
+	killer.Gold = 6
+	issuePeerTicket(t, store, "formula-reward-killer", 0x2b2b2b2b, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "formula-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed formula reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_726, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected formula-only reward mob registration to succeed")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "formula-reward-killer", 0x2b2b2b2b)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before formula reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+
+	firstHitOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected formula reward first hit error: %v", err)
+	}
+	if len(firstHitOut) != 1 {
+		t.Fatalf("expected non-lethal formula hit to return one target refresh frame, got %d frames", len(firstHitOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHitOut[0]))
+	if err != nil {
+		t.Fatalf("decode formula reward first-hit target refresh: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 50 {
+		t.Fatalf("expected formula damage 3 to leave profile mob at 50 percent HP, got %+v", refresh)
+	}
+
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	killOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected formula reward killing-hit error: %v", err)
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear target, experience, and gold point-change frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode formula reward killing hit dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode formula reward killing hit clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected formula reward killing hit to clear target, got %+v", clearTarget)
+	}
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode formula reward experience point change: %v", err)
+	}
+	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 55 || experienceChange.Value != 60 {
+		t.Fatalf("unexpected formula reward experience point change: %+v", experienceChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode formula reward gold point change: %v", err)
+	}
+	if goldChange.VID != killer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 66 || goldChange.Value != 72 {
+		t.Fatalf("unexpected formula reward gold point change: %+v", goldChange)
+	}
+
+	account, err := accounts.Load("formula-reward-killer")
+	if err != nil {
+		t.Fatalf("load formula rewarded account: %v", err)
+	}
+	if got := account.Characters[0].Points[bootstrapExperiencePointType]; got != 60 {
+		t.Fatalf("expected formula rewarded account experience point 60 after mob death, got %d", got)
+	}
+	if got := account.Characters[0].Gold; got != 72 {
+		t.Fatalf("expected formula rewarded account gold 72 after mob death, got %d", got)
+	}
+}
+
 func TestNewGameSessionFactoryAppliesExperienceOnlyPracticeMobDeathReward(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
