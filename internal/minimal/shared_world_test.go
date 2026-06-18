@@ -443,6 +443,47 @@ func TestSharedWorldRegistryRegisterGroundGoldSkipsDeadVisiblePeers(t *testing.T
 	}
 }
 
+func TestSharedWorldRegistryRemoveGroundGoldQueuesDeleteForLivingPeers(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030195, 0x02040195, 1100, 2100, 0, 101, 201)
+	livingPeer := peerVisibilityCharacter("LivingGoldPeer", 0x01030196, 0x02040196, 1200, 2200, 0, 102, 202)
+
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected gold-drop owner join to return a live shared-world entity ID")
+	}
+	livingPending := newPendingServerFrames()
+	livingID, _ := registry.Join(livingPeer, livingPending, nil)
+	if livingID == 0 {
+		t.Fatal("expected living gold peer join to return a live shared-world entity ID")
+	}
+	livingPending.flush()
+
+	const groundVID uint32 = 0x0700000C
+	if !registry.RegisterGroundGold(ownerID, "gold-drop-owner", owner, groundVID, 250) {
+		t.Fatal("expected owner ground-gold registration to succeed")
+	}
+	livingPending.flush()
+
+	if !registry.RemoveGroundItem(ownerID, owner, groundVID) {
+		t.Fatal("expected owner ground-gold removal to succeed through the shared ground-item path")
+	}
+	if registry.GroundItemExists(groundVID) {
+		t.Fatal("expected removed ground-gold entry to leave live ground occupancy")
+	}
+	livingQueued := livingPending.flush()
+	if len(livingQueued) != 1 {
+		t.Fatalf("expected living visible peer to receive 1 ground-gold delete frame, got %d", len(livingQueued))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, livingQueued[0]))
+	if err != nil {
+		t.Fatalf("decode living peer ground-gold delete: %v", err)
+	}
+	if groundDel.VID != groundVID {
+		t.Fatalf("unexpected living peer ground-gold delete: %+v", groundDel)
+	}
+}
+
 func TestSharedWorldRegistryRemoveGroundItemSkipsDeadVisiblePeers(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DropOwner", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)
