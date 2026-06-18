@@ -1106,7 +1106,7 @@ func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector 
 		return inventory.ItemInstance{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
-	if !ok || !r.groundItemVisibleToCharacterLocked(ground, collector) {
+	if !ok || !r.groundItemVisibleToCharacterLocked(ground, registeredCollector) {
 		return inventory.ItemInstance{}, false
 	}
 	return ground.Item, true
@@ -1125,7 +1125,7 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 		return sharedGroundItemPickup{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
-	if !ok || !r.groundItemReachableByCharacterLocked(ground, collector) {
+	if !ok || !r.groundItemReachableByCharacterLocked(ground, registeredCollector) {
 		return sharedGroundItemPickup{}, false
 	}
 	ownerName := ground.OwnerName
@@ -1155,7 +1155,7 @@ func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector log
 		return false
 	}
 	ground, ok := r.groundItemsByVID[vid]
-	if !ok || !r.groundItemReachableByCharacterLocked(ground, collector) {
+	if !ok || !r.groundItemReachableByCharacterLocked(ground, registeredCollector) {
 		return false
 	}
 	delete(r.groundItemsByVID, vid)
