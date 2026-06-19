@@ -27845,33 +27845,9 @@ func TestGameSessionFlowPracticeMobRespawnWatcherCombatBlocksSecondWatcher(t *te
 		t.Fatalf("expected 3 queued blocker-visibility frames for watcher, got %d", len(queued))
 	}
 
-	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
-	if err != nil {
-		t.Fatalf("unexpected owner target-selection error before respawn second-watcher block test: %v", err)
-	}
-	if len(selectOut) != 1 {
-		t.Fatalf("expected 1 owner target-selection frame before respawn second-watcher block test, got %d", len(selectOut))
-	}
-	var killingAttack [][]byte
-	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
-		if attackIndex > 0 {
-			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
-		}
-		attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
-		if err != nil {
-			t.Fatalf("unexpected owner attack %d before respawn second-watcher block test: %v", attackIndex+1, err)
-		}
-		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
-			killingAttack = attackOut
-			break
-		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected live owner hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
-		}
-	}
-	if len(killingAttack) != 2 {
-		t.Fatalf("expected killing owner hit to emit mob dead plus target clear, got %d frames", len(killingAttack))
-	}
+	drivePracticeMobOwnerKill(t, ownerFlow, targetVID, "respawn second-watcher block test", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before respawn second-watcher block test, got %d", len(queued))
 	}
@@ -27997,33 +27973,9 @@ func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatc
 		t.Fatalf("expected 3 queued blocker-visibility frames for watcher, got %d", len(queued))
 	}
 
-	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
-	if err != nil {
-		t.Fatalf("unexpected owner target-selection error before post-respawn movement release test: %v", err)
-	}
-	if len(selectOut) != 1 {
-		t.Fatalf("expected 1 owner target-selection frame before post-respawn movement release test, got %d", len(selectOut))
-	}
-	var killingAttack [][]byte
-	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
-		if attackIndex > 0 {
-			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
-		}
-		attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
-		if err != nil {
-			t.Fatalf("unexpected owner attack %d before post-respawn movement release test: %v", attackIndex+1, err)
-		}
-		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
-			killingAttack = attackOut
-			break
-		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected live owner hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
-		}
-	}
-	if len(killingAttack) != 2 {
-		t.Fatalf("expected killing owner hit to emit mob dead plus target clear, got %d frames", len(killingAttack))
-	}
+	drivePracticeMobOwnerKill(t, ownerFlow, targetVID, "post-respawn movement release test", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn movement release test, got %d", len(queued))
 	}
@@ -28163,33 +28115,9 @@ func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *
 		t.Fatalf("expected 3 queued blocker-visibility frames for watcher, got %d", len(queued))
 	}
 
-	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
-	if err != nil {
-		t.Fatalf("unexpected owner target-selection error before post-respawn logout release test: %v", err)
-	}
-	if len(selectOut) != 1 {
-		t.Fatalf("expected 1 owner target-selection frame before post-respawn logout release test, got %d", len(selectOut))
-	}
-	var killingAttack [][]byte
-	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
-		if attackIndex > 0 {
-			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
-		}
-		attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
-		if err != nil {
-			t.Fatalf("unexpected owner attack %d before post-respawn logout release test: %v", attackIndex+1, err)
-		}
-		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
-			killingAttack = attackOut
-			break
-		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected live owner hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
-		}
-	}
-	if len(killingAttack) != 2 {
-		t.Fatalf("expected killing owner hit to emit mob dead plus target clear, got %d frames", len(killingAttack))
-	}
+	drivePracticeMobOwnerKill(t, ownerFlow, targetVID, "post-respawn logout release test", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn logout release test, got %d", len(queued))
 	}
@@ -28343,33 +28271,9 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 		t.Fatalf("expected 3 queued blocker-visibility frames for watcher, got %d", len(queued))
 	}
 
-	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
-	if err != nil {
-		t.Fatalf("unexpected owner target-selection error before post-respawn quit release test: %v", err)
-	}
-	if len(selectOut) != 1 {
-		t.Fatalf("expected 1 owner target-selection frame before post-respawn quit release test, got %d", len(selectOut))
-	}
-	var killingAttack [][]byte
-	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
-		if attackIndex > 0 {
-			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
-		}
-		attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
-		if err != nil {
-			t.Fatalf("unexpected owner attack %d before post-respawn quit release test: %v", attackIndex+1, err)
-		}
-		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
-			killingAttack = attackOut
-			break
-		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected live owner hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
-		}
-	}
-	if len(killingAttack) != 2 {
-		t.Fatalf("expected killing owner hit to emit mob dead plus target clear, got %d frames", len(killingAttack))
-	}
+	drivePracticeMobOwnerKill(t, ownerFlow, targetVID, "post-respawn quit release test", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn quit release test, got %d", len(queued))
 	}
@@ -28537,33 +28441,9 @@ func TestGameSessionFlowPracticeMobRespawnWatcherSyncClearReleasesSecondWatcher(
 		t.Fatalf("expected 3 queued blocker-visibility frames for watcher, got %d", len(queued))
 	}
 
-	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
-	if err != nil {
-		t.Fatalf("unexpected owner target-selection error before post-respawn sync-position release test: %v", err)
-	}
-	if len(selectOut) != 1 {
-		t.Fatalf("expected 1 owner target-selection frame before post-respawn sync-position release test, got %d", len(selectOut))
-	}
-	var killingAttack [][]byte
-	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
-		if attackIndex > 0 {
-			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
-		}
-		attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
-		if err != nil {
-			t.Fatalf("unexpected owner attack %d before post-respawn sync-position release test: %v", attackIndex+1, err)
-		}
-		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
-			killingAttack = attackOut
-			break
-		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected live owner hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
-		}
-	}
-	if len(killingAttack) != 2 {
-		t.Fatalf("expected killing owner hit to emit mob dead plus target clear, got %d frames", len(killingAttack))
-	}
+	drivePracticeMobOwnerKill(t, ownerFlow, targetVID, "post-respawn sync-position release test", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn sync-position release test, got %d", len(queued))
 	}
