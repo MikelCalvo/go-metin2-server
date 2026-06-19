@@ -27750,6 +27750,9 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 	if watcherRefresh.TargetVID != targetVID || watcherRefresh.HPPercent != 90 {
 		t.Fatalf("expected watcher attack after respawn reselect to damage target to 90%% HP, got %+v", watcherRefresh)
 	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected owner to receive no stale frames after watcher restarts combat post-respawn, got %d", len(queued))
+	}
 }
 
 func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTargetReplacement(t *testing.T) {
