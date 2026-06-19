@@ -1,8 +1,11 @@
 package minimal
 
 import (
+	"context"
 	"errors"
 	"io"
+	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -27601,6 +27604,156 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	}
 	if postRespawnRefresh.TargetVID != targetVID || postRespawnRefresh.HPPercent != 90 {
 		t.Fatalf("expected post-respawn accepted attack to damage target to 90%% HP, got %+v", postRespawnRefresh)
+	}
+}
+
+type tcpStartedSessionFlow struct {
+	inner service.SessionFlow
+}
+
+func (f tcpStartedSessionFlow) Start() ([][]byte, error) {
+	return nil, nil
+}
+
+func (f tcpStartedSessionFlow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
+	return f.inner.HandleClientFrame(in)
+}
+
+func (f tcpStartedSessionFlow) FlushServerFrames() ([][]byte, error) {
+	if source, ok := f.inner.(service.ServerFrameSource); ok {
+		return source.FlushServerFrames()
+	}
+	return nil, nil
+}
+
+func (f tcpStartedSessionFlow) Close() error {
+	if closer, ok := f.inner.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
+}
+
+func readPlainTCPFrame(t *testing.T, conn net.Conn) frame.Frame {
+	t.Helper()
+
+	decoder := frame.NewDecoder(8192)
+	buffer := make([]byte, 8192)
+	for {
+		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatalf("set tcp read deadline: %v", err)
+		}
+		n, err := conn.Read(buffer)
+		if err != nil {
+			t.Fatalf("read tcp frame: %v", err)
+		}
+		frames, err := decoder.Feed(buffer[:n])
+		if err != nil {
+			t.Fatalf("decode tcp frame: %v", err)
+		}
+		if len(frames) > 0 {
+			return frames[0]
+		}
+	}
+}
+
+func writePlainTCPFrame(t *testing.T, conn net.Conn, raw []byte) {
+	t.Helper()
+
+	if err := conn.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set tcp write deadline: %v", err)
+	}
+	for len(raw) > 0 {
+		n, err := conn.Write(raw)
+		if err != nil {
+			t.Fatalf("write tcp frame: %v", err)
+		}
+		raw = raw[n:]
+	}
+}
+
+func serveStartedFlowOverPlainTCP(t *testing.T, flow service.SessionFlow) (net.Conn, context.CancelFunc, <-chan error) {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen tcp: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- service.ServeLegacy(ctx, listener, slog.New(slog.NewTextHandler(io.Discard, nil)), func() service.SessionFlow {
+			return tcpStartedSessionFlow{inner: flow}
+		})
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		cancel()
+		t.Fatalf("dial tcp: %v", err)
+	}
+	return conn, cancel, errCh
+}
+
+func stopPlainTCPServer(t *testing.T, conn net.Conn, cancel context.CancelFunc, errCh <-chan error) {
+	t.Helper()
+
+	_ = conn.Close()
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("ServeLegacy returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for ServeLegacy to stop")
+	}
+}
+
+func TestGameSessionFlowPracticeMobTargetSelectOverPlainTCP(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerTCP", 0x01030131, 0x02040131, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "tcp-target-select", 0x31313131, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected tcp target-select runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_tcp_target_select",
+		Name:          "PracticeMobTCPTargetSelect",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import tcp target-select content bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 tcp target-select practice mob, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "tcp-target-select", 0x31313131)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames before tcp target-select, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+	conn, cancel, errCh := serveStartedFlowOverPlainTCP(t, flow)
+	defer stopPlainTCPServer(t, conn, cancel, errCh)
+
+	writePlainTCPFrame(t, conn, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))
+	targetFrame := readPlainTCPFrame(t, conn)
+	selected, err := combatproto.DecodeServerTarget(targetFrame)
+	if err != nil {
+		t.Fatalf("decode tcp target-select response: %v", err)
+	}
+	if selected.TargetVID != targetVID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp target-select to return full-HP mob %d, got %+v", targetVID, selected)
 	}
 }
 
