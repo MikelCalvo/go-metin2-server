@@ -27604,6 +27604,137 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	}
 }
 
+func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000450, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_respawn_reselect",
+		Name:          "PracticeMobRespawnReselect",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target-selection error before respawn reselect test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 owner target-selection frame before respawn reselect test, got %d", len(selectOut))
+	}
+	var killingAttack [][]byte
+	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected owner attack %d before respawn reselect test: %v", attackIndex+1, err)
+		}
+		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
+			killingAttack = attackOut
+			break
+		}
+		if len(attackOut) != 2 {
+			t.Fatalf("expected live owner hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
+		}
+	}
+	if len(killingAttack) != 2 {
+		t.Fatalf("expected killing owner hit to emit mob dead plus target clear, got %d frames", len(killingAttack))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingAttack[0]))
+	if err != nil {
+		t.Fatalf("decode mob-death frame before respawn reselect test: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("expected owner killing hit to kill target vid %d, got %+v", targetVID, dead)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no owner stale retaliation frames before respawn reselect test, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 1 {
+		t.Fatalf("expected watcher to see exactly 1 mob-death frame before respawn reselect, got %d", len(queued))
+	}
+	preRespawnSelectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error while mob is dead before respawn: %v", err)
+	}
+	if len(preRespawnSelectOut) != 0 {
+		t.Fatalf("expected watcher target-selection while mob is dead before respawn to fail closed, got %d frames", len(preRespawnSelectOut))
+	}
+
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	ownerRespawn := flushServerFrames(t, ownerFlow)
+	if len(ownerRespawn) != 4 {
+		t.Fatalf("expected owner to receive 4 respawn rebuild frames, got %d", len(ownerRespawn))
+	}
+	watcherRespawn := flushServerFrames(t, watcherFlow)
+	if len(watcherRespawn) != 4 {
+		t.Fatalf("expected watcher to receive 4 respawn rebuild frames, got %d", len(watcherRespawn))
+	}
+	watcherRespawnAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, watcherRespawn[1]))
+	if err != nil {
+		t.Fatalf("decode watcher respawn add before reselect: %v", err)
+	}
+	if watcherRespawnAdd.VID != targetVID || watcherRespawnAdd.X != 1200 || watcherRespawnAdd.Y != 2200 {
+		t.Fatalf("expected watcher respawn add to make target visible again, got %+v", watcherRespawnAdd)
+	}
+	watcherReselectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher reselect error after respawn rebuild: %v", err)
+	}
+	if len(watcherReselectOut) != 1 {
+		t.Fatalf("expected watcher reselect after respawn rebuild to return 1 target frame, got %d", len(watcherReselectOut))
+	}
+	watcherReselect, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, watcherReselectOut[0]))
+	if err != nil {
+		t.Fatalf("decode watcher target frame after respawn rebuild: %v", err)
+	}
+	if watcherReselect.TargetVID != targetVID || watcherReselect.HPPercent != 100 {
+		t.Fatalf("expected watcher to reselect respawned full-HP practice mob, got %+v", watcherReselect)
+	}
+}
+
 func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTargetReplacement(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
