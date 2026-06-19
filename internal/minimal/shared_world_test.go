@@ -27791,32 +27791,41 @@ func TestGameSessionFlowPracticeMobRespawnWatcherCombatBlocksSecondWatcher(t *te
 		Y:             2200,
 		RaceNum:       101,
 		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}, {
+		Ref:           "practice.mob_respawn_release_target",
+		Name:          "PracticeMobRespawnReleaseTarget",
+		MapIndex:      bootstrapMapIndex,
+		X:             1250,
+		Y:             2250,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 	}}}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
 		t.Fatalf("import content spawn-group bundle: %v", err)
 	}
 	actors := runtime.StaticActors()
-	if len(actors) != 1 {
-		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	if len(actors) != 2 {
+		t.Fatalf("expected 2 runtime practice-mob actors after import, got %#v", actors)
 	}
 	targetVID := uint32(actors[0].EntityID)
+	releaseTargetVID := uint32(actors[1].EntityID)
 
 	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
-	if len(ownerEnter) != 8 {
-		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	if len(ownerEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for owner with two visible content practice mobs, got %d", len(ownerEnter))
 	}
 	defer closeSessionFlow(t, ownerFlow)
 	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
-	if len(watcherEnter) != 11 {
-		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	if len(watcherEnter) != 14 {
+		t.Fatalf("expected 14 bootstrap frames for watcher with visible owner and two content practice mobs, got %d", len(watcherEnter))
 	}
 	defer closeSessionFlow(t, watcherFlow)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
 		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
 	}
 	blockerFlow, blockerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-three", 0x33333333)
-	if len(blockerEnter) != 14 {
-		t.Fatalf("expected 14 bootstrap frames for blocker with two peers and content practice mob, got %d", len(blockerEnter))
+	if len(blockerEnter) != 17 {
+		t.Fatalf("expected 17 bootstrap frames for blocker with two peers and two content practice mobs, got %d", len(blockerEnter))
 	}
 	defer closeSessionFlow(t, blockerFlow)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
@@ -27893,6 +27902,27 @@ func TestGameSessionFlowPracticeMobRespawnWatcherCombatBlocksSecondWatcher(t *te
 	}
 	if len(blockedTargetOut) != 0 {
 		t.Fatalf("expected blocker target-selection to fail closed while watcher holds post-respawn aggro-lite gate, got %d frames", len(blockedTargetOut))
+	}
+	watcherRetargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: releaseTargetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher retarget after post-respawn combat: %v", err)
+	}
+	if len(watcherRetargetOut) != 1 {
+		t.Fatalf("expected watcher retarget to second mob after post-respawn combat to return 1 target frame, got %d", len(watcherRetargetOut))
+	}
+	releasedTargetOut, err := blockerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected blocker target-selection after watcher post-respawn retarget released first mob: %v", err)
+	}
+	if len(releasedTargetOut) != 1 {
+		t.Fatalf("expected blocker target-selection to succeed after watcher post-respawn retarget released first mob, got %d frames", len(releasedTargetOut))
+	}
+	releasedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, releasedTargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode blocker released-target frame after watcher post-respawn retarget: %v", err)
+	}
+	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
+		t.Fatalf("expected blocker to reacquire first post-respawn mob at current HP after watcher retarget release, got %+v", releasedTarget)
 	}
 }
 
