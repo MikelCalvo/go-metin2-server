@@ -27746,6 +27746,12 @@ type practiceMobTCPHarness struct {
 func newPracticeMobTCPHarness(t *testing.T, login string, loginKey uint32, spawnRef string, hp int32) *practiceMobTCPHarness {
 	t.Helper()
 
+	return newPracticeMobTCPRewardHarness(t, login, loginKey, spawnRef, hp, worldruntime.StaticActorDeathReward{})
+}
+
+func newPracticeMobTCPRewardHarness(t *testing.T, login string, loginKey uint32, spawnRef string, hp int32, reward worldruntime.StaticActorDeathReward) *practiceMobTCPHarness {
+	t.Helper()
+
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerTCP", 0x01030131, 0x02040131, 1100, 2100, 0, 101, 201)
 	if hp > 0 {
@@ -27762,13 +27768,16 @@ func newPracticeMobTCPHarness(t *testing.T, login string, loginKey uint32, spawn
 	h := &practiceMobTCPHarness{runtime: runtime, now: time.Unix(1700000700, 0)}
 	runtime.now = func() time.Time { return h.now }
 	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:           spawnRef,
-		Name:          "PracticeMobTCP",
-		MapIndex:      bootstrapMapIndex,
-		X:             1200,
-		Y:             2200,
-		RaceNum:       101,
-		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		Ref:              spawnRef,
+		Name:             "PracticeMobTCP",
+		MapIndex:         bootstrapMapIndex,
+		X:                1200,
+		Y:                2200,
+		RaceNum:          101,
+		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		RewardExperience: reward.Experience,
+		RewardGold:       reward.Gold,
+		RewardDropVnums:  append([]uint32(nil), reward.DropVnums...),
 	}}}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
 		t.Fatalf("import tcp practice-mob content bundle: %v", err)
@@ -27778,6 +27787,9 @@ func newPracticeMobTCPHarness(t *testing.T, login string, loginKey uint32, spawn
 		t.Fatalf("expected 1 tcp practice mob, got %#v", actors)
 	}
 	h.targetID = uint32(actors[0].EntityID)
+	if !reward.Empty() && !runtime.sharedWorld.overrideStaticActorDeathReward(actors[0].EntityID, reward) {
+		t.Fatalf("override tcp practice-mob death reward for entity %d", actors[0].EntityID)
+	}
 
 	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
 	if len(enterOut) != 8 {
@@ -27903,6 +27915,77 @@ func TestGameSessionFlowPracticeMobDeathAndTargetClearOverPlainTCP(t *testing.T)
 	}
 	if clear.TargetVID != 0 || clear.HPPercent != 0 {
 		t.Fatalf("expected tcp killing hit to clear target, got %+v", clear)
+	}
+}
+
+func TestGameSessionFlowPracticeMobRewardDeliveryOverPlainTCP(t *testing.T) {
+	const rewardExperience uint64 = 17
+	const rewardGold uint64 = 23
+	const rewardDropVnum uint32 = 27001
+	h := newPracticeMobTCPRewardHarness(t, "tcp-mob-reward", 0x71717171, "practice.mob_tcp_mob_reward", 500, worldruntime.StaticActorDeathReward{
+		Experience: rewardExperience,
+		Gold:       rewardGold,
+		DropVnums:  []uint32{rewardDropVnum},
+	})
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp pre-reward select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+
+	var frames []frame.Frame
+	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
+		if attackIndex > 0 {
+			h.advance(bootstrapPracticeMobServerOriginRetaliationDelay)
+			h.drainDelayedRetaliation(t, fmt.Sprintf("tcp pre-reward hit %d", attackIndex+1))
+		}
+		frames = h.attack(t)
+	}
+	for len(frames) < 6 {
+		frames = append(frames, h.client.readFrame(t))
+	}
+	dead, err := worldproto.DecodeDead(frames[0])
+	if err != nil {
+		t.Fatalf("decode tcp reward killing hit dead frame: %v", err)
+	}
+	if dead.VID != h.targetID {
+		t.Fatalf("expected tcp reward killing hit to emit dead for target %d, got %+v", h.targetID, dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(frames[1])
+	if err != nil {
+		t.Fatalf("decode tcp reward killing hit target clear: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected tcp reward killing hit to clear target, got %+v", clear)
+	}
+	expChange, err := worldproto.DecodePlayerPointChange(frames[2])
+	if err != nil {
+		t.Fatalf("decode tcp reward EXP point-change: %v", err)
+	}
+	if expChange.VID != 0x02040131 || expChange.Type != bootstrapExperiencePointType || expChange.Amount != int32(rewardExperience) || expChange.Value != 917 {
+		t.Fatalf("expected tcp reward EXP point-change +%d to reach 917, got %+v", rewardExperience, expChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(frames[3])
+	if err != nil {
+		t.Fatalf("decode tcp reward gold point-change: %v", err)
+	}
+	if goldChange.VID != 0x02040131 || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != int32(rewardGold) || goldChange.Value != int32(rewardGold) {
+		t.Fatalf("expected tcp reward gold point-change +%d, got %+v", rewardGold, goldChange)
+	}
+	groundAdd, err := itemproto.DecodeGroundAdd(frames[4])
+	if err != nil {
+		t.Fatalf("decode tcp reward ground add: %v", err)
+	}
+	if groundAdd.VID == 0 || groundAdd.Vnum != rewardDropVnum || groundAdd.X != 1100 || groundAdd.Y != 2100 {
+		t.Fatalf("expected tcp reward ground drop vnum %d at player position, got %+v", rewardDropVnum, groundAdd)
+	}
+	ownership, err := itemproto.DecodeOwnership(frames[5])
+	if err != nil {
+		t.Fatalf("decode tcp reward ownership: %v", err)
+	}
+	if ownership.VID != groundAdd.VID || ownership.OwnerName != "PeerTCP" {
+		t.Fatalf("expected tcp reward ownership for ground VID %d to PeerTCP, got %+v", groundAdd.VID, ownership)
 	}
 }
 
