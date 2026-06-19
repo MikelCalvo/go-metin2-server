@@ -27537,6 +27537,27 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	if respawnDelete.VID != targetVID {
 		t.Fatalf("expected respawn delete for target vid %d, got %+v", targetVID, respawnDelete)
 	}
+	respawnAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, respawnFrames[1]))
+	if err != nil {
+		t.Fatalf("decode respawn add after mob-death cleanup: %v", err)
+	}
+	if respawnAdd.VID != targetVID || respawnAdd.X != 1200 || respawnAdd.Y != 2200 || respawnAdd.RaceNum != 101 {
+		t.Fatalf("expected respawn add to rebuild target vid %d at original spawn, got %+v", targetVID, respawnAdd)
+	}
+	respawnInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, respawnFrames[2]))
+	if err != nil {
+		t.Fatalf("decode respawn additional info after mob-death cleanup: %v", err)
+	}
+	if respawnInfo.VID != targetVID || respawnInfo.Name != "PracticeMobRetaliationCleanup" {
+		t.Fatalf("expected respawn additional info to rebuild named target vid %d, got %+v", targetVID, respawnInfo)
+	}
+	respawnUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, respawnFrames[3]))
+	if err != nil {
+		t.Fatalf("decode respawn update after mob-death cleanup: %v", err)
+	}
+	if respawnUpdate.VID != targetVID {
+		t.Fatalf("expected respawn update for target vid %d, got %+v", targetVID, respawnUpdate)
+	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no stale retaliation beat after respawn rebuild, got %d queued frames", len(queued))
 	}
