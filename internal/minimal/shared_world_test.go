@@ -27604,6 +27604,43 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	}
 }
 
+func drivePracticeMobOwnerKill(t *testing.T, ownerFlow service.SessionFlow, targetVID uint32, context string, advance func(time.Duration)) [][]byte {
+	t.Helper()
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target-selection error before %s: %v", context, err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 owner target-selection frame before %s, got %d", context, len(selectOut))
+	}
+
+	var killingAttack [][]byte
+	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
+		if attackIndex > 0 {
+			advance(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected owner attack %d before %s: %v", attackIndex+1, context, err)
+		}
+		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
+			killingAttack = attackOut
+			break
+		}
+		if len(attackOut) != 2 {
+			t.Fatalf("expected live owner hit %d before %s to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, context, len(attackOut))
+		}
+	}
+	if len(killingAttack) != 2 {
+		t.Fatalf("expected killing owner hit before %s to emit mob dead plus target clear, got %d frames", context, len(killingAttack))
+	}
+	return killingAttack
+}
+
 func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -27652,36 +27689,9 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
 	}
 
-	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
-	if err != nil {
-		t.Fatalf("unexpected owner target-selection error before respawn reselect test: %v", err)
-	}
-	if len(selectOut) != 1 {
-		t.Fatalf("expected 1 owner target-selection frame before respawn reselect test, got %d", len(selectOut))
-	}
-	var killingAttack [][]byte
-	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
-		if attackIndex > 0 {
-			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
-		}
-		attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
-			AttackType: combatproto.ClientAttackTypeNormal,
-			TargetVID:  targetVID,
-		})))
-		if err != nil {
-			t.Fatalf("unexpected owner attack %d before respawn reselect test: %v", attackIndex+1, err)
-		}
-		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
-			killingAttack = attackOut
-			break
-		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected live owner hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
-		}
-	}
-	if len(killingAttack) != 2 {
-		t.Fatalf("expected killing owner hit to emit mob dead plus target clear, got %d frames", len(killingAttack))
-	}
+	killingAttack := drivePracticeMobOwnerKill(t, ownerFlow, targetVID, "respawn reselect test", func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	})
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingAttack[0]))
 	if err != nil {
 		t.Fatalf("decode mob-death frame before respawn reselect test: %v", err)
