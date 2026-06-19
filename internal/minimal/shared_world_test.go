@@ -27860,6 +27860,16 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterSyncP
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected delayed retaliation cadence to stop after sync-position cleared target, got %d queued frames", len(queued))
 	}
+	postClearAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected stale attack error after sync-position cleared target and retaliation: %v", err)
+	}
+	if len(postClearAttackOut) != 0 {
+		t.Fatalf("expected stale attack after sync-position cleared target and retaliation to fail closed, got %d frames", len(postClearAttackOut))
+	}
 }
 
 func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
