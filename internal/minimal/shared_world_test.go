@@ -28464,13 +28464,38 @@ func TestGameSessionFlowPracticeMobSlashQuitStopsPendingRetaliationAndReleasesAg
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after owner quit released aggro-lite gate, got %+v", releasedTarget)
 	}
+	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected watcher attack error after owner /quit released practice-mob aggro-lite gate: %v", err)
+	}
+	if len(watcherAttackOut) != 2 {
+		t.Fatalf("expected watcher attack to restart target-refresh plus retaliation loop after owner /quit, got %d frames", len(watcherAttackOut))
+	}
+	watcherRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, watcherAttackOut[0]))
+	if err != nil {
+		t.Fatalf("decode watcher attack refresh after owner /quit released gate: %v", err)
+	}
+	if watcherRefresh.TargetVID != targetVID || watcherRefresh.HPPercent != 80 {
+		t.Fatalf("expected watcher attack after owner /quit to continue runtime-owned HP from 90%% to 80%%, got %+v", watcherRefresh)
+	}
 
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected pending delayed retaliation cadence to stop after owner /quit, got %d queued frames", len(queued))
 	}
-	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
-		t.Fatalf("expected no extra watcher frames after owner /quit cancelled pending retaliation, got %d", len(queued))
+	watcherQueuedRetaliation := flushServerFrames(t, watcherFlow)
+	if len(watcherQueuedRetaliation) != 1 {
+		t.Fatalf("expected only the watcher-owned delayed retaliation after owner /quit released the gate, got %d frames", len(watcherQueuedRetaliation))
+	}
+	watcherPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, watcherQueuedRetaliation[0]))
+	if err != nil {
+		t.Fatalf("decode watcher-owned delayed retaliation after owner /quit released gate: %v", err)
+	}
+	if watcherPointChange.VID != watcher.VID || watcherPointChange.Type != bootstrapPlayerPointType || watcherPointChange.Amount != -1 || watcherPointChange.Value != watcher.Points[bootstrapPlayerPointValueIndex]-2 {
+		t.Fatalf("expected watcher-owned delayed retaliation after owner /quit released gate, got %+v", watcherPointChange)
 	}
 }
 
