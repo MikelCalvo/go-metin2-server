@@ -27514,6 +27514,13 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	if dead.VID != targetVID {
 		t.Fatalf("expected killing hit to kill target vid %d, got %+v", targetVID, dead)
 	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killingAttack[1]))
+	if err != nil {
+		t.Fatalf("decode target-clear frame after mob death before retaliation cleanup: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected mob-death hit to clear selected target before retaliation cleanup, got %+v", clearTarget)
+	}
 
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected delayed retaliation cadence to stop after mob death, got %d queued frames", len(queued))
