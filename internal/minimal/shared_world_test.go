@@ -27676,6 +27676,13 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTarge
 	if len(replaceOut) != 1 {
 		t.Fatalf("expected 1 self-only target frame for replacement target before delayed retaliation stop test, got %d", len(replaceOut))
 	}
+	replacedTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, replaceOut[0]))
+	if err != nil {
+		t.Fatalf("decode replacement target frame before delayed retaliation stop test: %v", err)
+	}
+	if replacedTarget.TargetVID != secondTargetVID || replacedTarget.HPPercent != 100 {
+		t.Fatalf("expected replacement target to be selected at full HP while clearing old retaliation, got %+v", replacedTarget)
+	}
 
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
