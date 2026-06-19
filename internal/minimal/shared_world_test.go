@@ -27430,6 +27430,111 @@ func TestGameSessionFlowZeroHPOwnerMoveAndSyncFailClosed(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDeathAndRespawn(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000450, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_retaliation_cleanup",
+		Name:          "PracticeMobRetaliationCleanup",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before mob-death retaliation cleanup test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before mob-death retaliation cleanup test, got %d", len(selectOut))
+	}
+
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before mob-death retaliation cleanup test: %v", err)
+	}
+	if len(firstAttack) != 2 {
+		t.Fatalf("expected first hit to arm delayed retaliation and append immediate point-loss, got %d frames", len(firstAttack))
+	}
+	var killingAttack [][]byte
+	for attackIndex := 1; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
+		currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected attack %d before mob-death retaliation cleanup test: %v", attackIndex+1, err)
+		}
+		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
+			killingAttack = attackOut
+			break
+		}
+		if len(attackOut) != 2 {
+			t.Fatalf("expected live hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
+		}
+	}
+	if len(killingAttack) != 2 {
+		t.Fatalf("expected killing hit to emit mob DEAD plus target clear without extra retaliation, got %d frames", len(killingAttack))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingAttack[0]))
+	if err != nil {
+		t.Fatalf("decode mob-death frame before retaliation cleanup: %v", err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("expected killing hit to kill target vid %d, got %+v", targetVID, dead)
+	}
+
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected delayed retaliation cadence to stop after mob death, got %d queued frames", len(queued))
+	}
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	respawnFrames := flushServerFrames(t, flow)
+	if len(respawnFrames) != 4 {
+		t.Fatalf("expected respawn rebuild only after mob-death cleanup, got %d frames", len(respawnFrames))
+	}
+	respawnDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, respawnFrames[0]))
+	if err != nil {
+		t.Fatalf("decode respawn delete after mob-death cleanup: %v", err)
+	}
+	if respawnDelete.VID != targetVID {
+		t.Fatalf("expected respawn delete for target vid %d, got %+v", targetVID, respawnDelete)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no stale retaliation beat after respawn rebuild, got %d queued frames", len(queued))
+	}
+}
+
 func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTargetReplacement(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
