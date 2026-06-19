@@ -27733,6 +27733,23 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 	if watcherReselect.TargetVID != targetVID || watcherReselect.HPPercent != 100 {
 		t.Fatalf("expected watcher to reselect respawned full-HP practice mob, got %+v", watcherReselect)
 	}
+	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
+	}
+	if len(watcherAttackOut) != 2 {
+		t.Fatalf("expected watcher attack after respawn reselect to restart target-refresh plus retaliation loop, got %d frames", len(watcherAttackOut))
+	}
+	watcherRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, watcherAttackOut[0]))
+	if err != nil {
+		t.Fatalf("decode watcher attack refresh after respawn reselect: %v", err)
+	}
+	if watcherRefresh.TargetVID != targetVID || watcherRefresh.HPPercent != 90 {
+		t.Fatalf("expected watcher attack after respawn reselect to damage target to 90%% HP, got %+v", watcherRefresh)
+	}
 }
 
 func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTargetReplacement(t *testing.T) {
