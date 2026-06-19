@@ -27719,6 +27719,16 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 	if watcherRespawnAdd.VID != targetVID || watcherRespawnAdd.X != 1200 || watcherRespawnAdd.Y != 2200 {
 		t.Fatalf("expected watcher respawn add to make target visible again, got %+v", watcherRespawnAdd)
 	}
+	postRespawnStaleAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected watcher stale attack error after respawn before reselect: %v", err)
+	}
+	if len(postRespawnStaleAttackOut) != 0 {
+		t.Fatalf("expected watcher stale attack after respawn before reselect to fail closed, got %d frames", len(postRespawnStaleAttackOut))
+	}
 	watcherReselectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher reselect error after respawn rebuild: %v", err)
