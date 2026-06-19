@@ -3,6 +3,7 @@ package minimal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -27633,29 +27634,6 @@ func (f tcpStartedSessionFlow) Close() error {
 	return nil
 }
 
-func readPlainTCPFrame(t *testing.T, conn net.Conn) frame.Frame {
-	t.Helper()
-
-	decoder := frame.NewDecoder(8192)
-	buffer := make([]byte, 8192)
-	for {
-		if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
-			t.Fatalf("set tcp read deadline: %v", err)
-		}
-		n, err := conn.Read(buffer)
-		if err != nil {
-			t.Fatalf("read tcp frame: %v", err)
-		}
-		frames, err := decoder.Feed(buffer[:n])
-		if err != nil {
-			t.Fatalf("decode tcp frame: %v", err)
-		}
-		if len(frames) > 0 {
-			return frames[0]
-		}
-	}
-}
-
 func writePlainTCPFrame(t *testing.T, conn net.Conn, raw []byte) {
 	t.Helper()
 
@@ -27709,20 +27687,83 @@ func stopPlainTCPServer(t *testing.T, conn net.Conn, cancel context.CancelFunc, 
 	}
 }
 
-func TestGameSessionFlowPracticeMobTargetSelectOverPlainTCP(t *testing.T) {
+type plainTCPTestClient struct {
+	conn    net.Conn
+	decoder *frame.Decoder
+	queued  []frame.Frame
+}
+
+func newPlainTCPTestClient(conn net.Conn) *plainTCPTestClient {
+	return &plainTCPTestClient{conn: conn, decoder: frame.NewDecoder(8192)}
+}
+
+func (c *plainTCPTestClient) readFrame(t *testing.T) frame.Frame {
+	t.Helper()
+	if len(c.queued) > 0 {
+		frame := c.queued[0]
+		c.queued = c.queued[1:]
+		return frame
+	}
+	buffer := make([]byte, 8192)
+	for {
+		if err := c.conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			t.Fatalf("set tcp read deadline: %v", err)
+		}
+		n, err := c.conn.Read(buffer)
+		if err != nil {
+			t.Fatalf("read tcp frame: %v", err)
+		}
+		frames, err := c.decoder.Feed(buffer[:n])
+		if err != nil {
+			t.Fatalf("decode tcp frame: %v", err)
+		}
+		if len(frames) == 0 {
+			continue
+		}
+		if len(frames) > 1 {
+			c.queued = append(c.queued, frames[1:]...)
+		}
+		return frames[0]
+	}
+}
+
+func (c *plainTCPTestClient) writeFrame(t *testing.T, raw []byte) {
+	t.Helper()
+	writePlainTCPFrame(t, c.conn, raw)
+}
+
+type practiceMobTCPHarness struct {
+	runtime  *gameRuntime
+	flow     service.SessionFlow
+	conn     net.Conn
+	client   *plainTCPTestClient
+	cancel   context.CancelFunc
+	errCh    <-chan error
+	targetID uint32
+	now      time.Time
+}
+
+func newPracticeMobTCPHarness(t *testing.T, login string, loginKey uint32, spawnRef string, hp int32) *practiceMobTCPHarness {
+	t.Helper()
+
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerTCP", 0x01030131, 0x02040131, 1100, 2100, 0, 101, 201)
-	issuePeerTicket(t, store, "tcp-target-select", 0x31313131, owner)
+	if hp > 0 {
+		owner.Points[bootstrapPlayerPointValueIndex] = hp
+	}
+	issuePeerTicket(t, store, login, loginKey, owner)
 
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
 	if err != nil {
-		t.Fatalf("unexpected tcp target-select runtime error: %v", err)
+		t.Fatalf("unexpected tcp practice-mob runtime error: %v", err)
 	}
+	h := &practiceMobTCPHarness{runtime: runtime, now: time.Unix(1700000700, 0)}
+	runtime.now = func() time.Time { return h.now }
 	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:           "practice.mob_tcp_target_select",
-		Name:          "PracticeMobTCPTargetSelect",
+		Ref:           spawnRef,
+		Name:          "PracticeMobTCP",
 		MapIndex:      bootstrapMapIndex,
 		X:             1200,
 		Y:             2200,
@@ -27730,30 +27771,199 @@ func TestGameSessionFlowPracticeMobTargetSelectOverPlainTCP(t *testing.T) {
 		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 	}}}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
-		t.Fatalf("import tcp target-select content bundle: %v", err)
+		t.Fatalf("import tcp practice-mob content bundle: %v", err)
 	}
 	actors := runtime.StaticActors()
 	if len(actors) != 1 {
-		t.Fatalf("expected 1 tcp target-select practice mob, got %#v", actors)
+		t.Fatalf("expected 1 tcp practice mob, got %#v", actors)
 	}
-	targetVID := uint32(actors[0].EntityID)
+	h.targetID = uint32(actors[0].EntityID)
 
-	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "tcp-target-select", 0x31313131)
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
 	if len(enterOut) != 8 {
-		t.Fatalf("expected 8 bootstrap frames before tcp target-select, got %d", len(enterOut))
+		t.Fatalf("expected 8 bootstrap frames before tcp practice-mob test, got %d", len(enterOut))
 	}
-	defer closeSessionFlow(t, flow)
-	conn, cancel, errCh := serveStartedFlowOverPlainTCP(t, flow)
-	defer stopPlainTCPServer(t, conn, cancel, errCh)
+	h.flow = flow
+	h.conn, h.cancel, h.errCh = serveStartedFlowOverPlainTCP(t, flow)
+	h.client = newPlainTCPTestClient(h.conn)
+	return h
+}
 
-	writePlainTCPFrame(t, conn, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))
-	targetFrame := readPlainTCPFrame(t, conn)
-	selected, err := combatproto.DecodeServerTarget(targetFrame)
+func (h *practiceMobTCPHarness) close(t *testing.T) {
+	t.Helper()
+	stopPlainTCPServer(t, h.conn, h.cancel, h.errCh)
+	closeSessionFlow(t, h.flow)
+}
+
+func (h *practiceMobTCPHarness) advance(duration time.Duration) {
+	h.now = h.now.Add(duration)
+}
+
+func (h *practiceMobTCPHarness) selectTarget(t *testing.T) combatproto.ServerTargetPacket {
+	t.Helper()
+	h.client.writeFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: h.targetID}))
+	selected, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
 	if err != nil {
 		t.Fatalf("decode tcp target-select response: %v", err)
 	}
-	if selected.TargetVID != targetVID || selected.HPPercent != 100 {
-		t.Fatalf("expected tcp target-select to return full-HP mob %d, got %+v", targetVID, selected)
+	return selected
+}
+
+func (h *practiceMobTCPHarness) attack(t *testing.T) []frame.Frame {
+	t.Helper()
+	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
+	first := h.client.readFrame(t)
+	second := h.client.readFrame(t)
+	return []frame.Frame{first, second}
+}
+
+func (h *practiceMobTCPHarness) drainDelayedRetaliation(t *testing.T, context string) worldproto.PlayerPointChangePacket {
+	t.Helper()
+	pointChange, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp delayed retaliation before %s: %v", context, err)
+	}
+	if pointChange.Type != bootstrapPlayerPointValueIndex || pointChange.Amount >= 0 {
+		t.Fatalf("expected tcp delayed retaliation before %s to be negative HP point-change, got %+v", context, pointChange)
+	}
+	return pointChange
+}
+
+func TestGameSessionFlowPracticeMobTargetSelectOverPlainTCP(t *testing.T) {
+	h := newPracticeMobTCPHarness(t, "tcp-target-select", 0x31313131, "practice.mob_tcp_target_select", 0)
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp target-select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+}
+
+func TestGameSessionFlowPracticeMobAttackRefreshAndRetaliationOverPlainTCP(t *testing.T) {
+	h := newPracticeMobTCPHarness(t, "tcp-attack-refresh", 0x41414141, "practice.mob_tcp_attack_refresh", 50)
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp pre-attack select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+	frames := h.attack(t)
+	refresh, err := combatproto.DecodeServerTarget(frames[0])
+	if err != nil {
+		t.Fatalf("decode tcp attack target refresh: %v", err)
+	}
+	if refresh.TargetVID != h.targetID || refresh.HPPercent != 90 {
+		t.Fatalf("expected tcp attack to refresh target %d at 90%% HP, got %+v", h.targetID, refresh)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(frames[1])
+	if err != nil {
+		t.Fatalf("decode tcp immediate retaliation point-change: %v", err)
+	}
+	if pointChange.Type != bootstrapPlayerPointValueIndex || pointChange.Amount >= 0 || pointChange.Value != 49 {
+		t.Fatalf("expected tcp immediate retaliation to reduce player HP to 49, got %+v", pointChange)
+	}
+}
+
+func TestGameSessionFlowPracticeMobDeathAndTargetClearOverPlainTCP(t *testing.T) {
+	h := newPracticeMobTCPHarness(t, "tcp-mob-death", 0x51515151, "practice.mob_tcp_mob_death", 500)
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp pre-death select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+	var frames []frame.Frame
+	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
+		if attackIndex > 0 {
+			h.advance(bootstrapPracticeMobServerOriginRetaliationDelay)
+			h.drainDelayedRetaliation(t, fmt.Sprintf("tcp live hit %d", attackIndex+1))
+		}
+		frames = h.attack(t)
+		if attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
+			refresh, err := combatproto.DecodeServerTarget(frames[0])
+			if err != nil {
+				t.Fatalf("decode tcp live hit %d target refresh: %v", attackIndex+1, err)
+			}
+			wantHP := uint8(100 - ((attackIndex + 1) * 10))
+			if refresh.TargetVID != h.targetID || refresh.HPPercent != wantHP {
+				t.Fatalf("expected tcp live hit %d to refresh target %d at %d%% HP, got %+v", attackIndex+1, h.targetID, wantHP, refresh)
+			}
+		}
+	}
+	dead, err := worldproto.DecodeDead(frames[0])
+	if err != nil {
+		t.Fatalf("decode tcp killing hit dead frame: %v", err)
+	}
+	if dead.VID != h.targetID {
+		t.Fatalf("expected tcp killing hit to emit dead for target %d, got %+v", h.targetID, dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(frames[1])
+	if err != nil {
+		t.Fatalf("decode tcp killing hit target clear: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected tcp killing hit to clear target, got %+v", clear)
+	}
+}
+
+func TestGameSessionFlowPracticeMobRespawnRebuildOverPlainTCP(t *testing.T) {
+	h := newPracticeMobTCPHarness(t, "tcp-mob-respawn", 0x61616161, "practice.mob_tcp_mob_respawn", 500)
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp pre-respawn select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+	var killingFrames []frame.Frame
+	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
+		if attackIndex > 0 {
+			h.advance(bootstrapPracticeMobServerOriginRetaliationDelay)
+			h.drainDelayedRetaliation(t, fmt.Sprintf("tcp pre-respawn hit %d", attackIndex+1))
+		}
+		killingFrames = h.attack(t)
+	}
+	dead, err := worldproto.DecodeDead(killingFrames[0])
+	if err != nil {
+		t.Fatalf("decode tcp pre-respawn killing hit dead frame: %v", err)
+	}
+	if dead.VID != h.targetID {
+		t.Fatalf("expected tcp pre-respawn killing hit to emit dead for target %d, got %+v", h.targetID, dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(killingFrames[1])
+	if err != nil {
+		t.Fatalf("decode tcp pre-respawn killing hit target clear: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected tcp pre-respawn killing hit to clear target, got %+v", clear)
+	}
+	h.advance(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	respawnDelete, err := worldproto.DecodeCharacterDeleteNotice(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp respawn delete: %v", err)
+	}
+	if respawnDelete.VID != h.targetID {
+		t.Fatalf("expected tcp respawn delete for target %d, got %+v", h.targetID, respawnDelete)
+	}
+	respawnAdd, err := worldproto.DecodeCharacterAdd(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp respawn add: %v", err)
+	}
+	if respawnAdd.VID != h.targetID || respawnAdd.X != 1200 || respawnAdd.Y != 2200 {
+		t.Fatalf("expected tcp respawn add for target %d at spawn, got %+v", h.targetID, respawnAdd)
+	}
+	respawnInfo, err := worldproto.DecodeCharacterAdditionalInfo(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp respawn additional info: %v", err)
+	}
+	if respawnInfo.VID != h.targetID || respawnInfo.Name != "PracticeMobTCP" {
+		t.Fatalf("expected tcp respawn info for target %d, got %+v", h.targetID, respawnInfo)
+	}
+	respawnUpdate, err := worldproto.DecodeCharacterUpdate(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp respawn update: %v", err)
+	}
+	if respawnUpdate.VID != h.targetID {
+		t.Fatalf("expected tcp respawn update for target %d, got %+v", h.targetID, respawnUpdate)
 	}
 }
 
