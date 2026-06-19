@@ -27561,6 +27561,16 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no stale retaliation beat after respawn rebuild, got %d queued frames", len(queued))
 	}
+	postRespawnAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-respawn attack-without-reselect error after retaliation cleanup: %v", err)
+	}
+	if len(postRespawnAttackOut) != 0 {
+		t.Fatalf("expected post-respawn attack without fresh target selection after retaliation cleanup to fail closed, got %d frames", len(postRespawnAttackOut))
+	}
 }
 
 func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTargetReplacement(t *testing.T) {
