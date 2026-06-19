@@ -27571,6 +27571,37 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	if len(postRespawnAttackOut) != 0 {
 		t.Fatalf("expected post-respawn attack without fresh target selection after retaliation cleanup to fail closed, got %d frames", len(postRespawnAttackOut))
 	}
+	postRespawnSelectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected post-respawn reselect error after retaliation cleanup: %v", err)
+	}
+	if len(postRespawnSelectOut) != 1 {
+		t.Fatalf("expected post-respawn reselect after retaliation cleanup to return 1 target frame, got %d", len(postRespawnSelectOut))
+	}
+	postRespawnSelected, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, postRespawnSelectOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-respawn reselect target after retaliation cleanup: %v", err)
+	}
+	if postRespawnSelected.TargetVID != targetVID || postRespawnSelected.HPPercent != 100 {
+		t.Fatalf("expected post-respawn reselect to reacquire full-HP target vid %d, got %+v", targetVID, postRespawnSelected)
+	}
+	postRespawnAcceptedAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-respawn accepted attack error after retaliation cleanup: %v", err)
+	}
+	if len(postRespawnAcceptedAttack) != 2 {
+		t.Fatalf("expected post-respawn accepted attack to restart target-refresh plus retaliation loop, got %d frames", len(postRespawnAcceptedAttack))
+	}
+	postRespawnRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, postRespawnAcceptedAttack[0]))
+	if err != nil {
+		t.Fatalf("decode post-respawn accepted attack refresh after retaliation cleanup: %v", err)
+	}
+	if postRespawnRefresh.TargetVID != targetVID || postRespawnRefresh.HPPercent != 90 {
+		t.Fatalf("expected post-respawn accepted attack to damage target to 90%% HP, got %+v", postRespawnRefresh)
+	}
 }
 
 func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTargetReplacement(t *testing.T) {
