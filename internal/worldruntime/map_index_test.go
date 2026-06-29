@@ -45,6 +45,35 @@ func TestMapIndexUpdateMovesPlayersBetweenMapBuckets(t *testing.T) {
 	}
 }
 
+func TestMapIndexUpdateRepairsEntityIndexWhenMapBucketSurvives(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := newPlayerEntity(7, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	if !index.Register(alpha) {
+		t.Fatal("expected map-index registration to succeed")
+	}
+	delete(index.byEntityID, alpha.Entity.ID)
+
+	updated := alpha
+	updated.Character.MapIndex = 99
+	updated.Character.X = 1700
+	updated.Character.Y = 2800
+	if !index.Update(updated) {
+		t.Fatal("expected player update to repair surviving map-bucket ownership")
+	}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected old map player bucket to be empty after repaired update, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(99)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].X != 1700 || characters[0].Y != 2800 {
+		t.Fatalf("expected updated Alpha in new map bucket after repair, got %+v", characters)
+	}
+	stored, ok := index.byEntityID[alpha.Entity.ID]
+	if !ok || stored.Character.MapIndex != 99 || stored.Character.X != 1700 || stored.Character.Y != 2800 {
+		t.Fatalf("expected repaired entity index to point at updated player, got entity=%+v ok=%v", stored, ok)
+	}
+}
+
 func TestMapIndexRemoveClearsOccupancy(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	alpha := newPlayerEntity(1, entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
