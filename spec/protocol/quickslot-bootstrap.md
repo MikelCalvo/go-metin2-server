@@ -43,7 +43,7 @@ Payload:
 
 Total frame length: `7` bytes.
 
-Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid edits for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_ADD`. Item-type quickslots are valid only when their `slot.pos` points at exactly one occupied carried inventory item for the selected live character; empty cells and duplicate live occupancy of the requested carried cell fail closed with no frames or snapshot mutation. When a new item quickslot targets an item cell already referenced by another item quickslot, the older item quickslot is deleted first with `GC::QUICKSLOT_DEL`, then the new binding is returned with `GC::QUICKSLOT_ADD`; skill/command quickslots that happen to carry the same byte value are not deleted by this item retarget path. Skill quickslots are limited to slots `0..199`, and command quickslots are limited to slots `0..59`; out-of-range edits fail closed with no frames or snapshot mutation. Invalid edits fail closed with no frames.
+Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid edits for the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_ADD`. Item-type quickslots are valid only when their `slot.pos` points at exactly one occupied carried inventory item for the selected live character; empty cells and duplicate live occupancy of the requested carried cell fail closed with no frames or snapshot mutation. When a new item quickslot targets an item cell already referenced by another item quickslot, the older item quickslot is deleted first with `GC::QUICKSLOT_DEL`, then the new binding is returned with `GC::QUICKSLOT_ADD`; skill/command quickslots that happen to carry the same byte value are not deleted by this item retarget path. Skill quickslots are limited to slots `0..199`, and command quickslots are limited to slots `0..59`; out-of-range edits fail closed with no frames or snapshot mutation. Invalid edits fail closed with no frames. If bootstrap combat retaliation has already driven the selected live character to the zero-HP floor, `QUICKSLOT_ADD` fails closed with no frames and no persisted quickslot or inventory mutation until the character is restarted.
 
 ### Client `QUICKSLOT_DEL` (`0x050A`)
 
@@ -57,7 +57,7 @@ Payload:
 
 Total frame length: `5` bytes.
 
-Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid delete requests for an existing quickslot on the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_DEL`. Invalid positions and empty-position deletes fail closed with no frames or snapshot mutation.
+Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid delete requests for an existing quickslot on the selected live character, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_DEL`. Invalid positions and empty-position deletes fail closed with no frames or snapshot mutation. If bootstrap combat retaliation has already driven the selected live character to the zero-HP floor, `QUICKSLOT_DEL` fails closed with no frames and no persisted quickslot or inventory mutation until the character is restarted.
 
 ### Client `QUICKSLOT_SWAP` (`0x050B`)
 
@@ -72,7 +72,7 @@ Payload:
 
 Total frame length: `6` bytes.
 
-Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid swaps for the selected live character when at least one side is occupied, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_SWAP`. Swapping an occupied position with an empty valid position moves the occupied quickslot to the empty target position. Invalid positions, same-position no-op swaps, and swaps where both valid positions are empty fail closed with no frames or snapshot mutation.
+Current runtime behavior: decoded and dispatched only in `GAME`; the minimal runtime accepts valid swaps for the selected live character when at least one side is occupied, persists the updated quickslot snapshot, and returns self-only `GC::QUICKSLOT_SWAP`. Swapping an occupied position with an empty valid position moves the occupied quickslot to the empty target position. Invalid positions, same-position no-op swaps, and swaps where both valid positions are empty fail closed with no frames or snapshot mutation. If bootstrap combat retaliation has already driven the selected live character to the zero-HP floor, `QUICKSLOT_SWAP` fails closed with no frames and no persisted quickslot or inventory mutation until the character is restarted.
 
 ### Server `QUICKSLOT_ADD` (`0x0519`)
 
@@ -177,6 +177,7 @@ Implemented now:
 - loading-time selected-character `QUICKSLOT_ADD` bootstrap frames for persisted quickslot arrays, emitted after the selected-character presence/state burst and before trailing peer/static-actor visibility frames.
 - accepted self-only runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`; item quickslot adds must target exactly one occupied carried inventory item, duplicate carried-cell occupancy is rejected fail-closed, retargeting the same item cell to a new quickslot position deletes the older item quickslot first, client-originated deletes must target an existing quickslot position, and client-originated swaps require at least one occupied quickslot position.
 - accepted runtime updates to persisted quickslot state.
+- player-death/floor gating for quickslot edits: once bootstrap combat retaliation has driven the selected live character to the zero-HP floor, client-originated quickslot add/delete/swap edits fail closed with no frames and no persisted quickslot or inventory mutation until restart recovery.
 - stale reclaimed quickslot edit sockets remain self-local: they can receive deterministic quickslot refresh frames for their own socket, but they do not replace the authoritative persisted account snapshot or fresh live session state.
 - automatic item quickslot update synchronization after accepted carried-inventory `ITEM_MOVE` packets that empty the source cell, including destination-cell stale quickslot deletion when needed.
 - automatic item quickslot deletion synchronization after accepted carried-to-equipment `ITEM_MOVE` equips and the bootstrap `/equip_item` command seam.

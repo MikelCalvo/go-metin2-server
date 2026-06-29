@@ -3,12 +3,18 @@ package minimal
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+	"github.com/MikelCalvo/go-metin2-server/internal/service"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func TestGameSessionFlowQuickslotAddRetargetsDuplicateItemQuickslot(t *testing.T) {
@@ -265,5 +271,152 @@ func TestGameSessionFlowQuickslotAddStaleAfterReclaimIsSelfLocalOnly(t *testing.
 	}
 	if !reflect.DeepEqual(replacementOut, wantFrames) {
 		t.Fatalf("replacement quickslot add did not see authoritative original quickslot:\n got %#v\nwant %#v", replacementOut, wantFrames)
+	}
+}
+
+func TestGameSessionFlowPracticeMobQuickslotEditsFailClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	tests := []struct {
+		name       string
+		login      string
+		key        uint32
+		quickslots []loginticket.Quickslot
+		request    func(t *testing.T, flow service.SessionFlow) [][]byte
+	}{
+		{
+			name:  "add",
+			login: "quickslot-floor-add",
+			key:   0x50505101,
+			quickslots: []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeSkill, Slot: 5},
+			},
+			request: func(t *testing.T, flow service.SessionFlow) [][]byte {
+				t.Helper()
+				out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 4, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}})))
+				if err != nil {
+					t.Fatalf("unexpected post-floor quickslot add packet error: %v", err)
+				}
+				return out
+			},
+		},
+		{
+			name:  "delete",
+			login: "quickslot-floor-del",
+			key:   0x50505102,
+			quickslots: []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+			},
+			request: func(t *testing.T, flow service.SessionFlow) [][]byte {
+				t.Helper()
+				out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientDel(quickslotproto.ClientDelPacket{Position: 2})))
+				if err != nil {
+					t.Fatalf("unexpected post-floor quickslot delete packet error: %v", err)
+				}
+				return out
+			},
+		},
+		{
+			name:  "swap",
+			login: "quickslot-floor-swap",
+			key:   0x50505103,
+			quickslots: []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+			},
+			request: func(t *testing.T, flow service.SessionFlow) [][]byte {
+				t.Helper()
+				out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientSwap(quickslotproto.ClientSwapPacket{Position: 2, TargetPosition: 3})))
+				if err != nil {
+					t.Fatalf("unexpected post-floor quickslot swap packet error: %v", err)
+				}
+				return out
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("QuickslotFloor"+tt.name, 0x010305a0, 0x020405a0, 1100, 2100, 0, 101, 201)
+			owner.Points[bootstrapPlayerPointValueIndex] = 1
+			owner.Inventory = []inventory.ItemInstance{{ID: 501, Vnum: 27001, Count: 2, Slot: 5}}
+			owner.Quickslots = append([]loginticket.Quickslot(nil), tt.quickslots...)
+			issuePeerTicket(t, ticketStore, tt.login, tt.key, owner)
+			if err := accounts.Save(accountstore.Account{Login: tt.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed post-floor quickslot account: %v", err)
+			}
+
+			staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+			interactionStore := newInteractionDefinitionStore(t, nil)
+			runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore)
+			if err != nil {
+				t.Fatalf("unexpected post-floor quickslot runtime error: %v", err)
+			}
+			currentTime := time.Unix(1700000600, 0)
+			runtime.now = func() time.Time { return currentTime }
+			bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+				Ref:           "practice.quickslot_floor_" + tt.name,
+				Name:          "QuickslotFloorMob" + tt.name,
+				MapIndex:      bootstrapMapIndex,
+				X:             1200,
+				Y:             2200,
+				RaceNum:       101,
+				CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+			}}}
+			if _, err := runtime.ImportContentBundle(bundle); err != nil {
+				t.Fatalf("import content practice mob for post-floor quickslot denial: %v", err)
+			}
+			actors := runtime.StaticActors()
+			if len(actors) != 1 {
+				t.Fatalf("expected one content-loaded practice mob before post-floor quickslot denial, got %#v", actors)
+			}
+			targetVID := uint32(actors[0].EntityID)
+
+			flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), tt.login, tt.key)
+			defer closeSessionFlow(t, flow)
+			if len(enterOut) < 8 {
+				t.Fatalf("expected post-floor quickslot owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+			}
+			selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+			if err != nil {
+				t.Fatalf("unexpected target selection error before post-floor quickslot denial: %v", err)
+			}
+			if len(selectOut) != 1 {
+				t.Fatalf("expected target selection to emit 1 frame before post-floor quickslot denial, got %d", len(selectOut))
+			}
+			attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+			if err != nil {
+				t.Fatalf("unexpected attack error before post-floor quickslot denial: %v", err)
+			}
+			if len(attackOut) != 4 {
+				t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before post-floor quickslot denial, got %d", len(attackOut))
+			}
+			currentTime = currentTime.Add(time.Second)
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no delayed retaliation frames after post-floor quickslot denial setup, got %d", len(queued))
+			}
+
+			before, err := accounts.Load(tt.login)
+			if err != nil {
+				t.Fatalf("load persisted post-floor quickslot account before denial: %v", err)
+			}
+			out := tt.request(t, flow)
+			if len(out) != 0 {
+				t.Fatalf("expected post-floor quickslot %s to fail closed, got %d frames", tt.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected post-floor quickslot %s denial not to queue frames, got %d", tt.name, len(queued))
+			}
+			after, err := accounts.Load(tt.login)
+			if err != nil {
+				t.Fatalf("load persisted post-floor quickslot account after denial: %v", err)
+			}
+			if !reflect.DeepEqual(after.Characters[0].Quickslots, before.Characters[0].Quickslots) {
+				t.Fatalf("expected post-floor quickslot %s denial to keep persisted quickslots unchanged, before=%+v after=%+v", tt.name, before.Characters[0].Quickslots, after.Characters[0].Quickslots)
+			}
+			if !reflect.DeepEqual(after.Characters[0].Inventory, before.Characters[0].Inventory) {
+				t.Fatalf("expected post-floor quickslot %s denial to keep persisted inventory unchanged, before=%+v after=%+v", tt.name, before.Characters[0].Inventory, after.Characters[0].Inventory)
+			}
+		})
 	}
 }
