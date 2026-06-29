@@ -26678,6 +26678,89 @@ func TestGameSessionFlowPracticeMobQuitSlashCommandStillWorksAfterImmediateRetal
 	}
 }
 
+func TestGameSessionFlowPracticeMobLogoutSlashCommandStillWorksAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000450, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before zero-HP owner /logout regression check: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before zero-HP owner /logout regression check, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before zero-HP owner /logout regression check: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP owner /logout regression check, got %d frames", len(attackOut))
+	}
+
+	logoutOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/logout"})))
+	if err != nil {
+		t.Fatalf("unexpected /logout error after immediate retaliation reached owner HP floor: %v", err)
+	}
+	if len(logoutOut) != 1 {
+		t.Fatalf("expected /logout to keep its existing close-phase frame after immediate retaliation reached owner HP floor, got %d frames", len(logoutOut))
+	}
+	phase, err := control.DecodePhase(decodeSingleFrame(t, logoutOut[0]))
+	if err != nil {
+		t.Fatalf("decode /logout close phase after immediate retaliation reached owner HP floor: %v", err)
+	}
+	if phase.Phase != session.PhaseClose {
+		t.Fatalf("expected /logout to return close phase after immediate retaliation reached owner HP floor, got %q", phase.Phase)
+	}
+	phaseAware, ok := flow.(interface{ CurrentPhase() session.Phase })
+	if !ok {
+		t.Fatal("expected queued flow to expose current phase")
+	}
+	if phaseAware.CurrentPhase() != session.PhaseClose {
+		t.Fatalf("expected /logout to transition to close phase after immediate retaliation reached owner HP floor, got %q", phaseAware.CurrentPhase())
+	}
+	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 0 {
+		t.Fatalf("expected /logout to leave shared world after immediate retaliation reached owner HP floor, got %+v", snapshots)
+	}
+}
+
 func TestGameSessionFlowPracticeMobImmediateRetaliationSendsSelfDeadBeforeTargetClearAtOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
