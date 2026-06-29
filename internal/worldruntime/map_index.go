@@ -238,7 +238,11 @@ func (m *MapIndex) UpdateStatic(actor StaticEntity) bool {
 	defer m.mu.Unlock()
 	previous, ok := m.staticByEntityID[actor.Entity.ID]
 	if !ok {
-		return false
+		var found bool
+		previous, found = m.staticActorMapPresenceLocked(actor.Entity.ID)
+		if !found {
+			return false
+		}
 	}
 	previousMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: previous.Position.MapIndex})
 	nextMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
@@ -257,6 +261,16 @@ func (m *MapIndex) UpdateStatic(actor StaticEntity) bool {
 	}
 	bucket[actor.Entity.ID] = actor
 	return true
+}
+
+func (m *MapIndex) staticActorMapPresenceLocked(entityID uint64) (StaticEntity, bool) {
+	for _, bucket := range m.staticByMapIndex {
+		actor, ok := bucket[entityID]
+		if ok {
+			return actor, true
+		}
+	}
+	return StaticEntity{}, false
 }
 
 func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
