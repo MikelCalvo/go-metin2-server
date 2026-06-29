@@ -47,6 +47,7 @@ func (m *MapIndex) Register(player PlayerEntity) bool {
 	}
 
 	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: player.Position().MapIndex})
+	m.removePlayerMapPresenceLocked(player.Entity.ID)
 	m.byEntityID[player.Entity.ID] = player
 	m.effectiveMapByEntityID[player.Entity.ID] = mapIndex
 	bucket := m.byMapIndex[mapIndex]

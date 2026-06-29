@@ -139,6 +139,25 @@ func TestMapIndexRemoveClearsEntityIndexWhenMapBucketAlreadyMissing(t *testing.T
 	}
 }
 
+func TestMapIndexRegisterClearsStaleMapBucketsForSameEntityID(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(13, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+
+	registered := newPlayerEntity(stale.Entity.ID, entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800))
+	if !index.Register(registered) {
+		t.Fatal("expected player registration to clear stale map-bucket ownership")
+	}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale player map bucket to be cleared after registration, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].MapIndex != 77 {
+		t.Fatalf("expected registered player only in map 77 bucket, got %+v", characters)
+	}
+}
+
 func TestMapIndexSnapshotReturnsStableSortedCharactersPerMap(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	if !index.Register(newPlayerEntity(3, entityRegistryCharacter("Zulu", 0x02040103, 42, 1900, 3000))) {
