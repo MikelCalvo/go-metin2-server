@@ -120,6 +120,33 @@ func TestNonPlayerDirectoryUpdateClearsVisibilityVIDLookupWhenActorStopsBeingEnc
 	}
 }
 
+func TestNonPlayerDirectoryUpdateClearsStaleVisibilityVIDsForSameEntityID(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:   Entity{ID: 13, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	directory.entityIDByVID[99] = actor.Entity.ID
+
+	updated := actor
+	updated.Entity.Name = "Blacksmith"
+	if !directory.Update(updated) {
+		t.Fatal("expected static actor update to repair stale VID ownership")
+	}
+
+	if _, ok := directory.ByVID(99); ok {
+		t.Fatal("expected stale visibility VID lookup to be cleared after update")
+	}
+	lookup, ok := directory.ByVID(13)
+	if !ok || lookup.Entity.ID != actor.Entity.ID || lookup.Entity.Name != "Blacksmith" {
+		t.Fatalf("expected current visibility VID lookup to return Blacksmith, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestNonPlayerDirectoryPreservesCombatProfileOnRegisterAndUpdate(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
