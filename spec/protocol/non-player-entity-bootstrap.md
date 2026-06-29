@@ -101,6 +101,7 @@ This slice does not yet freeze:
   - if the reverse partial-teardown shape leaves only map-index presence behind, in-place update must repair the entity index and move the actor to the requested effective map instead of failing closed; this keeps operator/static-spawn edit paths tolerant of index cleanup order without treating an unknown actor ID as creatable
   - if a bad partial-teardown or repair path leaves duplicate map-bucket presence for the same static actor entity ID, later register, in-place update, or remove must prune all stale map buckets before inserting the new effective-map presence or reporting final removal; map occupancy must never keep ghost static actors for the same entity ID on older maps
   - if a stale visibility-VID index entry survives for the same static actor entity ID, later registration must prune the stale VID before inserting the actor's current encodable visibility VID; visible-VID lookup must never keep an old alias for the same static actor after registration repair
+  - if a stale visibility-VID index entry points at a missing static actor entity ID, a later `ByVID` lookup must prune that orphaned index entry before failing closed; visible-VID lookup must not keep returning through stale non-player directory aliases after partial teardown
 - inter-channel ownership
 
 ## Success definition for the next slice

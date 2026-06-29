@@ -50,7 +50,11 @@ func (d *NonPlayerDirectory) ByVID(vid uint32) (StaticEntity, bool) {
 		return StaticEntity{}, false
 	}
 	actor, ok := d.byEntityID[entityID]
-	return cloneStaticEntity(actor), ok
+	if !ok {
+		delete(d.entityIDByVID, vid)
+		return StaticEntity{}, false
+	}
+	return cloneStaticEntity(actor), true
 }
 
 func (d *NonPlayerDirectory) Update(actor StaticEntity) bool {

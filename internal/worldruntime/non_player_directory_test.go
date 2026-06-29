@@ -68,6 +68,18 @@ func TestNonPlayerDirectoryRegisterClearsStaleVisibilityVIDsForSameEntityID(t *t
 	}
 }
 
+func TestNonPlayerDirectoryLookupPrunesStaleVisibilityVID(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	directory.entityIDByVID[7] = 13
+
+	if actor, ok := directory.ByVID(7); ok {
+		t.Fatalf("expected stale static actor VID lookup to fail, got %+v", actor)
+	}
+	if _, exists := directory.entityIDByVID[7]; exists {
+		t.Fatal("expected stale static actor VID index to be pruned after lookup")
+	}
+}
+
 func TestNonPlayerDirectoryUpdateReplacesStaticActorByEntityID(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
