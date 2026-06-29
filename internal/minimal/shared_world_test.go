@@ -28050,6 +28050,76 @@ func TestGameSessionFlowPracticeMobRespawnRebuildOverPlainTCP(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartHereOverPlainTCP(t *testing.T) {
+	h := newPracticeMobTCPHarness(t, "tcp-restart-here", 0x81818181, "practice.mob_tcp_restart_here", 1)
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp pre-restart select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+
+	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
+	refresh, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-triggering target refresh: %v", err)
+	}
+	if refresh.TargetVID != h.targetID || refresh.HPPercent != 90 {
+		t.Fatalf("expected tcp restart-triggering attack to refresh target %d at 90%% HP, got %+v", h.targetID, refresh)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-triggering retaliation point-change: %v", err)
+	}
+	if pointChange.Type != bootstrapPlayerPointValueIndex || pointChange.Amount != -1 || pointChange.Value != 0 {
+		t.Fatalf("expected tcp restart-triggering retaliation to reduce player HP to 0, got %+v", pointChange)
+	}
+	dead, err := worldproto.DecodeDead(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-triggering self dead: %v", err)
+	}
+	if dead.VID != 0x02040131 {
+		t.Fatalf("expected tcp restart-triggering self dead for selected character VID 0x02040131, got %+v", dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-triggering target clear: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected tcp restart-triggering death to clear target, got %+v", clear)
+	}
+
+	h.client.writeFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"}))
+	restartAdd, err := worldproto.DecodeCharacterAdd(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-here self character add: %v", err)
+	}
+	if restartAdd.VID != 0x02040131 || restartAdd.X != 1100 || restartAdd.Y != 2100 {
+		t.Fatalf("expected tcp restart-here self add to rebuild selected character at current position, got %+v", restartAdd)
+	}
+	restartInfo, err := worldproto.DecodeCharacterAdditionalInfo(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-here self additional info: %v", err)
+	}
+	if restartInfo.VID != 0x02040131 || restartInfo.Name != "PeerTCP" {
+		t.Fatalf("expected tcp restart-here self additional info for PeerTCP, got %+v", restartInfo)
+	}
+	restartUpdate, err := worldproto.DecodeCharacterUpdate(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-here self update: %v", err)
+	}
+	if restartUpdate.VID != 0x02040131 {
+		t.Fatalf("expected tcp restart-here self update for selected character, got %+v", restartUpdate)
+	}
+	restartPoints, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-here self point refresh: %v", err)
+	}
+	if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 1 {
+		t.Fatalf("expected tcp restart-here to rebuild persisted HP value 1, got %+v", restartPoints)
+	}
+}
+
 func drivePracticeMobOwnerKill(t *testing.T, ownerFlow service.SessionFlow, targetVID uint32, context string, advance func(time.Duration)) [][]byte {
 	t.Helper()
 
