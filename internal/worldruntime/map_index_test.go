@@ -361,6 +361,27 @@ func TestMapIndexRemoveStaticClearsStaleMapBucketsForSameEntityID(t *testing.T) 
 	}
 }
 
+func TestMapIndexRegisterStaticClearsStaleMapBucketsForSameEntityID(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := StaticEntity{Entity: Entity{ID: 13, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{stale.Entity.ID: stale}
+
+	registered := stale
+	registered.Entity.Name = "VillageGuard"
+	registered.Position = NewPosition(77, 900, 1200)
+	if !index.RegisterStatic(registered) {
+		t.Fatal("expected static actor registration to clear stale map-bucket ownership")
+	}
+
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected stale map static bucket to be cleared after registration, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.ID != stale.Entity.ID || actors[0].Entity.Name != "VillageGuard" || actors[0].Position.MapIndex != 77 {
+		t.Fatalf("expected registered actor only in map 77 bucket, got %+v", actors)
+	}
+}
+
 func TestMapIndexRegisterStaticClonesDeathRewardDropVnums(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	guard := StaticEntity{

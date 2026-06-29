@@ -234,6 +234,7 @@ func (m *MapIndex) RegisterStatic(actor StaticEntity) bool {
 	}
 	actor = cloneStaticEntity(actor)
 	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
+	m.removeStaticMapPresenceLocked(actor.Entity.ID)
 	m.staticByEntityID[actor.Entity.ID] = actor
 	bucket := m.staticByMapIndex[mapIndex]
 	if bucket == nil {

@@ -99,7 +99,7 @@ This slice does not yet freeze:
   - runtime directories and map indexes must clone reward drop-vnum slices on register, update, removal, and snapshot/read paths so callers cannot mutate authored/bootstrap reward descriptors by holding an old slice alias
   - if a partially torn-down static actor is still present in the non-player directory but missing from the map index, a later in-place update must rebuild map presence while preserving the authored/bootstrap death reward instead of requiring delete-and-recreate
   - if the reverse partial-teardown shape leaves only map-index presence behind, in-place update must repair the entity index and move the actor to the requested effective map instead of failing closed; this keeps operator/static-spawn edit paths tolerant of index cleanup order without treating an unknown actor ID as creatable
-  - if a bad partial-teardown or repair path leaves duplicate map-bucket presence for the same static actor entity ID, later in-place update or remove must prune all stale map buckets before inserting the new effective-map presence or reporting final removal; map occupancy must never keep ghost static actors for the same entity ID on older maps
+  - if a bad partial-teardown or repair path leaves duplicate map-bucket presence for the same static actor entity ID, later register, in-place update, or remove must prune all stale map buckets before inserting the new effective-map presence or reporting final removal; map occupancy must never keep ghost static actors for the same entity ID on older maps
 - inter-channel ownership
 
 ## Success definition for the next slice
