@@ -97,3 +97,44 @@ func TestPlayerDirectoryRemoveClearsEntityIDVIDAndNameIndexes(t *testing.T) {
 		t.Fatal("expected exact-name lookup to be cleared after removal")
 	}
 }
+
+func TestPlayerDirectoryRegisterReclaimsStaleVIDAndNameIndexes(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
+	bravo := newPlayerEntity(alpha.Entity.ID+1, entityRegistryCharacter(alpha.Entity.Name, alpha.Entity.VID, 42, 1300, 2300))
+
+	directory := NewPlayerDirectory()
+	directory.entityIDByVID[alpha.Entity.VID] = alpha.Entity.ID
+	directory.entityIDByName[alpha.Entity.Name] = alpha.Entity.ID
+
+	if !directory.Register(bravo) {
+		t.Fatal("expected stale secondary indexes without entity ownership to be reclaimed during register")
+	}
+	byVID, ok := directory.ByVID(alpha.Entity.VID)
+	if !ok || byVID.Entity.ID != bravo.Entity.ID {
+		t.Fatalf("expected VID lookup to resolve registered replacement, got entity=%+v ok=%v", byVID, ok)
+	}
+	byName, ok := directory.ByName(alpha.Entity.Name)
+	if !ok || byName.Entity.ID != bravo.Entity.ID {
+		t.Fatalf("expected exact-name lookup to resolve registered replacement, got entity=%+v ok=%v", byName, ok)
+	}
+}
+
+func TestPlayerDirectoryLookupPrunesStaleVIDAndNameIndexes(t *testing.T) {
+	directory := NewPlayerDirectory()
+	directory.entityIDByVID[0x02040101] = 99
+	directory.entityIDByName["Ghost"] = 99
+
+	if player, ok := directory.ByVID(0x02040101); ok {
+		t.Fatalf("expected stale VID lookup to fail, got %+v", player)
+	}
+	if _, exists := directory.entityIDByVID[0x02040101]; exists {
+		t.Fatal("expected stale VID index to be pruned after lookup")
+	}
+	if player, ok := directory.ByName("Ghost"); ok {
+		t.Fatalf("expected stale exact-name lookup to fail, got %+v", player)
+	}
+	if _, exists := directory.entityIDByName["Ghost"]; exists {
+		t.Fatal("expected stale exact-name index to be pruned after lookup")
+	}
+}

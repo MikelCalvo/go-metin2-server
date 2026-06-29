@@ -32,10 +32,10 @@ func (d *PlayerDirectory) Register(player PlayerEntity) bool {
 	if _, ok := d.byEntityID[player.Entity.ID]; ok {
 		return false
 	}
-	if conflictingEntityID(d.entityIDByVID, player.Entity.VID, player.Entity.ID) {
+	if d.conflictingEntityIDByVIDLocked(player.Entity.VID, player.Entity.ID) {
 		return false
 	}
-	if conflictingEntityID(d.entityIDByName, player.Entity.Name, player.Entity.ID) {
+	if d.conflictingEntityIDByNameLocked(player.Entity.Name, player.Entity.ID) {
 		return false
 	}
 
@@ -57,10 +57,10 @@ func (d *PlayerDirectory) Update(player PlayerEntity) bool {
 	if !ok {
 		return false
 	}
-	if conflictingEntityID(d.entityIDByVID, player.Entity.VID, player.Entity.ID) {
+	if d.conflictingEntityIDByVIDLocked(player.Entity.VID, player.Entity.ID) {
 		return false
 	}
-	if conflictingEntityID(d.entityIDByName, player.Entity.Name, player.Entity.ID) {
+	if d.conflictingEntityIDByNameLocked(player.Entity.Name, player.Entity.ID) {
 		return false
 	}
 
@@ -113,7 +113,11 @@ func (d *PlayerDirectory) ByVID(vid uint32) (PlayerEntity, bool) {
 		return PlayerEntity{}, false
 	}
 	player, ok := d.byEntityID[entityID]
-	return player, ok
+	if !ok {
+		delete(d.entityIDByVID, vid)
+		return PlayerEntity{}, false
+	}
+	return player, true
 }
 
 func (d *PlayerDirectory) ByName(name string) (PlayerEntity, bool) {
@@ -128,7 +132,11 @@ func (d *PlayerDirectory) ByName(name string) (PlayerEntity, bool) {
 		return PlayerEntity{}, false
 	}
 	player, ok := d.byEntityID[entityID]
-	return player, ok
+	if !ok {
+		delete(d.entityIDByName, name)
+		return PlayerEntity{}, false
+	}
+	return player, true
 }
 
 func (d *PlayerDirectory) PlayerCharacters() []loginticket.Character {
@@ -148,6 +156,30 @@ func (d *PlayerDirectory) PlayerCharacters() []loginticket.Character {
 
 func validPlayerDirectoryEntity(player PlayerEntity) bool {
 	return player.Entity.ID != 0 && player.Entity.Kind == EntityKindPlayer && player.Entity.VID != 0 && player.Entity.Name != ""
+}
+
+func (d *PlayerDirectory) conflictingEntityIDByVIDLocked(vid uint32, entityID uint64) bool {
+	indexedEntityID, ok := d.entityIDByVID[vid]
+	if !ok || indexedEntityID == entityID {
+		return false
+	}
+	if _, exists := d.byEntityID[indexedEntityID]; !exists {
+		delete(d.entityIDByVID, vid)
+		return false
+	}
+	return true
+}
+
+func (d *PlayerDirectory) conflictingEntityIDByNameLocked(name string, entityID uint64) bool {
+	indexedEntityID, ok := d.entityIDByName[name]
+	if !ok || indexedEntityID == entityID {
+		return false
+	}
+	if _, exists := d.byEntityID[indexedEntityID]; !exists {
+		delete(d.entityIDByName, name)
+		return false
+	}
+	return true
 }
 
 func conflictingEntityID[K comparable](index map[K]uint64, key K, entityID uint64) bool {

@@ -56,6 +56,20 @@ The owned abstraction boundary is:
 - runtime callers should refer to reusable entity identity instead of raw session-local bookkeeping where possible
 - future non-player actors must fit this identity model instead of forcing another rewrite of visibility ownership later
 
+### Player directory
+
+The runtime now owns a dedicated player lookup directory in:
+- `internal/worldruntime/player_directory.go`
+
+The current owned responsibilities are:
+- index connected player entities by runtime entity ID
+- index connected player entities by client-visible `VID`
+- index connected player entities by exact character name
+- keep deterministic player snapshot output for higher-level scope helpers
+- prune stale secondary `VID` / name index entries when the primary entity entry is already gone, so partial teardown does not leave ghost lookup ownership that can block reconnect or replacement registration
+
+The stale-index pruning rule is deliberately narrow: a secondary lookup whose primary entity still exists remains authoritative and still blocks conflicting ownership; only orphaned secondary pointers are reclaimed.
+
 ### Map-occupancy index
 
 The runtime now owns a dedicated effective-map membership boundary in:
