@@ -261,6 +261,7 @@ Expected result:
 - the older item quickslot for that carried cell is cleared
 - the new item quickslot binding is added and persists after reconnect
 - unrelated skill/command quickslots with the same byte slot value remain unchanged
+- if stale/reclaimed-socket QA tooling is available, a reclaimed old socket may still see its own quickslot refresh frames, but reconnecting / inspecting the fresh authoritative session shows no persisted quickslot change from that stale socket
 
 ### 4.5.4 Delete an occupied quickslot (`QUICKSLOT_DEL`)
 

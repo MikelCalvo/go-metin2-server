@@ -140,7 +140,7 @@ The owned bootstrap ordering is:
    - `QUICKSLOT_ADD(position, {type, slot})...`
 3. trailing visible peer/static-actor frames, if any
 
-This keeps bootstrap quickslots self-only and snapshot-derived. Runtime `ADD` / `DEL` / `SWAP` edits are also self-only in this slice: the selected live character is mutated, the selected character snapshot is persisted back to the account store, and the server returns the matching quickslot refresh frame to the same session.
+This keeps bootstrap quickslots self-only and snapshot-derived. Runtime `ADD` / `DEL` / `SWAP` edits are also self-only in this slice: the selected live character is mutated, the selected character snapshot is persisted back to the account store, and the server returns the matching quickslot refresh frame to the same session. If an older reclaimed socket sends a valid-looking quickslot edit after a fresh session has become authoritative for the same selected character, the stale socket may still receive its self-local quickslot refresh frames, but the authoritative persisted account snapshot and fresh live session state stay unchanged.
 
 ## Item synchronization ownership
 
@@ -177,6 +177,7 @@ Implemented now:
 - loading-time selected-character `QUICKSLOT_ADD` bootstrap frames for persisted quickslot arrays, emitted after the selected-character presence/state burst and before trailing peer/static-actor visibility frames.
 - accepted self-only runtime mutation for client-originated `CG::QUICKSLOT_ADD` / `DEL` / `SWAP`; item quickslot adds must target exactly one occupied carried inventory item, duplicate carried-cell occupancy is rejected fail-closed, retargeting the same item cell to a new quickslot position deletes the older item quickslot first, client-originated deletes must target an existing quickslot position, and client-originated swaps require at least one occupied quickslot position.
 - accepted runtime updates to persisted quickslot state.
+- stale reclaimed quickslot edit sockets remain self-local: they can receive deterministic quickslot refresh frames for their own socket, but they do not replace the authoritative persisted account snapshot or fresh live session state.
 - automatic item quickslot update synchronization after accepted carried-inventory `ITEM_MOVE` packets that empty the source cell, including destination-cell stale quickslot deletion when needed.
 - automatic item quickslot deletion synchronization after accepted carried-to-equipment `ITEM_MOVE` equips and the bootstrap `/equip_item` command seam.
 - automatic item quickslot deletion synchronization after accepted last-stack carried-inventory `ITEM_USE` packets.

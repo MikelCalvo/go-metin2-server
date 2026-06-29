@@ -207,3 +207,63 @@ func TestGameSessionFlowQuickslotAddRejectsDuplicateItemSlotOccupancyWithoutMuta
 		t.Fatalf("duplicate-slot quickslot add mutated persisted inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
 	}
 }
+
+func TestGameSessionFlowQuickslotAddStaleAfterReclaimIsSelfLocalOnly(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("QuickslotStale", 0x0103059a, 0x0204059a, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 451, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "quickslot-stale", 0x5050509a, owner)
+	if err := accounts.Save(accountstore.Account{Login: "quickslot-stale", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed stale quickslot account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected stale quickslot runtime error: %v", err)
+	}
+	staleFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quickslot-stale", 0x5050509a)
+	closeSessionFlow(t, staleFlow)
+
+	issuePeerTicket(t, ticketStore, "quickslot-stale", 0x5050509b, owner)
+	replacementFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quickslot-stale", 0x5050509b)
+	defer closeSessionFlow(t, replacementFlow)
+
+	out, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 4, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}})))
+	if err != nil {
+		t.Fatalf("unexpected stale quickslot add packet error: %v", err)
+	}
+	wantFrames := [][]byte{
+		quickslotproto.EncodeDel(quickslotproto.DelPacket{Position: 2}),
+		quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: 4, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}}),
+	}
+	if !reflect.DeepEqual(out, wantFrames) {
+		t.Fatalf("unexpected stale quickslot self-local frames:\n got %#v\nwant %#v", out, wantFrames)
+	}
+
+	persisted, err := accounts.Load("quickslot-stale")
+	if err != nil {
+		t.Fatalf("load stale quickslot account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("stale quickslot add mutated authoritative quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("stale quickslot add mutated authoritative inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	live, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatalf("expected replacement live inventory snapshot")
+	}
+	if !reflect.DeepEqual(live.Inventory, []InventoryItemSnapshot{{ID: 451, Vnum: 27001, Count: 2, Slot: 5}}) {
+		t.Fatalf("stale quickslot add replaced live replacement inventory: %+v", live.Inventory)
+	}
+
+	replacementOut, err := replacementFlow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 4, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}})))
+	if err != nil {
+		t.Fatalf("unexpected replacement quickslot add packet error: %v", err)
+	}
+	if !reflect.DeepEqual(replacementOut, wantFrames) {
+		t.Fatalf("replacement quickslot add did not see authoritative original quickslot:\n got %#v\nwant %#v", replacementOut, wantFrames)
+	}
+}
