@@ -17448,6 +17448,82 @@ func TestGameSessionFlowItemUseToItemPartiallyMergesStacksWithUpdateFrames(t *te
 	}
 }
 
+func TestGameSessionFlowItemUseToItemPartialMergeDeletesTargetItemQuickslots(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemPartialTargetQS", 0x01030524, 0x02040524, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 109, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 110, Vnum: 27001, Count: 198, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 8},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 8},
+	}
+	issuePeerTicket(t, store, "use-to-item-partial-target-qs", 0x50505065, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-to-item-partial-target-qs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed use-to-item partial target-quickslot owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected use-to-item partial target-quickslot runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-partial-target-qs", 0x50505065)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(8),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partial target-quickslot use-to-item error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected partial use-to-item merge to emit source update, target update, and target item quickslot delete, got %d", len(out))
+	}
+	if update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0])); err != nil || update.Position != itemproto.InventoryPosition(5) || update.Count != 3 {
+		t.Fatalf("unexpected partial target-quickslot source update: %+v err=%v", update, err)
+	}
+	if update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1])); err != nil || update.Position != itemproto.InventoryPosition(8) || update.Count != 200 {
+		t.Fatalf("unexpected partial target-quickslot target update: %+v err=%v", update, err)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode partial target item quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 4 {
+		t.Fatalf("expected target item quickslot position 4 to be deleted, got %+v", quickslotDel)
+	}
+
+	snapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after partial target-quickslot use-to-item merge")
+	}
+	if !reflect.DeepEqual(snapshot.Inventory, []InventoryItemSnapshot{
+		{ID: 109, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 110, Vnum: 27001, Count: 200, Slot: 8},
+	}) {
+		t.Fatalf("expected runtime inventory to reflect partial target-quickslot merge, got %+v", snapshot.Inventory)
+	}
+	persisted, err := accounts.Load("use-to-item-partial-target-qs")
+	if err != nil {
+		t.Fatalf("load persisted use-to-item partial target-quickslot owner account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{
+		{ID: 109, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 110, Vnum: 27001, Count: 200, Slot: 8},
+	}) {
+		t.Fatalf("expected persisted inventory to reflect partial target-quickslot merge, got %+v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 8},
+	}) {
+		t.Fatalf("expected partial merge to delete only target item quickslot and preserve source/non-item quickslots, got %+v", persisted.Characters[0].Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemRejectsSameCellRequestWithoutMutation(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
