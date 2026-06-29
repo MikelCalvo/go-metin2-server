@@ -1122,6 +1122,90 @@ func TestGameSessionFlowItemUseToItemRejectsMissingSourceTemplateWithoutMutation
 	}
 }
 
+func TestGameSessionFlowItemUseToItemPartialMergeDeletesAllTargetItemQuickslots(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemPartialMultiQS", 0x010305ac, 0x020405ac, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 201, Vnum: 27001, Count: 7, Slot: 5},
+		{ID: 202, Vnum: 27001, Count: 8, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 6, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 7, Type: quickslotproto.TypeSkill, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "uit-partial-multi", 0x505050ac, owner)
+	if err := accounts.Save(accountstore.Account{Login: "uit-partial-multi", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partial multi-quickslot item-use-to-item account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  10,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected partial multi-quickslot item-use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "uit-partial-multi", 0x505050ac)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected partial multi-quickslot item-use-to-item packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected partial merge to emit source update, target update, and two target item quickslot deletes, got %d", len(out))
+	}
+	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode partial multi-quickslot source update: %v", err)
+	}
+	if sourceUpdate.Position != itemproto.InventoryPosition(5) || sourceUpdate.Count != 5 {
+		t.Fatalf("unexpected partial multi-quickslot source update: %+v", sourceUpdate)
+	}
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode partial multi-quickslot target update: %v", err)
+	}
+	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 10 {
+		t.Fatalf("unexpected partial multi-quickslot target update: %+v", targetUpdate)
+	}
+	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode first partial multi-quickslot delete: %v", err)
+	}
+	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode second partial multi-quickslot delete: %v", err)
+	}
+	if firstQuickslotDel.Position != 4 || secondQuickslotDel.Position != 6 {
+		t.Fatalf("expected target item quickslot positions 4 and 6 to be deleted in order, got %+v and %+v", firstQuickslotDel, secondQuickslotDel)
+	}
+
+	persisted, err := accounts.Load("uit-partial-multi")
+	if err != nil {
+		t.Fatalf("load partial multi-quickslot item-use-to-item account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 201, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 202, Vnum: 27001, Count: 10, Slot: 6},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted partial multi-quickslot inventory: got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 7, Type: quickslotproto.TypeSkill, Slot: 6},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted partial multi-quickslot quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemFullMergeDeletesAllSourceItemQuickslots(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
