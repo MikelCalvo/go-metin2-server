@@ -277,7 +277,8 @@ func TestMapIndexUpdateStaticRepairsEntityIndexWhenMapBucketSurvives(t *testing.
 	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != "Blacksmith" || actors[0].Position != NewPosition(99, 900, 1200) || actors[0].RaceNum != 20016 {
 		t.Fatalf("expected updated actor in new map bucket after repair, got %+v", actors)
 	}
-	if stored, ok := index.staticByEntityID[guard.Entity.ID]; !ok || stored.Entity.Name != "Blacksmith" || stored.Position != NewPosition(99, 900, 1200) {
+	stored, ok := index.StaticActor(guard.Entity.ID)
+	if !ok || stored.Entity.Name != "Blacksmith" || stored.Position != NewPosition(99, 900, 1200) {
 		t.Fatalf("expected repaired entity index to point at updated actor, got actor=%+v ok=%v", stored, ok)
 	}
 }

@@ -149,20 +149,32 @@ func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bo
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	previous, ok := r.staticActors.ByEntityID(actor.Entity.ID)
-	if !ok {
-		return StaticEntity{}, false
+	previous, hadDirectoryEntry := r.staticActors.ByEntityID(actor.Entity.ID)
+	if !hadDirectoryEntry {
+		var ok bool
+		previous, ok = r.maps.StaticActor(actor.Entity.ID)
+		if !ok {
+			return StaticEntity{}, false
+		}
 	}
 	if actor.DeathReward.Empty() && !previous.DeathReward.Empty() {
 		actor.DeathReward = previous.DeathReward.Clone()
 	}
 	updated := newStaticEntity(actor.Entity.ID, actor)
-	if !r.staticActors.Update(updated) {
+	if hadDirectoryEntry {
+		if !r.staticActors.Update(updated) {
+			return StaticEntity{}, false
+		}
+	} else if !r.staticActors.Register(updated) {
 		return StaticEntity{}, false
 	}
 	if !r.maps.UpdateStatic(updated) {
 		if !r.maps.RegisterStatic(updated) {
-			_ = r.staticActors.Update(previous)
+			if hadDirectoryEntry {
+				_ = r.staticActors.Update(previous)
+			} else {
+				_, _ = r.staticActors.Remove(updated.Entity.ID)
+			}
 			return StaticEntity{}, false
 		}
 	}

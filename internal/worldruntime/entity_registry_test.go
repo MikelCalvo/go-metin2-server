@@ -502,6 +502,50 @@ func TestEntityRegistryUpdateStaticActorRebuildsMissingMapPresence(t *testing.T)
 	}
 }
 
+func TestEntityRegistryUpdateStaticActorRebuildsMissingDirectoryEntry(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{
+		Entity:        Entity{Name: "DirectorylessRewardGuard"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.directoryless_reward_guard",
+		DeathReward:   StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
+	})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if _, ok := registry.staticActors.Remove(guard.Entity.ID); !ok {
+		t.Fatal("expected test setup to remove static actor directory entry")
+	}
+
+	updated := guard
+	updated.Entity.Name = "DirectorylessRewardGuardMoved"
+	updated.Position = NewPosition(99, 900, 1200)
+	updated.RaceNum = 20016
+	result, ok := registry.UpdateStaticActor(updated)
+	if !ok {
+		t.Fatal("expected static actor update to rebuild missing directory entry")
+	}
+	if result.Entity.ID != guard.Entity.ID || result.Entity.Name != "DirectorylessRewardGuardMoved" || result.Position != NewPosition(99, 900, 1200) || result.RaceNum != 20016 {
+		t.Fatalf("unexpected rebuilt static actor update result: %+v", result)
+	}
+	if result.DeathReward.Experience != 75 || result.DeathReward.Gold != 60 || len(result.DeathReward.DropVnums) != 2 || result.DeathReward.DropVnums[0] != 27001 || result.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected rebuilt directory update to preserve death reward, got %+v", result.DeathReward)
+	}
+	lookup, ok := registry.StaticActor(guard.Entity.ID)
+	if !ok || lookup.Entity.Name != "DirectorylessRewardGuardMoved" || lookup.Position != NewPosition(99, 900, 1200) || lookup.RaceNum != 20016 {
+		t.Fatalf("expected rebuilt static actor directory lookup to reflect update, got actor=%+v ok=%v", lookup, ok)
+	}
+	if actors := registry.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected old map static actor snapshot to be empty after rebuilt directory update, got %+v", actors)
+	}
+	actors := registry.StaticActors(99)
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != "DirectorylessRewardGuardMoved" {
+		t.Fatalf("expected updated static actor in map 99 snapshot, got %+v", actors)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,

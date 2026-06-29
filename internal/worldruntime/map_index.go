@@ -273,6 +273,19 @@ func (m *MapIndex) staticActorMapPresenceLocked(entityID uint64) (StaticEntity, 
 	return StaticEntity{}, false
 }
 
+func (m *MapIndex) StaticActor(entityID uint64) (StaticEntity, bool) {
+	if m == nil || entityID == 0 {
+		return StaticEntity{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	actor, ok := m.staticByEntityID[entityID]
+	if ok {
+		return cloneStaticEntity(actor), true
+	}
+	return m.staticActorMapPresenceLocked(entityID)
+}
+
 func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
 	if m == nil || entityID == 0 {
 		return StaticEntity{}, false
