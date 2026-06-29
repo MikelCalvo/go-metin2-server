@@ -25,6 +25,7 @@ func (d *NonPlayerDirectory) Register(actor StaticEntity) bool {
 	if vid, ok := StaticActorVisibilityVID(actor); ok && conflictingEntityID(d.entityIDByVID, vid, actor.Entity.ID) {
 		return false
 	}
+	d.removeVisibilityVIDsForEntityID(actor.Entity.ID)
 	d.byEntityID[actor.Entity.ID] = cloneStaticEntity(actor)
 	if vid, ok := StaticActorVisibilityVID(actor); ok {
 		d.entityIDByVID[vid] = actor.Entity.ID
@@ -87,6 +88,17 @@ func (d *NonPlayerDirectory) Remove(entityID uint64) (StaticEntity, bool) {
 		delete(d.entityIDByVID, vid)
 	}
 	return cloneStaticEntity(actor), true
+}
+
+func (d *NonPlayerDirectory) removeVisibilityVIDsForEntityID(entityID uint64) {
+	if d == nil || entityID == 0 {
+		return
+	}
+	for vid, indexedEntityID := range d.entityIDByVID {
+		if indexedEntityID == entityID {
+			delete(d.entityIDByVID, vid)
+		}
+	}
 }
 
 func (d *NonPlayerDirectory) StaticActors() []StaticEntity {
