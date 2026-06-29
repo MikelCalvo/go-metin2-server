@@ -62,16 +62,13 @@ func (d *NonPlayerDirectory) Update(actor StaticEntity) bool {
 	if d == nil || !validStaticEntity(actor) {
 		return false
 	}
-	previous, ok := d.byEntityID[actor.Entity.ID]
-	if !ok {
+	if _, ok := d.byEntityID[actor.Entity.ID]; !ok {
 		return false
 	}
 	if vid, ok := StaticActorVisibilityVID(actor); ok && conflictingEntityID(d.entityIDByVID, vid, actor.Entity.ID) {
 		return false
 	}
-	if previousVID, ok := StaticActorVisibilityVID(previous); ok {
-		delete(d.entityIDByVID, previousVID)
-	}
+	d.removeVisibilityVIDsForEntityID(actor.Entity.ID)
 	d.byEntityID[actor.Entity.ID] = cloneStaticEntity(actor)
 	if vid, ok := StaticActorVisibilityVID(actor); ok {
 		d.entityIDByVID[vid] = actor.Entity.ID
