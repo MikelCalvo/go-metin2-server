@@ -250,22 +250,13 @@ func (m *MapIndex) UpdateStatic(actor StaticEntity) bool {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	previous, ok := m.staticByEntityID[actor.Entity.ID]
-	if !ok {
-		var found bool
-		previous, found = m.staticActorMapPresenceLocked(actor.Entity.ID)
-		if !found {
+	if _, ok := m.staticByEntityID[actor.Entity.ID]; !ok {
+		if _, found := m.staticActorMapPresenceLocked(actor.Entity.ID); !found {
 			return false
 		}
 	}
-	previousMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: previous.Position.MapIndex})
 	nextMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
-	if bucket := m.staticByMapIndex[previousMapIndex]; bucket != nil {
-		delete(bucket, actor.Entity.ID)
-		if len(bucket) == 0 {
-			delete(m.staticByMapIndex, previousMapIndex)
-		}
-	}
+	m.removeStaticMapPresenceLocked(actor.Entity.ID)
 	actor = cloneStaticEntity(actor)
 	m.staticByEntityID[actor.Entity.ID] = actor
 	bucket := m.staticByMapIndex[nextMapIndex]
@@ -309,28 +300,31 @@ func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
 	actor, ok := m.staticByEntityID[entityID]
 	if ok {
 		delete(m.staticByEntityID, entityID)
-		mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
-		if bucket := m.staticByMapIndex[mapIndex]; bucket != nil {
-			delete(bucket, entityID)
-			if len(bucket) == 0 {
-				delete(m.staticByMapIndex, mapIndex)
-			}
-		}
+		m.removeStaticMapPresenceLocked(entityID)
 		return cloneStaticEntity(actor), true
 	}
-	for mapIndex, bucket := range m.staticByMapIndex {
+	for _, bucket := range m.staticByMapIndex {
 		actor, ok := bucket[entityID]
 		if !ok {
+			continue
+		}
+		m.removeStaticMapPresenceLocked(entityID)
+		delete(m.staticByEntityID, entityID)
+		return cloneStaticEntity(actor), true
+	}
+	return StaticEntity{}, false
+}
+
+func (m *MapIndex) removeStaticMapPresenceLocked(entityID uint64) {
+	for mapIndex, bucket := range m.staticByMapIndex {
+		if _, ok := bucket[entityID]; !ok {
 			continue
 		}
 		delete(bucket, entityID)
 		if len(bucket) == 0 {
 			delete(m.staticByMapIndex, mapIndex)
 		}
-		delete(m.staticByEntityID, entityID)
-		return cloneStaticEntity(actor), true
 	}
-	return StaticEntity{}, false
 }
 
 func (m *MapIndex) StaticActors(mapIndex uint32) []StaticEntity {

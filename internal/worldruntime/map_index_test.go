@@ -312,6 +312,55 @@ func TestMapIndexUpdateStaticRepairsEntityIndexWhenMapBucketSurvives(t *testing.
 	}
 }
 
+func TestMapIndexUpdateStaticClearsStaleMapBucketsForSameEntityID(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 11, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	index.staticByMapIndex[99] = map[uint64]StaticEntity{guard.Entity.ID: guard}
+
+	updated := guard
+	updated.Position = NewPosition(77, 900, 1200)
+	if !index.UpdateStatic(updated) {
+		t.Fatal("expected static actor update to clear stale map-bucket ownership")
+	}
+
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected old map static bucket to be empty after update, got %+v", actors)
+	}
+	if actors := index.StaticActors(99); len(actors) != 0 {
+		t.Fatalf("expected stale map static bucket to be cleared after update, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Position.MapIndex != 77 {
+		t.Fatalf("expected updated actor only in map 77 bucket, got %+v", actors)
+	}
+}
+
+func TestMapIndexRemoveStaticClearsStaleMapBucketsForSameEntityID(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 12, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	index.staticByMapIndex[99] = map[uint64]StaticEntity{guard.Entity.ID: guard}
+
+	removed, ok := index.RemoveStatic(guard.Entity.ID)
+	if !ok || removed.Entity.ID != guard.Entity.ID {
+		t.Fatalf("expected tolerant static actor removal to return guard, got actor=%+v ok=%v", removed, ok)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected original map static bucket to be cleared after remove, got %+v", actors)
+	}
+	if actors := index.StaticActors(99); len(actors) != 0 {
+		t.Fatalf("expected stale map static bucket to be cleared after remove, got %+v", actors)
+	}
+	if snapshots := index.Snapshot(); len(snapshots) != 0 {
+		t.Fatalf("expected no map snapshots after stale-bucket removal, got %+v", snapshots)
+	}
+}
+
 func TestMapIndexRegisterStaticClonesDeathRewardDropVnums(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	guard := StaticEntity{
