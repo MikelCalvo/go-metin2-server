@@ -56,6 +56,7 @@ Reward descriptors fail closed when:
 - any `reward_drop_vnums` entry is `0`
 - any `reward_drop_vnums` entry is duplicated in the same descriptor
 - a runtime-generated ground-item VID for a configured drop would be `0`
+- a runtime-generated ground-item instance for a configured drop would have zero count
 - multiple drops in the same descriptor would collide on the generated ground-item VID
 - a configured drop would reuse an already-live ground-item VID
 

@@ -283,6 +283,23 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsExistingVID(t *testing.T) {
 		t.Fatalf("expected original ground item to be preserved, got %+v", stored)
 	}
 }
+
+func TestSharedWorldRegistryRegisterGroundItemRejectsZeroCount(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ZeroCountDropOwner", 0x01030197, 0x02040197, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected zero-count drop owner join to allocate a shared-world entity id")
+	}
+
+	if registry.RegisterGroundItem(ownerID, "zero-count-drop-owner", owner, 0x0700000F, inventory.ItemInstance{Vnum: 3001}) {
+		t.Fatal("expected zero-count ground item registration to fail closed")
+	}
+	if registry.GroundItemExists(0x0700000F) {
+		t.Fatal("expected rejected zero-count ground item to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsDeadOwner(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DeadDropOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
