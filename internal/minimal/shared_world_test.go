@@ -8613,6 +8613,95 @@ func TestGameRuntimeNormalizesDropRewardOrderBeforeGroundVIDGeneration(t *testin
 	}
 }
 
+func TestGameRuntimeScalarRewardOverflowSkipsOnlyScalarAndKeepsValidDropReward(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050222, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050222, Name: "ScalarOverflowDropRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1150, 2150),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.scalar_overflow_drop_reward_mob",
+	}
+	killer := peerVisibilityCharacter("ScalarOverflowDropKiller", 0x01030122, 0x02040122, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 1<<31 - 10
+	issuePeerTicket(t, store, "scalar-overflow-drop-killer", 0x22222222, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "scalar-overflow-drop-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed scalar overflow drop reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_422, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected scalar overflow drop reward mob registration to succeed")
+	}
+	const rewardVnum uint32 = 27001
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 20, DropVnums: []uint32{rewardVnum}}) {
+		t.Fatal("expected scalar overflow drop reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "scalar-overflow-drop-killer", 0x22222222)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before scalar overflow drop reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on scalar overflow drop reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected scalar overflow reward kill to return dead, clear-target, ground-add, and ownership frames only, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode scalar overflow reward dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode scalar overflow reward clear-target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("unexpected scalar overflow reward clear target: %+v", clearTarget)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode scalar overflow reward ground add: %v", err)
+	}
+	expectedVID := bootstrapRewardGroundItemVID(killer, rewardVnum, 0)
+	if ground.Vnum != rewardVnum || ground.VID != expectedVID {
+		t.Fatalf("expected scalar overflow reward to keep valid drop, got %+v want vid=%d vnum=%d", ground, expectedVID, rewardVnum)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode scalar overflow reward ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: expectedVID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected scalar overflow reward ownership: %+v", ownership)
+	}
+	if !runtime.sharedWorld.GroundItemExists(expectedVID) {
+		t.Fatalf("expected scalar overflow reward ground item %d to be registered", expectedVID)
+	}
+	account, err := accounts.Load("scalar-overflow-drop-killer")
+	if err != nil {
+		t.Fatalf("load scalar overflow reward account: %v", err)
+	}
+	if len(account.Characters) != 1 || account.Characters[0].Points[bootstrapExperiencePointType] != 1<<31-10 {
+		t.Fatalf("expected overflowing scalar reward to leave persisted EXP unchanged, got %+v", account.Characters)
+	}
+}
+
 func TestGameRuntimeScalarRewardSurvivesCollidingDropReward(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{

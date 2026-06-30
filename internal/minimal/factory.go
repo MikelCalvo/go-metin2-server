@@ -2858,37 +2858,40 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if resolution.DeathReward.Experience != 0 || resolution.DeathReward.Gold != 0 {
 							reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: resolution.DeathReward.Experience, Gold: resolution.DeathReward.Gold})
 							if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold > uint64(math.MaxInt32) || reward.Experience > uint64(math.MaxInt32) {
-								return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
-							}
-							updatedSelected := selectedPlayer.LiveCharacter()
-							persistedSelected := selectedPlayer.PersistedSnapshot()
-							persistedSelected.Gold = updatedSelected.Gold
-							persistedSelected.Points[bootstrapExperiencePointType] = updatedSelected.Points[bootstrapExperiencePointType]
-							updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
-							if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
 								selectedPlayer.SetLiveGold(previousSelected.Gold)
 								selectedPlayer.SetLivePoint(bootstrapExperiencePointType, previousSelected.Points[bootstrapExperiencePointType])
 								refreshLiveCharacterRegistration()
-								return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
-							}
-							sessionTicket.Characters = updatedCharacters
-							selectedPlayer.SetPersistedSnapshot(persistedSelected)
-							refreshLiveCharacterRegistration()
-							if reward.Experience != 0 {
-								frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-									VID:    previousSelected.VID,
-									Type:   bootstrapExperiencePointType,
-									Amount: int32(reward.Experience),
-									Value:  reward.ExperienceAfter,
-								}))
-							}
-							if reward.Gold != 0 {
-								frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-									VID:    previousSelected.VID,
-									Type:   bootstrapGoldPointType,
-									Amount: int32(reward.Gold),
-									Value:  int32(reward.GoldAfter),
-								}))
+							} else {
+								updatedSelected := selectedPlayer.LiveCharacter()
+								persistedSelected := selectedPlayer.PersistedSnapshot()
+								persistedSelected.Gold = updatedSelected.Gold
+								persistedSelected.Points[bootstrapExperiencePointType] = updatedSelected.Points[bootstrapExperiencePointType]
+								updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
+								if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+									selectedPlayer.SetLiveGold(previousSelected.Gold)
+									selectedPlayer.SetLivePoint(bootstrapExperiencePointType, previousSelected.Points[bootstrapExperiencePointType])
+									refreshLiveCharacterRegistration()
+									return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
+								}
+								sessionTicket.Characters = updatedCharacters
+								selectedPlayer.SetPersistedSnapshot(persistedSelected)
+								refreshLiveCharacterRegistration()
+								if reward.Experience != 0 {
+									frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+										VID:    previousSelected.VID,
+										Type:   bootstrapExperiencePointType,
+										Amount: int32(reward.Experience),
+										Value:  reward.ExperienceAfter,
+									}))
+								}
+								if reward.Gold != 0 {
+									frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+										VID:    previousSelected.VID,
+										Type:   bootstrapGoldPointType,
+										Amount: int32(reward.Gold),
+										Value:  int32(reward.GoldAfter),
+									}))
+								}
 							}
 						}
 						if len(rewardDrops) != 0 {

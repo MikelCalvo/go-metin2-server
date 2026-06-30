@@ -97,7 +97,8 @@ Current rules:
 - gold uses the bootstrap gold point type
 - each scalar reward is applied to the selected live player runtime first
 - the updated selected-character account snapshot is saved before the corresponding point-change frame is appended
-- if the player runtime rejects the scalar reward because the descriptor or resulting live values would overflow the signed 32-bit visible carriers, or if account persistence fails, the accepted death/clear frames remain, scalar reward frames are omitted, and the live EXP/gold scalar values stay at or roll back to their pre-reward values; other live runtime state such as the current in-world position must not be clobbered
+- if the player runtime rejects the scalar reward because the descriptor or resulting live values would overflow the signed 32-bit visible carriers, the accepted death/clear frames remain, scalar reward frames are omitted, the live EXP/gold scalar values stay at their pre-reward values, and independent valid drop rewards still continue through their normal ground-add / ownership path
+- if account persistence fails after a scalar reward was tentatively applied, the accepted death/clear frames remain, scalar reward frames are omitted, and the live EXP/gold scalar values roll back to their pre-reward values; other live runtime state such as the current in-world position must not be clobbered
 
 ## Drop rewards
 
