@@ -434,6 +434,23 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsPointChangeCarrierOverflow(
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundGoldRejectsZeroAmount(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ZeroGoldDropOwner", 0x01030196, 0x02040196, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected zero gold-drop owner join to allocate a shared-world entity id")
+	}
+
+	const groundVID uint32 = 0x0700000E
+	if registry.RegisterGroundGold(ownerID, "zero-gold-drop-owner", owner, groundVID, 0) {
+		t.Fatal("expected zero ground-gold amount to fail closed")
+	}
+	if registry.GroundItemExists(groundVID) {
+		t.Fatal("expected rejected zero ground-gold entry to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundGoldSkipsDeadVisiblePeers(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030191, 0x02040191, 1100, 2100, 0, 101, 201)
