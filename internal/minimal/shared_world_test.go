@@ -32355,6 +32355,88 @@ func TestGameRuntimeItemUseToItemFullStackMergeRemovesSourceItemQuickslot(t *tes
 	}
 }
 
+func TestGameRuntimeItemUseToItemPartialMergeDeletesTargetItemQuickslot(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OwnerPartialUseToItem", 0x01030146, 0x02040146, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1001, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 1002, Vnum: 27001, Count: 198, Slot: 6},
+	}
+	owner.Equipment = []inventory.ItemInstance{}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	issuePeerTicket(t, store, "owner-partial-use-to-item", 0x46464646, owner)
+	if err := accounts.Save(accountstore.Account{Login: "owner-partial-use-to-item", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partial use-to-item owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected partial use-to-item runtime error: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "owner-partial-use-to-item", 0x46464646)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) < 9 {
+		t.Fatalf("expected partial use-to-item owner bootstrap to emit item and quickslot frames, got %d", len(enterOut))
+	}
+
+	useToItemOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(6),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected partial item use-to-item error: %v", err)
+	}
+	if len(useToItemOut) != 3 {
+		t.Fatalf("expected source update + target update + target quickslot-del frames for partial use-to-item merge, got %d", len(useToItemOut))
+	}
+	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useToItemOut[0]))
+	if err != nil {
+		t.Fatalf("decode partial use-to-item source update: %v", err)
+	}
+	if sourceUpdate.Position != itemproto.InventoryPosition(5) || sourceUpdate.Count != 3 {
+		t.Fatalf("unexpected partial use-to-item source update: %+v", sourceUpdate)
+	}
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useToItemOut[1]))
+	if err != nil {
+		t.Fatalf("decode partial use-to-item target update: %v", err)
+	}
+	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 200 {
+		t.Fatalf("unexpected partial use-to-item target update: %+v", targetUpdate)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useToItemOut[2]))
+	if err != nil {
+		t.Fatalf("decode partial use-to-item target quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 4 {
+		t.Fatalf("expected target item quickslot position 4 to be deleted, got %+v", quickslotDel)
+	}
+
+	persisted, err := accounts.Load("owner-partial-use-to-item")
+	if err != nil {
+		t.Fatalf("load persisted account after partial use-to-item merge: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted owner after partial use-to-item merge, got %+v", persisted)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{
+		{ID: 1001, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1002, Vnum: 27001, Count: 200, Slot: 6},
+	}) {
+		t.Fatalf("unexpected persisted inventory after partial use-to-item merge: %#v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 6},
+	}) {
+		t.Fatalf("expected source item and non-item target quickslots to remain after partial use-to-item merge, got %#v", persisted.Characters[0].Quickslots)
+	}
+}
+
 func issuePeerTicket(t *testing.T, store loginticket.Store, login string, loginKey uint32, character loginticket.Character) {
 	t.Helper()
 	if err := store.Issue(loginticket.Ticket{Login: login, LoginKey: loginKey, Empire: character.Empire, Characters: []loginticket.Character{character}}); err != nil {
