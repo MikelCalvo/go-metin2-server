@@ -300,6 +300,23 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsZeroCount(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundItemRejectsCountAboveGetCarrier(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("WideCountDropOwner", 0x01030198, 0x02040198, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected wide-count drop owner join to allocate a shared-world entity id")
+	}
+
+	wideCountItem := inventory.ItemInstance{Vnum: 3001, Count: 256}
+	if registry.RegisterGroundItem(ownerID, "wide-count-drop-owner", owner, 0x07000010, wideCountItem) {
+		t.Fatal("expected ground item count above GC_ITEM_GET carrier to fail closed")
+	}
+	if registry.GroundItemExists(0x07000010) {
+		t.Fatal("expected rejected wide-count ground item to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsDeadOwner(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DeadDropOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
