@@ -283,14 +283,16 @@ Expected result:
 - occupied-to-empty swaps move the binding to the empty target position and persist after reconnect
 - empty-to-empty swaps fail closed: no quickslot refresh frame is visible, existing quickslot bindings remain, and reconnect shows no persisted change
 
-### 4.5.6 Drop and pick up a carried item (`ITEM_DROP` / `ITEM_PICKUP`)
+### 4.5.6 Drop and pick up a carried item or gold (`ITEM_DROP` / `ITEM_PICKUP`)
 
 - [ ] Drop a known template-backed carried item stack in a safe visible location
 - [ ] Pick up the same temporary ground handle while still in range
+- [ ] Drop a small amount of gold/elk through the client gold-drop path and, if QA tooling can vary the packed item position, repeat with a non-carried position while the gold amount is non-zero
 - [ ] If possible in the QA fixture, repeat with a deliberately missing, malformed, mismatched, or ground-count-over-template-`max_count` authored item-template/state fixture for that `vnum`
 
 Expected result:
 - valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, and shows the normal pickup notice
+- a non-zero gold/elk field follows the gold-drop path regardless of the packed item position: gold decreases, the carried inventory remains unchanged, and a gold ground marker appears
 - loaded drop template metadata whose carried stack already exceeds the authored `max_count` fails closed: no ground actor, no carried-slot deletion/update, and no quickslot mutation is visible
 - if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_DROP` / `ITEM_DROP2` fails closed with no ground actor, no carried-slot deletion/update, no quickslot mutation, and no persisted-state mutation
 - missing, malformed, mismatched, or ground-count-over-template-`max_count` authored pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry

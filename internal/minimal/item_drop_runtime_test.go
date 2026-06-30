@@ -2338,6 +2338,83 @@ func TestGameRuntimeItemDrop2WithGoldDropsCurrencyInsteadOfCountedItem(t *testin
 	}
 }
 
+func TestGameRuntimeGoldDropIgnoresItemPositionWhenGoldIsNonZero(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GoldPositionOwner", 0x0103019c, 0x0204019c, 1400, 2400, 0, 101, 201)
+	owner.Gold = 7000
+	owner.Inventory = []inventory.ItemInstance{{ID: 1102, Vnum: 27032, Count: 4, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "gold-position-owner", 0x9c9c9c9c, owner)
+	if err := accounts.Save(accountstore.Account{Login: "gold-position-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed gold position owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected gold-position runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "gold-position-owner", 0x9c9c9c9c)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.Position{WindowType: itemproto.WindowEquipment, Cell: itemproto.InventoryMaxCell}, Elk: 1500})))
+	if err != nil {
+		t.Fatalf("unexpected gold-position drop error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected gold-position drop to emit POINT_CHANGE, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
+	}
+	point, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode gold-position point change: %v", err)
+	}
+	if point != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: -1500, Value: 5500}) {
+		t.Fatalf("unexpected gold-position point change: %+v", point)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode gold-position ground add: %v", err)
+	}
+	if ground.VID == 0 || ground.Vnum != 1 || ground.X != owner.X || ground.Y != owner.Y || ground.Z != owner.Z {
+		t.Fatalf("unexpected gold-position ground add: %+v", ground)
+	}
+
+	account, err := accounts.Load("gold-position-owner")
+	if err != nil {
+		t.Fatalf("load gold position owner account: %v", err)
+	}
+	if account.Characters[0].Gold != 5500 {
+		t.Fatalf("expected persisted gold 5500 after position-independent drop, got %d", account.Characters[0].Gold)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected position-independent gold drop to leave inventory unchanged, got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+
+	out, err = flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.Position{WindowType: itemproto.WindowEquipment, Cell: itemproto.InventoryMaxCell}, Gold: 500, Count: 7})))
+	if err != nil {
+		t.Fatalf("unexpected gold-position drop2 error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected gold-position drop2 to emit POINT_CHANGE, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
+	}
+	point, err = worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode gold-position drop2 point change: %v", err)
+	}
+	if point != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: -500, Value: 5000}) {
+		t.Fatalf("unexpected gold-position drop2 point change: %+v", point)
+	}
+
+	account, err = accounts.Load("gold-position-owner")
+	if err != nil {
+		t.Fatalf("reload gold position owner account: %v", err)
+	}
+	if account.Characters[0].Gold != 5000 {
+		t.Fatalf("expected persisted gold 5000 after drop2, got %d", account.Characters[0].Gold)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected position-independent gold drop2 to leave inventory unchanged, got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+}
+
 func TestGameRuntimeItemPickupRejectsRestrictedSelfPickupWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

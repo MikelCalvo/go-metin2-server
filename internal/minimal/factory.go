@@ -2428,12 +2428,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()
-					if packet.Position.WindowType != itemproto.WindowInventory {
-						return gameflow.ItemDropResult{Accepted: false}
-					}
 					if packet.Elk != 0 {
 						frames, accepted := executeSelectedGoldDrop(packet.Elk)
 						return gameflow.ItemDropResult{Accepted: accepted, Frames: frames}
+					}
+					if packet.Position.WindowType != itemproto.WindowInventory {
+						return gameflow.ItemDropResult{Accepted: false}
 					}
 					frames, accepted := executeSelectedItemDrop(packet.Position.Cell, 0)
 					return gameflow.ItemDropResult{Accepted: accepted, Frames: frames}
@@ -2441,12 +2441,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				HandleItemDrop2: func(packet itemproto.ClientDrop2Packet) gameflow.ItemDrop2Result {
 					stateMu.Lock()
 					defer stateMu.Unlock()
-					if packet.Position.WindowType != itemproto.WindowInventory {
-						return gameflow.ItemDrop2Result{Accepted: false}
-					}
 					if packet.Gold != 0 {
 						frames, accepted := executeSelectedGoldDrop(packet.Gold)
 						return gameflow.ItemDrop2Result{Accepted: accepted, Frames: frames}
+					}
+					if packet.Position.WindowType != itemproto.WindowInventory {
+						return gameflow.ItemDrop2Result{Accepted: false}
 					}
 					frames, accepted := executeSelectedItemDrop(packet.Position.Cell, uint16(packet.Count))
 					return gameflow.ItemDrop2Result{Accepted: accepted, Frames: frames}

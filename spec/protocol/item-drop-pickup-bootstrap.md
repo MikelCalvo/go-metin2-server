@@ -128,7 +128,7 @@ For the first live runtime slice, accepted drops are self-facing and persistence
 
 The first gold-drop runtime slice owns the gold amount fields on `CG::ITEM_DROP` / `CG::ITEM_DROP2` as a bootstrap currency-only ground entry:
 
-1. If the packet gold/elk field is non-zero, the runtime treats the request as a gold drop and does not mutate the carried item slot/count field.
+1. If the packet gold/elk field is non-zero, the runtime treats the request as a gold drop and does not mutate the carried item slot/count field. For this currency-only bootstrap path, the packed item position is ignored after the non-zero currency field is selected, so equipment-window or otherwise non-carried positions still follow the gold-drop path rather than being rejected by carried-item validation.
 2. The selected player's live and persisted gold are decremented by the requested amount. Zero, over-balance, and out-of-range amounts fail closed with no response and no mutation.
 3. The selected session receives `GC::PLAYER_POINT_CHANGE` for point type `11` with the negative amount and updated gold total, then one `GC::ITEM_GROUND_ADD` at the selected character's current coordinates and `GC::ITEM_OWNERSHIP` naming the dropping character.
 4. The bootstrap ground-add `vnum` for gold is currently fixed to `1`, matching the first owned currency marker while richer client display/count semantics remain deferred.
