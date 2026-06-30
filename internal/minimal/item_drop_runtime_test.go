@@ -339,6 +339,56 @@ func TestGameRuntimeItemDropRejectsAntiSellTemplateWithoutMutation(t *testing.T)
 	}
 }
 
+func TestGameRuntimeItemDropRejectsLockedCarriedItemWithoutMutation(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		packet []byte
+	}{
+		{name: "drop", packet: itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})},
+		{name: "drop2", packet: itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 1})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("DropLocked", 0x0103019b, 0x0204019b, 1250, 2250, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: 1032, Vnum: 27001, Count: 5, Slot: 5, Locked: true}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			login := "drop-locked-" + tc.name
+			issuePeerTicket(t, ticketStore, login, 0x6b6b6b6b, owner)
+			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed locked drop account: %v", err)
+			}
+
+			runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+			if err != nil {
+				t.Fatalf("unexpected locked item-drop runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x6b6b6b6b)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, tc.packet))
+			if err != nil {
+				t.Fatalf("unexpected locked item drop error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected locked item drop to emit no frames, got %d", len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after locked drop rejection, got %d", len(queued))
+			}
+			account, err := accounts.Load(login)
+			if err != nil {
+				t.Fatalf("load locked drop account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("locked drop mutated inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("locked drop mutated quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemDropRejectsDuplicateSlotOccupancyWithoutMutation(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
