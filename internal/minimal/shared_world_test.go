@@ -14796,6 +14796,94 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDeathRew
 	}
 }
 
+func TestNewGameSessionFactoryPrefersExplicitDeathRewardOverRegisteredProfileDefault(t *testing.T) {
+	const profile = "explicit_reward_profile_runtime"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 4,
+		DamagePerNormalAttack: 2,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:           worldruntime.StaticActorDeathReward{Experience: 33, Gold: 44},
+	}) {
+		t.Fatalf("expected registered explicit reward profile %q to be accepted", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105022D, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105022D, Name: "ExplicitRewardProfileMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: profile,
+		CombatKind:    profile,
+		SpawnGroupRef: "practice.explicit_reward_profile_mob",
+		DeathReward:   worldruntime.StaticActorDeathReward{Experience: 11, Gold: 22},
+	}
+	killer := peerVisibilityCharacter("ExplicitRewardKiller", 0x0103012D, 0x0204012D, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 100
+	killer.Gold = 200
+	issuePeerTicket(t, store, "explicit-reward-killer", 0x2d2d2d2d, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "explicit-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed explicit reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_728, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, actor.DeathReward); !ok {
+		t.Fatal("expected explicit reward mob registration to succeed")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "explicit-reward-killer", 0x2d2d2d2d)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before explicit reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= 2; hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on explicit reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear target, explicit experience, and explicit gold frames, got %d", len(killOut))
+	}
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode explicit reward experience point change: %v", err)
+	}
+	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 11 || experienceChange.Value != 111 {
+		t.Fatalf("expected explicit experience reward to override profile default, got %+v", experienceChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode explicit reward gold point change: %v", err)
+	}
+	if goldChange.VID != killer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 22 || goldChange.Value != 222 {
+		t.Fatalf("expected explicit gold reward to override profile default, got %+v", goldChange)
+	}
+
+	account, err := accounts.Load("explicit-reward-killer")
+	if err != nil {
+		t.Fatalf("load explicit rewarded account: %v", err)
+	}
+	if got := account.Characters[0].Points[bootstrapExperiencePointType]; got != 111 {
+		t.Fatalf("expected explicit rewarded account experience point 111 after mob death, got %d", got)
+	}
+	if got := account.Characters[0].Gold; got != 222 {
+		t.Fatalf("expected explicit rewarded account gold 222 after mob death, got %d", got)
+	}
+}
+
 func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileDeathReward(t *testing.T) {
 	const profile = "formula_only_reward_profile_runtime"
 	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
