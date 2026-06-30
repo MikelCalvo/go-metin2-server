@@ -300,6 +300,22 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsZeroCount(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundItemRejectsZeroVnum(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ZeroVnumDropOwner", 0x01030199, 0x02040199, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected zero-vnum drop owner join to allocate a shared-world entity id")
+	}
+
+	if registry.RegisterGroundItem(ownerID, "zero-vnum-drop-owner", owner, 0x07000011, inventory.ItemInstance{Count: 1}) {
+		t.Fatal("expected zero-vnum ground item registration to fail closed")
+	}
+	if registry.GroundItemExists(0x07000011) {
+		t.Fatal("expected rejected zero-vnum ground item to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsCountAboveGetCarrier(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("WideCountDropOwner", 0x01030198, 0x02040198, 1200, 2200, 0, 101, 201)
