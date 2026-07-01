@@ -1549,7 +1549,7 @@ func (r *sharedWorldRegistry) VisibleStaticActorFrames(subject loginticket.Chara
 }
 
 func (r *sharedWorldRegistry) VisibleGroundItemFrames(subject loginticket.Character) [][]byte {
-	if r == nil || len(r.groundItemsByVID) == 0 {
+	if r == nil || len(r.groundItemsByVID) == 0 || characterAtBootstrapHPFloor(subject) {
 		return nil
 	}
 

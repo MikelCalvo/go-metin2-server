@@ -14728,6 +14728,26 @@ func TestSharedWorldRegistryGroundGoldPickupSkipsDeadOwnerDelivery(t *testing.T)
 	}
 }
 
+func TestSharedWorldRegistryVisibleGroundItemFramesRejectsDeadSubject(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("GroundOwner", 0x01030131, 0x02040131, 1100, 2100, 0, 101, 201)
+	deadSubject := peerVisibilityCharacter("DeadGroundSubject", 0x01030132, 0x02040132, 1120, 2120, 1, 102, 202)
+	deadSubject.Points[bootstrapPlayerPointValueIndex] = 0
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	deadSubjectID, _ := registry.Join(deadSubject, newPendingServerFrames(), nil)
+	if ownerID == 0 || deadSubjectID == 0 {
+		t.Fatalf("expected owner and dead subject to join shared world, got owner=%d subject=%d", ownerID, deadSubjectID)
+	}
+	if !registry.RegisterGroundItem(ownerID, "ground-owner-login", owner, 0x0A0B0C31, inventory.ItemInstance{ID: 1031, Vnum: 27001, Count: 1, Slot: 5}) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+
+	if frames := registry.VisibleGroundItemFrames(deadSubject); len(frames) != 0 {
+		t.Fatalf("expected dead subject to receive no visible ground-item rebootstrap frames, got %d", len(frames))
+	}
+}
+
 func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisibleTrainingDummy(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
