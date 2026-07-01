@@ -977,7 +977,7 @@ func sameGroundRewardCollectorLocation(registered loginticket.Character, supplie
 }
 
 func sameGroundRewardCharacterLocation(registered loginticket.Character, supplied loginticket.Character) bool {
-	return registered.MapIndex == supplied.MapIndex && registered.X == supplied.X && registered.Y == supplied.Y && registered.Z == supplied.Z
+	return registered.ID == supplied.ID && registered.VID == supplied.VID && registered.Name == supplied.Name && registered.MapIndex == supplied.MapIndex && registered.X == supplied.X && registered.Y == supplied.Y && registered.Z == supplied.Z
 }
 
 func (r *sharedWorldRegistry) groundItemVisibleToCharacterLocked(ground sharedGroundItem, character loginticket.Character) bool {
