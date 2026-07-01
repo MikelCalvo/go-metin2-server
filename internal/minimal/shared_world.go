@@ -969,6 +969,14 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 }
 
 func sameGroundRewardOwnerLocation(registered loginticket.Character, supplied loginticket.Character) bool {
+	return sameGroundRewardCharacterLocation(registered, supplied)
+}
+
+func sameGroundRewardCollectorLocation(registered loginticket.Character, supplied loginticket.Character) bool {
+	return sameGroundRewardCharacterLocation(registered, supplied)
+}
+
+func sameGroundRewardCharacterLocation(registered loginticket.Character, supplied loginticket.Character) bool {
 	return registered.MapIndex == supplied.MapIndex && registered.X == supplied.X && registered.Y == supplied.Y && registered.Z == supplied.Z
 }
 
@@ -1107,7 +1115,7 @@ func (r *sharedWorldRegistry) GroundItemVisibleTo(collectorID uint64, collector 
 	defer r.mu.Unlock()
 
 	registeredCollector, ok := r.playerCharacter(collectorID)
-	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) {
+	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) || !sameGroundRewardCollectorLocation(registeredCollector, collector) {
 		return inventory.ItemInstance{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
@@ -1126,7 +1134,7 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 	defer r.mu.Unlock()
 
 	registeredCollector, ok := r.playerCharacter(collectorID)
-	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) {
+	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) || !sameGroundRewardCollectorLocation(registeredCollector, collector) {
 		return sharedGroundItemPickup{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
@@ -1156,7 +1164,7 @@ func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector log
 	defer r.mu.Unlock()
 
 	registeredCollector, ok := r.playerCharacter(collectorID)
-	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) {
+	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) || !sameGroundRewardCollectorLocation(registeredCollector, collector) {
 		return false
 	}
 	ground, ok := r.groundItemsByVID[vid]
