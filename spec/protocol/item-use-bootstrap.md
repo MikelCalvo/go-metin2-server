@@ -9,7 +9,7 @@ The goal is intentionally narrow:
 
 It does **not** yet define the full legacy item-use surface.
 
-The authored item-template snapshot boundary that feeds this runtime path is documented separately in `item-template-store-bootstrap.md`. In particular, malformed snapshots and snapshots with unknown JSON fields fail closed rather than booting while silently ignoring unowned item metadata.
+The authored item-template snapshot boundary that feeds this runtime path is documented separately in `item-template-store-bootstrap.md`. In particular, malformed snapshots and snapshots with unknown JSON fields fail closed rather than booting while silently ignoring unowned item metadata. Durable account snapshots are likewise guarded on save: carried inventory and equipment item instances must validate, so zero-count or otherwise malformed persisted item state cannot be written back as an authoritative account snapshot.
 
 ## Scope
 

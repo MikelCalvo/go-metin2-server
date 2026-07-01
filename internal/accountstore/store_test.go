@@ -11,6 +11,23 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
 
+func TestFileStoreRejectsZeroCountInventoryItem(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	account := Account{
+		Login:  "mkmk",
+		Empire: 2,
+		Characters: []loginticket.Character{{
+			ID:        1,
+			Name:      "MkmkWar",
+			Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 0, Slot: 8}},
+		}},
+	}
+
+	if err := store.Save(account); err == nil {
+		t.Fatal("expected zero-count inventory item snapshot to be rejected")
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	want := Account{

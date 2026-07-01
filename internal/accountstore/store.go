@@ -16,6 +16,7 @@ var (
 	ErrStoreDirRequired = errors.New("account store dir is required")
 	ErrLoginRequired    = errors.New("account login is required")
 	ErrAccountNotFound  = errors.New("account not found")
+	ErrInvalidAccount   = errors.New("invalid account snapshot")
 )
 
 type Account struct {
@@ -77,6 +78,9 @@ func (s *FileStore) Save(account Account) error {
 		return ErrLoginRequired
 	}
 	account.Characters = normalizeAccountCharacters(account.Characters)
+	if err := validateAccount(account); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create account store dir: %w", err)
 	}
@@ -106,4 +110,20 @@ func (s *FileStore) accountPath(login string) string {
 	normalized := strings.ToLower(login)
 	filename := hex.EncodeToString([]byte(normalized)) + ".json"
 	return filepath.Join(s.dir, filename)
+}
+
+func validateAccount(account Account) error {
+	for _, character := range account.Characters {
+		for _, item := range character.Inventory {
+			if err := item.Validate(); err != nil {
+				return fmt.Errorf("%w: inventory item %d: %v", ErrInvalidAccount, item.ID, err)
+			}
+		}
+		for _, item := range character.Equipment {
+			if err := item.Validate(); err != nil {
+				return fmt.Errorf("%w: equipment item %d: %v", ErrInvalidAccount, item.ID, err)
+			}
+		}
+	}
+	return nil
 }
