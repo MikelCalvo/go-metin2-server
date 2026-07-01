@@ -459,6 +459,31 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleLiveOwnerSnapshotAf
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleOwnerLocationSnapshotAfterOwnerMoves(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("StaleLocationRewardOwner", 0x01030198, 0x02040198, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected reward owner join to allocate a shared-world entity id")
+	}
+	movedOwner := owner
+	movedOwner.MapIndex = 42
+	movedOwner.X = 5000
+	movedOwner.Y = 6000
+	movedOwner.Z = 7
+	registry.UpdateCharacter(ownerID, movedOwner)
+
+	if registry.RegisterGroundItem(ownerID, "stale-location-reward-owner", owner, 0x07000019, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+		t.Fatal("expected stale owner location ground-item registration to fail closed after registered owner moves")
+	}
+	if registry.RegisterGroundGold(ownerID, "stale-location-reward-owner", owner, 0x0700001A, 250) {
+		t.Fatal("expected stale owner location ground-gold registration to fail closed after registered owner moves")
+	}
+	if registry.GroundItemExists(0x07000019) || registry.GroundItemExists(0x0700001A) {
+		t.Fatal("expected rejected stale-location reward ground entries to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundGoldRejectsExistingVID(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030194, 0x02040194, 1200, 2200, 0, 101, 201)

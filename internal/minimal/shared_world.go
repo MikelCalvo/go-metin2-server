@@ -939,7 +939,7 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	defer r.mu.Unlock()
 
 	registeredOwner, ok := r.playerCharacter(ownerID)
-	if !ok || characterAtBootstrapHPFloor(registeredOwner) || characterAtBootstrapHPFloor(character) {
+	if !ok || characterAtBootstrapHPFloor(registeredOwner) || characterAtBootstrapHPFloor(character) || !sameGroundRewardOwnerLocation(registeredOwner, character) {
 		return false
 	}
 	if _, exists := r.groundItemsByVID[vid]; exists {
@@ -966,6 +966,10 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
 	}
 	return true
+}
+
+func sameGroundRewardOwnerLocation(registered loginticket.Character, supplied loginticket.Character) bool {
+	return registered.MapIndex == supplied.MapIndex && registered.X == supplied.X && registered.Y == supplied.Y && registered.Z == supplied.Z
 }
 
 func (r *sharedWorldRegistry) groundItemVisibleToCharacterLocked(ground sharedGroundItem, character loginticket.Character) bool {
