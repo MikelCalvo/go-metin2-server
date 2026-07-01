@@ -55,10 +55,10 @@ Reward descriptors fail closed when:
 - applying `reward_experience` or `reward_gold` would overflow the selected character's current signed 32-bit visible point / gold carrier
 - any `reward_drop_vnums` entry is `0`
 - any `reward_drop_vnums` entry is duplicated in the same descriptor
-- a runtime-generated ground-item VID for a configured drop would be `0`
-- a runtime-generated ground-item instance for a configured drop would have `vnum = 0`
-- a runtime-generated ground-item instance for a configured drop would have zero count
-- a runtime-generated ground-item instance for a configured drop would exceed the current `GC ITEM_GET` count carrier (`255`)
+- a runtime-generated ground-entry VID for a configured item-shaped or gold-shaped drop would be `0`
+- a runtime-generated ground-item instance for a configured item-shaped drop would have `vnum = 0`
+- a runtime-generated ground-item instance for a configured item-shaped drop would have zero count
+- a runtime-generated ground-item instance for a configured item-shaped drop would exceed the current `GC ITEM_GET` count carrier (`255`)
 - multiple drops in the same descriptor would collide on the generated ground-item VID
 - a configured drop would reuse an already-live ground-item VID
 

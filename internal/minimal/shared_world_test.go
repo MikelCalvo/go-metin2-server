@@ -517,6 +517,22 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsZeroAmount(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundGoldRejectsZeroVID(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ZeroVIDGoldDropOwner", 0x0103019b, 0x0204019b, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected zero-vid gold-drop owner join to allocate a shared-world entity id")
+	}
+
+	if registry.RegisterGroundGold(ownerID, "zero-vid-gold-drop-owner", owner, 0, 250) {
+		t.Fatal("expected zero-vid ground-gold registration to fail closed")
+	}
+	if registry.GroundItemExists(0) {
+		t.Fatal("expected rejected zero-vid ground-gold entry to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundGoldSkipsDeadVisiblePeers(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030191, 0x02040191, 1100, 2100, 0, 101, 201)
