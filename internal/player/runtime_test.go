@@ -1032,30 +1032,53 @@ func TestRuntimeUseItemOnItemRejectsZeroCountSourceOrTargetWithoutMutation(t *te
 	}
 }
 
-func TestRuntimeUseItemRejectsTemplateMaxAboveItemRefreshByteWithoutMutation(t *testing.T) {
-	persisted := loginticket.Character{
-		ID:        0x01030102,
-		VID:       0x02040102,
-		Name:      "WideMaxUsePeer",
-		Points:    [255]int32{1: 700},
-		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 2, Slot: 5}},
-		Quickslots: []loginticket.Quickslot{
-			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+func TestRuntimeUseItemRejectsMalformedStackEdgesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+		mutate    func(*itemcatalog.Template)
+	}{
+		{
+			name:      "zero-count live item",
+			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 0, Slot: 5}},
+		},
+		{
+			name:      "template max-count exceeds item refresh byte",
+			inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 2, Slot: 5}},
+			mutate: func(template *itemcatalog.Template) {
+				template.MaxCount = 256
+			},
 		},
 	}
-	runtime := NewRuntime(persisted, SessionLink{Login: "wide-max-use-peer", CharacterIndex: 1})
-	before := runtime.LiveCharacter()
-	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
-	template.MaxCount = 256
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "MalformedUsePeer",
+				Points:    [255]int32{1: 700},
+				Inventory: append([]inventory.ItemInstance(nil), tc.inventory...),
+				Quickslots: []loginticket.Quickslot{
+					{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "malformed-use-peer", CharacterIndex: 1})
+			before := runtime.LiveCharacter()
+			template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
+			if tc.mutate != nil {
+				tc.mutate(&template)
+			}
 
-	if result, ok := runtime.UseItem(5, template); ok {
-		t.Fatalf("expected over-refresh-byte max_count item use to fail closed, got %+v", result)
-	}
-	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
-		t.Fatalf("over-refresh-byte max_count item use mutated live character: got %#v want %#v", got, before)
-	}
-	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
-		t.Fatalf("over-refresh-byte max_count item use mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", got.Inventory, got.Quickslots, got.Points[1])
+			if result, ok := runtime.UseItem(5, template); ok {
+				t.Fatalf("expected %s item use to fail closed, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s item use mutated live character: got %#v want %#v", tc.name, got, before)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
+				t.Fatalf("%s item use mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", tc.name, got.Inventory, got.Quickslots, got.Points[1])
+			}
+		})
 	}
 }
 

@@ -148,7 +148,7 @@ The first consumable path must fail closed when any of these are true:
 - the slot's `vnum` does not resolve to a valid non-equippable item template with a valid `use_effect` for direct `ITEM_USE`; `ITEM_USE_TO_ITEM` reuses the template's stack metadata only and does not require or execute `use_effect`
 - the resolved template `vnum` does not match the live carried item `vnum`; the player mutation boundary treats mismatched template metadata as fail-closed for both direct `ITEM_USE` and `ITEM_USE_TO_ITEM`
 - the resolved template carries an authored `equip_slot`; for `ITEM_USE_TO_ITEM`, this is frozen by player-boundary and packet-path tests as a transfer guard even when source and target stacks otherwise match
-- the carried live item snapshot is malformed under the bootstrap item-instance validation rules
+- the carried live item snapshot is malformed under the bootstrap item-instance validation rules, including zero-count stacks
 - the carried live item is locked
 - the requested carried cell has duplicate live item occupancy
 - the carried live item stack count already exceeds the resolved template-authored `max_count`; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
