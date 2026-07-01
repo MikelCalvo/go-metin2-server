@@ -437,6 +437,25 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsDeadOwner(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundRewardsRejectsEmptyOwnerLogin(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("EmptyLoginRewardOwner", 0x01030194, 0x02040194, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected reward owner join to allocate a shared-world entity id")
+	}
+
+	if registry.RegisterGroundItem(ownerID, "", owner, 0x07000009, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+		t.Fatal("expected empty-login ground-item reward registration to fail closed")
+	}
+	if registry.RegisterGroundGold(ownerID, "", owner, 0x0700000A, 250) {
+		t.Fatal("expected empty-login ground-gold reward registration to fail closed")
+	}
+	if registry.GroundItemExists(0x07000009) || registry.GroundItemExists(0x0700000A) {
+		t.Fatal("expected rejected empty-login reward ground entries to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleLiveOwnerSnapshotAfterOwnerDeath(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("StaleLiveRewardOwner", 0x01030193, 0x02040193, 1200, 2200, 0, 101, 201)
