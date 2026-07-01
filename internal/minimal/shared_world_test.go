@@ -589,6 +589,8 @@ func TestSharedWorldRegistryRemoveGroundGoldQueuesDeleteForLivingPeers(t *testin
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030195, 0x02040195, 1100, 2100, 0, 101, 201)
 	livingPeer := peerVisibilityCharacter("LivingGoldPeer", 0x01030196, 0x02040196, 1200, 2200, 0, 102, 202)
+	deadPeer := peerVisibilityCharacter("DeadGoldPeer", 0x01030197, 0x02040197, 1250, 2250, 0, 103, 203)
+	deadPeer.Points[bootstrapPlayerPointValueIndex] = 0
 
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
 	if ownerID == 0 {
@@ -596,16 +598,20 @@ func TestSharedWorldRegistryRemoveGroundGoldQueuesDeleteForLivingPeers(t *testin
 	}
 	livingPending := newPendingServerFrames()
 	livingID, _ := registry.Join(livingPeer, livingPending, nil)
-	if livingID == 0 {
-		t.Fatal("expected living gold peer join to return a live shared-world entity ID")
+	deadPending := newPendingServerFrames()
+	deadID, _ := registry.Join(deadPeer, deadPending, nil)
+	if livingID == 0 || deadID == 0 {
+		t.Fatalf("expected living and dead gold peers to join, got living=%d dead=%d", livingID, deadID)
 	}
 	livingPending.flush()
+	deadPending.flush()
 
 	const groundVID uint32 = 0x0700000C
 	if !registry.RegisterGroundGold(ownerID, "gold-drop-owner", owner, groundVID, 250) {
 		t.Fatal("expected owner ground-gold registration to succeed")
 	}
 	livingPending.flush()
+	deadPending.flush()
 
 	if !registry.RemoveGroundItem(ownerID, owner, groundVID) {
 		t.Fatal("expected owner ground-gold removal to succeed through the shared ground-item path")
@@ -623,6 +629,9 @@ func TestSharedWorldRegistryRemoveGroundGoldQueuesDeleteForLivingPeers(t *testin
 	}
 	if groundDel.VID != groundVID {
 		t.Fatalf("unexpected living peer ground-gold delete: %+v", groundDel)
+	}
+	if deadQueued := deadPending.flush(); len(deadQueued) != 0 {
+		t.Fatalf("expected dead visible peer to receive no ground-gold delete frame, got %d", len(deadQueued))
 	}
 }
 
