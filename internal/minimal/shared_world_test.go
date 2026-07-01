@@ -14795,6 +14795,24 @@ func TestSharedWorldRegistryVisibleGroundItemFramesRejectsDeadSubject(t *testing
 	}
 }
 
+func TestSharedWorldRegistryVisibleStaticActorFramesRejectsDeadSubject(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	deadSubject := peerVisibilityCharacter("DeadStaticSubject", 0x01030133, 0x02040133, 1120, 2120, 1, 102, 202)
+	deadSubject.Points[bootstrapPlayerPointValueIndex] = 0
+	deadSubjectID, _ := registry.Join(deadSubject, newPendingServerFrames(), nil)
+	if deadSubjectID == 0 {
+		t.Fatal("expected dead subject to join shared world")
+	}
+	if _, ok := registry.RegisterStaticActor("Visible Static Actor", bootstrapMapIndex, 1140, 2140, 20350); !ok {
+		t.Fatal("expected visible static actor registration to succeed")
+	}
+
+	if frames := registry.VisibleStaticActorFrames(deadSubject); len(frames) != 0 {
+		t.Fatalf("expected dead subject to receive no visible static-actor rebootstrap frames, got %d", len(frames))
+	}
+}
+
 func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisibleTrainingDummy(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)

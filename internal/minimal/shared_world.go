@@ -1542,7 +1542,7 @@ func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
 }
 
 func (r *sharedWorldRegistry) VisibleStaticActorFrames(subject loginticket.Character) [][]byte {
-	if r == nil || r.entities == nil {
+	if r == nil || r.entities == nil || characterAtBootstrapHPFloor(subject) {
 		return nil
 	}
 
