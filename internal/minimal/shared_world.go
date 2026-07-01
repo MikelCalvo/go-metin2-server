@@ -1182,6 +1182,14 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 	visibilityDiff := scopes.RelocateVisibilityDiff(previous, current)
 	staticActorVisibilityDiff := scopes.RelocateStaticActorVisibilityDiff(previous, current)
 	groundItemVisibilityDiff := r.groundItemVisibilityDiffLocked(previous, current)
+	originAddedVisiblePeers := visibilityDiff.AddedVisiblePeers
+	originAddedVisibleStaticActors := staticActorVisibilityDiff.AddedVisibleActors
+	originAddedGroundItems := groundItemVisibilityDiff.Added
+	if characterAtBootstrapHPFloor(current) {
+		originAddedVisiblePeers = nil
+		originAddedVisibleStaticActors = nil
+		originAddedGroundItems = nil
+	}
 	_ = r.entities.UpdatePlayer(id, current)
 	r.lastKnownCharacters[id] = current
 
@@ -1215,9 +1223,9 @@ func (r *sharedWorldRegistry) UpdateCharacterWithVisibilityTransition(id uint64,
 		r.enqueueToCharacterLocked(peerCharacter, addedRaw)
 	}
 
-	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, visibilityDiff.AddedVisiblePeers)
-	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, staticActorVisibilityDiff.AddedVisibleActors)...)
-	originFrames = append(originFrames, buildGroundItemVisibilityTransitionFrames(groundItemVisibilityDiff.Removed, groundItemVisibilityDiff.Added)...)
+	originFrames := buildTransferOriginFrames(visibilityDiff.RemovedVisiblePeers, originAddedVisiblePeers)
+	originFrames = append(originFrames, r.buildStaticActorVisibilityTransitionFramesLocked(staticActorVisibilityDiff.RemovedVisibleActors, originAddedVisibleStaticActors)...)
+	originFrames = append(originFrames, buildGroundItemVisibilityTransitionFrames(groundItemVisibilityDiff.Removed, originAddedGroundItems)...)
 	if len(originFrames) == 0 {
 		return
 	}
