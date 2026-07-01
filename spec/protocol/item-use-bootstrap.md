@@ -145,9 +145,9 @@ This effect placeholder exists only because there is not yet an owned visual-eff
 
 The first consumable path must fail closed when any of these are true:
 - the slot is empty
-- the slot's `vnum` does not resolve to a valid non-equippable item template with a valid `use_effect`
+- the slot's `vnum` does not resolve to a valid non-equippable item template with a valid `use_effect` for direct `ITEM_USE`; `ITEM_USE_TO_ITEM` reuses the template's stack metadata only and does not require or execute `use_effect`
 - the resolved template `vnum` does not match the live carried item `vnum`; the player mutation boundary treats mismatched template metadata as fail-closed for both direct `ITEM_USE` and `ITEM_USE_TO_ITEM`
-- the resolved template carries an authored `equip_slot`
+- the resolved template carries an authored `equip_slot`; for `ITEM_USE_TO_ITEM`, this is frozen by player-boundary and packet-path tests as a transfer guard even when source and target stacks otherwise match
 - the carried live item snapshot is malformed under the bootstrap item-instance validation rules
 - the carried live item is locked
 - the requested carried cell has duplicate live item occupancy
@@ -156,7 +156,7 @@ The first consumable path must fail closed when any of these are true:
 - applying the template-authored `use_effect.point_delta` would overflow the current signed 32-bit point-value range exposed by the bootstrap `PLAYER_POINT_CHANGE` path; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - the resolved template carries an authored job/sex anti flag for the selected character
 - the resolved template carries an authored `min_level` above the selected character's current persisted `level`
-- the resolved template carries an authored `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` guard
+- the resolved template carries an authored `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` guard; for `ITEM_USE_TO_ITEM`, the packet path freezes these as no-frame/no-mutation transfer guards rather than chat-emitting drop/pickup policy
 - the item is not in carried inventory
 - the request uses any `TItemPos` outside the current carried-inventory-only subset
 - frame construction fails
