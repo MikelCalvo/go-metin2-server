@@ -469,6 +469,21 @@ func TestRegisterStaticActorCombatProfileRejectsInvalidDeathReward(t *testing.T)
 	}
 }
 
+func TestRegisterStaticActorCombatProfileRejectsDuplicateDeathRewardDropsBeforeCloneNormalization(t *testing.T) {
+	const profile = "practice_duplicate_reward_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		DeathReward:           StaticActorDeathReward{DropVnums: []uint32{27002, 27001, 27002}},
+	}) {
+		t.Fatalf("expected %q profile registration with duplicate reward drop vnums to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected duplicate reward profile %q not to become valid", profile)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileRejectsDuplicateName(t *testing.T) {
 	const profile = "practice_boar"
 	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{

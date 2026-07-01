@@ -133,6 +133,9 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	if !validStaticActorCombatProfileName(profile) {
 		return false
 	}
+	if !ValidStaticActorDeathReward(defaults.DeathReward) {
+		return false
+	}
 	hasLegacyDamage := defaults.DamagePerNormalAttack != 0
 	hasExplicitFormula := defaults.AttackValue != 0
 	if hasLegacyDamage && !hasExplicitFormula && uint32(defaults.DamagePerNormalAttack)+uint32(defaults.DefenseValue) > uint32(^uint16(0)) {
@@ -145,7 +148,7 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	if defaults.AttackValue > defaults.DefenseValue && defaults.AttackValue-defaults.DefenseValue > uint16(defaults.MaxHP) {
 		return false
 	}
-	if profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || defaults.AttackValue == 0 || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 || !ValidStaticActorDeathReward(defaults.DeathReward) {
+	if profile == StaticActorCombatKindTrainingDummy || profile == StaticActorCombatProfilePracticeMob || defaults.MaxHP == 0 || (!hasLegacyDamage && !hasExplicitFormula) || defaults.AttackValue == 0 || defaults.DamagePerNormalAttack == 0 || defaults.DamagePerNormalAttack > defaults.MaxHP || defaults.RespawnDelay <= 0 {
 		return false
 	}
 	staticActorCombatProfileRegistry.Lock()

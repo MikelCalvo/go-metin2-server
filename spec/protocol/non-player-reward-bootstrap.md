@@ -71,7 +71,8 @@ The descriptor validator itself owns the static authoring checks before runtime 
 - zero-valued drop vnums are rejected
 - duplicate drop vnums in one descriptor are rejected
 - multiple distinct fixed drop vnums in one descriptor are accepted
-- validated drop-vnum lists are normalized into ascending deterministic order and deduplicated when cloned into runtime/default snapshots, so later registration, lookup, update, respawn, and preview paths do not depend on authored JSON/list ordering or caller-side duplicate entries
+- validated drop-vnum lists are normalized into ascending deterministic order and deduplicated when cloned into runtime/default snapshots, so later lookup, update, respawn, and preview paths do not depend on authored JSON/list ordering or caller-side duplicate entries
+- registered combat-profile reward defaults are validated before clone normalization, so duplicate authored/default drop vnums still fail closed instead of being silently deduplicated during registration
 - file-backed static actor snapshots reject malformed spawn-group reward descriptors before loading or saving runtime state
 
 Malformed reward descriptors must not roll back the already-accepted combat death edge.
