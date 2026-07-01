@@ -3382,6 +3382,116 @@ func TestNewGameSessionFactoryItemMovePartialMergeKeepsSourceQuickslotStable(t *
 	}
 }
 
+func TestNewGameSessionFactoryItemUseToItemRejectsLockedSourceOrTargetWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name: "locked source",
+			inventory: []inventory.ItemInstance{
+				{ID: 11, Vnum: 27001, Count: 3, Slot: 5, Locked: true},
+				{ID: 12, Vnum: 27001, Count: 2, Slot: 8},
+			},
+		},
+		{
+			name: "locked target",
+			inventory: []inventory.ItemInstance{
+				{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 12, Vnum: 27001, Count: 2, Slot: 8, Locked: true},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			characters := stubCharacters()
+			characters[1].Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			characters[1].Quickslots = []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeItem, Slot: 8},
+			}
+			if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+				t.Fatalf("save account: %v", err)
+			}
+			if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+				t.Fatalf("issue login ticket: %v", err)
+			}
+			flow := newStartedGameFlow(t, store, accounts)
+
+			mergeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+				Source: itemproto.InventoryPosition(5),
+				Target: itemproto.InventoryPosition(8),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected locked %s use-to-item error: %v", tc.name, err)
+			}
+			if len(mergeOut) != 0 {
+				t.Fatalf("expected locked %s use-to-item to fail closed with no frames, got %d", tc.name, len(mergeOut))
+			}
+			account, err := accounts.Load(StubLogin)
+			if err != nil {
+				t.Fatalf("load persisted account: %v", err)
+			}
+			if !reflect.DeepEqual(account.Characters[1].Inventory, characters[1].Inventory) {
+				t.Fatalf("unexpected persisted inventory after locked %s use-to-item attempt: %#v", tc.name, account.Characters[1].Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[1].Quickslots, characters[1].Quickslots) {
+				t.Fatalf("unexpected persisted quickslots after locked %s use-to-item attempt: %#v", tc.name, account.Characters[1].Quickslots)
+			}
+		})
+	}
+}
+
+func TestNewGameSessionFactoryItemUseToItemRejectsNonStackableTemplateWithoutMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 1, Slot: 5},
+		{ID: 12, Vnum: 27001, Count: 1, Slot: 8},
+	}
+	characters[1].Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 8},
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	itemTemplates := staticItemTemplateStore{snapshot: itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Non-Stackable Potion-Like Item",
+		Stackable: false,
+		MaxCount:  1,
+	}}}}
+	flow := newStartedGameFlowWithItemStore(t, store, accounts, itemTemplates)
+
+	mergeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+		Source: itemproto.InventoryPosition(5),
+		Target: itemproto.InventoryPosition(8),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected non-stackable use-to-item error: %v", err)
+	}
+	if len(mergeOut) != 0 {
+		t.Fatalf("expected non-stackable use-to-item to fail closed with no frames, got %d", len(mergeOut))
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Inventory, characters[1].Inventory) {
+		t.Fatalf("unexpected persisted inventory after non-stackable use-to-item attempt: %#v", account.Characters[1].Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[1].Quickslots, characters[1].Quickslots) {
+		t.Fatalf("unexpected persisted quickslots after non-stackable use-to-item attempt: %#v", account.Characters[1].Quickslots)
+	}
+}
+
 func TestNewGameSessionFactoryItemUseToItemRejectsAuthoredSexAntiFlagWithoutMutation(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
