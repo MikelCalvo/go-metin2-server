@@ -600,15 +600,15 @@ func TestStaticActorDeathRewardCloneCopiesDropVnums(t *testing.T) {
 	}
 }
 
-func TestStaticActorDeathRewardCloneSortsDropVnumsDeterministically(t *testing.T) {
-	reward := StaticActorDeathReward{DropVnums: []uint32{27003, 27001, 27002}}
+func TestStaticActorDeathRewardCloneSortsAndDeduplicatesDropVnumsDeterministically(t *testing.T) {
+	reward := StaticActorDeathReward{DropVnums: []uint32{27003, 27001, 27002, 27001, 27003}}
 	cloned := reward.Clone()
 
 	if len(cloned.DropVnums) != 3 || cloned.DropVnums[0] != 27001 || cloned.DropVnums[1] != 27002 || cloned.DropVnums[2] != 27003 {
-		t.Fatalf("expected cloned drop list to be sorted deterministically, got %+v", cloned.DropVnums)
+		t.Fatalf("expected cloned drop list to be sorted and deduplicated deterministically, got %+v", cloned.DropVnums)
 	}
-	if reward.DropVnums[0] != 27003 || reward.DropVnums[1] != 27001 || reward.DropVnums[2] != 27002 {
-		t.Fatalf("expected sorting clone to leave source order unchanged, got %+v", reward.DropVnums)
+	if reward.DropVnums[0] != 27003 || reward.DropVnums[1] != 27001 || reward.DropVnums[2] != 27002 || reward.DropVnums[3] != 27001 || reward.DropVnums[4] != 27003 {
+		t.Fatalf("expected normalizing clone to leave source order unchanged, got %+v", reward.DropVnums)
 	}
 }
 

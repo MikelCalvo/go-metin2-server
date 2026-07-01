@@ -82,6 +82,15 @@ func (r StaticActorDeathReward) Clone() StaticActorDeathReward {
 		sort.Slice(cloned.DropVnums, func(i int, j int) bool {
 			return cloned.DropVnums[i] < cloned.DropVnums[j]
 		})
+		write := 0
+		for _, vnum := range cloned.DropVnums {
+			if write > 0 && cloned.DropVnums[write-1] == vnum {
+				continue
+			}
+			cloned.DropVnums[write] = vnum
+			write++
+		}
+		cloned.DropVnums = cloned.DropVnums[:write]
 	}
 	return cloned
 }
