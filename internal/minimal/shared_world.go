@@ -931,7 +931,7 @@ func (r *sharedWorldRegistry) RegisterGroundGold(ownerID uint64, ownerLogin stri
 }
 
 func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32) bool {
-	if r == nil || ownerID == 0 || ownerLogin == "" || vid == 0 || item.Vnum == 0 {
+	if r == nil || ownerID == 0 || strings.TrimSpace(ownerLogin) == "" || vid == 0 || item.Vnum == 0 {
 		return false
 	}
 

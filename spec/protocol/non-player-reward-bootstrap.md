@@ -56,7 +56,7 @@ Reward descriptors fail closed when:
 - any `reward_drop_vnums` entry is `0`
 - any `reward_drop_vnums` entry is duplicated in the same descriptor
 - a runtime-generated ground-entry VID for a configured item-shaped or gold-shaped drop would be `0`
-- the reward owner login is empty when registering a configured item-shaped or gold-shaped drop
+- the reward owner login is empty or blank after trimming whitespace when registering a configured item-shaped or gold-shaped drop
 - a runtime-generated ground-item instance for a configured item-shaped drop would have `vnum = 0`
 - a runtime-generated ground-item instance for a configured item-shaped drop would have zero count
 - a runtime-generated ground-item instance for a configured item-shaped drop would exceed the current `GC ITEM_GET` count carrier (`255`)
@@ -137,7 +137,7 @@ Current rules:
 - replayed pickup of the same ground VID fails closed after the first successful pickup removes it
 - ground pickup removal now uses the same bootstrap reachability gate as pickup lookup: a collector who can see the ground reward but is outside the current pickup radius cannot remove it, and the ground entry remains available to reachable living sessions
 - when a connected owner leaves the shared world, currently owned reward ground entries are removed with deterministic `ITEM_GROUND_DEL` fanout to living visible peers; connected peers already at the bootstrap `0`-HP floor are skipped for both the owner leave visibility delete and owned-ground delete noise
-- gold-shaped ground rewards use the same live ground-entry lifecycle as item-shaped drops: empty owner-login metadata, zero amounts, and amounts above the signed 32-bit `PLAYER_POINT_CHANGE` carrier range fail closed before registration, duplicate `VID` registration fails closed without replacing the original amount, and removal queues the same `ITEM_GROUND_DEL` visibility cleanup to living visible peers
+- gold-shaped ground rewards use the same live ground-entry lifecycle as item-shaped drops: empty or blank owner-login metadata, zero amounts, and amounts above the signed 32-bit `PLAYER_POINT_CHANGE` carrier range fail closed before registration, duplicate `VID` registration fails closed without replacing the original amount, and removal queues the same `ITEM_GROUND_DEL` visibility cleanup to living visible peers
 
 ## Respawn / lifecycle ownership
 
