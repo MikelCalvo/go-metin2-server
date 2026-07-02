@@ -527,6 +527,27 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsBlankOwnerName(t *testin
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundRewardsRejectsPaddedOwnerMetadata(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("PaddedNameRewardOwner", 0x010301a2, 0x020401a2, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected padded-metadata reward owner join to allocate a shared-world entity id")
+	}
+
+	paddedNameOwner := owner
+	paddedNameOwner.Name = " PaddedNameRewardOwner "
+	if registry.RegisterGroundItem(ownerID, "padded-metadata-owner", paddedNameOwner, 0x07000023, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+		t.Fatal("expected padded owner-name ground-item reward registration to fail closed")
+	}
+	if registry.RegisterGroundGold(ownerID, " padded-metadata-owner ", owner, 0x07000024, 250) {
+		t.Fatal("expected padded owner-login ground-gold reward registration to fail closed")
+	}
+	if registry.GroundItemExists(0x07000023) || registry.GroundItemExists(0x07000024) {
+		t.Fatal("expected rejected padded-metadata reward ground entries to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleLiveOwnerSnapshotAfterOwnerDeath(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("StaleLiveRewardOwner", 0x01030193, 0x02040193, 1200, 2200, 0, 101, 201)

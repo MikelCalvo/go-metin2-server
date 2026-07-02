@@ -56,8 +56,8 @@ Reward descriptors fail closed when:
 - any `reward_drop_vnums` entry is `0`
 - any `reward_drop_vnums` entry is duplicated in the same descriptor
 - a runtime-generated ground-entry VID for a configured item-shaped or gold-shaped drop would be `0`
-- the reward owner login is empty or blank after trimming whitespace when registering a configured item-shaped or gold-shaped drop
-- the reward owner character name is empty or blank after trimming whitespace when registering a configured item-shaped or gold-shaped drop
+- the reward owner login is empty, blank after trimming whitespace, or padded with leading/trailing whitespace when registering a configured item-shaped or gold-shaped drop
+- the reward owner character name is empty, blank after trimming whitespace, or padded with leading/trailing whitespace when registering a configured item-shaped or gold-shaped drop
 - a runtime-generated ground-item instance for a configured item-shaped drop would have `vnum = 0`
 - a runtime-generated ground-item instance for a configured item-shaped drop would have zero count
 - a runtime-generated ground-item instance for a configured item-shaped drop would exceed the current `GC ITEM_GET` count carrier (`255`)
