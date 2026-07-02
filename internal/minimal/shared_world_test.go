@@ -348,6 +348,23 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsEquippedItem(t *testing.T) 
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundItemRejectsUnequippedEquipSlotMetadata(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("EquipSlotMetadataGroundOwner", 0x0103019d, 0x0204019d, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected equip-slot metadata ground-item owner join to allocate a shared-world entity id")
+	}
+
+	item := inventory.ItemInstance{Vnum: 3001, Count: 1, EquipSlot: inventory.EquipmentSlotWeapon}
+	if registry.RegisterGroundItem(ownerID, "equip-slot-metadata-ground-owner", owner, 0x07000014, item) {
+		t.Fatal("expected unequipped ground item with equip-slot metadata to fail closed")
+	}
+	if registry.GroundItemExists(0x07000014) {
+		t.Fatal("expected rejected equip-slot metadata ground item to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsZeroVID(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("ZeroVIDDropOwner", 0x0103019a, 0x0204019a, 1200, 2200, 0, 101, 201)

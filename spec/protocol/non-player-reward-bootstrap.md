@@ -61,6 +61,7 @@ Reward descriptors fail closed when:
 - a runtime-generated ground-item instance for a configured item-shaped drop would have `vnum = 0`
 - a runtime-generated ground-item instance for a configured item-shaped drop would have zero count
 - a runtime-generated ground-item instance for a configured item-shaped drop would exceed the current `GC ITEM_GET` count carrier (`255`)
+- a runtime-generated ground-item instance for a configured item-shaped drop would carry equipped/locked state or stale equipment-slot metadata
 - multiple drops in the same descriptor would collide on the generated ground-item VID
 - a configured drop would reuse an already-live ground-item VID
 
