@@ -916,7 +916,7 @@ func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visib
 
 func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance) bool {
 	const maxItemGetCountCarrier = uint16(^uint8(0))
-	if item.Vnum == 0 || item.Count == 0 || item.Count > maxItemGetCountCarrier {
+	if item.Vnum == 0 || item.Count == 0 || item.Count > maxItemGetCountCarrier || item.Locked {
 		return false
 	}
 	return r.registerGroundItem(ownerID, ownerLogin, character, vid, item, 0)

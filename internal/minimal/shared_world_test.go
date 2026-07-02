@@ -316,6 +316,22 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsZeroVnum(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundItemRejectsLockedItem(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("LockedGroundOwner", 0x0103019b, 0x0204019b, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected locked ground-item owner join to allocate a shared-world entity id")
+	}
+
+	if registry.RegisterGroundItem(ownerID, "locked-ground-owner", owner, 0x07000012, inventory.ItemInstance{Vnum: 3001, Count: 1, Locked: true}) {
+		t.Fatal("expected locked ground item registration to fail closed")
+	}
+	if registry.GroundItemExists(0x07000012) {
+		t.Fatal("expected rejected locked ground item to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsZeroVID(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("ZeroVIDDropOwner", 0x0103019a, 0x0204019a, 1200, 2200, 0, 101, 201)
