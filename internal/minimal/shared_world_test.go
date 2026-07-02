@@ -372,8 +372,9 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsUnequippedItemWithEquipSlot
 		t.Fatal("expected equip-slot ground-item owner join to allocate a shared-world entity id")
 	}
 
-	if registry.RegisterGroundItem(ownerID, "equip-slot-ground-owner", owner, 0x07000014, inventory.ItemInstance{Vnum: 3001, Count: 1, EquipSlot: inventory.EquipmentSlotWeapon}) {
-		t.Fatal("expected unequipped ground item with equip slot metadata to fail closed")
+	item := inventory.ItemInstance{Vnum: 3001, Count: 1, EquipSlot: inventory.EquipmentSlotWeapon}
+	if registry.RegisterGroundItem(ownerID, "equip-slot-ground-owner", owner, 0x07000014, item) {
+		t.Fatal("expected unequipped ground item with equip-slot metadata to fail closed")
 	}
 	if registry.GroundItemExists(0x07000014) {
 		t.Fatal("expected rejected equip-slot ground item to stay absent")
