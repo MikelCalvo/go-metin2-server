@@ -50,16 +50,18 @@ type sharedWorldRegistry struct {
 }
 
 type sharedGroundItem struct {
-	VID        uint32
-	OwnerID    uint64
-	OwnerLogin string
-	OwnerName  string
-	Item       inventory.ItemInstance
-	GoldAmount uint32
-	MapIndex   uint32
-	X          int32
-	Y          int32
-	Z          int32
+	VID              uint32
+	OwnerID          uint64
+	OwnerLogin       string
+	OwnerCharacterID uint32
+	OwnerVID         uint32
+	OwnerName        string
+	Item             inventory.ItemInstance
+	GoldAmount       uint32
+	MapIndex         uint32
+	X                int32
+	Y                int32
+	Z                int32
 }
 
 type sharedGroundItemPickup struct {
@@ -946,16 +948,18 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 		return false
 	}
 	ground := sharedGroundItem{
-		VID:        vid,
-		OwnerID:    ownerID,
-		OwnerLogin: ownerLogin,
-		OwnerName:  character.Name,
-		Item:       item,
-		GoldAmount: goldAmount,
-		MapIndex:   r.topology.EffectiveMapIndex(character),
-		X:          character.X,
-		Y:          character.Y,
-		Z:          character.Z,
+		VID:              vid,
+		OwnerID:          ownerID,
+		OwnerLogin:       ownerLogin,
+		OwnerCharacterID: character.ID,
+		OwnerVID:         character.VID,
+		OwnerName:        character.Name,
+		Item:             item,
+		GoldAmount:       goldAmount,
+		MapIndex:         r.topology.EffectiveMapIndex(character),
+		X:                character.X,
+		Y:                character.Y,
+		Z:                character.Z,
 	}
 	r.groundItemsByVID[vid] = ground
 	frames := encodeGroundItemVisibleFrames(ground)
@@ -1145,7 +1149,7 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 	var ownerCharacter loginticket.Character
 	if ground.OwnerID != 0 && ground.OwnerID != collectorID {
 		owner, ok := r.entities.Player(ground.OwnerID)
-		if ok && !characterAtBootstrapHPFloor(owner.Character) && r.topology.SharesVisibleWorld(collector, owner.Character) {
+		if ok && !characterAtBootstrapHPFloor(owner.Character) && groundItemOwnerStillMatches(ground, owner.Character) && r.topology.SharesVisibleWorld(collector, owner.Character) {
 			ownerCharacter = owner.Character
 			if ownerName == "" {
 				ownerName = owner.Character.Name
@@ -1153,6 +1157,10 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 		}
 	}
 	return sharedGroundItemPickup{Item: ground.Item, GoldAmount: ground.GoldAmount, OwnerID: ground.OwnerID, OwnerLogin: ground.OwnerLogin, OwnerName: ownerName, Owner: ownerCharacter}, true
+}
+
+func groundItemOwnerStillMatches(ground sharedGroundItem, owner loginticket.Character) bool {
+	return owner.ID == ground.OwnerCharacterID && owner.VID == ground.OwnerVID && owner.Name == ground.OwnerName && owner.MapIndex == ground.MapIndex && owner.X == ground.X && owner.Y == ground.Y && owner.Z == ground.Z
 }
 
 func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector loginticket.Character, vid uint32) bool {

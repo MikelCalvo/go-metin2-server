@@ -651,6 +651,36 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleOwnerIdentitySnapsh
 	}
 }
 
+func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerIdentityChanges(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("IdentityPickupOwner", 0x010301aa, 0x020401aa, 1200, 2200, 0, 101, 201)
+	collector := peerVisibilityCharacter("OwnerIdentityCollector", 0x010301ab, 0x020401ab, 1220, 2220, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatal("expected owner and collector joins to allocate shared-world entity ids")
+	}
+	const groundVID uint32 = 0x07000028
+	if !registry.RegisterGroundItem(ownerID, "identity-pickup-owner", owner, groundVID, inventory.ItemInstance{ID: 0x30010004, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected owner ground-item registration to succeed")
+	}
+	updatedOwner := owner
+	updatedOwner.Name = "FreshIdentityPickupOwner"
+	updatedOwner.VID = 0x020401ac
+	registry.UpdateCharacter(ownerID, updatedOwner)
+
+	pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID)
+	if !ok {
+		t.Fatal("expected collector pickup resolution to remain available")
+	}
+	if pickup.Owner.ID != 0 || pickup.Owner.Name != "" {
+		t.Fatalf("expected owner delivery to be withheld after owner identity changes, got %+v", pickup.Owner)
+	}
+	if pickup.OwnerName != owner.Name {
+		t.Fatalf("expected display ownership name to remain %q, got %q", owner.Name, pickup.OwnerName)
+	}
+}
+
 func TestSharedWorldRegistryGroundRewardPickupRejectsStaleCollectorIdentitySnapshot(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("IdentityPickupOwner", 0x0103019d, 0x0204019d, 1200, 2200, 0, 101, 201)
