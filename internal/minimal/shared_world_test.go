@@ -669,17 +669,45 @@ func TestSharedWorldRegistryGroundRewardPickupRejectsStaleCollectorIdentitySnaps
 	updatedCollector.VID = 0x0204019f
 	registry.UpdateCharacter(collectorID, updatedCollector)
 
+	assertGroundRewardPickupRejectedForCollectorSnapshot(t, registry, collectorID, collector, groundVID, "stale collector identity snapshot")
+}
+
+func TestSharedWorldRegistryGroundRewardPickupRejectsStaleCollectorLocationSnapshot(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("LocationPickupOwner", 0x010301a3, 0x020401a3, 1200, 2200, 0, 101, 201)
+	collector := peerVisibilityCharacter("StaleLocationCollector", 0x010301a4, 0x020401a4, 1220, 2220, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatal("expected owner and collector joins to allocate shared-world entity ids")
+	}
+	const groundVID uint32 = 0x07000025
+	if !registry.RegisterGroundItem(ownerID, "location-pickup-owner", owner, groundVID, inventory.ItemInstance{ID: 0x30010003, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected owner ground-item registration to succeed")
+	}
+	movedCollector := collector
+	movedCollector.MapIndex = 42
+	movedCollector.X = 5000
+	movedCollector.Y = 6000
+	movedCollector.Z = 9
+	registry.UpdateCharacter(collectorID, movedCollector)
+
+	assertGroundRewardPickupRejectedForCollectorSnapshot(t, registry, collectorID, collector, groundVID, "stale collector location snapshot")
+}
+
+func assertGroundRewardPickupRejectedForCollectorSnapshot(t *testing.T, registry *sharedWorldRegistry, collectorID uint64, collector loginticket.Character, groundVID uint32, reason string) {
+	t.Helper()
 	if _, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); ok {
-		t.Fatal("expected stale collector identity snapshot ground visibility to fail closed")
+		t.Fatalf("expected %s ground visibility to fail closed", reason)
 	}
 	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
-		t.Fatal("expected stale collector identity snapshot pickup resolution to fail closed")
+		t.Fatalf("expected %s pickup resolution to fail closed", reason)
 	}
 	if registry.RemoveGroundItem(collectorID, collector, groundVID) {
-		t.Fatal("expected stale collector identity snapshot removal to fail closed")
+		t.Fatalf("expected %s removal to fail closed", reason)
 	}
 	if !registry.GroundItemExists(groundVID) {
-		t.Fatal("expected rejected stale-collector pickup/remove to leave ground item registered")
+		t.Fatalf("expected rejected %s pickup/remove to leave ground item registered", reason)
 	}
 }
 
