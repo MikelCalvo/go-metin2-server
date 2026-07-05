@@ -263,7 +263,7 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsExistingVID(t *testing.T) {
 	owner := peerVisibilityCharacter("DropOwner", 0x01030190, 0x02040190, 1200, 2200, 0, 101, 201)
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
 
-	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	item := inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}
 	if !registry.RegisterGroundItem(ownerID, "drop-owner", owner, 0x07000001, item) {
 		t.Fatal("expected first ground item registration to succeed")
 	}
@@ -271,7 +271,7 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsExistingVID(t *testing.T) {
 		t.Fatal("expected first ground item to remain registered")
 	}
 
-	duplicate := inventory.ItemInstance{Vnum: 3002, Count: 1}
+	duplicate := inventory.ItemInstance{ID: 0x30020001, Vnum: 3002, Count: 1}
 	if registry.RegisterGroundItem(ownerID, "drop-owner", owner, 0x07000001, duplicate) {
 		t.Fatal("expected duplicate ground item VID registration to fail closed")
 	}
@@ -313,6 +313,22 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsZeroVnum(t *testing.T) {
 	}
 	if registry.GroundItemExists(0x07000011) {
 		t.Fatal("expected rejected zero-vnum ground item to stay absent")
+	}
+}
+
+func TestSharedWorldRegistryRegisterGroundItemRejectsZeroItemID(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ZeroItemIDDropOwner", 0x0103019e, 0x0204019e, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected zero-item-id drop owner join to allocate a shared-world entity id")
+	}
+
+	if registry.RegisterGroundItem(ownerID, "zero-item-id-drop-owner", owner, 0x07000015, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+		t.Fatal("expected zero-item-id ground item registration to fail closed")
+	}
+	if registry.GroundItemExists(0x07000015) {
+		t.Fatal("expected rejected zero-item-id ground item to stay absent")
 	}
 }
 
@@ -372,7 +388,7 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsZeroVID(t *testing.T) {
 		t.Fatal("expected zero-vid drop owner join to allocate a shared-world entity id")
 	}
 
-	if registry.RegisterGroundItem(ownerID, "zero-vid-drop-owner", owner, 0, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if registry.RegisterGroundItem(ownerID, "zero-vid-drop-owner", owner, 0, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected zero-vid ground item registration to fail closed")
 	}
 	if registry.GroundItemExists(0) {
@@ -407,7 +423,7 @@ func TestSharedWorldRegistryRegisterGroundItemRejectsDeadOwner(t *testing.T) {
 		t.Fatal("expected dead owner join to return a live shared-world entity ID")
 	}
 
-	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	item := inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}
 	if registry.RegisterGroundItem(ownerID, "dead-drop-owner", owner, 0x07000002, item) {
 		t.Fatal("expected dead owner ground item registration to fail closed")
 	}
@@ -440,7 +456,7 @@ func TestSharedWorldRegistryRegisterGroundItemSkipsDeadVisiblePeers(t *testing.T
 	livingPending.flush()
 	deadPending.flush()
 
-	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	item := inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}
 	if !registry.RegisterGroundItem(ownerID, "drop-owner", owner, 0x07000004, item) {
 		t.Fatal("expected owner ground item registration to succeed")
 	}
@@ -493,7 +509,7 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsEmptyOwnerLogin(t *testi
 		t.Fatal("expected reward owner join to allocate a shared-world entity id")
 	}
 
-	if registry.RegisterGroundItem(ownerID, "", owner, 0x07000009, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if registry.RegisterGroundItem(ownerID, "", owner, 0x07000009, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected empty-login ground-item reward registration to fail closed")
 	}
 	if registry.RegisterGroundGold(ownerID, "", owner, 0x0700000A, 250) {
@@ -512,7 +528,7 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsBlankOwnerLogin(t *testi
 		t.Fatal("expected blank-login reward owner join to allocate a shared-world entity id")
 	}
 
-	if registry.RegisterGroundItem(ownerID, "   ", owner, 0x0700001F, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if registry.RegisterGroundItem(ownerID, "   ", owner, 0x0700001F, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected blank-login ground-item reward registration to fail closed")
 	}
 	if registry.RegisterGroundGold(ownerID, "\t", owner, 0x07000020, 250) {
@@ -532,7 +548,7 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsBlankOwnerName(t *testin
 		t.Fatal("expected blank-name reward owner join to allocate a shared-world entity id")
 	}
 
-	if registry.RegisterGroundItem(ownerID, "blank-name-reward-owner", owner, 0x07000021, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if registry.RegisterGroundItem(ownerID, "blank-name-reward-owner", owner, 0x07000021, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected blank-name ground-item reward registration to fail closed")
 	}
 	if registry.RegisterGroundGold(ownerID, "blank-name-reward-owner", owner, 0x07000022, 250) {
@@ -553,7 +569,7 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsPaddedOwnerMetadata(t *t
 
 	paddedNameOwner := owner
 	paddedNameOwner.Name = " PaddedNameRewardOwner "
-	if registry.RegisterGroundItem(ownerID, "padded-metadata-owner", paddedNameOwner, 0x07000023, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if registry.RegisterGroundItem(ownerID, "padded-metadata-owner", paddedNameOwner, 0x07000023, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected padded owner-name ground-item reward registration to fail closed")
 	}
 	if registry.RegisterGroundGold(ownerID, " padded-metadata-owner ", owner, 0x07000024, 250) {
@@ -575,7 +591,7 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleLiveOwnerSnapshotAf
 	deadOwner.Points[bootstrapPlayerPointValueIndex] = 0
 	registry.UpdateCharacter(ownerID, deadOwner)
 
-	if registry.RegisterGroundItem(ownerID, "stale-live-reward-owner", owner, 0x07000007, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if registry.RegisterGroundItem(ownerID, "stale-live-reward-owner", owner, 0x07000007, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected stale live owner snapshot ground-item registration to fail closed after registered owner death")
 	}
 	if registry.RegisterGroundGold(ownerID, "stale-live-reward-owner", owner, 0x07000008, 250) {
@@ -600,7 +616,7 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleOwnerLocationSnapsh
 	movedOwner.Z = 7
 	registry.UpdateCharacter(ownerID, movedOwner)
 
-	if registry.RegisterGroundItem(ownerID, "stale-location-reward-owner", owner, 0x07000019, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if registry.RegisterGroundItem(ownerID, "stale-location-reward-owner", owner, 0x07000019, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected stale owner location ground-item registration to fail closed after registered owner moves")
 	}
 	if registry.RegisterGroundGold(ownerID, "stale-location-reward-owner", owner, 0x0700001A, 250) {
@@ -623,7 +639,7 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleOwnerIdentitySnapsh
 	updatedOwner.VID = 0x0204019d
 	registry.UpdateCharacter(ownerID, updatedOwner)
 
-	if registry.RegisterGroundItem(ownerID, "stale-identity-reward-owner", owner, 0x0700001B, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if registry.RegisterGroundItem(ownerID, "stale-identity-reward-owner", owner, 0x0700001B, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected stale owner identity ground-item registration to fail closed after registered owner identity changes")
 	}
 	if registry.RegisterGroundGold(ownerID, "stale-identity-reward-owner", owner, 0x0700001C, 250) {
@@ -644,7 +660,7 @@ func TestSharedWorldRegistryGroundRewardPickupRejectsStaleCollectorIdentitySnaps
 		t.Fatal("expected owner and collector joins to allocate shared-world entity ids")
 	}
 	const groundVID uint32 = 0x0700001D
-	if !registry.RegisterGroundItem(ownerID, "identity-pickup-owner", owner, groundVID, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if !registry.RegisterGroundItem(ownerID, "identity-pickup-owner", owner, groundVID, inventory.ItemInstance{ID: 0x30010002, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected owner ground-item registration to succeed")
 	}
 	updatedCollector := collector
@@ -860,7 +876,7 @@ func TestSharedWorldRegistryRemoveGroundItemSkipsDeadVisiblePeers(t *testing.T) 
 	livingPending.flush()
 	deadPending.flush()
 
-	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	item := inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}
 	const groundVID uint32 = 0x07000005
 	if !registry.RegisterGroundItem(ownerID, "drop-owner", owner, groundVID, item) {
 		t.Fatal("expected owner ground item registration to succeed")
@@ -907,7 +923,7 @@ func TestSharedWorldRegistryLeaveRemovesOwnedGroundItemsAndSkipsDeadVisiblePeers
 
 	const firstGroundVID uint32 = 0x07000009
 	const secondGroundVID uint32 = 0x0700000A
-	if !registry.RegisterGroundItem(ownerID, "leaving-drop-owner", owner, firstGroundVID, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if !registry.RegisterGroundItem(ownerID, "leaving-drop-owner", owner, firstGroundVID, inventory.ItemInstance{ID: 0x30010003, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected first owner ground item registration to succeed")
 	}
 	if !registry.RegisterGroundGold(ownerID, "leaving-drop-owner", owner, secondGroundVID, 500) {
@@ -965,7 +981,7 @@ func TestSharedWorldRegistryTransferSkipsDestinationGroundItemsForDeadRecipient(
 	deadPending.flush()
 
 	groundVID := uint32(0x07000007)
-	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	item := inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}
 	if !registry.RegisterGroundItem(ownerID, "ground-owner", owner, groundVID, item) {
 		t.Fatal("expected owner ground item registration to succeed")
 	}
@@ -1045,7 +1061,7 @@ func TestSharedWorldRegistryUpdateCharacterSkipsDestinationGroundItemsForDeadRec
 	deadPending.flush()
 
 	groundVID := uint32(0x07000012)
-	item := inventory.ItemInstance{Vnum: 3001, Count: 1}
+	item := inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}
 	if !registry.RegisterGroundItem(ownerID, "ground-update-owner", owner, groundVID, item) {
 		t.Fatal("expected owner ground item registration to succeed")
 	}
@@ -8739,7 +8755,7 @@ func TestGameRuntimeDropRewardCollisionFailsClosedWithoutDuplicateGroundItem(t *
 		t.Fatal("expected killer to join shared world before pre-registering colliding drop")
 	}
 	sharedWorldID := playerEntity.Entity.ID
-	if !runtime.sharedWorld.RegisterGroundItem(sharedWorldID, "colliding-reward-killer", killer, collisionVID, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if !runtime.sharedWorld.RegisterGroundItem(sharedWorldID, "colliding-reward-killer", killer, collisionVID, inventory.ItemInstance{ID: 0x30010004, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected pre-existing colliding ground item registration to succeed")
 	}
 	targetVID := uint32(actor.Entity.ID)
@@ -8818,7 +8834,7 @@ func TestGameRuntimeDropRewardCollisionSkipsOnlyCollidingDrop(t *testing.T) {
 		t.Fatal("expected killer to join shared world before pre-registering colliding drop")
 	}
 	sharedWorldID := playerEntity.Entity.ID
-	if !runtime.sharedWorld.RegisterGroundItem(sharedWorldID, "partial-collision-killer", killer, collidingVID, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if !runtime.sharedWorld.RegisterGroundItem(sharedWorldID, "partial-collision-killer", killer, collidingVID, inventory.ItemInstance{ID: 0x30010005, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected pre-existing partial-collision ground item registration to succeed")
 	}
 	targetVID := uint32(actor.Entity.ID)
@@ -9079,7 +9095,7 @@ func TestGameRuntimeScalarRewardSurvivesCollidingDropReward(t *testing.T) {
 		t.Fatal("expected killer to join shared world before pre-registering colliding drop")
 	}
 	sharedWorldID := playerEntity.Entity.ID
-	if !runtime.sharedWorld.RegisterGroundItem(sharedWorldID, "scalar-collision-killer", killer, collisionVID, inventory.ItemInstance{Vnum: 3001, Count: 1}) {
+	if !runtime.sharedWorld.RegisterGroundItem(sharedWorldID, "scalar-collision-killer", killer, collisionVID, inventory.ItemInstance{ID: 0x30010006, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected pre-existing scalar collision ground item registration to succeed")
 	}
 	targetVID := uint32(actor.Entity.ID)
