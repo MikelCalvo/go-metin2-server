@@ -80,6 +80,47 @@ func TestNonPlayerDirectoryLookupPrunesStaleVisibilityVID(t *testing.T) {
 	}
 }
 
+func TestNonPlayerDirectoryRegisterPrunesOrphanedVisibilityVIDConflict(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	directory.entityIDByVID[7] = 999
+
+	actor := StaticEntity{
+		Entity:   Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected static actor registration to prune orphaned VID conflict")
+	}
+	lookup, ok := directory.ByVID(7)
+	if !ok || lookup.Entity.ID != actor.Entity.ID || lookup.Entity.Name != actor.Entity.Name {
+		t.Fatalf("expected current visibility VID lookup after orphan prune, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
+func TestNonPlayerDirectoryUpdatePrunesOrphanedVisibilityVIDConflict(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:   Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  uint32(^uint16(0)) + 1,
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected non-encodable static actor registration to succeed")
+	}
+	directory.entityIDByVID[7] = 999
+
+	updated := actor
+	updated.RaceNum = 20300
+	if !directory.Update(updated) {
+		t.Fatal("expected static actor update to prune orphaned VID conflict")
+	}
+	lookup, ok := directory.ByVID(7)
+	if !ok || lookup.Entity.ID != actor.Entity.ID || lookup.RaceNum != 20300 {
+		t.Fatalf("expected current visibility VID lookup after update orphan prune, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestNonPlayerDirectoryUpdateReplacesStaticActorByEntityID(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{

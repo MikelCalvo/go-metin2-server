@@ -102,6 +102,7 @@ This slice does not yet freeze:
   - if a bad partial-teardown or repair path leaves duplicate map-bucket presence for the same static actor entity ID, later register, in-place update, or remove must prune all stale map buckets before inserting the new effective-map presence or reporting final removal; map occupancy must never keep ghost static actors for the same entity ID on older maps
   - if a stale visibility-VID index entry survives for the same static actor entity ID, later registration or in-place update must prune the stale VID before inserting the actor's current encodable visibility VID; removal must prune every visibility VID alias for the removed entity ID; visible-VID lookup must never keep an old alias for the same static actor after registration, update repair, or removal
   - if a stale visibility-VID index entry points at a missing static actor entity ID, a later `ByVID` lookup must prune that orphaned index entry before failing closed; visible-VID lookup must not keep returning through stale non-player directory aliases after partial teardown
+  - if that orphaned visibility-VID entry would otherwise conflict with later registration or in-place update of the real actor for that VID, the non-player directory must prune the orphan and allow the current actor to claim the VID; only live conflicting actor ownership should fail closed
 - inter-channel ownership
 
 ## Success definition for the next slice

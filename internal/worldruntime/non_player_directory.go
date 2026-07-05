@@ -22,7 +22,7 @@ func (d *NonPlayerDirectory) Register(actor StaticEntity) bool {
 	if _, ok := d.byEntityID[actor.Entity.ID]; ok {
 		return false
 	}
-	if vid, ok := StaticActorVisibilityVID(actor); ok && conflictingEntityID(d.entityIDByVID, vid, actor.Entity.ID) {
+	if vid, ok := StaticActorVisibilityVID(actor); ok && d.conflictingVisibilityVID(vid, actor.Entity.ID) {
 		return false
 	}
 	d.removeVisibilityVIDsForEntityID(actor.Entity.ID)
@@ -65,7 +65,7 @@ func (d *NonPlayerDirectory) Update(actor StaticEntity) bool {
 	if _, ok := d.byEntityID[actor.Entity.ID]; !ok {
 		return false
 	}
-	if vid, ok := StaticActorVisibilityVID(actor); ok && conflictingEntityID(d.entityIDByVID, vid, actor.Entity.ID) {
+	if vid, ok := StaticActorVisibilityVID(actor); ok && d.conflictingVisibilityVID(vid, actor.Entity.ID) {
 		return false
 	}
 	d.removeVisibilityVIDsForEntityID(actor.Entity.ID)
@@ -98,6 +98,18 @@ func (d *NonPlayerDirectory) removeVisibilityVIDsForEntityID(entityID uint64) {
 			delete(d.entityIDByVID, vid)
 		}
 	}
+}
+
+func (d *NonPlayerDirectory) conflictingVisibilityVID(vid uint32, entityID uint64) bool {
+	indexedEntityID, ok := d.entityIDByVID[vid]
+	if !ok || indexedEntityID == entityID {
+		return false
+	}
+	if _, exists := d.byEntityID[indexedEntityID]; exists {
+		return true
+	}
+	delete(d.entityIDByVID, vid)
+	return false
 }
 
 func (d *NonPlayerDirectory) StaticActors() []StaticEntity {
