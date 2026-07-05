@@ -15119,9 +15119,12 @@ func TestSharedWorldRegistryVisibleGroundItemFramesRejectsDeadSubject(t *testing
 	if !registry.RegisterGroundItem(ownerID, "ground-owner-login", owner, 0x0A0B0C31, inventory.ItemInstance{ID: 1031, Vnum: 27001, Count: 1, Slot: 5}) {
 		t.Fatal("expected owner ground item registration to succeed")
 	}
+	if !registry.RegisterGroundGold(ownerID, "ground-owner-login", owner, 0x0A0B0C32, 350) {
+		t.Fatal("expected owner ground gold registration to succeed")
+	}
 
 	if frames := registry.VisibleGroundItemFrames(deadSubject); len(frames) != 0 {
-		t.Fatalf("expected dead subject to receive no visible ground-item rebootstrap frames, got %d", len(frames))
+		t.Fatalf("expected dead subject to receive no visible ground-item or ground-gold rebootstrap frames, got %d", len(frames))
 	}
 }
 
