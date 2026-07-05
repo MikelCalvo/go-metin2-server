@@ -695,6 +695,29 @@ func TestSharedWorldRegistryGroundRewardPickupRejectsStaleCollectorLocationSnaps
 	assertGroundRewardPickupRejectedForCollectorSnapshot(t, registry, collectorID, collector, groundVID, "stale collector location snapshot")
 }
 
+func TestSharedWorldRegistryGroundGoldRewardPickupRejectsStaleCollectorLocationSnapshot(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("LocationGoldPickupOwner", 0x010301a5, 0x020401a5, 1200, 2200, 0, 101, 201)
+	collector := peerVisibilityCharacter("StaleLocationGoldCollector", 0x010301a6, 0x020401a6, 1220, 2220, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatal("expected owner and collector joins to allocate shared-world entity ids")
+	}
+	const groundVID uint32 = 0x07000026
+	if !registry.RegisterGroundGold(ownerID, "location-gold-pickup-owner", owner, groundVID, 250) {
+		t.Fatal("expected owner ground-gold registration to succeed")
+	}
+	movedCollector := collector
+	movedCollector.MapIndex = 42
+	movedCollector.X = 5000
+	movedCollector.Y = 6000
+	movedCollector.Z = 9
+	registry.UpdateCharacter(collectorID, movedCollector)
+
+	assertGroundRewardPickupRejectedForCollectorSnapshot(t, registry, collectorID, collector, groundVID, "stale collector location gold snapshot")
+}
+
 func assertGroundRewardPickupRejectedForCollectorSnapshot(t *testing.T, registry *sharedWorldRegistry, collectorID uint64, collector loginticket.Character, groundVID uint32, reason string) {
 	t.Helper()
 	if _, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); ok {
