@@ -85,9 +85,7 @@ func (d *NonPlayerDirectory) Remove(entityID uint64) (StaticEntity, bool) {
 		return StaticEntity{}, false
 	}
 	delete(d.byEntityID, entityID)
-	if vid, ok := StaticActorVisibilityVID(actor); ok {
-		delete(d.entityIDByVID, vid)
-	}
+	d.removeVisibilityVIDsForEntityID(entityID)
 	return cloneStaticEntity(actor), true
 }
 

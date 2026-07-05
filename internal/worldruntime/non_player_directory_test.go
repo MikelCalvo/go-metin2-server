@@ -159,6 +159,30 @@ func TestNonPlayerDirectoryUpdateClearsStaleVisibilityVIDsForSameEntityID(t *tes
 	}
 }
 
+func TestNonPlayerDirectoryRemoveClearsStaleVisibilityVIDsForSameEntityID(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:   Entity{ID: 14, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	directory.entityIDByVID[99] = actor.Entity.ID
+
+	removed, ok := directory.Remove(actor.Entity.ID)
+	if !ok || removed.Entity.ID != actor.Entity.ID {
+		t.Fatalf("expected static actor remove to return VillageGuard, got actor=%+v ok=%v", removed, ok)
+	}
+	if _, exists := directory.entityIDByVID[99]; exists {
+		t.Fatal("expected stale visibility VID index to be cleared immediately after remove")
+	}
+	if _, exists := directory.entityIDByVID[14]; exists {
+		t.Fatal("expected current visibility VID index to be cleared immediately after remove")
+	}
+}
+
 func TestNonPlayerDirectoryPreservesCombatProfileOnRegisterAndUpdate(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
