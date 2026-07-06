@@ -307,6 +307,13 @@ func (r *gameRuntime) CharacterVisibility() []CharacterVisibilitySnapshot {
 	return r.sharedWorld.CharacterVisibility()
 }
 
+func (r *gameRuntime) CombatTargetSnapshots() []CombatTargetSnapshot {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	return r.sharedWorld.CombatTargetSnapshots()
+}
+
 func (r *gameRuntime) InteractionVisibility() []CharacterInteractionVisibilitySnapshot {
 	if r == nil || r.sharedWorld == nil {
 		return nil

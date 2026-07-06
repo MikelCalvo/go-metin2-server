@@ -697,6 +697,38 @@ func (r *sharedWorldRegistry) CombatTargetSnapshot(entityID uint64) (CombatTarge
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	return r.combatTargetSnapshotLocked(entityID)
+}
+
+func (r *sharedWorldRegistry) CombatTargetSnapshots() []CombatTargetSnapshot {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.sessionCombatTargets) == 0 {
+		return nil
+	}
+	entityIDs := make([]uint64, 0, len(r.sessionCombatTargets))
+	for entityID := range r.sessionCombatTargets {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i, j int) bool { return entityIDs[i] < entityIDs[j] })
+
+	snapshots := make([]CombatTargetSnapshot, 0, len(entityIDs))
+	for _, entityID := range entityIDs {
+		snapshot, ok := r.combatTargetSnapshotLocked(entityID)
+		if !ok {
+			continue
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots
+}
+
+func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (CombatTargetSnapshot, bool) {
 	targetVID, ok := r.sessionCombatTargets[entityID]
 	if !ok || targetVID == 0 {
 		return CombatTargetSnapshot{}, false

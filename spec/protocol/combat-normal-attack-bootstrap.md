@@ -124,17 +124,18 @@ So the first owned target-state surface is now intentionally tiny but expressive
 
 ## Runtime combat-target snapshot
 
-The runtime now also owns one read-only selected-combat-target snapshot for local/debug callers.
-It is not a new client packet and does not replace the existing self-only `GC TARGET` wire surface.
+The runtime now also owns read-only selected-combat-target snapshots for local/debug callers.
+They are not new client packets and do not replace the existing self-only `GC TARGET` wire surface.
 
-For a live shared-world session with an active selected static-actor combat target, the snapshot reports:
+For a live shared-world session with an active selected static-actor combat target, each snapshot reports:
 - `subject_entity_id`
 - `target_vid`
 - the target `snapshot_version` captured from runtime combat ownership
 - current target `hp_percent`
 - the same compact static-actor snapshot shape used by local static-actor/visibility introspection
 
-The snapshot fails closed when the subject is missing, no target is selected, the selected target is no longer visible, or the selected actor no longer has owned bootstrap combat HP semantics.
+The per-subject snapshot fails closed when the subject is missing, no target is selected, the selected target is no longer visible, or the selected actor no longer has owned bootstrap combat HP semantics.
+The aggregate runtime snapshot skips those invalid/stale entries and returns active selections in deterministic `subject_entity_id` order.
 This gives later loopback/operator surfaces a stable read-only seam without granting stale sockets or global actor lookups a new authoritative combat path.
 
 ## Relationship to later HP / death work

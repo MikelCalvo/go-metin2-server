@@ -15629,6 +15629,76 @@ func TestSharedWorldRegistryCombatTargetSnapshotReportsSelectedPracticeMob(t *te
 	}
 }
 
+func TestSharedWorldRegistryCombatTargetSnapshotsReportsDeterministicActiveSelections(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	firstSubject := peerVisibilityCharacter("FirstSubject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	secondSubject := peerVisibilityCharacter("SecondSubject", 0x01030102, 0x02040102, 1110, 2110, 1, 101, 201)
+	firstSubjectID, _ := registry.Join(firstSubject, newPendingServerFrames(), nil)
+	secondSubjectID, _ := registry.Join(secondSubject, newPendingServerFrames(), nil)
+	if firstSubjectID == 0 || secondSubjectID == 0 {
+		t.Fatalf("expected both subjects to join, got first=%d second=%d", firstSubjectID, secondSubjectID)
+	}
+	firstActor, ok := registry.RegisterStaticActorWithCombatKind(0, "FirstPracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected first practice-mob registration to succeed")
+	}
+	secondActor, ok := registry.RegisterStaticActorWithCombatKind(0, "SecondPracticeMob", bootstrapMapIndex, 1210, 2210, 20351, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected second practice-mob registration to succeed")
+	}
+	secondAttempt := registry.AttemptStaticActorCombatTarget(secondSubjectID, uint32(secondActor.EntityID))
+	if !secondAttempt.Accepted || !registry.SetSessionCombatTarget(secondSubjectID, secondAttempt.TargetVID) {
+		t.Fatalf("expected second subject target selection to be recorded, got %+v", secondAttempt)
+	}
+	firstAttempt := registry.AttemptStaticActorCombatTarget(firstSubjectID, uint32(firstActor.EntityID))
+	if !firstAttempt.Accepted || !registry.SetSessionCombatTarget(firstSubjectID, firstAttempt.TargetVID) {
+		t.Fatalf("expected first subject target selection to be recorded, got %+v", firstAttempt)
+	}
+
+	snapshots := registry.CombatTargetSnapshots()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected two active combat target snapshots, got %d: %+v", len(snapshots), snapshots)
+	}
+	if snapshots[0].SubjectEntityID != firstSubjectID || snapshots[0].TargetVID != uint32(firstActor.EntityID) {
+		t.Fatalf("expected first deterministic snapshot to describe first subject/actor, got %+v", snapshots[0])
+	}
+	if snapshots[1].SubjectEntityID != secondSubjectID || snapshots[1].TargetVID != uint32(secondActor.EntityID) {
+		t.Fatalf("expected second deterministic snapshot to describe second subject/actor, got %+v", snapshots[1])
+	}
+	if snapshots[0].Actor.Name != "FirstPracticeMob" || snapshots[1].Actor.Name != "SecondPracticeMob" {
+		t.Fatalf("unexpected active combat target actors: %+v", snapshots)
+	}
+}
+
+func TestGameRuntimeCombatTargetSnapshotsReportsActiveSelections(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("SnapshotAttacker", 0x01030103, 0x02040103, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "snapshot-attacker", 0x33333333, attacker)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "SnapshotPracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected practice-mob registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "snapshot-attacker", 0x33333333)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.EntityID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before runtime snapshot to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+
+	snapshots := runtime.CombatTargetSnapshots()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one runtime combat target snapshot, got %d: %+v", len(snapshots), snapshots)
+	}
+	if snapshots[0].TargetVID != targetVID || snapshots[0].HPPercent != 100 || snapshots[0].Actor.Name != "SnapshotPracticeMob" {
+		t.Fatalf("unexpected runtime combat target snapshot: %+v", snapshots[0])
+	}
+}
+
 func TestSharedWorldRegistryRegisterSpawnGroupActorWithPracticeMobProfileIsCombatTargetable(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
