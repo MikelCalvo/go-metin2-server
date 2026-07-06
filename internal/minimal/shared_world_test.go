@@ -15512,11 +15512,11 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisibleTrainin
 	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
 	if subjectID == 0 {
-		t.Fatal("expected subject join to return a live shared-world entity ID")
+		t.Fatal("expected subject join to return a shared-world entity ID")
 	}
 	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
 	if !ok {
-		t.Fatal("expected visible training-dummy registration to succeed")
+		t.Fatal("expected training dummy registration to succeed")
 	}
 
 	attempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
@@ -15529,7 +15529,7 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisibleTrainin
 	if attempt.TargetVID != uint32(actor.EntityID) {
 		t.Fatalf("expected combat-target attempt target VID %#08x, got %#08x", uint32(actor.EntityID), attempt.TargetVID)
 	}
-	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "TrainingDummy" {
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != actor.Name || attempt.HPPercent != 100 || attempt.SnapshotVersion == 0 {
 		t.Fatalf("unexpected resolved training-dummy combat-target attempt: %+v", attempt)
 	}
 }
