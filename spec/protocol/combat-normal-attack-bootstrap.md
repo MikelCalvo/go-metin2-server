@@ -35,6 +35,7 @@ This contract currently applies only to:
 - one currently visible in-range non-player actor still marked as `training_dummy`
 - one immediate attack-intent request against that already selected target
 - one tiny target-refresh surface that can still describe `current target`, `updated hp percent`, or `no active target`
+- one read-only runtime snapshot of the session's current selected combat target for local/debug surfaces
 
 This contract does **not** yet claim:
 - the full gameplay meaning of every non-zero `attack_type` value beyond the first narrow bootstrap ownership boundary
@@ -120,6 +121,21 @@ So the first owned target-state surface is now intentionally tiny but expressive
 1. `TARGET(target_vid > 0, hp_percent = 100)` — selected live dummy with fresh full bootstrap HP on first owned selection
 2. `TARGET(target_vid > 0, hp_percent = updated)` — same selected dummy after accepted bootstrap attack-driven HP changes
 3. `TARGET(0, 0)` — selected target cleared or no longer valid
+
+## Runtime combat-target snapshot
+
+The runtime now also owns one read-only selected-combat-target snapshot for local/debug callers.
+It is not a new client packet and does not replace the existing self-only `GC TARGET` wire surface.
+
+For a live shared-world session with an active selected static-actor combat target, the snapshot reports:
+- `subject_entity_id`
+- `target_vid`
+- the target `snapshot_version` captured from runtime combat ownership
+- current target `hp_percent`
+- the same compact static-actor snapshot shape used by local static-actor/visibility introspection
+
+The snapshot fails closed when the subject is missing, no target is selected, the selected target is no longer visible, or the selected actor no longer has owned bootstrap combat HP semantics.
+This gives later loopback/operator surfaces a stable read-only seam without granting stale sockets or global actor lookups a new authoritative combat path.
 
 ## Relationship to later HP / death work
 

@@ -124,6 +124,14 @@ type StaticActorCombatTargetAttempt struct {
 	Actor           StaticActorSnapshot
 }
 
+type CombatTargetSnapshot struct {
+	SubjectEntityID uint64              `json:"subject_entity_id"`
+	TargetVID       uint32              `json:"target_vid"`
+	SnapshotVersion uint64              `json:"snapshot_version"`
+	HPPercent       uint8               `json:"hp_percent"`
+	Actor           StaticActorSnapshot `json:"actor"`
+}
+
 type StaticActorCombatAttackAttempt struct {
 	Accepted                    bool
 	Failure                     string
@@ -679,6 +687,45 @@ func (r *sharedWorldRegistry) SetSessionCombatTarget(entityID uint64, targetVID 
 	}
 	r.setSessionCombatTargetLocked(entityID, targetVID)
 	return true
+}
+
+func (r *sharedWorldRegistry) CombatTargetSnapshot(entityID uint64) (CombatTargetSnapshot, bool) {
+	if r == nil || entityID == 0 {
+		return CombatTargetSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	targetVID, ok := r.sessionCombatTargets[entityID]
+	if !ok || targetVID == 0 {
+		return CombatTargetSnapshot{}, false
+	}
+	subject, ok := r.playerCharacter(entityID)
+	if !ok {
+		return CombatTargetSnapshot{}, false
+	}
+	actor, ok := r.scopesLocked().VisibleStaticActorByVID(subject, targetVID)
+	if !ok || actor.Entity.ID == 0 {
+		return CombatTargetSnapshot{}, false
+	}
+	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok {
+		return CombatTargetSnapshot{}, false
+	}
+	hpPercent, ok := worldruntime.BootstrapStaticActorHPPercent(actor.CombatKind, currentHP)
+	if !ok {
+		return CombatTargetSnapshot{}, false
+	}
+	actorSnapshot := staticActorSnapshot(r.topology, actor)
+	actorSnapshot.Dead = currentHP == 0
+	return CombatTargetSnapshot{
+		SubjectEntityID: entityID,
+		TargetVID:       targetVID,
+		SnapshotVersion: r.staticActorCombatSnapshot[actor.Entity.ID],
+		HPPercent:       hpPercent,
+		Actor:           actorSnapshot,
+	}, true
 }
 
 func (r *sharedWorldRegistry) ClearSessionCombatTarget(entityID uint64) {

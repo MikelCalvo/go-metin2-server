@@ -15597,6 +15597,38 @@ func TestSharedWorldRegistryAttemptStaticActorCombatTargetResolvesVisiblePractic
 	}
 }
 
+func TestSharedWorldRegistryCombatTargetSnapshotReportsSelectedPracticeMob(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected visible practice-mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected practice-mob combat-target selection to succeed, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target selection to be recorded")
+	}
+
+	snapshot, ok := registry.CombatTargetSnapshot(subjectID)
+	if !ok {
+		t.Fatal("expected selected combat target snapshot to be reported")
+	}
+	if snapshot.SubjectEntityID != subjectID || snapshot.TargetVID != targetAttempt.TargetVID || snapshot.SnapshotVersion != targetAttempt.SnapshotVersion || snapshot.HPPercent != targetAttempt.HPPercent {
+		t.Fatalf("unexpected selected combat target snapshot: %+v target attempt=%+v", snapshot, targetAttempt)
+	}
+	if snapshot.Actor.EntityID != actor.EntityID || snapshot.Actor.Name != "PracticeMob" || snapshot.Actor.CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob {
+		t.Fatalf("unexpected selected combat target actor snapshot: %+v", snapshot.Actor)
+	}
+}
+
 func TestSharedWorldRegistryRegisterSpawnGroupActorWithPracticeMobProfileIsCombatTargetable(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
