@@ -177,6 +177,7 @@ func TestGameRuntimeItemMoveRejectsTransferGuardedStackTemplatesWithoutMutation(
 		name   string
 		mutate func(*itemcatalog.Template)
 	}{
+		{name: "anti stack", mutate: func(template *itemcatalog.Template) { template.AntiStack = true }},
 		{name: "anti drop", mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }},
 		{name: "anti give", mutate: func(template *itemcatalog.Template) { template.AntiGive = true }},
 		{name: "anti sell", mutate: func(template *itemcatalog.Template) { template.AntiSell = true }},
