@@ -61,9 +61,11 @@ The runtime currently owns these guarantees:
 - if a transport hook is already missing but a stale player entity still remains, a fresh `ENTERGAME` for that same selected character reclaims the stale runtime ownership instead of leaving the new session permanently rejected
 - if the session-directory entry still survives, that hook remains the authoritative live-conflict signal even when the player/entity index entry is already gone; duplicate `ENTERGAME` must still be rejected until teardown removes that hook
 - when that stale ownership had visible peers, those peers receive the stale `CHARACTER_DEL` before the reclaimed session replays the normal fresh visibility entry burst
+- if the reclaimed stale owner was already at the current bootstrap `0`-HP floor, living visible peers also receive the fresh entry burst followed by the owned `GC DEAD(owner_vid)` replay so the re-entered actor does not visually resurrect
+- if a zero-HP owner is only a recipient of stale-reclaim teardown/re-entry fanout, that recipient is skipped instead of receiving peer visibility frames while broader player-death semantics remain out of scope
 - if the reclaimed stale owner also owned pending ground-item or ground-gold entries, reclaim removes those entries and queues their `GROUND_DEL` frames to living visible peers before the fresh re-entry burst
 
-This keeps shared-world delivery and transfer lookup from targeting dead sessions.
+This keeps shared-world delivery and transfer lookup from targeting dead sessions and keeps reconnect/reclaim visibility aligned with the current dead-state replay contract.
 
 ## Entity and map ownership during teardown
 
