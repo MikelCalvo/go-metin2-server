@@ -102,6 +102,10 @@ func registerLocalNamedSnapshotEndpoint(mux *http.ServeMux, pattern string, pref
 		return mux
 	}
 	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
 			return
