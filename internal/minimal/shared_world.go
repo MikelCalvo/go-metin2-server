@@ -802,6 +802,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 			}
 			r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 		}
+		r.removeOwnedGroundItemsLocked(entityID, visibilityDiff.RemovedVisiblePeers)
 	}
 }
 
