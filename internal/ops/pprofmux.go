@@ -97,6 +97,27 @@ func RegisterLocalCombatTargetEndpoint(mux *http.ServeMux, combatTargetSnapshot 
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/combat-target/", "/local/combat-target/", combatTargetSnapshot)
 }
 
+func RegisterLocalCombatTargetsEndpoint(mux *http.ServeMux, combatTargetSnapshots func() any) *http.ServeMux {
+	if mux == nil || combatTargetSnapshots == nil {
+		return mux
+	}
+	mux.HandleFunc("/local/combat-targets", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(combatTargetSnapshots()); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	return mux
+}
+
 func registerLocalNamedSnapshotEndpoint(mux *http.ServeMux, pattern string, prefix string, snapshot func(string) (any, bool)) *http.ServeMux {
 	if mux == nil || snapshot == nil {
 		return mux

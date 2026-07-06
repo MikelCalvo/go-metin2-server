@@ -190,10 +190,11 @@ The per-character subject snapshot in this endpoint also reuses the same player 
 Returns the exact-name live M3 runtime state for the selected character.
 These endpoints are intended for loopback-only debugging and QA while the gameplay-facing surfaces are still bootstrap.
 
-### `GET /local/combat-target/{name}`
+### `GET /local/combat-target/{name}` and `GET /local/combat-targets`
 
-Returns the exact-name selected combat-target snapshot for a connected bootstrap character when that session currently owns a visible runtime combat target.
-The response reuses the runtime debug snapshot shape documented in `spec/protocol/combat-normal-attack-bootstrap.md`:
+`GET /local/combat-target/{name}` returns the exact-name selected combat-target snapshot for a connected bootstrap character when that session currently owns a visible runtime combat target.
+`GET /local/combat-targets` returns the deterministic list of all currently resolved active combat-target snapshots, sorted by runtime subject entity ID, so loopback QA can inspect target ownership without already knowing the selected character name.
+Both responses reuse the runtime debug snapshot shape documented in `spec/protocol/combat-normal-attack-bootstrap.md`:
 
 - `subject_entity_id`
 - `target_vid`
@@ -201,7 +202,7 @@ The response reuses the runtime debug snapshot shape documented in `spec/protoco
 - `hp_percent`
 - `actor`
 
-The endpoint is loopback-only and read-only. It returns `404` when the character is not connected, has no active target, or the target no longer resolves through the current visibility/runtime combat rules.
+Both endpoints are loopback-only and read-only. The exact-name endpoint returns `404` when the character is not connected, has no active target, or the target no longer resolves through the current visibility/runtime combat rules; the list endpoint omits unresolved/stale selections instead of leaking hidden or invalid target data.
 
 ### `GET` / `POST /local/static-actors` and `PATCH` / `PUT` / `DELETE /local/static-actors/{entity_id}`
 
@@ -254,7 +255,9 @@ Use the current local-only runtime endpoints together when combat target ownersh
    - simulate range/visibility-loss moves before mutating runtime state, then compare with the real `MOVE` / `SYNC_POSITION` path; dead practice mobs now stay marked `dead: true` in the previewed static-actor arrays, and dead player subjects / peers now keep the same flag there too
 4. `POST /local/transfer`
    - reproduce transfer rebootstrap cleanup explicitly when checking whether stale target ownership survives across a fresh bootstrap; dead practice mobs now stay marked `dead: true` in the applied structured result, and dead player subjects / peers do too
-5. `GET` / `PATCH` / `PUT /local/static-actors/{entity_id}`
+5. `GET /local/combat-targets`
+   - list all currently resolved active target selections when debugging multi-session target ownership without knowing every character name first
+6. `GET` / `PATCH` / `PUT /local/static-actors/{entity_id}`
    - inspect or replace the current dummy snapshot in place when reproducing replaced-target fail-closed behavior
 
 Current combat ownership debugging expectations:
@@ -358,6 +361,12 @@ Inspect live inventory, equipment, and currency for a character:
 curl http://127.0.0.1:6060/local/inventory/MkmkWar
 curl http://127.0.0.1:6060/local/equipment/MkmkWar
 curl http://127.0.0.1:6060/local/currency/MkmkWar
+```
+
+List all currently resolved combat-target selections:
+
+```bash
+curl http://127.0.0.1:6060/local/combat-targets
 ```
 
 List the authored interaction catalog:
