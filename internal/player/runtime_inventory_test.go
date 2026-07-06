@@ -743,6 +743,11 @@ func TestMerchantTemplateMutationsRejectSelectedCharacterAntiFlagTemplates(t *te
 			character: loginticket.Character{RaceNum: 1},
 			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiFemale: true},
 		},
+		{
+			name:      "minimum level",
+			character: loginticket.Character{Level: 9},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, MinLevel: 10},
+		},
 	}
 
 	for _, tc := range cases {

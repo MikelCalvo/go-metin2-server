@@ -324,6 +324,16 @@ Expected result:
 - selected-character anti-flagged or transfer-guarded equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
 - equipment whose template-authored `equip_effect` point delta would overflow the bootstrap signed 32-bit point value also fails closed before item, quickslot, point, or persistence mutation
 
+### 4.5.9 Merchant buy/sell template restrictions (`SHOP BUY` / `SHOP SELL2`)
+
+- [ ] Open a known bootstrap merchant window with a disposable QA character
+- [ ] Attempt to buy a catalog item whose authored template requires a higher `min_level` than the selected character has
+- [ ] Attempt to sell a carried item whose authored template requires a higher `min_level` than the selected character has
+
+Expected result:
+- both packet paths fail with the current merchant invalid-position companion and no inventory, item quickslot, gold, or persisted account mutation is visible
+- adjacent allowed merchant buy/sell cases still use the template-authored price/sell-credit behavior
+
 ---
 
 ## 5. Single-client movement

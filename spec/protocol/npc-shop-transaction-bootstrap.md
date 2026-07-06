@@ -134,7 +134,7 @@ When a gated `BUY` request arrives, the runtime must validate all of the followi
 - the entry `count` is greater than zero
 - the selected character has at least that much gold available
 - the selected character has a valid carried-inventory placement for that template/count under `item-stack-bootstrap.md`, including `anti_stack` templates skipping existing-stack merge/fan-out paths
-- the resolved template does not carry a selected-character job/sex restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`)
+- the resolved template does not carry a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
 - persistence/writeback can succeed before the new live state is committed
 
 The first buy contract intentionally remains single-entry and immediate:
@@ -190,7 +190,7 @@ The first buy path must fail closed when any of these are true:
 - the catalog/template resolution fails
 - the player has insufficient gold
 - no valid carried inventory placement exists
-- the resolved template carries a selected-character job/sex restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`)
+- the resolved template carries a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
 - persistence/writeback fails
 
 The first sell/sell2 path must fail closed when any of these are true:
@@ -202,7 +202,7 @@ The first sell/sell2 path must fail closed when any of these are true:
 - the requested carried cell has duplicate live item occupancy
 - the carried item is marked runtime-locked
 - the template is marked `anti_sell`
-- the resolved template carries a selected-character job/sex restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, or `anti_female`)
+- the resolved template carries a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
 - the template has no sell price
 - persistence/writeback fails
 
@@ -346,8 +346,9 @@ The first live sell-back contract remains intentionally narrow:
 - ordinary sell credit derives from loaded item-template `shop_buy_price` as `floor((shop_buy_price * sold_count) / 5)` minus `floor(3% tax)`
 - templates flagged `sell_count_per_gold` follow the legacy count-per-gold branch first: use `floor(sold_count / shop_buy_price)` when `shop_buy_price > 0`, or `sold_count` when it is zero, then apply the same `/5` and 3% tax floor; if the resulting credit is zero, the bootstrap runtime fails closed
 - templates flagged `anti_sell` fail closed before credit calculation, return bare self-only `GC::SHOP INVALID_POS` on the packet sell path while a merchant window is active, and leave live plus persisted inventory/currency unchanged
-- the player mutation boundary also exposes a template-backed sell helper that rejects `anti_sell` templates, template/item-`vnum` mismatches, invalid template metadata, invalid counts, locked carried items, equipped carried items, and zero-credit pricing before mutating live inventory or gold
+- the player mutation boundary also exposes a template-backed sell helper that rejects `anti_sell` templates, template/item-`vnum` mismatches, invalid template metadata, invalid counts, locked carried items, equipped carried items, selected-character job/sex/level restrictions, and zero-credit pricing before mutating live inventory or gold
 - successful template-backed sell uses the same template-derived `MerchantSellCredit` calculation as the packet/runtime sell path, then delegates to the existing credit mutation so whole-stack and partial-stack state results stay aligned
+- selected-character `min_level` restrictions are checked through the same template-use guard as job/sex anti-flags; packet `SHOP BUY`, packet `SHOP SELL` / `SELL2`, and the template-backed player-runtime sell helper all fail closed before inventory, quickslot, gold, or persistence mutation when the selected character is below the authored minimum level
 - the updated selected-character snapshot is persisted before the live shared-world registration is refreshed
 - if persistence/writeback fails, the runtime rolls the selected character's live gold and carried inventory back to the pre-sell snapshot, emits no success frames, and leaves the persisted account snapshot unchanged
 - whole-stack success emits self-only `ITEM_DEL(slot)`, then zero or more self-only `QUICKSLOT_DEL(position)` frames for item quickslots that referenced the removed carried slot, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`

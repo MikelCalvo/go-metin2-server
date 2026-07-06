@@ -20198,6 +20198,46 @@ func TestGameSessionFlowShopBuyAndSellRejectSelectedCharacterAntiFlagTemplatesWi
 	assertMerchantStateUnchanged(t, sellRuntime, sellAccounts, sellLogin, sellBuyer, "anti-flag packet shop sell2")
 }
 
+func TestGameSessionFlowShopBuyAndSellRejectMinLevelTemplatesWithoutMutation(t *testing.T) {
+	buyBuyer := merchantBuyerCharacter("MerchantBuyerPacketMinLevel", 0x0104012a, 0x0205012a, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	buyBuyer.Level = 9
+	buyRuntime, buyAccounts, buyFlow, buyActorID, buyLogin := setupMerchantBuySession(t, "merchant-min-level-buy", 0x2a2a2a2a, buyBuyer)
+	defer closeSessionFlow(t, buyFlow)
+	buyRuntime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, MinLevel: 10}
+
+	interactWithMerchantForBuy(t, buyFlow, buyActorID)
+	buyOut, err := buyFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected min-level packet shop buy error: %v", err)
+	}
+	if len(buyOut) != 1 {
+		t.Fatalf("expected min-level packet shop buy to emit 1 invalid-pos frame, got %d", len(buyOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode min-level packet shop buy invalid-pos frame: %v", err)
+	}
+	assertMerchantStateUnchanged(t, buyRuntime, buyAccounts, buyLogin, buyBuyer, "min-level packet shop buy")
+
+	sellBuyer := merchantBuyerCharacter("MerchantSellerPacketMinLevel", 0x0104012b, 0x0205012b, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	sellBuyer.Level = 9
+	sellRuntime, sellAccounts, sellFlow, sellActorID, sellLogin := setupMerchantBuySession(t, "merchant-min-level-sell", 0x2b2b2b2b, sellBuyer)
+	defer closeSessionFlow(t, sellFlow)
+	sellRuntime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, MinLevel: 10}
+
+	interactWithMerchantForBuy(t, sellFlow, sellActorID)
+	sellOut, err := sellFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected min-level packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected min-level packet shop sell2 to emit 1 invalid-pos frame, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode min-level packet shop sell2 invalid-pos frame: %v", err)
+	}
+	assertMerchantStateUnchanged(t, sellRuntime, sellAccounts, sellLogin, sellBuyer, "min-level packet shop sell2")
+}
+
 func assertMerchantStateUnchanged(t *testing.T, runtime *gameRuntime, accounts accountstore.Store, login string, want loginticket.Character, context string) {
 	t.Helper()
 	currencySnapshot, ok := runtime.CurrencySnapshot(want.Name)
