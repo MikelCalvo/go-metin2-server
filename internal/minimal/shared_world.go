@@ -700,6 +700,21 @@ func (r *sharedWorldRegistry) CombatTargetSnapshot(entityID uint64) (CombatTarge
 	return r.combatTargetSnapshotLocked(entityID)
 }
 
+func (r *sharedWorldRegistry) CombatTargetSnapshotByName(name string) (CombatTargetSnapshot, bool) {
+	if r == nil || name == "" {
+		return CombatTargetSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	player, ok := r.scopesLocked().PlayerByExactName(name)
+	if !ok || player.Entity.ID == 0 {
+		return CombatTargetSnapshot{}, false
+	}
+	return r.combatTargetSnapshotLocked(player.Entity.ID)
+}
+
 func (r *sharedWorldRegistry) CombatTargetSnapshots() []CombatTargetSnapshot {
 	if r == nil {
 		return nil

@@ -190,6 +190,19 @@ The per-character subject snapshot in this endpoint also reuses the same player 
 Returns the exact-name live M3 runtime state for the selected character.
 These endpoints are intended for loopback-only debugging and QA while the gameplay-facing surfaces are still bootstrap.
 
+### `GET /local/combat-target/{name}`
+
+Returns the exact-name selected combat-target snapshot for a connected bootstrap character when that session currently owns a visible runtime combat target.
+The response reuses the runtime debug snapshot shape documented in `spec/protocol/combat-normal-attack-bootstrap.md`:
+
+- `subject_entity_id`
+- `target_vid`
+- `snapshot_version`
+- `hp_percent`
+- `actor`
+
+The endpoint is loopback-only and read-only. It returns `404` when the character is not connected, has no active target, or the target no longer resolves through the current visibility/runtime combat rules.
+
 ### `GET` / `POST /local/static-actors` and `PATCH` / `PUT` / `DELETE /local/static-actors/{entity_id}`
 
 Use these endpoints to inspect and author bootstrap static actors.

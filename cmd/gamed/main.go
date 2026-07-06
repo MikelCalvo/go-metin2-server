@@ -94,6 +94,16 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalCombatTargetEndpoint(
+		opsHandler,
+		func(name string) (any, bool) {
+			snapshot, ok := gameRuntime.CombatTargetSnapshot(name)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalInteractionVisibilityEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.InteractionVisibility() },

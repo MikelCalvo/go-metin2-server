@@ -93,6 +93,10 @@ func RegisterLocalCurrencyEndpoint(mux *http.ServeMux, currencySnapshot func(str
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/currency/", "/local/currency/", currencySnapshot)
 }
 
+func RegisterLocalCombatTargetEndpoint(mux *http.ServeMux, combatTargetSnapshot func(string) (any, bool)) *http.ServeMux {
+	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/combat-target/", "/local/combat-target/", combatTargetSnapshot)
+}
+
 func registerLocalNamedSnapshotEndpoint(mux *http.ServeMux, pattern string, prefix string, snapshot func(string) (any, bool)) *http.ServeMux {
 	if mux == nil || snapshot == nil {
 		return mux

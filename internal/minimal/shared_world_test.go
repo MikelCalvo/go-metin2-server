@@ -15627,6 +15627,18 @@ func TestSharedWorldRegistryCombatTargetSnapshotReportsSelectedPracticeMob(t *te
 	if snapshot.Actor.EntityID != actor.EntityID || snapshot.Actor.Name != "PracticeMob" || snapshot.Actor.CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob {
 		t.Fatalf("unexpected selected combat target actor snapshot: %+v", snapshot.Actor)
 	}
+
+	byName, ok := registry.CombatTargetSnapshotByName(subject.Name)
+	if !ok {
+		t.Fatal("expected selected combat target snapshot to resolve by exact character name")
+	}
+	if byName.SubjectEntityID != snapshot.SubjectEntityID || byName.TargetVID != snapshot.TargetVID || byName.SnapshotVersion != snapshot.SnapshotVersion || byName.HPPercent != snapshot.HPPercent || byName.Actor.EntityID != snapshot.Actor.EntityID || byName.Actor.Name != snapshot.Actor.Name {
+		t.Fatalf("expected exact-name combat target snapshot %+v, got %+v", snapshot, byName)
+	}
+
+	if missing, ok := registry.CombatTargetSnapshotByName("Unknown"); ok || missing.TargetVID != 0 {
+		t.Fatalf("expected unknown exact-name combat target snapshot to fail closed, got ok=%v snapshot=%+v", ok, missing)
+	}
 }
 
 func TestSharedWorldRegistryCombatTargetSnapshotsReportsDeterministicActiveSelections(t *testing.T) {

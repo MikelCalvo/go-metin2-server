@@ -373,6 +373,13 @@ func (r *gameRuntime) RuntimeConfigSnapshot() RuntimeConfigSnapshot {
 	return snapshot
 }
 
+func (r *gameRuntime) CombatTargetSnapshot(name string) (CombatTargetSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return CombatTargetSnapshot{}, false
+	}
+	return r.sharedWorld.CombatTargetSnapshotByName(name)
+}
+
 func (r *gameRuntime) InventorySnapshot(name string) (CharacterInventorySnapshot, bool) {
 	state, ok := r.liveCharacterState(name)
 	if !ok {
