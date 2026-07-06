@@ -3897,6 +3897,57 @@ func TestItemUseToItemQuickslotSyncDeletesConsumedSourceSlot(t *testing.T) {
 	}
 }
 
+func TestItemUseToItemQuickslotSyncDeletesChangedTargetSlotOnPartialMerge(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030103,
+		VID:       0x02040103,
+		Name:      "PeerThree",
+		Inventory: []inventory.ItemInstance{{ID: 21, Vnum: 27001, Count: 7, Slot: 5}, {ID: 22, Vnum: 27001, Count: 8, Slot: 6}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 7, Type: quickslotproto.TypeItem, Slot: 6},
+			{Position: 8, Type: quickslotproto.TypeItem, Slot: 6},
+			{Position: 9, Type: quickslotproto.TypeSkill, Slot: 6},
+		},
+	}
+	selectedPlayer := player.NewRuntime(persisted, player.SessionLink{Login: "peer-three", CharacterIndex: 1})
+	mergeResult := inventory.MoveResult{
+		Changed:      true,
+		From:         5,
+		To:           6,
+		FromOccupied: true,
+		FromItem:     inventory.ItemInstance{ID: 21, Vnum: 27001, Count: 5, Slot: 5},
+		ToOccupied:   true,
+		ToItem:       inventory.ItemInstance{ID: 22, Vnum: 27001, Count: 10, Slot: 6},
+		CountOnly:    true,
+	}
+
+	frames, ok := itemUseToItemQuickslotSyncFrames(selectedPlayer, mergeResult)
+	if !ok {
+		t.Fatal("expected partial use-to-item quickslot sync to succeed")
+	}
+	if len(frames) != 2 {
+		t.Fatalf("expected two quickslot deletes for changed target stack, got %d", len(frames))
+	}
+	for index, raw := range frames {
+		deleted, err := quickslotproto.DecodeDel(decodeSingleFrame(t, raw))
+		if err != nil {
+			t.Fatalf("decode quickslot delete %d: %v", index, err)
+		}
+		wantPosition := []uint8{7, 8}[index]
+		if deleted.Position != wantPosition {
+			t.Fatalf("expected target item quickslot position %d to be deleted at index %d, got %d", wantPosition, index, deleted.Position)
+		}
+	}
+	wantLiveQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 9, Type: quickslotproto.TypeSkill, Slot: 6},
+	}
+	if got := selectedPlayer.LiveQuickslots(); !reflect.DeepEqual(got, wantLiveQuickslots) {
+		t.Fatalf("unexpected live quickslots after partial use-to-item merge: got %#v want %#v", got, wantLiveQuickslots)
+	}
+}
+
 func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 	t.Helper()
 
