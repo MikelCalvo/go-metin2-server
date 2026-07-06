@@ -14085,6 +14085,78 @@ func TestGameRuntimeRemoveStaticActorQueuesDeleteForVisibleOnlinePlayers(t *test
 	}
 }
 
+func TestGameRuntimeReclaimPreventsStaleSessionCombatTargetAndAttack(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("CombatOwner", 0x01030171, 0x02040171, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "combat-owner-first", 0x17171771, owner)
+	issuePeerTicket(t, store, "combat-owner-second", 0x17171772, owner)
+	if err := accounts.Save(accountstore.Account{Login: "combat-owner-first", Empire: owner.Empire, Characters: []loginticket.Character{owner}}); err != nil {
+		t.Fatalf("seed first combat owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "combat-owner-second", Empire: owner.Empire, Characters: []loginticket.Character{owner}}); err != nil {
+		t.Fatalf("seed second combat owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return time.Unix(1_700_002_001, 0) }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected training dummy registration to succeed")
+	}
+	factory := runtime.SessionFactory()
+	staleFlow, _ := enterGameWithLoginTicket(t, factory, "combat-owner-first", 0x17171771)
+	defer closeSessionFlow(t, staleFlow)
+	flushServerFrames(t, staleFlow)
+
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
+	if !ok {
+		t.Fatal("expected first owner entity to be registered before simulated reclaim")
+	}
+	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(ownerEntity.Entity.ID); !ok {
+		t.Fatal("expected simulated reclaim to remove stale owner session hook")
+	}
+	replacementFlow, _ := enterGameWithLoginTicket(t, factory, "combat-owner-second", 0x17171772)
+	defer closeSessionFlow(t, replacementFlow)
+	flushServerFrames(t, replacementFlow)
+	targetVID := uint32(actor.EntityID)
+
+	staleTargetOut, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected stale target error after reclaim: %v", err)
+	}
+	if len(staleTargetOut) != 0 {
+		t.Fatalf("expected reclaimed stale session target selection to fail closed with no frames, got %d", len(staleTargetOut))
+	}
+	staleAttackOut, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected stale attack error after reclaim: %v", err)
+	}
+	if len(staleAttackOut) != 0 {
+		t.Fatalf("expected reclaimed stale session attack to fail closed with no frames, got %d", len(staleAttackOut))
+	}
+	if queued := flushServerFrames(t, replacementFlow); len(queued) != 0 {
+		t.Fatalf("expected reclaimed stale combat traffic not to queue frames to replacement owner, got %d", len(queued))
+	}
+
+	replacementTargetOut, err := replacementFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected replacement target error after stale combat traffic: %v", err)
+	}
+	if len(replacementTargetOut) != 1 {
+		t.Fatalf("expected replacement owner target selection to remain available with one frame, got %d", len(replacementTargetOut))
+	}
+	targetPacket, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, replacementTargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode replacement target frame after stale combat traffic: %v", err)
+	}
+	if targetPacket.TargetVID != targetVID || targetPacket.HPPercent != 100 {
+		t.Fatalf("expected replacement owner to see untouched training dummy target, got %+v", targetPacket)
+	}
+}
+
 func TestSharedWorldRegistryRemoveStaticActorClearsSelectedCombatTargetOwnership(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1)
 	registry := newSharedWorldRegistryWithTopology(topology)
