@@ -104,6 +104,44 @@ func TestDropInventoryItemWithTemplateRejectsDropTransferGuardsWithoutMutation(t
 	}
 }
 
+func TestDropInventoryItemWithTemplateRejectsSelectedCharacterRestrictionsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		character loginticket.Character
+		template  itemcatalog.Template
+	}{
+		{
+			name:      "anti warrior",
+			character: loginticket.Character{Job: 0, RaceNum: 0, Level: 10},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Warrior Restricted Potion", Stackable: true, MaxCount: 200, AntiWarrior: true},
+		},
+		{
+			name:      "anti female",
+			character: loginticket.Character{Job: 1, RaceNum: 1, Level: 10},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Female Restricted Potion", Stackable: true, MaxCount: 200, AntiFemale: true},
+		},
+		{
+			name:      "min level",
+			character: loginticket.Character{Job: 0, RaceNum: 0, Level: 5},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Veteran Potion", Stackable: true, MaxCount: 200, MinLevel: 10},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.character.Inventory = []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}}
+			runtime := NewRuntime(tc.character, SessionLink{})
+			before := runtime.LiveInventory()
+
+			if _, ok := runtime.DropInventoryItemWithTemplate(5, 1, tc.template); ok {
+				t.Fatalf("expected %s item drop to be rejected", tc.name)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s drop mutated inventory: got %#v want %#v", tc.name, got, before)
+			}
+		})
+	}
+}
+
 func TestDropInventoryItemWithTemplateRejectsMismatchedTemplateWithoutMutation(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{{ID: 1, Vnum: 27001, Count: 5, Slot: 5}},
