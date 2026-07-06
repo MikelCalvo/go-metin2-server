@@ -937,6 +937,58 @@ func TestSharedWorldRegistryJoinReclaimRemovesOwnedGroundItems(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryJoinReclaimRemovesOwnedGroundGold(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("ReclaimedGoldOwner", 0x010301b7, 0x020401b7, 1200, 2200, 0, 101, 201)
+	peer := peerVisibilityCharacter("ReclaimedGoldPeer", 0x010301b8, 0x020401b8, 1220, 2220, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	peerPending := newPendingServerFrames()
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected owner and peer to join shared world, got owner=%d peer=%d", ownerID, peerID)
+	}
+	peerPending.flush()
+
+	const groundVID uint32 = 0x0700002C
+	if !registry.RegisterGroundGold(ownerID, "reclaimed-gold-owner", owner, groundVID, 250) {
+		t.Fatal("expected owner ground gold registration to succeed")
+	}
+	peerPending.flush()
+	if _, ok := registry.sessionDirectory.Remove(ownerID); !ok {
+		t.Fatal("expected owner session entry to be removable for stale reclaim setup")
+	}
+
+	freshOwnerPending := newPendingServerFrames()
+	freshOwnerID, peers := registry.Join(owner, freshOwnerPending, nil)
+	if freshOwnerID == 0 || freshOwnerID == ownerID {
+		t.Fatalf("expected stale owner to be reclaimed with a fresh entity id, got old=%d fresh=%d", ownerID, freshOwnerID)
+	}
+	if len(peers) != 1 || peers[0].Name != peer.Name {
+		t.Fatalf("expected fresh owner join to see existing peer, got %#v", peers)
+	}
+	if registry.GroundItemExists(groundVID) {
+		t.Fatal("expected stale owner's owned ground gold to be removed during reclaim")
+	}
+	peerQueued := peerPending.flush()
+	if len(peerQueued) != 5 {
+		t.Fatalf("expected peer to receive owner delete, ground-gold delete, and 3-frame reentry burst, got %d frames", len(peerQueued))
+	}
+	ownerDel, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, peerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode reclaimed owner delete: %v", err)
+	}
+	if ownerDel.VID != owner.VID {
+		t.Fatalf("unexpected reclaimed owner delete: %+v", ownerDel)
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, peerQueued[1]))
+	if err != nil {
+		t.Fatalf("decode reclaimed owner ground-gold delete: %v", err)
+	}
+	if groundDel.VID != groundVID {
+		t.Fatalf("unexpected reclaimed owner ground-gold delete: %+v", groundDel)
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundGoldRejectsExistingVID(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("GoldDropOwner", 0x01030194, 0x02040194, 1200, 2200, 0, 101, 201)
