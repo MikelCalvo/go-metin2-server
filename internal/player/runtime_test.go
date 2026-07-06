@@ -882,7 +882,7 @@ func TestRuntimeUseItemOnItemRejectsInvalidSourceOrTargetWithoutMutation(t *test
 	}
 }
 
-func TestRuntimeUseItemOnItemRejectsEquippedSourceOrTargetWithoutMutation(t *testing.T) {
+func TestRuntimeUseItemOnItemRejectsEquippedLockedSourceOrTargetWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string
 		inventory []inventory.ItemInstance
@@ -899,6 +899,20 @@ func TestRuntimeUseItemOnItemRejectsEquippedSourceOrTargetWithoutMutation(t *tes
 			inventory: []inventory.ItemInstance{
 				{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
 				{ID: 12, Vnum: 27001, Count: 4, Slot: 6, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+			},
+		},
+		{
+			name: "locked source snapshot",
+			inventory: []inventory.ItemInstance{
+				{ID: 11, Vnum: 27001, Count: 3, Slot: 5, Locked: true},
+				{ID: 12, Vnum: 27001, Count: 4, Slot: 6},
+			},
+		},
+		{
+			name: "locked target snapshot",
+			inventory: []inventory.ItemInstance{
+				{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 12, Vnum: 27001, Count: 4, Slot: 6, Locked: true},
 			},
 		},
 	}
