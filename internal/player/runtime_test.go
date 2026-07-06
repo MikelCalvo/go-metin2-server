@@ -1231,6 +1231,31 @@ func TestRuntimeUseItemOnItemRejectsDuplicateSourceTargetItemIDWithoutMutation(t
 	}
 }
 
+func TestRuntimeInventoryMoveRejectsDuplicateSourceTargetItemIDWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "MoveDuplicateIDPeer",
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 11, Vnum: 27001, Count: 4, Slot: 6}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "move-duplicate-id-peer", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.MoveInventoryItemBounded(5, 6, 200); ok {
+		t.Fatalf("expected duplicate source/target item ID inventory move to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("duplicate source/target item ID inventory move mutated live character: got %#v want %#v", got, before)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) {
+		t.Fatalf("duplicate source/target item ID inventory move mutated persisted state: inventory=%#v quickslots=%#v", got.Inventory, got.Quickslots)
+	}
+}
+
 func TestRuntimeUseItemRejectsMalformedRuntimeTemplateWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030102,

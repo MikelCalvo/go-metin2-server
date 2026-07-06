@@ -309,7 +309,7 @@ Expected result:
 - stackable, non-`anti_stack` items merge only up to the template-authored `max_count`
 - if the target has only partial room, both source and target counts refresh, the source item quickslot remains, and all item quickslots bound to the refreshed target cell are cleared in quickslot-position order while non-item quickslots with the same byte slot remain
 - an exact counted or zero-count full-stack merge removes the source cell, refreshes the destination count, deletes source item quickslots, leaves target item quickslots stable, and leaves unrelated skill/command quickslots unchanged
-- `anti_stack`, `anti_drop`, `anti_give`, and `anti_sell` templates, same-`vnum` merge attempts with missing source-template metadata in an explicitly authored item-template snapshot, and duplicate source/target cell occupancy fixtures fail closed: no item counts change, no source cell disappears, no quickslot change is persisted, and no item refresh frames are visible
+- `anti_stack`, `anti_drop`, `anti_give`, and `anti_sell` templates, same-`vnum` merge attempts with missing source-template metadata in an explicitly authored item-template snapshot, duplicate source/target cell occupancy fixtures, and corrupt fixtures where source and target cells carry the same item instance ID fail closed: no item counts change, no source cell disappears, no quickslot change is persisted, and no item refresh frames are visible
 
 ### 4.5.8 Equip a carried item (`ITEM_MOVE` to equipment cell)
 

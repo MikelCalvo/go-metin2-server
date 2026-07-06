@@ -538,7 +538,7 @@ func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventor
 		return r.moveInventoryItemFullStack(from, to, result)
 	}
 	destinationItem := r.liveInventory[toIndex]
-	if destinationItem.Locked || destinationItem.Count == 0 {
+	if destinationItem.Locked || destinationItem.ID == sourceItem.ID || destinationItem.Count == 0 {
 		return inventory.MoveResult{}, false
 	}
 	if destinationItem.Vnum != sourceItem.Vnum {
@@ -620,7 +620,7 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 	if count == sourceItem.Count {
 		if toIndex >= 0 {
 			destinationItem := r.liveInventory[toIndex]
-			if destinationItem.Locked {
+			if destinationItem.Locked || destinationItem.ID == sourceItem.ID {
 				return inventory.MoveResult{}, false
 			}
 			if destinationItem.Vnum != sourceItem.Vnum {
@@ -652,7 +652,7 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 	sourceRemainder.Count -= count
 	if toIndex >= 0 {
 		destinationItem := r.liveInventory[toIndex]
-		if destinationItem.Locked || destinationItem.Vnum != sourceItem.Vnum || destinationItem.Count == 0 {
+		if destinationItem.Locked || destinationItem.ID == sourceItem.ID || destinationItem.Vnum != sourceItem.Vnum || destinationItem.Count == 0 {
 			return inventory.MoveResult{}, false
 		}
 		mergedCount := uint32(destinationItem.Count) + uint32(count)
