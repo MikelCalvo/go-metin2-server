@@ -11477,6 +11477,7 @@ func setupReclaimedOwnerRuntimeWithAccounts(t *testing.T) (accountstore.Store, s
 	accounts := accountstore.NewFileStore(t.TempDir())
 	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerOne.Gold = 1000
 	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
 	for _, account := range []accountstore.Account{
@@ -11624,6 +11625,59 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleSessionWhisperSelfLocal(t *testing
 	}
 	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
 		t.Fatalf("expected replacement owner to receive no queued frames from stale owner whisper, got %d", len(queued))
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwnerOld)
+	closeSessionFlow(t, flowOwnerNew)
+}
+
+func TestGameRuntimeEnterGameReclaimKeepsStaleGoldDropNonAuthoritative(t *testing.T) {
+	accounts, _, flowWatcher, flowOwnerOld, flowOwnerNew, _, peerOne := setupReclaimedOwnerRuntimeWithAccounts(t)
+
+	goldDropOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(0), Elk: 123})))
+	if err != nil {
+		t.Fatalf("unexpected stale owner gold drop error: %v", err)
+	}
+	if len(goldDropOut) != 3 {
+		t.Fatalf("expected stale owner gold drop to remain self-local with 3 frames, got %d", len(goldDropOut))
+	}
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, goldDropOut[0]))
+	if err != nil {
+		t.Fatalf("decode stale owner self gold point change: %v", err)
+	}
+	if pointPacket.VID != peerOne.VID || pointPacket.Type != bootstrapGoldPointType || pointPacket.Amount != -123 {
+		t.Fatalf("unexpected stale owner self gold point change: %+v", pointPacket)
+	}
+	groundAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, goldDropOut[1]))
+	if err != nil {
+		t.Fatalf("decode stale owner self ground add: %v", err)
+	}
+	if groundAdd.Vnum != 1 || groundAdd.X != peerOne.X || groundAdd.Y != peerOne.Y {
+		t.Fatalf("unexpected stale owner self ground add: %+v", groundAdd)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, goldDropOut[2]))
+	if err != nil {
+		t.Fatalf("decode stale owner self ownership: %v", err)
+	}
+	if ownership.VID != groundAdd.VID || ownership.OwnerName != peerOne.Name {
+		t.Fatalf("unexpected stale owner self ownership: %+v for ground add %+v", ownership, groundAdd)
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected watcher to receive no ground add from stale owner gold drop, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
+		t.Fatalf("expected replacement owner to receive no queued frames from stale owner gold drop, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted account after stale gold drop: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly 1 persisted character after stale gold drop, got %+v", persisted)
+	}
+	if persisted.Characters[0].Gold != peerOne.Gold {
+		t.Fatalf("expected stale gold drop to leave persisted gold unchanged, before=%d after=%d", peerOne.Gold, persisted.Characters[0].Gold)
 	}
 
 	closeSessionFlow(t, flowWatcher)
