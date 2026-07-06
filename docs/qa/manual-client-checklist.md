@@ -226,7 +226,7 @@ Run this only with a disposable QA character and known seeded item-template data
 
 Expected result:
 - the client receives a `PLAYER_POINT_CHANGE` from the template-authored `use_effect`
-- if more than one item remains in the stack, the carried cell refreshes with the decremented count
+- if more than one item remains in the stack, the carried cell refreshes with the decremented count and both item and non-item quickslots for that still-occupied cell remain unchanged
 - if the consumed stack reaches zero, the carried cell disappears and only item quickslots referencing that cell are cleared; unrelated skill/command quickslots remain
 - locked carried stacks fail closed: no point change, item refresh, quickslot change, or placeholder chat is visible
 - if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_USE` fails closed with no point change, item refresh, quickslot change, placeholder chat, or persisted-state mutation
