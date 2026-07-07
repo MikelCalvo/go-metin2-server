@@ -15691,6 +15691,31 @@ func TestSharedWorldRegistryCombatTargetSnapshotTracksDamagedHPAndDeathClear(t *
 	}
 }
 
+func TestSharedWorldRegistryCombatTargetSnapshotRejectsDeadSubject(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subject.Points[bootstrapPlayerPointValueIndex] = 0
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected dead subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected visible practice-mob registration to succeed")
+	}
+	if !registry.SetSessionCombatTarget(subjectID, uint32(actor.EntityID)) {
+		t.Fatal("expected selected combat target ownership to be recorded for dead subject regression")
+	}
+
+	if snapshot, ok := registry.CombatTargetSnapshot(subjectID); ok || snapshot.TargetVID != 0 {
+		t.Fatalf("expected dead subject combat target snapshot to fail closed, got ok=%v snapshot=%+v", ok, snapshot)
+	}
+	if snapshots := registry.CombatTargetSnapshots(); len(snapshots) != 0 {
+		t.Fatalf("expected aggregate combat target snapshots to omit dead subject, got %+v", snapshots)
+	}
+}
+
 func TestSharedWorldRegistryCombatTargetSnapshotRequiresLiveSessionDirectoryEntry(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)

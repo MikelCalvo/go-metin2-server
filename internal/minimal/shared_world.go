@@ -752,7 +752,7 @@ func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (Comba
 		return CombatTargetSnapshot{}, false
 	}
 	subject, ok := r.playerCharacter(entityID)
-	if !ok {
+	if !ok || characterAtBootstrapHPFloor(subject) {
 		return CombatTargetSnapshot{}, false
 	}
 	actor, ok := r.scopesLocked().VisibleStaticActorByVID(subject, targetVID)
