@@ -66,6 +66,60 @@ func newStartedGameFlowWithItemStore(t *testing.T, store loginticket.Store, acco
 	return flow
 }
 
+func TestBootstrapTopologyFromConfigDefaultsToWholeMapVisibility(t *testing.T) {
+	topology, err := bootstrapTopologyFromConfig(config.Service{})
+	if err != nil {
+		t.Fatalf("unexpected topology error: %v", err)
+	}
+	if _, ok := topology.VisibilityPolicy().(worldruntime.WholeMapVisibilityPolicy); !ok {
+		t.Fatalf("expected whole-map visibility policy by default, got %T", topology.VisibilityPolicy())
+	}
+}
+
+func TestBootstrapTopologyFromConfigNormalizesRadiusModeAndRejectsInvalidValues(t *testing.T) {
+	topology, err := bootstrapTopologyFromConfig(config.Service{VisibilityMode: " Radius ", VisibilityRadius: 400, VisibilitySectorSize: 200})
+	if err != nil {
+		t.Fatalf("unexpected topology error: %v", err)
+	}
+	policy, ok := topology.VisibilityPolicy().(worldruntime.RadiusVisibilityPolicy)
+	if !ok {
+		t.Fatalf("expected radius visibility policy, got %T", topology.VisibilityPolicy())
+	}
+	if policy.Radius != 400 || policy.SectorSize != 200 {
+		t.Fatalf("unexpected radius policy: %+v", policy)
+	}
+
+	if _, err := bootstrapTopologyFromConfig(config.Service{VisibilityMode: "radius", VisibilityRadius: 0, VisibilitySectorSize: 200}); !errors.Is(err, ErrInvalidVisibilityRadius) {
+		t.Fatalf("expected ErrInvalidVisibilityRadius, got %v", err)
+	}
+	if _, err := bootstrapTopologyFromConfig(config.Service{VisibilityMode: "radius", VisibilityRadius: 400, VisibilitySectorSize: 0}); !errors.Is(err, ErrInvalidVisibilitySectorSize) {
+		t.Fatalf("expected ErrInvalidVisibilitySectorSize, got %v", err)
+	}
+	if _, err := bootstrapTopologyFromConfig(config.Service{VisibilityMode: "sector"}); !errors.Is(err, ErrInvalidVisibilityMode) {
+		t.Fatalf("expected ErrInvalidVisibilityMode, got %v", err)
+	}
+}
+
+func TestGameRuntimeConfigSnapshotReportsRadiusPolicy(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 400, VisibilitySectorSize: 200},
+		loginticket.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		nil,
+		staticItemTemplateStore{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	snapshot := runtime.RuntimeConfigSnapshot()
+	if snapshot.LocalChannelID != 1 || snapshot.VisibilityMode != "radius" || snapshot.VisibilityRadius != 400 || snapshot.VisibilitySectorSize != 200 {
+		t.Fatalf("unexpected runtime config snapshot: %+v", snapshot)
+	}
+}
+
 func TestSlashGameCommandRejectsArgumentsForOwnedRestartAndLeaveCommands(t *testing.T) {
 	for _, message := range []string{
 		"/quit now",
