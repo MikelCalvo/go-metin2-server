@@ -15691,6 +15691,37 @@ func TestSharedWorldRegistryCombatTargetSnapshotTracksDamagedHPAndDeathClear(t *
 	}
 }
 
+func TestSharedWorldRegistryCombatTargetSnapshotRequiresLiveSessionDirectoryEntry(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected visible practice-mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted || !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatalf("expected practice-mob combat-target selection to be recorded, got %+v", targetAttempt)
+	}
+	if _, ok := registry.sessionDirectory.Remove(subjectID); !ok {
+		t.Fatal("expected test setup to remove live session-directory entry")
+	}
+
+	if snapshot, ok := registry.CombatTargetSnapshot(subjectID); ok || snapshot.TargetVID != 0 {
+		t.Fatalf("expected combat target snapshot to fail closed without live session hook, got ok=%v snapshot=%+v", ok, snapshot)
+	}
+	if byName, ok := registry.CombatTargetSnapshotByName(subject.Name); ok || byName.TargetVID != 0 {
+		t.Fatalf("expected exact-name combat target snapshot to fail closed without live session hook, got ok=%v snapshot=%+v", ok, byName)
+	}
+	if snapshots := registry.CombatTargetSnapshots(); len(snapshots) != 0 {
+		t.Fatalf("expected list endpoint snapshot to omit stale combat target without live session hook, got %+v", snapshots)
+	}
+}
+
 func TestSharedWorldRegistryCombatTargetSnapshotsReportsDeterministicActiveSelections(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)

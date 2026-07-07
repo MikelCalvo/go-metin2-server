@@ -744,6 +744,9 @@ func (r *sharedWorldRegistry) CombatTargetSnapshots() []CombatTargetSnapshot {
 }
 
 func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (CombatTargetSnapshot, bool) {
+	if _, ok := r.sessionEntryLocked(entityID); !ok {
+		return CombatTargetSnapshot{}, false
+	}
 	targetVID, ok := r.sessionCombatTargets[entityID]
 	if !ok || targetVID == 0 {
 		return CombatTargetSnapshot{}, false

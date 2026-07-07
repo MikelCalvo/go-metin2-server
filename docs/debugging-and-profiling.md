@@ -202,7 +202,7 @@ Both responses reuse the runtime debug snapshot shape documented in `spec/protoc
 - `hp_percent`
 - `actor`
 
-Both endpoints are loopback-only and read-only. The exact-name endpoint returns `404` when the character is not connected, has no active target, or the target no longer resolves through the current visibility/runtime combat rules; the list endpoint omits unresolved/stale selections instead of leaking hidden or invalid target data.
+Both endpoints are loopback-only and read-only. The exact-name endpoint returns `404` when the character is not connected, no longer has a live session hook, has no active target, or the target no longer resolves through the current visibility/runtime combat rules; the list endpoint omits unresolved/stale selections instead of leaking hidden or invalid target data.
 
 ### `GET` / `POST /local/static-actors` and `PATCH` / `PUT` / `DELETE /local/static-actors/{entity_id}`
 

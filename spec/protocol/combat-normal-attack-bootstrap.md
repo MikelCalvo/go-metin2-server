@@ -134,10 +134,10 @@ For a live shared-world session with an active selected static-actor combat targ
 - current target `hp_percent`
 - the same compact static-actor snapshot shape used by local static-actor/visibility introspection
 
-The per-subject snapshot fails closed when the subject is missing, no target is selected, the selected target is no longer visible, or the selected actor no longer has owned bootstrap combat HP semantics.
+The per-subject snapshot fails closed when the subject is missing, no longer has a live session hook, no target is selected, the selected target is no longer visible, or the selected actor no longer has owned bootstrap combat HP semantics.
 After accepted non-lethal hits, snapshots report the runtime-owned damaged `hp_percent` rather than resetting to full HP; after the target reaches the zero-HP death edge and selected-target ownership is cleared, the per-subject and aggregate snapshots omit that stale target instead of reporting a dead active selection.
 The loopback `/local/combat-target/{name}` operator/debug endpoint exposes that per-subject snapshot by exact character name.
-The aggregate runtime snapshot skips invalid/stale entries and returns active selections in deterministic `subject_entity_id` order; the loopback `/local/combat-targets` endpoint exposes that list for local debugging.
+The aggregate runtime snapshot skips invalid/stale entries, including selected targets whose owning session hook has already disappeared, and returns active selections in deterministic `subject_entity_id` order; the loopback `/local/combat-targets` endpoint exposes that list for local debugging.
 This gives local operator surfaces a stable read-only seam without granting stale sockets or global actor lookups a new authoritative combat path.
 
 ## Relationship to later HP / death work
