@@ -135,8 +135,9 @@ For a live shared-world session with an active selected static-actor combat targ
 - the same compact static-actor snapshot shape used by local static-actor/visibility introspection
 
 The per-subject snapshot fails closed when the subject is missing, no target is selected, the selected target is no longer visible, or the selected actor no longer has owned bootstrap combat HP semantics.
-The aggregate runtime snapshot skips those invalid/stale entries and returns active selections in deterministic `subject_entity_id` order.
-This gives later loopback/operator surfaces a stable read-only seam without granting stale sockets or global actor lookups a new authoritative combat path.
+The loopback `/local/combat-target/{name}` operator/debug endpoint exposes that per-subject snapshot by exact character name.
+The aggregate runtime snapshot skips invalid/stale entries and returns active selections in deterministic `subject_entity_id` order; the loopback `/local/combat-targets` endpoint exposes that list for local debugging.
+This gives local operator surfaces a stable read-only seam without granting stale sockets or global actor lookups a new authoritative combat path.
 
 ## Relationship to later HP / death work
 

@@ -363,11 +363,19 @@ curl http://127.0.0.1:6060/local/equipment/MkmkWar
 curl http://127.0.0.1:6060/local/currency/MkmkWar
 ```
 
+Inspect one currently resolved combat-target selection by exact character name:
+
+```bash
+curl http://127.0.0.1:6060/local/combat-target/MkmkWar
+```
+
 List all currently resolved combat-target selections:
 
 ```bash
 curl http://127.0.0.1:6060/local/combat-targets
 ```
+
+Both combat-target endpoints are read-only local runtime snapshots. They do not introduce new client packets and still fail closed when a selected target is stale, invisible, or no longer combat-targetable.
 
 List the authored interaction catalog:
 
