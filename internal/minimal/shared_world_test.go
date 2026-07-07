@@ -15641,6 +15641,56 @@ func TestSharedWorldRegistryCombatTargetSnapshotReportsSelectedPracticeMob(t *te
 	}
 }
 
+func TestSharedWorldRegistryCombatTargetSnapshotTracksDamagedHPAndDeathClear(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected visible practice-mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected practice-mob combat-target selection to succeed, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected accepted target selection to be recorded")
+	}
+
+	firstHit := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+	if !firstHit.Accepted || firstHit.Died {
+		t.Fatalf("expected first practice-mob hit to be accepted and leave target alive, got %+v", firstHit)
+	}
+	damaged, ok := registry.CombatTargetSnapshot(subjectID)
+	if !ok {
+		t.Fatal("expected active combat target snapshot after non-lethal hit")
+	}
+	if damaged.TargetVID != targetAttempt.TargetVID || damaged.HPPercent != firstHit.HPPercent || damaged.Actor.Dead {
+		t.Fatalf("expected damaged live target snapshot to track first-hit HP percent, got snapshot=%+v hit=%+v", damaged, firstHit)
+	}
+
+	var killingHit StaticActorCombatAttackAttempt
+	for hit := 2; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		killingHit = registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, uint32(actor.EntityID))
+		if !killingHit.Accepted {
+			t.Fatalf("expected hit %d to be accepted before death clear, got %+v", hit, killingHit)
+		}
+	}
+	if !killingHit.Died {
+		t.Fatalf("expected final practice-mob hit to kill target, got %+v", killingHit)
+	}
+	if snapshot, ok := registry.CombatTargetSnapshot(subjectID); ok || snapshot.TargetVID != 0 {
+		t.Fatalf("expected killed selected target to be absent from combat target snapshots, got ok=%v snapshot=%+v", ok, snapshot)
+	}
+	if snapshots := registry.CombatTargetSnapshots(); len(snapshots) != 0 {
+		t.Fatalf("expected killed selected target to be removed from aggregate combat target snapshots, got %+v", snapshots)
+	}
+}
+
 func TestSharedWorldRegistryCombatTargetSnapshotsReportsDeterministicActiveSelections(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
