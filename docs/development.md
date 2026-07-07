@@ -74,6 +74,25 @@ The intent is simple: every small slice should be pushable and publicly re-check
 
 `gamed` currently advertises `PublicAddr + port(LegacyAddr)` in `LOGIN_SUCCESS4`.
 
+### Bootstrap visibility policy
+
+`gamed` defaults to whole-map bootstrap visibility: connected players and static actors share visibility when they are in the same effective `MapIndex` on the local bootstrap channel.
+
+The runtime can opt into the radius AOI policy with environment overrides:
+
+- `METIN2_VISIBILITY_MODE` / `METIN2_GAMED_VISIBILITY_MODE`
+  - default: `whole_map`
+  - supported values: `whole_map`, `radius`
+  - values are normalized by trimming whitespace, lowercasing, and treating `-` as `_`
+- `METIN2_VISIBILITY_RADIUS` / `METIN2_GAMED_VISIBILITY_RADIUS`
+  - required positive integer when `visibility_mode = radius`
+- `METIN2_VISIBILITY_SECTOR_SIZE` / `METIN2_GAMED_VISIBILITY_SECTOR_SIZE`
+  - required positive integer when `visibility_mode = radius`
+
+Service-specific overrides take precedence over global overrides for each field. Invalid visibility mode or non-positive radius/sector values fail `gamed` startup instead of falling back silently.
+
+Use the loopback-only `GET /local/runtime-config` endpoint to confirm the policy the running `gamed` process actually booted with.
+
 ### Bootstrap QA reference
 
 For the default stub credentials and the current real-client smoke flow, see the [manual client QA checklist](qa/manual-client-checklist.md).
