@@ -989,6 +989,26 @@ func TestRuntimeUseItemRejectsMinLevelTemplateBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestUseItemRejectsRuntimeWideTemplateMaxWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}},
+		Points:    [255]int32{1: 25},
+	}, SessionLink{})
+	beforeInventory := runtime.LiveInventory()
+	beforePoints := runtime.LiveCharacter().Points
+	template := itemcatalog.Template{Vnum: 27001, Name: "Wide Runtime Potion", Stackable: true, MaxCount: 256, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "must not consume"}}
+
+	if result, ok := runtime.UseItem(5, template); ok {
+		t.Fatalf("expected over-uint8 max_count ITEM_USE template to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+		t.Fatalf("over-uint8 max_count ITEM_USE mutated inventory: got %#v want %#v", got, beforeInventory)
+	}
+	if got := runtime.LiveCharacter().Points; got != beforePoints {
+		t.Fatalf("over-uint8 max_count ITEM_USE mutated points: got %#v want %#v", got, beforePoints)
+	}
+}
+
 func TestUseItemRejectsMalformedTemplateUseEffectWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string
