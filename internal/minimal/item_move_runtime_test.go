@@ -1023,6 +1023,9 @@ func TestGameRuntimeItemUseToItemPartialMergePreservesSourceQuickslot(t *testing
 	owner.Quickslots = []loginticket.Quickslot{
 		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
 		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 6, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 7, Type: quickslotproto.TypeCommand, Slot: 6},
 	}
 	issuePeerTicket(t, ticketStore, "use-to-item-partial", 0x63636363, owner)
 	if err := accounts.Save(accountstore.Account{Login: "use-to-item-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {

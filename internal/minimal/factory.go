@@ -3614,9 +3614,6 @@ func itemUseToItemQuickslotSyncFrames(selectedPlayer *player.Runtime, result inv
 		return itemRemovalQuickslotSyncFrames(selectedPlayer, result.From)
 	}
 	if result.CountOnly {
-		if result.ToOccupied {
-			return itemRemovalQuickslotSyncFrames(selectedPlayer, result.To)
-		}
 		return nil, true
 	}
 	return inventoryMoveQuickslotSyncFrames(selectedPlayer, result.From, result.To)

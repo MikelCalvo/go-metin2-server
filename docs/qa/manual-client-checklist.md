@@ -246,7 +246,7 @@ Expected result:
 - compatible stacks consolidate up to the template-authored `max_count`
 - authored stack `max_count` values above the current bootstrap client count range (`255`) are rejected at item-template load time, not accepted as runtime use-to-item behavior
 - the consumed source cell disappears only on a full merge
-- if the target has only partial room, both source and target counts refresh, the source item quickslot remains, and all item quickslots bound to the refreshed target cell are cleared in quickslot-position order while non-item quickslots with the same byte slot remain
+- if the target has only partial room, both source and target counts refresh, and item/non-item quickslots bound to either still-occupied cell remain unchanged
 - all item quickslots for a removed source cell are cleared in deterministic quickslot-position order on full merge, target item quickslots remain stable on full merge, and unrelated skill/command quickslots remain
 - restricted or invalid states (`anti_stack`, transfer anti-flags, missing/non-stackable/malformed/mismatched templates, source/target `vnum` mismatches, locked source/target stacks, selected-character job/sex/min-level restrictions, duplicate source/target item instance IDs, duplicate live occupancy of the source or target carried cell, already-full targets, or source/target counts already above template `max_count`) fail closed with no visible mutation
 - a `min_level` restriction above the selected character's level leaves both carried stacks and any source-cell item quickslot unchanged even when the source and target are otherwise compatible

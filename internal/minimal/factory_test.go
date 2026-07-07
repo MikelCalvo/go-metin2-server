@@ -3897,7 +3897,7 @@ func TestItemUseToItemQuickslotSyncDeletesConsumedSourceSlot(t *testing.T) {
 	}
 }
 
-func TestItemUseToItemQuickslotSyncDeletesChangedTargetSlotOnPartialMerge(t *testing.T) {
+func TestItemUseToItemQuickslotSyncPreservesChangedTargetSlotOnPartialMerge(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:        0x01030103,
 		VID:       0x02040103,
@@ -3926,21 +3926,13 @@ func TestItemUseToItemQuickslotSyncDeletesChangedTargetSlotOnPartialMerge(t *tes
 	if !ok {
 		t.Fatal("expected partial use-to-item quickslot sync to succeed")
 	}
-	if len(frames) != 2 {
-		t.Fatalf("expected two quickslot deletes for changed target stack, got %d", len(frames))
-	}
-	for index, raw := range frames {
-		deleted, err := quickslotproto.DecodeDel(decodeSingleFrame(t, raw))
-		if err != nil {
-			t.Fatalf("decode quickslot delete %d: %v", index, err)
-		}
-		wantPosition := []uint8{7, 8}[index]
-		if deleted.Position != wantPosition {
-			t.Fatalf("expected target item quickslot position %d to be deleted at index %d, got %d", wantPosition, index, deleted.Position)
-		}
+	if len(frames) != 0 {
+		t.Fatalf("expected no quickslot deletes for changed target count-only stack, got %d", len(frames))
 	}
 	wantLiveQuickslots := []loginticket.Quickslot{
 		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 7, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 8, Type: quickslotproto.TypeItem, Slot: 6},
 		{Position: 9, Type: quickslotproto.TypeSkill, Slot: 6},
 	}
 	if got := selectedPlayer.LiveQuickslots(); !reflect.DeepEqual(got, wantLiveQuickslots) {

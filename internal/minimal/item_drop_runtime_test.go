@@ -671,7 +671,7 @@ func TestGameRuntimeItemUseToItemMergesStacksAndPersistsQuickslotCleanup(t *test
 	}
 }
 
-func TestGameRuntimeItemUseToItemPartialMergeDeletesTargetQuickslot(t *testing.T) {
+func TestGameRuntimeItemUseToItemPartialMergePreservesTargetQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("UseToItemTargetSlot", 0x01030612, 0x02040612, 1100, 2100, 0, 101, 201)
@@ -708,8 +708,8 @@ func TestGameRuntimeItemUseToItemPartialMergeDeletesTargetQuickslot(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected target-quickslot partial use-to-item error: %v", err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("expected partial use-to-item to emit source update, target update, and target QUICKSLOT_DEL, got %d frames", len(out))
+	if len(out) != 2 {
+		t.Fatalf("expected partial use-to-item to emit source and target updates only, got %d frames", len(out))
 	}
 	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -725,14 +725,6 @@ func TestGameRuntimeItemUseToItemPartialMergeDeletesTargetQuickslot(t *testing.T
 	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 200 {
 		t.Fatalf("unexpected target-quickslot partial target update: %+v", targetUpdate)
 	}
-	targetQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
-	if err != nil {
-		t.Fatalf("decode target-quickslot partial quickslot del: %v", err)
-	}
-	if targetQuickslotDel.Position != 2 {
-		t.Fatalf("unexpected target-quickslot partial quickslot del: %+v", targetQuickslotDel)
-	}
-
 	account, err := accounts.Load("use-to-item-target-quickslot")
 	if err != nil {
 		t.Fatalf("load target-quickslot partial use-to-item owner account: %v", err)
@@ -746,10 +738,11 @@ func TestGameRuntimeItemUseToItemPartialMergeDeletesTargetQuickslot(t *testing.T
 	}
 	wantQuickslots := []loginticket.Quickslot{
 		{Position: 1, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 6},
 		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 6},
 	}
 	if !reflect.DeepEqual(account.Characters[0].Quickslots, wantQuickslots) {
-		t.Fatalf("expected partial merge to delete target item quickslot only, got %#v want %#v", account.Characters[0].Quickslots, wantQuickslots)
+		t.Fatalf("expected partial merge to preserve target quickslots, got %#v want %#v", account.Characters[0].Quickslots, wantQuickslots)
 	}
 }
 
