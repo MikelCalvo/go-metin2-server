@@ -329,6 +329,10 @@ func TestPickupGroundItemRejectsMalformedGroundStackBeforeMergeWithoutMutation(t
 			name: "equipped ground snapshot",
 			item: inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
 		},
+		{
+			name: "locked ground snapshot",
+			item: inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 2, Slot: 6, Locked: true},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
