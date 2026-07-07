@@ -397,6 +397,32 @@ func TestPickupGroundItemWithTemplateRejectsAuthoredRestrictionsWithoutMutation(
 	}
 }
 
+func TestPickupGroundItemWithAntiStackTemplateUsesFreshCarriedSlot(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 198, Slot: 5}},
+	}, SessionLink{})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Bound Red Potion", Stackable: true, MaxCount: 200, AntiStack: true}
+	groundItem := inventory.ItemInstance{ID: 42, Vnum: 27001, Count: 2}
+
+	result, ok := runtime.PickupGroundItemWithTemplate(groundItem, 5, template)
+	if !ok {
+		t.Fatal("expected anti-stack pickup to use a fresh carried slot instead of merging")
+	}
+	if result.Merged || result.Split || result.Updated.ID != 0 || len(result.UpdatedItems) != 0 {
+		t.Fatalf("expected fresh-slot anti-stack pickup result, got %+v", result)
+	}
+	if result.Placed.ID != 42 || result.Placed.Vnum != 27001 || result.Placed.Count != 2 || result.Placed.Slot != 0 {
+		t.Fatalf("unexpected anti-stack placed item: %+v", result.Placed)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 42, Vnum: 27001, Count: 2, Slot: 0},
+		{ID: 41, Vnum: 27001, Count: 198, Slot: 5},
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, wantInventory) {
+		t.Fatalf("anti-stack pickup should not merge with compatible stack: got %#v want %#v", got, wantInventory)
+	}
+}
+
 func TestUseItemOnItemConsolidatesFullSourceAndKeepsTargetQuickslotStable(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{
