@@ -2642,14 +2642,18 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.QuickslotResult{Accepted: false}
 					}
 					frames := make([][]byte, 0, len(duplicateItemQuickslots)+1)
-					if packet.Slot.Type == quickslotproto.TypeItem {
-						for _, quickslot := range duplicateItemQuickslots {
-							if quickslot.Type == quickslotproto.TypeItem && quickslot.Slot == packet.Slot.Position && quickslot.Position != packet.Position {
-								frames = append(frames, quickslotproto.EncodeDel(quickslotproto.DelPacket{Position: quickslot.Position}))
+					if packet.Slot.Type == quickslotproto.TypeNone {
+						frames = append(frames, quickslotproto.EncodeDel(quickslotproto.DelPacket{Position: result.Position}))
+					} else {
+						if packet.Slot.Type == quickslotproto.TypeItem {
+							for _, quickslot := range duplicateItemQuickslots {
+								if quickslot.Type == quickslotproto.TypeItem && quickslot.Slot == packet.Slot.Position && quickslot.Position != packet.Position {
+									frames = append(frames, quickslotproto.EncodeDel(quickslotproto.DelPacket{Position: quickslot.Position}))
+								}
 							}
 						}
+						frames = append(frames, quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: result.Position, Slot: quickslotproto.Slot{Type: result.Type, Position: result.Slot}}))
 					}
-					frames = append(frames, quickslotproto.EncodeAdd(quickslotproto.AddPacket{Position: result.Position, Slot: quickslotproto.Slot{Type: result.Type, Position: result.Slot}}))
 					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 					return gameflow.QuickslotResult{Accepted: ok, Frames: frames}
 				},

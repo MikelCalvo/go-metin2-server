@@ -263,13 +263,15 @@ Expected result:
 - unrelated skill/command quickslots with the same byte slot value remain unchanged
 - if stale/reclaimed-socket QA tooling is available, a reclaimed old socket may still see its own quickslot refresh frames, but reconnecting / inspecting the fresh authoritative session shows no persisted quickslot change from that stale socket
 
-### 4.5.4 Delete an occupied quickslot (`QUICKSLOT_DEL`)
+### 4.5.4 Delete an occupied quickslot (`QUICKSLOT_DEL` / `QUICKSLOT_ADD` type none)
 
 - [ ] Delete a quickslot position that currently contains an item, skill, or command binding
+- [ ] If the client path emits `QUICKSLOT_ADD` with `slot.type = 0` for clearing, clear an occupied quickslot through that path too
 - [ ] Delete a different quickslot bar position that is currently empty
 
 Expected result:
 - deleting the occupied position clears that binding and persists after reconnect
+- a type-none `QUICKSLOT_ADD` clear returns the same visible delete behavior: the occupied binding is cleared, no new none binding remains, and reconnect shows the binding gone
 - deleting the empty position fails closed: no quickslot refresh frame is visible, existing quickslot bindings remain, and reconnect shows no persisted change
 
 ### 4.5.5 Swap quickslots (`QUICKSLOT_SWAP`)

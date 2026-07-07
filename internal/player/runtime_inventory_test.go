@@ -1191,6 +1191,22 @@ func TestRuntimeCanSetDeleteAndSwapQuickslots(t *testing.T) {
 		t.Fatalf("unexpected live quickslots after duplicate move: %#v", got)
 	}
 
+	noneDeleted, ok := runtime.SetQuickslot(8, loginticket.Quickslot{Type: quickslotproto.TypeNone, Slot: 0})
+	if !ok || noneDeleted.Position != 8 {
+		t.Fatalf("expected type-none quickslot set to delete position 8, got %+v ok=%v", noneDeleted, ok)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, []loginticket.Quickslot{
+		{Position: 3, Type: 1, Slot: 5},
+		{Position: 7, Type: 2, Slot: 9},
+	}) {
+		t.Fatalf("unexpected live quickslots after type-none delete: %#v", got)
+	}
+
+	setAgain, ok := runtime.SetQuickslot(8, loginticket.Quickslot{Type: 1, Slot: 6})
+	if !ok || setAgain.Position != 8 {
+		t.Fatalf("expected item quickslot to be restorable after type-none delete, got %+v ok=%v", setAgain, ok)
+	}
+
 	deleted, ok := runtime.DeleteQuickslot(3)
 	if !ok || deleted.Position != 3 {
 		t.Fatalf("expected quickslot delete to return position 3, got %+v ok=%v", deleted, ok)
@@ -1270,7 +1286,7 @@ func TestRuntimeSetQuickslotRejectsInvalidInputs(t *testing.T) {
 		slot     loginticket.Quickslot
 	}{
 		{name: "quickslot position", position: 36, slot: loginticket.Quickslot{Type: 1, Slot: 5}},
-		{name: "type", position: 3, slot: loginticket.Quickslot{Type: 4, Slot: 5}},
+		{name: "unsupported type", position: 3, slot: loginticket.Quickslot{Type: 4, Slot: 5}},
 		{name: "item slot", position: 3, slot: loginticket.Quickslot{Type: 1, Slot: 90}},
 		{name: "missing item", position: 3, slot: loginticket.Quickslot{Type: 1, Slot: 6}},
 		{name: "nil runtime", position: 3, slot: loginticket.Quickslot{Type: 1, Slot: 5}},
