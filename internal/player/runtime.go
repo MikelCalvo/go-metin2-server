@@ -441,7 +441,7 @@ func (r *Runtime) PickupGroundItemWithTemplate(item inventory.ItemInstance, pref
 }
 
 func (r *Runtime) PickupGroundItem(item inventory.ItemInstance, preferred inventory.SlotIndex, maxCount uint16) (GroundItemPickupResult, bool) {
-	if r == nil || item.ID == 0 || item.Vnum == 0 || item.Count == 0 || preferred >= inventory.CarriedInventorySlotCount {
+	if r == nil || item.ID == 0 || item.Vnum == 0 || item.Count == 0 || item.Count > 255 || preferred >= inventory.CarriedInventorySlotCount {
 		return GroundItemPickupResult{}, false
 	}
 	if err := item.Validate(); err != nil {

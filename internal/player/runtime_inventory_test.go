@@ -397,6 +397,19 @@ func TestPickupGroundItemWithTemplateRejectsAuthoredRestrictionsWithoutMutation(
 	}
 }
 
+func TestPickupGroundItemRejectsFallbackWideGroundStackBeforeMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{}, SessionLink{})
+	before := runtime.LiveInventory()
+	ground := inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 256, Slot: 6}
+
+	if result, ok := runtime.PickupGroundItem(ground, 6, 0); ok {
+		t.Fatalf("expected fallback wide-stack pickup to fail closed before uint8 refresh, got %+v", result)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("fallback wide-stack pickup mutated inventory: got %#v want %#v", got, before)
+	}
+}
+
 func TestPickupGroundItemWithAntiStackTemplateUsesFreshCarriedSlot(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 198, Slot: 5}},

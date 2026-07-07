@@ -297,6 +297,7 @@ Expected result:
 - if a corrupt/disposable fixture reaches the shared-world ground-handle seam with stale equipment-slot metadata on an otherwise unequipped ground snapshot, registration fails closed and no temporary ground actor becomes available
 - if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_DROP` / `ITEM_DROP2` fails closed with no ground actor, no carried-slot deletion/update, no quickslot mutation, and no persisted-state mutation
 - missing, malformed, mismatched, or ground-count-over-template-`max_count` authored pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
+- fallback/no-template pickup fixtures whose ground stack count exceeds the current one-byte item refresh range (`255`) fail closed before item pickup notice, inventory mutation, or ground-handle removal
 - loaded pickup template metadata marked `anti_give` or restricted by the selected character's job/sex/min-level metadata also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
 
 ### 4.5.7 Drag inventory stack onto inventory stack (`ITEM_MOVE`)
