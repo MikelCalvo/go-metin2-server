@@ -502,6 +502,25 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsDeadOwner(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundGoldRejectsInvalidAmounts(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("InvalidGoldAmountOwner", 0x01030197, 0x02040197, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected invalid-gold-amount owner join to allocate a shared-world entity id")
+	}
+
+	if registry.RegisterGroundGold(ownerID, "invalid-gold-amount-owner", owner, 0x07000017, 0) {
+		t.Fatal("expected zero-amount ground-gold reward registration to fail closed")
+	}
+	if registry.RegisterGroundGold(ownerID, "invalid-gold-amount-owner", owner, 0x07000018, uint32(1<<31)) {
+		t.Fatal("expected over-carrier ground-gold reward registration to fail closed")
+	}
+	if registry.GroundItemExists(0x07000017) || registry.GroundItemExists(0x07000018) {
+		t.Fatal("expected rejected invalid-amount ground-gold rewards to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundRewardsRejectsEmptyOwnerLogin(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("EmptyLoginRewardOwner", 0x01030194, 0x02040194, 1200, 2200, 0, 101, 201)
