@@ -102,6 +102,26 @@ func TestLoadServiceUsesVisibilityDefaultsWhenEnvIsMissing(t *testing.T) {
 	}
 }
 
+func TestLoadServiceUsesGlobalVisibilityOverrides(t *testing.T) {
+	t.Setenv("METIN2_VISIBILITY_MODE", " radius ")
+	t.Setenv("METIN2_GAMED_VISIBILITY_MODE", "")
+	t.Setenv("METIN2_VISIBILITY_RADIUS", "600")
+	t.Setenv("METIN2_GAMED_VISIBILITY_RADIUS", "")
+	t.Setenv("METIN2_VISIBILITY_SECTOR_SIZE", "300")
+	t.Setenv("METIN2_GAMED_VISIBILITY_SECTOR_SIZE", "")
+
+	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	if cfg.VisibilityMode != "radius" {
+		t.Fatalf("expected global visibility mode radius, got %q", cfg.VisibilityMode)
+	}
+	if cfg.VisibilityRadius != 600 {
+		t.Fatalf("expected global visibility radius 600, got %d", cfg.VisibilityRadius)
+	}
+	if cfg.VisibilitySectorSize != 300 {
+		t.Fatalf("expected global visibility sector size 300, got %d", cfg.VisibilitySectorSize)
+	}
+}
+
 func TestLoadServicePrefersServiceSpecificVisibilityOverrides(t *testing.T) {
 	t.Setenv("METIN2_VISIBILITY_MODE", "whole_map")
 	t.Setenv("METIN2_GAMED_VISIBILITY_MODE", "radius")
