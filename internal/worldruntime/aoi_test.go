@@ -28,6 +28,17 @@ func TestRadiusVisibilityPolicyRejectsPeersOutsideRadius(t *testing.T) {
 	}
 }
 
+func TestRadiusVisibilityPolicyRequiresSameEffectiveMap(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithVisibilityPolicy(RadiusVisibilityPolicy{Radius: 400, SectorSize: 200})
+	subject := visibilityCharacter("Subject", 0x02040101, 42, 1700, 2800)
+	differentMapPeer := visibilityCharacter("DifferentMapPeer", 0x02040102, 43, 1701, 2801)
+
+	peers := VisiblePeers(topology, subject, []loginticket.Character{subject, differentMapPeer}, subject.VID)
+	if len(peers) != 0 {
+		t.Fatalf("expected different-map peer to stay hidden even inside AOI radius, got %+v", peers)
+	}
+}
+
 func TestSectorKeyForPositionIsStable(t *testing.T) {
 	position := NewPosition(42, 1700, 2800)
 	if got := SectorKeyForPosition(position, 200); got != (SectorKey{MapIndex: 42, SX: 8, SY: 14}) {
