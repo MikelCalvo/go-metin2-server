@@ -293,7 +293,7 @@ Expected result:
 - [ ] If possible in the QA fixture, repeat with a deliberately missing, malformed, mismatched, or ground-count-over-template-`max_count` authored item-template/state fixture for that `vnum`
 
 Expected result:
-- valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, and shows the normal pickup notice
+- valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, preserves existing item/non-item quickslots for a compatible merge target cell, and shows the normal pickup notice
 - a non-zero gold/elk field follows the gold-drop path regardless of the packed item position: gold decreases, the carried inventory remains unchanged, and a gold ground marker appears
 - loaded drop template metadata whose carried stack already exceeds the authored `max_count`, is transfer-guarded with `anti_drop` / `anti_give` / `anti_sell`, or is rejected by selected-character job/sex/min-level restrictions fails closed: no ground actor, no carried-slot deletion/update, and no quickslot mutation is visible
 - if a corrupt/disposable fixture reaches the shared-world ground-handle seam with stale equipment-slot metadata on an otherwise unequipped ground snapshot, registration fails closed and no temporary ground actor becomes available

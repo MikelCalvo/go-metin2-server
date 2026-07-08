@@ -3444,6 +3444,56 @@ func TestGameRuntimeItemPickupAntiStackTemplateRestoresFreshSlotWithoutMerging(t
 	}
 }
 
+func TestGameRuntimeItemPickupMergePreservesTargetItemQuickslot(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupQuickslotOwner", 0x01030191, 0x02040191, 1400, 2400, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 2021, Vnum: 27003, Count: 3, Slot: 0},
+		{ID: 1021, Vnum: 27003, Count: 2, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 0},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 0},
+	}
+	issuePeerTicket(t, ticketStore, "pickup-quickslot-owner", 0x91919191, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-quickslot-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup quickslot owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27003, Name: "Quickslot Merge Potion", Stackable: true, MaxCount: 200}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected item-pickup quickslot runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-quickslot-owner", 0x91919191)
+	flushServerFrames(t, flow)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(6))
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected merge pickup to emit GROUND_DEL, ITEM_UPDATE, and ITEM_GET without quickslot frames, got %d frames", len(pickupOut))
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode quickslot-preserving pickup update: %v", err)
+	}
+	if update.Position != itemproto.InventoryPosition(0) || update.Count != 5 {
+		t.Fatalf("expected pickup to merge into quickslotted target slot 0, got %+v", update)
+	}
+	account, err := accounts.Load("pickup-quickslot-owner")
+	if err != nil {
+		t.Fatalf("load pickup quickslot owner account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 2021, Vnum: 27003, Count: 5, Slot: 0}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted pickup inventory: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected pickup merge to preserve target item and non-item quickslots, got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameRuntimeItemPickupSplitsStackableDropAcrossPartialStacksAndFreshSlot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
