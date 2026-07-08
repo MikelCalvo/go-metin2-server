@@ -2397,6 +2397,29 @@ func occupiedInventorySlotsExcept(skip ...inventory.SlotIndex) []inventory.ItemI
 	return items
 }
 
+func TestRuntimeRemoveEquipTemplateEffectRejectsPointUnderflowWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: -1<<31 + 5,
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.RemoveEquipTemplateEffect(bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10), inventory.EquipmentSlotWeapon); ok {
+		t.Fatalf("expected underflowing equip template effect removal to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("underflowing equip template effect removal mutated live character: got %#v want %#v", got, before)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != -1<<31+5 {
+		t.Fatalf("underflowing equip template effect removal mutated persisted points: got %d want %d", got, -1<<31+5)
+	}
+}
+
 func TestRuntimeApplyPointDeltaAdjustsLivePointsWithoutMutatingPersistedSnapshot(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,
