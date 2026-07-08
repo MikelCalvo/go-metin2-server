@@ -51,6 +51,7 @@ The repository now implements this full bootstrap contract for the authored/runt
 - if a still-connected visible player had already reached the current retaliation-owned `0`-HP floor, that zero-HP recipient is skipped from later dummy `GC DEAD(vid)` fanout and from that later respawn rebuild burst while other live viewers still receive the ordinary lifecycle frames
 - the same runtime-owned dead interval is now surfaced through loopback runtime/operator snapshots too: static-actor entries returned by `/local/static-actors`, `/local/static-actors/{entity_id}`, `/local/visibility`, `/local/maps`, `/local/relocate-preview`, and `/local/transfer` carry `dead: true` until the dummy respawns
 - the rebuilt dummy returns at bootstrap HP as a fresh live combat snapshot that requires fresh target acquisition before later attacks succeed again
+- if the dying combatant was an engaged content-loaded practice mob with delayed owner-side retaliation armed, the death edge cancels that pending delayed beat before the respawn delay elapses, and the respawn rebuild does not restart retaliation until a fresh post-respawn target / accepted hit establishes a new engagement
 
 ## Why freeze death / respawn separately
 

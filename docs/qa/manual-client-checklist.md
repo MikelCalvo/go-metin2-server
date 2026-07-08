@@ -660,11 +660,23 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] Confirm a stale attack still fails until the practice mob is selected again
 - [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
 
+### 5.12.1 Practice-mob pending-retaliation cleanup on mob death
+
+Run this when the target build has authored QA `spawn_groups` practice-mob content loaded and enough selected-player HP to kill the mob before player death.
+
+- [ ] Select the visible practice mob and land one accepted hit to arm the delayed server-origin retaliation cadence
+- [ ] Continue accepted hits, respecting the owned normal-attack cadence, until the practice mob reaches the zero-HP death edge
+- [ ] Confirm the killing hit shows only the mob `DEAD(target_vid)` plus `TARGET(0, 0)` clear from the combat lifecycle, not an extra owner-side retaliation point-change
+- [ ] Wait less than the owned respawn delay and confirm no stale delayed retaliation beat arrives after mob death
+- [ ] Wait until the owned respawn delay expires and confirm the ordinary mob rebuild burst (`CHARACTER_DEL` + add/info/update)
+- [ ] Confirm no stale delayed retaliation beat arrives immediately after that respawn rebuild unless the mob is freshly reselected and hit again
+
 Expected result:
 - owner-side retaliation death uses `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`
 - `/restart_here` is accepted only after the zero-HP floor and keeps the session in `GAME`
 - player HP is rebuilt from persisted state, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition
 - post-floor `ITEM_MOVE` is silent and non-mutating until a restart/recovery seam is used
+- mob death cancels pending delayed retaliation and respawn does not resurrect stale retaliation work without fresh target acquisition
 
 ### 5.13 Practice-mob retaliation restart-town smoke
 
