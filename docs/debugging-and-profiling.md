@@ -58,7 +58,14 @@ Unless noted otherwise, non-loopback callers are rejected with `403`.
 
 ### `GET /local/runtime-config`
 
-Returns JSON describing the active bootstrap runtime selection, including the current local-channel wiring and visibility policy (`whole_map` or configured radius AOI).
+Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:
+
+- `local_channel_id`
+- `visibility_mode` (`whole_map`, `radius`, or `custom` for future non-standard policies)
+- `visibility_radius`
+- `visibility_sector_size`
+
+The default bootstrap runtime reports local channel `1` and whole-map visibility. When `gamed` is configured for radius AOI, this snapshot reports the active radius and sector-size values selected from the `METIN2_VISIBILITY_*` / `METIN2_GAMED_VISIBILITY_*` environment overrides.
 
 ### `POST /local/notice`
 
