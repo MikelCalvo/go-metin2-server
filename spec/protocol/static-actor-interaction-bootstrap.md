@@ -71,11 +71,14 @@ The first owned interaction families stay intentionally narrow:
 
 The currently implemented bootstrap interaction families remain conservative:
 - the actor must already be visible to the player
+- the actor must also be within the current bootstrap interaction range on the same effective map; a nearby coordinate on a different map is rejected as out of range
 - the runtime resolves `interaction_kind` + `interaction_ref`
 - `info` and `talk` remain self-facing chat-backed responses
 - `warp` reuses the existing self-session transfer / rebootstrap path instead of inventing a separate dialog or warp packet family
 - `shop_preview` reuses the structured merchant catalog plus the current bootstrap merchant window open / buy / close contract instead of inventing a second merchant-definition seam
 - no quest progression, barter, or combat side effects are required
+
+The current out-of-range failure is intentionally bootstrap-scoped. It is owned only as a fail-closed guard around already-visible static actors, not as the final NPC interaction distance policy.
 
 Current owned meanings:
 - `interaction_kind = "info"`
