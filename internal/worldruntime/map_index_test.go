@@ -401,6 +401,29 @@ func TestMapIndexRegisterStaticClearsStaleMapBucketsForSameEntityID(t *testing.T
 	}
 }
 
+func TestMapIndexStaticActorLookupPrunesDuplicateStaleMapBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	current := stale
+	current.Entity.Name = "VillageGuard"
+	current.Position = NewPosition(77, 900, 1200)
+	index.staticByEntityID[stale.Entity.ID] = current
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{stale.Entity.ID: stale}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{stale.Entity.ID: current}
+
+	lookup, ok := index.StaticActor(stale.Entity.ID)
+	if !ok || lookup.Entity.Name != "VillageGuard" || lookup.Position.MapIndex != 77 {
+		t.Fatalf("expected current static actor lookup, got actor=%+v ok=%v", lookup, ok)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected stale map static bucket to be pruned after lookup, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.ID != stale.Entity.ID || actors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected current map bucket to remain after lookup prune, got %+v", actors)
+	}
+}
+
 func TestMapIndexRegisterStaticClonesDeathRewardDropVnums(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	guard := StaticEntity{

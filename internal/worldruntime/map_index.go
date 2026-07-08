@@ -288,6 +288,14 @@ func (m *MapIndex) StaticActor(entityID uint64) (StaticEntity, bool) {
 	defer m.mu.Unlock()
 	actor, ok := m.staticByEntityID[entityID]
 	if ok {
+		m.removeStaticMapPresenceLocked(entityID)
+		mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
+		bucket := m.staticByMapIndex[mapIndex]
+		if bucket == nil {
+			bucket = make(map[uint64]StaticEntity)
+			m.staticByMapIndex[mapIndex] = bucket
+		}
+		bucket[entityID] = actor
 		return cloneStaticEntity(actor), true
 	}
 	actor, ok = m.staticActorMapPresenceLocked(entityID)
