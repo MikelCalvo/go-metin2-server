@@ -352,7 +352,7 @@ func TestGameRuntimeItemMoveRejectsSelectedCharacterRestrictedStackTemplatesWith
 	}
 }
 
-func TestGameRuntimeItemMovePartialMergeDeletesAllTargetItemQuickslots(t *testing.T) {
+func TestGameRuntimeItemMovePartialMergePreservesAllTargetItemQuickslots(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MovePartialMultiQS", 0x0103069f, 0x0204069f, 1300, 2300, 0, 101, 201)
@@ -386,8 +386,8 @@ func TestGameRuntimeItemMovePartialMergeDeletesAllTargetItemQuickslots(t *testin
 	if err != nil {
 		t.Fatalf("unexpected partial multi-quickslot item-move packet error: %v", err)
 	}
-	if len(out) != 4 {
-		t.Fatalf("expected partial item move to emit source update, target update, and two target item quickslot deletes, got %d", len(out))
+	if len(out) != 2 {
+		t.Fatalf("expected partial item move to emit only source and target updates, got %d", len(out))
 	}
 	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -403,18 +403,6 @@ func TestGameRuntimeItemMovePartialMergeDeletesAllTargetItemQuickslots(t *testin
 	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 10 {
 		t.Fatalf("unexpected partial item-move target update: %+v", targetUpdate)
 	}
-	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
-	if err != nil {
-		t.Fatalf("decode first partial item-move quickslot delete: %v", err)
-	}
-	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[3]))
-	if err != nil {
-		t.Fatalf("decode second partial item-move quickslot delete: %v", err)
-	}
-	if firstQuickslotDel.Position != 4 || secondQuickslotDel.Position != 6 {
-		t.Fatalf("expected target item quickslot positions 4 and 6 to be deleted in order, got %+v and %+v", firstQuickslotDel, secondQuickslotDel)
-	}
-
 	persisted, err := accounts.Load("move-partial-multi-qs")
 	if err != nil {
 		t.Fatalf("load partial multi-quickslot item-move account: %v", err)
@@ -426,12 +414,8 @@ func TestGameRuntimeItemMovePartialMergeDeletesAllTargetItemQuickslots(t *testin
 	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
 		t.Fatalf("unexpected persisted partial item-move inventory: got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
 	}
-	wantQuickslots := []loginticket.Quickslot{
-		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
-		{Position: 7, Type: quickslotproto.TypeSkill, Slot: 6},
-	}
-	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
-		t.Fatalf("unexpected persisted partial item-move quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("unexpected persisted partial item-move quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
 	}
 }
 
@@ -1193,6 +1177,82 @@ func TestGameRuntimeItemMoveCountedPartialSplitPreservesSourceItemQuickslot(t *t
 	}
 	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
 		t.Fatalf("counted split item-move should preserve source quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
+func TestGameRuntimeItemMoveCountedPartialMergePreservesSourceAndTargetItemQuickslots(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Small Red Potion",
+		Stackable: true,
+		MaxCount:  10,
+	}}}); err != nil {
+		t.Fatalf("seed counted partial merge item-move template: %v", err)
+	}
+	owner := peerVisibilityCharacter("ItemMoveMergeQS", 0x01030239, 0x02040239, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1951, Vnum: 27001, Count: 5, Slot: 5},
+		{ID: 1952, Vnum: 27001, Count: 7, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 8},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 8},
+	}
+	issuePeerTicket(t, ticketStore, "item-move-partial-merge-qs", 0x69696979, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-move-partial-merge-qs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed counted partial merge item-move owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected counted partial merge item-move runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-move-partial-merge-qs", 0x69696979)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(8),
+		Count:       2,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected counted partial merge item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected counted partial merge item move to emit only source and destination item refreshes, got %d", len(out))
+	}
+	sourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode counted partial merge source update: %v", err)
+	}
+	if sourceUpdate.Position != itemproto.InventoryPosition(5) || sourceUpdate.Count != 3 {
+		t.Fatalf("unexpected counted partial merge source refresh: %+v", sourceUpdate)
+	}
+	destinationUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode counted partial merge destination update: %v", err)
+	}
+	if destinationUpdate.Position != itemproto.InventoryPosition(8) || destinationUpdate.Count != 9 {
+		t.Fatalf("unexpected counted partial merge destination refresh: %+v", destinationUpdate)
+	}
+
+	account, err := accounts.Load("item-move-partial-merge-qs")
+	if err != nil {
+		t.Fatalf("load counted partial merge item-move account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 1951, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1952, Vnum: 27001, Count: 9, Slot: 8},
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("counted partial merge persisted inventory mismatch: got %#v want %#v", account.Characters[0].Inventory, wantInventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("counted partial merge item-move should preserve source and target quickslots: got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
 	}
 }
 
