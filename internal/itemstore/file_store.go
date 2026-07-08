@@ -93,7 +93,10 @@ func decodeSnapshotStrict(raw []byte, snapshot *Snapshot) error {
 	if err := decoder.Decode(snapshot); err != nil {
 		return err
 	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON value")
+		}
 		return err
 	}
 	return nil

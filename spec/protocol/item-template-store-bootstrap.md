@@ -39,11 +39,11 @@ Each template must pass the current `internal/itemstore` validation before the r
 
 The store normalizes and persists deterministic JSON: template names and effect messages are trimmed, equipment slot names are normalized, and templates are sorted by `vnum`.
 
-## Unknown-field hardening
+## Strict JSON hardening
 
-The file-backed loader now rejects unknown JSON fields instead of silently accepting them.
+The file-backed loader now rejects unknown JSON fields and trailing JSON values instead of silently accepting them.
 
-This is a fail-closed authoring guard: if a snapshot contains unowned metadata such as a future effect field, the runtime must reject the snapshot rather than booting while ignoring that metadata. This keeps item behavior template-backed only for fields the repository currently owns and tests.
+This is a fail-closed authoring guard: if a snapshot contains unowned metadata such as a future effect field, or multiple concatenated top-level JSON values, the runtime must reject the snapshot rather than booting while ignoring or only partially reading that metadata. This keeps item behavior template-backed only for fields the repository currently owns and tests.
 
 ## Bootstrap fallback
 
@@ -55,11 +55,11 @@ If the default item-template file is missing, the minimal runtime still uses the
 
 Missing-file fallback is a bootstrap compatibility aid, not the final production item-data model.
 
-Malformed snapshots, invalid templates, duplicate `vnum` entries, and snapshots with unknown JSON fields are fatal for runtime construction.
+Malformed snapshots, invalid templates, duplicate `vnum` entries, snapshots with unknown JSON fields, and snapshots with trailing JSON values are fatal for runtime construction.
 
 ## Tests
 
 Current coverage:
 
-- `internal/itemstore` freezes deterministic save/load behavior, validation failures, anti-flag metadata round trips, use/equip effect metadata, and unknown-field rejection on load.
+- `internal/itemstore` freezes deterministic save/load behavior, validation failures, anti-flag metadata round trips, use/equip effect metadata, and strict load rejection for unknown fields or trailing JSON values.
 - Runtime item-use, equip, merchant, drop/pickup, and drag-to-item stack slices resolve only through loaded template metadata or the deterministic missing-file fallback described above.

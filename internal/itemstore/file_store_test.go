@@ -92,6 +92,14 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 		t.Fatalf("expected ErrInvalidSnapshot for unknown item-template field, got %v", err)
 	}
 
+	trailingJSON := []byte("{\"templates\":[{\"vnum\":27001,\"name\":\"Small Red Potion\",\"stackable\":true,\"max_count\":200}]}{}")
+	if err := os.WriteFile(path, trailingJSON, 0o644); err != nil {
+		t.Fatalf("write trailing-json snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for trailing item-template JSON, got %v", err)
+	}
+
 	zeroVnum := Snapshot{Templates: []Template{{Vnum: 0, Name: "Broken", Stackable: true, MaxCount: 1}}}
 	if err := store.Save(zeroVnum); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for zero vnum, got %v", err)
