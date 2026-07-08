@@ -90,6 +90,74 @@ func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemDropDeletesAllSourceItemQuickslots(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DropMultiQuickslot", 0x0103017e, 0x0204017e, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1008, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 6, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "drop-multi-quickslot", 0x7e7e7e7e, owner)
+	if err := accounts.Save(accountstore.Account{Login: "drop-multi-quickslot", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed multi-quickslot drop owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected multi-quickslot item-drop runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-multi-quickslot", 0x7e7e7e7e)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected multi-quickslot item drop error: %v", err)
+	}
+	if len(out) != 5 {
+		t.Fatalf("expected item drop to emit ITEM_DEL, two QUICKSLOT_DEL frames, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
+	}
+	if _, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0])); err != nil {
+		t.Fatalf("decode multi-quickslot item drop del: %v", err)
+	}
+	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode first multi-quickslot item drop quickslot del: %v", err)
+	}
+	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode second multi-quickslot item drop quickslot del: %v", err)
+	}
+	if firstQuickslotDel.Position != 2 || secondQuickslotDel.Position != 4 {
+		t.Fatalf("expected deterministic source item quickslot deletes at positions 2 and 4, got %+v and %+v", firstQuickslotDel, secondQuickslotDel)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode multi-quickslot item drop ground add: %v", err)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, out[4]))
+	if err != nil {
+		t.Fatalf("decode multi-quickslot item drop ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: owner.Name}) {
+		t.Fatalf("unexpected multi-quickslot item drop ownership: got %+v want vid %d owner %q", ownership, ground.VID, owner.Name)
+	}
+
+	account, err := accounts.Load("drop-multi-quickslot")
+	if err != nil {
+		t.Fatalf("load multi-quickslot drop owner account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected multi-quickslot whole-stack drop to clear persisted inventory, got %#v", account.Characters[0].Inventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{{Position: 6, Type: quickslotproto.TypeSkill, Slot: 5}}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("expected multi-quickslot whole-stack drop to clear only source item quickslots, got %#v", account.Characters[0].Quickslots)
+	}
+}
+
 func TestGameRuntimeItemDropRejectsAtBootstrapHPFloorWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
