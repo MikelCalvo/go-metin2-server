@@ -16001,6 +16001,94 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDeathRew
 	}
 }
 
+func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDropReward(t *testing.T) {
+	const profile = "rewarded_drop_profile_runtime"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 4,
+		DamagePerNormalAttack: 2,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:           worldruntime.StaticActorDeathReward{DropVnums: []uint32{27003}},
+	}) {
+		t.Fatalf("expected registered drop reward profile %q to be accepted", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105022E, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105022E, Name: "RegisteredDropRewardProfileMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: profile,
+		CombatKind:    profile,
+		SpawnGroupRef: "practice.registered_drop_reward_profile_mob",
+	}
+	killer := peerVisibilityCharacter("DropRewardKiller", 0x0103012E, 0x0204012E, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "registered-drop-reward-killer", 0x2e2e2e2e, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "registered-drop-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed registered drop reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_729, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected registered-profile drop reward mob registration to succeed")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "registered-drop-reward-killer", 0x2e2e2e2e)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before registered-profile drop reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= 2; hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on registered-profile drop reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode registered-profile drop reward killing hit dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode registered-profile drop reward killing hit clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected registered-profile drop reward killing hit to clear target, got %+v", clearTarget)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode registered-profile drop reward ground add: %v", err)
+	}
+	expectedVID := bootstrapRewardGroundItemVID(killer, 27003, 0)
+	if ground.VID != expectedVID || ground.Vnum != 27003 || ground.X != killer.X || ground.Y != killer.Y {
+		t.Fatalf("unexpected registered-profile drop reward ground add: %+v want vid=%d", ground, expectedVID)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode registered-profile drop reward ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: expectedVID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected registered-profile drop reward ownership: %+v", ownership)
+	}
+	if !runtime.sharedWorld.GroundItemExists(expectedVID) {
+		t.Fatalf("expected registered-profile drop reward ground item %d to be registered", expectedVID)
+	}
+}
+
 func TestNewGameSessionFactoryPrefersExplicitDeathRewardOverRegisteredProfileDefault(t *testing.T) {
 	const profile = "explicit_reward_profile_runtime"
 	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
