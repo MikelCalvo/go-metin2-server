@@ -574,7 +574,7 @@ func TestLocalRuntimeConfigEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"visibility_mode":"radius"`) || !strings.Contains(string(body), `"visibility_radius":400`) || !strings.Contains(string(body), `"visibility_sector_size":200`) {
+	if !strings.Contains(string(body), `"local_channel_id":1`) || !strings.Contains(string(body), `"visibility_mode":"radius"`) || !strings.Contains(string(body), `"visibility_radius":400`) || !strings.Contains(string(body), `"visibility_sector_size":200`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
