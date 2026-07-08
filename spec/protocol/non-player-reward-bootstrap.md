@@ -46,6 +46,7 @@ Registered bootstrap combat profiles may carry a validated death-reward default 
 Runtime coverage freezes that a spawn-backed actor using such a registered profile can apply the profile's default EXP/gold/drop descriptor on the accepted killing hit.
 That includes a drop-only profile default case where the killing hit emits the normal death/clear frames followed by one `ITEM_GROUND_ADD` / `ITEM_OWNERSHIP` pair and registers the deterministic reward ground item.
 That runtime coverage now also includes formula-only registered profiles whose `damage_per_normal_attack` is canonicalized from `attack_value - defense_value`, so the profile can both drive deterministic HP mutation and apply its reward descriptor on the same death edge.
+A formula-only registered profile may carry a combined descriptor as well; the killing hit still uses the formula-derived HP mutation first, then emits death/clear, scalar EXP/gold point changes, and deterministic owned drop frames in the normal reward ordering.
 If the authored spawn-group snapshot also carries an explicit reward descriptor, that authored descriptor wins over the profile-level default for the current actor life; profile defaults are only the fallback for spawn-backed actors whose live/authored snapshot has no explicit reward descriptor.
 That profile-level default still does **not** make standalone runtime static actors reward-bearing: without a non-empty `spawn_group_ref` or explicit authored live snapshot descriptor, the shared-world death attempt returns a rewardless descriptor.
 

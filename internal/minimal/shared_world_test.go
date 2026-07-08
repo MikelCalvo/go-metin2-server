@@ -16089,6 +16089,132 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDropRewa
 	}
 }
 
+func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileCombinedDeathReward(t *testing.T) {
+	const profile = "formula_reward_profile_runtime"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        4,
+		AttackValue:  3,
+		DefenseValue: 1,
+		RespawnDelay: worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:  worldruntime.StaticActorDeathReward{Experience: 12, Gold: 13, DropVnums: []uint32{27004}},
+	}) {
+		t.Fatalf("expected formula-only reward profile %q to be accepted", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105022F, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105022F, Name: "FormulaRewardProfileMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: profile,
+		CombatKind:    profile,
+		SpawnGroupRef: "practice.formula_reward_profile_mob",
+	}
+	killer := peerVisibilityCharacter("FormulaRewardKiller", 0x0103012F, 0x0204012F, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 30
+	killer.Gold = 40
+	issuePeerTicket(t, store, "formula-reward-killer", 0x2f2f2f2f, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "formula-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed formula reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_730, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected formula-only registered-profile reward mob registration to succeed")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "formula-reward-killer", 0x2f2f2f2f)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected target selection before formula reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
+	}
+
+	firstHit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected formula reward first attack error: %v", err)
+	}
+	if len(firstHit) != 1 {
+		t.Fatalf("expected first formula reward hit to return one HP refresh, got %d frames", len(firstHit))
+	}
+	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHit[0]))
+	if err != nil {
+		t.Fatalf("decode first formula reward HP refresh: %v", err)
+	}
+	if firstRefresh.TargetVID != targetVID || firstRefresh.HPPercent != 50 {
+		t.Fatalf("expected formula-only attack/defense profile to report 50%% HP after first hit, got %+v", firstRefresh)
+	}
+
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	killOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected formula reward killing attack error: %v", err)
+	}
+	if len(killOut) != 6 {
+		t.Fatalf("expected killing hit to return dead, clear target, experience, gold, ground-add, and ownership frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode formula reward killing hit dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode formula reward clear target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected formula reward killing hit to clear target, got %+v", clearTarget)
+	}
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode formula reward experience point change: %v", err)
+	}
+	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 12 || experienceChange.Value != 42 {
+		t.Fatalf("unexpected formula reward experience point change: %+v", experienceChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode formula reward gold point change: %v", err)
+	}
+	if goldChange.VID != killer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 13 || goldChange.Value != 53 {
+		t.Fatalf("unexpected formula reward gold point change: %+v", goldChange)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	if err != nil {
+		t.Fatalf("decode formula reward ground add: %v", err)
+	}
+	expectedVID := bootstrapRewardGroundItemVID(killer, 27004, 0)
+	if ground.VID != expectedVID || ground.Vnum != 27004 || ground.X != killer.X || ground.Y != killer.Y {
+		t.Fatalf("unexpected formula reward ground add: %+v want vid=%d", ground, expectedVID)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	if err != nil {
+		t.Fatalf("decode formula reward ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: expectedVID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected formula reward ownership: %+v", ownership)
+	}
+	if !runtime.sharedWorld.GroundItemExists(expectedVID) {
+		t.Fatalf("expected formula reward ground item %d to be registered", expectedVID)
+	}
+
+	account, err := accounts.Load("formula-reward-killer")
+	if err != nil {
+		t.Fatalf("load formula rewarded account: %v", err)
+	}
+	if got := account.Characters[0].Points[bootstrapExperiencePointType]; got != 42 {
+		t.Fatalf("expected formula rewarded account experience point 42 after mob death, got %d", got)
+	}
+	if got := account.Characters[0].Gold; got != 53 {
+		t.Fatalf("expected formula rewarded account gold 53 after mob death, got %d", got)
+	}
+}
+
 func TestNewGameSessionFactoryPrefersExplicitDeathRewardOverRegisteredProfileDefault(t *testing.T) {
 	const profile = "explicit_reward_profile_runtime"
 	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
