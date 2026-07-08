@@ -821,6 +821,10 @@ func TestRuntimeUseItemOnItemRejectsTemplateTransferGuardsWithoutMutation(t *tes
 		template itemcatalog.Template
 	}{
 		{
+			name:     "non-stackable template",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Single Potion", Stackable: false, MaxCount: 1},
+		},
+		{
 			name:     "equippable template",
 			template: itemcatalog.Template{Vnum: 27001, Name: "Equippable Stack", Stackable: true, MaxCount: 200, EquipSlot: inventory.EquipmentSlotBody.String()},
 		},
