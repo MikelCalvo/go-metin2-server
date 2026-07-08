@@ -611,6 +611,29 @@ func TestAppendGroundItemsToMapOccupancySnapshotsPreservesGroundOnlyMapsAndOrder
 	}
 }
 
+func TestAppendGroundItemsToMapOccupancySnapshotsDoesNotMutateInputSnapshots(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	original := []MapOccupancySnapshot{
+		{
+			MapIndex:        42,
+			CharacterCount:  1,
+			Characters:      []ConnectedCharacterSnapshot{{Name: "Peer", VID: 0x02040101}},
+			GroundItems:     []GroundItemSnapshot{{VID: 10, Vnum: 27001, Count: 1, MapIndex: 42}},
+			GroundItemCount: 1,
+		},
+	}
+
+	updated := AppendGroundItemsToMapOccupancySnapshots(topology, original, []GroundItemOccupancy{
+		{VID: 20, Vnum: 27002, Count: 3, OwnerName: "Owner", MapIndex: 42, X: 1700, Y: 2800, Z: 0},
+	})
+	if len(updated) != 1 || updated[0].GroundItemCount != 2 {
+		t.Fatalf("expected returned occupancy to include appended ground item, got %+v", updated)
+	}
+	if original[0].GroundItemCount != 1 || len(original[0].GroundItems) != 1 || original[0].GroundItems[0].VID != 10 {
+		t.Fatalf("expected input snapshot to remain unchanged, got %+v", original[0])
+	}
+}
+
 func TestVisibleGroundItemsUsesConfiguredVisibilityPolicyAndOrder(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(300, 100)
 	subject := entityRegistryCharacter("Subject", 0x02040101, 42, 1000, 1000)

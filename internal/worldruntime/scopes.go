@@ -620,6 +620,7 @@ func AppendGroundItemsToMapOccupancySnapshots(topology BootstrapTopology, snapsh
 	if len(groundItems) == 0 {
 		return snapshots
 	}
+	snapshots = cloneMapOccupancySnapshots(snapshots)
 	byMap := make(map[uint32]int, len(snapshots)+len(groundItems))
 	for i := range snapshots {
 		byMap[snapshots[i].MapIndex] = i
@@ -683,16 +684,8 @@ func RelocateGroundItemVisibilityDiff(topology BootstrapTopology, current logint
 
 func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology BootstrapTopology, current loginticket.Character, target loginticket.Character) []MapOccupancySnapshot {
 	byMap := make(map[uint32]MapOccupancySnapshot, len(before)+1)
-	for _, snapshot := range before {
-		byMap[snapshot.MapIndex] = MapOccupancySnapshot{
-			MapIndex:         snapshot.MapIndex,
-			CharacterCount:   snapshot.CharacterCount,
-			Characters:       append([]ConnectedCharacterSnapshot(nil), snapshot.Characters...),
-			StaticActorCount: snapshot.StaticActorCount,
-			StaticActors:     append([]StaticActorSnapshot(nil), snapshot.StaticActors...),
-			GroundItemCount:  snapshot.GroundItemCount,
-			GroundItems:      append([]GroundItemSnapshot(nil), snapshot.GroundItems...),
-		}
+	for _, snapshot := range cloneMapOccupancySnapshots(before) {
+		byMap[snapshot.MapIndex] = snapshot
 	}
 
 	currentSnapshot := connectedCharacterSnapshot(topology, current)
@@ -787,6 +780,25 @@ func playerEntitiesToCharacters(players []PlayerEntity) []loginticket.Character 
 		characters = append(characters, player.Character)
 	}
 	return characters
+}
+
+func cloneMapOccupancySnapshots(snapshots []MapOccupancySnapshot) []MapOccupancySnapshot {
+	if len(snapshots) == 0 {
+		return nil
+	}
+	cloned := make([]MapOccupancySnapshot, len(snapshots))
+	for i, snapshot := range snapshots {
+		cloned[i] = MapOccupancySnapshot{
+			MapIndex:         snapshot.MapIndex,
+			CharacterCount:   snapshot.CharacterCount,
+			Characters:       append([]ConnectedCharacterSnapshot(nil), snapshot.Characters...),
+			StaticActorCount: snapshot.StaticActorCount,
+			StaticActors:     append([]StaticActorSnapshot(nil), snapshot.StaticActors...),
+			GroundItemCount:  snapshot.GroundItemCount,
+			GroundItems:      append([]GroundItemSnapshot(nil), snapshot.GroundItems...),
+		}
+	}
+	return cloned
 }
 
 func sortVisibilitySnapshots(snapshots []VisibilitySnapshot) {
