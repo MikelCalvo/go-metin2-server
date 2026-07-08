@@ -339,6 +339,59 @@ func TestCanonicalizeAppliesPracticeMobDefaultsToSpawnGroupWithoutCombatProfile(
 	}
 }
 
+func TestCanonicalizeAcceptsRegisteredSpawnGroupCombatProfile(t *testing.T) {
+	const profile = "practice_bundle_wolf"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 3,
+		Level:        7,
+		Rank:         2,
+		RespawnDelay: worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:  worldruntime.StaticActorDeathReward{Experience: 25, Gold: 11, DropVnums: []uint32{27002, 27001}},
+	}) {
+		t.Fatalf("expected registered combat profile %q to be accepted", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	dropVnums := []uint32{27002, 27001}
+	bundle, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
+		Ref:              "practice.bundle_wolf",
+		Name:             "Practice Bundle Wolf",
+		MapIndex:         42,
+		X:                1775,
+		Y:                2875,
+		RaceNum:          101,
+		CombatProfile:    " practice_bundle_wolf ",
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  dropVnums,
+	}}})
+	if err != nil {
+		t.Fatalf("expected spawn group using registered combat profile to canonicalize, got %v", err)
+	}
+
+	want := Bundle{SpawnGroups: []SpawnGroup{{
+		Ref:              "practice.bundle_wolf",
+		Name:             "Practice Bundle Wolf",
+		MapIndex:         42,
+		X:                1775,
+		Y:                2875,
+		RaceNum:          101,
+		CombatProfile:    profile,
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001, 27002},
+	}}}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected canonical registered-profile spawn group:\n got: %#v\nwant: %#v", bundle, want)
+	}
+	dropVnums[0] = 0
+	if bundle.SpawnGroups[0].RewardDropVnums[0] != 27001 {
+		t.Fatalf("expected registered-profile spawn reward drops to be cloned, got %#v", bundle.SpawnGroups[0].RewardDropVnums)
+	}
+}
+
 func TestCanonicalizeRejectsSpawnGroupWithBlankName(t *testing.T) {
 	_, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
 		Ref:           "practice.mob_alpha",
