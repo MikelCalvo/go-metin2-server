@@ -1488,13 +1488,15 @@ func TestRuntimeUseItemOnItemMergesPartialStackWhenTargetHasLimitedRoom(t *testi
 	}
 }
 
-func TestRuntimeUseItemOnItemLatePartialMergeValidationFailureLeavesSourceAndTargetUnchanged(t *testing.T) {
+func TestRuntimeUseItemOnItemLateMergeValidationFailureLeavesSourceAndTargetUnchanged(t *testing.T) {
 	cases := []struct {
 		name        string
+		maxCount    uint16
 		rewriteItem func(inventory.ItemInstance) inventory.ItemInstance
 	}{
 		{
-			name: "source validation failure",
+			name:     "full merge source validation failure",
+			maxCount: 20,
 			rewriteItem: func(item inventory.ItemInstance) inventory.ItemInstance {
 				if item.Slot == 5 {
 					item.ID = 0
@@ -1503,7 +1505,28 @@ func TestRuntimeUseItemOnItemLatePartialMergeValidationFailureLeavesSourceAndTar
 			},
 		},
 		{
-			name: "target validation failure",
+			name:     "full merge target validation failure",
+			maxCount: 20,
+			rewriteItem: func(item inventory.ItemInstance) inventory.ItemInstance {
+				if item.Slot == 6 {
+					item.ID = 0
+				}
+				return item
+			},
+		},
+		{
+			name:     "partial merge source validation failure",
+			maxCount: 10,
+			rewriteItem: func(item inventory.ItemInstance) inventory.ItemInstance {
+				if item.Slot == 5 {
+					item.ID = 0
+				}
+				return item
+			},
+		},
+		{
+			name:     "partial merge target validation failure",
+			maxCount: 10,
 			rewriteItem: func(item inventory.ItemInstance) inventory.ItemInstance {
 				if item.Slot == 6 {
 					item.ID = 0
@@ -1523,12 +1546,12 @@ func TestRuntimeUseItemOnItemLatePartialMergeValidationFailureLeavesSourceAndTar
 			}
 			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 			template := bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50")
-			template.MaxCount = 10
+			template.MaxCount = tc.maxCount
 			before := runtime.LiveCharacter()
 
 			result, ok := runtime.useItemOnItem(5, 6, template, tc.rewriteItem)
 			if ok {
-				t.Fatalf("expected late %s to reject partial use-to-item merge, got %+v", tc.name, result)
+				t.Fatalf("expected late %s to reject use-to-item merge, got %+v", tc.name, result)
 			}
 			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
 				t.Fatalf("expected late %s to leave live character unchanged, got %#v want %#v", tc.name, got, before)
