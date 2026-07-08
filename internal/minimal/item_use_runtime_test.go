@@ -15,6 +15,50 @@ import (
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
 
+func TestGameSessionFlowItemUseToItemRejectsAtBootstrapHPFloorWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemDead", 0x0103052d, 0x0204052d, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 203, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 204, Vnum: 27001, Count: 3, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "uit-hp-floor", 0x5050502d, owner)
+	if err := accounts.Save(accountstore.Account{Login: "uit-hp-floor", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed hp-floor item-use-to-item account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Floor Potion", Stackable: true, MaxCount: 200}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected hp-floor item-use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "uit-hp-floor", 0x5050502d)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected hp-floor item-use-to-item packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected hp-floor ITEM_USE_TO_ITEM to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after hp-floor ITEM_USE_TO_ITEM rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("uit-hp-floor")
+	if err != nil {
+		t.Fatalf("load persisted hp-floor item-use-to-item account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("hp-floor ITEM_USE_TO_ITEM mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("hp-floor ITEM_USE_TO_ITEM mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemRejectsRuntimeWideMaxWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name            string
