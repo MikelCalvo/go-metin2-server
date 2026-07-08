@@ -2072,6 +2072,7 @@ func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byt
 }
 
 func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
+	message = strings.TrimSpace(message)
 	if r == nil || message == "" {
 		return 0
 	}

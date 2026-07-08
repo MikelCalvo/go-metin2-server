@@ -4254,12 +4254,53 @@ func TestGameRuntimeBroadcastNoticeQueuesSystemMessageAcrossMaps(t *testing.T) {
 }
 
 func TestGameRuntimeBroadcastNoticeRejectsEmptyMessage(t *testing.T) {
-	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
 	if delivered := runtime.BroadcastNotice(""); delivered != 0 {
 		t.Fatalf("expected empty notice to queue for 0 sessions, got %d", delivered)
+	}
+	if delivered := runtime.BroadcastNotice(" \t\n "); delivered != 0 {
+		t.Fatalf("expected whitespace-only notice to queue for 0 sessions, got %d", delivered)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected whitespace-only notice to queue no frames, got %d", len(queued))
+	}
+}
+
+func TestGameRuntimeBroadcastNoticeTrimsDeliveredMessage(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	if delivered := runtime.BroadcastNotice("  server maintenance  \n"); delivered != 1 {
+		t.Fatalf("expected trimmed non-empty notice to queue for one session, got %d", delivered)
+	}
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected one trimmed notice frame, got %d", len(queued))
+	}
+	decoded, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode trimmed notice: %v", err)
+	}
+	if decoded.Type != chatproto.ChatTypeNotice || decoded.VID != 0 || decoded.Message != "server maintenance" {
+		t.Fatalf("unexpected trimmed notice delivery: %+v", decoded)
 	}
 }
 
