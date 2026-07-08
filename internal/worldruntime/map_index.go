@@ -290,7 +290,8 @@ func (m *MapIndex) StaticActor(entityID uint64) (StaticEntity, bool) {
 	if ok {
 		return cloneStaticEntity(actor), true
 	}
-	return m.staticActorMapPresenceLocked(entityID)
+	actor, ok = m.staticActorMapPresenceLocked(entityID)
+	return cloneStaticEntity(actor), ok
 }
 
 func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {

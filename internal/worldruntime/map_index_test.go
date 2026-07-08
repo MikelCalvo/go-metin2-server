@@ -475,3 +475,33 @@ func TestMapIndexStaticActorSnapshotsCloneDeathRewardDropVnums(t *testing.T) {
 		t.Fatalf("expected static actor reward snapshots to be isolated from callers, got %+v", actors[0].DeathReward.DropVnums)
 	}
 }
+
+func TestMapIndexStaticActorLookupClonesDeathRewardDropVnumsWhenEntityIndexIsMissing(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{
+		Entity:        Entity{ID: 12, Kind: EntityKindStaticActor, Name: "PracticeMob"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.mob_delta",
+		DeathReward:   StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001, 27002}},
+	}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	delete(index.staticByEntityID, guard.Entity.ID)
+
+	lookup, ok := index.StaticActor(guard.Entity.ID)
+	if !ok {
+		t.Fatal("expected static actor lookup through surviving map bucket to succeed")
+	}
+	lookup.DeathReward.DropVnums[0] = 99999
+
+	lookup, ok = index.StaticActor(guard.Entity.ID)
+	if !ok {
+		t.Fatal("expected second static actor lookup through surviving map bucket to succeed")
+	}
+	if len(lookup.DeathReward.DropVnums) != 2 || lookup.DeathReward.DropVnums[0] != 27001 || lookup.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected static actor lookup to clone reward drops from surviving map bucket, got %+v", lookup.DeathReward.DropVnums)
+	}
+}
