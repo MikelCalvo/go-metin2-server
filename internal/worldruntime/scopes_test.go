@@ -1,6 +1,9 @@
 package worldruntime
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestScopesVisibleTargetsFollowConfiguredVisibilityPolicy(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
@@ -679,6 +682,26 @@ func TestGroundItemVisibilityDiffUsesConfiguredVisibilityPolicyAndOrder(t *testi
 	}
 	if len(diff.AddedVisibleItems) != 1 || diff.AddedVisibleItems[0].VID != 30 {
 		t.Fatalf("expected added visible ground [30], got %+v", diff.AddedVisibleItems)
+	}
+}
+
+func TestGroundItemVisibilityDiffClonesInputSlices(t *testing.T) {
+	current := []GroundItemSnapshot{{VID: 20, Vnum: 27002, Count: 2}, {VID: 10, Vnum: 27001, Count: 1}}
+	target := []GroundItemSnapshot{{VID: 30, Vnum: 27003, Count: 3}}
+	originalCurrent := append([]GroundItemSnapshot(nil), current...)
+	originalTarget := append([]GroundItemSnapshot(nil), target...)
+
+	diff := BuildGroundItemVisibilityDiff(current, target)
+	diff.CurrentVisibleItems[0].Count = 99
+	diff.TargetVisibleItems[0].Count = 88
+	diff.RemovedVisibleItems[0].Count = 77
+	diff.AddedVisibleItems[0].Count = 66
+
+	if !reflect.DeepEqual(current, originalCurrent) {
+		t.Fatalf("ground visibility diff mutated current input: got %+v want %+v", current, originalCurrent)
+	}
+	if !reflect.DeepEqual(target, originalTarget) {
+		t.Fatalf("ground visibility diff mutated target input: got %+v want %+v", target, originalTarget)
 	}
 }
 
