@@ -22645,6 +22645,109 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	}
 }
 
+func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRespawn(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peer.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000355, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_pending_retaliation_cleanup",
+		Name:          "PracticeMobPendingRetaliationCleanup",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice mob after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible content practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before pending-retaliation cleanup test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only combat target frame before pending-retaliation cleanup test, got %d", len(selectOut))
+	}
+
+	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected combat attack error on pending-retaliation cleanup hit %d: %v", attackIndex+1, err)
+		}
+		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
+			if len(attackOut) != 2 {
+				t.Fatalf("expected killing hit to keep death + clear choreography without retaliation point-change, got %d frames", len(attackOut))
+			}
+			death, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[0]))
+			if err != nil {
+				t.Fatalf("decode practice mob death frame: %v", err)
+			}
+			if death.VID != targetVID {
+				t.Fatalf("unexpected practice mob death packet: %+v", death)
+			}
+			cleared, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[1]))
+			if err != nil {
+				t.Fatalf("decode practice mob clear-target frame: %v", err)
+			}
+			if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
+				t.Fatalf("unexpected practice mob clear-target packet: %+v", cleared)
+			}
+			continue
+		}
+		if len(attackOut) != 2 {
+			t.Fatalf("expected live hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
+		}
+	}
+
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected mob death to cancel pending delayed retaliation before respawn, got %d queued frames", len(queued))
+	}
+
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	respawnFrames := flushServerFrames(t, flow)
+	if len(respawnFrames) != 4 {
+		t.Fatalf("expected delete + add/info/update respawn rebuild after pending-retaliation cleanup, got %d frames", len(respawnFrames))
+	}
+	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, respawnFrames[0]))
+	if err != nil {
+		t.Fatalf("decode practice mob respawn delete frame: %v", err)
+	}
+	if deleted.VID != targetVID {
+		t.Fatalf("unexpected practice mob respawn delete frame: %+v", deleted)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no stale delayed retaliation after respawn rebuild, got %d queued frames", len(queued))
+	}
+}
+
 func TestGameSessionFlowPracticeMobAggroLiteRejectsFreshThirdPartyTargetAfterFirstAcceptedHit(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
