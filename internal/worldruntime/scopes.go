@@ -299,7 +299,7 @@ func (s Scopes) VisibleStaticActorByVIDWithinInteractionRange(subject loginticke
 }
 
 func StaticActorWithinInteractionRange(subject loginticket.Character, actor StaticEntity, maxDistance int32) bool {
-	if maxDistance <= 0 {
+	if maxDistance <= 0 || effectiveMapIndex(subject.MapIndex) != effectiveMapIndex(actor.Position.MapIndex) {
 		return false
 	}
 	dx := int64(subject.X) - int64(actor.Position.X)
@@ -307,6 +307,13 @@ func StaticActorWithinInteractionRange(subject loginticket.Character, actor Stat
 	distanceSquared := dx*dx + dy*dy
 	maxDistanceSquared := int64(maxDistance) * int64(maxDistance)
 	return distanceSquared <= maxDistanceSquared
+}
+
+func effectiveMapIndex(mapIndex uint32) uint32 {
+	if mapIndex == 0 {
+		return bootstrapMapIndex
+	}
+	return mapIndex
 }
 
 func (s Scopes) VisibleTargetsForStaticActor(actor StaticEntity) []PlayerEntity {

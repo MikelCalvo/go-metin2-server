@@ -69,6 +69,12 @@ This is the query now reused by:
 - self-facing AOI rebuild on `MOVE`
 - self-facing AOI rebuild on `SYNC_POSITION`
 
+Interaction-range helpers are deliberately stricter than plain distance math:
+- the actor must still share the subject's effective bootstrap map
+- then the helper applies the configured maximum squared-distance check
+
+This prevents a nearby coordinate on another effective map from passing a later interaction or combat range gate solely because its `x/y` values are close.
+
 ### Ground-item relocation visibility
 
 `internal/worldruntime/scopes.go` now owns relocation-preview math for runtime-owned ground-item occupancy supplied by the bootstrap shared-world runtime.

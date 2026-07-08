@@ -253,6 +253,15 @@ func TestScopesVisibleStaticActorByVIDWithinInteractionRangeRequiresCurrentRange
 	}
 }
 
+func TestStaticActorWithinInteractionRangeRequiresSameEffectiveMap(t *testing.T) {
+	subject := entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800)
+	actor := StaticEntity{Entity: Entity{ID: 10, Name: "NearbyOtherMap"}, Position: NewPosition(43, 1701, 2801), RaceNum: 20300}
+
+	if StaticActorWithinInteractionRange(subject, actor, 300) {
+		t.Fatal("expected nearby static actor on another map to stay outside interaction range")
+	}
+}
+
 func TestScopesCharacterVisibilitySnapshotsIncludeVisibleStaticActors(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)
