@@ -746,6 +746,32 @@ func TestRuntimeDropInventoryItemRejectsDuplicateSlotOccupancyWithoutMutation(t 
 	}
 }
 
+func TestRuntimeUseItemOnItemRejectsZeroCountTargetWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "ZeroTargetPeer",
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+			{ID: 12, Vnum: 27001, Count: 0, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "zero-target-peer", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	if result, ok := runtime.UseItemOnItem(5, 8, template); ok {
+		t.Fatalf("expected zero-count target use-to-item to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("zero-count target use-to-item mutated live character: got %#v want %#v", got, before)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) {
+		t.Fatalf("zero-count target use-to-item mutated persisted state: inventory=%#v quickslots=%#v", got.Inventory, got.Quickslots)
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsAuthoredJobSexAndLevelRestrictionsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string
