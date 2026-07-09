@@ -1,6 +1,11 @@
 package worldruntime
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+)
 
 func TestMapIndexRegistersPlayersIntoEffectiveMapBuckets(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
@@ -182,6 +187,44 @@ func TestMapIndexSnapshotReturnsStableSortedCharactersPerMap(t *testing.T) {
 	}
 	if len(snapshots[1].Characters) != 1 || snapshots[1].Characters[0].Name != "Zulu" {
 		t.Fatalf("expected Zulu-only snapshot for map 42, got %+v", snapshots[1].Characters)
+	}
+}
+
+func TestMapIndexSnapshotClonesPlayerItemState(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100)
+	alpha.Inventory = append(alpha.Inventory, inventory.ItemInstance{ID: 101, Vnum: 27001, Count: 1})
+	alpha.Equipment = append(alpha.Equipment, inventory.ItemInstance{ID: 201, Vnum: 11299, Count: 1})
+	alpha.Quickslots = append(alpha.Quickslots, loginticket.Quickslot{Type: 1, Position: 2})
+	if !index.Register(newPlayerEntity(1, alpha)) {
+		t.Fatal("expected Alpha registration to succeed")
+	}
+
+	characters := index.PlayerCharacters(1)
+	characters[0].Inventory[0].Vnum = 11111
+	characters[0].Equipment[0].Vnum = 22222
+	characters[0].Quickslots[0].Position = 9
+
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || len(snapshots[0].Characters) != 1 {
+		t.Fatalf("expected one player occupancy snapshot, got %+v", snapshots)
+	}
+	snapshots[0].Characters[0].Inventory[0].Count = 7
+	snapshots[0].Characters[0].Equipment[0].Count = 8
+	snapshots[0].Characters[0].Quickslots[0].Slot = 3
+
+	stored := index.PlayerCharacters(1)
+	if len(stored) != 1 {
+		t.Fatalf("expected stored Alpha to remain present, got %+v", stored)
+	}
+	if stored[0].Inventory[0].Vnum != 27001 || stored[0].Inventory[0].Count != 1 {
+		t.Fatalf("expected stored inventory to stay cloned, got %+v", stored[0].Inventory)
+	}
+	if stored[0].Equipment[0].Vnum != 11299 || stored[0].Equipment[0].Count != 1 {
+		t.Fatalf("expected stored equipment to stay cloned, got %+v", stored[0].Equipment)
+	}
+	if stored[0].Quickslots[0].Position != 2 || stored[0].Quickslots[0].Slot != 0 {
+		t.Fatalf("expected stored quickslots to stay cloned, got %+v", stored[0].Quickslots)
 	}
 }
 

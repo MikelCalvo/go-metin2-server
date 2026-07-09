@@ -48,14 +48,14 @@ func (m *MapIndex) Register(player PlayerEntity) bool {
 
 	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: player.Position().MapIndex})
 	m.removePlayerMapPresenceLocked(player.Entity.ID)
-	m.byEntityID[player.Entity.ID] = player
+	m.byEntityID[player.Entity.ID] = clonePlayerEntity(player)
 	m.effectiveMapByEntityID[player.Entity.ID] = mapIndex
 	bucket := m.byMapIndex[mapIndex]
 	if bucket == nil {
 		bucket = make(map[uint64]PlayerEntity)
 		m.byMapIndex[mapIndex] = bucket
 	}
-	bucket[player.Entity.ID] = player
+	bucket[player.Entity.ID] = clonePlayerEntity(player)
 	return true
 }
 
@@ -85,14 +85,14 @@ func (m *MapIndex) Update(player PlayerEntity) bool {
 		}
 	}
 
-	m.byEntityID[player.Entity.ID] = player
+	m.byEntityID[player.Entity.ID] = clonePlayerEntity(player)
 	m.effectiveMapByEntityID[player.Entity.ID] = nextMapIndex
 	bucket := m.byMapIndex[nextMapIndex]
 	if bucket == nil {
 		bucket = make(map[uint64]PlayerEntity)
 		m.byMapIndex[nextMapIndex] = bucket
 	}
-	bucket[player.Entity.ID] = player
+	bucket[player.Entity.ID] = clonePlayerEntity(player)
 	return true
 }
 
@@ -100,7 +100,7 @@ func (m *MapIndex) playerMapPresenceLocked(entityID uint64) (PlayerEntity, bool)
 	for _, bucket := range m.byMapIndex {
 		player, ok := bucket[entityID]
 		if ok {
-			return player, true
+			return clonePlayerEntity(player), true
 		}
 	}
 	return PlayerEntity{}, false
@@ -118,7 +118,7 @@ func (m *MapIndex) Remove(entityID uint64) (PlayerEntity, bool) {
 	if ok {
 		delete(m.byEntityID, entityID)
 		m.removePlayerMapPresenceLocked(entityID)
-		return player, true
+		return clonePlayerEntity(player), true
 	}
 
 	for mapIndex, bucket := range m.byMapIndex {
@@ -132,7 +132,7 @@ func (m *MapIndex) Remove(entityID uint64) (PlayerEntity, bool) {
 		}
 		delete(m.byEntityID, entityID)
 		delete(m.effectiveMapByEntityID, entityID)
-		return player, true
+		return clonePlayerEntity(player), true
 	}
 	delete(m.effectiveMapByEntityID, entityID)
 	return PlayerEntity{}, false
@@ -177,7 +177,7 @@ func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
 	}
 	characters := make([]loginticket.Character, 0, len(bucket))
 	for _, player := range bucket {
-		characters = append(characters, player.Character)
+		characters = append(characters, cloneCharacterSnapshot(player.Character))
 	}
 	sortCharacters(characters)
 	return characters
@@ -206,7 +206,7 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 	for mapIndex := range mapIndices {
 		characters := make([]loginticket.Character, 0, len(m.byMapIndex[mapIndex]))
 		for _, player := range m.byMapIndex[mapIndex] {
-			characters = append(characters, player.Character)
+			characters = append(characters, cloneCharacterSnapshot(player.Character))
 		}
 		sortCharacters(characters)
 
