@@ -5247,6 +5247,11 @@ func cloneStaticActorSnapshots(snapshot []StaticActorSnapshot) []StaticActorSnap
 	}
 	cloned := make([]StaticActorSnapshot, len(snapshot))
 	copy(cloned, snapshot)
+	for i := range cloned {
+		if len(cloned[i].RewardDropVnums) > 0 {
+			cloned[i].RewardDropVnums = append([]uint32(nil), cloned[i].RewardDropVnums...)
+		}
+	}
 	return cloned
 }
 

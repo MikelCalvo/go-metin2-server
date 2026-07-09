@@ -40,6 +40,31 @@ import (
 
 const defaultMerchantPreview = "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g; [2] Small Red Potion x2 @ 100g"
 
+func TestCloneStaticActorSnapshotsClonesRewardDropVnums(t *testing.T) {
+	original := []StaticActorSnapshot{{
+		EntityID:         0x07000101,
+		Name:             "RewardCloneMob",
+		MapIndex:         bootstrapMapIndex,
+		X:                1200,
+		Y:                2200,
+		RaceNum:          20350,
+		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		SpawnGroupRef:    "practice.reward_clone",
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27001, 27002},
+	}}
+
+	cloned := cloneStaticActorSnapshots(original)
+	if len(cloned) != 1 {
+		t.Fatalf("expected one cloned static actor, got %d", len(cloned))
+	}
+	cloned[0].RewardDropVnums[0] = 99999
+	if original[0].RewardDropVnums[0] != 27001 {
+		t.Fatalf("expected reward drop vnums to be deep-cloned, original mutated to %+v", original[0].RewardDropVnums)
+	}
+}
+
 func TestLegacyCreatePositionForEmpireCoversOwnedTownRestartTable(t *testing.T) {
 	tests := []struct {
 		name         string

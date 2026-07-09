@@ -156,6 +156,7 @@ Current rules:
 - killing a rewarded practice mob may apply that descriptor once for the accepted death edge
 - the timed respawn rebuild restores the same authored actor identity and preserves `spawn_group_ref`, `reward_experience`, `reward_gold`, and `reward_drop_vnums`
 - preserving the descriptor across respawn does **not** mean rewards are automatically granted on respawn; the descriptor is only applied again after a later accepted killing hit in a fresh live loop
+- runtime helpers that clone authored static-actor snapshots must deep-copy `reward_drop_vnums` so update/remove/rollback paths cannot mutate the caller's descriptor slice by alias
 - dead/live HP state remains runtime-owned and separate from account or content persistence
 
 ## Combined reward descriptor coverage
