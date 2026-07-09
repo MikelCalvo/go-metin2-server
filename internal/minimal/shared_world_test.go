@@ -19846,6 +19846,98 @@ func TestGameSessionFlowItemUseToItemRejectsSourceCountTemplateBoundsWithoutMuta
 	}
 }
 
+func TestGameSessionFlowItemUseToItemRejectsTargetCapacityEdgesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name          string
+		login         string
+		loginKey      uint32
+		charName      string
+		source        inventory.ItemInstance
+		target        inventory.ItemInstance
+		template      itemcatalog.Template
+		wantInventory []InventoryItemSnapshot
+	}{
+		{
+			name:     "already full target",
+			login:    "use-to-item-full-target",
+			loginKey: 0x5050505e,
+			charName: "UseToItemFullTarget",
+			source:   inventory.ItemInstance{ID: 108, Vnum: 27001, Count: 2, Slot: 5},
+			target:   inventory.ItemInstance{ID: 109, Vnum: 27001, Count: 200, Slot: 8},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Full Target Potion", Stackable: true, MaxCount: 200},
+			wantInventory: []InventoryItemSnapshot{
+				{ID: 108, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 109, Vnum: 27001, Count: 200, Slot: 8},
+			},
+		},
+		{
+			name:     "target count exceeds template max",
+			login:    "use-to-item-over-target",
+			loginKey: 0x5050505f,
+			charName: "UseToItemOverTarget",
+			source:   inventory.ItemInstance{ID: 110, Vnum: 27001, Count: 2, Slot: 5},
+			target:   inventory.ItemInstance{ID: 111, Vnum: 27001, Count: 201, Slot: 8},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Over Target Potion", Stackable: true, MaxCount: 200},
+			wantInventory: []InventoryItemSnapshot{
+				{ID: 110, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 111, Vnum: 27001, Count: 201, Slot: 8},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter(tc.charName, 0x0103051e, 0x0204051e, 1100, 2100, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{tc.source, tc.target}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}, {Position: 3, Type: quickslotproto.TypeItem, Slot: 8}}
+			issuePeerTicket(t, ticketStore, tc.login, tc.loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s owner account: %v", tc.name, err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{tc.template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.loginKey)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
+				Source: itemproto.InventoryPosition(5),
+				Target: itemproto.InventoryPosition(8),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected %s use-to-item error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s use-to-item request to fail closed without frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s use-to-item rejection, got %d", tc.name, len(queued))
+			}
+			snapshot, ok := runtime.InventorySnapshot(owner.Name)
+			if !ok {
+				t.Fatalf("expected inventory snapshot after %s use-to-item rejection", tc.name)
+			}
+			if !reflect.DeepEqual(snapshot.Inventory, tc.wantInventory) {
+				t.Fatalf("expected %s rejection to leave runtime inventory unchanged, got %+v want %+v", tc.name, snapshot.Inventory, tc.wantInventory)
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load persisted %s account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("expected %s rejection to leave persisted inventory unchanged, got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("expected %s rejection to leave persisted quickslots unchanged, got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantBuyerClose", 0x01040104, 0x02050104, 125, nil)
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-close", 0x44444444, buyer)
