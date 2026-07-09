@@ -203,6 +203,24 @@ func TestEntityRegistryRegistersAndLooksUpStaticActors(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryRejectsExplicitStaticActorIDAlreadyOwnedByPlayer(t *testing.T) {
+	registry := NewEntityRegistry()
+	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if player.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+
+	if actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: player.Entity.ID, Name: "CollidingGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300}); ok {
+		t.Fatalf("expected explicit static actor ID colliding with player to fail closed, got %+v", actor)
+	}
+	if lookup, ok := registry.Player(player.Entity.ID); !ok || lookup.Entity.Name != "Alpha" {
+		t.Fatalf("expected original player entity to remain registered after rejected static actor, got entity=%+v ok=%v", lookup, ok)
+	}
+	if actor, ok := registry.StaticActor(uint64(player.Entity.ID)); ok {
+		t.Fatalf("expected colliding static actor to stay absent, got %+v", actor)
+	}
+}
+
 func TestEntityRegistryStaticActorsPreserveInteractionMetadata(t *testing.T) {
 	registry := NewEntityRegistry()
 	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, InteractionKind: "talk", InteractionRef: "npc:village_guard"})

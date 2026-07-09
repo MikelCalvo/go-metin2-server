@@ -61,6 +61,8 @@ func (r *EntityRegistry) registerStaticActor(actor StaticEntity) (StaticEntity, 
 	id := actor.Entity.ID
 	if id == 0 {
 		id = r.nextID + 1
+	} else if _, exists := r.players.ByEntityID(id); exists {
+		return StaticEntity{}, false
 	}
 	registered := newStaticEntity(id, actor)
 	if !r.staticActors.Register(registered) {
