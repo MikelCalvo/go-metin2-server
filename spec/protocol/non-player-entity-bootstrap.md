@@ -104,6 +104,7 @@ This slice does not yet freeze:
   - if a stale visibility-VID index entry points at a missing static actor entity ID, a later `ByVID` lookup must prune that orphaned index entry before failing closed; visible-VID lookup must not keep returning through stale non-player directory aliases after partial teardown
   - if that orphaned visibility-VID entry would otherwise conflict with later registration or in-place update of the real actor for that VID, the non-player directory must prune the orphan and allow the current actor to claim the VID; only live conflicting actor ownership should fail closed
   - explicit static-actor entity-ID restore paths must fail closed when the requested ID is already owned by a live player entity; player and non-player runtime identities share one registry-owned entity namespace and must not overlap even if a static snapshot or operator repair path supplies an explicit ID
+  - player `VID` values and encodable static-actor visibility `VID` values must share the same live visibility namespace; registering either side must fail closed when the other side already owns that visible ID so later target/interaction lookups cannot resolve one on top of the other
 - inter-channel ownership
 
 ## Success definition for the next slice

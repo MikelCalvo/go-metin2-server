@@ -594,6 +594,46 @@ func TestEntityRegistryUpdateStaticActorRebuildsMissingDirectoryEntry(t *testing
 	}
 }
 
+func TestEntityRegistryRejectsPlayerVIDAlreadyOwnedByStaticActorVisibilityVID(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: 0x02040101, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration with explicit visibility VID to succeed")
+	}
+
+	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", uint32(actor.Entity.ID), 42, 1800, 2900))
+	if player.Entity.ID != 0 {
+		t.Fatalf("expected player registration with colliding visible VID to fail closed, got %+v", player)
+	}
+	lookup, ok := registry.StaticActor(actor.Entity.ID)
+	if !ok || lookup.Entity.Name != "VillageGuard" {
+		t.Fatalf("expected original static actor to remain registered after rejected player, got actor=%+v ok=%v", lookup, ok)
+	}
+	if players := registry.PlayerCharacters(); len(players) != 0 {
+		t.Fatalf("expected rejected player to stay out of player snapshots, got %+v", players)
+	}
+}
+
+func TestEntityRegistryRejectsStaticActorVisibilityVIDAlreadyOwnedByPlayer(t *testing.T) {
+	registry := NewEntityRegistry()
+	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if player.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+
+	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Name: "VillageGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300})
+	if ok {
+		t.Fatalf("expected static actor registration with colliding visible VID to fail closed, got %+v", actor)
+	}
+	lookup, ok := registry.Player(player.Entity.ID)
+	if !ok || lookup.Entity.Name != "Alpha" {
+		t.Fatalf("expected original player to remain registered after rejected static actor, got player=%+v ok=%v", lookup, ok)
+	}
+	if actors := registry.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor to stay out of static actor snapshots, got %+v", actors)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,

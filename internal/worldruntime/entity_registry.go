@@ -31,6 +31,11 @@ func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerE
 	defer r.mu.Unlock()
 	r.nextID++
 	registered := newPlayerEntity(r.nextID, character)
+	if r.staticActors != nil {
+		if _, exists := r.staticActors.ByVID(registered.Entity.VID); exists {
+			return PlayerEntity{}
+		}
+	}
 	if !r.players.Register(registered) {
 		return PlayerEntity{}
 	}
@@ -65,6 +70,11 @@ func (r *EntityRegistry) registerStaticActor(actor StaticEntity) (StaticEntity, 
 		return StaticEntity{}, false
 	}
 	registered := newStaticEntity(id, actor)
+	if vid, ok := StaticActorVisibilityVID(registered); ok {
+		if _, exists := r.players.ByVID(vid); exists {
+			return StaticEntity{}, false
+		}
+	}
 	if !r.staticActors.Register(registered) {
 		return StaticEntity{}, false
 	}
