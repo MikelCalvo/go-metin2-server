@@ -200,10 +200,62 @@ func TestNonPlayerDirectoryUpdateClearsStaleVisibilityVIDsForSameEntityID(t *tes
 	}
 }
 
-func TestNonPlayerDirectoryLookupsDeepCloneDeathRewardDrops(t *testing.T) {
+func TestNonPlayerDirectoryRegisterDeepClonesDeathRewardDrops(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
 		Entity:        Entity{ID: 15, Kind: EntityKindStaticActor, Name: "RewardGuard"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.reward_guard",
+		DeathReward:   StaticActorDeathReward{DropVnums: []uint32{27001, 27002}},
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected reward actor registration to succeed")
+	}
+	actor.DeathReward.DropVnums[0] = 11111
+
+	stored, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected stored reward actor to remain present")
+	}
+	if len(stored.DeathReward.DropVnums) != 2 || stored.DeathReward.DropVnums[0] != 27001 || stored.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected register to clone caller reward drops, got %+v", stored.DeathReward.DropVnums)
+	}
+}
+
+func TestNonPlayerDirectoryUpdateDeepClonesDeathRewardDrops(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:        Entity{ID: 16, Kind: EntityKindStaticActor, Name: "RewardGuard"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.reward_guard",
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected reward actor registration to succeed")
+	}
+	updated := actor
+	updated.DeathReward = StaticActorDeathReward{DropVnums: []uint32{27001, 27002}}
+	if !directory.Update(updated) {
+		t.Fatal("expected reward actor update to succeed")
+	}
+	updated.DeathReward.DropVnums[1] = 22222
+
+	stored, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected stored reward actor to remain present")
+	}
+	if len(stored.DeathReward.DropVnums) != 2 || stored.DeathReward.DropVnums[0] != 27001 || stored.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected update to clone caller reward drops, got %+v", stored.DeathReward.DropVnums)
+	}
+}
+
+func TestNonPlayerDirectoryLookupsDeepCloneDeathRewardDrops(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:        Entity{ID: 17, Kind: EntityKindStaticActor, Name: "RewardGuard"},
 		Position:      NewPosition(42, 1700, 2800),
 		RaceNum:       20300,
 		CombatProfile: StaticActorCombatProfilePracticeMob,
