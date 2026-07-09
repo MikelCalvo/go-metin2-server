@@ -69,13 +69,17 @@ func TestScopesShoutTargetsRequireSameEmpireButIgnoreMap(t *testing.T) {
 	}
 }
 
-func TestScopesPartyTargetsReturnAllOtherConnectedPlayers(t *testing.T) {
+func TestScopesPartyTargetsReturnAllOtherConnectedLivePlayers(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)
 
 	subject := registry.RegisterPlayer(entityRegistryCharacter("Subject", 0x02040101, 1, 1700, 2800))
 	nearPeer := registry.RegisterPlayer(entityRegistryCharacter("NearPeer", 0x02040102, 1, 1900, 2900))
 	farPeer := registry.RegisterPlayer(entityRegistryCharacter("FarPeer", 0x02040103, 42, 2800, 3900))
+	removedPeer := registry.RegisterPlayer(entityRegistryCharacter("RemovedPeer", 0x02040104, 99, 3100, 4100))
+	if _, ok := registry.Remove(removedPeer.Entity.ID); !ok {
+		t.Fatalf("expected RemovedPeer to be removable before party target lookup")
+	}
 
 	targets := NewScopes(topology, registry).PartyTargets(subject.Entity.ID)
 	if len(targets) != 2 {

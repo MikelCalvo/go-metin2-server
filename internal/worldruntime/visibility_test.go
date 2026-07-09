@@ -117,27 +117,35 @@ func TestBuildVisibilityDiffDeepClonesCurrentAndTargetPeers(t *testing.T) {
 		visibilityCharacter("CurrentPeer", 0x02040102, 1, 1500, 2600),
 	}
 	current[0].Inventory = []inventory.ItemInstance{{Vnum: 27001, Count: 1}}
+	current[0].Equipment = []inventory.ItemInstance{{Vnum: 11299, Count: 1}}
+	current[0].Quickslots = []loginticket.Quickslot{{Position: 1, Type: 2, Slot: 3}}
 	target := []loginticket.Character{
 		visibilityCharacter("TargetPeer", 0x02040103, 1, 1700, 2800),
 	}
 	target[0].Inventory = []inventory.ItemInstance{{Vnum: 27002, Count: 1}}
+	target[0].Equipment = []inventory.ItemInstance{{Vnum: 11499, Count: 1}}
+	target[0].Quickslots = []loginticket.Quickslot{{Position: 4, Type: 5, Slot: 6}}
 
 	diff := BuildVisibilityDiff(current, target)
 	current[0].Name = "mutated-current"
 	current[0].Inventory[0].Vnum = 99999
+	current[0].Equipment[0].Vnum = 29999
+	current[0].Quickslots[0].Slot = 99
 	target[0].Name = "mutated-target"
 	target[0].Inventory[0].Vnum = 99998
+	target[0].Equipment[0].Vnum = 28888
+	target[0].Quickslots[0].Slot = 88
 
-	if len(diff.CurrentVisiblePeers) != 1 || diff.CurrentVisiblePeers[0].Name != "CurrentPeer" || diff.CurrentVisiblePeers[0].Inventory[0].Vnum != 27001 {
+	if len(diff.CurrentVisiblePeers) != 1 || diff.CurrentVisiblePeers[0].Name != "CurrentPeer" || diff.CurrentVisiblePeers[0].Inventory[0].Vnum != 27001 || diff.CurrentVisiblePeers[0].Equipment[0].Vnum != 11299 || diff.CurrentVisiblePeers[0].Quickslots[0].Slot != 3 {
 		t.Fatalf("expected current visible peers to be deep-cloned, got %+v", diff.CurrentVisiblePeers)
 	}
-	if len(diff.TargetVisiblePeers) != 1 || diff.TargetVisiblePeers[0].Name != "TargetPeer" || diff.TargetVisiblePeers[0].Inventory[0].Vnum != 27002 {
+	if len(diff.TargetVisiblePeers) != 1 || diff.TargetVisiblePeers[0].Name != "TargetPeer" || diff.TargetVisiblePeers[0].Inventory[0].Vnum != 27002 || diff.TargetVisiblePeers[0].Equipment[0].Vnum != 11499 || diff.TargetVisiblePeers[0].Quickslots[0].Slot != 6 {
 		t.Fatalf("expected target visible peers to be deep-cloned, got %+v", diff.TargetVisiblePeers)
 	}
-	if len(diff.RemovedVisiblePeers) != 1 || diff.RemovedVisiblePeers[0].Name != "CurrentPeer" || diff.RemovedVisiblePeers[0].Inventory[0].Vnum != 27001 {
+	if len(diff.RemovedVisiblePeers) != 1 || diff.RemovedVisiblePeers[0].Name != "CurrentPeer" || diff.RemovedVisiblePeers[0].Inventory[0].Vnum != 27001 || diff.RemovedVisiblePeers[0].Equipment[0].Vnum != 11299 || diff.RemovedVisiblePeers[0].Quickslots[0].Slot != 3 {
 		t.Fatalf("expected removed visible peers to be deep-cloned, got %+v", diff.RemovedVisiblePeers)
 	}
-	if len(diff.AddedVisiblePeers) != 1 || diff.AddedVisiblePeers[0].Name != "TargetPeer" || diff.AddedVisiblePeers[0].Inventory[0].Vnum != 27002 {
+	if len(diff.AddedVisiblePeers) != 1 || diff.AddedVisiblePeers[0].Name != "TargetPeer" || diff.AddedVisiblePeers[0].Inventory[0].Vnum != 27002 || diff.AddedVisiblePeers[0].Equipment[0].Vnum != 11499 || diff.AddedVisiblePeers[0].Quickslots[0].Slot != 6 {
 		t.Fatalf("expected added visible peers to be deep-cloned, got %+v", diff.AddedVisiblePeers)
 	}
 }
