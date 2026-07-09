@@ -202,6 +202,34 @@ func TestScopesVisibleStaticActorsFollowConfiguredVisibilityPolicyAndOrder(t *te
 	}
 }
 
+func TestBuildStaticActorVisibilityDiffDeepClonesRewardDropVnums(t *testing.T) {
+	current := []StaticEntity{{
+		Entity:      Entity{ID: 10, Kind: EntityKindStaticActor, Name: "RewardMob"},
+		Position:    NewPosition(1, 1000, 2000),
+		RaceNum:     20300,
+		DeathReward: StaticActorDeathReward{DropVnums: []uint32{27001, 27002}},
+	}}
+	target := []StaticEntity{{
+		Entity:      Entity{ID: 11, Kind: EntityKindStaticActor, Name: "TargetRewardMob"},
+		Position:    NewPosition(1, 1200, 2200),
+		RaceNum:     20301,
+		DeathReward: StaticActorDeathReward{DropVnums: []uint32{27003, 27004}},
+	}}
+
+	diff := buildStaticActorVisibilityDiff(current, target)
+	diff.CurrentVisibleActors[0].DeathReward.DropVnums[0] = 11111
+	diff.RemovedVisibleActors[0].DeathReward.DropVnums[1] = 22222
+	diff.TargetVisibleActors[0].DeathReward.DropVnums[0] = 33333
+	diff.AddedVisibleActors[0].DeathReward.DropVnums[1] = 44444
+
+	if current[0].DeathReward.DropVnums[0] != 27001 || current[0].DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected current static actor reward drops to stay cloned, got %+v", current[0].DeathReward.DropVnums)
+	}
+	if target[0].DeathReward.DropVnums[0] != 27003 || target[0].DeathReward.DropVnums[1] != 27004 {
+		t.Fatalf("expected target static actor reward drops to stay cloned, got %+v", target[0].DeathReward.DropVnums)
+	}
+}
+
 func TestScopesVisibleStaticActorByVIDRequiresCurrentVisibility(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)

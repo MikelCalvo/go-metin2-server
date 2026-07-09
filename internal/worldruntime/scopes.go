@@ -577,7 +577,11 @@ func cloneStaticActors(actors []StaticEntity) []StaticEntity {
 	if len(actors) == 0 {
 		return nil
 	}
-	cloned := append([]StaticEntity(nil), actors...)
+	cloned := make([]StaticEntity, 0, len(actors))
+	for _, actor := range actors {
+		actor.DeathReward = actor.DeathReward.Clone()
+		cloned = append(cloned, actor)
+	}
 	sortStaticEntities(cloned)
 	return cloned
 }
