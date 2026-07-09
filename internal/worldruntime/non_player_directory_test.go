@@ -200,6 +200,44 @@ func TestNonPlayerDirectoryUpdateClearsStaleVisibilityVIDsForSameEntityID(t *tes
 	}
 }
 
+func TestNonPlayerDirectoryLookupsDeepCloneDeathRewardDrops(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:        Entity{ID: 15, Kind: EntityKindStaticActor, Name: "RewardGuard"},
+		Position:      NewPosition(42, 1700, 2800),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.reward_guard",
+		DeathReward:   StaticActorDeathReward{DropVnums: []uint32{27001, 27002}},
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected reward actor registration to succeed")
+	}
+
+	byEntityID, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected entity-id lookup to succeed")
+	}
+	byEntityID.DeathReward.DropVnums[0] = 11111
+
+	byVID, ok := directory.ByVID(uint32(actor.Entity.ID))
+	if !ok {
+		t.Fatal("expected visibility-VID lookup to succeed")
+	}
+	byVID.DeathReward.DropVnums[1] = 22222
+
+	actors := directory.StaticActors()
+	actors[0].DeathReward.DropVnums[0] = 33333
+
+	stored, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected stored reward actor to remain present")
+	}
+	if len(stored.DeathReward.DropVnums) != 2 || stored.DeathReward.DropVnums[0] != 27001 || stored.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected stored reward drops to stay cloned, got %+v", stored.DeathReward.DropVnums)
+	}
+}
+
 func TestNonPlayerDirectoryRemoveClearsStaleVisibilityVIDsForSameEntityID(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
