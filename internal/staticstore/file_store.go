@@ -70,11 +70,26 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if _, err := temp.Write(raw); err != nil {
 		return fmt.Errorf("write static actor snapshot: %w", err)
 	}
+	if err := temp.Sync(); err != nil {
+		return fmt.Errorf("sync static actor temp file: %w", err)
+	}
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close static actor temp file: %w", err)
 	}
 	if err := os.Rename(temp.Name(), s.path); err != nil {
 		return fmt.Errorf("commit static actor snapshot: %w", err)
 	}
+	if err := syncDir(filepath.Dir(s.path)); err != nil {
+		return fmt.Errorf("sync static actor store dir: %w", err)
+	}
 	return nil
+}
+
+func syncDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
