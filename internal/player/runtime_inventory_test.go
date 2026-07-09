@@ -231,6 +231,36 @@ func TestPickupGroundItemSkipsLockedCompatibleStacks(t *testing.T) {
 	}
 }
 
+func TestPickupGroundItemWithTemplateAntiStackSkipsCompatibleMergeTargets(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 198, Slot: 2},
+			{ID: 12, Vnum: 27001, Count: 199, Slot: 5},
+		},
+	}, SessionLink{})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiStack: true}
+	ground := inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 1, Slot: 9}
+
+	result, ok := runtime.PickupGroundItemWithTemplate(ground, 9, template)
+	if !ok {
+		t.Fatal("expected anti-stack pickup to use a fresh carried slot instead of merging")
+	}
+	if result.Merged || result.Split || result.Updated.ID != 0 || len(result.UpdatedItems) != 0 {
+		t.Fatalf("anti-stack pickup unexpectedly merged into compatible stacks: %+v", result)
+	}
+	if result.Placed != (inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 1, Slot: 9}) {
+		t.Fatalf("unexpected anti-stack placed item: %+v", result.Placed)
+	}
+	want := []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 198, Slot: 2},
+		{ID: 12, Vnum: 27001, Count: 199, Slot: 5},
+		{ID: 31, Vnum: 27001, Count: 1, Slot: 9},
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("anti-stack pickup mutated merge targets or placed wrong item: got %#v want %#v", got, want)
+	}
+}
+
 func TestPickupGroundItemFillsCompatibleStacksBeforePlacingRemainder(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{
