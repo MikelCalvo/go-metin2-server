@@ -177,7 +177,6 @@ func TestGameRuntimeItemMoveRejectsTransferGuardedStackTemplatesWithoutMutation(
 		name   string
 		mutate func(*itemcatalog.Template)
 	}{
-		{name: "anti stack", mutate: func(template *itemcatalog.Template) { template.AntiStack = true }},
 		{name: "anti drop", mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }},
 		{name: "anti give", mutate: func(template *itemcatalog.Template) { template.AntiGive = true }},
 		{name: "anti sell", mutate: func(template *itemcatalog.Template) { template.AntiSell = true }},
@@ -1760,7 +1759,7 @@ func TestGameRuntimeItemUseToItemFullMergeDeletesOnlySourceItemQuickslot(t *test
 	}
 }
 
-func TestGameRuntimeItemMoveRejectsAntiStackTemplateCompatibleMergeWithoutMutation(t *testing.T) {
+func TestGameRuntimeItemMoveAntiStackTemplateSwapsSameVnumStacksAndRetargetsQuickslots(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
@@ -1797,8 +1796,22 @@ func TestGameRuntimeItemMoveRejectsAntiStackTemplateCompatibleMergeWithoutMutati
 	if err != nil {
 		t.Fatalf("unexpected anti-stack item move error: %v", err)
 	}
-	if len(out) != 0 {
-		t.Fatalf("expected anti-stack compatible move to emit no frames, got %d", len(out))
+	if len(out) != 2 {
+		t.Fatalf("expected anti-stack same-vnum move to swap with two item set frames, got %d", len(out))
+	}
+	sourceSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode anti-stack source set frame: %v", err)
+	}
+	if sourceSet.Position != itemproto.InventoryPosition(5) || sourceSet.Vnum != 27001 || sourceSet.Count != 4 {
+		t.Fatalf("unexpected anti-stack source set frame: %+v", sourceSet)
+	}
+	targetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode anti-stack target set frame: %v", err)
+	}
+	if targetSet.Position != itemproto.InventoryPosition(6) || targetSet.Vnum != 27001 || targetSet.Count != 3 {
+		t.Fatalf("unexpected anti-stack target set frame: %+v", targetSet)
 	}
 	account, err := accounts.Load("move-antistack-owner")
 	if err != nil {
@@ -1807,8 +1820,16 @@ func TestGameRuntimeItemMoveRejectsAntiStackTemplateCompatibleMergeWithoutMutati
 	if len(account.Characters) != 1 {
 		t.Fatalf("expected one persisted anti-stack move owner, got %+v", account)
 	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("anti-stack compatible move mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	wantInventory := map[uint64]inventory.ItemInstance{
+		1101: {ID: 1101, Vnum: 27001, Count: 3, Slot: 6},
+		1102: {ID: 1102, Vnum: 27001, Count: 4, Slot: 5},
+	}
+	gotInventory := make(map[uint64]inventory.ItemInstance, len(account.Characters[0].Inventory))
+	for _, item := range account.Characters[0].Inventory {
+		gotInventory[item.ID] = item
+	}
+	if !reflect.DeepEqual(gotInventory, wantInventory) {
+		t.Fatalf("anti-stack same-vnum move did not persist swap: got %#v want %#v", gotInventory, wantInventory)
 	}
 }
 

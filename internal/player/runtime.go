@@ -521,8 +521,14 @@ func clonePickupUpdatedItems(changes []inventory.ItemInstance) []inventory.ItemI
 }
 
 func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventory.SlotIndex, maxCount uint16) (inventory.MoveResult, bool) {
-	if r == nil || maxCount == 0 || from == to {
+	if r == nil || from == to {
 		return inventory.MoveResult{}, false
+	}
+	if maxCount == 0 {
+		if !canForceSameVnumSwap(r.liveInventory, from, to) {
+			return inventory.MoveResult{}, false
+		}
+		return r.moveInventoryItemFullStack(from, to, inventory.MoveResult{From: from, To: to, CompatibleSwap: true, ForcedSwap: true})
 	}
 	if countInventorySlotOccupancy(r.liveInventory, from) != 1 || countInventorySlotOccupancy(r.liveInventory, to) > 1 {
 		return inventory.MoveResult{}, false
@@ -600,7 +606,17 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 	if r == nil || count == 0 {
 		return inventory.MoveResult{}, false
 	}
-	if maxCount == 0 || count > maxCount || from == to {
+	if from == to {
+		return inventory.MoveResult{}, false
+	}
+	if maxCount == 0 {
+		fromIndex := findInventorySlot(r.liveInventory, from)
+		if fromIndex < 0 || count < r.liveInventory[fromIndex].Count || !canForceSameVnumSwap(r.liveInventory, from, to) {
+			return inventory.MoveResult{}, false
+		}
+		return r.moveInventoryItemFullStack(from, to, inventory.MoveResult{From: from, To: to, CompatibleSwap: true, ForcedSwap: true})
+	}
+	if count > maxCount {
 		return inventory.MoveResult{}, false
 	}
 	if countInventorySlotOccupancy(r.liveInventory, from) != 1 || countInventorySlotOccupancy(r.liveInventory, to) > 1 {
@@ -1288,6 +1304,20 @@ func countInventorySlotOccupancy(items []inventory.ItemInstance, slot inventory.
 		}
 	}
 	return count
+}
+
+func canForceSameVnumSwap(items []inventory.ItemInstance, from inventory.SlotIndex, to inventory.SlotIndex) bool {
+	if countInventorySlotOccupancy(items, from) != 1 || countInventorySlotOccupancy(items, to) != 1 {
+		return false
+	}
+	fromIndex := findInventorySlot(items, from)
+	toIndex := findInventorySlot(items, to)
+	if fromIndex < 0 || toIndex < 0 {
+		return false
+	}
+	fromItem := items[fromIndex]
+	toItem := items[toIndex]
+	return !fromItem.Locked && !toItem.Locked && fromItem.ID != toItem.ID && fromItem.Vnum == toItem.Vnum && fromItem.Count > 0 && toItem.Count > 0
 }
 
 func hasDuplicateInventorySlotOccupancy(items []inventory.ItemInstance) bool {

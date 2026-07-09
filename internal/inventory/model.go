@@ -27,14 +27,16 @@ type ItemInstance struct {
 }
 
 type MoveResult struct {
-	Changed      bool
-	From         SlotIndex
-	To           SlotIndex
-	FromOccupied bool
-	FromItem     ItemInstance
-	ToOccupied   bool
-	ToItem       ItemInstance
-	CountOnly    bool
+	Changed        bool
+	From           SlotIndex
+	To             SlotIndex
+	FromOccupied   bool
+	FromItem       ItemInstance
+	ToOccupied     bool
+	ToItem         ItemInstance
+	CountOnly      bool
+	CompatibleSwap bool
+	ForcedSwap     bool
 }
 
 func (i ItemInstance) Validate() error {

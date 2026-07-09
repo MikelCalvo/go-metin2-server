@@ -2564,6 +2564,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					var moveResult inventory.MoveResult
 					maxCount := ^uint16(0)
+					forceSameVnumSwap := false
 					liveInventory := selectedPlayer.LiveInventory()
 					for _, sourceItem := range liveInventory {
 						if sourceItem.Slot != inventory.SlotIndex(packet.Source.Cell) {
@@ -2577,7 +2578,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 										break
 									}
 								}
-							} else if template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || template.EquipSlot != "" || !template.Stackable || !selectedPlayer.CanUseTemplate(template) {
+							} else if template.AntiStack {
+								maxCount = 0
+								forceSameVnumSwap = true
+							} else if template.AntiDrop || template.AntiGive || template.AntiSell || template.EquipSlot != "" || !template.Stackable || !selectedPlayer.CanUseTemplate(template) {
 								maxCount = 0
 							} else if template.MaxCount > 0 {
 								maxCount = template.MaxCount
@@ -2591,6 +2595,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 						}
 						break
+					}
+					if maxCount == 0 && !forceSameVnumSwap {
+						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					if packet.Count == 0 {
 						moveResult, ok = selectedPlayer.MoveInventoryItemBounded(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), maxCount)
@@ -3601,7 +3608,7 @@ func itemMoveQuickslotSyncFrames(selectedPlayer *player.Runtime, result inventor
 		}
 		return itemRemovalQuickslotSyncFrames(selectedPlayer, result.From)
 	}
-	if result.FromOccupied && result.ToOccupied && result.FromItem.Vnum == result.ToItem.Vnum {
+	if result.FromOccupied && result.ToOccupied && result.FromItem.Vnum == result.ToItem.Vnum && !result.CompatibleSwap {
 		return nil, true
 	}
 	return inventoryMoveQuickslotSyncFrames(selectedPlayer, result.From, result.To)
