@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -1031,7 +1032,7 @@ func (r *sharedWorldRegistry) RegisterGroundGold(ownerID uint64, ownerLogin stri
 }
 
 func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32) bool {
-	if r == nil || ownerID == 0 || ownerLogin == "" || ownerLogin != strings.TrimSpace(ownerLogin) || character.Name == "" || character.Name != strings.TrimSpace(character.Name) || vid == 0 || item.Vnum == 0 {
+	if r == nil || ownerID == 0 || !validRewardOwnerMetadata(ownerLogin) || !validRewardOwnerMetadata(character.Name) || vid == 0 || item.Vnum == 0 {
 		return false
 	}
 
@@ -1066,6 +1067,18 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 			continue
 		}
 		r.enqueueToEntityLocked(target.Entity.ID, frames)
+	}
+	return true
+}
+
+func validRewardOwnerMetadata(value string) bool {
+	if value == "" || strings.TrimSpace(value) != value {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsSpace(r) {
+			return false
+		}
 	}
 	return true
 }

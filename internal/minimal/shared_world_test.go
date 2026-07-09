@@ -548,14 +548,24 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsBlankOwnerLogin(t *testi
 		t.Fatal("expected blank-login reward owner join to allocate a shared-world entity id")
 	}
 
-	if registry.RegisterGroundItem(ownerID, "   ", owner, 0x0700001F, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
-		t.Fatal("expected blank-login ground-item reward registration to fail closed")
+	blankLoginCases := map[string]string{
+		"spaces":  "   ",
+		"tab":     "\t",
+		"newline": "\n",
+		"unicode": "\u00a0\u2003",
 	}
-	if registry.RegisterGroundGold(ownerID, "\t", owner, 0x07000020, 250) {
-		t.Fatal("expected blank-login ground-gold reward registration to fail closed")
-	}
-	if registry.GroundItemExists(0x0700001F) || registry.GroundItemExists(0x07000020) {
-		t.Fatal("expected rejected blank-login reward ground entries to stay absent")
+	for name, ownerLogin := range blankLoginCases {
+		t.Run(name, func(t *testing.T) {
+			if registry.RegisterGroundItem(ownerID, ownerLogin, owner, 0x0700001F, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
+				t.Fatalf("expected blank-login ground-item reward registration for %q to fail closed", ownerLogin)
+			}
+			if registry.RegisterGroundGold(ownerID, ownerLogin, owner, 0x07000020, 250) {
+				t.Fatalf("expected blank-login ground-gold reward registration for %q to fail closed", ownerLogin)
+			}
+			if registry.GroundItemExists(0x0700001F) || registry.GroundItemExists(0x07000020) {
+				t.Fatal("expected rejected blank-login reward ground entries to stay absent")
+			}
+		})
 	}
 }
 
@@ -597,6 +607,27 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsPaddedOwnerMetadata(t *t
 	}
 	if registry.GroundItemExists(0x07000023) || registry.GroundItemExists(0x07000024) {
 		t.Fatal("expected rejected padded-metadata reward ground entries to stay absent")
+	}
+}
+
+func TestSharedWorldRegistryRegisterGroundRewardsRejectsEmbeddedWhitespaceOwnerMetadata(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("EmbeddedNameRewardOwner", 0x010301a3, 0x020401a3, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected embedded-metadata reward owner join to allocate a shared-world entity id")
+	}
+
+	embeddedNameOwner := owner
+	embeddedNameOwner.Name = "Embedded NameRewardOwner"
+	if registry.RegisterGroundItem(ownerID, "embedded-metadata-owner", embeddedNameOwner, 0x07000025, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected embedded-whitespace owner-name ground-item reward registration to fail closed")
+	}
+	if registry.RegisterGroundGold(ownerID, "embedded\nmetadata-owner", owner, 0x07000026, 250) {
+		t.Fatal("expected embedded-whitespace owner-login ground-gold reward registration to fail closed")
+	}
+	if registry.GroundItemExists(0x07000025) || registry.GroundItemExists(0x07000026) {
+		t.Fatal("expected rejected embedded-whitespace reward ground entries to stay absent")
 	}
 }
 
