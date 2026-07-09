@@ -39,7 +39,7 @@ func (d *PlayerDirectory) Register(player PlayerEntity) bool {
 		return false
 	}
 
-	d.byEntityID[player.Entity.ID] = player
+	d.byEntityID[player.Entity.ID] = clonePlayerEntity(player)
 	d.entityIDByVID[player.Entity.VID] = player.Entity.ID
 	d.entityIDByName[player.Entity.Name] = player.Entity.ID
 	return true
@@ -66,7 +66,7 @@ func (d *PlayerDirectory) Update(player PlayerEntity) bool {
 
 	delete(d.entityIDByVID, previous.Entity.VID)
 	delete(d.entityIDByName, previous.Entity.Name)
-	d.byEntityID[player.Entity.ID] = player
+	d.byEntityID[player.Entity.ID] = clonePlayerEntity(player)
 	d.entityIDByVID[player.Entity.VID] = player.Entity.ID
 	d.entityIDByName[player.Entity.Name] = player.Entity.ID
 	return true
@@ -98,7 +98,7 @@ func (d *PlayerDirectory) ByEntityID(entityID uint64) (PlayerEntity, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	player, ok := d.byEntityID[entityID]
-	return player, ok
+	return clonePlayerEntity(player), ok
 }
 
 func (d *PlayerDirectory) ByVID(vid uint32) (PlayerEntity, bool) {
@@ -117,7 +117,7 @@ func (d *PlayerDirectory) ByVID(vid uint32) (PlayerEntity, bool) {
 		delete(d.entityIDByVID, vid)
 		return PlayerEntity{}, false
 	}
-	return player, true
+	return clonePlayerEntity(player), true
 }
 
 func (d *PlayerDirectory) ByName(name string) (PlayerEntity, bool) {
@@ -136,7 +136,7 @@ func (d *PlayerDirectory) ByName(name string) (PlayerEntity, bool) {
 		delete(d.entityIDByName, name)
 		return PlayerEntity{}, false
 	}
-	return player, true
+	return clonePlayerEntity(player), true
 }
 
 func (d *PlayerDirectory) PlayerCharacters() []loginticket.Character {
@@ -148,10 +148,15 @@ func (d *PlayerDirectory) PlayerCharacters() []loginticket.Character {
 	defer d.mu.Unlock()
 	characters := make([]loginticket.Character, 0, len(d.byEntityID))
 	for _, player := range d.byEntityID {
-		characters = append(characters, player.Character)
+		characters = append(characters, cloneCharacterSnapshot(player.Character))
 	}
 	sortCharacters(characters)
 	return characters
+}
+
+func clonePlayerEntity(player PlayerEntity) PlayerEntity {
+	player.Character = cloneCharacterSnapshot(player.Character)
+	return player
 }
 
 func validPlayerDirectoryEntity(player PlayerEntity) bool {

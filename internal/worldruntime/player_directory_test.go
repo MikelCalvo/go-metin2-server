@@ -1,6 +1,11 @@
 package worldruntime
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+)
 
 func TestPlayerDirectoryLooksUpPlayersByEntityID(t *testing.T) {
 	registry := NewEntityRegistry()
@@ -136,5 +141,56 @@ func TestPlayerDirectoryLookupPrunesStaleVIDAndNameIndexes(t *testing.T) {
 	}
 	if _, exists := directory.entityIDByName["Ghost"]; exists {
 		t.Fatal("expected stale exact-name index to be pruned after lookup")
+	}
+}
+
+func TestPlayerDirectoryLookupsDeepCloneItemState(t *testing.T) {
+	registry := NewEntityRegistry()
+	alphaCharacter := entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100)
+	alphaCharacter.Inventory = append(alphaCharacter.Inventory, inventory.ItemInstance{ID: 101, Vnum: 27001, Count: 1})
+	alphaCharacter.Equipment = append(alphaCharacter.Equipment, inventory.ItemInstance{ID: 201, Vnum: 11299, Count: 1})
+	alphaCharacter.Quickslots = append(alphaCharacter.Quickslots, loginticket.Quickslot{Type: 1, Position: 2})
+	alpha := registry.RegisterPlayer(alphaCharacter)
+
+	directory := NewPlayerDirectory()
+	if !directory.Register(alpha) {
+		t.Fatal("expected player directory registration to succeed")
+	}
+
+	byEntityID, ok := directory.ByEntityID(alpha.Entity.ID)
+	if !ok {
+		t.Fatal("expected entity-id lookup to succeed")
+	}
+	byEntityID.Character.Inventory[0].Vnum = 11111
+	byEntityID.Character.Equipment[0].Vnum = 22222
+	byEntityID.Character.Quickslots[0].Position = 9
+
+	byVID, ok := directory.ByVID(alpha.Entity.VID)
+	if !ok {
+		t.Fatal("expected VID lookup to succeed")
+	}
+	byVID.Character.Inventory[0].Count = 7
+
+	byName, ok := directory.ByName(alpha.Entity.Name)
+	if !ok {
+		t.Fatal("expected exact-name lookup to succeed")
+	}
+	byName.Character.Equipment[0].Count = 8
+
+	characters := directory.PlayerCharacters()
+	characters[0].Inventory[0].Vnum = 33333
+
+	stored, ok := directory.ByEntityID(alpha.Entity.ID)
+	if !ok {
+		t.Fatal("expected stored player to remain present")
+	}
+	if stored.Character.Inventory[0].Vnum != 27001 || stored.Character.Inventory[0].Count != 1 {
+		t.Fatalf("expected stored inventory to stay cloned, got %+v", stored.Character.Inventory)
+	}
+	if stored.Character.Equipment[0].Vnum != 11299 || stored.Character.Equipment[0].Count != 1 {
+		t.Fatalf("expected stored equipment to stay cloned, got %+v", stored.Character.Equipment)
+	}
+	if stored.Character.Quickslots[0].Position != 2 {
+		t.Fatalf("expected stored quickslots to stay cloned, got %+v", stored.Character.Quickslots)
 	}
 }
