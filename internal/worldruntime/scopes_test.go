@@ -660,8 +660,30 @@ func TestAppendGroundItemsToMapOccupancySnapshotsDoesNotMutateInputSnapshots(t *
 	if len(updated) != 1 || updated[0].GroundItemCount != 2 {
 		t.Fatalf("expected returned occupancy to include appended ground item, got %+v", updated)
 	}
-	if original[0].GroundItemCount != 1 || len(original[0].GroundItems) != 1 || original[0].GroundItems[0].VID != 10 {
-		t.Fatalf("expected input snapshot to remain unchanged, got %+v", original[0])
+	updated[0].Characters[0].Name = "Mutated"
+	updated[0].GroundItems[0].Count = 99
+	if original[0].CharacterCount != 1 || len(original[0].Characters) != 1 || original[0].Characters[0].Name != "Peer" {
+		t.Fatalf("expected input character snapshot to remain unchanged, got %+v", original[0])
+	}
+	if original[0].GroundItemCount != 1 || len(original[0].GroundItems) != 1 || original[0].GroundItems[0].VID != 10 || original[0].GroundItems[0].Count != 1 {
+		t.Fatalf("expected input ground snapshot to remain unchanged, got %+v", original[0])
+	}
+}
+
+func TestAppendGroundItemsToMapOccupancySnapshotsDoesNotAliasInputWhenNoGroundItems(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	original := []MapOccupancySnapshot{
+		{
+			MapIndex:       42,
+			CharacterCount: 1,
+			Characters:     []ConnectedCharacterSnapshot{{Name: "Peer", VID: 0x02040101}},
+		},
+	}
+
+	updated := AppendGroundItemsToMapOccupancySnapshots(topology, original, nil)
+	updated[0].Characters[0].Name = "Mutated"
+	if original[0].Characters[0].Name != "Peer" {
+		t.Fatalf("expected empty ground-item append to clone input snapshots, got %+v", original[0])
 	}
 }
 
@@ -730,6 +752,26 @@ func TestGroundItemVisibilityDiffClonesInputSlices(t *testing.T) {
 	}
 	if !reflect.DeepEqual(target, originalTarget) {
 		t.Fatalf("ground visibility diff mutated target input: got %+v want %+v", target, originalTarget)
+	}
+}
+
+func TestGroundItemVisibilityDiffPreservesUpdatedPayloadForSameVID(t *testing.T) {
+	current := []GroundItemSnapshot{
+		{VID: 10, Vnum: 27001, Count: 1, OwnerName: "Owner", MapIndex: 42, X: 1000, Y: 1000},
+	}
+	target := []GroundItemSnapshot{
+		{VID: 10, Vnum: 27001, Count: 3, OwnerName: "Owner", MapIndex: 42, X: 1100, Y: 1200},
+	}
+
+	diff := BuildGroundItemVisibilityDiff(current, target)
+	if len(diff.CurrentVisibleItems) != 1 || len(diff.TargetVisibleItems) != 1 {
+		t.Fatalf("expected same ground VID to stay visible in current and target sets, got %+v", diff)
+	}
+	if len(diff.RemovedVisibleItems) != 0 || len(diff.AddedVisibleItems) != 0 {
+		t.Fatalf("expected same visible ground VID not to be treated as removed/added, got %+v", diff)
+	}
+	if diff.TargetVisibleItems[0].Count != 3 || diff.TargetVisibleItems[0].X != 1100 || diff.TargetVisibleItems[0].Y != 1200 {
+		t.Fatalf("expected target-visible ground payload to preserve updated snapshot, got %+v", diff.TargetVisibleItems[0])
 	}
 }
 

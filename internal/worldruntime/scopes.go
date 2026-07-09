@@ -621,10 +621,10 @@ func buildMapOccupancySnapshots(topology BootstrapTopology, occupancies []MapOcc
 }
 
 func AppendGroundItemsToMapOccupancySnapshots(topology BootstrapTopology, snapshots []MapOccupancySnapshot, groundItems []GroundItemOccupancy) []MapOccupancySnapshot {
+	snapshots = cloneMapOccupancySnapshots(snapshots)
 	if len(groundItems) == 0 {
 		return snapshots
 	}
-	snapshots = cloneMapOccupancySnapshots(snapshots)
 	byMap := make(map[uint32]int, len(snapshots)+len(groundItems))
 	for i := range snapshots {
 		byMap[snapshots[i].MapIndex] = i
