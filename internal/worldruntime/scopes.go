@@ -815,10 +815,22 @@ func cloneMapOccupancySnapshots(snapshots []MapOccupancySnapshot) []MapOccupancy
 			CharacterCount:   snapshot.CharacterCount,
 			Characters:       append([]ConnectedCharacterSnapshot(nil), snapshot.Characters...),
 			StaticActorCount: snapshot.StaticActorCount,
-			StaticActors:     append([]StaticActorSnapshot(nil), snapshot.StaticActors...),
+			StaticActors:     cloneStaticActorSnapshots(snapshot.StaticActors),
 			GroundItemCount:  snapshot.GroundItemCount,
 			GroundItems:      append([]GroundItemSnapshot(nil), snapshot.GroundItems...),
 		}
+	}
+	return cloned
+}
+
+func cloneStaticActorSnapshots(snapshots []StaticActorSnapshot) []StaticActorSnapshot {
+	if len(snapshots) == 0 {
+		return nil
+	}
+	cloned := make([]StaticActorSnapshot, len(snapshots))
+	for i, snapshot := range snapshots {
+		snapshot.RewardDropVnums = append([]uint32(nil), snapshot.RewardDropVnums...)
+		cloned[i] = snapshot
 	}
 	return cloned
 }

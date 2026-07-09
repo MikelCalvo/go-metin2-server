@@ -715,7 +715,31 @@ func TestAppendGroundItemsToMapOccupancySnapshotsDoesNotAliasInputWhenNoGroundIt
 	updated := AppendGroundItemsToMapOccupancySnapshots(topology, original, nil)
 	updated[0].Characters[0].Name = "Mutated"
 	if original[0].Characters[0].Name != "Peer" {
-		t.Fatalf("expected empty ground-item append to clone input snapshots, got %+v", original[0])
+		t.Fatalf("expected cloned no-ground occupancy snapshots, got original %+v", original[0])
+	}
+}
+
+func TestAppendGroundItemsToMapOccupancySnapshotsDeepClonesStaticActorRewardDrops(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	original := []MapOccupancySnapshot{
+		{
+			MapIndex:         42,
+			StaticActorCount: 1,
+			StaticActors: []StaticActorSnapshot{{
+				EntityID:         10,
+				Name:             "RewardMob",
+				MapIndex:         42,
+				RaceNum:          20300,
+				RewardDropVnums:  []uint32{27001, 27002},
+				RewardExperience: 100,
+			}},
+		},
+	}
+
+	updated := AppendGroundItemsToMapOccupancySnapshots(topology, original, nil)
+	updated[0].StaticActors[0].RewardDropVnums[0] = 11111
+	if original[0].StaticActors[0].RewardDropVnums[0] != 27001 || original[0].StaticActors[0].RewardDropVnums[1] != 27002 {
+		t.Fatalf("expected input static actor reward drops to remain cloned, got %+v", original[0].StaticActors[0].RewardDropVnums)
 	}
 }
 
