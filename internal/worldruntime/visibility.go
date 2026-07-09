@@ -95,7 +95,7 @@ func cloneCharacters(characters []loginticket.Character) []loginticket.Character
 	if len(characters) == 0 {
 		return nil
 	}
-	cloned := append([]loginticket.Character(nil), characters...)
+	cloned := loginticket.CloneCharacters(characters)
 	sortCharacters(cloned)
 	return cloned
 }

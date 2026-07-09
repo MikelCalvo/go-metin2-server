@@ -104,6 +104,10 @@ The helper now also owns an explicit transition result for callers that need the
 - `RemovedVisiblePeers`
 - `AddedVisiblePeers`
 
+Those peer slices are owned snapshots, not aliases to caller-owned character slices.
+When characters carry mutable runtime payloads such as inventory, equipment, or quickslot state, visibility diff construction deep-clones those fields before sorting and returning the result.
+This prevents later caller-side persistence/runtime edits from mutating a previously computed visibility transition.
+
 This is enough for the bootstrap runtime to describe:
 - enter/bootstrap visibility
 - leave behavior

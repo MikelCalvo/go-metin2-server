@@ -3,6 +3,7 @@ package worldruntime
 import (
 	"testing"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
 
@@ -108,6 +109,36 @@ func TestRelocateVisibilityDiffReportsCurrentTargetAddsAndRemovals(t *testing.T)
 	}
 	if len(diff.AddedVisiblePeers) != 1 || diff.AddedVisiblePeers[0].Name != "NewPeer" {
 		t.Fatalf("unexpected added visible peers on relocate: %+v", diff.AddedVisiblePeers)
+	}
+}
+
+func TestBuildVisibilityDiffDeepClonesCurrentAndTargetPeers(t *testing.T) {
+	current := []loginticket.Character{
+		visibilityCharacter("CurrentPeer", 0x02040102, 1, 1500, 2600),
+	}
+	current[0].Inventory = []inventory.ItemInstance{{Vnum: 27001, Count: 1}}
+	target := []loginticket.Character{
+		visibilityCharacter("TargetPeer", 0x02040103, 1, 1700, 2800),
+	}
+	target[0].Inventory = []inventory.ItemInstance{{Vnum: 27002, Count: 1}}
+
+	diff := BuildVisibilityDiff(current, target)
+	current[0].Name = "mutated-current"
+	current[0].Inventory[0].Vnum = 99999
+	target[0].Name = "mutated-target"
+	target[0].Inventory[0].Vnum = 99998
+
+	if len(diff.CurrentVisiblePeers) != 1 || diff.CurrentVisiblePeers[0].Name != "CurrentPeer" || diff.CurrentVisiblePeers[0].Inventory[0].Vnum != 27001 {
+		t.Fatalf("expected current visible peers to be deep-cloned, got %+v", diff.CurrentVisiblePeers)
+	}
+	if len(diff.TargetVisiblePeers) != 1 || diff.TargetVisiblePeers[0].Name != "TargetPeer" || diff.TargetVisiblePeers[0].Inventory[0].Vnum != 27002 {
+		t.Fatalf("expected target visible peers to be deep-cloned, got %+v", diff.TargetVisiblePeers)
+	}
+	if len(diff.RemovedVisiblePeers) != 1 || diff.RemovedVisiblePeers[0].Name != "CurrentPeer" || diff.RemovedVisiblePeers[0].Inventory[0].Vnum != 27001 {
+		t.Fatalf("expected removed visible peers to be deep-cloned, got %+v", diff.RemovedVisiblePeers)
+	}
+	if len(diff.AddedVisiblePeers) != 1 || diff.AddedVisiblePeers[0].Name != "TargetPeer" || diff.AddedVisiblePeers[0].Inventory[0].Vnum != 27002 {
+		t.Fatalf("expected added visible peers to be deep-cloned, got %+v", diff.AddedVisiblePeers)
 	}
 }
 
