@@ -8947,6 +8947,44 @@ func TestGameRuntimeMapOccupancyIncludesStaticActorsOnStaticOnlyMaps(t *testing.
 	}
 }
 
+func TestSharedWorldDeathRewardOverrideRejectsMalformedDescriptorAndPreservesExisting(t *testing.T) {
+	runtime := newSharedWorldRegistry()
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050227, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050227, Name: "RewardOverrideGuardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.reward_override_guard_mob",
+	}
+	if _, ok := runtime.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected reward override guard mob registration to succeed")
+	}
+
+	valid := worldruntime.StaticActorDeathReward{DropVnums: []uint32{27002, 27001}}
+	if !runtime.overrideStaticActorDeathReward(actor.Entity.ID, valid) {
+		t.Fatal("expected valid reward override to apply")
+	}
+	valid.DropVnums[0] = 99999
+
+	storedActor, ok := runtime.entities.StaticActor(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected reward override guard mob to remain registered")
+	}
+	storedReward := runtime.staticActorDeathRewardLocked(storedActor)
+	if len(storedReward.DropVnums) != 2 || storedReward.DropVnums[0] != 27001 || storedReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected stored reward override to be cloned and normalized, got %+v", storedReward)
+	}
+
+	if runtime.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27003, 0}}) {
+		t.Fatal("expected malformed reward override to fail closed")
+	}
+	storedReward = runtime.staticActorDeathRewardLocked(storedActor)
+	if len(storedReward.DropVnums) != 2 || storedReward.DropVnums[0] != 27001 || storedReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected malformed override to preserve existing reward, got %+v", storedReward)
+	}
+}
+
 func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
@@ -17749,9 +17787,12 @@ func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobRewardDescrip
 	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
 		t.Fatal("expected unsupported reward mob registration to succeed")
 	}
-	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 5, DropVnums: []uint32{0}}) {
-		t.Fatal("expected invalid-drop mixed reward override to apply to registered practice mob")
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 5}) {
+		t.Fatal("expected scalar reward override to apply to registered practice mob")
 	}
+	runtime.sharedWorld.mu.Lock()
+	runtime.sharedWorld.staticActorDeathReward[actor.Entity.ID] = worldruntime.StaticActorDeathReward{Experience: 5, DropVnums: []uint32{0}}
+	runtime.sharedWorld.mu.Unlock()
 
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "unsupported-reward-killer", 0x22222222)
 	defer closeSessionFlow(t, flow)

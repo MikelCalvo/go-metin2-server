@@ -465,7 +465,7 @@ func (r *sharedWorldRegistry) staticActorDeathRewardLocked(actor worldruntime.St
 }
 
 func (r *sharedWorldRegistry) overrideStaticActorDeathReward(entityID uint64, reward worldruntime.StaticActorDeathReward) bool {
-	if r == nil || entityID == 0 {
+	if r == nil || entityID == 0 || !worldruntime.ValidStaticActorDeathReward(reward) {
 		return false
 	}
 	r.mu.Lock()
