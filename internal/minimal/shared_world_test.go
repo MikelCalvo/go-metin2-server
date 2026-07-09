@@ -33893,7 +33893,7 @@ func TestGameRuntimeItemUseResolvesPointEffectFromItemTemplateStore(t *testing.T
 	}
 }
 
-func TestGameRuntimeItemUseToItemFullStackMergeRemovesSourceItemQuickslot(t *testing.T) {
+func TestGameRuntimeItemUseToItemFullStackMergeRemovesAllSourceItemQuickslots(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("Owner", 0x01030145, 0x02040145, 1100, 2100, 0, 101, 201)
@@ -33905,6 +33905,7 @@ func TestGameRuntimeItemUseToItemFullStackMergeRemovesSourceItemQuickslot(t *tes
 	owner.Quickslots = []loginticket.Quickslot{
 		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
 		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 5},
 	}
 	issuePeerTicket(t, store, "owner", 0x45454545, owner)
 	if err := accounts.Save(accountstore.Account{Login: "owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
@@ -33917,7 +33918,7 @@ func TestGameRuntimeItemUseToItemFullStackMergeRemovesSourceItemQuickslot(t *tes
 	}
 	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "owner", 0x45454545)
 	defer closeSessionFlow(t, flow)
-	if len(enterOut) < 8 {
+	if len(enterOut) < 9 {
 		t.Fatalf("expected use-to-item owner bootstrap to emit item and quickslot frames, got %d", len(enterOut))
 	}
 
@@ -33928,8 +33929,8 @@ func TestGameRuntimeItemUseToItemFullStackMergeRemovesSourceItemQuickslot(t *tes
 	if err != nil {
 		t.Fatalf("unexpected item use-to-item error: %v", err)
 	}
-	if len(useToItemOut) != 3 {
-		t.Fatalf("expected item-del + item-set + quickslot-del frames for full-stack use-to-item merge, got %d", len(useToItemOut))
+	if len(useToItemOut) != 4 {
+		t.Fatalf("expected item-del + item-set + two quickslot-del frames for full-stack use-to-item merge, got %d", len(useToItemOut))
 	}
 	delPacket, err := itemproto.DecodeDel(decodeSingleFrame(t, useToItemOut[0]))
 	if err != nil {
@@ -33947,10 +33948,17 @@ func TestGameRuntimeItemUseToItemFullStackMergeRemovesSourceItemQuickslot(t *tes
 	}
 	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useToItemOut[2]))
 	if err != nil {
-		t.Fatalf("decode use-to-item quickslot delete: %v", err)
+		t.Fatalf("decode first use-to-item quickslot delete: %v", err)
 	}
 	if quickslotDel.Position != 2 {
-		t.Fatalf("expected source item quickslot position 2 to be deleted, got %+v", quickslotDel)
+		t.Fatalf("expected first source item quickslot position 2 to be deleted, got %+v", quickslotDel)
+	}
+	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useToItemOut[3]))
+	if err != nil {
+		t.Fatalf("decode second use-to-item quickslot delete: %v", err)
+	}
+	if secondQuickslotDel.Position != 4 {
+		t.Fatalf("expected second source item quickslot position 4 to be deleted, got %+v", secondQuickslotDel)
 	}
 
 	persisted, err := accounts.Load("owner")
