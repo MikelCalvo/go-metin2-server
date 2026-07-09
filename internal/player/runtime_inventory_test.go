@@ -2314,6 +2314,38 @@ func TestRuntimeEquipItemWithTemplateRejectsSelectedCharacterAntiFlagsWithoutMut
 	}
 }
 
+func TestRuntimeEquipItemWithTemplateRejectsTransferGuardsWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "TemplateGuard",
+		Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}},
+	}
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{name: "anti stack", template: itemcatalog.Template{Vnum: 0x11223344, Name: "Anti-Stack Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AntiStack: true}},
+		{name: "anti drop", template: itemcatalog.Template{Vnum: 0x11223344, Name: "Anti-Drop Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AntiDrop: true}},
+		{name: "anti give", template: itemcatalog.Template{Vnum: 0x11223344, Name: "Anti-Give Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AntiGive: true}},
+		{name: "anti sell", template: itemcatalog.Template{Vnum: 0x11223344, Name: "Anti-Sell Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), AntiSell: true}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(character, SessionLink{Login: "template-guard", CharacterIndex: 0})
+			if _, ok := runtime.EquipItemWithTemplate(8, inventory.EquipmentSlotBody, tc.template); ok {
+				t.Fatalf("expected %s authored equip template to fail closed", tc.name)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, character.Inventory) {
+				t.Fatalf("expected inventory unchanged after %s template equip, got %#v want %#v", tc.name, got, character.Inventory)
+			}
+			if got := runtime.LiveEquipment(); len(got) != 0 {
+				t.Fatalf("expected no live equipment after %s template equip, got %#v", tc.name, got)
+			}
+		})
+	}
+}
+
 func TestRuntimeRejectsLockedEquippedItemUnequipWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = nil
