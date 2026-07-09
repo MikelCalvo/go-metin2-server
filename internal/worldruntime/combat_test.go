@@ -386,6 +386,31 @@ func TestRegisterStaticActorCombatProfileAddsDeathRewardDefaults(t *testing.T) {
 	}
 }
 
+func TestRegisterStaticActorCombatProfileNormalizesDeathRewardDropDefaults(t *testing.T) {
+	const profile = "practice_sorted_reward_wolf"
+	reward := StaticActorDeathReward{DropVnums: []uint32{27003, 27001, 27002}}
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		DeathReward:           reward,
+	}) {
+		t.Fatalf("expected %q profile registration with unordered death reward drops to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	if reward.DropVnums[0] != 27003 || reward.DropVnums[1] != 27001 || reward.DropVnums[2] != 27002 {
+		t.Fatalf("expected registration to leave caller reward drop order unchanged, got %+v", reward.DropVnums)
+	}
+	resolvedReward, ok := BootstrapStaticActorDeathReward(profile)
+	if !ok {
+		t.Fatalf("expected registered reward profile death reward to resolve")
+	}
+	if len(resolvedReward.DropVnums) != 3 || resolvedReward.DropVnums[0] != 27001 || resolvedReward.DropVnums[1] != 27002 || resolvedReward.DropVnums[2] != 27003 {
+		t.Fatalf("expected registered reward drops to resolve in deterministic ascending order, got %+v", resolvedReward.DropVnums)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileRejectsDamageAboveMaxHP(t *testing.T) {
 	const profile = "practice_overkill_wolf"
 	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
