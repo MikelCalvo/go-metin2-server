@@ -81,6 +81,36 @@ func TestEntityRegistryLooksUpPlayersByVIDAndExactName(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryRejectsStaticActorIDCollisionWithRegisteredPlayer(t *testing.T) {
+	registry := NewEntityRegistry()
+	player := registry.RegisterPlayer(entityRegistryCharacter("CollisionOwner", 0x02040177, 1, 1100, 2100))
+	if player.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed before collision attempt")
+	}
+
+	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{
+		Entity:        Entity{ID: player.Entity.ID, Name: "CollisionMob"},
+		Position:      NewPosition(1, 1200, 2200),
+		RaceNum:       20300,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.collision_mob",
+	})
+	if ok {
+		t.Fatalf("expected static actor registration with player entity ID to fail closed, got %+v", actor)
+	}
+	if _, ok := registry.StaticActor(player.Entity.ID); ok {
+		t.Fatalf("expected no static actor to be registered with player entity ID %d", player.Entity.ID)
+	}
+	lookup, ok := registry.Player(player.Entity.ID)
+	if !ok || lookup.Entity.Name != player.Entity.Name || lookup.Character.VID != player.Character.VID {
+		t.Fatalf("expected player entity to remain intact after rejected collision, got entity=%+v ok=%v", lookup, ok)
+	}
+	characters := registry.MapCharacters(player.Character.MapIndex)
+	if len(characters) != 1 || characters[0].Name != player.Character.Name {
+		t.Fatalf("expected player map occupancy to remain intact after rejected collision, got %+v", characters)
+	}
+}
+
 func TestEntityRegistryReturnsDeterministicSortedPlayerCharacters(t *testing.T) {
 	registry := NewEntityRegistry()
 	registry.RegisterPlayer(entityRegistryCharacter("Zulu", 0x02040103, 42, 1900, 3000))
