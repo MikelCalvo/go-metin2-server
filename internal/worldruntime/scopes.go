@@ -3,6 +3,7 @@ package worldruntime
 import (
 	"sort"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
 
@@ -590,9 +591,26 @@ func clonePlayerEntities(players []PlayerEntity) []PlayerEntity {
 	if len(players) == 0 {
 		return nil
 	}
-	cloned := append([]PlayerEntity(nil), players...)
+	cloned := make([]PlayerEntity, 0, len(players))
+	for _, player := range players {
+		player.Character = cloneCharacterSnapshot(player.Character)
+		cloned = append(cloned, player)
+	}
 	sortPlayerEntities(cloned)
 	return cloned
+}
+
+func cloneCharacterSnapshot(character loginticket.Character) loginticket.Character {
+	if len(character.Inventory) > 0 {
+		character.Inventory = append([]inventory.ItemInstance(nil), character.Inventory...)
+	}
+	if len(character.Equipment) > 0 {
+		character.Equipment = append([]inventory.ItemInstance(nil), character.Equipment...)
+	}
+	if len(character.Quickslots) > 0 {
+		character.Quickslots = append([]loginticket.Quickslot(nil), character.Quickslots...)
+	}
+	return character
 }
 
 func sortPlayerEntities(players []PlayerEntity) {

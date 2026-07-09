@@ -3,6 +3,8 @@ package worldruntime
 import (
 	"reflect"
 	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
 
 func TestScopesVisibleTargetsFollowConfiguredVisibilityPolicy(t *testing.T) {
@@ -203,6 +205,32 @@ func TestScopesVisibleStaticActorsFollowConfiguredVisibilityPolicyAndOrder(t *te
 	}
 	if subject.Entity.ID == 0 {
 		t.Fatal("expected subject entity to have a stable runtime identity")
+	}
+}
+
+func TestBuildStaticActorTargetDiffDeepClonesPlayerInventories(t *testing.T) {
+	current := []PlayerEntity{{
+		Entity:    Entity{ID: 10, Kind: EntityKindPlayer, Name: "CurrentPeer", VID: 0x02040110},
+		Character: entityRegistryCharacter("CurrentPeer", 0x02040110, 1, 1000, 2000),
+	}}
+	current[0].Character.Inventory = append(current[0].Character.Inventory, inventory.ItemInstance{ID: 101, Vnum: 27001, Count: 1})
+	target := []PlayerEntity{{
+		Entity:    Entity{ID: 11, Kind: EntityKindPlayer, Name: "TargetPeer", VID: 0x02040111},
+		Character: entityRegistryCharacter("TargetPeer", 0x02040111, 1, 1200, 2200),
+	}}
+	target[0].Character.Inventory = append(target[0].Character.Inventory, inventory.ItemInstance{ID: 102, Vnum: 27002, Count: 1})
+
+	diff := buildStaticActorTargetDiff(current, target)
+	diff.CurrentVisibleTargets[0].Character.Inventory[0].Vnum = 11111
+	diff.RemovedVisibleTargets[0].Character.Inventory[0].Vnum = 22222
+	diff.TargetVisibleTargets[0].Character.Inventory[0].Vnum = 33333
+	diff.AddedVisibleTargets[0].Character.Inventory[0].Vnum = 44444
+
+	if current[0].Character.Inventory[0].Vnum != 27001 {
+		t.Fatalf("expected current target inventory to stay cloned, got %+v", current[0].Character.Inventory)
+	}
+	if target[0].Character.Inventory[0].Vnum != 27002 {
+		t.Fatalf("expected target inventory to stay cloned, got %+v", target[0].Character.Inventory)
 	}
 }
 
