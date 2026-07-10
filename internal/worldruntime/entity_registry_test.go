@@ -293,6 +293,28 @@ func TestEntityRegistryRejectsExplicitStaticActorIDAlreadyOwnedByPlayer(t *testi
 	}
 }
 
+func TestEntityRegistryRejectsExplicitStaticActorIDAlreadyOwnedByMapOnlyPlayer(t *testing.T) {
+	registry := NewEntityRegistry()
+	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if player.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(player.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial index loss")
+	}
+
+	if actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: player.Entity.ID, Name: "CollidingGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300}); ok {
+		t.Fatalf("expected explicit static actor ID colliding with map-only player to fail closed, got %+v", actor)
+	}
+	lookup, ok := registry.maps.Remove(player.Entity.ID)
+	if !ok || lookup.Entity.Name != "Alpha" {
+		t.Fatalf("expected map-only player presence to remain after rejected static actor, got entity=%+v ok=%v", lookup, ok)
+	}
+	if actor, ok := registry.StaticActor(player.Entity.ID); ok {
+		t.Fatalf("expected colliding static actor to stay absent, got %+v", actor)
+	}
+}
+
 func TestEntityRegistryStaticActorsPreserveInteractionMetadata(t *testing.T) {
 	registry := NewEntityRegistry()
 	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, InteractionKind: "talk", InteractionRef: "npc:village_guard"})

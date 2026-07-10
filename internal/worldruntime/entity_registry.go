@@ -75,6 +75,8 @@ func (r *EntityRegistry) registerStaticActor(actor StaticEntity) (StaticEntity, 
 		id = r.nextID + 1
 	} else if _, exists := r.players.ByEntityID(id); exists {
 		return StaticEntity{}, false
+	} else if _, exists := r.maps.Player(id); exists {
+		return StaticEntity{}, false
 	}
 	registered := newStaticEntity(id, actor)
 	if r.staticActorVisibilityVIDConflictsWithPlayerLocked(registered) {

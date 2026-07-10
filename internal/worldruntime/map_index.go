@@ -183,6 +183,19 @@ func (m *MapIndex) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 	return PlayerEntity{}, false
 }
 
+func (m *MapIndex) Player(entityID uint64) (PlayerEntity, bool) {
+	if m == nil || entityID == 0 {
+		return PlayerEntity{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	player, ok := m.byEntityID[entityID]
+	if ok {
+		return clonePlayerEntity(player), true
+	}
+	return m.playerMapPresenceLocked(entityID)
+}
+
 func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
 	if m == nil {
 		return nil
