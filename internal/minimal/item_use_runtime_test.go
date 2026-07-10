@@ -1206,6 +1206,58 @@ func TestGameSessionFlowItemUseToItemRejectsMissingSourceTemplateWithoutMutation
 	}
 }
 
+func TestGameSessionFlowItemUseToItemRejectsAuthoredAntiStackTemplateWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemAntiStack", 0x010305bd, 0x020405bd, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 201, Vnum: 27001, Count: 7, Slot: 5},
+		{ID: 202, Vnum: 27001, Count: 8, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "uit-anti-stack", 0x505050bd, owner)
+	if err := accounts.Save(accountstore.Account{Login: "uit-anti-stack", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed anti-stack item-use-to-item account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Anti Stack Potion",
+		Stackable: true,
+		MaxCount:  20,
+		AntiStack: true,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected anti-stack item-use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "uit-anti-stack", 0x505050bd)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected anti-stack item-use-to-item packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected anti-stack ITEM_USE_TO_ITEM to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after anti-stack ITEM_USE_TO_ITEM rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("uit-anti-stack")
+	if err != nil {
+		t.Fatalf("load persisted anti-stack item-use-to-item account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("anti-stack ITEM_USE_TO_ITEM mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("anti-stack ITEM_USE_TO_ITEM mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemPartialMergePreservesAllTargetItemQuickslots(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
