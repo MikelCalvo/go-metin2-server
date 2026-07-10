@@ -683,6 +683,33 @@ func TestEntityRegistryRejectsStaticActorUpdateThatWouldCollideWithPlayerVID(t *
 	}
 }
 
+func TestEntityRegistryRejectsPlayerUpdateThatWouldCollideWithStaticActorVisibilityVID(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: 0x02040177, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration with explicit visibility VID to succeed")
+	}
+	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1800, 2900))
+	if player.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed before colliding update")
+	}
+
+	updated := player.Character
+	updated.VID = uint32(actor.Entity.ID)
+	updated.ID = uint32(actor.Entity.ID)
+	if registry.UpdatePlayer(player.Entity.ID, updated) {
+		t.Fatal("expected player update with static actor visible VID collision to fail closed")
+	}
+	lookup, ok := registry.Player(player.Entity.ID)
+	if !ok || lookup.Entity.VID != player.Entity.VID || lookup.Character.VID != player.Character.VID || lookup.Entity.Name != "Alpha" {
+		t.Fatalf("expected original player to remain unchanged after rejected update, got player=%+v ok=%v", lookup, ok)
+	}
+	actorLookup, ok := registry.StaticActor(actor.Entity.ID)
+	if !ok || actorLookup.Entity.Name != "VillageGuard" {
+		t.Fatalf("expected original static actor to remain registered after rejected player update, got actor=%+v ok=%v", actorLookup, ok)
+	}
+}
+
 func entityRegistryCharacter(name string, vid uint32, mapIndex uint32, x int32, y int32) loginticket.Character {
 	return loginticket.Character{
 		ID:       vid,

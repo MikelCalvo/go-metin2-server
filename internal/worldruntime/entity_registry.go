@@ -216,6 +216,18 @@ func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character
 		return false
 	}
 	updated := newPlayerEntity(id, character)
+	if r.staticActors != nil {
+		if actor, exists := r.staticActors.ByVID(updated.Entity.VID); exists && actor.Entity.ID != updated.Entity.ID {
+			return false
+		}
+	}
+	if r.maps != nil {
+		if actor, exists := r.maps.StaticActor(uint64(updated.Entity.VID)); exists {
+			if vid, ok := StaticActorVisibilityVID(actor); ok && vid == updated.Entity.VID && actor.Entity.ID != updated.Entity.ID {
+				return false
+			}
+		}
+	}
 	if !r.players.Update(updated) {
 		return false
 	}
