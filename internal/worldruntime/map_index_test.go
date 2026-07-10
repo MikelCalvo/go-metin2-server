@@ -374,6 +374,28 @@ func TestMapIndexUpdateStaticRepairsEntityIndexWhenMapBucketSurvives(t *testing.
 	}
 }
 
+func TestMapIndexUpdateStaticRejectsPlayerBucketCollisionWhenEntityIndexMissing(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(7, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	if !index.Register(player) {
+		t.Fatal("expected player registration to succeed")
+	}
+	delete(index.byEntityID, player.Entity.ID)
+
+	actor := StaticEntity{Entity: Entity{ID: player.Entity.ID, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(99, 900, 1200), RaceNum: 20300}
+	if index.UpdateStatic(actor) {
+		t.Fatal("expected static actor update to reject a surviving player map-bucket collision")
+	}
+
+	characters := index.PlayerCharacters(42)
+	if len(characters) != 1 || characters[0].Name != "Alpha" {
+		t.Fatalf("expected original player map bucket to remain after rejected static update, got %+v", characters)
+	}
+	if actors := index.StaticActors(99); len(actors) != 0 {
+		t.Fatalf("expected no static actor to be inserted after rejected collision, got %+v", actors)
+	}
+}
+
 func TestMapIndexUpdateStaticClearsStaleMapBucketsForSameEntityID(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	guard := StaticEntity{Entity: Entity{ID: 11, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
