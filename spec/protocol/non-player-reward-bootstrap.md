@@ -48,6 +48,7 @@ That includes a drop-only profile default case where the killing hit emits the n
 That runtime coverage now also includes formula-only registered profiles whose `damage_per_normal_attack` is canonicalized from `attack_value - defense_value`, so the profile can both drive deterministic HP mutation and apply its reward descriptor on the same death edge.
 A formula-only registered profile may carry a combined descriptor as well; the killing hit still uses the formula-derived HP mutation first, then emits death/clear, scalar EXP/gold point changes, and deterministic owned drop frames in the normal reward ordering.
 If the authored spawn-group snapshot also carries an explicit reward descriptor, that authored descriptor wins over the profile-level default for the current actor life; profile defaults are only the fallback for spawn-backed actors whose live/authored snapshot has no explicit reward descriptor.
+Dedicated coverage freezes this precedence and clone isolation so a registered profile default cannot silently replace an authored EXP/gold/drop override.
 That profile-level default still does **not** make standalone runtime static actors reward-bearing: without a non-empty `spawn_group_ref` or explicit authored live snapshot descriptor, the shared-world death attempt returns a rewardless descriptor.
 
 ## Validation

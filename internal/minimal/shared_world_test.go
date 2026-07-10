@@ -9052,6 +9052,47 @@ func TestSharedWorldStaticActorDeathRewardFallsBackToRegisteredFormulaProfileDef
 	}
 }
 
+func TestSharedWorldStaticActorDeathRewardPrefersAuthoredDescriptorOverRegisteredProfileDefault(t *testing.T) {
+	const profile = "practice_authored_reward_override_mob"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 8,
+		DamagePerNormalAttack: 2,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:           worldruntime.StaticActorDeathReward{Experience: 11, Gold: 7, DropVnums: []uint32{27002}},
+	}) {
+		t.Fatalf("expected %q profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	runtime := newSharedWorldRegistry()
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050245, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050245, Name: "AuthoredRewardOverrideMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: profile,
+		CombatKind:    profile,
+		SpawnGroupRef: "practice.authored_reward_override_mob",
+	}
+	if _, ok := runtime.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{Experience: 101, Gold: 55, DropVnums: []uint32{27004, 27003}}); !ok {
+		t.Fatal("expected authored reward override mob registration to succeed")
+	}
+
+	storedActor, ok := runtime.entities.StaticActor(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected authored reward override mob to remain registered")
+	}
+	reward := runtime.staticActorDeathRewardLocked(storedActor)
+	if reward.Experience != 101 || reward.Gold != 55 || len(reward.DropVnums) != 2 || reward.DropVnums[0] != 27003 || reward.DropVnums[1] != 27004 {
+		t.Fatalf("expected authored reward descriptor to override profile default, got %+v", reward)
+	}
+
+	reward.DropVnums[0] = 99999
+	reward = runtime.staticActorDeathRewardLocked(storedActor)
+	if len(reward.DropVnums) != 2 || reward.DropVnums[0] != 27003 || reward.DropVnums[1] != 27004 {
+		t.Fatalf("expected authored reward override lookup to return isolated clone, got %+v", reward)
+	}
+}
+
 func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
