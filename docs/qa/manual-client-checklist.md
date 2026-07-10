@@ -232,6 +232,7 @@ Expected result:
 - if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_USE` fails closed with no point change, item refresh, quickslot change, placeholder chat, or persisted-state mutation
 - templates marked `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` also fail closed for direct consumable use: no point change, item refresh, quickslot change, or placeholder chat is visible
 - templates with authored `min_level` above the selected character's current level fail closed the same way
+- selected characters at the bootstrap zero-HP floor cannot consume carried items; the request fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a carried stack whose live count already exceeds its loaded template-authored `max_count` fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose resolved template `max_count` cannot fit the current one-byte item refresh count range fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose template-authored point delta would overflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
