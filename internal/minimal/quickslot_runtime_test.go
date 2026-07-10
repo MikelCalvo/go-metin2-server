@@ -180,6 +180,71 @@ func TestGameSessionFlowQuickslotSwapRejectsBothEmptyPositionsWithoutMutation(t 
 	}
 }
 
+func TestGameSessionFlowQuickslotEditsRejectAtBootstrapHPFloorWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name   string
+		login  string
+		packet []byte
+	}{
+		{
+			name:   "add",
+			login:  "quickslot-floor-add",
+			packet: quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 4, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}}),
+		},
+		{
+			name:   "delete",
+			login:  "quickslot-floor-del",
+			packet: quickslotproto.EncodeClientDel(quickslotproto.ClientDelPacket{Position: 2}),
+		},
+		{
+			name:   "swap",
+			login:  "quickslot-floor-swap",
+			packet: quickslotproto.EncodeClientSwap(quickslotproto.ClientSwapPacket{Position: 2, TargetPosition: 3}),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("QuickslotFloor", 0x01030591, 0x02040591, 1100, 2100, 0, 101, 201)
+			owner.Points[bootstrapPlayerPointValueIndex] = 0
+			owner.Inventory = []inventory.ItemInstance{{ID: 451, Vnum: 27001, Count: 2, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+			}
+			issuePeerTicket(t, ticketStore, tc.login, 0x50505091, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed quickslot hp-floor %s account: %v", tc.name, err)
+			}
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("unexpected quickslot hp-floor %s runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x50505091)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, tc.packet))
+			if err != nil {
+				t.Fatalf("unexpected quickslot hp-floor %s packet error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected hp-floor quickslot %s to emit no frames, got %d", tc.name, len(out))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load quickslot hp-floor %s account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("hp-floor quickslot %s mutated persisted quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("hp-floor quickslot %s mutated persisted inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowQuickslotDelRejectsEmptyPositionWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
