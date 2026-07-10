@@ -67,6 +67,13 @@ func TestEncodeServerClearTargetUsesZeroTargetAndZeroHP(t *testing.T) {
 	}
 }
 
+func TestDecodeClientTargetRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientTarget(frame.Frame{Header: HeaderServerTarget, Length: 8, Payload: []byte{0x07, 0x01, 0x04, 0x02, 0x64}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
 func TestDecodeClientTargetRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeClientTarget(frame.Frame{Header: HeaderClientTarget, Length: 7, Payload: []byte{0x01, 0x02, 0x03}})
 	if !errors.Is(err, ErrInvalidPayload) {
@@ -74,10 +81,24 @@ func TestDecodeClientTargetRejectsMalformedPayload(t *testing.T) {
 	}
 }
 
+func TestDecodeServerTargetRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeServerTarget(frame.Frame{Header: HeaderClientTarget, Length: 7, Payload: []byte{0x07, 0x01, 0x04, 0x02}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
 func TestDecodeServerTargetRejectsMalformedPayload(t *testing.T) {
 	_, err := DecodeServerTarget(frame.Frame{Header: HeaderServerTarget, Length: 8, Payload: []byte{0x01, 0x02, 0x03, 0x04}})
 	if !errors.Is(err, ErrInvalidPayload) {
 		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestDecodeClientAttackRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientAttack(frame.Frame{Header: HeaderClientTarget, Length: 7, Payload: []byte{0x07, 0x01, 0x04, 0x02}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
 	}
 }
 
