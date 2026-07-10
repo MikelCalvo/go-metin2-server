@@ -1361,6 +1361,93 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesAllSourceItemQuickslots(t *
 	}
 }
 
+func TestGameSessionFlowItemUseStaleAfterReclaimIsSelfLocalOnly(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseItemStale", 0x0103054d, 0x0204054d, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 203, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-stale", 0x5050504d, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-stale", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed stale item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "stale template consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected stale item-use runtime error: %v", err)
+	}
+	staleFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-stale", 0x5050504d)
+	closeSessionFlow(t, staleFlow)
+
+	issuePeerTicket(t, ticketStore, "item-use-stale", 0x5050504e, owner)
+	replacementFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-stale", 0x5050504e)
+	defer closeSessionFlow(t, replacementFlow)
+
+	staleOut, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected stale item-use packet error: %v", err)
+	}
+	if len(staleOut) != 3 {
+		t.Fatalf("expected stale item-use to emit self-local point change, item set, and info chat only, got %d", len(staleOut))
+	}
+	stalePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, staleOut[0]))
+	if err != nil {
+		t.Fatalf("decode stale item-use point change: %v", err)
+	}
+	if stalePointChange.VID != owner.VID || stalePointChange.Type != bootstrapPlayerPointType || stalePointChange.Amount != 50 || stalePointChange.Value != 75 {
+		t.Fatalf("unexpected stale item-use point change: %+v", stalePointChange)
+	}
+	staleItemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, staleOut[1]))
+	if err != nil {
+		t.Fatalf("decode stale item-use item set: %v", err)
+	}
+	if staleItemSet.Position != itemproto.InventoryPosition(5) || staleItemSet.Vnum != 27001 || staleItemSet.Count != 2 {
+		t.Fatalf("unexpected stale item-use item set: %+v", staleItemSet)
+	}
+	staleInfoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, staleOut[2]))
+	if err != nil {
+		t.Fatalf("decode stale item-use info chat: %v", err)
+	}
+	if staleInfoChat.Type != chatproto.ChatTypeInfo || staleInfoChat.VID != 0 || staleInfoChat.Message != "stale template consume" {
+		t.Fatalf("unexpected stale item-use info chat: %+v", staleInfoChat)
+	}
+	persisted, err := accounts.Load("item-use-stale")
+	if err != nil {
+		t.Fatalf("load stale item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected stale item-use to leave authoritative inventory unchanged, got %+v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected stale item-use to leave authoritative quickslots unchanged, got %+v", persisted.Characters[0].Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected stale item-use to leave authoritative points unchanged, got %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	replacementOut, err := replacementFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected replacement item-use packet error: %v", err)
+	}
+	if len(replacementOut) != 3 {
+		t.Fatalf("expected replacement owner to still see original partial-stack item-use after stale local use, got %d frames", len(replacementOut))
+	}
+	replacementItemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, replacementOut[1]))
+	if err != nil {
+		t.Fatalf("decode replacement item-use item set: %v", err)
+	}
+	if replacementItemSet.Position != itemproto.InventoryPosition(5) || replacementItemSet.Count != 2 {
+		t.Fatalf("expected replacement owner to consume from unchanged authoritative stack, got %+v", replacementItemSet)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemStaleAfterReclaimIsSelfLocalOnly(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
