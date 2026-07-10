@@ -906,6 +906,11 @@ func TestUseItemOnItemRejectsSelectedCharacterAntiFlagTemplatesWithoutMutation(t
 			character: loginticket.Character{RaceNum: 1, Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}},
 			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, AntiFemale: true},
 		},
+		{
+			name:      "minimum level",
+			character: loginticket.Character{Level: 9, Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 2, Slot: 5}, {ID: 42, Vnum: 27001, Count: 3, Slot: 6}}},
+			template:  itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, MinLevel: 10},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
