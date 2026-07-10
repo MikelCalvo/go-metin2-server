@@ -173,6 +173,11 @@ func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bo
 		actor.DeathReward = previous.DeathReward.Clone()
 	}
 	updated := newStaticEntity(actor.Entity.ID, actor)
+	if vid, ok := StaticActorVisibilityVID(updated); ok {
+		if player, exists := r.players.ByVID(vid); exists && player.Entity.ID != updated.Entity.ID {
+			return StaticEntity{}, false
+		}
+	}
 	if hadDirectoryEntry {
 		if !r.staticActors.Update(updated) {
 			return StaticEntity{}, false
