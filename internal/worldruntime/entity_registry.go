@@ -77,10 +77,8 @@ func (r *EntityRegistry) registerStaticActor(actor StaticEntity) (StaticEntity, 
 		return StaticEntity{}, false
 	}
 	registered := newStaticEntity(id, actor)
-	if vid, ok := StaticActorVisibilityVID(registered); ok {
-		if _, exists := r.players.ByVID(vid); exists {
-			return StaticEntity{}, false
-		}
+	if r.staticActorVisibilityVIDConflictsWithPlayerLocked(registered) {
+		return StaticEntity{}, false
 	}
 	if !r.staticActors.Register(registered) {
 		return StaticEntity{}, false
@@ -180,10 +178,8 @@ func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bo
 		actor.DeathReward = previous.DeathReward.Clone()
 	}
 	updated := newStaticEntity(actor.Entity.ID, actor)
-	if vid, ok := StaticActorVisibilityVID(updated); ok {
-		if player, exists := r.players.ByVID(vid); exists && player.Entity.ID != updated.Entity.ID {
-			return StaticEntity{}, false
-		}
+	if r.staticActorVisibilityVIDConflictsWithPlayerLocked(updated) {
+		return StaticEntity{}, false
 	}
 	if hadDirectoryEntry {
 		if !r.staticActors.Update(updated) {
@@ -312,6 +308,24 @@ func (r *EntityRegistry) NextEntityID() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.nextID + 1
+}
+
+func (r *EntityRegistry) staticActorVisibilityVIDConflictsWithPlayerLocked(actor StaticEntity) bool {
+	vid, ok := StaticActorVisibilityVID(actor)
+	if !ok || r == nil {
+		return false
+	}
+	if r.players != nil {
+		if player, exists := r.players.ByVID(vid); exists && player.Entity.ID != actor.Entity.ID {
+			return true
+		}
+	}
+	if r.maps != nil {
+		if player, exists := r.maps.PlayerByVID(vid); exists && player.Entity.ID != actor.Entity.ID {
+			return true
+		}
+	}
+	return false
 }
 
 func newPlayerEntity(id uint64, character loginticket.Character) PlayerEntity {

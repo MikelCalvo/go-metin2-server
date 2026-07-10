@@ -162,6 +162,27 @@ func (m *MapIndex) removePlayerMapPresenceLocked(entityID uint64) {
 	}
 }
 
+func (m *MapIndex) PlayerByVID(vid uint32) (PlayerEntity, bool) {
+	if m == nil || vid == 0 {
+		return PlayerEntity{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, player := range m.byEntityID {
+		if player.Entity.VID == vid {
+			return clonePlayerEntity(player), true
+		}
+	}
+	for _, bucket := range m.byMapIndex {
+		for _, player := range bucket {
+			if player.Entity.VID == vid {
+				return clonePlayerEntity(player), true
+			}
+		}
+	}
+	return PlayerEntity{}, false
+}
+
 func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
 	if m == nil {
 		return nil
