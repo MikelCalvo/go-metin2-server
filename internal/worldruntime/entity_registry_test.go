@@ -81,6 +81,48 @@ func TestEntityRegistryLooksUpPlayersByVIDAndExactName(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryRejectedPlayerRegistrationDoesNotConsumeEntityID(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
+	if alpha.Entity.ID != 1 {
+		t.Fatalf("expected first player entity ID 1, got %+v", alpha)
+	}
+
+	duplicateName := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040102, 1, 1200, 2200))
+	if duplicateName.Entity.ID != 0 {
+		t.Fatalf("expected duplicate-name registration to fail closed, got %+v", duplicateName)
+	}
+
+	bravo := registry.RegisterPlayer(entityRegistryCharacter("Bravo", 0x02040102, 1, 1300, 2300))
+	if bravo.Entity.ID != 2 {
+		t.Fatalf("expected failed registration not to consume entity ID; got Bravo entity %+v", bravo)
+	}
+	if next := registry.NextEntityID(); next != 3 {
+		t.Fatalf("expected next entity ID 3 after two successful players, got %d", next)
+	}
+}
+
+func TestEntityRegistryRejectedStaticActorRegistrationDoesNotConsumeEntityID(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
+	if alpha.Entity.ID != 1 {
+		t.Fatalf("expected first player entity ID 1, got %+v", alpha)
+	}
+
+	collidingActor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: uint64(alpha.Entity.VID), Name: "CollidingGuard"}, Position: NewPosition(1, 1200, 2200), RaceNum: 20300})
+	if ok {
+		t.Fatalf("expected static actor registration with player visible VID collision to fail closed, got %+v", collidingActor)
+	}
+
+	bravo := registry.RegisterPlayer(entityRegistryCharacter("Bravo", 0x02040102, 1, 1300, 2300))
+	if bravo.Entity.ID != 2 {
+		t.Fatalf("expected failed static actor registration not to consume entity ID; got Bravo entity %+v", bravo)
+	}
+	if next := registry.NextEntityID(); next != 3 {
+		t.Fatalf("expected next entity ID 3 after one rejected static actor registration, got %d", next)
+	}
+}
+
 func TestEntityRegistryRejectsStaticActorIDCollisionWithRegisteredPlayer(t *testing.T) {
 	registry := NewEntityRegistry()
 	player := registry.RegisterPlayer(entityRegistryCharacter("CollisionOwner", 0x02040177, 1, 1100, 2100))

@@ -29,8 +29,7 @@ func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerE
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.nextID++
-	registered := newPlayerEntity(r.nextID, character)
+	registered := newPlayerEntity(r.nextID+1, character)
 	if r.staticActors != nil {
 		if _, exists := r.staticActors.ByVID(registered.Entity.VID); exists {
 			return PlayerEntity{}
@@ -50,6 +49,7 @@ func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerE
 		_, _ = r.players.Remove(registered.Entity.ID)
 		return PlayerEntity{}
 	}
+	r.nextID = registered.Entity.ID
 	return registered
 }
 
