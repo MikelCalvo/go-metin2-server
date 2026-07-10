@@ -9010,6 +9010,48 @@ func TestSharedWorldDeathRewardOverrideRejectsMalformedDescriptorAndPreservesExi
 	}
 }
 
+func TestSharedWorldStaticActorDeathRewardFallsBackToRegisteredFormulaProfileDefault(t *testing.T) {
+	const profile = "practice_formula_reward_default_mob"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        8,
+		AttackValue:  5,
+		DefenseValue: 3,
+		RespawnDelay: worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:  worldruntime.StaticActorDeathReward{Experience: 11, Gold: 7, DropVnums: []uint32{27002, 27001}},
+	}) {
+		t.Fatalf("expected %q formula reward profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	runtime := newSharedWorldRegistry()
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050244, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050244, Name: "FormulaRewardDefaultMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: profile,
+		CombatKind:    profile,
+		SpawnGroupRef: "practice.formula_reward_default_mob",
+	}
+	if _, ok := runtime.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected formula reward default mob registration to succeed")
+	}
+
+	storedActor, ok := runtime.entities.StaticActor(actor.Entity.ID)
+	if !ok {
+		t.Fatal("expected formula reward default mob to remain registered")
+	}
+	reward := runtime.staticActorDeathRewardLocked(storedActor)
+	if reward.Experience != 11 || reward.Gold != 7 || len(reward.DropVnums) != 2 || reward.DropVnums[0] != 27001 || reward.DropVnums[1] != 27002 {
+		t.Fatalf("expected spawn-backed actor to resolve formula profile default reward, got %+v", reward)
+	}
+
+	reward.DropVnums[0] = 99999
+	reward = runtime.staticActorDeathRewardLocked(storedActor)
+	if len(reward.DropVnums) != 2 || reward.DropVnums[0] != 27001 || reward.DropVnums[1] != 27002 {
+		t.Fatalf("expected profile default reward lookup to return isolated clone, got %+v", reward)
+	}
+}
+
 func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
