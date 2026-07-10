@@ -614,6 +614,29 @@ func TestEntityRegistryRejectsPlayerVIDAlreadyOwnedByStaticActorVisibilityVID(t 
 	}
 }
 
+func TestEntityRegistryRejectsPlayerVIDAlreadyOwnedByMapOnlyStaticActorVisibilityVID(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: 0x02040101, Name: "MapOnlyGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration with explicit visibility VID to succeed")
+	}
+	if _, ok := registry.staticActors.Remove(actor.Entity.ID); !ok {
+		t.Fatal("expected direct static-actor directory removal to simulate partial index loss")
+	}
+
+	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", uint32(actor.Entity.ID), 42, 1800, 2900))
+	if player.Entity.ID != 0 {
+		t.Fatalf("expected player registration with map-only static actor visible VID collision to fail closed, got %+v", player)
+	}
+	lookup, ok := registry.maps.StaticActor(actor.Entity.ID)
+	if !ok || lookup.Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected map-only static actor map presence to remain after rejected player, got actor=%+v ok=%v", lookup, ok)
+	}
+	if players := registry.PlayerCharacters(); len(players) != 0 {
+		t.Fatalf("expected rejected player to stay out of player snapshots, got %+v", players)
+	}
+}
+
 func TestEntityRegistryRejectsStaticActorVisibilityVIDAlreadyOwnedByPlayer(t *testing.T) {
 	registry := NewEntityRegistry()
 	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))

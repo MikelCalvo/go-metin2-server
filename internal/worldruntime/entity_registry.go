@@ -36,6 +36,13 @@ func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerE
 			return PlayerEntity{}
 		}
 	}
+	if r.maps != nil {
+		if actor, exists := r.maps.StaticActor(uint64(registered.Entity.VID)); exists {
+			if vid, ok := StaticActorVisibilityVID(actor); ok && vid == registered.Entity.VID {
+				return PlayerEntity{}
+			}
+		}
+	}
 	if !r.players.Register(registered) {
 		return PlayerEntity{}
 	}
