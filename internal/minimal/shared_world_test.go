@@ -15762,6 +15762,67 @@ func TestSharedWorldRegistryGroundGoldRemovalRejectsOutOfRangeCollector(t *testi
 	}
 }
 
+func TestSharedWorldRegistryGroundRewardPickupRejectsStaleFarCollectorSnapshotAfterCollectorMovesNear(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(4000, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("FarSnapshotOwner", 0x01030140, 0x02040140, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("FarThenNearCollector", 0x01030141, 0x02040141, 2500, 3500, 1, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	groundVID := uint32(0x0A0B0C34)
+	item := inventory.ItemInstance{ID: 1034, Vnum: 27004, Count: 1, Slot: 5}
+	if !registry.RegisterGroundItem(ownerID, "far-snapshot-owner", owner, groundVID, item) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+	nearCollector := collector
+	nearCollector.X = 1120
+	nearCollector.Y = 2120
+	registry.UpdateCharacter(collectorID, nearCollector)
+
+	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
+		t.Fatal("expected stale far collector snapshot pickup to fail closed even after registered collector moved near")
+	}
+	if removed := registry.RemoveGroundItem(collectorID, collector, groundVID); removed {
+		t.Fatal("expected stale far collector snapshot removal to fail closed even after registered collector moved near")
+	}
+	if !registry.GroundItemExists(groundVID) {
+		t.Fatal("expected rejected stale far snapshot pickup/removal to leave ground item registered")
+	}
+}
+
+func TestSharedWorldRegistryGroundGoldPickupRejectsStaleFarCollectorSnapshotAfterCollectorMovesNear(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(4000, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("FarGoldSnapshotOwner", 0x01030142, 0x02040142, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("FarThenNearGoldCollector", 0x01030143, 0x02040143, 2500, 3500, 1, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	groundVID := uint32(0x0A0B0C35)
+	if !registry.RegisterGroundGold(ownerID, "far-gold-snapshot-owner", owner, groundVID, 275) {
+		t.Fatal("expected owner ground gold registration to succeed")
+	}
+	nearCollector := collector
+	nearCollector.X = 1120
+	nearCollector.Y = 2120
+	registry.UpdateCharacter(collectorID, nearCollector)
+
+	if pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok || pickup.GoldAmount != 0 {
+		t.Fatalf("expected stale far collector snapshot ground-gold pickup to fail closed even after registered collector moved near, got ok=%v pickup=%+v", ok, pickup)
+	}
+	if removed := registry.RemoveGroundItem(collectorID, collector, groundVID); removed {
+		t.Fatal("expected stale far collector snapshot ground-gold removal to fail closed even after registered collector moved near")
+	}
+	if !registry.GroundItemExists(groundVID) {
+		t.Fatal("expected rejected stale far snapshot ground-gold pickup/removal to leave ground gold registered")
+	}
+}
+
 func TestSharedWorldRegistryGroundGoldPickupSkipsDeadOwnerDelivery(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
