@@ -571,6 +571,33 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsDuplicateVIDWithoutReplacin
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundItemRejectsDuplicateVIDWithoutReplacingExistingItem(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("DuplicateItemVIDOwner", 0x0103019a, 0x0204019a, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected duplicate-item-vid owner join to allocate a shared-world entity id")
+	}
+
+	const groundVID uint32 = 0x0700001d
+	original := inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}
+	replacement := inventory.ItemInstance{ID: 0x30010002, Vnum: 3002, Count: 1}
+	if !registry.RegisterGroundItem(ownerID, "duplicate-item-vid-owner", owner, groundVID, original) {
+		t.Fatal("expected first ground-item reward registration to succeed")
+	}
+	if registry.RegisterGroundItem(ownerID, "duplicate-item-vid-owner", owner, groundVID, replacement) {
+		t.Fatal("expected duplicate ground-item reward VID registration to fail closed")
+	}
+
+	pickup, ok := registry.GroundItemPickupFor(ownerID, owner, groundVID)
+	if !ok {
+		t.Fatal("expected original ground-item reward to remain reachable after duplicate VID rejection")
+	}
+	if pickup.Item.ID != original.ID || pickup.Item.Vnum != original.Vnum || pickup.Item.Count != original.Count {
+		t.Fatalf("expected duplicate VID rejection to preserve original ground-item reward, got %+v", pickup.Item)
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundRewardsRejectsEmptyOwnerLogin(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("EmptyLoginRewardOwner", 0x01030194, 0x02040194, 1200, 2200, 0, 101, 201)
