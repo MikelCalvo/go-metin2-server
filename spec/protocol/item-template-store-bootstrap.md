@@ -57,6 +57,8 @@ Missing-file fallback is a bootstrap compatibility aid, not the final production
 
 Malformed snapshots, invalid templates, duplicate `vnum` entries, snapshots with unknown JSON fields, and snapshots with trailing JSON values are fatal for runtime construction.
 
+The durable account snapshot store applies the same fail-closed item-instance validation on both save and load. Persisted carried-inventory or equipment entries with malformed item instances, including zero-count item stacks, are rejected as invalid account snapshots instead of being normalized into live bootstrap state.
+
 ## Tests
 
 Current coverage:

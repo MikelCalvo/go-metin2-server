@@ -67,6 +67,9 @@ func (s *FileStore) Load(login string) (Account, error) {
 		return Account{}, fmt.Errorf("decode account: %w", err)
 	}
 	account.Characters = normalizeAccountCharacters(account.Characters)
+	if err := validateAccount(account); err != nil {
+		return Account{}, err
+	}
 	return account, nil
 }
 

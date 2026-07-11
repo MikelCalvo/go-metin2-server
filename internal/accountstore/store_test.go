@@ -28,6 +28,19 @@ func TestFileStoreRejectsZeroCountInventoryItem(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsZeroCountInventoryItem(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":27001,"count":0,"slot":8}],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write invalid zero-count account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for loaded zero-count inventory item, got %v", err)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	want := Account{
