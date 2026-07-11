@@ -103,6 +103,8 @@ The first bootstrap spawn-group contract freezes these fields:
 - `ref`
   - stable authored identifier for the spawn group
   - unique within the bundle
+  - canonical dotted lowercase identifier made of at least two `[a-z][a-z0-9_]*` segments, for example `practice.mob_alpha`
+  - runtime import and static-actor snapshot validation reject non-canonical refs instead of preserving ambiguous authored ownership keys
   - this is the authored identity that future runtime respawn ownership binds to
 - `name`
   - required operator-friendly display label
@@ -190,7 +192,7 @@ What is **not** yet frozen here:
 ## Validation rules
 
 The first content contract should fail closed when:
-- `ref` is empty or duplicated
+- `ref` is empty, duplicated, or not in the canonical dotted lowercase form `[a-z][a-z0-9_]*(.[a-z][a-z0-9_]*)+`
 - `name` is empty after trimming whitespace
 - `map_index` is `0`
 - `race_num` is `0`

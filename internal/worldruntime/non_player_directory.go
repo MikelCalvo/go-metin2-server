@@ -162,7 +162,40 @@ func ValidStaticActorCombatProfile(profile string) bool {
 }
 
 func ValidStaticActorSpawnGroupRef(ref string) bool {
-	return ref == strings.TrimSpace(ref)
+	if ref == "" {
+		return true
+	}
+	if ref != strings.TrimSpace(ref) {
+		return false
+	}
+	segments := strings.Split(ref, ".")
+	if len(segments) < 2 {
+		return false
+	}
+	for _, segment := range segments {
+		if !validSpawnGroupRefSegment(segment) {
+			return false
+		}
+	}
+	return true
+}
+
+func validSpawnGroupRefSegment(segment string) bool {
+	if segment == "" {
+		return false
+	}
+	first := segment[0]
+	if first < 'a' || first > 'z' {
+		return false
+	}
+	for i := 1; i < len(segment); i++ {
+		c := segment[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func sortStaticEntities(actors []StaticEntity) {

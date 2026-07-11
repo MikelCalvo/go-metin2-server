@@ -414,6 +414,30 @@ func TestNonPlayerDirectoryPreservesSpawnGroupRefOnRegisterAndUpdate(t *testing.
 	}
 }
 
+func TestNonPlayerDirectoryRejectsNonCanonicalSpawnGroupRef(t *testing.T) {
+	for name, ref := range map[string]string{
+		"blank segment":      "practice..mob",
+		"uppercase segment":  "practice.Mob",
+		"hyphenated segment": "practice-mob",
+		"leading digit":      "1practice.mob",
+		"missing namespace":  "practice_mob",
+	} {
+		t.Run(name, func(t *testing.T) {
+			directory := NewNonPlayerDirectory()
+			actor := StaticEntity{
+				Entity:        Entity{ID: 14, Kind: EntityKindStaticActor, Name: "PracticeMobAlpha"},
+				Position:      NewPosition(42, 1800, 2900),
+				RaceNum:       101,
+				CombatProfile: StaticActorCombatProfilePracticeMob,
+				SpawnGroupRef: ref,
+			}
+			if directory.Register(actor) {
+				t.Fatalf("expected spawn-backed actor with ref %q to be rejected", ref)
+			}
+		})
+	}
+}
+
 func TestNonPlayerDirectoryRejectsStandaloneStaticActorDeathReward(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{

@@ -3148,7 +3148,7 @@ func TestNewGameRuntimeExportsSpawnGroupsInContentBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
-	if _, ok := runtime.registerStaticActorWithInteractionCombatProfileAndSpawnGroupRef("Practice Wolf", 3, 1200, 2200, 101, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "spawn:wolf:1"); !ok {
+	if _, ok := runtime.registerStaticActorWithInteractionCombatProfileAndSpawnGroupRef("Practice Wolf", 3, 1200, 2200, 101, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "spawn.wolf_1"); !ok {
 		t.Fatal("expected spawn-backed static actor registration to succeed")
 	}
 
@@ -3163,7 +3163,7 @@ func TestNewGameRuntimeExportsSpawnGroupsInContentBundle(t *testing.T) {
 		t.Fatalf("expected one exported spawn group, got %+v", bundle.SpawnGroups)
 	}
 	spawnGroup := bundle.SpawnGroups[0]
-	if spawnGroup.Ref != "spawn:wolf:1" || spawnGroup.Name != "Practice Wolf" || spawnGroup.MapIndex != 3 || spawnGroup.X != 1200 || spawnGroup.Y != 2200 || spawnGroup.RaceNum != 101 || spawnGroup.CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob {
+	if spawnGroup.Ref != "spawn.wolf_1" || spawnGroup.Name != "Practice Wolf" || spawnGroup.MapIndex != 3 || spawnGroup.X != 1200 || spawnGroup.Y != 2200 || spawnGroup.RaceNum != 101 || spawnGroup.CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob {
 		t.Fatalf("unexpected exported spawn group: %+v", spawnGroup)
 	}
 }
