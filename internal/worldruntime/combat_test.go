@@ -99,6 +99,30 @@ func TestApplyBootstrapStaticActorNormalAttackClampsFormulaDamageToMinimumOne(t 
 	}
 }
 
+func TestApplyBootstrapStaticActorNormalAttackClampsOverMaxRuntimeHPBeforeDamage(t *testing.T) {
+	const profile = "practice_overmax_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        20,
+		AttackValue:  7,
+		DefenseValue: 3,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with formula stats to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	nextHP, hpPercent, ok := ApplyBootstrapStaticActorNormalAttack(profile, 25)
+	if !ok {
+		t.Fatal("expected registered formula profile normal attack to support over-max runtime HP by clamping first")
+	}
+	if nextHP != 16 {
+		t.Fatalf("expected over-max runtime HP to clamp to max HP before 4 damage, got next HP %d", nextHP)
+	}
+	if hpPercent != 80 {
+		t.Fatalf("expected over-max runtime HP attack to report 80 percent after clamp and damage, got %d", hpPercent)
+	}
+}
+
 func TestBootstrapStaticActorRespawnDelayReturnsTrainingDummyBootstrapDelay(t *testing.T) {
 	delay, ok := BootstrapStaticActorRespawnDelay(StaticActorCombatKindTrainingDummy)
 	if !ok {
