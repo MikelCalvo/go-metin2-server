@@ -172,6 +172,91 @@ func TestGameRuntimeItemMoveRejectsDuplicateSourceOrTargetOccupancyWithoutMutati
 	}
 }
 
+func TestGameRuntimeItemMoveNonStackableSameVnumFullStackSwapsWithoutMerging(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MoveNonStackSwap", 0x0103066f, 0x0204066f, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 6401, Vnum: 50001, Count: 1, Slot: 5},
+		{ID: 6402, Vnum: 50001, Count: 1, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "move-non-stack-swap", 0x6060606f, owner)
+	if err := accounts.Save(accountstore.Account{Login: "move-non-stack-swap", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed non-stackable same-vnum item-move account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 50001, Name: "Non-Stackable Badge", Stackable: false, MaxCount: 1}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected non-stackable same-vnum item-move runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "move-non-stack-swap", 0x6060606f)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(6),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected non-stackable same-vnum item-move packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected non-stackable same-vnum full-stack move to emit source set, destination set, stale quickslot delete, and retarget quickslot add; got %d frames", len(out))
+	}
+	sourceSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode non-stackable same-vnum source set: %v", err)
+	}
+	if sourceSet.Position != itemproto.InventoryPosition(5) || sourceSet.Vnum != 50001 || sourceSet.Count != 1 {
+		t.Fatalf("unexpected non-stackable same-vnum source set: %+v", sourceSet)
+	}
+	destinationSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode non-stackable same-vnum destination set: %v", err)
+	}
+	if destinationSet.Position != itemproto.InventoryPosition(6) || destinationSet.Vnum != 50001 || destinationSet.Count != 1 {
+		t.Fatalf("unexpected non-stackable same-vnum destination set: %+v", destinationSet)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode non-stackable same-vnum stale quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 3 {
+		t.Fatalf("expected stale destination item quickslot position 3 to be deleted, got %+v", quickslotDel)
+	}
+	quickslotAdd, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode non-stackable same-vnum quickslot retarget: %v", err)
+	}
+	if quickslotAdd.Position != 2 || quickslotAdd.Slot.Type != quickslotproto.TypeItem || quickslotAdd.Slot.Position != 6 {
+		t.Fatalf("expected source item quickslot position 2 to retarget to carried slot 6, got %+v", quickslotAdd)
+	}
+
+	persisted, err := accounts.Load("move-non-stack-swap")
+	if err != nil {
+		t.Fatalf("load non-stackable same-vnum item-move account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 6402, Vnum: 50001, Count: 1, Slot: 5},
+		{ID: 6401, Vnum: 50001, Count: 1, Slot: 6},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted inventory after non-stackable same-vnum swap: got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted quickslots after non-stackable same-vnum swap: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
 func TestGameRuntimeItemMoveRejectsTransferGuardedStackTemplatesWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name   string
