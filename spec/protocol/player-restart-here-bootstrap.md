@@ -79,6 +79,8 @@ This keeps the first alive-again surface honest:
 
 Recipients that are themselves already at the current zero-HP floor remain out of audience as already frozen in `player-death-bootstrap.md`.
 
+Later peers that enter the same visible world after accepted `/restart_here` treat the recovered owner as a live actor again. They receive the ordinary peer bootstrap burst for that owner and do **not** receive a replayed `DEAD(owner_vid)` from the earlier pre-restart death window.
+
 ## Persistence rule
 
 For this first slice, `/restart_here` does not invent new persistence semantics.

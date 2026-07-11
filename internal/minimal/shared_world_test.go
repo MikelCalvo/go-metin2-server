@@ -5254,6 +5254,110 @@ func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhileAlive(t *testing.T
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartHereLatePeerSeesRecoveredOwnerAlive(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	lateWatcher := peerVisibilityCharacter("LateHereWatcher", 0x01030103, 0x02040103, 1400, 2400, 4, 103, 203)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+	issuePeerTicket(t, store, "late-here-watcher", 0x33333333, lateWatcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error in late /restart_here visibility test: %v", err)
+	}
+	currentTime := time.Unix(1700000531, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_late_here_visibility",
+		Name:          "PracticeMobLateHereVisibility",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle for late /restart_here visibility test: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import for late /restart_here visibility test, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner in late /restart_here visibility test, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher in late /restart_here visibility test, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected owner to receive 3 queued watcher entry frames before late /restart_here visibility test, got %d", len(queued))
+	}
+
+	advance := func(duration time.Duration) { currentTime = currentTime.Add(duration) }
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here error in late visibility test: %v", err)
+	}
+	if len(restartOut) != 4 {
+		t.Fatalf("expected 4 self frames from /restart_here late visibility setup, got %d", len(restartOut))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 4 {
+		t.Fatalf("expected watcher to receive 4 queued owner refresh frames after /restart_here late visibility setup, got %d", len(queued))
+	}
+
+	lateWatcherFlow, lateWatcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "late-here-watcher", 0x33333333)
+	defer closeSessionFlow(t, lateWatcherFlow)
+	if len(lateWatcherEnter) != 14 {
+		t.Fatalf("expected late peer to receive 5 self frames plus 3 recovered-owner frames plus 3 existing-watcher frames plus 3 static-actor frames, got %d", len(lateWatcherEnter))
+	}
+	ownerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, lateWatcherEnter[5]))
+	if err != nil {
+		t.Fatalf("decode recovered owner add for late /restart_here peer: %v", err)
+	}
+	if ownerAdd.VID != owner.VID || ownerAdd.X != owner.X || ownerAdd.Y != owner.Y {
+		t.Fatalf("expected late peer to see recovered owner alive at original position, got %+v", ownerAdd)
+	}
+	ownerInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, lateWatcherEnter[6]))
+	if err != nil {
+		t.Fatalf("decode recovered owner info for late /restart_here peer: %v", err)
+	}
+	if ownerInfo.VID != owner.VID || ownerInfo.Name != owner.Name {
+		t.Fatalf("expected late peer info for recovered owner %s/%d, got %+v", owner.Name, owner.VID, ownerInfo)
+	}
+	for i := 5; i < len(lateWatcherEnter); i++ {
+		if dead, err := worldproto.DecodeDead(decodeSingleFrame(t, lateWatcherEnter[i])); err == nil {
+			t.Fatalf("did not expect late peer after /restart_here to replay DEAD(owner), got %+v at frame %d", dead, i)
+		}
+	}
+	if queued := flushServerFrames(t, lateWatcherFlow); len(queued) != 0 {
+		t.Fatalf("expected late peer to receive no queued dead-state follow-up for recovered owner after /restart_here, got %d", len(queued))
+	}
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected recovered owner to receive 3 queued late-peer entry frames after /restart_here, got %d", len(ownerQueued))
+	}
+	latePeerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode late peer add for recovered owner after /restart_here: %v", err)
+	}
+	if latePeerAdd.VID != lateWatcher.VID {
+		t.Fatalf("expected recovered owner to see late peer vid %d after /restart_here, got %+v", lateWatcher.VID, latePeerAdd)
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartHereFreshTargetKeepsRuntimeOwnedMobHP(t *testing.T) {
 	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
 	defer closeSessionFlow(t, ownerFlow)
