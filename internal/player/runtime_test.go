@@ -449,6 +449,39 @@ func TestRuntimeItemUseConsumesBootstrapConsumableWithoutMutatingPersistedPoints
 	}
 }
 
+func TestRuntimeItemUseRejectsVnumMismatchedTemplateWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:     0x01030103,
+		VID:    0x02040103,
+		Name:   "PeerTwo",
+		Points: [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
+			{ID: 12, Vnum: 27001, Count: 2, Slot: 6},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.UseItem(5, bootstrapConsumableTemplate(27002, 1, 1, 50, "consume:27002:+50"))
+	if ok {
+		t.Fatalf("expected vnum-mismatched item use to fail, got result %+v", result)
+	}
+	move, ok := runtime.UseItemOnItem(5, 6, bootstrapConsumableTemplate(27002, 1, 1, 50, "consume:27002:+50"))
+	if ok {
+		t.Fatalf("expected vnum-mismatched item-use-to-item to fail, got result %+v", move)
+	}
+	live := runtime.LiveCharacter()
+	if live.Points[1] != persisted.Points[1] {
+		t.Fatalf("vnum-mismatched item use mutated points: got %d want %d", live.Points[1], persisted.Points[1])
+	}
+	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) {
+		t.Fatalf("vnum-mismatched item use mutated live inventory: got %#v want %#v", live.Inventory, persisted.Inventory)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("vnum-mismatched item use mutated persisted inventory: got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeItemUseRemovesTheLastConsumableStack(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,
