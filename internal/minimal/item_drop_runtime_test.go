@@ -538,6 +538,93 @@ func TestGameRuntimeItemDropRejectsTransferGuardTemplatesWithoutMutation(t *test
 	}
 }
 
+func TestGameRuntimeItemDropRejectsSelectedCharacterRestrictionsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name     string
+		login    string
+		job      uint8
+		raceNum  uint16
+		level    uint8
+		template itemcatalog.Template
+	}{
+		{
+			name:     "anti-warrior",
+			login:    "drop-anti-warrior",
+			job:      0,
+			raceNum:  0,
+			level:    1,
+			template: itemcatalog.Template{Vnum: 27003, Name: "Warrior Restricted Drop Potion", Stackable: true, MaxCount: 200, AntiWarrior: true},
+		},
+		{
+			name:     "anti-female",
+			login:    "drop-anti-female",
+			job:      1,
+			raceNum:  1,
+			level:    1,
+			template: itemcatalog.Template{Vnum: 27003, Name: "Female Restricted Drop Potion", Stackable: true, MaxCount: 200, AntiFemale: true},
+		},
+		{
+			name:     "min-level",
+			login:    "drop-min-level",
+			job:      0,
+			raceNum:  0,
+			level:    5,
+			template: itemcatalog.Template{Vnum: 27003, Name: "Veteran Drop Potion", Stackable: true, MaxCount: 200, MinLevel: 10},
+		},
+	}
+
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("DropRestricted", 0x0103019a+uint32(index), 0x0204019a+uint32(index), 1250, 2250, tc.raceNum, 101, 201)
+			owner.Job = tc.job
+			owner.RaceNum = tc.raceNum
+			owner.Level = tc.level
+			owner.Inventory = []inventory.ItemInstance{{ID: uint64(1032 + index), Vnum: 27003, Count: 4, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, ticketStore, tc.login, 0x4a4a4a4a+uint32(index), owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s drop owner account: %v", tc.name, err)
+			}
+
+			runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(
+				config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+				ticketStore,
+				accounts,
+				nil,
+				newItemTemplateStore(t, []itemcatalog.Template{tc.template}),
+			)
+			if err != nil {
+				t.Fatalf("unexpected %s item-drop runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x4a4a4a4a+uint32(index))
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 1})))
+			if err != nil {
+				t.Fatalf("unexpected %s item drop2 error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s restricted item drop to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s restricted drop, got %d", tc.name, len(queued))
+			}
+			account, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load %s drop account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s restricted drop mutated inventory: got %#v want %#v", tc.name, account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s restricted drop mutated quickslots: got %#v want %#v", tc.name, account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemDropRejectsLockedCarriedItemWithoutMutation(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
