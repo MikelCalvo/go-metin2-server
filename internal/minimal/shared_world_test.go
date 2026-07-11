@@ -16077,6 +16077,9 @@ func TestSharedWorldRegistryGroundRewardPickupRejectsStaleFarCollectorSnapshotAf
 	nearCollector.Y = 2120
 	registry.UpdateCharacter(collectorID, nearCollector)
 
+	if _, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); ok {
+		t.Fatal("expected stale far collector snapshot visibility to fail closed even after registered collector moved near")
+	}
 	if _, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok {
 		t.Fatal("expected stale far collector snapshot pickup to fail closed even after registered collector moved near")
 	}
@@ -16107,6 +16110,9 @@ func TestSharedWorldRegistryGroundGoldPickupRejectsStaleFarCollectorSnapshotAfte
 	nearCollector.Y = 2120
 	registry.UpdateCharacter(collectorID, nearCollector)
 
+	if _, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); ok {
+		t.Fatal("expected stale far collector snapshot ground-gold visibility to fail closed even after registered collector moved near")
+	}
 	if pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok || pickup.GoldAmount != 0 {
 		t.Fatalf("expected stale far collector snapshot ground-gold pickup to fail closed even after registered collector moved near, got ok=%v pickup=%+v", ok, pickup)
 	}
