@@ -427,6 +427,36 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			raceNum:  0,
 		},
 		{
+			name: "anti assassin template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Assassin Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiAssassin: true},
+			job:      1,
+			raceNum:  1,
+		},
+		{
+			name: "anti sura template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Sura Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiSura: true},
+			job:      2,
+			raceNum:  2,
+		},
+		{
+			name: "anti shaman template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Shaman Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiShaman: true},
+			job:      3,
+			raceNum:  3,
+		},
+		{
 			name: "anti male template",
 			inventory: []inventory.ItemInstance{
 				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
@@ -435,6 +465,16 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			template: itemcatalog.Template{Vnum: 27001, Name: "Male Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiMale: true},
 			job:      0,
 			raceNum:  0,
+		},
+		{
+			name: "anti female template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Female Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiFemale: true},
+			job:      1,
+			raceNum:  1,
 		},
 		{
 			name: "min-level template",
