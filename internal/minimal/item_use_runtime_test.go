@@ -1675,6 +1675,94 @@ func TestGameSessionFlowItemUseToItemStaleAfterReclaimIsSelfLocalOnly(t *testing
 	}
 }
 
+func TestGameSessionFlowItemUseToItemStalePartialMergeAfterReclaimIsSelfLocalOnly(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemStalePartial", 0x0103054b, 0x0204054b, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 211, Vnum: 27001, Count: 7, Slot: 5},
+		{ID: 212, Vnum: 27001, Count: 8, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "item-use-to-item-stale-partial", 0x5050508b, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-to-item-stale-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed stale partial item-use-to-item account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  10,
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected stale partial item-use-to-item runtime error: %v", err)
+	}
+	staleFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-to-item-stale-partial", 0x5050508b)
+	closeSessionFlow(t, staleFlow)
+
+	issuePeerTicket(t, ticketStore, "item-use-to-item-stale-partial", 0x5050508a, owner)
+	replacementFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-to-item-stale-partial", 0x5050508a)
+	defer closeSessionFlow(t, replacementFlow)
+
+	staleOut, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected stale partial item-use-to-item packet error: %v", err)
+	}
+	if len(staleOut) != 2 {
+		t.Fatalf("expected stale partial item-use-to-item to emit self-local source and target updates only, got %d", len(staleOut))
+	}
+	staleSourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, staleOut[0]))
+	if err != nil {
+		t.Fatalf("decode stale partial item-use-to-item source update: %v", err)
+	}
+	if staleSourceUpdate.Position != itemproto.InventoryPosition(5) || staleSourceUpdate.Count != 5 {
+		t.Fatalf("unexpected stale partial item-use-to-item source update: %+v", staleSourceUpdate)
+	}
+	staleTargetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, staleOut[1]))
+	if err != nil {
+		t.Fatalf("decode stale partial item-use-to-item target update: %v", err)
+	}
+	if staleTargetUpdate.Position != itemproto.InventoryPosition(6) || staleTargetUpdate.Count != 10 {
+		t.Fatalf("unexpected stale partial item-use-to-item target update: %+v", staleTargetUpdate)
+	}
+	persisted, err := accounts.Load("item-use-to-item-stale-partial")
+	if err != nil {
+		t.Fatalf("load stale partial item-use-to-item account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected stale partial item-use-to-item to leave authoritative inventory unchanged, got %+v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected stale partial item-use-to-item to leave authoritative quickslots unchanged, got %+v", persisted.Characters[0].Quickslots)
+	}
+
+	replacementOut, err := replacementFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected replacement partial item-use-to-item packet error: %v", err)
+	}
+	if len(replacementOut) != 2 {
+		t.Fatalf("expected replacement owner to still see the original partial merge after stale local use, got %d frames", len(replacementOut))
+	}
+	replacementSourceUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, replacementOut[0]))
+	if err != nil {
+		t.Fatalf("decode replacement partial item-use-to-item source update: %v", err)
+	}
+	if replacementSourceUpdate.Position != itemproto.InventoryPosition(5) || replacementSourceUpdate.Count != 5 {
+		t.Fatalf("expected replacement owner source to merge from unchanged authoritative state, got %+v", replacementSourceUpdate)
+	}
+	replacementTargetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, replacementOut[1]))
+	if err != nil {
+		t.Fatalf("decode replacement partial item-use-to-item target update: %v", err)
+	}
+	if replacementTargetUpdate.Position != itemproto.InventoryPosition(6) || replacementTargetUpdate.Count != 10 {
+		t.Fatalf("expected replacement owner target to merge from unchanged authoritative state, got %+v", replacementTargetUpdate)
+	}
+}
+
 func TestGameSessionFlowItemUsePartialStackRefreshesItemAndPreservesQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
