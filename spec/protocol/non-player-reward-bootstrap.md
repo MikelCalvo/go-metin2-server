@@ -43,6 +43,7 @@ Default bootstrap `training_dummy` and `practice_mob` profile defaults remain re
 Both profile-level default helpers are covered directly so a later combat-profile broadening cannot accidentally turn either bootstrap profile into an implicit reward source.
 
 Registered bootstrap combat profiles may carry a validated death-reward default for authored spawn-group use, and lookup returns cloned descriptor slices so callers cannot mutate the registry by editing returned defaults.
+Both full combat-profile default lookup and reward-only lookup return isolated reward descriptors; mutating either returned value must not alter later profile resolutions.
 Runtime coverage freezes that a spawn-backed actor using such a registered profile can apply the profile's default EXP/gold/drop descriptor on the accepted killing hit.
 That includes a drop-only profile default case where the killing hit emits the normal death/clear frames followed by one `ITEM_GROUND_ADD` / `ITEM_OWNERSHIP` pair and registers the deterministic reward ground item.
 That runtime coverage now also includes formula-only registered profiles whose `damage_per_normal_attack` is canonicalized from `attack_value - defense_value`, so the profile can both drive deterministic HP mutation and apply its reward descriptor on the same death edge.

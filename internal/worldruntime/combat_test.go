@@ -410,6 +410,39 @@ func TestRegisterStaticActorCombatProfileAddsDeathRewardDefaults(t *testing.T) {
 	}
 }
 
+func TestBootstrapStaticActorCombatProfileDefaultsReturnsIsolatedRewardClone(t *testing.T) {
+	const profile = "practice_reward_clone_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		DeathReward: StaticActorDeathReward{
+			Experience: 25,
+			Gold:       7,
+			DropVnums:  []uint32{27001, 27002},
+		},
+	}) {
+		t.Fatalf("expected %q profile registration with death reward to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected registered reward profile defaults to resolve")
+	}
+	defaults.DeathReward.DropVnums[0] = 99999
+	defaults.DeathReward.Experience = 1000
+	defaults.DeathReward.Gold = 2000
+
+	nextDefaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected registered reward profile defaults to resolve again")
+	}
+	if nextDefaults.DeathReward.Experience != 25 || nextDefaults.DeathReward.Gold != 7 || len(nextDefaults.DeathReward.DropVnums) != 2 || nextDefaults.DeathReward.DropVnums[0] != 27001 || nextDefaults.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected combat profile default lookups to return isolated reward clones, got %+v", nextDefaults.DeathReward)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileNormalizesDeathRewardDropDefaults(t *testing.T) {
 	const profile = "practice_sorted_reward_wolf"
 	reward := StaticActorDeathReward{DropVnums: []uint32{27003, 27001, 27002}}
