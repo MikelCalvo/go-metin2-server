@@ -611,6 +611,32 @@ func TestRegisterStaticActorCombatProfileRejectsDuplicateName(t *testing.T) {
 	}
 }
 
+func TestRegisterStaticActorCombatProfileRejectsBuiltInOverride(t *testing.T) {
+	for _, profile := range []string{StaticActorCombatKindTrainingDummy, StaticActorCombatProfilePracticeMob} {
+		t.Run(profile, func(t *testing.T) {
+			before, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+			if !ok {
+				t.Fatalf("expected built-in profile %q defaults to resolve before override attempt", profile)
+			}
+			if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+				MaxHP:                 99,
+				DamagePerNormalAttack: 9,
+				RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+			}) {
+				t.Fatalf("expected built-in profile %q override to fail closed", profile)
+			}
+			UnregisterStaticActorCombatProfileForTest(profile)
+			after, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+			if !ok {
+				t.Fatalf("expected built-in profile %q defaults to remain available after rejected override", profile)
+			}
+			if after.MaxHP != before.MaxHP || after.DamagePerNormalAttack != before.DamagePerNormalAttack || after.AttackValue != before.AttackValue || after.DefenseValue != before.DefenseValue || after.Level != before.Level || after.Rank != before.Rank || after.RespawnDelay != before.RespawnDelay || !after.DeathReward.Empty() {
+				t.Fatalf("expected rejected built-in override to preserve defaults for %q, before=%+v after=%+v", profile, before, after)
+			}
+		})
+	}
+}
+
 func TestBootstrapStaticActorCurrentHPSupportsTrainingDummyCombatProfile(t *testing.T) {
 	currentHP, ok := BootstrapStaticActorCurrentHP(StaticActorCombatProfileTrainingDummy)
 	if !ok {
