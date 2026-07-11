@@ -5627,6 +5627,118 @@ func TestGameSessionFlowPracticeMobRestartTownPreservesSourcePracticeMobHPForOth
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartTownLateDestinationPeerSeesRecoveredOwnerAlive(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	sourceWatcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	lateTownWatcher := peerVisibilityCharacter("LateTownWatcher", 0x01030104, 0x02040104, 52090, 166620, 4, 104, 204)
+	lateTownWatcher.MapIndex = 21
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, sourceWatcher)
+	issuePeerTicket(t, store, "late-town-watcher", 0x44444444, lateTownWatcher)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed owner account before late /restart_town visibility test: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "peer-two", Empire: sourceWatcher.Empire, Characters: cloneCharacters([]loginticket.Character{sourceWatcher})}); err != nil {
+		t.Fatalf("seed source watcher account before late /restart_town visibility test: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "late-town-watcher", Empire: lateTownWatcher.Empire, Characters: cloneCharacters([]loginticket.Character{lateTownWatcher})}); err != nil {
+		t.Fatalf("seed late town watcher account before late /restart_town visibility test: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error in late /restart_town visibility test: %v", err)
+	}
+	currentTime := time.Unix(1700000527, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_late_town_visibility",
+		Name:          "PracticeMobLateTownVisibility",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle for late /restart_town visibility test: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import for late /restart_town visibility test, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner in late /restart_town visibility test, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	sourceWatcherFlow, sourceWatcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(sourceWatcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for source watcher in late /restart_town visibility test, got %d", len(sourceWatcherEnter))
+	}
+	defer closeSessionFlow(t, sourceWatcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after source watcher joins in late /restart_town visibility test, got %d", len(queued))
+	}
+
+	advance := func(duration time.Duration) {
+		currentTime = currentTime.Add(duration)
+	}
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, sourceWatcherFlow, targetVID, owner.VID, advance)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town error in late visibility test: %v", err)
+	}
+	if len(restartOut) != 6 {
+		t.Fatalf("expected 6 self frames from /restart_town late visibility setup, got %d", len(restartOut))
+	}
+	if queued := flushServerFrames(t, sourceWatcherFlow); len(queued) != 1 {
+		t.Fatalf("expected source watcher to receive 1 queued owner delete after /restart_town late visibility setup, got %d", len(queued))
+	}
+
+	lateTownFlow, lateTownEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "late-town-watcher", 0x44444444)
+	defer closeSessionFlow(t, lateTownFlow)
+	if len(lateTownEnter) != 8 {
+		t.Fatalf("expected late destination peer to receive 5 self frames plus 3 recovered-owner peer frames, got %d", len(lateTownEnter))
+	}
+	ownerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, lateTownEnter[5]))
+	if err != nil {
+		t.Fatalf("decode recovered owner add for late destination peer: %v", err)
+	}
+	if ownerAdd.VID != owner.VID || ownerAdd.X != 52070 || ownerAdd.Y != 166600 {
+		t.Fatalf("expected late destination peer to see recovered owner alive at empire town position, got %+v", ownerAdd)
+	}
+	ownerInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, lateTownEnter[6]))
+	if err != nil {
+		t.Fatalf("decode recovered owner info for late destination peer: %v", err)
+	}
+	if ownerInfo.VID != owner.VID || ownerInfo.Name != owner.Name {
+		t.Fatalf("expected late destination peer info for recovered owner %s/%d, got %+v", owner.Name, owner.VID, ownerInfo)
+	}
+	if queued := flushServerFrames(t, lateTownFlow); len(queued) != 0 {
+		t.Fatalf("expected late destination peer to receive no queued dead-state follow-up for recovered owner, got %d", len(queued))
+	}
+	ownerQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected recovered owner to receive 3 queued late-peer entry frames, got %d", len(ownerQueued))
+	}
+	latePeerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, ownerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode late destination peer add for recovered owner: %v", err)
+	}
+	if latePeerAdd.VID != lateTownWatcher.VID {
+		t.Fatalf("expected recovered owner to see late destination peer vid %d, got %+v", lateTownWatcher.VID, latePeerAdd)
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartTownUsesOwnedEmpireCreatePositionTableOnSameSocket(t *testing.T) {
 	testCases := []struct {
 		name            string
