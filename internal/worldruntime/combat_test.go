@@ -494,6 +494,57 @@ func TestRegisterStaticActorCombatProfileRejectsInvalidDeathReward(t *testing.T)
 	}
 }
 
+func TestRegisterStaticActorCombatProfileAcceptsRewardCarrierMaximums(t *testing.T) {
+	const profile = "practice_reward_carrier_max_wolf"
+	const maxPointCarrier = uint64(^uint32(0) >> 1)
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		DeathReward: StaticActorDeathReward{
+			Experience: maxPointCarrier,
+			Gold:       maxPointCarrier,
+		},
+	}) {
+		t.Fatalf("expected %q profile registration with point-carrier maximum reward scalars to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	reward, ok := BootstrapStaticActorDeathReward(profile)
+	if !ok {
+		t.Fatalf("expected registered reward profile death reward to resolve")
+	}
+	if reward.Experience != maxPointCarrier || reward.Gold != maxPointCarrier {
+		t.Fatalf("expected point-carrier maximum reward scalars to round-trip, got %+v", reward)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileRejectsRewardScalarsAbovePointCarrier(t *testing.T) {
+	const maxPointCarrier = uint64(^uint32(0) >> 1)
+	for _, tt := range []struct {
+		name   string
+		reward StaticActorDeathReward
+	}{
+		{name: "experience", reward: StaticActorDeathReward{Experience: maxPointCarrier + 1}},
+		{name: "gold", reward: StaticActorDeathReward{Gold: maxPointCarrier + 1}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			profile := "practice_reward_overflow_" + tt.name
+			if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+				MaxHP:                 24,
+				DamagePerNormalAttack: 3,
+				RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+				DeathReward:           tt.reward,
+			}) {
+				t.Fatalf("expected %q profile registration with overflowing %s reward to fail closed", profile, tt.name)
+			}
+			if ValidStaticActorCombatProfile(profile) {
+				t.Fatalf("expected rejected reward-overflow profile %q not to become valid", profile)
+			}
+		})
+	}
+}
+
 func TestRegisterStaticActorCombatProfileRejectsDuplicateDeathRewardDropsBeforeCloneNormalization(t *testing.T) {
 	const profile = "practice_duplicate_reward_wolf"
 	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
