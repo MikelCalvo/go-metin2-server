@@ -15872,6 +15872,38 @@ func TestSharedWorldRegistryGroundItemPickupRejectsStaleLiveCollectorSnapshotAft
 	}
 }
 
+func TestSharedWorldRegistryGroundGoldPickupRejectsStaleLiveCollectorSnapshotAfterCollectorDeath(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("GoldOwner", 0x01030147, 0x02040147, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("StaleLiveGoldCollector", 0x01030148, 0x02040148, 1120, 2120, 1, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	groundVID := uint32(0x0A0B0C36)
+	if !registry.RegisterGroundGold(ownerID, "gold-owner-login", owner, groundVID, 325) {
+		t.Fatal("expected owner ground gold registration to succeed")
+	}
+	deadCollector := collector
+	deadCollector.Points[bootstrapPlayerPointValueIndex] = 0
+	registry.UpdateCharacter(collectorID, deadCollector)
+
+	if item, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); ok || item.Vnum != 0 {
+		t.Fatalf("expected stale live collector ground-gold visibility lookup to fail after registered collector death, got ok=%v item=%+v", ok, item)
+	}
+	if pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok || pickup.GoldAmount != 0 {
+		t.Fatalf("expected stale live collector ground-gold pickup lookup to fail after registered collector death, got ok=%v pickup=%+v", ok, pickup)
+	}
+	if removed := registry.RemoveGroundItem(collectorID, collector, groundVID); removed {
+		t.Fatal("expected stale live collector ground-gold removal to fail after registered collector death")
+	}
+	if pickup, ok := registry.GroundItemPickupFor(ownerID, owner, groundVID); !ok || pickup.GoldAmount != 325 {
+		t.Fatalf("expected rejected stale collector ground-gold pickup to leave ground gold available for living owner, got ok=%v pickup=%+v", ok, pickup)
+	}
+}
+
 func TestSharedWorldRegistryGroundItemPickupRejectsStaleNearCollectorSnapshotAfterCollectorMovesAway(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
