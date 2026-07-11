@@ -546,6 +546,31 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsInvalidAmounts(t *testing.T
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundGoldRejectsDuplicateVIDWithoutReplacingExistingAmount(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("DuplicateGoldVIDOwner", 0x01030199, 0x02040199, 1200, 2200, 0, 101, 201)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected duplicate-gold-vid owner join to allocate a shared-world entity id")
+	}
+
+	const groundVID uint32 = 0x07000019
+	if !registry.RegisterGroundGold(ownerID, "duplicate-gold-vid-owner", owner, groundVID, 250) {
+		t.Fatal("expected first ground-gold reward registration to succeed")
+	}
+	if registry.RegisterGroundGold(ownerID, "duplicate-gold-vid-owner", owner, groundVID, 500) {
+		t.Fatal("expected duplicate ground-gold reward VID registration to fail closed")
+	}
+
+	pickup, ok := registry.GroundItemPickupFor(ownerID, owner, groundVID)
+	if !ok {
+		t.Fatal("expected original ground-gold reward to remain reachable after duplicate VID rejection")
+	}
+	if pickup.GoldAmount != 250 {
+		t.Fatalf("expected duplicate VID rejection to preserve original ground-gold amount 250, got %d", pickup.GoldAmount)
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundRewardsRejectsEmptyOwnerLogin(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("EmptyLoginRewardOwner", 0x01030194, 0x02040194, 1200, 2200, 0, 101, 201)
