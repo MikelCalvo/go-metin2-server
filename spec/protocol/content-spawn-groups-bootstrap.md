@@ -200,7 +200,7 @@ The first content contract should fail closed when:
 - coordinates are malformed for the current bundle schema
 - reward scalar values overflow the current bootstrap point-change carrier, or `reward_drop_vnums` contains `0` or duplicate drop vnums
 
-Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate `ref` values, and preserves the prior authored/runtime snapshot when validation fails.
+Import should reject malformed spawn groups before mutating live runtime state. The bundle canonicalization path now keeps spawn-group names explicit instead of synthesizing them from `ref`, rejects duplicate or non-canonical `ref` values without trimming the authored identifier into a different key, and preserves the prior authored/runtime snapshot when validation fails.
 
 Runtime static-actor snapshots are also part of this contract because export, persistence rollback, map/visibility introspection, and respawn/rebuild code all round-trip through the same snapshot shape. A materialized spawn-group actor must therefore preserve its authored `spawn_group_ref` and normalized `combat_profile` in the live runtime snapshot, not just in the initial content-bundle record or file-backed store.
 

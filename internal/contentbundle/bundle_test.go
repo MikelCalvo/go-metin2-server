@@ -267,10 +267,35 @@ func TestCanonicalizeRejectsDuplicateSpawnGroupRefs(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsNonCanonicalSpawnGroupRefs(t *testing.T) {
+	for name, ref := range map[string]string{
+		"single segment":    "practice",
+		"uppercase segment": "practice.MobAlpha",
+		"hyphen segment":    "practice.mob-alpha",
+		"leading digit":     "practice.1mob_alpha",
+		"trailing space":    "practice.mob_alpha ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
+				Ref:           ref,
+				Name:          "Practice Mob Alpha",
+				MapIndex:      42,
+				X:             1775,
+				Y:             2875,
+				RaceNum:       101,
+				CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+			}}})
+			if !errors.Is(err, ErrInvalidBundle) {
+				t.Fatalf("expected ErrInvalidBundle for spawn-group ref %q, got %v", ref, err)
+			}
+		})
+	}
+}
+
 func TestCanonicalizeKeepsSpawnGroupRewardDescriptor(t *testing.T) {
 	dropVnums := []uint32{27002, 27001}
 	bundle, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
-		Ref:              " practice.reward_mob ",
+		Ref:              "practice.reward_mob",
 		Name:             " Reward Mob ",
 		MapIndex:         42,
 		X:                1775,

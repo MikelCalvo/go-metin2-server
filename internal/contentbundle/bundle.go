@@ -204,7 +204,7 @@ func validInteractionMetadata(kind string, ref string) bool {
 }
 
 func validSpawnGroup(spawnGroup SpawnGroup) bool {
-	if strings.TrimSpace(spawnGroup.Ref) == "" || strings.TrimSpace(spawnGroup.Name) == "" || spawnGroup.MapIndex == 0 || spawnGroup.RaceNum == 0 {
+	if !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroup.Ref) || strings.TrimSpace(spawnGroup.Ref) == "" || strings.TrimSpace(spawnGroup.Name) == "" || spawnGroup.MapIndex == 0 || spawnGroup.RaceNum == 0 {
 		return false
 	}
 	if !worldruntime.ValidStaticActorCombatProfile(spawnGroup.CombatProfile) || spawnGroup.CombatProfile == "" {
@@ -223,7 +223,6 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
 	}
 	normalized := make([]SpawnGroup, len(spawnGroups))
 	for i, spawnGroup := range spawnGroups {
-		spawnGroup.Ref = strings.TrimSpace(spawnGroup.Ref)
 		spawnGroup.Name = strings.TrimSpace(spawnGroup.Name)
 		spawnGroup.CombatProfile = strings.TrimSpace(spawnGroup.CombatProfile)
 		if spawnGroup.CombatProfile == "" {

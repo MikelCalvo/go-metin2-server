@@ -80,11 +80,11 @@ func TestLocalContentBundleEndpointImportsBundleForLoopbackPost(t *testing.T) {
 
 func TestLocalContentBundleEndpointImportsSpawnGroupsForLoopbackPost(t *testing.T) {
 	importer := &stubContentBundleImporter{status: http.StatusOK, bundle: contentbundle.Bundle{
-		SpawnGroups: []contentbundle.SpawnGroup{{Ref: "spawn:wolf:1", Name: "Practice Wolf", MapIndex: 3, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: "practice_mob"}},
+		SpawnGroups: []contentbundle.SpawnGroup{{Ref: "practice.wolf_1", Name: "Practice Wolf", MapIndex: 3, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: "practice_mob"}},
 	}}
 	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
 
-	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(`{"spawn_groups":[{"ref":"spawn:wolf:1","name":"Practice Wolf","map_index":3,"x":1200,"y":2200,"race_num":101,"combat_profile":"practice_mob"}],"interaction_definitions":[]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(`{"spawn_groups":[{"ref":"practice.wolf_1","name":"Practice Wolf","map_index":3,"x":1200,"y":2200,"race_num":101,"combat_profile":"practice_mob"}],"interaction_definitions":[]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -93,7 +93,7 @@ func TestLocalContentBundleEndpointImportsSpawnGroupsForLoopbackPost(t *testing.
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
-	if importer.calls != 1 || len(importer.lastBundle.SpawnGroups) != 1 || importer.lastBundle.SpawnGroups[0].Ref != "spawn:wolf:1" {
+	if importer.calls != 1 || len(importer.lastBundle.SpawnGroups) != 1 || importer.lastBundle.SpawnGroups[0].Ref != "practice.wolf_1" {
 		t.Fatalf("unexpected spawn-group importer call state: %+v", importer)
 	}
 }
