@@ -766,7 +766,7 @@ func decodeLocalGroundItemVID(r *http.Request) (uint32, bool) {
 	if vidRaw == "" || strings.Contains(vidRaw, "/") {
 		return 0, false
 	}
-	vid, err := strconv.ParseUint(vidRaw, 10, 32)
+	vid, err := strconv.ParseUint(vidRaw, 0, 32)
 	if err != nil || vid == 0 {
 		return 0, false
 	}

@@ -1649,6 +1649,33 @@ func TestLocalGroundItemEndpointReturnsExactGroundSnapshotForLoopbackGet(t *test
 	}
 }
 
+func TestLocalGroundItemEndpointAcceptsHexVID(t *testing.T) {
+	snapshot := worldruntime.GroundItemSnapshot{VID: 0x0700002e, Vnum: 3002, Count: 3, OwnerName: "GroundOwner", MapIndex: 1, X: 1200, Y: 2200}
+	mux := RegisterLocalGroundItemEndpoint(NewPprofMux("gamed"), func(vid uint32) (any, bool) {
+		if vid != snapshot.VID {
+			t.Fatalf("expected hex VID to decode as %d, got %d", snapshot.VID, vid)
+		}
+		return snapshot, true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/0x0700002e", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"vid":117440558`) || !strings.Contains(string(body), `"owner_name":"GroundOwner"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
 func TestLocalGroundItemEndpointRejectsInvalidVID(t *testing.T) {
 	mux := RegisterLocalGroundItemEndpoint(NewPprofMux("gamed"), func(uint32) (any, bool) {
 		t.Fatal("ground item lookup should not be called for invalid VID")
