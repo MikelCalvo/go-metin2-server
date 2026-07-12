@@ -1366,6 +1366,44 @@ func TestSharedWorldRegistryRemoveGroundGoldQueuesDeleteForLivingPeers(t *testin
 	}
 }
 
+func TestSharedWorldRegistryRemoveGroundItemQueuesDeleteToVisibleCollector(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("PickedDropOwner", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("PickedDropCollector", 0x01030122, 0x02040122, 1200, 2200, 0, 102, 202)
+
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorPending := newPendingServerFrames()
+	collectorID, _ := registry.Join(collector, collectorPending, nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	collectorPending.flush()
+
+	const groundVID uint32 = 0x07000021
+	if !registry.RegisterGroundItem(ownerID, "picked-drop-owner", owner, groundVID, inventory.ItemInstance{ID: 0x30010021, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+	collectorPending.flush()
+
+	if !registry.RemoveGroundItem(collectorID, collector, groundVID) {
+		t.Fatal("expected collector ground item removal to succeed")
+	}
+	if registry.GroundItemExists(groundVID) {
+		t.Fatal("expected picked ground item to leave live ground occupancy")
+	}
+	queued := collectorPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected collector to receive 1 self-facing ground-item delete frame, got %d", len(queued))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode collector ground-item delete: %v", err)
+	}
+	if groundDel.VID != groundVID {
+		t.Fatalf("unexpected collector ground-item delete: %+v", groundDel)
+	}
+}
+
 func TestSharedWorldRegistryRemoveGroundItemSkipsDeadVisiblePeers(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DropOwner", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)
