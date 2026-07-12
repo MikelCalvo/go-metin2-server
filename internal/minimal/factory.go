@@ -1434,7 +1434,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 		}
-		executeActiveMerchantSell := func(selectedPlayer *player.Runtime, slot inventory.SlotIndex, count uint16, packetShopFrames bool) ([][]byte, bool) {
+		executeActiveMerchantSell := func(selectedPlayer *player.Runtime, slot inventory.SlotIndex, count uint16, explicitCount bool, packetShopFrames bool) ([][]byte, bool) {
 			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
 				return nil, false
 			}
@@ -1443,6 +1443,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					return frames, true
 				}
 				return nil, false
+			}
+			if explicitCount && count == 0 {
+				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
+				if !ok {
+					return nil, false
+				}
+				return frames, true
 			}
 			soldCount, ok := selectedPlayer.MerchantSellCount(slot, count)
 			if !ok {
@@ -3008,7 +3015,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok {
 						return gameflow.ShopResult{Accepted: false}
 					}
-					frames, ok := executeActiveMerchantSell(selectedPlayer, inventory.SlotIndex(packet.Slot), 0, true)
+					frames, ok := executeActiveMerchantSell(selectedPlayer, inventory.SlotIndex(packet.Slot), 0, false, true)
 					if !ok {
 						return gameflow.ShopResult{Accepted: false}
 					}
@@ -3022,7 +3029,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok {
 						return gameflow.ShopResult{Accepted: false}
 					}
-					frames, ok := executeActiveMerchantSell(selectedPlayer, inventory.SlotIndex(packet.Slot), uint16(packet.Count), true)
+					frames, ok := executeActiveMerchantSell(selectedPlayer, inventory.SlotIndex(packet.Slot), uint16(packet.Count), true, true)
 					if !ok {
 						return gameflow.ShopResult{Accepted: false}
 					}

@@ -342,6 +342,7 @@ The first live sell-back contract remains intentionally narrow:
 - sell requests target carried inventory slots only
 - `SELL(slot)` uses count `0`, meaning the full current stack
 - `SELL2(slot,count)` sells the requested count; count `0` and counts larger than the current stack fail closed instead of silently widening into a whole-stack sell
+- explicit zero-count `SELL2` is rejected before credit calculation or mutation, returns bare self-only `GC::SHOP INVALID_POS` while a merchant window is active, and leaves live plus persisted inventory/currency unchanged
 - accepted sells remove the whole stack or decrement the stack count and credit the selected character's live gold total with the owned template-derived sell credit
 - ordinary sell credit derives from loaded item-template `shop_buy_price` as `floor((shop_buy_price * sold_count) / 5)` minus `floor(3% tax)`
 - templates flagged `sell_count_per_gold` follow the legacy count-per-gold branch first: use `floor(sold_count / shop_buy_price)` when `shop_buy_price > 0`, or `sold_count` when it is zero, then apply the same `/5` and 3% tax floor; if the resulting credit is zero, the bootstrap runtime fails closed

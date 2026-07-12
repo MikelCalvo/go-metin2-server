@@ -1118,6 +1118,13 @@ func (r *Runtime) SellMerchantItemWithTemplate(slot inventory.SlotIndex, count u
 	return r.SellMerchantItemForCredit(slot, soldCount, credit)
 }
 
+func (r *Runtime) SellMerchantItemWithTemplateCounted(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (MerchantSellResult, bool) {
+	if count == 0 {
+		return MerchantSellResult{}, false
+	}
+	return r.SellMerchantItemWithTemplate(slot, count, template)
+}
+
 func (r *Runtime) MerchantSellCount(slot inventory.SlotIndex, count uint16) (uint16, bool) {
 	if r == nil || countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
 		return 0, false

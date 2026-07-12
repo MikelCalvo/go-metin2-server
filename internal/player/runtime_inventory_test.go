@@ -2903,6 +2903,24 @@ func TestRuntimeSellMerchantItemWithTemplateUsesTemplateCredit(t *testing.T) {
 	}
 }
 
+func TestRuntimeSellMerchantItemWithTemplateCountedRejectsZeroCountWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500}
+	beforeInventory := runtime.LiveInventory()
+	beforeGold := runtime.LiveGold()
+
+	if result, ok := runtime.SellMerchantItemWithTemplateCounted(5, 0, template); ok {
+		t.Fatalf("expected counted template-backed zero-count merchant sell to fail, got %+v", result)
+	}
+	if got := runtime.LiveGold(); got != beforeGold {
+		t.Fatalf("expected counted zero sell to leave live gold unchanged, got %d want %d", got, beforeGold)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+		t.Fatalf("expected counted zero sell to leave live inventory unchanged, got %#v want %#v", got, beforeInventory)
+	}
+}
+
 func TestRuntimeSellMerchantItemRejectsInvalidInputWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})

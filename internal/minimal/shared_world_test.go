@@ -13409,6 +13409,62 @@ func TestGameSessionFlowMerchantSellRejectsEquippedCarriedSlot(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowMerchantSell2RejectsZeroCountWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerZeroCount", 0x01040126, 0x02050126, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell2-zero-count", 0x26262626, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	beforePersisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted account before zero-count sell2: %v", err)
+	}
+	beforeCurrency, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot before zero-count sell2")
+	}
+	beforeInventory, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot before zero-count sell2")
+	}
+
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 0})))
+	if err != nil {
+		t.Fatalf("unexpected zero-count sell2 error: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected one invalid-pos frame for zero-count sell2, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode zero-count sell2 invalid-pos frame: %v", err)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted account after zero-count sell2: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly one persisted seller after zero-count sell2, got %+v", persisted)
+	}
+	if persisted.Characters[0].Gold != beforePersisted.Characters[0].Gold || !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) {
+		t.Fatalf("expected zero-count sell2 to leave persisted state unchanged, before=%+v after=%+v", beforePersisted.Characters[0], persisted.Characters[0])
+	}
+	afterCurrency, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after zero-count sell2")
+	}
+	if afterCurrency != beforeCurrency {
+		t.Fatalf("expected zero-count sell2 to leave live currency unchanged, before=%+v after=%+v", beforeCurrency, afterCurrency)
+	}
+	afterInventory, ok := runtime.InventorySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after zero-count sell2")
+	}
+	if !reflect.DeepEqual(afterInventory, beforeInventory) {
+		t.Fatalf("expected zero-count sell2 to leave live inventory unchanged, before=%+v after=%+v", beforeInventory, afterInventory)
+	}
+}
+
 func TestGameRuntimeEnterGameReclaimKeepsStaleMerchantBuyMutationNonAuthoritative(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
