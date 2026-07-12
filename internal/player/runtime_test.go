@@ -1244,6 +1244,7 @@ func TestRuntimeUseItemOnItemRejectsTemplateVnumMismatchWithoutMutation(t *testi
 		ID:        0x01030102,
 		VID:       0x02040102,
 		Name:      "UseToItemMismatchPeer",
+		Gold:      75,
 		Points:    [255]int32{1: 700},
 		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
 		Quickslots: []loginticket.Quickslot{
@@ -1260,8 +1261,35 @@ func TestRuntimeUseItemOnItemRejectsTemplateVnumMismatchWithoutMutation(t *testi
 	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
 		t.Fatalf("template/source-vnum mismatch use-to-item mutated live character: got %#v want %#v", got, before)
 	}
-	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
-		t.Fatalf("template/source-vnum mismatch use-to-item mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", got.Inventory, got.Quickslots, got.Points[1])
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] || got.Gold != persisted.Gold {
+		t.Fatalf("template/source-vnum mismatch use-to-item mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d gold=%d", got.Inventory, got.Quickslots, got.Points[1], got.Gold)
+	}
+}
+
+func TestRuntimeUseItemOnItemDoesNotMutateLiveGold(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "UseToItemGoldPeer",
+		Gold:      75,
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}, {ID: 12, Vnum: 27001, Count: 4, Slot: 6}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "use-to-item-gold-peer", CharacterIndex: 1})
+	runtime.SetLiveGold(123)
+
+	result, ok := runtime.UseItemOnItem(5, 6, bootstrapConsumableTemplate(27001, 1, 1, 50, "consume:27001:+50"))
+	if !ok {
+		t.Fatal("expected compatible stack use-to-item merge to succeed")
+	}
+	if !result.Changed || result.ToItem.Count != 7 {
+		t.Fatalf("unexpected use-to-item result: %+v", result)
+	}
+	if got := runtime.LiveGold(); got != 123 {
+		t.Fatalf("expected use-to-item stack merge to preserve live gold, got %d", got)
+	}
+	if got := runtime.PersistedSnapshot().Gold; got != persisted.Gold {
+		t.Fatalf("expected use-to-item stack merge to preserve persisted gold boundary, got %d", got)
 	}
 }
 
