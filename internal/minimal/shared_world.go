@@ -900,7 +900,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) {
 			}
 			r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 		}
-		r.removeOwnedGroundItemsLocked(entityID, visibilityDiff.RemovedVisiblePeers)
+		r.removeOwnedGroundItemsLocked(entityID, r.visiblePeersForOwnedGroundItemsLocked(entityID, visibilityDiff.RemovedVisiblePeers))
 	}
 }
 
@@ -972,7 +972,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 		}
 		r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 	}
-	r.removeOwnedGroundItemsLocked(id, visibilityDiff.RemovedVisiblePeers)
+	r.removeOwnedGroundItemsLocked(id, r.visiblePeersForOwnedGroundItemsLocked(id, visibilityDiff.RemovedVisiblePeers))
 }
 
 func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.Character) {
@@ -985,6 +985,42 @@ func (r *sharedWorldRegistry) UpdateCharacter(id uint64, character loginticket.C
 
 	_ = r.entities.UpdatePlayer(id, character)
 	r.lastKnownCharacters[id] = character
+}
+
+func (r *sharedWorldRegistry) visiblePeersForOwnedGroundItemsLocked(ownerID uint64, fallback []loginticket.Character) []loginticket.Character {
+	if ownerID == 0 || len(r.groundItemsByVID) == 0 {
+		return fallback
+	}
+	peersByVID := make(map[uint32]loginticket.Character)
+	for _, peer := range fallback {
+		peersByVID[peer.VID] = peer
+	}
+	for _, ground := range r.groundItemsByVID {
+		if ground.OwnerID != ownerID {
+			continue
+		}
+		groundCharacter := loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y, Z: ground.Z}
+		for _, candidate := range r.scopesLocked().VisibleTargets(0, groundCharacter) {
+			if candidate.Character.VID == ground.OwnerVID {
+				continue
+			}
+			peersByVID[candidate.Character.VID] = candidate.Character
+		}
+	}
+	if len(peersByVID) == 0 {
+		return nil
+	}
+	peers := make([]loginticket.Character, 0, len(peersByVID))
+	for _, peer := range peersByVID {
+		peers = append(peers, peer)
+	}
+	sort.Slice(peers, func(i int, j int) bool {
+		if peers[i].Name == peers[j].Name {
+			return peers[i].VID < peers[j].VID
+		}
+		return peers[i].Name < peers[j].Name
+	})
+	return peers
 }
 
 func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visiblePeers []loginticket.Character) {

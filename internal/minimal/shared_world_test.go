@@ -1086,6 +1086,88 @@ func assertGroundRewardPickupRejectedForCollectorSnapshot(t *testing.T, registry
 	}
 }
 
+func TestSharedWorldRegistryLeaveAfterOwnerMovesDeletesOwnedGroundItemsForGroundVisiblePeers(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("MovedLeaveGroundOwner", 0x010301b9, 0x020401b9, 1200, 2200, 0, 101, 201)
+	peer := peerVisibilityCharacter("MovedLeaveGroundPeer", 0x010301ba, 0x020401ba, 1220, 2220, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	peerPending := newPendingServerFrames()
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected owner and peer to join shared world, got owner=%d peer=%d", ownerID, peerID)
+	}
+	peerPending.flush()
+
+	const groundVID uint32 = 0x07000031
+	if !registry.RegisterGroundItem(ownerID, "moved-leave-ground-owner", owner, groundVID, inventory.ItemInstance{ID: 0x30010031, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+	peerPending.flush()
+
+	movedOwner := owner
+	movedOwner.MapIndex = 42
+	movedOwner.X = 5000
+	movedOwner.Y = 6000
+	registry.UpdateCharacter(ownerID, movedOwner)
+	registry.Leave(ownerID)
+
+	if registry.GroundItemExists(groundVID) {
+		t.Fatal("expected owner leave to remove owned ground item after owner moved away")
+	}
+	queued := peerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected old ground-visible peer to receive one ground delete after moved owner leaves, got %d", len(queued))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode moved-owner ground delete: %v", err)
+	}
+	if groundDel.VID != groundVID {
+		t.Fatalf("unexpected moved-owner ground delete: %+v", groundDel)
+	}
+}
+
+func TestSharedWorldRegistryLeaveAfterOwnerMovesDeletesOwnedGroundGoldForGroundVisiblePeers(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("MovedLeaveGoldOwner", 0x010301bb, 0x020401bb, 1200, 2200, 0, 101, 201)
+	peer := peerVisibilityCharacter("MovedLeaveGoldPeer", 0x010301bc, 0x020401bc, 1220, 2220, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	peerPending := newPendingServerFrames()
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected owner and peer to join shared world, got owner=%d peer=%d", ownerID, peerID)
+	}
+	peerPending.flush()
+
+	const groundVID uint32 = 0x07000032
+	if !registry.RegisterGroundGold(ownerID, "moved-leave-gold-owner", owner, groundVID, 250) {
+		t.Fatal("expected owner ground gold registration to succeed")
+	}
+	peerPending.flush()
+
+	movedOwner := owner
+	movedOwner.MapIndex = 42
+	movedOwner.X = 5000
+	movedOwner.Y = 6000
+	registry.UpdateCharacter(ownerID, movedOwner)
+	registry.Leave(ownerID)
+
+	if registry.GroundItemExists(groundVID) {
+		t.Fatal("expected owner leave to remove owned ground gold after owner moved away")
+	}
+	queued := peerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected old ground-visible peer to receive one ground-gold delete after moved owner leaves, got %d", len(queued))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode moved-owner ground-gold delete: %v", err)
+	}
+	if groundDel.VID != groundVID {
+		t.Fatalf("unexpected moved-owner ground-gold delete: %+v", groundDel)
+	}
+}
+
 func TestSharedWorldRegistryJoinReclaimRemovesOwnedGroundItems(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("ReclaimedGroundOwner", 0x010301b1, 0x020401b1, 1200, 2200, 0, 101, 201)
