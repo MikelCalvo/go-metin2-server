@@ -1749,9 +1749,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				}
 				selectedPlayer.SetLiveGold(selectedPlayer.LiveGold() + uint64(pickup.GoldAmount))
 				updatedSelected := selectedPlayer.LiveCharacter()
+				getFrame, err := encodeBootstrapItemGetFrame(pickup.Item)
+				if err != nil {
+					return nil, false
+				}
 				frames := [][]byte{
 					itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}),
 					worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{VID: previousSelected.VID, Type: bootstrapGoldPointType, Amount: int32(pickup.GoldAmount), Value: int32(updatedSelected.Gold)}),
+					getFrame,
 				}
 				frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 				if !ok {

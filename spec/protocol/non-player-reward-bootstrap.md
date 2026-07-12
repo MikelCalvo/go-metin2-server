@@ -118,7 +118,7 @@ Current rules:
 Drop rewards reuse the existing bootstrap ground-item families:
 - `ITEM_GROUND_ADD`
 - `ITEM_OWNERSHIP`
-- later pickup still uses the normal owned `ITEM_PICKUP` path, producing `ITEM_GROUND_DEL`, `ITEM_SET`, and `ITEM_GET` as appropriate
+- later pickup still uses the normal owned `ITEM_PICKUP` path, producing `ITEM_GROUND_DEL`, `ITEM_SET` for item-shaped entries, gold `PLAYER_POINT_CHANGE` for gold-shaped entries, and `ITEM_GET` confirmation as appropriate
 
 Ground reward registration is guarded by the same live-owner rule for both item-shaped and gold-shaped ground entries.
 If the would-be owner is already at the current bootstrap `0` HP floor, registering either a ground item or ground gold fails closed and leaves no live ground occupancy behind.
@@ -136,7 +136,7 @@ Lookup, pickup-resolution, and removal also re-check the registered collector sn
 Dedicated coverage now freezes the gold-shaped reward half of stale collector-death, stale collector-identity, stale collector-location, stale owner-identity owner-delivery, and stale owner-location owner-delivery cases, not just ordinary item-shaped drops, because both reward families share the same ground-entry visibility/pickup seam.
 This guard applies in both directions for item-shaped and gold-shaped rewards: a stale near snapshot cannot pick up after the registered collector has moved away or rebound to a different selected-character identity, and a stale far snapshot cannot become valid merely because the registered collector later moved near the ground reward.
 Dedicated shared-world coverage freezes both stale-near-then-far and stale-far-then-near collector-location cases for gold-shaped rewards as well as ordinary item-shaped drops: the stale snapshot cannot regain visibility, resolve pickup, or remove the ground entry, and the reward remains registered for a fresh current pickup attempt.
-When that living, identity-current, and currently reachable collector succeeds, the collector receives the ordinary self pickup shape (`ITEM_GROUND_DEL`, inventory `ITEM_SET`, and normal `ITEM_GET` feedback) and the dead, rebound, or relocated owner receives no queued party-style pickup feedback.
+When that living, identity-current, and currently reachable collector succeeds, the collector receives the ordinary self pickup shape (`ITEM_GROUND_DEL`, inventory `ITEM_SET`, and normal `ITEM_GET` feedback) for item-shaped rewards. Gold-shaped self-pickup now mirrors that visible confirmation style as `ITEM_GROUND_DEL`, gold `PLAYER_POINT_CHANGE`, and normal `ITEM_GET(vnum=1,count=1)` so the client gets both the currency mutation and the same pickup-notice cue already used by ordinary item pickups. The dead, rebound, or relocated owner receives no queued party-style pickup feedback.
 
 This keeps death/restart cleanup and concurrent movement from leaking new pickup surfaces, stale delete noise, debug/runtime-visible pickup affordances, stale collector pickup affordances, stale owner-location ground registration, transfer-entry ground visibility, or late owner-delivery mutations for players that are already dead or no longer at the supplied reward location.
 

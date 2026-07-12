@@ -2537,8 +2537,8 @@ func TestGameRuntimeItemDropWithGoldDropsCurrencyInsteadOfInventoryItem(t *testi
 		t.Fatalf("expected gold drop to leave inventory unchanged, got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
 	}
 	pickupOut := pickupGroundItem(t, flow, ground.VID)
-	if len(pickupOut) != 2 {
-		t.Fatalf("expected gold pickup to emit GROUND_DEL and POINT_CHANGE, got %d frames", len(pickupOut))
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected gold pickup to emit GROUND_DEL, POINT_CHANGE, and ITEM_GET, got %d frames", len(pickupOut))
 	}
 	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0]))
 	if err != nil {
@@ -2553,6 +2553,13 @@ func TestGameRuntimeItemDropWithGoldDropsCurrencyInsteadOfInventoryItem(t *testi
 	}
 	if pickupPoint != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: 1200, Value: 5000}) {
 		t.Fatalf("unexpected gold pickup point change: %+v", pickupPoint)
+	}
+	pickupGet, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode gold pickup item get: %v", err)
+	}
+	if pickupGet != (itemproto.GetPacket{Vnum: 1, Count: 1, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected gold pickup item get: %+v", pickupGet)
 	}
 	account, err = accounts.Load("gold-drop-owner")
 	if err != nil {
@@ -4536,8 +4543,8 @@ func TestGameRuntimeGoldPickupOwnedByPartyMemberFailsClosedWhenOwnerPersistenceF
 	}
 
 	ownerOut := pickupGroundItem(t, ownerFlow, ground.VID)
-	if len(ownerOut) != 2 {
-		t.Fatalf("expected failed owner-delivery handle to remain retryable for owner self pickup, got %d frames", len(ownerOut))
+	if len(ownerOut) != 3 {
+		t.Fatalf("expected failed owner-delivery handle to remain retryable for owner self pickup with visible confirmation, got %d frames", len(ownerOut))
 	}
 	ownerDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, ownerOut[0]))
 	if err != nil {
@@ -4552,6 +4559,13 @@ func TestGameRuntimeGoldPickupOwnedByPartyMemberFailsClosedWhenOwnerPersistenceF
 	}
 	if ownerPoint != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: 1200, Value: 7000}) {
 		t.Fatalf("unexpected owner retry point change: %+v", ownerPoint)
+	}
+	ownerGet, err := itemproto.DecodeGet(decodeSingleFrame(t, ownerOut[2]))
+	if err != nil {
+		t.Fatalf("decode owner retry gold pickup get notice: %v", err)
+	}
+	if ownerGet != (itemproto.GetPacket{Vnum: 1, Count: 1, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected owner retry gold pickup get notice: %+v", ownerGet)
 	}
 }
 
