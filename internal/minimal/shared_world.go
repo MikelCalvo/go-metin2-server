@@ -1480,7 +1480,7 @@ func (r *sharedWorldRegistry) CharacterVisibility() []CharacterVisibilitySnapsho
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.markCharacterVisibilityStaticActorStateLocked(r.scopesLocked().CharacterVisibilitySnapshots())
+	return r.markCharacterVisibilityStaticActorStateLocked(r.scopesLocked().CharacterVisibilitySnapshotsWithGroundItems(r.groundItemOccupanciesLocked()))
 }
 
 func (r *sharedWorldRegistry) InteractionVisibility() []worldruntime.CharacterInteractionVisibilitySnapshot {

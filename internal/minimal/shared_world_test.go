@@ -9134,6 +9134,41 @@ func TestGameRuntimeConnectedCharactersReflectsRelocatedLocation(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryCharacterVisibilityIncludesVisibleGroundItems(t *testing.T) {
+	registry := newSharedWorldRegistryWithTopology(worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(300, 100))
+	owner := peerVisibilityCharacter("GroundVisibilityOwner", 0x010301a0, 0x020401a0, 1000, 1000, 0, 101, 201)
+	observer := peerVisibilityCharacter("GroundVisibilityObserver", 0x010301a1, 0x020401a1, 1150, 1000, 0, 102, 202)
+	farObserver := peerVisibilityCharacter("GroundVisibilityFar", 0x010301a2, 0x020401a2, 5000, 5000, 0, 103, 203)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	_, _ = registry.Join(observer, newPendingServerFrames(), nil)
+	_, _ = registry.Join(farObserver, newPendingServerFrames(), nil)
+
+	if !registry.RegisterGroundItem(ownerID, "ground-visibility-owner", owner, 0x07000021, inventory.ItemInstance{ID: 0x30010021, Vnum: 3001, Count: 2}) {
+		t.Fatal("expected ground item registration to succeed")
+	}
+	if !registry.RegisterGroundGold(ownerID, "ground-visibility-owner", owner, 0x07000022, 1250) {
+		t.Fatal("expected ground gold registration to succeed")
+	}
+
+	snapshots := registry.CharacterVisibility()
+	if len(snapshots) != 3 {
+		t.Fatalf("expected three character visibility snapshots, got %+v", snapshots)
+	}
+	byName := make(map[string]CharacterVisibilitySnapshot, len(snapshots))
+	for _, snapshot := range snapshots {
+		byName[snapshot.Name] = snapshot
+	}
+	for _, name := range []string{"GroundVisibilityObserver", "GroundVisibilityOwner"} {
+		visible := byName[name].VisibleGroundItems
+		if len(visible) != 2 || visible[0].VID != 0x07000021 || visible[0].Count != 2 || visible[1].VID != 0x07000022 || visible[1].GoldAmount != 1250 {
+			t.Fatalf("expected %s to see deterministic item+gold ground entries, got %+v", name, visible)
+		}
+	}
+	if visible := byName["GroundVisibilityFar"].VisibleGroundItems; len(visible) != 0 {
+		t.Fatalf("expected far observer to see no ground entries, got %+v", visible)
+	}
+}
+
 func TestGameRuntimeCharacterVisibilityReturnsSortedVisiblePeers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerZulu := peerVisibilityCharacter("Zulu", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

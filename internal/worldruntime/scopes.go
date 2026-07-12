@@ -51,6 +51,7 @@ type CharacterVisibilitySnapshot struct {
 	ConnectedCharacterSnapshot
 	VisiblePeers        []ConnectedCharacterSnapshot `json:"visible_peers"`
 	VisibleStaticActors []StaticActorSnapshot        `json:"visible_static_actors"`
+	VisibleGroundItems  []GroundItemSnapshot         `json:"visible_ground_items,omitempty"`
 }
 
 type CharacterInteractionVisibilitySnapshot struct {
@@ -215,6 +216,10 @@ func (s Scopes) VisibilitySnapshots() []VisibilitySnapshot {
 }
 
 func (s Scopes) CharacterVisibilitySnapshots() []CharacterVisibilitySnapshot {
+	return s.CharacterVisibilitySnapshotsWithGroundItems(nil)
+}
+
+func (s Scopes) CharacterVisibilitySnapshotsWithGroundItems(groundItems []GroundItemOccupancy) []CharacterVisibilitySnapshot {
 	visibility := s.VisibilitySnapshots()
 	snapshots := make([]CharacterVisibilitySnapshot, 0, len(visibility))
 	for _, entry := range visibility {
@@ -222,6 +227,7 @@ func (s Scopes) CharacterVisibilitySnapshots() []CharacterVisibilitySnapshot {
 			ConnectedCharacterSnapshot: connectedCharacterSnapshot(s.Topology, entry.Subject.Character),
 			VisiblePeers:               connectedCharacterSnapshots(s.Topology, playerEntitiesToCharacters(entry.VisiblePeers)),
 			VisibleStaticActors:        staticActorSnapshots(s.Topology, s.VisibleStaticActors(entry.Subject.Character)),
+			VisibleGroundItems:         VisibleGroundItems(s.Topology, entry.Subject.Character, groundItems),
 		})
 	}
 	sortCharacterVisibilitySnapshots(snapshots)
