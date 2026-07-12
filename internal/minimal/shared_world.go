@@ -2237,6 +2237,21 @@ func (r *sharedWorldRegistry) GroundItems() []GroundItemSnapshot {
 	return snapshots
 }
 
+func (r *sharedWorldRegistry) GroundItem(vid uint32) (GroundItemSnapshot, bool) {
+	if r == nil || vid == 0 {
+		return GroundItemSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ground, ok := r.groundItemsByVID[vid]
+	if !ok {
+		return GroundItemSnapshot{}, false
+	}
+	return groundItemSnapshot(ground), true
+}
+
 func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapshot {
 	if r == nil || r.entities == nil {
 		return nil

@@ -1619,3 +1619,82 @@ func (t *stubCharacterTransferer) TransferCharacter(name string, mapIndex uint32
 	t.lastY = y
 	return t.result, t.found
 }
+func TestLocalGroundItemEndpointReturnsExactGroundSnapshotForLoopbackGet(t *testing.T) {
+	snapshot := worldruntime.GroundItemSnapshot{VID: 0x0700002e, Vnum: 3002, Count: 3, OwnerName: "GroundOwner", MapIndex: 1, X: 1200, Y: 2200}
+	mux := RegisterLocalGroundItemEndpoint(NewPprofMux("gamed"), func(vid uint32) (any, bool) {
+		if vid != snapshot.VID {
+			return nil, false
+		}
+		return snapshot, true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/117440558", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"vid":117440558`) || !strings.Contains(string(body), `"vnum":3002`) || !strings.Contains(string(body), `"owner_name":"GroundOwner"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalGroundItemEndpointRejectsInvalidVID(t *testing.T) {
+	mux := RegisterLocalGroundItemEndpoint(NewPprofMux("gamed"), func(uint32) (any, bool) {
+		t.Fatal("ground item lookup should not be called for invalid VID")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/not-a-vid", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestLocalGroundItemEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalGroundItemEndpoint(NewPprofMux("gamed"), func(uint32) (any, bool) {
+		t.Fatal("ground item lookup should not be called for non-loopback callers")
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/117440558", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalGroundItemEndpointReturnsNotFoundForMissingVID(t *testing.T) {
+	mux := RegisterLocalGroundItemEndpoint(NewPprofMux("gamed"), func(uint32) (any, bool) {
+		return nil, false
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items/117440558", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+}

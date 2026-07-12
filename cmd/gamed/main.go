@@ -68,6 +68,16 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.GroundItems() },
 	)
+	opsHandler = ops.RegisterLocalGroundItemEndpoint(
+		opsHandler,
+		func(vid uint32) (any, bool) {
+			snapshot, ok := gameRuntime.GroundItem(vid)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalInventoryEndpoint(
 		opsHandler,
 		func(name string) (any, bool) {

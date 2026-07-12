@@ -197,6 +197,11 @@ Each entry includes:
 - `y`
 - `z`
 
+### `GET /local/ground-items/{vid}`
+
+Returns one pending bootstrap ground entry by its visible ground `vid` using the same JSON fields as `/local/ground-items`.
+This endpoint is also loopback-only and read-only. Invalid or missing `vid` path values return `400`; well-formed but absent `vid` values return `404`.
+
 ### `GET /local/interaction-visibility`
 
 Returns a JSON snapshot of each connected bootstrap character plus the currently visible interactable static actors that would resolve for them.

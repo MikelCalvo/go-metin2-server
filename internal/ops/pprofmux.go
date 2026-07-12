@@ -103,6 +103,30 @@ func RegisterLocalGroundItemsEndpoint(mux *http.ServeMux, groundItems func() any
 	return mux
 }
 
+func RegisterLocalGroundItemEndpoint(mux *http.ServeMux, groundItem func(uint32) (any, bool)) *http.ServeMux {
+	if mux == nil || groundItem == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/ground-items/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		vid, ok := decodeLocalGroundItemVID(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := groundItem(vid)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalInventoryEndpoint(mux *http.ServeMux, inventorySnapshot func(string) (any, bool)) *http.ServeMux {
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/inventory/", "/local/inventory/", inventorySnapshot)
 }
@@ -734,6 +758,19 @@ func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {
 		return 0, false
 	}
 	return entityID, true
+}
+
+func decodeLocalGroundItemVID(r *http.Request) (uint32, bool) {
+	vidRaw := strings.TrimPrefix(r.URL.Path, "/local/ground-items/")
+	vidRaw = strings.TrimSpace(vidRaw)
+	if vidRaw == "" || strings.Contains(vidRaw, "/") {
+		return 0, false
+	}
+	vid, err := strconv.ParseUint(vidRaw, 10, 32)
+	if err != nil || vid == 0 {
+		return 0, false
+	}
+	return uint32(vid), true
 }
 
 func decodeLocalCharacterName(r *http.Request, prefix string) (string, bool) {

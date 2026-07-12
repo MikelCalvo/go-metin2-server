@@ -606,6 +606,45 @@ func TestGameRuntimeGroundItemsReturnsDeterministicPendingGroundSnapshots(t *tes
 	}
 }
 
+func TestGameRuntimeGroundItemReturnsSinglePendingGroundSnapshotByVID(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), accountstore.NewFileStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	owner := peerVisibilityCharacter("GroundSnapshotByVIDOwner", 0x0103019d, 0x0204019d, 1200, 2200, 0, 101, 201)
+	ownerID, _ := runtime.sharedWorld.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected ground snapshot by VID owner join to allocate a shared-world entity id")
+	}
+
+	if !runtime.sharedWorld.RegisterGroundGold(ownerID, "ground-snapshot-by-vid-owner", owner, 0x0700002f, 750) {
+		t.Fatal("expected ground-gold registration to succeed")
+	}
+	if !runtime.sharedWorld.RegisterGroundItem(ownerID, "ground-snapshot-by-vid-owner", owner, 0x0700002e, inventory.ItemInstance{ID: 0x3001002e, Vnum: 3002, Count: 3}) {
+		t.Fatal("expected ground-item registration to succeed")
+	}
+
+	item, ok := runtime.GroundItem(0x0700002e)
+	if !ok {
+		t.Fatal("expected exact ground-item snapshot lookup to succeed")
+	}
+	if item.VID != 0x0700002e || item.Vnum != 3002 || item.Count != 3 || item.GoldAmount != 0 || item.OwnerName != owner.Name || item.X != owner.X || item.Y != owner.Y {
+		t.Fatalf("unexpected exact item-shaped ground snapshot: %+v", item)
+	}
+
+	gold, ok := runtime.GroundItem(0x0700002f)
+	if !ok {
+		t.Fatal("expected exact ground-gold snapshot lookup to succeed")
+	}
+	if gold.VID != 0x0700002f || gold.GoldAmount != 750 || gold.Vnum != 1 || gold.Count != 0 || gold.OwnerName != owner.Name || gold.X != owner.X || gold.Y != owner.Y {
+		t.Fatalf("unexpected exact gold-shaped ground snapshot: %+v", gold)
+	}
+
+	if _, ok := runtime.GroundItem(0x07000030); ok {
+		t.Fatal("expected missing exact ground snapshot lookup to fail closed")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsDuplicateVIDWithoutReplacingExistingItem(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DuplicateItemVIDOwner", 0x0103019a, 0x0204019a, 1200, 2200, 0, 101, 201)
