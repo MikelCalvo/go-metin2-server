@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
 
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
@@ -123,6 +125,17 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	invalidEquipSlot := Snapshot{Templates: []Template{{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "cape"}}}
 	if err := store.Save(invalidEquipSlot); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for invalid equip slot, got %v", err)
+	}
+	equipWithUseEffect := Snapshot{Templates: []Template{{
+		Vnum:      11200,
+		Name:      "Consumable Wooden Sword",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: inventory.EquipmentSlotWeapon.String(),
+		UseEffect: &UseEffect{PointType: 7, PointIndex: 1, PointDelta: 25, Message: "must not use equipment"},
+	}}}
+	if err := store.Save(equipWithUseEffect); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for equipment template with use_effect, got %v", err)
 	}
 	duplicate := Snapshot{Templates: []Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},

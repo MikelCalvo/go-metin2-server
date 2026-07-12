@@ -116,7 +116,7 @@ func validTemplate(template Template) bool {
 		return template.EquipEffect == nil && validUseEffect(template.UseEffect)
 	}
 	_, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
-	return ok && validUseEffect(template.UseEffect) && validPointEffect(template.EquipEffect)
+	return ok && template.UseEffect == nil && validPointEffect(template.EquipEffect)
 }
 
 func validUseEffect(effect *UseEffect) bool {
