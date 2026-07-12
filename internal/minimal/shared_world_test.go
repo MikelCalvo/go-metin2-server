@@ -34815,6 +34815,101 @@ func TestGameRuntimeItemUseResolvesPointEffectFromItemTemplateStore(t *testing.T
 	}
 }
 
+func TestGameRuntimeItemUseLastStackRemovesAllSourceItemQuickslots(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseItemLastStack", 0x01030147, 0x02040147, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 700
+	owner.Inventory = []inventory.ItemInstance{{ID: 1101, Vnum: 27002, Count: 1, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 5, Type: quickslotproto.TypeCommand, Slot: 5},
+	}
+	issuePeerTicket(t, store, "use-item-last-stack", 0x47474747, owner)
+	if err := accounts.Save(accountstore.Account{Login: "use-item-last-stack", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed last-stack item-use owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27002,
+		Name:      "Last Stack Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{
+			PointType:  7,
+			PointIndex: bootstrapPlayerPointValueIndex,
+			PointDelta: 25,
+			Message:    "consume:27002:+25",
+		},
+	}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, newInteractionDefinitionStore(t, nil), itemStore)
+	if err != nil {
+		t.Fatalf("unexpected last-stack item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-item-last-stack", 0x47474747)
+	defer closeSessionFlow(t, flow)
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected last-stack item-use packet error: %v", err)
+	}
+	if len(useOut) != 5 {
+		t.Fatalf("expected point-change + item-del + two quickslot-del + info frames for last-stack item use, got %d", len(useOut))
+	}
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
+	if err != nil {
+		t.Fatalf("decode last-stack item-use point change: %v", err)
+	}
+	if pointPacket.VID != owner.VID || pointPacket.Type != 7 || pointPacket.Amount != 25 || pointPacket.Value != 725 {
+		t.Fatalf("unexpected last-stack item-use point change: %+v", pointPacket)
+	}
+	delPacket, err := itemproto.DecodeDel(decodeSingleFrame(t, useOut[1]))
+	if err != nil {
+		t.Fatalf("decode last-stack item-use delete: %v", err)
+	}
+	if delPacket.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected last-stack item-use delete packet: %+v", delPacket)
+	}
+	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[2]))
+	if err != nil {
+		t.Fatalf("decode first last-stack quickslot delete: %v", err)
+	}
+	if firstQuickslotDel.Position != 2 {
+		t.Fatalf("expected first item quickslot position 2 to be deleted, got %+v", firstQuickslotDel)
+	}
+	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[3]))
+	if err != nil {
+		t.Fatalf("decode second last-stack quickslot delete: %v", err)
+	}
+	if secondQuickslotDel.Position != 4 {
+		t.Fatalf("expected second item quickslot position 4 to be deleted, got %+v", secondQuickslotDel)
+	}
+	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[4]))
+	if err != nil {
+		t.Fatalf("decode last-stack item-use info: %v", err)
+	}
+	if infoPacket.Type != chatproto.ChatTypeInfo || infoPacket.VID != 0 || infoPacket.Message != "consume:27002:+25" {
+		t.Fatalf("unexpected last-stack item-use info packet: %+v", infoPacket)
+	}
+
+	persisted, err := accounts.Load("use-item-last-stack")
+	if err != nil {
+		t.Fatalf("load persisted account after last-stack item use: %v", err)
+	}
+	if len(persisted.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected last-stack item use to remove carried item, got %#v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, []loginticket.Quickslot{
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 5, Type: quickslotproto.TypeCommand, Slot: 5},
+	}) {
+		t.Fatalf("expected only non-item quickslots to remain after last-stack item use, got %#v", persisted.Characters[0].Quickslots)
+	}
+}
+
 func TestGameRuntimeItemUseToItemFullStackMergeRemovesAllSourceItemQuickslots(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
