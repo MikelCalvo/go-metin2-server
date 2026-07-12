@@ -129,6 +129,7 @@ They are not new client packets and do not replace the existing self-only `GC TA
 
 For a live shared-world session with an active selected static-actor combat target, each snapshot reports:
 - `subject_entity_id`
+- `subject`, using the same effective connected-character snapshot shape exposed by `/local/players`
 - `target_vid`
 - the target `snapshot_version` captured from runtime combat ownership
 - current target `hp_percent`
@@ -136,6 +137,7 @@ For a live shared-world session with an active selected static-actor combat targ
 
 The per-subject snapshot fails closed when the subject is missing, no longer has a live session hook, is already at the current bootstrap zero-HP floor, no target is selected, the selected target is no longer visible, or the selected actor no longer has owned bootstrap combat HP semantics.
 After accepted non-lethal hits, snapshots report the runtime-owned damaged `hp_percent` rather than resetting to full HP; after the subject reaches the zero-HP floor or the target reaches the zero-HP death edge and selected-target ownership is cleared, the per-subject and aggregate snapshots omit that stale target instead of reporting a dead active selection.
+The embedded `subject` field lets local operator/debug consumers verify the selected owner's current effective map, position, empire/guild, and dead-state without joining the combat-target result to a separate `/local/players` response.
 The loopback `/local/combat-target/{name}` operator/debug endpoint exposes that per-subject snapshot by exact character name.
 The aggregate runtime snapshot skips invalid/stale entries, including selected targets whose owning session hook has already disappeared, and returns active selections in deterministic `subject_entity_id` order; the loopback `/local/combat-targets` endpoint exposes that list for local debugging.
 This gives local operator surfaces a stable read-only seam without granting stale sockets or global actor lookups a new authoritative combat path.

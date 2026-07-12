@@ -616,7 +616,7 @@ func TestLocalRuntimeConfigEndpointRejectsWrongMethod(t *testing.T) {
 }
 
 func TestLocalCombatTargetsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing.T) {
-	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"subject_entity_id": uint64(17), "target_vid": uint32(22), "snapshot_version": uint64(3), "hp_percent": uint8(80)}}}
+	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"subject_entity_id": uint64(17), "subject": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "target_vid": uint32(22), "snapshot_version": uint64(3), "hp_percent": uint8(80)}}}
 	mux := RegisterLocalCombatTargetsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/combat-targets", nil)
@@ -638,7 +638,7 @@ func TestLocalCombatTargetsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"target_vid":22`) || !strings.Contains(string(body), `"hp_percent":80`) {
+	if !strings.Contains(string(body), `"target_vid":22`) || !strings.Contains(string(body), `"hp_percent":80`) || !strings.Contains(string(body), `"subject"`) || !strings.Contains(string(body), `"name":"MkmkSura"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
@@ -680,7 +680,7 @@ func TestLocalCombatTargetsEndpointRejectsWrongMethod(t *testing.T) {
 }
 
 func TestLocalCombatTargetEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
-	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"MkmkSura": map[string]any{"subject_entity_id": uint64(17), "target_vid": uint32(22), "snapshot_version": uint64(3), "hp_percent": uint8(80)}}}
+	snapshotter := &stubNamedSnapshotter{snapshots: map[string]any{"MkmkSura": map[string]any{"subject_entity_id": uint64(17), "subject": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "target_vid": uint32(22), "snapshot_version": uint64(3), "hp_percent": uint8(80)}}}
 	mux := RegisterLocalCombatTargetEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/combat-target/MkmkSura", nil)
@@ -702,7 +702,7 @@ func TestLocalCombatTargetEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"target_vid":22`) || !strings.Contains(string(body), `"hp_percent":80`) {
+	if !strings.Contains(string(body), `"target_vid":22`) || !strings.Contains(string(body), `"hp_percent":80`) || !strings.Contains(string(body), `"subject"`) || !strings.Contains(string(body), `"name":"MkmkSura"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }

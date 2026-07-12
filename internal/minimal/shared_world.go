@@ -126,11 +126,12 @@ type StaticActorCombatTargetAttempt struct {
 }
 
 type CombatTargetSnapshot struct {
-	SubjectEntityID uint64              `json:"subject_entity_id"`
-	TargetVID       uint32              `json:"target_vid"`
-	SnapshotVersion uint64              `json:"snapshot_version"`
-	HPPercent       uint8               `json:"hp_percent"`
-	Actor           StaticActorSnapshot `json:"actor"`
+	SubjectEntityID uint64                     `json:"subject_entity_id"`
+	Subject         ConnectedCharacterSnapshot `json:"subject"`
+	TargetVID       uint32                     `json:"target_vid"`
+	SnapshotVersion uint64                     `json:"snapshot_version"`
+	HPPercent       uint8                      `json:"hp_percent"`
+	Actor           StaticActorSnapshot        `json:"actor"`
 }
 
 type StaticActorCombatAttackAttempt struct {
@@ -772,6 +773,7 @@ func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (Comba
 	actorSnapshot.Dead = currentHP == 0
 	return CombatTargetSnapshot{
 		SubjectEntityID: entityID,
+		Subject:         worldruntime.ConnectedCharacterSnapshotFor(r.topology, subject),
 		TargetVID:       targetVID,
 		SnapshotVersion: r.staticActorCombatSnapshot[actor.Entity.ID],
 		HPPercent:       hpPercent,

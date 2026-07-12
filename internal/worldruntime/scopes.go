@@ -196,7 +196,7 @@ func (s Scopes) ConnectedCharacterSnapshots() []ConnectedCharacterSnapshot {
 	targets := s.ConnectedTargets()
 	snapshots := make([]ConnectedCharacterSnapshot, 0, len(targets))
 	for _, target := range targets {
-		snapshots = append(snapshots, connectedCharacterSnapshot(s.Topology, target.Character))
+		snapshots = append(snapshots, ConnectedCharacterSnapshotFor(s.Topology, target.Character))
 	}
 	sortConnectedCharacterSnapshots(snapshots)
 	return snapshots
@@ -227,7 +227,7 @@ func (s Scopes) CharacterVisibilitySnapshotsWithGroundItems(groundItems []Ground
 	snapshots := make([]CharacterVisibilitySnapshot, 0, len(visibility))
 	for _, entry := range visibility {
 		snapshots = append(snapshots, CharacterVisibilitySnapshot{
-			ConnectedCharacterSnapshot: connectedCharacterSnapshot(s.Topology, entry.Subject.Character),
+			ConnectedCharacterSnapshot: ConnectedCharacterSnapshotFor(s.Topology, entry.Subject.Character),
 			VisiblePeers:               connectedCharacterSnapshots(s.Topology, playerEntitiesToCharacters(entry.VisiblePeers)),
 			VisibleStaticActors:        staticActorSnapshots(s.Topology, s.VisibleStaticActors(entry.Subject.Character)),
 			VisibleGroundItems:         VisibleGroundItems(s.Topology, entry.Subject.Character, groundItems),
@@ -245,7 +245,7 @@ func (s Scopes) CharacterInteractionVisibilitySnapshots() []CharacterInteraction
 	snapshots := make([]CharacterInteractionVisibilitySnapshot, 0, len(targets))
 	for _, subject := range targets {
 		snapshots = append(snapshots, CharacterInteractionVisibilitySnapshot{
-			ConnectedCharacterSnapshot:      connectedCharacterSnapshot(s.Topology, subject.Character),
+			ConnectedCharacterSnapshot:      ConnectedCharacterSnapshotFor(s.Topology, subject.Character),
 			VisibleInteractableStaticActors: staticActorSnapshots(s.Topology, s.VisibleInteractableStaticActors(subject.Character)),
 		})
 	}
@@ -355,7 +355,7 @@ func (s Scopes) BuildRelocationPreview(current, target loginticket.Character, ap
 
 func (s Scopes) BuildRelocationPreviewWithGroundItems(current, target loginticket.Character, applied bool, groundItems []GroundItemOccupancy) RelocationPreview {
 	if s.Entities == nil {
-		return RelocationPreview{Applied: applied, Character: connectedCharacterSnapshot(s.Topology, current), Target: connectedCharacterSnapshot(s.Topology, target)}
+		return RelocationPreview{Applied: applied, Character: ConnectedCharacterSnapshotFor(s.Topology, current), Target: ConnectedCharacterSnapshotFor(s.Topology, target)}
 	}
 	visibilityDiff := s.RelocateVisibilityDiff(current, target)
 	staticActorVisibilityDiff := s.RelocateStaticActorVisibilityDiff(current, target)
@@ -365,8 +365,8 @@ func (s Scopes) BuildRelocationPreviewWithGroundItems(current, target loginticke
 	afterOccupancy := relocateMapOccupancySnapshots(beforeOccupancy, s.Topology, current, target)
 	return RelocationPreview{
 		Applied:                    applied,
-		Character:                  connectedCharacterSnapshot(s.Topology, current),
-		Target:                     connectedCharacterSnapshot(s.Topology, target),
+		Character:                  ConnectedCharacterSnapshotFor(s.Topology, current),
+		Target:                     ConnectedCharacterSnapshotFor(s.Topology, target),
 		CurrentVisiblePeers:        connectedCharacterSnapshots(s.Topology, visibilityDiff.CurrentVisiblePeers),
 		TargetVisiblePeers:         connectedCharacterSnapshots(s.Topology, visibilityDiff.TargetVisiblePeers),
 		RemovedVisiblePeers:        connectedCharacterSnapshots(s.Topology, visibilityDiff.RemovedVisiblePeers),
@@ -424,7 +424,7 @@ func (s Scopes) filterTargets(originID uint64, origin loginticket.Character, pre
 	return targets
 }
 
-func connectedCharacterSnapshot(topology BootstrapTopology, character loginticket.Character) ConnectedCharacterSnapshot {
+func ConnectedCharacterSnapshotFor(topology BootstrapTopology, character loginticket.Character) ConnectedCharacterSnapshot {
 	return ConnectedCharacterSnapshot{
 		Name:     character.Name,
 		VID:      character.VID,
@@ -483,7 +483,7 @@ func staticActorCombatRank(actor StaticEntity) uint8 {
 func connectedCharacterSnapshots(topology BootstrapTopology, characters []loginticket.Character) []ConnectedCharacterSnapshot {
 	snapshots := make([]ConnectedCharacterSnapshot, 0, len(characters))
 	for _, character := range characters {
-		snapshots = append(snapshots, connectedCharacterSnapshot(topology, character))
+		snapshots = append(snapshots, ConnectedCharacterSnapshotFor(topology, character))
 	}
 	sortConnectedCharacterSnapshots(snapshots)
 	return snapshots
@@ -719,8 +719,8 @@ func relocateMapOccupancySnapshots(before []MapOccupancySnapshot, topology Boots
 		byMap[snapshot.MapIndex] = snapshot
 	}
 
-	currentSnapshot := connectedCharacterSnapshot(topology, current)
-	targetSnapshot := connectedCharacterSnapshot(topology, target)
+	currentSnapshot := ConnectedCharacterSnapshotFor(topology, current)
+	targetSnapshot := ConnectedCharacterSnapshotFor(topology, target)
 
 	if snapshot, ok := byMap[currentSnapshot.MapIndex]; ok {
 		filtered := make([]ConnectedCharacterSnapshot, 0, len(snapshot.Characters))

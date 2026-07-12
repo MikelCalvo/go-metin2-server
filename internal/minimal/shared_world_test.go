@@ -16823,6 +16823,33 @@ func TestSharedWorldRegistryCombatTargetSnapshotRequiresLiveSessionDirectoryEntr
 	}
 }
 
+func TestSharedWorldRegistryCombatTargetSnapshotsExposeSubjectSnapshot(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subject.MapIndex = 0
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected practice-mob registration to succeed")
+	}
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
+	if !targetAttempt.Accepted || !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatalf("expected practice-mob combat-target selection to be recorded, got %+v", targetAttempt)
+	}
+
+	snapshot, ok := registry.CombatTargetSnapshot(subjectID)
+	if !ok {
+		t.Fatal("expected active combat target snapshot")
+	}
+	if snapshot.Subject.Name != subject.Name || snapshot.Subject.VID != subject.VID || snapshot.Subject.MapIndex != bootstrapMapIndex || snapshot.Subject.X != subject.X || snapshot.Subject.Y != subject.Y {
+		t.Fatalf("expected subject snapshot to expose effective connected-character state, got %+v", snapshot.Subject)
+	}
+}
+
 func TestSharedWorldRegistryCombatTargetSnapshotsReportsDeterministicActiveSelections(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
