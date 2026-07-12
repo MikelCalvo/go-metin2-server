@@ -593,10 +593,10 @@ func TestGameRuntimeGroundItemsReturnsDeterministicPendingGroundSnapshots(t *tes
 	if len(snapshots) != 2 {
 		t.Fatalf("expected two pending ground snapshots, got %+v", snapshots)
 	}
-	if snapshots[0].VID != 0x0700002c || snapshots[0].Vnum != 3001 || snapshots[0].Count != 2 || snapshots[0].OwnerName != owner.Name || snapshots[0].MapIndex != bootstrapMapIndex || snapshots[0].X != owner.X || snapshots[0].Y != owner.Y {
+	if snapshots[0].VID != 0x0700002c || snapshots[0].Vnum != 3001 || snapshots[0].Count != 2 || snapshots[0].OwnerName != owner.Name || snapshots[0].OwnerLogin != "ground-snapshot-owner" || snapshots[0].OwnerCharacterID != owner.ID || snapshots[0].OwnerVID != owner.VID || snapshots[0].MapIndex != bootstrapMapIndex || snapshots[0].X != owner.X || snapshots[0].Y != owner.Y {
 		t.Fatalf("unexpected item-shaped ground snapshot: %+v", snapshots[0])
 	}
-	if snapshots[1].VID != 0x0700002d || snapshots[1].GoldAmount != 250 || snapshots[1].Count != 0 || snapshots[1].OwnerName != owner.Name || snapshots[1].MapIndex != bootstrapMapIndex || snapshots[1].X != owner.X || snapshots[1].Y != owner.Y {
+	if snapshots[1].VID != 0x0700002d || snapshots[1].GoldAmount != 250 || snapshots[1].Count != 0 || snapshots[1].OwnerName != owner.Name || snapshots[1].OwnerLogin != "ground-snapshot-owner" || snapshots[1].OwnerCharacterID != owner.ID || snapshots[1].OwnerVID != owner.VID || snapshots[1].MapIndex != bootstrapMapIndex || snapshots[1].X != owner.X || snapshots[1].Y != owner.Y {
 		t.Fatalf("unexpected gold-shaped ground snapshot: %+v", snapshots[1])
 	}
 

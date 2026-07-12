@@ -1210,15 +1210,18 @@ func sharedGroundItemOccupancy(ground sharedGroundItem) worldruntime.GroundItemO
 		count = 0
 	}
 	return worldruntime.GroundItemOccupancy{
-		VID:        ground.VID,
-		Vnum:       ground.Item.Vnum,
-		Count:      count,
-		OwnerName:  ground.OwnerName,
-		GoldAmount: ground.GoldAmount,
-		MapIndex:   ground.MapIndex,
-		X:          ground.X,
-		Y:          ground.Y,
-		Z:          ground.Z,
+		VID:              ground.VID,
+		Vnum:             ground.Item.Vnum,
+		Count:            count,
+		OwnerName:        ground.OwnerName,
+		OwnerLogin:       ground.OwnerLogin,
+		OwnerCharacterID: ground.OwnerCharacterID,
+		OwnerVID:         ground.OwnerVID,
+		GoldAmount:       ground.GoldAmount,
+		MapIndex:         ground.MapIndex,
+		X:                ground.X,
+		Y:                ground.Y,
+		Z:                ground.Z,
 	}
 }
 

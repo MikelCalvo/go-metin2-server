@@ -79,15 +79,18 @@ type StaticActorSnapshot struct {
 }
 
 type GroundItemSnapshot struct {
-	VID        uint32 `json:"vid"`
-	Vnum       uint32 `json:"vnum"`
-	Count      uint16 `json:"count,omitempty"`
-	OwnerName  string `json:"owner_name,omitempty"`
-	GoldAmount uint32 `json:"gold_amount,omitempty"`
-	MapIndex   uint32 `json:"map_index"`
-	X          int32  `json:"x"`
-	Y          int32  `json:"y"`
-	Z          int32  `json:"z"`
+	VID              uint32 `json:"vid"`
+	Vnum             uint32 `json:"vnum"`
+	Count            uint16 `json:"count,omitempty"`
+	OwnerName        string `json:"owner_name,omitempty"`
+	OwnerLogin       string `json:"owner_login,omitempty"`
+	OwnerCharacterID uint32 `json:"owner_character_id,omitempty"`
+	OwnerVID         uint32 `json:"owner_vid,omitempty"`
+	GoldAmount       uint32 `json:"gold_amount,omitempty"`
+	MapIndex         uint32 `json:"map_index"`
+	X                int32  `json:"x"`
+	Y                int32  `json:"y"`
+	Z                int32  `json:"z"`
 }
 
 type GroundItemOccupancy = GroundItemSnapshot

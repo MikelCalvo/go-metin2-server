@@ -178,7 +178,7 @@ Each entry includes:
 The `characters` array is sorted by name and each character uses the same effective runtime location fields exposed by `/local/players`, including the current `dead` flag.
 Static actors are surfaced in the owned map snapshots as the current runtime expands beyond player-only visibility.
 Those static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still dead before respawn.
-Temporary pending ground items are surfaced with their visible `vid`, `vnum`, optional `count`, optional `owner_name`, optional `gold_amount`, effective `map_index`, and `x/y/z` position so operator map snapshots show both connected actors and transient ground occupancy.
+Temporary pending ground items are surfaced with their visible `vid`, `vnum`, optional `count`, optional display `owner_name`, owner identity (`owner_login`, `owner_character_id`, `owner_vid`), optional `gold_amount`, effective `map_index`, and `x/y/z` position so operator map snapshots show both connected actors and transient ground occupancy without losing the owned ground-entry identity used by stale-pickup guards.
 
 ### `GET /local/ground-items`
 
@@ -191,6 +191,9 @@ Each entry includes:
 - `vnum` for item-shaped ground rewards
 - `count` for item-shaped ground rewards
 - `owner_name`
+- `owner_login`
+- `owner_character_id`
+- `owner_vid`
 - `gold_amount` for gold-shaped ground rewards
 - `map_index`
 - `x`
