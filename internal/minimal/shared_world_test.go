@@ -1448,7 +1448,7 @@ func TestSharedWorldRegistryRemoveGroundGoldQueuesDeleteForLivingPeers(t *testin
 	}
 }
 
-func TestSharedWorldRegistryRemoveGroundItemQueuesDeleteToVisibleCollector(t *testing.T) {
+func TestSharedWorldRegistryRemoveGroundItemDoesNotQueueDeleteToCollector(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("PickedDropOwner", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
 	collector := peerVisibilityCharacter("PickedDropCollector", 0x01030122, 0x02040122, 1200, 2200, 0, 102, 202)
@@ -1473,16 +1473,8 @@ func TestSharedWorldRegistryRemoveGroundItemQueuesDeleteToVisibleCollector(t *te
 	if registry.GroundItemExists(groundVID) {
 		t.Fatal("expected picked ground item to leave live ground occupancy")
 	}
-	queued := collectorPending.flush()
-	if len(queued) != 1 {
-		t.Fatalf("expected collector to receive 1 self-facing ground-item delete frame, got %d", len(queued))
-	}
-	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, queued[0]))
-	if err != nil {
-		t.Fatalf("decode collector ground-item delete: %v", err)
-	}
-	if groundDel.VID != groundVID {
-		t.Fatalf("unexpected collector ground-item delete: %+v", groundDel)
+	if queued := collectorPending.flush(); len(queued) != 0 {
+		t.Fatalf("expected no duplicate async ground-item delete for collector, got %d frames", len(queued))
 	}
 }
 

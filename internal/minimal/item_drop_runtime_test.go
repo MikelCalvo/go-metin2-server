@@ -90,6 +90,71 @@ func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemPickupDoesNotQueueDuplicateCollectorGroundDel(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupNoDup", 0x01030174, 0x02040174, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1004, Vnum: 27001, Count: 3, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "pickup-no-dup", 0x74747474, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-no-dup", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup no-duplicate account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected pickup no-duplicate runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-no-dup", 0x74747474)
+	defer closeSessionFlow(t, flow)
+
+	dropOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected item drop before pickup: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected drop without quickslot to emit ITEM_DEL, GROUND_ADD, and OWNERSHIP, got %d frames", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode dropped ground item: %v", err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after self drop registration, got %d", len(queued))
+	}
+
+	pickupOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
+	if err != nil {
+		t.Fatalf("unexpected item pickup error: %v", err)
+	}
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET directly, got %d frames", len(pickupOut))
+	}
+	groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode pickup ground del: %v", err)
+	}
+	if groundDel.VID != ground.VID {
+		t.Fatalf("unexpected pickup ground del: got %+v want vid %d", groundDel, ground.VID)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode pickup item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(5) || set.Vnum != 27001 || set.Count != 3 {
+		t.Fatalf("unexpected pickup item set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode pickup item get: %v", err)
+	}
+	if get.Vnum != 27001 || get.Count != 3 {
+		t.Fatalf("unexpected pickup item get: %+v", get)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no duplicate queued collector ground-del after direct pickup response, got %d frames", len(queued))
+	}
+}
+
 func TestGameRuntimeItemDropDeletesAllSourceItemQuickslots(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
