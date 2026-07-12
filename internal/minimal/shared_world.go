@@ -2221,6 +2221,22 @@ func (r *sharedWorldRegistry) mapOccupancySnapshots() []MapOccupancySnapshot {
 	return r.mapOccupancySnapshotsLocked()
 }
 
+func (r *sharedWorldRegistry) GroundItems() []GroundItemSnapshot {
+	if r == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	snapshots := make([]GroundItemSnapshot, 0, len(r.groundItemsByVID))
+	for _, ground := range r.groundItemsByVID {
+		snapshots = append(snapshots, groundItemSnapshot(ground))
+	}
+	sortGroundItemSnapshots(snapshots)
+	return snapshots
+}
+
 func (r *sharedWorldRegistry) mapOccupancySnapshotsLocked() []MapOccupancySnapshot {
 	if r == nil || r.entities == nil {
 		return nil

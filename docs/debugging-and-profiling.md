@@ -178,6 +178,23 @@ Static actors are surfaced in the owned map snapshots as the current runtime exp
 Those static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still dead before respawn.
 Temporary pending ground items are surfaced with their visible `vid`, `vnum`, optional `count`, optional `owner_name`, optional `gold_amount`, effective `map_index`, and `x/y/z` position so operator map snapshots show both connected actors and transient ground occupancy.
 
+### `GET /local/ground-items`
+
+Returns a flat JSON snapshot of all currently pending bootstrap ground entries, sorted by visible ground `vid`.
+This is a loopback-only debug view of the same transient item-shaped and gold-shaped rewards already included in `/local/maps`; it does not expose a gameplay pickup API and does not mutate ground state.
+
+Each entry includes:
+
+- `vid`
+- `vnum` for item-shaped ground rewards
+- `count` for item-shaped ground rewards
+- `owner_name`
+- `gold_amount` for gold-shaped ground rewards
+- `map_index`
+- `x`
+- `y`
+- `z`
+
 ### `GET /local/interaction-visibility`
 
 Returns a JSON snapshot of each connected bootstrap character plus the currently visible interactable static actors that would resolve for them.

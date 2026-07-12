@@ -64,6 +64,10 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.RuntimeConfigSnapshot() },
 	)
+	opsHandler = ops.RegisterLocalGroundItemsEndpoint(
+		opsHandler,
+		func() any { return gameRuntime.GroundItems() },
+	)
 	opsHandler = ops.RegisterLocalInventoryEndpoint(
 		opsHandler,
 		func(name string) (any, bool) {

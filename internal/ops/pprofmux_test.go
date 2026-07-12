@@ -993,6 +993,70 @@ func TestLocalMapsEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalGroundItemsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"vid": uint32(0x0700002c), "vnum": uint32(3001), "count": uint16(2), "owner_name": "GroundSnapshotOwner", "map_index": uint32(1), "x": int32(1200), "y": int32(2200)}, {"vid": uint32(0x0700002d), "gold_amount": uint32(250), "owner_name": "GroundSnapshotOwner", "map_index": uint32(1), "x": int32(1200), "y": int32(2200)}}}
+	mux := RegisterLocalGroundItemsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected ground item snapshotter to be called once, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"vid":117440556`) || !strings.Contains(string(body), `"gold_amount":250`) || !strings.Contains(string(body), `"owner_name":"GroundSnapshotOwner"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalGroundItemsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubListSnapshotter{}
+	mux := RegisterLocalGroundItemsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/ground-items", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected ground item snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalGroundItemsEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubListSnapshotter{}
+	mux := RegisterLocalGroundItemsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/ground-items", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected ground item snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
 func TestLocalStaticActorsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubStaticActorSnapshotter{actors: []map[string]any{{"entity_id": uint64(2), "name": "Blacksmith", "map_index": uint32(42), "x": int32(1900), "y": int32(3000), "race_num": uint32(20301)}, {"entity_id": uint64(1), "name": "VillageGuard", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20300)}}}
 	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), snapshotter.StaticActors, nil)

@@ -571,6 +571,41 @@ func TestSharedWorldRegistryRegisterGroundGoldRejectsDuplicateVIDWithoutReplacin
 	}
 }
 
+func TestGameRuntimeGroundItemsReturnsDeterministicPendingGroundSnapshots(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), accountstore.NewFileStore(t.TempDir()))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	owner := peerVisibilityCharacter("GroundSnapshotOwner", 0x0103019c, 0x0204019c, 1200, 2200, 0, 101, 201)
+	ownerID, _ := runtime.sharedWorld.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected ground snapshot owner join to allocate a shared-world entity id")
+	}
+
+	if !runtime.sharedWorld.RegisterGroundGold(ownerID, "ground-snapshot-owner", owner, 0x0700002d, 250) {
+		t.Fatal("expected ground-gold registration to succeed")
+	}
+	if !runtime.sharedWorld.RegisterGroundItem(ownerID, "ground-snapshot-owner", owner, 0x0700002c, inventory.ItemInstance{ID: 0x3001002c, Vnum: 3001, Count: 2}) {
+		t.Fatal("expected ground-item registration to succeed")
+	}
+
+	snapshots := runtime.GroundItems()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected two pending ground snapshots, got %+v", snapshots)
+	}
+	if snapshots[0].VID != 0x0700002c || snapshots[0].Vnum != 3001 || snapshots[0].Count != 2 || snapshots[0].OwnerName != owner.Name || snapshots[0].MapIndex != bootstrapMapIndex || snapshots[0].X != owner.X || snapshots[0].Y != owner.Y {
+		t.Fatalf("unexpected item-shaped ground snapshot: %+v", snapshots[0])
+	}
+	if snapshots[1].VID != 0x0700002d || snapshots[1].GoldAmount != 250 || snapshots[1].Count != 0 || snapshots[1].OwnerName != owner.Name || snapshots[1].MapIndex != bootstrapMapIndex || snapshots[1].X != owner.X || snapshots[1].Y != owner.Y {
+		t.Fatalf("unexpected gold-shaped ground snapshot: %+v", snapshots[1])
+	}
+
+	snapshots[0].Count = 99
+	if fresh := runtime.GroundItems(); len(fresh) != 2 || fresh[0].Count != 2 {
+		t.Fatalf("expected ground snapshot output to be cloned, got %+v", fresh)
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundItemRejectsDuplicateVIDWithoutReplacingExistingItem(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("DuplicateItemVIDOwner", 0x0103019a, 0x0204019a, 1200, 2200, 0, 101, 201)
