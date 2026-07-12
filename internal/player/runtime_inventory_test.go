@@ -655,6 +655,49 @@ func TestUseItemOnItemRejectsDuplicateInstanceIDsWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestUseItemOnItemRejectsZeroInstanceIDsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name: "zero source instance id",
+			inventory: []inventory.ItemInstance{
+				{ID: 0, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 42, Vnum: 27001, Count: 3, Slot: 6},
+			},
+		},
+		{
+			name: "zero target instance id",
+			inventory: []inventory.ItemInstance{
+				{ID: 41, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 0, Vnum: 27001, Count: 3, Slot: 6},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(loginticket.Character{
+				Inventory:  tc.inventory,
+				Quickslots: []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}},
+			}, SessionLink{})
+			beforeInventory := runtime.LiveInventory()
+			beforeQuickslots := runtime.LiveQuickslots()
+			template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+			if result, ok := runtime.UseItemOnItem(5, 6, template); ok {
+				t.Fatalf("expected %s ITEM_USE_TO_ITEM consolidation to fail closed, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+				t.Fatalf("%s use-to-item mutated live inventory: got %#v want %#v", tc.name, got, beforeInventory)
+			}
+			if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, beforeQuickslots) {
+				t.Fatalf("%s use-to-item mutated quickslots: got %#v want %#v", tc.name, got, beforeQuickslots)
+			}
+		})
+	}
+}
+
 func TestUseItemOnItemFailsClosedWhenSourceRemainderValidationFails(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{
