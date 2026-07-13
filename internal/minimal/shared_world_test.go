@@ -34448,6 +34448,84 @@ func TestGameSessionFlowStaticActorAttackReselectingSameTargetDoesNotBypassCaden
 	}
 }
 
+func TestGameSessionFlowStaticActorAttackRetargetDoesNotBypassCadenceWindow(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000400, 0)
+	runtime.now = func() time.Time { return currentTime }
+	firstActor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummyOne", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected first visible training-dummy registration to succeed")
+	}
+	secondActor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummyTwo", bootstrapMapIndex, 1210, 2210, 20351, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected second visible training-dummy registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 11 {
+		t.Fatalf("expected 11 bootstrap frames with two visible training dummies, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	firstVID := uint32(firstActor.EntityID)
+	secondVID := uint32(secondActor.EntityID)
+	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstVID}))); err != nil || len(selectOut) != 1 {
+		t.Fatalf("expected first target selection before retarget cadence test to return 1 frame, got frames=%d err=%v", len(selectOut), err)
+	}
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  firstVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected first combat attack error before retarget cadence test: %v", err)
+	}
+	if len(firstAttack) != 1 {
+		t.Fatalf("expected 1 self-only target-refresh frame on first accepted dummy hit before retarget cadence test, got %d", len(firstAttack))
+	}
+
+	if retargetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: secondVID}))); err != nil || len(retargetOut) != 1 {
+		t.Fatalf("expected second target selection inside cadence window to return 1 frame, got frames=%d err=%v", len(retargetOut), err)
+	}
+	retargetAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  secondVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected retargeted combat attack error inside cadence window: %v", err)
+	}
+	if len(retargetAttack) != 0 {
+		t.Fatalf("expected retargeted attack inside owned 250ms session cadence window to fail closed, got %d frames", len(retargetAttack))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames for cadence-window denied retargeted attack, got %d", len(queued))
+	}
+
+	currentTime = currentTime.Add(250 * time.Millisecond)
+	afterCooldown, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  secondVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected retargeted combat attack error after cadence window expired: %v", err)
+	}
+	if len(afterCooldown) != 1 {
+		t.Fatalf("expected retargeted attack after cadence window expiry to be accepted, got %d frames", len(afterCooldown))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, afterCooldown[0]))
+	if err != nil {
+		t.Fatalf("decode accepted retargeted target-refresh frame after cadence window expiry: %v", err)
+	}
+	if refresh.TargetVID != secondVID || refresh.HPPercent != 90 {
+		t.Fatalf("unexpected retargeted dummy target-refresh packet after cadence window expiry: %+v", refresh)
+	}
+}
+
 type failingStaticActorStore struct{}
 
 func (f *failingStaticActorStore) Load() (staticstore.Snapshot, error) {
