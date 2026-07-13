@@ -270,6 +270,113 @@ func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testi
 	}
 }
 
+func TestGameRuntimeRejectsConflictingImportedCombatProfileSnapshot(t *testing.T) {
+	const profile = "practice_conflicting_import_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		AttackValue:           7,
+		DefenseValue:          4,
+		RespawnDelay:          1500 * time.Millisecond,
+	}) {
+		t.Fatalf("expected local combat profile %q to register", profile)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.conflicting_wolf",
+			Name:          "Practice Conflicting Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 30,
+			DamagePerNormalAttack: 3,
+			AttackValue:           7,
+			DefenseValue:          4,
+			RespawnDelayMs:        1500,
+		}},
+	})
+	if !errors.Is(err, contentbundle.ErrInvalidBundle) {
+		t.Fatalf("expected conflicting imported combat profile snapshot to fail closed, got %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 0 {
+		t.Fatalf("expected failed conflicting profile import not to materialize actors, got %+v", actors)
+	}
+	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok || defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 3 {
+		t.Fatalf("expected local combat profile defaults to remain unchanged, got defaults=%+v ok=%v", defaults, ok)
+	}
+}
+
+func TestGameRuntimeRollsBackImportedCombatProfilesWhenStaticActorPersistenceFails(t *testing.T) {
+	const profile = "practice_import_rollback_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticActorStore,
+		interactionStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if worldruntime.ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected imported profile %q to start unregistered", profile)
+	}
+
+	runtime.staticStore = &failingStaticActorStore{}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.rollback_wolf",
+			Name:          "Practice Rollback Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 3,
+			AttackValue:           7,
+			DefenseValue:          4,
+			RespawnDelayMs:        1500,
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected content bundle import to fail when static actor persistence fails")
+	}
+	if worldruntime.ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected failed content import to roll back newly registered profile %q", profile)
+	}
+}
+
 func TestGameRuntimeUpdateSpawnGroupActorPreservesRewardDescriptor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

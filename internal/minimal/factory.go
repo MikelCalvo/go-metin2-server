@@ -4960,6 +4960,18 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	return normalized, nil
 }
 
+func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot, defaults worldruntime.StaticActorCombatProfileDefaults) bool {
+	return strings.TrimSpace(snapshot.Profile) != "" &&
+		snapshot.MaxHP == defaults.MaxHP &&
+		snapshot.DamagePerNormalAttack == defaults.DamagePerNormalAttack &&
+		snapshot.AttackValue == defaults.AttackValue &&
+		snapshot.DefenseValue == defaults.DefenseValue &&
+		snapshot.Level == defaults.Level &&
+		snapshot.Rank == defaults.Rank &&
+		time.Duration(snapshot.RespawnDelayMs)*time.Millisecond == defaults.RespawnDelay &&
+		reflect.DeepEqual(snapshot.DeathReward.Clone(), defaults.DeathReward.Clone())
+}
+
 func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnapshot) (func(), error) {
 	registered := make([]string, 0, len(profiles))
 	rollback := func() {
@@ -4973,6 +4985,11 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			continue
 		}
 		if worldruntime.ValidStaticActorCombatProfile(profile) {
+			existing, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+			if !ok || !contentBundleCombatProfileSnapshotMatchesDefaults(snapshot, existing) {
+				rollback()
+				return nil, contentbundle.ErrInvalidBundle
+			}
 			continue
 		}
 		if snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || snapshot.RespawnDelayMs <= 0 {
