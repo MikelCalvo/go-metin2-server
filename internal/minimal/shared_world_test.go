@@ -2661,6 +2661,120 @@ func TestNewGameSessionFactoryNormalAttackCadenceRejectsImmediateRepeatWithoutMu
 	}
 }
 
+func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliationUntilRespawn(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("Attacker", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	attacker.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "attacker", 0x11111111, attacker)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000501, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "attacker", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for attacker with visible content practice mob, got %d", len(enterOut))
+	}
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before pending-retaliation cleanup test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before pending-retaliation cleanup test, got %d", len(selectOut))
+	}
+
+	for attackIndex := 0; attackIndex < 10; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected practice-mob attack error on pending-retaliation cleanup hit %d: %v", attackIndex+1, err)
+		}
+		wantFrames := 2
+		if attackIndex == 9 {
+			wantFrames = 2
+		}
+		if len(attackOut) != wantFrames {
+			t.Fatalf("expected %d frames on pending-retaliation cleanup hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
+		}
+	}
+
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected mob death to clear stale pending server-origin retaliation before respawn, got %d queued frames", len(queued))
+	}
+	staleTargetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected stale target-selection dispatch error before respawn: %v", err)
+	}
+	if len(staleTargetOut) != 0 {
+		t.Fatalf("expected stale post-death target selection to fail closed before respawn, got %d frames", len(staleTargetOut))
+	}
+	staleAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected stale attack dispatch error before respawn: %v", err)
+	}
+	if len(staleAttackOut) != 0 {
+		t.Fatalf("expected stale post-death attack to fail closed before respawn, got %d frames", len(staleAttackOut))
+	}
+
+	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	respawnQueued := flushServerFrames(t, flow)
+	if len(respawnQueued) != 4 {
+		t.Fatalf("expected delayed respawn rebuild without stale retaliation frames, got %d frames", len(respawnQueued))
+	}
+	if _, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, respawnQueued[0])); err != nil {
+		t.Fatalf("decode respawn delete after pending-retaliation cleanup: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, respawnQueued[1])); err != nil {
+		t.Fatalf("decode respawn add after pending-retaliation cleanup: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, respawnQueued[2])); err != nil {
+		t.Fatalf("decode respawn additional info after pending-retaliation cleanup: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, respawnQueued[3])); err != nil {
+		t.Fatalf("decode respawn update after pending-retaliation cleanup: %v", err)
+	}
+
+	freshSelectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected fresh target-selection dispatch error after respawn: %v", err)
+	}
+	if len(freshSelectOut) != 1 {
+		t.Fatalf("expected fresh target selection to work after respawn, got %d frames", len(freshSelectOut))
+	}
+	freshTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, freshSelectOut[0]))
+	if err != nil {
+		t.Fatalf("decode fresh target selection after respawn: %v", err)
+	}
+	if freshTarget.TargetVID != targetVID || freshTarget.HPPercent != 100 {
+		t.Fatalf("expected respawned practice mob to require fresh full-HP selection, got %+v", freshTarget)
+	}
+}
+
 func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeReplaysDeadTrainingDummyVisibility(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
