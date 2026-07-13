@@ -27,12 +27,28 @@ func testMerchantCatalogDefinition() interactionstore.Definition {
 }
 
 func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
+	const customProfile = "practice_snapshot_guard"
+	if !worldruntime.RegisterStaticActorCombatProfile(customProfile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 4,
+		AttackValue:           7,
+		DefenseValue:          3,
+		Level:                 8,
+		Rank:                  2,
+		RespawnDelay:          1500 * time.Millisecond,
+		DeathReward:           worldruntime.StaticActorDeathReward{Experience: 12, Gold: 7, DropVnums: []uint32{27002, 27001}},
+	}) {
+		t.Fatalf("expected custom snapshot combat profile %q to register", customProfile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(customProfile) })
+
 	bundle, err := FromSnapshots(
 		staticstore.Snapshot{StaticActors: []staticstore.StaticActor{
 			{EntityID: 9, Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
 			{EntityID: 3, Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20301},
 			{EntityID: 7, Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
 			{EntityID: 5, Name: "TrainingDummy", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
+			{EntityID: 15, Name: "SnapshotGuard", MapIndex: 42, X: 1780, Y: 2880, RaceNum: 102, CombatProfile: customProfile},
 			{EntityID: 13, Name: "RewardMob", MapIndex: 42, X: 1785, Y: 2885, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.reward_mob", RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001, 27002}},
 			{EntityID: 11, Name: "Teleporter", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
 		}},
@@ -50,6 +66,7 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 		StaticActors: []StaticActor{
 			{Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20301},
 			{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{Name: "SnapshotGuard", MapIndex: 42, X: 1780, Y: 2880, RaceNum: 102, CombatProfile: customProfile},
 			{Name: "Teleporter", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
 			{Name: "TrainingDummy", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
 			{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
@@ -57,6 +74,17 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 		SpawnGroups: []SpawnGroup{
 			{Ref: "practice.reward_mob", Name: "RewardMob", MapIndex: 42, X: 1785, Y: 2885, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001, 27002}},
 		},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               customProfile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 4,
+			AttackValue:           7,
+			DefenseValue:          3,
+			Level:                 8,
+			Rank:                  2,
+			RespawnDelayMs:        1500,
+			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 12, Gold: 7, DropVnums: []uint32{27001, 27002}},
+		}},
 		InteractionDefinitions: []interactionstore.Definition{
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 			testMerchantCatalogDefinition(),
