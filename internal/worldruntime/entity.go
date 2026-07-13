@@ -172,10 +172,14 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 	return true
 }
 
-func UnregisterStaticActorCombatProfileForTest(profile string) {
+func UnregisterStaticActorCombatProfile(profile string) {
 	staticActorCombatProfileRegistry.Lock()
 	defer staticActorCombatProfileRegistry.Unlock()
 	delete(staticActorCombatProfileRegistry.profiles, strings.TrimSpace(profile))
+}
+
+func UnregisterStaticActorCombatProfileForTest(profile string) {
+	UnregisterStaticActorCombatProfile(profile)
 }
 
 func StaticActorCombatProfileSnapshots() []StaticActorCombatProfileSnapshot {

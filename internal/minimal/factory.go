@@ -4929,8 +4929,13 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	if r == nil || r.staticStore == nil || r.interactionStore == nil {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable
 	}
+	rollbackProfiles, err := registerContentBundleCombatProfiles(bundle.CombatProfiles)
+	if err != nil {
+		return contentbundle.Bundle{}, err
+	}
 	normalized, err := contentbundle.Canonicalize(bundle)
 	if err != nil {
+		rollbackProfiles()
 		return contentbundle.Bundle{}, err
 	}
 	previousBundle, err := r.ExportContentBundle()
@@ -4938,17 +4943,56 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return contentbundle.Bundle{}, err
 	}
 	if err := r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: normalized.InteractionDefinitions}); err != nil {
+		rollbackProfiles()
 		return contentbundle.Bundle{}, err
 	}
 	if err := r.replaceStaticActorsFromBundle(normalized); err != nil {
 		rollbackErr := r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions})
 		rollbackErr = errors.Join(rollbackErr, r.replaceStaticActorsFromBundle(previousBundle))
+		rollbackProfiles()
 		if rollbackErr != nil {
 			return contentbundle.Bundle{}, errors.Join(err, rollbackErr)
 		}
 		return contentbundle.Bundle{}, err
 	}
 	return normalized, nil
+}
+
+func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnapshot) (func(), error) {
+	registered := make([]string, 0, len(profiles))
+	rollback := func() {
+		for i := len(registered) - 1; i >= 0; i-- {
+			worldruntime.UnregisterStaticActorCombatProfile(registered[i])
+		}
+	}
+	for _, snapshot := range profiles {
+		profile := strings.TrimSpace(snapshot.Profile)
+		if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
+			continue
+		}
+		if worldruntime.ValidStaticActorCombatProfile(profile) {
+			continue
+		}
+		if snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || snapshot.RespawnDelayMs <= 0 {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
+		}
+		if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+			MaxHP:                 snapshot.MaxHP,
+			DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
+			AttackValue:           snapshot.AttackValue,
+			DefenseValue:          snapshot.DefenseValue,
+			Level:                 snapshot.Level,
+			Rank:                  snapshot.Rank,
+			RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
+			DeathReward:           snapshot.DeathReward,
+		}) {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
+		}
+		registered = append(registered, profile)
+	}
+	return rollback, nil
 }
 
 func (r *gameRuntime) CreateInteractionDefinition(definition InteractionDefinition) (InteractionDefinition, error) {

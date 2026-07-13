@@ -121,6 +121,8 @@ The first bootstrap spawn-group contract freezes these fields:
   - omitted values canonicalize to the current spawn-group default `practice_mob`
   - `training_dummy` remains supported for legacy/bootstrap static actors and explicit authored use
   - `practice_mob` currently reuses the same compact HP, damage, respawn, HP-percent refresh, and rewardless defaults as `training_dummy` while giving spawn-loaded combatants their own authored profile name
+  - bundles may include a matching top-level `combat_profiles` snapshot for non-built-in profile names; runtime import registers those profile defaults before validating/importing `spawn_groups`, so portable bundles can carry their authored combat profile and reward defaults without requiring a prior local profile registration step
+  - if later bundle validation or static-actor replacement fails after registering new combat profiles, the bootstrap importer rolls back the profile registrations it introduced for that failed import; already-registered local profiles are left untouched
 - `reward_experience`, `reward_gold`, `reward_drop_vnums`
   - optional authored death-reward descriptor fields
   - if all reward fields are omitted or zero/empty, bundle canonicalization now applies the selected combat profile's bootstrap death-reward defaults; the built-in `practice_mob` and `training_dummy` profiles remain rewardless, while registered reward-bearing profiles can provide deterministic defaults

@@ -212,6 +212,64 @@ func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFr
 	}
 }
 
+func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testing.T) {
+	const profile = "practice_imported_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.imported_wolf",
+			Name:          "Practice Imported Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 3,
+			AttackValue:           7,
+			DefenseValue:          4,
+			Level:                 9,
+			Rank:                  2,
+			RespawnDelayMs:        1500,
+			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 15, Gold: 10, DropVnums: []uint32{27002, 27001}},
+		}},
+	}
+
+	imported, err := runtime.ImportContentBundle(bundle)
+	if err != nil {
+		t.Fatalf("import content bundle with authored combat profile: %v", err)
+	}
+	if !worldruntime.ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected imported combat profile %q to be registered before spawn import", profile)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one imported spawn actor, got %#v", actors)
+	}
+	if actors[0].CombatProfile != profile || actors[0].RewardExperience != 15 || actors[0].RewardGold != 10 || !reflect.DeepEqual(actors[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("unexpected imported profile-backed spawn actor: %+v", actors[0])
+	}
+	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != profile {
+		t.Fatalf("expected imported bundle to retain authored combat profile snapshot, got %#v", imported.CombatProfiles)
+	}
+}
+
 func TestGameRuntimeUpdateSpawnGroupActorPreservesRewardDescriptor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
