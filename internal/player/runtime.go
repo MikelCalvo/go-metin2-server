@@ -178,6 +178,18 @@ func (r *Runtime) SetLiveGold(gold uint64) {
 	r.liveGold = gold
 }
 
+func (r *Runtime) AddLiveGold(amount uint64) (uint64, bool) {
+	if r == nil || amount == 0 || amount > uint64(1<<31-1) {
+		return 0, false
+	}
+	nextGold := r.liveGold + amount
+	if nextGold < r.liveGold || nextGold > uint64(1<<31-1) {
+		return 0, false
+	}
+	r.liveGold = nextGold
+	return nextGold, true
+}
+
 func (r *Runtime) SetLivePoint(pointIndex uint8, value int32) bool {
 	if r == nil || int(pointIndex) >= len(r.livePoints) {
 		return false

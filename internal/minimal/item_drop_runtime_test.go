@@ -4454,6 +4454,85 @@ func TestGameRuntimeItemDropOwnerCloseRemovesPendingGroundHandleForVisiblePeers(
 	closeSessionFlow(t, watcherFlow)
 }
 
+func TestGameRuntimeGoldPickupRejectsOverflowBeforeRemovingGroundHandle(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GoldOverflowOwner", 0x010301aa, 0x020401aa, 1400, 2400, 0, 101, 201)
+	owner.Gold = uint64(1<<31 - 1)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1135, Vnum: 27032, Count: 1, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "gold-overflow-owner", 0xaaaaaaaa, owner)
+	if err := accounts.Save(accountstore.Account{Login: "gold-overflow-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed gold overflow owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected gold-overflow runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "gold-overflow-owner", 0xaaaaaaaa)
+
+	dropOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5), Elk: 1})))
+	if err != nil {
+		t.Fatalf("drop overflow test gold: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected gold drop to emit point/add/ownership frames, got %d", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode overflow gold ground add: %v", err)
+	}
+
+	reload, err := accounts.Load("gold-overflow-owner")
+	if err != nil {
+		t.Fatalf("load overflow account after drop: %v", err)
+	}
+	reload.Characters[0].Gold = uint64(1<<31 - 1)
+	if err := accounts.Save(reload); err != nil {
+		t.Fatalf("simulate external gold restoration before pickup: %v", err)
+	}
+	if !runtime.applyLiveCharacterPersistedSnapshot(owner.Name, reload.Characters[0]) {
+		t.Fatal("expected live gold snapshot restoration before pickup")
+	}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 0 {
+		t.Fatalf("expected overflowing gold pickup to fail closed without frames, got %d", len(pickupOut))
+	}
+	account, err := accounts.Load("gold-overflow-owner")
+	if err != nil {
+		t.Fatalf("reload overflow account after rejected pickup: %v", err)
+	}
+	if account.Characters[0].Gold != uint64(1<<31-1) {
+		t.Fatalf("expected overflowing gold pickup to leave gold unchanged, got %d", account.Characters[0].Gold)
+	}
+
+	account.Characters[0].Gold = uint64(1<<31 - 2)
+	if err := accounts.Save(account); err != nil {
+		t.Fatalf("restore retryable account state: %v", err)
+	}
+	if !runtime.applyLiveCharacterPersistedSnapshot(owner.Name, account.Characters[0]) {
+		t.Fatal("expected live gold snapshot restoration before retry")
+	}
+	retryOut := pickupGroundItem(t, flow, ground.VID)
+	if len(retryOut) != 3 {
+		t.Fatalf("expected overflow-rejected gold handle to remain retryable for self pickup, got %d frames", len(retryOut))
+	}
+	if _, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, retryOut[0])); err != nil {
+		t.Fatalf("decode retry ground del: %v", err)
+	}
+	retryPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, retryOut[1]))
+	if err != nil {
+		t.Fatalf("decode retry gold point change: %v", err)
+	}
+	if retryPoint != (worldproto.PlayerPointChangePacket{VID: owner.VID, Type: bootstrapGoldPointType, Amount: 1, Value: 1<<31 - 1}) {
+		t.Fatalf("unexpected retry gold point change: %+v", retryPoint)
+	}
+	if _, err := itemproto.DecodeGet(decodeSingleFrame(t, retryOut[2])); err != nil {
+		t.Fatalf("decode retry gold get: %v", err)
+	}
+}
+
 func TestGameRuntimeGoldPickupOwnedByPartyMemberDeliversCurrencyToOwner(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

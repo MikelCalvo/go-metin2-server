@@ -1751,18 +1751,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					sharedWorld.EnqueueToEntity(pickup.OwnerID, ownerFrames)
 					return [][]byte{itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}), collectorGetFrame}, true
 				}
-				if selectedPlayer.LiveGold() > uint64(math.MaxInt32)-uint64(pickup.GoldAmount) {
+				updatedGold, ok := selectedPlayer.AddLiveGold(uint64(pickup.GoldAmount))
+				if !ok {
 					return nil, false
 				}
-				selectedPlayer.SetLiveGold(selectedPlayer.LiveGold() + uint64(pickup.GoldAmount))
-				updatedSelected := selectedPlayer.LiveCharacter()
 				getFrame, err := encodeBootstrapItemGetFrame(pickup.Item)
 				if err != nil {
 					return nil, false
 				}
 				frames := [][]byte{
 					itemproto.EncodeGroundDel(itemproto.GroundDelPacket{VID: vid}),
-					worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{VID: previousSelected.VID, Type: bootstrapGoldPointType, Amount: int32(pickup.GoldAmount), Value: int32(updatedSelected.Gold)}),
+					worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{VID: previousSelected.VID, Type: bootstrapGoldPointType, Amount: int32(pickup.GoldAmount), Value: int32(updatedGold)}),
 					getFrame,
 				}
 				frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
