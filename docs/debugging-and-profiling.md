@@ -130,6 +130,19 @@ Player snapshots in the same preview now also expose `dead: true` while a still-
 - the same player `dead: true` flag is preserved in transfer results while a still-connected owner remains at that retaliation-owned `0`-HP floor
 - if that same dead owner is moved into another live peer's visible world or into visibility of another static actor through this loopback path, live peers still receive the ordinary queued peer-entry burst plus trailing `GC DEAD(owner_vid)` for that owner, while the dead owner itself now skips both the queued destination peer-entry burst and any queued destination static-actor bootstrap burst and keeps only any old-world cleanup frames still needed locally
 
+### `GET /local/runtime-config`
+
+Returns a loopback-only JSON snapshot of the active `gamed` bootstrap runtime policy, so operators can verify the visibility/AOI mode the daemon actually booted with instead of inferring it from environment variables.
+
+Current fields:
+
+- `local_channel_id`
+- `visibility_mode` (`whole_map`, `radius`, or `custom` for future non-standard policies)
+- `visibility_radius`
+- `visibility_sector_size`
+
+`whole_map` remains the default bootstrap behavior and reports zero radius/sector values. `radius` reports the configured runtime AOI radius and sector size from the active topology policy.
+
 ### `GET /local/players`
 
 Returns a JSON snapshot of the currently connected bootstrap characters, sorted by name.

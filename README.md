@@ -52,7 +52,7 @@ Legend used below:
   - Target selection, normal attack ingress, cadence gates, runtime HP, dead-state rejection, delayed respawn, aggro-lite engagement ownership, retaliation, player death floor, restart-here/restart-town bootstrap recovery, deterministic EXP/gold rewards, and fixed drop-vnum reward seams exist for practice mobs. Real combat formulas, skills, PvP, mob AI, chase/leash/return, loot tables, and full revive choreography are not compatibility-grade yet.
 
 - `[~]` **M6 — Operations and developer workflow**
-  - The project has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime/config/player/visibility/map/content endpoints, and development/testing/debugging docs. It still needs release/versioning policy, production deployment docs, migrations, backups, admin tooling, and multi-channel ops maturity.
+  - The project has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime-config/player/visibility/map/content endpoints, and development/testing/debugging docs. The runtime-config endpoint exposes the active bootstrap visibility/AOI policy (`whole_map` vs `radius`) so local QA can inspect daemon state without reading environment variables. It still needs release/versioning policy, production deployment docs, migrations, backups, admin tooling, and multi-channel ops maturity.
 
 - `[ ]` **M7 — Legacy parity / production server**
   - Not started as a claim. The current goal is to keep landing small verified compatibility slices until the server can support a narrow playable vertical, then broaden toward legacy-grade systems.
