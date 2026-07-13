@@ -322,11 +322,12 @@ Expected result:
 - [ ] Confirm the template's authored `equip_slot` matches the destination equipment cell, has no selected-character job/sex anti-flag, and is not guarded with `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`
 - [ ] Drag the carried item into its matching equipment cell
 - [ ] Repeat with the same item shape but a selected-character job/sex anti-flag that should reject the character
+- [ ] Repeat with authored metadata whose `equip_slot` or `vnum` does not match the carried item/destination cell
 - [ ] Repeat with otherwise matching equipment metadata guarded by one of `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`
 
 Expected result:
 - allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, deletes item quickslots bound to the cleared carried source cell, leaves unrelated skill/command quickslots with the same byte slot value unchanged, and applies the template-authored `equip_effect` point change when present
-- selected-character anti-flagged or transfer-guarded equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
+- selected-character anti-flagged, mismatched-`vnum`, mismatched-slot, or transfer-guarded equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
 - equipment whose template-authored `equip_effect` point delta would overflow the bootstrap signed 32-bit point value also fails closed before item, quickslot, point, or persistence mutation
 
 ### 4.5.9 Merchant buy/sell template restrictions (`SHOP BUY` / `SHOP SELL2`)

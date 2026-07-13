@@ -947,6 +947,64 @@ func TestGameRuntimeItemMoveEquipRejectsMissingTemplateWithoutMutation(t *testin
 	}
 }
 
+func TestGameRuntimeItemMoveEquipRejectsMismatchedTemplateVnumWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      11501,
+		Name:      "Mismatched Test Armor",
+		Stackable: false,
+		MaxCount:  1,
+		EquipSlot: inventory.EquipmentSlotBody.String(),
+	}}}); err != nil {
+		t.Fatalf("seed mismatched equip template: %v", err)
+	}
+	owner := peerVisibilityCharacter("MismatchedEquipOwner", 0x01030254, 0x02040254, 1300, 2300, 2, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 5401, Vnum: 11500, Count: 1, Slot: 5}}
+	owner.Equipment = nil
+	owner.Points[1] = 750
+	issuePeerTicket(t, ticketStore, "mismatched-equip-owner", 0x54535353, owner)
+	if err := accounts.Save(accountstore.Account{Login: "mismatched-equip-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed mismatched-template equip owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected mismatched-template equip runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "mismatched-equip-owner", 0x54535353)
+	defer closeSessionFlow(t, flow)
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: bodyPosition,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected mismatched-template equip error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected mismatched-template equip to emit no frames, got %d", len(out))
+	}
+	account, err := accounts.Load("mismatched-equip-owner")
+	if err != nil {
+		t.Fatalf("load mismatched-template equip owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("mismatched-template equip mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+	if len(account.Characters[0].Equipment) != 0 {
+		t.Fatalf("mismatched-template equip mutated persisted equipment: got %#v", account.Characters[0].Equipment)
+	}
+	if account.Characters[0].Points[1] != owner.Points[1] {
+		t.Fatalf("mismatched-template equip mutated persisted point: got %d want %d", account.Characters[0].Points[1], owner.Points[1])
+	}
+}
+
 func TestGameRuntimeItemMoveEquipAppliesTemplateEffectWhenAllowed(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

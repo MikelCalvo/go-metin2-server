@@ -2316,6 +2316,26 @@ func TestRuntimeEquipItemWithTemplateRejectsMismatchedAuthoredSlotWithoutMutatin
 	}
 }
 
+func TestRuntimeEquipItemWithTemplateRejectsMismatchedTemplateVnumWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "TemplateGuard",
+		Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 8}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "template-guard", CharacterIndex: 0})
+	template := itemcatalog.Template{Vnum: 0x55667788, Name: "Different Practice Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+
+	if _, ok := runtime.EquipItemWithTemplate(8, inventory.EquipmentSlotBody, template); ok {
+		t.Fatal("expected mismatched template vnum to reject equip")
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, character.Inventory) {
+		t.Fatalf("expected inventory unchanged after mismatched-vnum template equip, got %#v want %#v", got, character.Inventory)
+	}
+	if got := runtime.LiveEquipment(); len(got) != 0 {
+		t.Fatalf("expected no live equipment after mismatched-vnum template equip, got %#v", got)
+	}
+}
+
 func TestRuntimeEquipItemWithTemplateAcceptsMatchingAuthoredSlot(t *testing.T) {
 	character := loginticket.Character{
 		ID:        1,
