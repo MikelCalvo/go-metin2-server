@@ -11,6 +11,37 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
+func TestRuntimeSyncItemQuickslotsForItemRemovalDeletesAllMatchingItemSlotsOnly(t *testing.T) {
+	character := loginticket.Character{Quickslots: []loginticket.Quickslot{
+		{Position: 1, Type: quickslotproto.TypeCommand, Slot: 5},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 5, Type: quickslotproto.TypeItem, Slot: 5},
+	}}
+	runtime := NewRuntime(character, SessionLink{Login: "quickslot-removal"})
+
+	deleted, ok := runtime.SyncItemQuickslotsForItemRemoval(5)
+	if !ok {
+		t.Fatalf("expected quickslot removal sync to accept carried slot")
+	}
+	wantDeleted := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 5, Type: quickslotproto.TypeItem, Slot: 5},
+	}
+	if !reflect.DeepEqual(deleted, wantDeleted) {
+		t.Fatalf("unexpected deleted quickslots: got %+v want %+v", deleted, wantDeleted)
+	}
+	wantLive := []loginticket.Quickslot{
+		{Position: 1, Type: quickslotproto.TypeCommand, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, wantLive) {
+		t.Fatalf("unexpected live quickslots after item removal sync: got %+v want %+v", got, wantLive)
+	}
+}
+
 func TestRuntimeSeparatesLivePositionFromPersistedSnapshot(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:       0x01030102,
