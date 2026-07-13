@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -335,7 +336,11 @@ func TestCanonicalizeAppliesRegisteredProfileRewardDefaultsToSpawnGroupWithoutRe
 	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
 		MaxHP:                 24,
 		DamagePerNormalAttack: 3,
-		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		AttackValue:           7,
+		DefenseValue:          4,
+		Level:                 9,
+		Rank:                  2,
+		RespawnDelay:          1500 * time.Millisecond,
 		DeathReward:           worldruntime.StaticActorDeathReward{Experience: 15, Gold: 10, DropVnums: []uint32{27002, 27001}},
 	}) {
 		t.Fatalf("expected registered reward-default profile %q", profile)
@@ -354,18 +359,31 @@ func TestCanonicalizeAppliesRegisteredProfileRewardDefaultsToSpawnGroupWithoutRe
 	if err != nil {
 		t.Fatalf("canonicalize reward-default spawn group: %v", err)
 	}
-	want := Bundle{SpawnGroups: []SpawnGroup{{
-		Ref:              "practice.mob_alpha",
-		Name:             "Practice Mob Alpha",
-		MapIndex:         42,
-		X:                1775,
-		Y:                2875,
-		RaceNum:          101,
-		CombatProfile:    profile,
-		RewardExperience: 15,
-		RewardGold:       10,
-		RewardDropVnums:  []uint32{27001, 27002},
-	}}}
+	want := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.mob_alpha",
+			Name:             "Practice Mob Alpha",
+			MapIndex:         42,
+			X:                1775,
+			Y:                2875,
+			RaceNum:          101,
+			CombatProfile:    profile,
+			RewardExperience: 15,
+			RewardGold:       10,
+			RewardDropVnums:  []uint32{27001, 27002},
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 3,
+			AttackValue:           7,
+			DefenseValue:          4,
+			Level:                 9,
+			Rank:                  2,
+			RespawnDelayMs:        1500,
+			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 15, Gold: 10, DropVnums: []uint32{27001, 27002}},
+		}},
+	}
 	if !reflect.DeepEqual(bundle, want) {
 		t.Fatalf("unexpected canonical reward-default spawn group:\n got: %#v\nwant: %#v", bundle, want)
 	}
@@ -437,18 +455,31 @@ func TestCanonicalizeAcceptsRegisteredSpawnGroupCombatProfile(t *testing.T) {
 		t.Fatalf("expected spawn group using registered combat profile to canonicalize, got %v", err)
 	}
 
-	want := Bundle{SpawnGroups: []SpawnGroup{{
-		Ref:              "practice.bundle_wolf",
-		Name:             "Practice Bundle Wolf",
-		MapIndex:         42,
-		X:                1775,
-		Y:                2875,
-		RaceNum:          101,
-		CombatProfile:    profile,
-		RewardExperience: 75,
-		RewardGold:       60,
-		RewardDropVnums:  []uint32{27001, 27002},
-	}}}
+	want := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.bundle_wolf",
+			Name:             "Practice Bundle Wolf",
+			MapIndex:         42,
+			X:                1775,
+			Y:                2875,
+			RaceNum:          101,
+			CombatProfile:    profile,
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  []uint32{27001, 27002},
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			AttackValue:           8,
+			DefenseValue:          3,
+			Level:                 7,
+			Rank:                  2,
+			RespawnDelayMs:        2000,
+			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 25, Gold: 11, DropVnums: []uint32{27001, 27002}},
+		}},
+	}
 	if !reflect.DeepEqual(bundle, want) {
 		t.Fatalf("unexpected canonical registered-profile spawn group:\n got: %#v\nwant: %#v", bundle, want)
 	}

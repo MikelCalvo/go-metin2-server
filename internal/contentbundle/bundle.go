@@ -37,9 +37,10 @@ type SpawnGroup struct {
 }
 
 type Bundle struct {
-	StaticActors           []StaticActor                 `json:"static_actors"`
-	SpawnGroups            []SpawnGroup                  `json:"spawn_groups,omitempty"`
-	InteractionDefinitions []interactionstore.Definition `json:"interaction_definitions"`
+	StaticActors           []StaticActor                                   `json:"static_actors"`
+	SpawnGroups            []SpawnGroup                                    `json:"spawn_groups,omitempty"`
+	CombatProfiles         []worldruntime.StaticActorCombatProfileSnapshot `json:"combat_profiles,omitempty"`
+	InteractionDefinitions []interactionstore.Definition                   `json:"interaction_definitions"`
 }
 
 func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot) (Bundle, error) {
@@ -77,9 +78,11 @@ func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionst
 }
 
 func Canonicalize(bundle Bundle) (Bundle, error) {
+	normalizedSpawnGroups := normalizeSpawnGroups(bundle.SpawnGroups)
 	normalized := Bundle{
 		StaticActors:           normalizeStaticActors(bundle.StaticActors),
-		SpawnGroups:            normalizeSpawnGroups(bundle.SpawnGroups),
+		SpawnGroups:            normalizedSpawnGroups,
+		CombatProfiles:         combatProfilesForSpawnGroups(normalizedSpawnGroups),
 		InteractionDefinitions: cloneDefinitions(bundle.InteractionDefinitions),
 	}
 	sort.Slice(normalized.StaticActors, func(i int, j int) bool {
@@ -239,6 +242,42 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
 		normalized[i] = spawnGroup
 	}
 	return normalized
+}
+
+func combatProfilesForSpawnGroups(spawnGroups []SpawnGroup) []worldruntime.StaticActorCombatProfileSnapshot {
+	if len(spawnGroups) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	profiles := make([]worldruntime.StaticActorCombatProfileSnapshot, 0)
+	for _, spawnGroup := range spawnGroups {
+		profile := strings.TrimSpace(spawnGroup.CombatProfile)
+		if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
+			continue
+		}
+		if _, ok := seen[profile]; ok {
+			continue
+		}
+		var found bool
+		for _, snapshot := range worldruntime.StaticActorCombatProfileSnapshots() {
+			if snapshot.Profile == profile {
+				profiles = append(profiles, snapshot)
+				seen[profile] = struct{}{}
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+	}
+	sort.Slice(profiles, func(i int, j int) bool {
+		return profiles[i].Profile < profiles[j].Profile
+	})
+	if len(profiles) == 0 {
+		return nil
+	}
+	return profiles
 }
 
 func cloneUint32s(values []uint32) []uint32 {
