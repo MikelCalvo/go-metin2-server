@@ -549,7 +549,20 @@ Expected result:
 - skill quickslot add requests outside slots `0..199` and command quickslot add requests outside slots `0..59` fail closed with no frame and no persisted quickslot mutation
 - automatic item-mutation quickslot synchronization is now owned for the current bootstrap paths: item moves retarget/delete item quickslots, while last-stack item consume or full-source drag-to-item consolidation deletes item quickslots that referenced the removed carried cell and leaves skill/command quickslots unchanged
 
-### 5.7.2 Drag-to-item carried-stack merge
+### 5.7.3 Template-backed item anti-flag display
+
+Run this only when the QA character can enter with one carried or equipped item whose template carries currently owned anti-flag metadata (`anti_drop`, `anti_give`, `anti_sell`, `anti_stack`, job flags, or sex flags).
+
+- [ ] Enter `GAME` and observe the selected-character item bootstrap
+- [ ] Confirm the affected `ITEM_SET` frame carries the matching `anti_flags` bits instead of `0`
+- [ ] Mutate the item through an owned full-slot `ITEM_MOVE`, equip, unequip, merchant buy, or accepted pickup path that emits `ITEM_SET`
+- [ ] Confirm the refreshed `ITEM_SET` still carries anti-flags from the item template
+
+Expected result:
+- client-visible occupied-slot `ITEM_SET` frames are backed by authored template anti-flag metadata for the currently owned flag subset
+- unowned anti-flag bits remain zero until the matching template metadata/runtime behavior is owned
+
+### 5.7.4 Drag-to-item carried-stack merge
 
 Run this only when the QA character has two compatible carried stacks for the same stackable template (current bootstrap seed: `27001`).
 

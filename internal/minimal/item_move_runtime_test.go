@@ -34,7 +34,7 @@ func TestGameRuntimeItemMoveRetargetsSourceItemQuickslotAndDeletesStaleDestinati
 	if err := accounts.Save(accountstore.Account{Login: "move-quickslot-retarget", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed quickslot-retarget item-move account: %v", err)
 	}
-	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Retarget Stack Potion", Stackable: true, MaxCount: 200}})
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Retarget Stack Potion", Stackable: true, MaxCount: 200, AntiFemale: true, AntiAssassin: true}})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected quickslot-retarget item-move runtime error: %v", err)
@@ -67,6 +67,10 @@ func TestGameRuntimeItemMoveRetargetsSourceItemQuickslotAndDeletesStaleDestinati
 	if itemSet.Position != itemproto.InventoryPosition(6) || itemSet.Vnum != 27001 || itemSet.Count != 3 {
 		t.Fatalf("unexpected item set frame: %+v", itemSet)
 	}
+	wantMoveAntiFlags := itemproto.AntiFlagFemale | itemproto.AntiFlagAssassin
+	if itemSet.AntiFlags != wantMoveAntiFlags {
+		t.Fatalf("expected moved item set anti flags %#x, got %#x", wantMoveAntiFlags, itemSet.AntiFlags)
+	}
 	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {
 		t.Fatalf("decode quickslot delete frame: %v", err)
@@ -95,6 +99,61 @@ func TestGameRuntimeItemMoveRetargetsSourceItemQuickslotAndDeletesStaleDestinati
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
 		t.Fatalf("unexpected persisted quickslots after quickslot-retarget item move: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
+func TestGameRuntimeItemBootstrapFramesCarryTemplateAntiFlags(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AntiFlagBootstrap", 0x0103069a, 0x0204069a, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 6601, Vnum: 27091, Count: 3, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{{ID: 6602, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	issuePeerTicket(t, ticketStore, "antiflag-bootstrap", 0x6060609a, owner)
+	if err := accounts.Save(accountstore.Account{Login: "antiflag-bootstrap", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed anti-flag bootstrap account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27091, Name: "Bound Practice Potion", Stackable: true, MaxCount: 200, AntiDrop: true, AntiGive: true, AntiSell: true, AntiStack: true},
+		{Vnum: 11200, Name: "Warrior-Locked Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String(), AntiWarrior: true, AntiMale: true},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected anti-flag bootstrap runtime error: %v", err)
+	}
+
+	_, frames := enterGameWithLoginTicket(t, runtime.SessionFactory(), "antiflag-bootstrap", 0x6060609a)
+	var itemSets []itemproto.SetPacket
+	for _, raw := range frames {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != itemproto.HeaderSet {
+			continue
+		}
+		packet, err := itemproto.DecodeSet(frame)
+		if err != nil {
+			t.Fatalf("decode bootstrap item set: %v", err)
+		}
+		itemSets = append(itemSets, packet)
+	}
+	if len(itemSets) != 2 {
+		t.Fatalf("expected inventory and equipment item bootstrap sets, got %d", len(itemSets))
+	}
+	if itemSets[0].Position != itemproto.InventoryPosition(5) || itemSets[0].Vnum != 27091 {
+		t.Fatalf("unexpected carried bootstrap item set: %+v", itemSets[0])
+	}
+	wantCarriedAntiFlags := itemproto.AntiFlagDrop | itemproto.AntiFlagGive | itemproto.AntiFlagSell | itemproto.AntiFlagStack
+	if itemSets[0].AntiFlags != wantCarriedAntiFlags {
+		t.Fatalf("expected carried item anti flags %#x, got %#x", wantCarriedAntiFlags, itemSets[0].AntiFlags)
+	}
+	weaponPosition, err := itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("build weapon position: %v", err)
+	}
+	if itemSets[1].Position != weaponPosition || itemSets[1].Vnum != 11200 {
+		t.Fatalf("unexpected equipment bootstrap item set: %+v", itemSets[1])
+	}
+	wantEquipmentAntiFlags := itemproto.AntiFlagWarrior | itemproto.AntiFlagMale
+	if itemSets[1].AntiFlags != wantEquipmentAntiFlags {
+		t.Fatalf("expected equipment item anti flags %#x, got %#x", wantEquipmentAntiFlags, itemSets[1].AntiFlags)
 	}
 }
 

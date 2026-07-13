@@ -1423,7 +1423,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
-			frames, err := merchantBuyResultFrames(buyResult, packetShopFrames)
+			frames, err := merchantBuyResultFrames(buyResult, packetShopFrames, runtime.itemTemplates)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -1575,7 +1575,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !moveResult.Changed {
 				return gameflow.ItemUseToItemResult{Accepted: true}
 			}
-			frames, err := inventoryMoveResultFrames(moveResult)
+			frames, err := inventoryMoveResultFrames(moveResult, runtime.itemTemplates)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -1804,7 +1804,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !collectorOK {
 						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 					}
-					collectorItemFrames, collectorOK := encodeBootstrapGroundPickupInventoryFrames(collectorResult)
+					collectorItemFrames, collectorOK := encodeBootstrapGroundPickupInventoryFrames(collectorResult, runtime.itemTemplates)
 					if !collectorOK {
 						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 						refreshLiveCharacterRegistration()
@@ -1827,7 +1827,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					return collectorFrames, true
 				}
-				itemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult)
+				itemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult, runtime.itemTemplates)
 				if !ok {
 					return nil, false
 				}
@@ -1893,7 +1893,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 			}
-			itemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult)
+			itemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult, runtime.itemTemplates)
 			if !ok {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -2053,7 +2053,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if err != nil {
 						return worldentry.EnterGameResult{Rejected: true}
 					}
-					itemBootstrapFrames, err := buildSelectedItemBootstrapFrames(selected)
+					itemBootstrapFrames, err := buildSelectedItemBootstrapFrames(selected, runtime.itemTemplates)
 					if err != nil {
 						return worldentry.EnterGameResult{Rejected: true}
 					}
@@ -2175,7 +2175,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !moveResult.Changed {
 							return gameflow.ChatResult{Accepted: true}
 						}
-						frames, err := inventoryMoveResultFrames(moveResult)
+						frames, err := inventoryMoveResultFrames(moveResult, runtime.itemTemplates)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
@@ -2211,7 +2211,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							pointChange = &result
 						}
-						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), fromSlot, equippedItem, pointChange)
+						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), fromSlot, equippedItem, pointChange, runtime.itemTemplates)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
@@ -2256,7 +2256,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							pointChange = &result
 						}
-						frames, err := unequipResultFrames(selectedPlayer.LiveCharacter(), equipSlot, inventoryItem, pointChange)
+						frames, err := unequipResultFrames(selectedPlayer.LiveCharacter(), equipSlot, inventoryItem, pointChange, runtime.itemTemplates)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
@@ -2532,7 +2532,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							pointChange = &result
 						}
-						frames, err := unequipResultFrames(selectedPlayer.LiveCharacter(), equipSlot, inventoryItem, pointChange)
+						frames, err := unequipResultFrames(selectedPlayer.LiveCharacter(), equipSlot, inventoryItem, pointChange, runtime.itemTemplates)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
@@ -2573,7 +2573,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							pointChange = &result
 						}
 						fromSlot := inventory.SlotIndex(packet.Source.Cell)
-						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), fromSlot, equippedItem, pointChange)
+						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), fromSlot, equippedItem, pointChange, runtime.itemTemplates)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 							refreshLiveCharacterRegistration()
@@ -2645,7 +2645,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !moveResult.Changed {
 						return gameflow.ItemMoveResult{Accepted: true}
 					}
-					frames, err := inventoryMoveResultFrames(moveResult)
+					frames, err := inventoryMoveResultFrames(moveResult, runtime.itemTemplates)
 					if err != nil {
 						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 						refreshLiveCharacterRegistration()
@@ -3596,7 +3596,7 @@ func ticketPlayerPointChangePacket(character loginticket.Character) worldproto.P
 	}
 }
 
-func buildSelectedItemBootstrapFrames(character loginticket.Character) ([][]byte, error) {
+func buildSelectedItemBootstrapFrames(character loginticket.Character, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
 	if len(character.Inventory) == 0 && len(character.Equipment) == 0 {
 		return nil, nil
 	}
@@ -3607,7 +3607,7 @@ func buildSelectedItemBootstrapFrames(character loginticket.Character) ([][]byte
 		return carried[i].Slot < carried[j].Slot
 	})
 	for _, instance := range carried {
-		raw, err := encodeBootstrapInventoryItemFrame(instance)
+		raw, err := encodeBootstrapInventoryItemFrameWithTemplates(instance, templates)
 		if err != nil {
 			return nil, err
 		}
@@ -3623,7 +3623,7 @@ func buildSelectedItemBootstrapFrames(character loginticket.Character) ([][]byte
 		return leftPosition.Cell < rightPosition.Cell
 	})
 	for _, instance := range equipped {
-		raw, err := encodeBootstrapEquipmentItemFrame(instance)
+		raw, err := encodeBootstrapEquipmentItemFrameWithTemplates(instance, templates)
 		if err != nil {
 			return nil, err
 		}
@@ -3691,7 +3691,7 @@ func itemRemovalQuickslotSyncFrames(selectedPlayer *player.Runtime, slot invento
 	return frames, true
 }
 
-func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
+func inventoryMoveResultFrames(result inventory.MoveResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
 	if !result.Changed {
 		return nil, nil
 	}
@@ -3716,7 +3716,7 @@ func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
 		return frames, nil
 	}
 	if result.FromOccupied {
-		frame, err := encodeBootstrapInventoryItemFrame(result.FromItem)
+		frame, err := encodeBootstrapInventoryItemFrameWithTemplates(result.FromItem, templates)
 		if err != nil {
 			return nil, err
 		}
@@ -3725,7 +3725,7 @@ func inventoryMoveResultFrames(result inventory.MoveResult) ([][]byte, error) {
 		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(uint16(result.From))}))
 	}
 	if result.ToOccupied {
-		frame, err := encodeBootstrapInventoryItemFrame(result.ToItem)
+		frame, err := encodeBootstrapInventoryItemFrameWithTemplates(result.ToItem, templates)
 		if err != nil {
 			return nil, err
 		}
@@ -3742,8 +3742,8 @@ func encodeInventoryItemUpdateFrame(item inventory.ItemInstance) ([]byte, error)
 	return itemproto.EncodeUpdate(itemproto.UpdatePacket{Position: position, Count: uint8(item.Count)}), nil
 }
 
-func equipResultFrames(character loginticket.Character, from inventory.SlotIndex, equippedItem inventory.ItemInstance, pointChange *player.PointChangeResult) ([][]byte, error) {
-	setFrame, err := encodeBootstrapEquipmentItemFrame(equippedItem)
+func equipResultFrames(character loginticket.Character, from inventory.SlotIndex, equippedItem inventory.ItemInstance, pointChange *player.PointChangeResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
+	setFrame, err := encodeBootstrapEquipmentItemFrameWithTemplates(equippedItem, templates)
 	if err != nil {
 		return nil, err
 	}
@@ -3759,12 +3759,12 @@ func equipResultFrames(character loginticket.Character, from inventory.SlotIndex
 	return frames, nil
 }
 
-func unequipResultFrames(character loginticket.Character, from inventory.EquipmentSlot, inventoryItem inventory.ItemInstance, pointChange *player.PointChangeResult) ([][]byte, error) {
+func unequipResultFrames(character loginticket.Character, from inventory.EquipmentSlot, inventoryItem inventory.ItemInstance, pointChange *player.PointChangeResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
 	position, ok := equipmentBootstrapPosition(from)
 	if !ok {
 		return nil, fmt.Errorf("bootstrap equipment slot unsupported: %s", from.String())
 	}
-	setFrame, err := encodeBootstrapInventoryItemFrame(inventoryItem)
+	setFrame, err := encodeBootstrapInventoryItemFrameWithTemplates(inventoryItem, templates)
 	if err != nil {
 		return nil, err
 	}
@@ -3844,7 +3844,7 @@ func encodePlayerPointChangeFrame(vid uint32, result player.PointChangeResult) [
 	})
 }
 
-func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames bool) ([][]byte, error) {
+func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames bool, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
 	changes := result.ItemChanges
 	if len(changes) == 0 && len(result.Items) != 0 {
 		changes = make([]player.MerchantBuyItemChange, 0, len(result.Items))
@@ -3855,7 +3855,7 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 	frames := make([][]byte, 0, len(changes)+1)
 	for _, change := range changes {
 		if change.Created {
-			setFrame, err := encodeBootstrapInventoryItemFrame(change.Item)
+			setFrame, err := encodeBootstrapInventoryItemFrameWithTemplates(change.Item, templates)
 			if err != nil {
 				return nil, err
 			}
@@ -4077,6 +4077,10 @@ func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition) 
 }
 
 func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte, error) {
+	return encodeBootstrapInventoryItemFrameWithTemplates(instance, nil)
+}
+
+func encodeBootstrapInventoryItemFrameWithTemplates(instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {
 	if err := instance.Validate(); err != nil {
 		return nil, err
 	}
@@ -4087,10 +4091,14 @@ func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte,
 	if err != nil {
 		return nil, fmt.Errorf("bootstrap inventory slot out of range: %d", instance.Slot)
 	}
-	return encodeBootstrapItemFrame(position, instance)
+	return encodeBootstrapItemFrameWithTemplates(position, instance, templates)
 }
 
 func encodeBootstrapEquipmentItemFrame(instance inventory.ItemInstance) ([]byte, error) {
+	return encodeBootstrapEquipmentItemFrameWithTemplates(instance, nil)
+}
+
+func encodeBootstrapEquipmentItemFrameWithTemplates(instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {
 	if err := instance.Validate(); err != nil {
 		return nil, err
 	}
@@ -4101,10 +4109,10 @@ func encodeBootstrapEquipmentItemFrame(instance inventory.ItemInstance) ([]byte,
 	if !ok {
 		return nil, fmt.Errorf("bootstrap equipment slot unsupported: %s", instance.EquipSlot.String())
 	}
-	return encodeBootstrapItemFrame(position, instance)
+	return encodeBootstrapItemFrameWithTemplates(position, instance, templates)
 }
 
-func encodeBootstrapGroundPickupInventoryFrames(result player.GroundItemPickupResult) ([][]byte, bool) {
+func encodeBootstrapGroundPickupInventoryFrames(result player.GroundItemPickupResult, templates map[uint32]itemcatalog.Template) ([][]byte, bool) {
 	frames := make([][]byte, 0, len(result.UpdatedItems)+1)
 	if result.Merged {
 		frame, ok := encodeBootstrapGroundPickupUpdateFrame(result.Updated)
@@ -4122,7 +4130,7 @@ func encodeBootstrapGroundPickupInventoryFrames(result player.GroundItemPickupRe
 		}
 	}
 	if result.Placed.ID != 0 {
-		frame, ok := encodeBootstrapGroundPickupSetFrame(result.Placed)
+		frame, ok := encodeBootstrapGroundPickupSetFrame(result.Placed, templates)
 		if !ok {
 			return nil, false
 		}
@@ -4131,12 +4139,12 @@ func encodeBootstrapGroundPickupInventoryFrames(result player.GroundItemPickupRe
 	return frames, len(frames) > 0
 }
 
-func encodeBootstrapGroundPickupSetFrame(instance inventory.ItemInstance) ([]byte, bool) {
+func encodeBootstrapGroundPickupSetFrame(instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, bool) {
 	position, err := itemproto.CarriedInventoryPosition(uint16(instance.Slot))
 	if err != nil {
 		return nil, false
 	}
-	frame, err := encodeBootstrapItemFrame(position, instance)
+	frame, err := encodeBootstrapItemFrameWithTemplates(position, instance, templates)
 	if err != nil {
 		return nil, false
 	}
@@ -4156,14 +4164,55 @@ func encodeBootstrapGroundPickupUpdateFrame(instance inventory.ItemInstance) ([]
 }
 
 func encodeBootstrapItemFrame(position itemproto.Position, instance inventory.ItemInstance) ([]byte, error) {
+	return encodeBootstrapItemFrameWithTemplates(position, instance, nil)
+}
+
+func encodeBootstrapItemFrameWithTemplates(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {
 	if instance.Count > 255 {
 		return nil, fmt.Errorf("bootstrap item count exceeds legacy uint8: %d", instance.Count)
 	}
-	return itemproto.EncodeSet(itemproto.SetPacket{
-		Position: position,
-		Vnum:     instance.Vnum,
-		Count:    uint8(instance.Count),
-	}), nil
+	packet := itemproto.SetPacket{
+		Position:  position,
+		Vnum:      instance.Vnum,
+		Count:     uint8(instance.Count),
+		AntiFlags: bootstrapItemAntiFlags(templates[instance.Vnum]),
+	}
+	return itemproto.EncodeSet(packet), nil
+}
+
+func bootstrapItemAntiFlags(template itemcatalog.Template) uint32 {
+	var flags uint32
+	if template.AntiFemale {
+		flags |= itemproto.AntiFlagFemale
+	}
+	if template.AntiMale {
+		flags |= itemproto.AntiFlagMale
+	}
+	if template.AntiWarrior {
+		flags |= itemproto.AntiFlagWarrior
+	}
+	if template.AntiAssassin {
+		flags |= itemproto.AntiFlagAssassin
+	}
+	if template.AntiSura {
+		flags |= itemproto.AntiFlagSura
+	}
+	if template.AntiShaman {
+		flags |= itemproto.AntiFlagShaman
+	}
+	if template.AntiDrop {
+		flags |= itemproto.AntiFlagDrop
+	}
+	if template.AntiSell {
+		flags |= itemproto.AntiFlagSell
+	}
+	if template.AntiGive {
+		flags |= itemproto.AntiFlagGive
+	}
+	if template.AntiStack {
+		flags |= itemproto.AntiFlagStack
+	}
+	return flags
 }
 
 func encodeBootstrapItemUpdateFrame(position itemproto.Position, instance inventory.ItemInstance) ([]byte, error) {

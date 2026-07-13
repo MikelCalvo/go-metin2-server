@@ -29,6 +29,18 @@ func loadHexFixture(t *testing.T, name string) []byte {
 	return decoded
 }
 
+func TestAntiFlagConstantsMatchLegacyBitPositions(t *testing.T) {
+	if AntiFlagFemale != 1<<0 || AntiFlagMale != 1<<1 || AntiFlagWarrior != 1<<2 || AntiFlagAssassin != 1<<3 || AntiFlagSura != 1<<4 || AntiFlagShaman != 1<<5 {
+		t.Fatalf("unexpected job/sex anti-flag bit positions")
+	}
+	if AntiFlagGet != 1<<6 || AntiFlagDrop != 1<<7 || AntiFlagSell != 1<<8 || AntiFlagGive != 1<<13 || AntiFlagStack != 1<<15 {
+		t.Fatalf("unexpected item transfer anti-flag bit positions")
+	}
+	if AntiFlagSafebox != 1<<17 {
+		t.Fatalf("unexpected safebox anti-flag bit position")
+	}
+}
+
 func TestEncodeSetBuildsAnInventoryFrame(t *testing.T) {
 	want := loadHexFixture(t, "item-set-inventory-frame.hex")
 	got := EncodeSet(sampleInventorySetPacket())

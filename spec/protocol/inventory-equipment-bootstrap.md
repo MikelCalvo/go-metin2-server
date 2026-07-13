@@ -186,7 +186,19 @@ For the current owned bootstrap surface:
   7. `sockets [3]int32`
   8. `attributes [7]` of `{type uint8, value int16}`
 
-Although the first logical item snapshot contract still does not assign gameplay meaning to sockets, attributes, or most legacy flag bits yet, the first codec carries them as opaque compatibility fields so later slices do not need to redraw the frame boundary.
+For current bootstrap `ITEM_SET` emissions, runtime-owned item-template anti-flags are projected into `anti_flags` so the client-visible slot refresh is backed by the same template metadata that gates use, movement, drop, pickup, and sell paths. The currently owned projections are:
+- `anti_female -> bit 0`
+- `anti_male -> bit 1`
+- `anti_warrior -> bit 2`
+- `anti_assassin -> bit 3`
+- `anti_sura -> bit 4`
+- `anti_shaman -> bit 5`
+- `anti_drop -> bit 7`
+- `anti_sell -> bit 8`
+- `anti_give -> bit 13`
+- `anti_stack -> bit 15`
+
+Although the first logical item snapshot contract still does not assign gameplay meaning to sockets, attributes, or most legacy flag bits yet, the first codec carries them as opaque compatibility fields so later slices do not need to redraw the frame boundary. Unowned anti-flag bits such as empire, save, pk-drop, myshop, and safebox remain zero until the corresponding template metadata and runtime behavior are owned.
 
 This docs-first contract therefore now freezes **names, ordering, scope, byte layout, and non-goals** for the first owned item bootstrap family.
 

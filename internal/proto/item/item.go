@@ -59,6 +59,27 @@ const (
 	GetArgDeliveredToPartyMember uint8 = 2
 )
 
+const (
+	AntiFlagFemale uint32 = 1 << iota
+	AntiFlagMale
+	AntiFlagWarrior
+	AntiFlagAssassin
+	AntiFlagSura
+	AntiFlagShaman
+	AntiFlagGet
+	AntiFlagDrop
+	AntiFlagSell
+	AntiFlagEmpireA
+	AntiFlagEmpireB
+	AntiFlagEmpireC
+	AntiFlagSave
+	AntiFlagGive
+	AntiFlagPKDrop
+	AntiFlagStack
+	AntiFlagMyShop
+	AntiFlagSafebox
+)
+
 var (
 	ErrUnexpectedHeader       = errors.New("unexpected item packet header")
 	ErrInvalidPayload         = errors.New("invalid item packet payload")
