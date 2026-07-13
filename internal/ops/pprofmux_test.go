@@ -650,6 +650,44 @@ func TestLocalStaticActorCombatProfileEndpointRegistersProfileForLoopbackPost(t 
 	}
 }
 
+func TestLocalStaticActorCombatProfileEndpointReturnsProfilesForLoopbackGet(t *testing.T) {
+	const profile = "ops_list_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  9,
+		DefenseValue: 4,
+		Level:        7,
+		Rank:         2,
+		RespawnDelay: worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:  worldruntime.StaticActorDeathReward{Experience: 30, Gold: 11, DropVnums: []uint32{27002, 27001}},
+	}) {
+		t.Fatalf("expected %q profile registration to succeed before list endpoint check", profile)
+	}
+
+	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-combat-profiles", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body %q", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	bodyText := rec.Body.String()
+	if !strings.Contains(bodyText, `"profile":"practice_mob"`) || !strings.Contains(bodyText, `"profile":"training_dummy"`) || !strings.Contains(bodyText, `"profile":"ops_list_wolf"`) {
+		t.Fatalf("expected built-in and registered profiles in JSON response body %q", bodyText)
+	}
+	if !strings.Contains(bodyText, `"damage_per_normal_attack":5`) || !strings.Contains(bodyText, `"respawn_delay_ms":2000`) || !strings.Contains(bodyText, `"DropVnums":[27001,27002]`) {
+		t.Fatalf("expected canonical profile defaults and normalized reward drops in JSON response body %q", bodyText)
+	}
+}
+
 func TestLocalStaticActorCombatProfileEndpointRejectsInvalidProfile(t *testing.T) {
 	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
 	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-combat-profiles", strings.NewReader(`{"profile":"practice_mob","max_hp":24,"attack_value":9,"respawn_delay_ms":1500}`))
@@ -678,7 +716,7 @@ func TestLocalStaticActorCombatProfileEndpointRejectsNonLoopbackRemoteAddr(t *te
 
 func TestLocalStaticActorCombatProfileEndpointRejectsWrongMethod(t *testing.T) {
 	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
-	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-combat-profiles", nil)
+	req := httptest.NewRequest(http.MethodPut, "/local/static-actor-combat-profiles", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 

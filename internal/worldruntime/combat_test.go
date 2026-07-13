@@ -244,6 +244,52 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 	}
 }
 
+func TestStaticActorCombatProfileDefaultSnapshotsReturnBuiltinsAndRegisteredProfilesSorted(t *testing.T) {
+	const profile = "practice_sorted_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 2,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+		DeathReward:  StaticActorDeathReward{DropVnums: []uint32{27002, 27001}},
+	}) {
+		t.Fatalf("expected %q profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	snapshots := StaticActorCombatProfileDefaultSnapshots()
+	if len(snapshots) < 3 {
+		t.Fatalf("expected at least built-in training/practice profiles plus registered profile, got %+v", snapshots)
+	}
+	last := ""
+	var foundTraining, foundPractice, foundRegistered bool
+	for _, snapshot := range snapshots {
+		if snapshot.Profile == "" {
+			t.Fatalf("expected snapshot profile name to be populated: %+v", snapshot)
+		}
+		if last != "" && snapshot.Profile < last {
+			t.Fatalf("expected deterministic profile ordering, got %q before %q in %+v", snapshot.Profile, last, snapshots)
+		}
+		last = snapshot.Profile
+		switch snapshot.Profile {
+		case StaticActorCombatProfileTrainingDummy:
+			foundTraining = snapshot.MaxHP == TrainingDummyBootstrapMaxHP
+		case StaticActorCombatProfilePracticeMob:
+			foundPractice = snapshot.MaxHP == PracticeMobBootstrapMaxHP
+		case profile:
+			foundRegistered = snapshot.MaxHP == 24 && len(snapshot.DeathReward.DropVnums) == 2 && snapshot.DeathReward.DropVnums[0] == 27001 && snapshot.DeathReward.DropVnums[1] == 27002
+			snapshot.DeathReward.DropVnums[0] = 99999
+		}
+	}
+	if !foundTraining || !foundPractice || !foundRegistered {
+		t.Fatalf("expected built-in and registered profiles in snapshots, got %+v", snapshots)
+	}
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok || len(defaults.DeathReward.DropVnums) != 2 || defaults.DeathReward.DropVnums[0] != 27001 || defaults.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("expected snapshot mutation not to affect registered profile defaults, got defaults=%+v ok=%v", defaults, ok)
+	}
+}
+
 func TestRegisterStaticActorCombatProfileCanonicalizesOmittedLevelToBootstrapDefault(t *testing.T) {
 	const profile = "practice_level_default_wolf"
 	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{

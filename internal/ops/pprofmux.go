@@ -65,6 +65,10 @@ type localStaticActorCombatProfileResponse struct {
 	DeathReward           worldruntime.StaticActorDeathReward `json:"death_reward"`
 }
 
+type localStaticActorCombatProfileListResponse struct {
+	Profiles []localStaticActorCombatProfileResponse `json:"profiles"`
+}
+
 type localInteractionDefinitionRequest struct {
 	Kind     string                                  `json:"kind"`
 	Ref      string                                  `json:"ref"`
@@ -343,35 +347,53 @@ func RegisterLocalStaticActorCombatProfileEndpoint(mux *http.ServeMux) *http.Ser
 		return mux
 	}
 	mux.HandleFunc("/local/static-actor-combat-profiles", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		profile, defaults, ok := decodeLocalStaticActorCombatProfileRequest(r)
-		if !ok || !worldruntime.RegisterStaticActorCombatProfile(profile, defaults) {
-			w.WriteHeader(http.StatusBadRequest)
-			return
+		switch r.Method {
+		case http.MethodGet:
+			snapshots := worldruntime.StaticActorCombatProfileDefaultSnapshots()
+			profiles := make([]localStaticActorCombatProfileResponse, 0, len(snapshots))
+			for _, snapshot := range snapshots {
+				profiles = append(profiles, localStaticActorCombatProfileResponse{
+					Profile:               snapshot.Profile,
+					MaxHP:                 snapshot.MaxHP,
+					DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
+					AttackValue:           snapshot.AttackValue,
+					DefenseValue:          snapshot.DefenseValue,
+					Level:                 snapshot.Level,
+					Rank:                  snapshot.Rank,
+					RespawnDelayMs:        snapshot.RespawnDelay.Milliseconds(),
+					DeathReward:           snapshot.DeathReward,
+				})
+			}
+			writeLocalJSONMutationResponse(w, localStaticActorCombatProfileListResponse{Profiles: profiles}, http.StatusOK)
+		case http.MethodPost:
+			profile, defaults, ok := decodeLocalStaticActorCombatProfileRequest(r)
+			if !ok || !worldruntime.RegisterStaticActorCombatProfile(profile, defaults) {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			registered, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+			if !ok {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			writeLocalJSONMutationResponse(w, localStaticActorCombatProfileResponse{
+				Profile:               profile,
+				MaxHP:                 registered.MaxHP,
+				DamagePerNormalAttack: registered.DamagePerNormalAttack,
+				AttackValue:           registered.AttackValue,
+				DefenseValue:          registered.DefenseValue,
+				Level:                 registered.Level,
+				Rank:                  registered.Rank,
+				RespawnDelayMs:        registered.RespawnDelay.Milliseconds(),
+				DeathReward:           registered.DeathReward,
+			}, http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
-		registered, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
-		if !ok {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		writeLocalJSONMutationResponse(w, localStaticActorCombatProfileResponse{
-			Profile:               profile,
-			MaxHP:                 registered.MaxHP,
-			DamagePerNormalAttack: registered.DamagePerNormalAttack,
-			AttackValue:           registered.AttackValue,
-			DefenseValue:          registered.DefenseValue,
-			Level:                 registered.Level,
-			Rank:                  registered.Rank,
-			RespawnDelayMs:        registered.RespawnDelay.Milliseconds(),
-			DeathReward:           registered.DeathReward,
-		}, http.StatusOK)
 	})
 	return mux
 }

@@ -67,11 +67,13 @@ Returns JSON describing the active bootstrap runtime selection. This endpoint is
 
 The default bootstrap runtime reports local channel `1` and whole-map visibility. When `gamed` is configured for radius AOI, this snapshot reports the active radius and sector-size values selected from the `METIN2_VISIBILITY_*` / `METIN2_GAMED_VISIBILITY_*` environment overrides.
 
-### `POST /local/static-actor-combat-profiles`
+### `GET` / `POST /local/static-actor-combat-profiles`
 
-Registers one process-local bootstrap static-actor combat profile for later static-actor or spawn-group authoring. This is loopback-only operator tooling, not gameplay protocol and not durable content storage.
+Lists and registers process-local bootstrap static-actor combat profiles for later static-actor or spawn-group authoring. This is loopback-only operator tooling, not gameplay protocol and not durable content storage.
 
-Request body JSON fields:
+`GET` returns a deterministic JSON list under `profiles`, including the built-in `practice_mob` and `training_dummy` profiles plus any registered process-local profiles. Each entry exposes the same canonical defaults returned by registration, including derived `damage_per_normal_attack`, formula fields, presentation fields, respawn delay, and cloned reward descriptors.
+
+`POST` request body JSON fields:
 
 - `profile` — lowercase snake-case profile name; built-in names and duplicates are rejected
 - `max_hp`
@@ -81,7 +83,7 @@ Request body JSON fields:
 - `respawn_delay_ms`
 - optional `death_reward` with `experience`, `gold`, and `drop_vnums`
 
-On success the endpoint returns the canonicalized profile defaults, including any derived `damage_per_normal_attack` and sorted reward drop vnums. Invalid JSON, unknown fields, invalid formulas, invalid reward descriptors, non-loopback callers, and non-`POST` methods fail closed.
+On success `POST` returns the canonicalized profile defaults, including any derived `damage_per_normal_attack` and sorted reward drop vnums. Invalid JSON, unknown fields, invalid formulas, invalid reward descriptors, non-loopback callers, and methods other than `GET` / `POST` fail closed.
 
 ### `POST /local/notice`
 

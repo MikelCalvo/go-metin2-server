@@ -124,6 +124,11 @@ type StaticActorCombatProfileDefaults struct {
 	DeathReward           StaticActorDeathReward
 }
 
+type StaticActorCombatProfileDefaultSnapshot struct {
+	Profile string
+	StaticActorCombatProfileDefaults
+}
+
 var staticActorCombatProfileRegistry = struct {
 	sync.RWMutex
 	profiles map[string]StaticActorCombatProfileDefaults
@@ -253,6 +258,31 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 		}
 		return cloneStaticActorCombatProfileDefaults(defaults), true
 	}
+}
+
+func StaticActorCombatProfileDefaultSnapshots() []StaticActorCombatProfileDefaultSnapshot {
+	snapshots := []StaticActorCombatProfileDefaultSnapshot{
+		{Profile: StaticActorCombatProfilePracticeMob},
+		{Profile: StaticActorCombatProfileTrainingDummy},
+	}
+	for index := range snapshots {
+		defaults, _ := BootstrapStaticActorCombatProfileDefaults(snapshots[index].Profile)
+		snapshots[index].StaticActorCombatProfileDefaults = defaults
+	}
+
+	staticActorCombatProfileRegistry.RLock()
+	for profile, defaults := range staticActorCombatProfileRegistry.profiles {
+		snapshots = append(snapshots, StaticActorCombatProfileDefaultSnapshot{
+			Profile:                          profile,
+			StaticActorCombatProfileDefaults: cloneStaticActorCombatProfileDefaults(defaults),
+		})
+	}
+	staticActorCombatProfileRegistry.RUnlock()
+
+	sort.Slice(snapshots, func(i int, j int) bool {
+		return snapshots[i].Profile < snapshots[j].Profile
+	})
+	return snapshots
 }
 
 func BootstrapStaticActorCurrentHP(combatKind string) (uint8, bool) {
