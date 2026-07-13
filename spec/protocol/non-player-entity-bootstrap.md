@@ -24,7 +24,7 @@ This contract applies only to:
 - runtime-owned in-place edits of those static actors across non-player directories and map indexes while preserving entity identity
 - optional interaction-ready metadata (`interaction_kind` / `interaction_ref`) persisted and exposed through those same bootstrap actor seams without claiming interaction behavior yet
 - operator/runtime map-occupancy and static-actor snapshots that can now surface those actors through `internal/worldruntime/scopes.go`, including resolved combat profile rank metadata for combat-profile actors
-- the first loopback-only operator seed/snapshot/update/remove surface used to create, inspect, edit, and delete those runtime actors on `gamed`
+- the first loopback-only operator seed/snapshot/update/remove surface used to create, inspect, edit, and delete those runtime actors on `gamed`, including optional `combat_profile` metadata for create/update paths that need to author combat-capable bootstrap actors without a content-bundle import
 - the first client-visible enter-game bootstrap burst for static actors that already share the entering player's visible world under the current bootstrap topology/AOI policy
 - the first live operator-seed visibility burst for newly created static actors that already share some connected player's visible world under those same bootstrap topology/AOI rules
 - the first live operator-delete visibility teardown for removing static actors that are currently visible to connected players under those same bootstrap topology/AOI rules

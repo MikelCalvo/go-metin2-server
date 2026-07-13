@@ -1185,6 +1185,31 @@ func TestLocalStaticActorsEndpointRegistersActorWithInteractionMetadataForLoopba
 	}
 }
 
+func TestLocalStaticActorsEndpointRegistersActorWithCombatProfileForLoopbackPost(t *testing.T) {
+	registrar := &stubStaticActorRegistrar{registered: true, actor: map[string]any{"entity_id": uint64(1), "name": "TrainingDummy", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20350), "combat_profile": "training_dummy"}}
+	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), nil, registrar.RegisterStaticActor)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors", strings.NewReader(`{"name":"TrainingDummy","map_index":42,"x":1700,"y":2800,"race_num":20350,"combat_profile":"training_dummy"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if registrar.calls != 1 || registrar.lastCombatProfile != "training_dummy" {
+		t.Fatalf("expected combat profile to reach static actor registrar, got %+v", registrar)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"combat_profile":"training_dummy"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
 func TestLocalStaticActorsEndpointRejectsInvalidSeedBody(t *testing.T) {
 	registrar := &stubStaticActorRegistrar{registered: true}
 	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), nil, registrar.RegisterStaticActor)
@@ -1274,6 +1299,31 @@ func TestLocalStaticActorUpdateEndpointUpdatesInteractionMetadataForLoopbackPatc
 		t.Fatalf("read response body: %v", err)
 	}
 	if !strings.Contains(string(body), `"interaction_kind":"info"`) || !strings.Contains(string(body), `"interaction_ref":"lore:merchant"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorUpdateEndpointUpdatesCombatProfileForLoopbackPatch(t *testing.T) {
+	updater := &stubStaticActorUpdater{updated: true, actor: map[string]any{"entity_id": uint64(7), "name": "TrainingDummy", "map_index": uint32(99), "x": int32(900), "y": int32(1200), "race_num": uint32(20350), "combat_profile": "training_dummy"}}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodPatch, "/local/static-actors/7", strings.NewReader(`{"name":"TrainingDummy","map_index":99,"x":900,"y":1200,"race_num":20350,"combat_profile":"training_dummy"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if updater.calls != 1 || updater.lastCombatProfile != "training_dummy" {
+		t.Fatalf("expected combat profile to reach static actor updater, got %+v", updater)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"combat_profile":"training_dummy"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
@@ -1528,9 +1578,10 @@ type stubStaticActorRegistrar struct {
 	lastRaceNum         uint32
 	lastInteractionKind string
 	lastInteractionRef  string
+	lastCombatProfile   string
 }
 
-func (r *stubStaticActorRegistrar) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (any, bool) {
+func (r *stubStaticActorRegistrar) RegisterStaticActor(name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string) (any, bool) {
 	r.calls++
 	r.lastName = name
 	r.lastMapIndex = mapIndex
@@ -1539,6 +1590,7 @@ func (r *stubStaticActorRegistrar) RegisterStaticActor(name string, mapIndex uin
 	r.lastRaceNum = raceNum
 	r.lastInteractionKind = interactionKind
 	r.lastInteractionRef = interactionRef
+	r.lastCombatProfile = combatProfile
 	return r.actor, r.registered
 }
 
@@ -1554,9 +1606,10 @@ type stubStaticActorUpdater struct {
 	lastRaceNum         uint32
 	lastInteractionKind string
 	lastInteractionRef  string
+	lastCombatProfile   string
 }
 
-func (r *stubStaticActorUpdater) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string) (any, bool) {
+func (r *stubStaticActorUpdater) UpdateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string) (any, bool) {
 	r.calls++
 	r.lastEntityID = entityID
 	r.lastName = name
@@ -1566,6 +1619,7 @@ func (r *stubStaticActorUpdater) UpdateStaticActor(entityID uint64, name string,
 	r.lastRaceNum = raceNum
 	r.lastInteractionKind = interactionKind
 	r.lastInteractionRef = interactionRef
+	r.lastCombatProfile = combatProfile
 	return r.actor, r.updated
 }
 

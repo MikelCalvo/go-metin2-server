@@ -30,6 +30,7 @@ type localStaticActorRequest struct {
 	RaceNum         uint32 `json:"race_num"`
 	InteractionKind string `json:"interaction_kind"`
 	InteractionRef  string `json:"interaction_ref"`
+	CombatProfile   string `json:"combat_profile"`
 }
 
 type localInteractionDefinitionRequest struct {
@@ -192,7 +193,7 @@ func registerLocalNamedSnapshotEndpoint(mux *http.ServeMux, pattern string, pref
 	return mux
 }
 
-func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() any, registerStaticActor func(string, uint32, int32, int32, uint32, string, string) (any, bool)) *http.ServeMux {
+func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() any, registerStaticActor func(string, uint32, int32, int32, uint32, string, string, string) (any, bool)) *http.ServeMux {
 	if mux == nil || (staticActors == nil && registerStaticActor == nil) {
 		return mux
 	}
@@ -226,7 +227,7 @@ func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() a
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			actor, ok := registerStaticActor(request.Name, request.MapIndex, request.X, request.Y, request.RaceNum, request.InteractionKind, request.InteractionRef)
+			actor, ok := registerStaticActor(request.Name, request.MapIndex, request.X, request.Y, request.RaceNum, request.InteractionKind, request.InteractionRef, request.CombatProfile)
 			if !ok {
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -270,7 +271,7 @@ func RegisterLocalStaticActorDeleteEndpoint(mux *http.ServeMux, removeStaticActo
 	return mux
 }
 
-func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActor func(uint64, string, uint32, int32, int32, uint32, string, string) (any, bool)) *http.ServeMux {
+func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActor func(uint64, string, uint32, int32, int32, uint32, string, string, string) (any, bool)) *http.ServeMux {
 	if mux == nil || updateStaticActor == nil {
 		return mux
 	}
@@ -290,7 +291,7 @@ func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActo
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		actor, ok := updateStaticActor(entityID, request.Name, request.MapIndex, request.X, request.Y, request.RaceNum, request.InteractionKind, request.InteractionRef)
+		actor, ok := updateStaticActor(entityID, request.Name, request.MapIndex, request.X, request.Y, request.RaceNum, request.InteractionKind, request.InteractionRef, request.CombatProfile)
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
