@@ -176,8 +176,8 @@ This slice freezes a narrow ownership model:
   - success returns the canonicalized profile defaults, including derived `damage_per_normal_attack` and sorted/deduplicated reward drops
   - content-bundle canonicalization now snapshots custom registered profiles referenced by `spawn_groups` and `static_actors` in the top-level `combat_profiles` array, including formula stats, presentation metadata, respawn delay, and death-reward defaults, so exported authored combat content is self-describing for local QA instead of depending only on process-local profile registration state
   - built-in profile names are intentionally omitted from `combat_profiles` because their defaults are runtime-owned bootstrap constants, while custom profiles used by either authored collection are deduplicated and sorted by profile name
-  - invalid JSON, unknown fields, non-loopback callers, built-in/duplicate/invalid profile names, invalid formula defaults, invalid respawn delay, and invalid reward descriptors fail closed without registration
-- that registration seam is still process-local operator tooling, not yet a durable content-bundle schema for arbitrary formulas; authored bundle import still accepts only currently registered profile names and the built-in bootstrap profiles
+  - invalid JSON, unknown fields, non-loopback callers, built-in/duplicate/invalid profile names, profile names with surrounding whitespace, invalid formula defaults, invalid respawn delay, and invalid reward descriptors fail closed without registration
+- that registration seam is still process-local operator tooling; content-bundle import/export now carries deterministic `combat_profiles` snapshots for custom authored profiles, but runtime still rejects malformed profile definitions and never canonicalizes padded profile names into a different key
 - dots, spaces, hyphens, uppercase letters, and leading digits are intentionally rejected for combat profile names so profile identifiers stay distinct from authored `spawn_group_ref` values such as `practice.mob_alpha` and remain safe to compare as stable runtime selectors
 
 ### Runtime owns

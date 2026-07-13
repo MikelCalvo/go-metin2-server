@@ -775,8 +775,8 @@ func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldr
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return "", worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
-	profile := strings.TrimSpace(request.Profile)
-	if profile == "" || request.RespawnDelayMs <= 0 {
+	profile := request.Profile
+	if strings.TrimSpace(profile) == "" || request.RespawnDelayMs <= 0 {
 		return "", worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	defaults := worldruntime.StaticActorCombatProfileDefaults{

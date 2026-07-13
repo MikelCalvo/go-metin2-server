@@ -702,6 +702,26 @@ func TestLocalStaticActorCombatProfileEndpointRejectsInvalidProfile(t *testing.T
 	}
 }
 
+func TestLocalStaticActorCombatProfileEndpointRejectsPaddedProfileName(t *testing.T) {
+	const profile = "ops_padded_profile"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-combat-profiles", strings.NewReader(`{"profile":" ops_padded_profile ","max_hp":24,"attack_value":9,"defense_value":4,"respawn_delay_ms":1500}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for padded profile, got %d body %q", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+	if _, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile); ok {
+		t.Fatalf("expected padded profile request not to register %q", profile)
+	}
+}
+
 func TestLocalStaticActorCombatProfileEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
 	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-combat-profiles", strings.NewReader(`{"profile":"ops_remote_wolf","max_hp":24,"attack_value":9,"respawn_delay_ms":1500}`))
