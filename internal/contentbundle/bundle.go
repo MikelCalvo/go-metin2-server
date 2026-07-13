@@ -228,6 +228,13 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
 		if spawnGroup.CombatProfile == "" {
 			spawnGroup.CombatProfile = worldruntime.StaticActorCombatProfilePracticeMob
 		}
+		if spawnGroup.RewardExperience == 0 && spawnGroup.RewardGold == 0 && len(spawnGroup.RewardDropVnums) == 0 {
+			if reward, ok := worldruntime.BootstrapStaticActorDeathReward(spawnGroup.CombatProfile); ok {
+				spawnGroup.RewardExperience = reward.Experience
+				spawnGroup.RewardGold = reward.Gold
+				spawnGroup.RewardDropVnums = reward.DropVnums
+			}
+		}
 		spawnGroup.RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
 		normalized[i] = spawnGroup
 	}

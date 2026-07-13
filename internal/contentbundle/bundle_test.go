@@ -330,6 +330,47 @@ func TestCanonicalizeKeepsSpawnGroupRewardDescriptor(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeAppliesRegisteredProfileRewardDefaultsToSpawnGroupWithoutRewardDescriptor(t *testing.T) {
+	const profile = "practice_reward_defaults"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		DeathReward:           worldruntime.StaticActorDeathReward{Experience: 15, Gold: 10, DropVnums: []uint32{27002, 27001}},
+	}) {
+		t.Fatalf("expected registered reward-default profile %q", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	bundle, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "Practice Mob Alpha",
+		MapIndex:      42,
+		X:             1775,
+		Y:             2875,
+		RaceNum:       101,
+		CombatProfile: profile,
+	}}})
+	if err != nil {
+		t.Fatalf("canonicalize reward-default spawn group: %v", err)
+	}
+	want := Bundle{SpawnGroups: []SpawnGroup{{
+		Ref:              "practice.mob_alpha",
+		Name:             "Practice Mob Alpha",
+		MapIndex:         42,
+		X:                1775,
+		Y:                2875,
+		RaceNum:          101,
+		CombatProfile:    profile,
+		RewardExperience: 15,
+		RewardGold:       10,
+		RewardDropVnums:  []uint32{27001, 27002},
+	}}}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected canonical reward-default spawn group:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
 func TestCanonicalizeRejectsInvalidSpawnGroupRewardDescriptor(t *testing.T) {
 	maxPointCarrier := uint64(^uint32(0) >> 1)
 	for name, spawnGroup := range map[string]SpawnGroup{

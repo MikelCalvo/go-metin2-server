@@ -123,7 +123,8 @@ The first bootstrap spawn-group contract freezes these fields:
   - `practice_mob` currently reuses the same compact HP, damage, respawn, HP-percent refresh, and rewardless defaults as `training_dummy` while giving spawn-loaded combatants their own authored profile name
 - `reward_experience`, `reward_gold`, `reward_drop_vnums`
   - optional authored death-reward descriptor fields
-  - omitted scalar fields canonicalize to `0`; omitted or empty drop lists canonicalize to an empty reward-drop descriptor
+  - if all reward fields are omitted or zero/empty, bundle canonicalization now applies the selected combat profile's bootstrap death-reward defaults; the built-in `practice_mob` and `training_dummy` profiles remain rewardless, while registered reward-bearing profiles can provide deterministic defaults
+  - explicit non-zero reward fields override profile defaults for that spawn group
   - non-empty drop-vnum lists canonicalize into ascending deterministic order across content bundles and file-backed static-actor snapshots
   - non-zero values use the narrow reward contract in `non-player-reward-bootstrap.md` on the accepted killing hit
   - reward data belongs to the authored spawn group and round-trips through content bundles, static-actor snapshots, and runtime import/export; it is not live character persistence by itself
