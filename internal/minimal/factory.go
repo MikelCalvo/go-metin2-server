@@ -1644,7 +1644,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if runtime.itemTemplatesAuthored && !hasDropTemplate {
 				return nil, false
 			}
-			if hasDropTemplate && (dropTemplate.AntiDrop || dropTemplate.AntiGive || dropTemplate.AntiSell) {
+			if hasDropTemplate && (dropTemplate.AntiGet || dropTemplate.AntiDrop || dropTemplate.AntiGive || dropTemplate.AntiSell) {
 				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemDropRejectedInfoMessage})}, true
 			}
 			for _, item := range selectedPlayer.LiveInventory() {
@@ -1785,7 +1785,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if template.EquipSlot != "" {
 							return nil, false
 						}
-						if template.AntiDrop || template.AntiGive || template.AntiSell || !ownerRuntime.CanUseTemplate(template) {
+						if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || !ownerRuntime.CanUseTemplate(template) {
 							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 						}
 						if pickup.Item.Count > template.MaxCount {
@@ -1876,7 +1876,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if template.EquipSlot != "" {
 						return nil, false
 					}
-					if template.AntiDrop || template.AntiGive || template.AntiSell || !selectedPlayer.CanUseTemplate(template) {
+					if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || !selectedPlayer.CanUseTemplate(template) {
 						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 					}
 					if pickup.Item.Count > template.MaxCount {
@@ -4220,6 +4220,9 @@ func bootstrapItemAntiFlags(template itemcatalog.Template) uint32 {
 	}
 	if template.AntiStack {
 		flags |= itemproto.AntiFlagStack
+	}
+	if template.AntiGet {
+		flags |= itemproto.AntiFlagGet
 	}
 	return flags
 }

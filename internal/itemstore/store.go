@@ -25,6 +25,7 @@ type Template struct {
 	AntiDrop         bool         `json:"anti_drop,omitempty"`
 	AntiGive         bool         `json:"anti_give,omitempty"`
 	AntiStack        bool         `json:"anti_stack,omitempty"`
+	AntiGet          bool         `json:"anti_get,omitempty"`
 	AntiMale         bool         `json:"anti_male,omitempty"`
 	AntiFemale       bool         `json:"anti_female,omitempty"`
 	AntiWarrior      bool         `json:"anti_warrior,omitempty"`

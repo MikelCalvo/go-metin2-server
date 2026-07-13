@@ -2494,54 +2494,65 @@ func TestGameRuntimeItemUseToItemStaleSessionEmitsLocalFramesButDoesNotPersist(t
 	}
 }
 
-func TestGameRuntimeItemDropRejectsAntiDropAndAntiGiveTemplatesWithoutMutation(t *testing.T) {
-	ticketStore := loginticket.NewFileStore(t.TempDir())
-	accounts := accountstore.NewFileStore(t.TempDir())
-	owner := peerVisibilityCharacter("BoundDropOwner", 0x01030191, 0x02040191, 1300, 2300, 0, 101, 201)
-	owner.Inventory = []inventory.ItemInstance{{ID: 1019, Vnum: 27019, Count: 3, Slot: 5}}
-	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
-	issuePeerTicket(t, ticketStore, "bound-drop-owner", 0x19191919, owner)
-	if err := accounts.Save(accountstore.Account{Login: "bound-drop-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-		t.Fatalf("seed bound drop owner account: %v", err)
+func TestGameRuntimeItemDropRejectsAntiDropGiveSellGetTemplatesWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name   string
+		login  string
+		vnum   uint32
+		mutate func(*itemcatalog.Template)
+	}{
+		{name: "anti-drop", login: "bound-drop-owner", vnum: 27019, mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }},
+		{name: "anti-give", login: "bound-give-owner", vnum: 27020, mutate: func(template *itemcatalog.Template) { template.AntiGive = true }},
+		{name: "anti-sell", login: "bound-sell-owner", vnum: 27021, mutate: func(template *itemcatalog.Template) { template.AntiSell = true }},
+		{name: "anti-get", login: "bound-get-owner", vnum: 27022, mutate: func(template *itemcatalog.Template) { template.AntiGet = true }},
 	}
-	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
-		Vnum:      27019,
-		Name:      "Bound Practice Potion",
-		Stackable: true,
-		MaxCount:  200,
-		AntiDrop:  true,
-		AntiGive:  true,
-	}})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("BoundDropOwner", 0x01030191, 0x02040191, 1300, 2300, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: 1019, Vnum: tc.vnum, Count: 3, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, ticketStore, tc.login, 0x19191919, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s bound drop owner account: %v", tc.name, err)
+			}
+			template := itemcatalog.Template{Vnum: tc.vnum, Name: "Bound Practice Potion", Stackable: true, MaxCount: 200}
+			tc.mutate(&template)
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
 
-	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
-	if err != nil {
-		t.Fatalf("unexpected anti-drop item runtime error: %v", err)
-	}
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "bound-drop-owner", 0x19191919)
+			runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, itemStore)
+			if err != nil {
+				t.Fatalf("unexpected %s item runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x19191919)
+			defer closeSessionFlow(t, flow)
 
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
-	if err != nil {
-		t.Fatalf("unexpected anti-drop item drop error: %v", err)
-	}
-	if len(out) != 1 {
-		t.Fatalf("expected anti-drop/give item drop to emit one info chat frame, got %d", len(out))
-	}
-	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
-	if err != nil {
-		t.Fatalf("decode anti-drop/give info chat: %v", err)
-	}
-	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != itemDropRejectedInfoMessage {
-		t.Fatalf("unexpected anti-drop/give info chat: %+v", info)
-	}
-	account, err := accounts.Load("bound-drop-owner")
-	if err != nil {
-		t.Fatalf("load bound drop owner account: %v", err)
-	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("expected anti-drop/give item inventory to stay unchanged, got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
-	}
-	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
-		t.Fatalf("expected anti-drop/give item quickslots to stay unchanged, got %#v want %#v", account.Characters[0].Quickslots, owner.Quickslots)
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+			if err != nil {
+				t.Fatalf("unexpected %s item drop error: %v", tc.name, err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected %s item drop to emit one info chat frame, got %d", tc.name, len(out))
+			}
+			info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+			if err != nil {
+				t.Fatalf("decode %s info chat: %v", tc.name, err)
+			}
+			if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != itemDropRejectedInfoMessage {
+				t.Fatalf("unexpected %s info chat: %+v", tc.name, info)
+			}
+			account, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load %s bound drop owner account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("expected %s item inventory to stay unchanged, got %#v want %#v", tc.name, account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("expected %s item quickslots to stay unchanged, got %#v want %#v", tc.name, account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
 	}
 }
 
