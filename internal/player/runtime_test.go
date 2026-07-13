@@ -810,6 +810,77 @@ func TestRuntimeDropInventoryItemRejectsDuplicateSlotOccupancyWithoutMutation(t 
 	}
 }
 
+func TestRuntimeUseItemOnItemFullMergeDeletesSourceAndKeepsTarget(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:     0x01030121,
+		VID:    0x02040121,
+		Name:   "PeerTwo",
+		Points: [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 4, Slot: 5},
+			{ID: 12, Vnum: 27001, Count: 6, Slot: 6},
+		},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.UseItemOnItem(5, 6, itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 10})
+	if !ok {
+		t.Fatal("expected full item-use-to-item merge to succeed")
+	}
+	if !result.Changed || result.From != 5 || result.To != 6 || result.FromOccupied || !result.ToOccupied || result.CountOnly {
+		t.Fatalf("unexpected full merge result flags: %+v", result)
+	}
+	if result.ToItem != (inventory.ItemInstance{ID: 12, Vnum: 27001, Count: 10, Slot: 6}) {
+		t.Fatalf("unexpected full merge target item: %+v", result.ToItem)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 12, Vnum: 27001, Count: 10, Slot: 6}}
+	if got := runtime.LiveCharacter().Inventory; !reflect.DeepEqual(got, wantInventory) {
+		t.Fatalf("expected full merge to remove source and refresh target, got %+v want %+v", got, wantInventory)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("player mutation boundary should not rewrite persisted inventory directly, got %+v", runtime.PersistedSnapshot().Inventory)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Quickslots, persisted.Quickslots) {
+		t.Fatalf("player mutation boundary should not rewrite quickslots directly, got %+v", runtime.PersistedSnapshot().Quickslots)
+	}
+}
+
+func TestRuntimeUseItemOnItemPartialMergeRefreshesBothStacks(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:     0x01030122,
+		VID:    0x02040122,
+		Name:   "PeerTwo",
+		Points: [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 7, Slot: 5},
+			{ID: 12, Vnum: 27001, Count: 8, Slot: 6},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.UseItemOnItem(5, 6, itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 10})
+	if !ok {
+		t.Fatal("expected partial item-use-to-item merge to succeed")
+	}
+	if !result.Changed || result.From != 5 || result.To != 6 || !result.FromOccupied || !result.ToOccupied || !result.CountOnly {
+		t.Fatalf("unexpected partial merge result flags: %+v", result)
+	}
+	if result.FromItem != (inventory.ItemInstance{ID: 11, Vnum: 27001, Count: 5, Slot: 5}) {
+		t.Fatalf("unexpected partial merge source item: %+v", result.FromItem)
+	}
+	if result.ToItem != (inventory.ItemInstance{ID: 12, Vnum: 27001, Count: 10, Slot: 6}) {
+		t.Fatalf("unexpected partial merge target item: %+v", result.ToItem)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 5, Slot: 5}, {ID: 12, Vnum: 27001, Count: 10, Slot: 6}}
+	if got := runtime.LiveCharacter().Inventory; !reflect.DeepEqual(got, wantInventory) {
+		t.Fatalf("expected partial merge to refresh source and target, got %+v want %+v", got, wantInventory)
+	}
+}
+
 func TestRuntimeUseItemOnItemRejectsMalformedTargetWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name       string

@@ -248,7 +248,7 @@ Expected result:
 - authored stack `max_count` values above the current bootstrap client count range (`255`) are rejected at item-template load time, not accepted as runtime use-to-item behavior
 - the consumed source cell disappears only on a full merge
 - if the target has only partial room, both source and target counts refresh, and item/non-item quickslots bound to either still-occupied cell remain unchanged
-- all item quickslots for a removed source cell are cleared in deterministic quickslot-position order on full merge, target item quickslots remain stable on full merge, and unrelated skill/command quickslots remain
+- all item quickslots for a removed source cell are cleared in deterministic quickslot-position order on full merge, target item quickslots remain stable on full merge even when both source and target cells were quickslotted before the drag, and unrelated skill/command quickslots remain
 - restricted or invalid states (`anti_stack`, transfer anti-flags, missing/non-stackable/malformed/mismatched templates, source/target `vnum` mismatches, locked source/target stacks, selected-character job/sex/min-level restrictions, duplicate source/target item instance IDs, duplicate live occupancy of the source or target carried cell, already-full targets, source/target counts already above template `max_count`, or selected characters at the bootstrap zero-HP floor) fail closed with no visible mutation; for `anti_stack`, both carried stacks and item quickslots should remain unchanged
 - a `min_level` restriction above the selected character's level or a selected character at the bootstrap zero-HP floor leaves both carried stacks and any source-cell item quickslot unchanged even when the source and target are otherwise compatible
 
