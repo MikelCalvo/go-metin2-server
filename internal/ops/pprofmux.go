@@ -353,22 +353,10 @@ func RegisterLocalStaticActorCombatProfileEndpoint(mux *http.ServeMux) *http.Ser
 		}
 		switch r.Method {
 		case http.MethodGet:
-			snapshots := worldruntime.StaticActorCombatProfileDefaultSnapshots()
-			profiles := make([]localStaticActorCombatProfileResponse, 0, len(snapshots))
-			for _, snapshot := range snapshots {
-				profiles = append(profiles, localStaticActorCombatProfileResponse{
-					Profile:               snapshot.Profile,
-					MaxHP:                 snapshot.MaxHP,
-					DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
-					AttackValue:           snapshot.AttackValue,
-					DefenseValue:          snapshot.DefenseValue,
-					Level:                 snapshot.Level,
-					Rank:                  snapshot.Rank,
-					RespawnDelayMs:        snapshot.RespawnDelay.Milliseconds(),
-					DeathReward:           snapshot.DeathReward,
-				})
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if err := json.NewEncoder(w).Encode(worldruntime.StaticActorCombatProfileSnapshots()); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
 			}
-			writeLocalJSONMutationResponse(w, localStaticActorCombatProfileListResponse{Profiles: profiles}, http.StatusOK)
 		case http.MethodPost:
 			profile, defaults, ok := decodeLocalStaticActorCombatProfileRequest(r)
 			if !ok || !worldruntime.RegisterStaticActorCombatProfile(profile, defaults) {

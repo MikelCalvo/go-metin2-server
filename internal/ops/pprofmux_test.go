@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -724,6 +725,48 @@ func TestLocalStaticActorCombatProfileEndpointRejectsWrongMethod(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
+func TestLocalStaticActorCombatProfileEndpointListsProfilesForLoopbackGet(t *testing.T) {
+	const profile = "ops_profile_snapshot_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{MaxHP: 18, AttackValue: 6, DefenseValue: 2, RespawnDelay: 1200 * time.Millisecond}) {
+		t.Fatalf("expected %q profile registration to succeed", profile)
+	}
+	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-combat-profiles", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body %q", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"profile":"training_dummy"`) || !strings.Contains(body, `"profile":"practice_mob"`) || !strings.Contains(body, `"profile":"ops_profile_snapshot_wolf"`) {
+		t.Fatalf("expected built-in and registered profiles in response body, got %q", body)
+	}
+	if !strings.Contains(body, `"damage_per_normal_attack":4`) || !strings.Contains(body, `"respawn_delay_ms":1200`) {
+		t.Fatalf("expected canonical registered profile defaults in response body, got %q", body)
+	}
+}
+
+func TestLocalStaticActorCombatProfileEndpointRejectsNonLoopbackList(t *testing.T) {
+	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-combat-profiles", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
 	}
 }
 

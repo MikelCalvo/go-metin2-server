@@ -124,9 +124,16 @@ type StaticActorCombatProfileDefaults struct {
 	DeathReward           StaticActorDeathReward
 }
 
-type StaticActorCombatProfileDefaultSnapshot struct {
-	Profile string
-	StaticActorCombatProfileDefaults
+type StaticActorCombatProfileSnapshot struct {
+	Profile               string                 `json:"profile"`
+	MaxHP                 uint8                  `json:"max_hp"`
+	DamagePerNormalAttack uint8                  `json:"damage_per_normal_attack"`
+	AttackValue           uint16                 `json:"attack_value"`
+	DefenseValue          uint16                 `json:"defense_value"`
+	Level                 uint16                 `json:"level"`
+	Rank                  uint8                  `json:"rank"`
+	RespawnDelayMs        int64                  `json:"respawn_delay_ms"`
+	DeathReward           StaticActorDeathReward `json:"death_reward"`
 }
 
 var staticActorCombatProfileRegistry = struct {
@@ -169,6 +176,53 @@ func UnregisterStaticActorCombatProfileForTest(profile string) {
 	staticActorCombatProfileRegistry.Lock()
 	defer staticActorCombatProfileRegistry.Unlock()
 	delete(staticActorCombatProfileRegistry.profiles, strings.TrimSpace(profile))
+}
+
+func StaticActorCombatProfileSnapshots() []StaticActorCombatProfileSnapshot {
+	snapshots := []StaticActorCombatProfileSnapshot{
+		staticActorCombatProfileSnapshot(StaticActorCombatProfilePracticeMob, StaticActorCombatProfileDefaults{
+			MaxHP:                 PracticeMobBootstrapMaxHP,
+			DamagePerNormalAttack: PracticeMobBootstrapDamagePerNormalAttack,
+			AttackValue:           PracticeMobBootstrapAttackValue,
+			DefenseValue:          PracticeMobBootstrapDefenseValue,
+			Level:                 PracticeMobBootstrapLevel,
+			Rank:                  PracticeMobBootstrapRank,
+			RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		}),
+		staticActorCombatProfileSnapshot(StaticActorCombatProfileTrainingDummy, StaticActorCombatProfileDefaults{
+			MaxHP:                 TrainingDummyBootstrapMaxHP,
+			DamagePerNormalAttack: TrainingDummyBootstrapDamagePerNormalAttack,
+			AttackValue:           TrainingDummyBootstrapAttackValue,
+			DefenseValue:          TrainingDummyBootstrapDefenseValue,
+			Level:                 TrainingDummyBootstrapLevel,
+			Rank:                  TrainingDummyBootstrapRank,
+			RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+		}),
+	}
+	staticActorCombatProfileRegistry.RLock()
+	for profile, defaults := range staticActorCombatProfileRegistry.profiles {
+		snapshots = append(snapshots, staticActorCombatProfileSnapshot(profile, cloneStaticActorCombatProfileDefaults(defaults)))
+	}
+	staticActorCombatProfileRegistry.RUnlock()
+	sort.Slice(snapshots, func(i int, j int) bool {
+		return snapshots[i].Profile < snapshots[j].Profile
+	})
+	return snapshots
+}
+
+func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombatProfileDefaults) StaticActorCombatProfileSnapshot {
+	defaults = cloneStaticActorCombatProfileDefaults(defaults)
+	return StaticActorCombatProfileSnapshot{
+		Profile:               profile,
+		MaxHP:                 defaults.MaxHP,
+		DamagePerNormalAttack: defaults.DamagePerNormalAttack,
+		AttackValue:           defaults.AttackValue,
+		DefenseValue:          defaults.DefenseValue,
+		Level:                 defaults.Level,
+		Rank:                  defaults.Rank,
+		RespawnDelayMs:        defaults.RespawnDelay.Milliseconds(),
+		DeathReward:           defaults.DeathReward.Clone(),
+	}
 }
 
 func validStaticActorCombatProfileName(profile string) bool {
@@ -258,31 +312,6 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 		}
 		return cloneStaticActorCombatProfileDefaults(defaults), true
 	}
-}
-
-func StaticActorCombatProfileDefaultSnapshots() []StaticActorCombatProfileDefaultSnapshot {
-	snapshots := []StaticActorCombatProfileDefaultSnapshot{
-		{Profile: StaticActorCombatProfilePracticeMob},
-		{Profile: StaticActorCombatProfileTrainingDummy},
-	}
-	for index := range snapshots {
-		defaults, _ := BootstrapStaticActorCombatProfileDefaults(snapshots[index].Profile)
-		snapshots[index].StaticActorCombatProfileDefaults = defaults
-	}
-
-	staticActorCombatProfileRegistry.RLock()
-	for profile, defaults := range staticActorCombatProfileRegistry.profiles {
-		snapshots = append(snapshots, StaticActorCombatProfileDefaultSnapshot{
-			Profile:                          profile,
-			StaticActorCombatProfileDefaults: cloneStaticActorCombatProfileDefaults(defaults),
-		})
-	}
-	staticActorCombatProfileRegistry.RUnlock()
-
-	sort.Slice(snapshots, func(i int, j int) bool {
-		return snapshots[i].Profile < snapshots[j].Profile
-	})
-	return snapshots
 }
 
 func BootstrapStaticActorCurrentHP(combatKind string) (uint8, bool) {
