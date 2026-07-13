@@ -12949,12 +12949,12 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleItemUseMutationNonAuthoritative(t 
 	if pointPacket.VID != owner.VID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != 50 || pointPacket.Value != 750 {
 		t.Fatalf("unexpected stale owner item-use point change: %+v", pointPacket)
 	}
-	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useOut[1]))
+	setPacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useOut[1]))
 	if err != nil {
-		t.Fatalf("decode stale owner item-use set: %v", err)
+		t.Fatalf("decode stale owner item-use update: %v", err)
 	}
-	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Vnum != 27001 || setPacket.Count != 2 {
-		t.Fatalf("unexpected stale owner item-use set packet: %+v", setPacket)
+	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Count != 2 {
+		t.Fatalf("unexpected stale owner item-use update packet: %+v", setPacket)
 	}
 	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
 	if err != nil {
@@ -34708,12 +34708,12 @@ func TestGameSessionFlowPracticeMobUseItemKeepsRetaliationPointLossRuntimeOnlyWh
 	if usePointChange.Value != 52 {
 		t.Fatalf("expected slash item use to raise live owner points to 52 while keeping retaliation runtime-only, got %+v", usePointChange)
 	}
-	useSetPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useOut[1]))
+	useSetPacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useOut[1]))
 	if err != nil {
-		t.Fatalf("decode slash item-use set during runtime-only item-use persistence: %v", err)
+		t.Fatalf("decode slash item-use update during runtime-only item-use persistence: %v", err)
 	}
-	if useSetPacket.Position.WindowType != itemproto.WindowInventory || useSetPacket.Position.Cell != 5 || useSetPacket.Vnum != 27001 || useSetPacket.Count != 2 {
-		t.Fatalf("unexpected slash item-use set packet during runtime-only item-use persistence: %+v", useSetPacket)
+	if useSetPacket.Position.WindowType != itemproto.WindowInventory || useSetPacket.Position.Cell != 5 || useSetPacket.Count != 2 {
+		t.Fatalf("unexpected slash item-use update packet during runtime-only item-use persistence: %+v", useSetPacket)
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -34795,7 +34795,7 @@ func TestGameRuntimeItemUseResolvesPointEffectFromItemTemplateStore(t *testing.T
 		t.Fatalf("unexpected template-store item use error: %v", err)
 	}
 	if len(useOut) != 3 {
-		t.Fatalf("expected point-change + item-set + info frames for template-store item use, got %d", len(useOut))
+		t.Fatalf("expected point-change + item-update + info frames for template-store item use, got %d", len(useOut))
 	}
 	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
 	if err != nil {
@@ -34804,12 +34804,12 @@ func TestGameRuntimeItemUseResolvesPointEffectFromItemTemplateStore(t *testing.T
 	if pointPacket.VID != owner.VID || pointPacket.Type != 7 || pointPacket.Amount != 25 || pointPacket.Value != 725 {
 		t.Fatalf("unexpected template-store item-use point change: %+v", pointPacket)
 	}
-	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useOut[1]))
+	setPacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useOut[1]))
 	if err != nil {
-		t.Fatalf("decode template-store item-use set: %v", err)
+		t.Fatalf("decode template-store item-use update: %v", err)
 	}
-	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Vnum != 27002 || setPacket.Count != 2 {
-		t.Fatalf("unexpected template-store item-use set packet: %+v", setPacket)
+	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Count != 2 {
+		t.Fatalf("unexpected template-store item-use update packet: %+v", setPacket)
 	}
 	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
 	if err != nil {

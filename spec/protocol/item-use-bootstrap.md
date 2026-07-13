@@ -127,10 +127,10 @@ For the current seeded bootstrap consumable template this still means:
 - `value = updated Points[1]`
 
 The item refresh for the consumed slot must use the existing owned item family:
-- if the stack remains non-zero after consume, emit `ITEM_SET(slot)` with the decremented `count`
+- if the stack remains non-zero after consume, emit `ITEM_UPDATE(slot)` with the decremented `count`
 - if the consumed stack reaches zero, emit `ITEM_DEL(slot)`
 
-The minimal session/runtime packet path now freezes partial-stack `ITEM_USE` with template-authored output: `PLAYER_POINT_CHANGE`, `ITEM_SET` for the decremented carried count, then the template-authored `CHAT_TYPE_INFO` placeholder. The persisted account snapshot keeps the item instance in the same carried slot with the decremented count, persists the updated point value, and leaves both item and non-item quickslots for that still-occupied cell unchanged.
+The minimal session/runtime packet path now freezes partial-stack `ITEM_USE` with template-authored output: `PLAYER_POINT_CHANGE`, `ITEM_UPDATE` for the already-known carried cell's decremented count, then the template-authored `CHAT_TYPE_INFO` placeholder. The persisted account snapshot keeps the item instance in the same carried slot with the decremented count, persists the updated point value, and leaves both item and non-item quickslots for that still-occupied cell unchanged.
 
 The minimal session/runtime packet path now freezes last-stack `ITEM_USE` with template-authored output: `PLAYER_POINT_CHANGE`, `ITEM_DEL`, every item-only `QUICKSLOT_DEL` in deterministic quickslot-position order, then the template-authored `CHAT_TYPE_INFO` placeholder. The persisted account snapshot removes the consumed stack, persists the updated point value, deletes all item quickslots that referenced the removed carried cell, and preserves non-item quickslots that carry the same byte slot value.
 

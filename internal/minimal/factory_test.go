@@ -2416,7 +2416,7 @@ func TestNewGameSessionFactoryItemUsePersistsPointChangeAndDecrementsTheConsumab
 		t.Fatalf("unexpected item use error: %v", err)
 	}
 	if len(useOut) != 3 {
-		t.Fatalf("expected point-change + item-set + info frames for item use, got %d", len(useOut))
+		t.Fatalf("expected point-change + item-update + info frames for item use, got %d", len(useOut))
 	}
 	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
 	if err != nil {
@@ -2425,12 +2425,12 @@ func TestNewGameSessionFactoryItemUsePersistsPointChangeAndDecrementsTheConsumab
 	if pointPacket.VID != wantVID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != 50 || pointPacket.Value != 750 {
 		t.Fatalf("unexpected point-change packet: %+v", pointPacket)
 	}
-	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useOut[1]))
+	setPacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useOut[1]))
 	if err != nil {
-		t.Fatalf("decode item-use set frame: %v", err)
+		t.Fatalf("decode item-use update frame: %v", err)
 	}
-	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Vnum != 27001 || setPacket.Count != 2 {
-		t.Fatalf("unexpected item-use set packet: %+v", setPacket)
+	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Count != 2 {
+		t.Fatalf("unexpected item-use update packet: %+v", setPacket)
 	}
 	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
 	if err != nil {
@@ -2491,7 +2491,7 @@ func TestNewGameSessionFactoryItemUsePacketPersistsPointChangeAndDecrementsTheCo
 		t.Fatalf("unexpected packet item-use error: %v", err)
 	}
 	if len(useOut) != 3 {
-		t.Fatalf("expected point-change + item-set + info frames for packet item use, got %d", len(useOut))
+		t.Fatalf("expected point-change + item-update + info frames for packet item use, got %d", len(useOut))
 	}
 	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
 	if err != nil {
@@ -2500,12 +2500,12 @@ func TestNewGameSessionFactoryItemUsePacketPersistsPointChangeAndDecrementsTheCo
 	if pointPacket.VID != wantVID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != 50 || pointPacket.Value != 750 {
 		t.Fatalf("unexpected point-change packet: %+v", pointPacket)
 	}
-	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useOut[1]))
+	setPacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useOut[1]))
 	if err != nil {
-		t.Fatalf("decode packet item-use set frame: %v", err)
+		t.Fatalf("decode packet item-use update frame: %v", err)
 	}
-	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Vnum != 27001 || setPacket.Count != 2 {
-		t.Fatalf("unexpected packet item-use set packet: %+v", setPacket)
+	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Count != 2 {
+		t.Fatalf("unexpected packet item-use update packet: %+v", setPacket)
 	}
 	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
 	if err != nil {

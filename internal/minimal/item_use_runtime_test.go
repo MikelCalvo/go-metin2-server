@@ -1537,7 +1537,7 @@ func TestGameSessionFlowItemUseStaleAfterReclaimIsSelfLocalOnly(t *testing.T) {
 		t.Fatalf("unexpected stale item-use packet error: %v", err)
 	}
 	if len(staleOut) != 3 {
-		t.Fatalf("expected stale item-use to emit self-local point change, item set, and info chat only, got %d", len(staleOut))
+		t.Fatalf("expected stale item-use to emit self-local point change, item update, and info chat only, got %d", len(staleOut))
 	}
 	stalePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, staleOut[0]))
 	if err != nil {
@@ -1546,12 +1546,12 @@ func TestGameSessionFlowItemUseStaleAfterReclaimIsSelfLocalOnly(t *testing.T) {
 	if stalePointChange.VID != owner.VID || stalePointChange.Type != bootstrapPlayerPointType || stalePointChange.Amount != 50 || stalePointChange.Value != 75 {
 		t.Fatalf("unexpected stale item-use point change: %+v", stalePointChange)
 	}
-	staleItemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, staleOut[1]))
+	staleItemSet, err := itemproto.DecodeUpdate(decodeSingleFrame(t, staleOut[1]))
 	if err != nil {
-		t.Fatalf("decode stale item-use item set: %v", err)
+		t.Fatalf("decode stale item-use item update: %v", err)
 	}
-	if staleItemSet.Position != itemproto.InventoryPosition(5) || staleItemSet.Vnum != 27001 || staleItemSet.Count != 2 {
-		t.Fatalf("unexpected stale item-use item set: %+v", staleItemSet)
+	if staleItemSet.Position != itemproto.InventoryPosition(5) || staleItemSet.Count != 2 {
+		t.Fatalf("unexpected stale item-use item update: %+v", staleItemSet)
 	}
 	staleInfoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, staleOut[2]))
 	if err != nil {
@@ -1581,9 +1581,9 @@ func TestGameSessionFlowItemUseStaleAfterReclaimIsSelfLocalOnly(t *testing.T) {
 	if len(replacementOut) != 3 {
 		t.Fatalf("expected replacement owner to still see original partial-stack item-use after stale local use, got %d frames", len(replacementOut))
 	}
-	replacementItemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, replacementOut[1]))
+	replacementItemSet, err := itemproto.DecodeUpdate(decodeSingleFrame(t, replacementOut[1]))
 	if err != nil {
-		t.Fatalf("decode replacement item-use item set: %v", err)
+		t.Fatalf("decode replacement item-use item update: %v", err)
 	}
 	if replacementItemSet.Position != itemproto.InventoryPosition(5) || replacementItemSet.Count != 2 {
 		t.Fatalf("expected replacement owner to consume from unchanged authoritative stack, got %+v", replacementItemSet)
@@ -1763,6 +1763,73 @@ func TestGameSessionFlowItemUseToItemStalePartialMergeAfterReclaimIsSelfLocalOnl
 	}
 }
 
+func TestGameSessionFlowItemUsePartialStackEmitsItemUpdateInsteadOfFullSet(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UsePartialUpdate", 0x0103051e, 0x0204051e, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 107, Vnum: 27001, Count: 4, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-partial-update", 0x5050505e, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-partial-update", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-use partial-update owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "template consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-use partial-update runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-partial-update", 0x5050505e)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected item-use partial-update packet error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected item-use partial stack to emit point change, item update, and info chat only, got %d", len(out))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode partial-update item-use point change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 50 || pointChange.Value != 75 {
+		t.Fatalf("unexpected partial-update item-use point change: %+v", pointChange)
+	}
+	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode partial-update item-use item update: %v", err)
+	}
+	if itemUpdate.Position != itemproto.InventoryPosition(5) || itemUpdate.Count != 3 {
+		t.Fatalf("unexpected partial-update item-use item update: %+v", itemUpdate)
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode partial-update item-use info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != "template consume" {
+		t.Fatalf("unexpected partial-update item-use info chat: %+v", infoChat)
+	}
+
+	persisted, err := accounts.Load("item-use-partial-update")
+	if err != nil {
+		t.Fatalf("load persisted item-use partial-update account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 107, Vnum: 27001, Count: 3, Slot: 5}}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("expected consumed partial stack to persist decremented inventory, got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected partial stack consume to preserve quickslots, got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+}
+
 func TestGameSessionFlowItemUsePartialStackRefreshesItemAndPreservesQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -1796,7 +1863,7 @@ func TestGameSessionFlowItemUsePartialStackRefreshesItemAndPreservesQuickslot(t 
 		t.Fatalf("unexpected item-use partial-stack packet error: %v", err)
 	}
 	if len(out) != 3 {
-		t.Fatalf("expected item-use partial stack to emit point change, item set, and info chat only, got %d", len(out))
+		t.Fatalf("expected item-use partial stack to emit point change, item update, and info chat only, got %d", len(out))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -1805,12 +1872,12 @@ func TestGameSessionFlowItemUsePartialStackRefreshesItemAndPreservesQuickslot(t 
 	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 50 || pointChange.Value != 75 {
 		t.Fatalf("unexpected partial-stack item-use point change: %+v", pointChange)
 	}
-	itemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode partial-stack item-use item set: %v", err)
+		t.Fatalf("decode partial-stack item-use item update: %v", err)
 	}
-	if itemSet.Position != itemproto.InventoryPosition(5) || itemSet.Vnum != 27001 || itemSet.Count != 2 {
-		t.Fatalf("unexpected partial-stack item-use item set: %+v", itemSet)
+	if itemUpdate.Position != itemproto.InventoryPosition(5) || itemUpdate.Count != 2 {
+		t.Fatalf("unexpected partial-stack item-use item update: %+v", itemUpdate)
 	}
 	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[2]))
 	if err != nil {

@@ -3795,11 +3795,11 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 	if result.ItemRemoved {
 		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
 	} else {
-		setFrame, err := encodeBootstrapItemFrame(position, result.Item)
+		updateFrame, err := encodeInventoryItemUpdateFrame(result.Item)
 		if err != nil {
 			return nil, err
 		}
-		frames = append(frames, setFrame)
+		frames = append(frames, updateFrame)
 	}
 	frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: result.EffectMessage}))
 	return frames, nil
