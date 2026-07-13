@@ -2521,6 +2521,26 @@ func TestRuntimePickupGroundItemRejectsDuplicateMergeSlotOccupancyWithoutMutatio
 	}
 }
 
+func TestRuntimePickupGroundItemRejectsDuplicateGroundItemIDWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Inventory: []inventory.ItemInstance{
+			{ID: 11, Vnum: 27001, Count: 4, Slot: 0},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.PickupGroundItem(inventory.ItemInstance{ID: 11, Vnum: 27001, Count: 3, Slot: 6}, 6, 200); ok {
+		t.Fatalf("expected duplicate ground item id pickup to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("duplicate ground item id pickup mutated live state:\ngot:  %+v\nwant: %+v", got, before)
+	}
+}
+
 func TestRuntimePickupGroundItemSkipsLockedCompatibleStacks(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

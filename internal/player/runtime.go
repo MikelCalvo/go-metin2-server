@@ -465,7 +465,7 @@ func (r *Runtime) PickupGroundItem(item inventory.ItemInstance, preferred invent
 	if item.Equipped || item.Locked {
 		return GroundItemPickupResult{}, false
 	}
-	if hasDuplicateInventorySlotOccupancy(r.liveInventory) {
+	if hasDuplicateInventorySlotOccupancy(r.liveInventory) || hasItemInstanceID(r.liveInventory, item.ID) || hasItemInstanceID(r.liveEquipment, item.ID) {
 		return GroundItemPickupResult{}, false
 	}
 	updatedInventory := cloneItemInstances(r.liveInventory)
@@ -1362,6 +1362,18 @@ func hasDuplicateInventorySlotOccupancy(items []inventory.ItemInstance) bool {
 			return true
 		}
 		seen[item.Slot] = true
+	}
+	return false
+}
+
+func hasItemInstanceID(items []inventory.ItemInstance, id uint64) bool {
+	if id == 0 {
+		return false
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
 	}
 	return false
 }
