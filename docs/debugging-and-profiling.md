@@ -67,6 +67,22 @@ Returns JSON describing the active bootstrap runtime selection. This endpoint is
 
 The default bootstrap runtime reports local channel `1` and whole-map visibility. When `gamed` is configured for radius AOI, this snapshot reports the active radius and sector-size values selected from the `METIN2_VISIBILITY_*` / `METIN2_GAMED_VISIBILITY_*` environment overrides.
 
+### `POST /local/static-actor-combat-profiles`
+
+Registers one process-local bootstrap static-actor combat profile for later static-actor or spawn-group authoring. This is loopback-only operator tooling, not gameplay protocol and not durable content storage.
+
+Request body JSON fields:
+
+- `profile` — lowercase snake-case profile name; built-in names and duplicates are rejected
+- `max_hp`
+- optional `damage_per_normal_attack`
+- optional formula fields `attack_value` / `defense_value`
+- optional presentation fields `level` / `rank`
+- `respawn_delay_ms`
+- optional `death_reward` with `experience`, `gold`, and `drop_vnums`
+
+On success the endpoint returns the canonicalized profile defaults, including any derived `damage_per_normal_attack` and sorted reward drop vnums. Invalid JSON, unknown fields, invalid formulas, invalid reward descriptors, non-loopback callers, and non-`POST` methods fail closed.
+
 ### `POST /local/notice`
 
 - request body: raw plain-text notice message

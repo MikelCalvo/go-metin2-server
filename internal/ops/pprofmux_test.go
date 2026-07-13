@@ -615,6 +615,80 @@ func TestLocalRuntimeConfigEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalStaticActorCombatProfileEndpointRegistersProfileForLoopbackPost(t *testing.T) {
+	const profile = "ops_profile_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
+	body := `{"profile":"ops_profile_wolf","max_hp":24,"attack_value":9,"defense_value":4,"level":7,"rank":2,"respawn_delay_ms":1500,"death_reward":{"experience":30,"gold":11,"drop_vnums":[27002,27001]}}`
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-combat-profiles", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body %q", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected profile %q to be registered", profile)
+	}
+	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 5 || defaults.AttackValue != 9 || defaults.DefenseValue != 4 || defaults.Level != 7 || defaults.Rank != 2 || defaults.RespawnDelay.String() != "1.5s" {
+		t.Fatalf("unexpected registered defaults: %+v", defaults)
+	}
+	if defaults.DeathReward.Experience != 30 || defaults.DeathReward.Gold != 11 || len(defaults.DeathReward.DropVnums) != 2 || defaults.DeathReward.DropVnums[0] != 27001 || defaults.DeathReward.DropVnums[1] != 27002 {
+		t.Fatalf("unexpected registered death reward: %+v", defaults.DeathReward)
+	}
+	bodyText := rec.Body.String()
+	if !strings.Contains(bodyText, `"profile":"ops_profile_wolf"`) || !strings.Contains(bodyText, `"damage_per_normal_attack":5`) || !strings.Contains(bodyText, `"respawn_delay_ms":1500`) {
+		t.Fatalf("unexpected JSON response body %q", bodyText)
+	}
+}
+
+func TestLocalStaticActorCombatProfileEndpointRejectsInvalidProfile(t *testing.T) {
+	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-combat-profiles", strings.NewReader(`{"profile":"practice_mob","max_hp":24,"attack_value":9,"respawn_delay_ms":1500}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestLocalStaticActorCombatProfileEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-combat-profiles", strings.NewReader(`{"profile":"ops_remote_wolf","max_hp":24,"attack_value":9,"respawn_delay_ms":1500}`))
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalStaticActorCombatProfileEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-combat-profiles", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
 func TestLocalCombatTargetsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing.T) {
 	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"subject_entity_id": uint64(17), "subject": map[string]any{"name": "MkmkSura", "vid": uint32(99), "map_index": uint32(1)}, "target_vid": uint32(22), "snapshot_version": uint64(3), "hp_percent": uint8(80)}}}
 	mux := RegisterLocalCombatTargetsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)

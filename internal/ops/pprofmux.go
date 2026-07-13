@@ -10,9 +10,11 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 type localRelocationRequest struct {
@@ -31,6 +33,36 @@ type localStaticActorRequest struct {
 	InteractionKind string `json:"interaction_kind"`
 	InteractionRef  string `json:"interaction_ref"`
 	CombatProfile   string `json:"combat_profile"`
+}
+
+type localStaticActorCombatProfileRequest struct {
+	Profile               string                      `json:"profile"`
+	MaxHP                 uint8                       `json:"max_hp"`
+	DamagePerNormalAttack uint8                       `json:"damage_per_normal_attack"`
+	AttackValue           uint16                      `json:"attack_value"`
+	DefenseValue          uint16                      `json:"defense_value"`
+	Level                 uint16                      `json:"level"`
+	Rank                  uint8                       `json:"rank"`
+	RespawnDelayMs        int64                       `json:"respawn_delay_ms"`
+	DeathReward           localStaticActorDeathReward `json:"death_reward"`
+}
+
+type localStaticActorDeathReward struct {
+	Experience uint64   `json:"experience"`
+	Gold       uint64   `json:"gold"`
+	DropVnums  []uint32 `json:"drop_vnums"`
+}
+
+type localStaticActorCombatProfileResponse struct {
+	Profile               string                              `json:"profile"`
+	MaxHP                 uint8                               `json:"max_hp"`
+	DamagePerNormalAttack uint8                               `json:"damage_per_normal_attack"`
+	AttackValue           uint16                              `json:"attack_value"`
+	DefenseValue          uint16                              `json:"defense_value"`
+	Level                 uint16                              `json:"level"`
+	Rank                  uint8                               `json:"rank"`
+	RespawnDelayMs        int64                               `json:"respawn_delay_ms"`
+	DeathReward           worldruntime.StaticActorDeathReward `json:"death_reward"`
 }
 
 type localInteractionDefinitionRequest struct {
@@ -303,6 +335,44 @@ func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActo
 	}
 	mux.HandleFunc("PATCH /local/static-actors/", handler)
 	mux.HandleFunc("PUT /local/static-actors/", handler)
+	return mux
+}
+
+func RegisterLocalStaticActorCombatProfileEndpoint(mux *http.ServeMux) *http.ServeMux {
+	if mux == nil {
+		return mux
+	}
+	mux.HandleFunc("/local/static-actor-combat-profiles", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		profile, defaults, ok := decodeLocalStaticActorCombatProfileRequest(r)
+		if !ok || !worldruntime.RegisterStaticActorCombatProfile(profile, defaults) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		registered, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+		if !ok {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writeLocalJSONMutationResponse(w, localStaticActorCombatProfileResponse{
+			Profile:               profile,
+			MaxHP:                 registered.MaxHP,
+			DamagePerNormalAttack: registered.DamagePerNormalAttack,
+			AttackValue:           registered.AttackValue,
+			DefenseValue:          registered.DefenseValue,
+			Level:                 registered.Level,
+			Rank:                  registered.Rank,
+			RespawnDelayMs:        registered.RespawnDelay.Milliseconds(),
+			DeathReward:           registered.DeathReward,
+		}, http.StatusOK)
+	})
 	return mux
 }
 
@@ -682,6 +752,38 @@ func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bo
 		return localStaticActorRequest{}, false
 	}
 	return request, true
+}
+
+func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldruntime.StaticActorCombatProfileDefaults, bool) {
+	var request localStaticActorCombatProfileRequest
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		return "", worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return "", worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	profile := strings.TrimSpace(request.Profile)
+	if profile == "" || request.RespawnDelayMs <= 0 {
+		return "", worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	defaults := worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 request.MaxHP,
+		DamagePerNormalAttack: request.DamagePerNormalAttack,
+		AttackValue:           request.AttackValue,
+		DefenseValue:          request.DefenseValue,
+		Level:                 request.Level,
+		Rank:                  request.Rank,
+		RespawnDelay:          time.Duration(request.RespawnDelayMs) * time.Millisecond,
+		DeathReward: worldruntime.StaticActorDeathReward{
+			Experience: request.DeathReward.Experience,
+			Gold:       request.DeathReward.Gold,
+			DropVnums:  request.DeathReward.DropVnums,
+		},
+	}
+	return profile, defaults, true
 }
 
 func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.Definition, bool) {

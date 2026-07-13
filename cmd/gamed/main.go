@@ -157,6 +157,7 @@ func main() {
 			return actor, true
 		},
 	)
+	opsHandler = ops.RegisterLocalStaticActorCombatProfileEndpoint(opsHandler)
 	opsHandler = ops.RegisterLocalInteractionDefinitionEndpoints(
 		opsHandler,
 		func() any { return gameRuntime.InteractionDefinitions() },
