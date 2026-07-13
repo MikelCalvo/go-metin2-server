@@ -231,7 +231,7 @@ Expected result:
 - locked carried stacks fail closed: no point change, item refresh, quickslot change, or placeholder chat is visible
 - if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_USE` fails closed with no point change, item refresh, quickslot change, placeholder chat, or persisted-state mutation
 - templates marked `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` also fail closed for direct consumable use: no point change, item refresh, quickslot change, or placeholder chat is visible
-- templates with authored `min_level` above the selected character's current level fail closed the same way
+- templates with authored job, sex, empire, or `min_level` restrictions for the selected character fail closed the same way
 - selected characters at the bootstrap zero-HP floor cannot consume carried items; the request fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a carried stack whose live count already exceeds its loaded template-authored `max_count` fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose resolved template `max_count` cannot fit the current one-byte item refresh count range fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
@@ -249,7 +249,7 @@ Expected result:
 - the consumed source cell disappears only on a full merge
 - if the target has only partial room, both source and target counts refresh, and item/non-item quickslots bound to either still-occupied cell remain unchanged
 - all item quickslots for a removed source cell are cleared in deterministic quickslot-position order on full merge, target item quickslots remain stable on full merge even when both source and target cells were quickslotted before the drag, and unrelated skill/command quickslots remain
-- restricted or invalid states (`anti_stack`, transfer anti-flags, missing/non-stackable/malformed/mismatched templates, source/target `vnum` mismatches, locked source/target stacks, selected-character job/sex/min-level restrictions, duplicate source/target item instance IDs, duplicate live occupancy of the source or target carried cell, already-full targets, source/target counts already above template `max_count`, or selected characters at the bootstrap zero-HP floor) fail closed with no visible mutation; for `anti_stack`, both carried stacks and item quickslots should remain unchanged
+- restricted or invalid states (`anti_stack`, transfer anti-flags, missing/non-stackable/malformed/mismatched templates, source/target `vnum` mismatches, locked source/target stacks, selected-character job/sex/empire/min-level restrictions, duplicate source/target item instance IDs, duplicate live occupancy of the source or target carried cell, already-full targets, source/target counts already above template `max_count`, or selected characters at the bootstrap zero-HP floor) fail closed with no visible mutation; for `anti_stack`, both carried stacks and item quickslots should remain unchanged
 - a `min_level` restriction above the selected character's level or a selected character at the bootstrap zero-HP floor leaves both carried stacks and any source-cell item quickslot unchanged even when the source and target are otherwise compatible
 
 ### 4.5.3 Retarget an item quickslot (`QUICKSLOT_ADD`)

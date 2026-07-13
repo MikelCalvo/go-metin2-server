@@ -4200,6 +4200,15 @@ func bootstrapItemAntiFlags(template itemcatalog.Template) uint32 {
 	if template.AntiShaman {
 		flags |= itemproto.AntiFlagShaman
 	}
+	if template.AntiEmpireA {
+		flags |= itemproto.AntiFlagEmpireA
+	}
+	if template.AntiEmpireB {
+		flags |= itemproto.AntiFlagEmpireB
+	}
+	if template.AntiEmpireC {
+		flags |= itemproto.AntiFlagEmpireC
+	}
 	if template.AntiDrop {
 		flags |= itemproto.AntiFlagDrop
 	}

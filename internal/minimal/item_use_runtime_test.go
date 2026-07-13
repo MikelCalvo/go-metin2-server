@@ -234,6 +234,7 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 		level        uint8
 		job          uint8
 		raceNum      uint16
+		empire       uint8
 	}{
 		{
 			name: "locked source",
@@ -477,6 +478,33 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			raceNum:  1,
 		},
 		{
+			name: "anti empire a template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Empire A Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiEmpireA: true},
+			empire:   1,
+		},
+		{
+			name: "anti empire b template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Empire B Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiEmpireB: true},
+			empire:   2,
+		},
+		{
+			name: "anti empire c template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Empire C Restricted Stack Potion", Stackable: true, MaxCount: 200, AntiEmpireC: true},
+			empire:   3,
+		},
+		{
 			name: "min-level template",
 			inventory: []inventory.ItemInstance{
 				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
@@ -494,6 +522,9 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			owner := peerVisibilityCharacter("UseToItemGuard", 0x0103052c, 0x0204052c, 1100, 2100, tc.raceNum, 101, 201)
 			owner.Job = tc.job
 			owner.RaceNum = tc.raceNum
+			if tc.empire != 0 {
+				owner.Empire = tc.empire
+			}
 			if tc.level != 0 {
 				owner.Level = tc.level
 			}

@@ -31,6 +31,9 @@ type Template struct {
 	AntiAssassin     bool         `json:"anti_assassin,omitempty"`
 	AntiSura         bool         `json:"anti_sura,omitempty"`
 	AntiShaman       bool         `json:"anti_shaman,omitempty"`
+	AntiEmpireA      bool         `json:"anti_empire_a,omitempty"`
+	AntiEmpireB      bool         `json:"anti_empire_b,omitempty"`
+	AntiEmpireC      bool         `json:"anti_empire_c,omitempty"`
 	MinLevel         uint8        `json:"min_level,omitempty"`
 	EquipSlot        string       `json:"equip_slot,omitempty"`
 	UseEffect        *UseEffect   `json:"use_effect,omitempty"`

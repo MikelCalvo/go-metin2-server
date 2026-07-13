@@ -422,6 +422,19 @@ func antiFlaggedConsumableTemplate(vnum uint32, mutate func(*itemcatalog.Templat
 	return template
 }
 
+func antiFlagTestEmpire(template itemcatalog.Template) uint8 {
+	if template.AntiEmpireA {
+		return 1
+	}
+	if template.AntiEmpireB {
+		return 2
+	}
+	if template.AntiEmpireC {
+		return 3
+	}
+	return 0
+}
+
 func bootstrapEquipmentPointTemplate(vnum uint32, equipSlot inventory.EquipmentSlot, pointType uint8, pointIndex uint8, pointDelta int32) itemcatalog.Template {
 	return itemcatalog.Template{
 		Vnum:      vnum,
@@ -591,6 +604,9 @@ func TestRuntimeItemUseRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testi
 		{name: "anti shaman", job: 3, raceNum: 3, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiShaman = true })},
 		{name: "anti male", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiMale = true })},
 		{name: "anti female", job: 1, raceNum: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiFemale = true })},
+		{name: "anti empire a", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireA = true })},
+		{name: "anti empire b", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireB = true })},
+		{name: "anti empire c", job: 0, raceNum: 0, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireC = true })},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -600,6 +616,7 @@ func TestRuntimeItemUseRejectsAuthoredJobAndSexAntiFlagsWithoutMutation(t *testi
 				Name:      "RestrictedPeer",
 				Job:       tc.job,
 				RaceNum:   tc.raceNum,
+				Empire:    antiFlagTestEmpire(tc.template),
 				Points:    [255]int32{1: 700},
 				Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
 			}
@@ -752,6 +769,9 @@ func TestRuntimeUseItemRejectsAuthoredJobSexLevelAndTransferAntiFlagsWithoutMuta
 		{name: "anti shaman", job: 3, raceNum: 3, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiShaman = true })},
 		{name: "anti male", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiMale = true })},
 		{name: "anti female", job: 1, raceNum: 1, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiFemale = true })},
+		{name: "anti empire a", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireA = true })},
+		{name: "anti empire b", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireB = true })},
+		{name: "anti empire c", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireC = true })},
 		{name: "min level", job: 0, raceNum: 0, level: 9, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.MinLevel = 10 })},
 		{name: "anti stack", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiStack = true })},
 		{name: "anti drop", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiDrop = true })},
@@ -766,6 +786,7 @@ func TestRuntimeUseItemRejectsAuthoredJobSexLevelAndTransferAntiFlagsWithoutMuta
 				Name:    "RestrictedUsePeer",
 				Job:     tc.job,
 				RaceNum: tc.raceNum,
+				Empire:  antiFlagTestEmpire(tc.template),
 				Level:   tc.level,
 				Points:  [255]int32{1: 700},
 				Inventory: []inventory.ItemInstance{
@@ -932,6 +953,9 @@ func TestRuntimeUseItemOnItemRejectsAuthoredJobSexAndLevelRestrictionsWithoutMut
 		{name: "anti shaman", job: 3, raceNum: 3, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiShaman = true })},
 		{name: "anti male", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiMale = true })},
 		{name: "anti female", job: 1, raceNum: 1, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiFemale = true })},
+		{name: "anti empire a", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireA = true })},
+		{name: "anti empire b", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireB = true })},
+		{name: "anti empire c", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireC = true })},
 		{name: "min level", job: 0, raceNum: 0, level: 9, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.MinLevel = 10 })},
 	}
 	for _, tc := range cases {
@@ -942,6 +966,7 @@ func TestRuntimeUseItemOnItemRejectsAuthoredJobSexAndLevelRestrictionsWithoutMut
 				Name:    "RestrictedPeer",
 				Job:     tc.job,
 				RaceNum: tc.raceNum,
+				Empire:  antiFlagTestEmpire(tc.template),
 				Level:   tc.level,
 				Inventory: []inventory.ItemInstance{
 					{ID: 11, Vnum: 27001, Count: 3, Slot: 5},
