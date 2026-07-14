@@ -355,6 +355,7 @@ func referencedCombatProfileNames(staticActors []StaticActor, spawnGroups []Spaw
 	}
 	return referenced
 }
+
 func appendCombatProfileSnapshot(profiles []worldruntime.StaticActorCombatProfileSnapshot, seen map[string]struct{}, profile string) []worldruntime.StaticActorCombatProfileSnapshot {
 	profile = strings.TrimSpace(profile)
 	if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
