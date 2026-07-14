@@ -225,10 +225,12 @@ Current runtime rules:
 - spawn-backed live actors export as `spawn_groups`, not as ordinary `static_actors`
 - importing a bundle with `spawn_groups` materializes one runtime static actor per group with the authored `spawn_group_ref`
 - the imported actor uses the authored placement, `race_num`, and normalized `combat_profile`
+- when a successful import materializes a spawn-backed actor while players are already online, the runtime enqueues the normal static-actor visibility bootstrap burst (`CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`) only to sessions that currently share the actor's visible world/AOI
+- sessions outside the configured visibility policy do not receive the imported spawn actor until a later enter-game or AOI/transfer visibility rebuild makes it visible
 - if static-actor persistence fails after interaction definitions have already been replaced, import fails closed and restores the previously exported content bundle before reporting failure
 - the operator endpoint remains loopback-only bootstrap tooling; it is not a gameplay packet or public API
 
-This keeps authored attackable spawn content distinct from hand-authored visible/static actor content while still letting local QA export and re-import the current bootstrap content bundle deterministically.
+This keeps authored attackable spawn content distinct from hand-authored visible/static actor content while still letting local QA export and re-import the current bootstrap content bundle deterministically, including live QA sessions that are already connected when the import succeeds.
 
 ## Relationship to existing static actors
 

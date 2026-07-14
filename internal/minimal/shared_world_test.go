@@ -212,6 +212,81 @@ func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFr
 	}
 }
 
+func TestGameRuntimeImportContentBundleQueuesSpawnGroupVisibilityForOnlinePlayers(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	near := peerVisibilityCharacter("SpawnImportNear", 0x01035501, 0x02045501, 1800, 2900, 0, 101, 201)
+	near.MapIndex = 42
+	near.X = 1800
+	near.Y = 2900
+	far := peerVisibilityCharacter("SpawnImportFar", 0x01035502, 0x02045502, 9800, 9900, 0, 102, 202)
+	far.MapIndex = 42
+	far.X = 9800
+	far.Y = 9900
+	issuePeerTicket(t, store, "spawn-import-near", 0x55550101, near)
+	issuePeerTicket(t, store, "spawn-import-far", 0x55550202, far)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	nearFlow, nearEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "spawn-import-near", 0x55550101)
+	defer closeSessionFlow(t, nearFlow)
+	if len(nearEnter) != 5 {
+		t.Fatalf("expected near player base enter-game burst before spawn import, got %d frames", len(nearEnter))
+	}
+	farFlow, farEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "spawn-import-far", 0x55550202)
+	defer closeSessionFlow(t, farFlow)
+	if len(farEnter) != 5 {
+		t.Fatalf("expected far player base enter-game burst before spawn import, got %d frames", len(farEnter))
+	}
+	flushServerFrames(t, nearFlow)
+	flushServerFrames(t, farFlow)
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.import_visible",
+		Name:          "ImportedPracticeMob",
+		MapIndex:      42,
+		X:             1810,
+		Y:             2910,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}})
+	if err != nil {
+		t.Fatalf("import spawn-group content bundle: %v", err)
+	}
+
+	nearQueued := flushServerFrames(t, nearFlow)
+	if len(nearQueued) != 3 {
+		t.Fatalf("expected nearby online player to receive imported spawn actor bootstrap, got %d frames", len(nearQueued))
+	}
+	actorAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, nearQueued[0]))
+	if err != nil {
+		t.Fatalf("decode imported spawn actor add: %v", err)
+	}
+	if actorAdd.Type != 1 || actorAdd.X != 1810 || actorAdd.Y != 2910 {
+		t.Fatalf("unexpected imported spawn actor add packet: %+v", actorAdd)
+	}
+	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, nearQueued[1]))
+	if err != nil {
+		t.Fatalf("decode imported spawn actor info: %v", err)
+	}
+	if actorInfo.VID != actorAdd.VID || actorInfo.Name != "ImportedPracticeMob" {
+		t.Fatalf("unexpected imported spawn actor info packet: %+v add=%+v", actorInfo, actorAdd)
+	}
+	actorUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, nearQueued[2]))
+	if err != nil {
+		t.Fatalf("decode imported spawn actor update: %v", err)
+	}
+	if actorUpdate.VID != actorAdd.VID {
+		t.Fatalf("unexpected imported spawn actor update packet: %+v add=%+v", actorUpdate, actorAdd)
+	}
+	if farQueued := flushServerFrames(t, farFlow); len(farQueued) != 0 {
+		t.Fatalf("expected far online player outside radius to receive no imported spawn actor frames, got %d", len(farQueued))
+	}
+}
+
 func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testing.T) {
 	const profile = "practice_imported_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
