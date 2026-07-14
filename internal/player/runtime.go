@@ -950,7 +950,7 @@ func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.Slo
 }
 
 func (r *Runtime) useItemOnItem(source inventory.SlotIndex, target inventory.SlotIndex, template itemcatalog.Template, rewriteItem func(inventory.ItemInstance) inventory.ItemInstance) (inventory.MoveResult, bool) {
-	if r == nil || source == target || source >= inventory.CarriedInventorySlotCount || target >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || !template.Stackable || template.EquipSlot != "" || template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell || template.MaxCount == 0 || template.MaxCount > 255 {
+	if r == nil || source == target || source >= inventory.CarriedInventorySlotCount || target >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || !template.Stackable || template.EquipSlot != "" || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.MaxCount == 0 || template.MaxCount > 255 {
 		return inventory.MoveResult{}, false
 	}
 	if countInventorySlotOccupancy(r.liveInventory, source) != 1 || countInventorySlotOccupancy(r.liveInventory, target) != 1 {

@@ -277,6 +277,14 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			template: itemcatalog.Template{Vnum: 27001, Name: "Anti Stack Potion", Stackable: true, MaxCount: 200, AntiStack: true},
 		},
 		{
+			name: "anti-get template",
+			inventory: []inventory.ItemInstance{
+				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+			},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Anti Get Potion", Stackable: true, MaxCount: 200, AntiGet: true},
+		},
+		{
 			name: "anti-drop template",
 			inventory: []inventory.ItemInstance{
 				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},

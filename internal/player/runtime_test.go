@@ -1004,6 +1004,10 @@ func TestRuntimeUseItemOnItemRejectsTemplateTransferGuardsWithoutMutation(t *tes
 			template: itemcatalog.Template{Vnum: 27001, Name: "Anti Stack", Stackable: true, MaxCount: 200, AntiStack: true},
 		},
 		{
+			name:     "anti-get template",
+			template: itemcatalog.Template{Vnum: 27001, Name: "Anti Get", Stackable: true, MaxCount: 200, AntiGet: true},
+		},
+		{
 			name:     "anti-drop template",
 			template: itemcatalog.Template{Vnum: 27001, Name: "Anti Drop", Stackable: true, MaxCount: 200, AntiDrop: true},
 		},
