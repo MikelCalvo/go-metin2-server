@@ -2615,7 +2615,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							} else if !template.Stackable {
 								maxCount = 0
 								forceSameVnumSwap = true
-							} else if template.AntiDrop || template.AntiGive || template.AntiSell || template.EquipSlot != "" || !selectedPlayer.CanUseTemplate(template) {
+							} else if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.EquipSlot != "" || !selectedPlayer.CanUseTemplate(template) {
 								maxCount = 0
 							} else if template.MaxCount > 0 {
 								maxCount = template.MaxCount
