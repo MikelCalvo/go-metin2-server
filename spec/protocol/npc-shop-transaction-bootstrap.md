@@ -201,7 +201,7 @@ The first sell/sell2 path must fail closed when any of these are true:
 - the item is currently equipped or otherwise not in a plain carried state
 - the requested carried cell has duplicate live item occupancy
 - the carried item is marked runtime-locked
-- the template is marked `anti_sell`
+- the template is marked with a transfer/sell restriction (`anti_get`, `anti_drop`, `anti_give`, or `anti_sell`)
 - the resolved template carries a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
 - the template has no sell price
 - persistence/writeback fails

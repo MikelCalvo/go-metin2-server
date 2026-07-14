@@ -2867,14 +2867,26 @@ func TestMerchantSellCreditForCountPerGoldTemplateUsesLegacyCountDivision(t *tes
 	}
 }
 
-func TestMerchantSellCreditRejectsAntiSellTemplate(t *testing.T) {
-	_, ok := MerchantSellCredit(itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiSell: true}, 3)
-	if ok {
-		t.Fatal("expected anti-sell template to reject merchant sell credit")
+func TestMerchantSellCreditRejectsTransferRestrictedTemplates(t *testing.T) {
+	cases := []struct {
+		name     string
+		template itemcatalog.Template
+	}{
+		{name: "anti sell", template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiSell: true}},
+		{name: "anti get", template: itemcatalog.Template{Vnum: 27001, Name: "No Sellback Pickup Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiGet: true}},
+		{name: "anti drop", template: itemcatalog.Template{Vnum: 27001, Name: "No Transfer Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiDrop: true}},
+		{name: "anti give", template: itemcatalog.Template{Vnum: 27001, Name: "No Give Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiGive: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, ok := MerchantSellCredit(tc.template, 3); ok {
+				t.Fatalf("expected %s template to reject merchant sell credit", tc.name)
+			}
+		})
 	}
 }
 
-func TestRuntimeSellMerchantItemWithTemplateRejectsAntiSellAndMismatchedTemplateWithoutMutatingState(t *testing.T) {
+func TestRuntimeSellMerchantItemWithTemplateRejectsRestrictedTemplatesWithoutMutatingState(t *testing.T) {
 	cases := []struct {
 		name     string
 		template itemcatalog.Template
@@ -2882,6 +2894,18 @@ func TestRuntimeSellMerchantItemWithTemplateRejectsAntiSellAndMismatchedTemplate
 		{
 			name:     "anti sell",
 			template: itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiSell: true},
+		},
+		{
+			name:     "anti get",
+			template: itemcatalog.Template{Vnum: 27001, Name: "No Sellback Pickup Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiGet: true},
+		},
+		{
+			name:     "anti drop",
+			template: itemcatalog.Template{Vnum: 27001, Name: "No Transfer Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiDrop: true},
+		},
+		{
+			name:     "anti give",
+			template: itemcatalog.Template{Vnum: 27001, Name: "No Give Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiGive: true},
 		},
 		{
 			name:     "template vnum mismatch",
