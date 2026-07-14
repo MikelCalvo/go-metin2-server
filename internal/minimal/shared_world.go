@@ -1130,6 +1130,10 @@ func sameGroundRewardCollectorLocation(registered loginticket.Character, supplie
 	return sameGroundRewardCharacterLocation(registered, supplied)
 }
 
+func sameGroundRewardCollectorSnapshot(registered loginticket.Character, supplied loginticket.Character) bool {
+	return sameGroundRewardCollectorLocation(registered, supplied) && registered.Points[bootstrapPlayerPointValueIndex] == supplied.Points[bootstrapPlayerPointValueIndex]
+}
+
 func sameGroundRewardCharacterLocation(registered loginticket.Character, supplied loginticket.Character) bool {
 	return registered.ID == supplied.ID && registered.VID == supplied.VID && registered.Name == supplied.Name && registered.MapIndex == supplied.MapIndex && registered.X == supplied.X && registered.Y == supplied.Y && registered.Z == supplied.Z
 }
@@ -1291,7 +1295,7 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 	defer r.mu.Unlock()
 
 	registeredCollector, ok := r.playerCharacter(collectorID)
-	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) || !sameGroundRewardCollectorLocation(registeredCollector, collector) {
+	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) || !sameGroundRewardCollectorSnapshot(registeredCollector, collector) {
 		return sharedGroundItemPickup{}, false
 	}
 	ground, ok := r.groundItemsByVID[vid]
@@ -1325,7 +1329,7 @@ func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector log
 	defer r.mu.Unlock()
 
 	registeredCollector, ok := r.playerCharacter(collectorID)
-	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) || !sameGroundRewardCollectorLocation(registeredCollector, collector) {
+	if !ok || characterAtBootstrapHPFloor(registeredCollector) || characterAtBootstrapHPFloor(collector) || !sameGroundRewardCollectorSnapshot(registeredCollector, collector) {
 		return false
 	}
 	ground, ok := r.groundItemsByVID[vid]
