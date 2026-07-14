@@ -345,6 +345,39 @@ func TestGameRuntimeImportContentBundleRejectsDuplicateSpawnGroupRefsWithoutMuta
 	}
 }
 
+func TestGameRuntimeImportContentBundleRejectsUnreferencedCombatProfileWithoutRegisteringIt(t *testing.T) {
+	const profile = "practice_unreferenced_import_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+		Profile:               profile,
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		AttackValue:           7,
+		DefenseValue:          4,
+		RespawnDelayMs:        1500,
+	}}})
+	if !errors.Is(err, contentbundle.ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for unreferenced imported combat profile, got %v", err)
+	}
+	if worldruntime.ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected failed unreferenced combat-profile import not to register profile %q", profile)
+	}
+	if bundle, err := runtime.ExportContentBundle(); err != nil {
+		t.Fatalf("export content bundle after rejected unreferenced profile: %v", err)
+	} else if !reflect.DeepEqual(bundle, contentbundle.Bundle{}) {
+		t.Fatalf("expected rejected unreferenced profile import not to mutate runtime, got %#v", bundle)
+	}
+}
+
 func TestGameRuntimeImportContentBundleRejectsDuplicateCombatProfilesWithoutMutatingRuntime(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")

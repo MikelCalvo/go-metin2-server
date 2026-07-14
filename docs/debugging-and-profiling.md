@@ -85,6 +85,12 @@ Lists and registers process-local bootstrap static-actor combat profiles for lat
 
 On success `POST` returns the canonicalized profile defaults, including any derived `damage_per_normal_attack` and sorted reward drop vnums. Invalid JSON, unknown fields, invalid formulas, invalid reward descriptors, non-loopback callers, and methods other than `GET` / `POST` fail closed.
 
+### `GET` / `POST /local/content-bundle`
+
+Exports or imports the deterministic authored bootstrap content bundle used by static actors, interaction definitions, spawn groups, and their authored combat-profile snapshots.
+
+`POST` canonicalizes and validates the whole bundle before applying it. In addition to the per-row validation, non-built-in `combat_profiles` entries must be referenced by at least one static actor or spawn group in the same bundle; unreferenced snapshots are rejected so this endpoint cannot mutate process-local combat profiles without importing authored content that uses them.
+
 ### `POST /local/notice`
 
 - request body: raw plain-text notice message

@@ -30,6 +30,7 @@ This contract applies only to:
 This document now freezes the contract and also records the two landed service-style verticals:
 - `warp` is now implemented on top of the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime
 - `shop_preview` now opens the bootstrap merchant window and buy-only merchant flow on top of the same ingress and the same structured merchant catalog seam
+- authored content bundles may carry process-local combat profile snapshots only when the same bundle references them from a static actor or spawn group
 
 ## Why service-style NPCs first
 
@@ -84,6 +85,18 @@ Frozen target behavior:
 - the same catalog still owns a deterministic compact preview render for QA/debug and lower-level resolution surfaces
 
 This remains intentionally narrow even now that the first buy-only merchant path exists: sell-back, stock depletion, and richer merchant-window choreography still remain separate later work.
+
+## Content-bundle combat profile guardrail
+
+Content bundles can carry authored combat profile snapshots so imported spawn groups can materialize process-local practice-mob variants before the static actors are restored.
+That import path is intentionally fail-closed:
+
+- every non-built-in `combat_profiles[].profile` entry must be referenced by at least one authored static actor or spawn group in the same bundle
+- duplicate profile snapshots are rejected
+- snapshots that conflict with an already-registered local profile are rejected
+- failed imports must not register the profile, materialize actors, persist content, or leak queued visibility frames
+
+This keeps `/local/content-bundle` from becoming a side-channel for unreferenced process-local combat profile mutation.
 
 ## Routing rule
 

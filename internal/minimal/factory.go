@@ -4931,7 +4931,8 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	if r == nil || r.staticStore == nil || r.interactionStore == nil {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable
 	}
-	rollbackProfiles, err := registerContentBundleCombatProfiles(bundle.CombatProfiles)
+	referencedProfiles := contentBundleReferencedCombatProfiles(bundle)
+	rollbackProfiles, err := registerContentBundleCombatProfiles(bundle.CombatProfiles, referencedProfiles)
 	if err != nil {
 		return contentbundle.Bundle{}, err
 	}
@@ -4998,7 +4999,24 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 		reflect.DeepEqual(snapshot.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
 
-func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnapshot) (func(), error) {
+func contentBundleReferencedCombatProfiles(bundle contentbundle.Bundle) map[string]struct{} {
+	referenced := make(map[string]struct{}, len(bundle.StaticActors)+len(bundle.SpawnGroups))
+	for _, actor := range bundle.StaticActors {
+		profile := strings.TrimSpace(actor.CombatProfile)
+		if profile != "" {
+			referenced[profile] = struct{}{}
+		}
+	}
+	for _, spawnGroup := range bundle.SpawnGroups {
+		profile := strings.TrimSpace(spawnGroup.CombatProfile)
+		if profile != "" {
+			referenced[profile] = struct{}{}
+		}
+	}
+	return referenced
+}
+
+func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnapshot, referencedProfiles map[string]struct{}) (func(), error) {
 	registered := make([]string, 0, len(profiles))
 	seen := make(map[string]struct{}, len(profiles))
 	rollback := func() {
@@ -5010,6 +5028,10 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 		profile := strings.TrimSpace(snapshot.Profile)
 		if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
 			continue
+		}
+		if _, referenced := referencedProfiles[profile]; !referenced {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
 		}
 		if _, exists := seen[profile]; exists {
 			rollback()
