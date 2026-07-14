@@ -37,6 +37,7 @@ Each template must pass the current `internal/itemstore` validation before the r
 - `use_effect` is valid only on carried-use templates that do not author an `equip_slot`; equipment templates with `use_effect` are rejected so direct item use and equip side effects cannot both be authored on one bootstrap template
 - `equip_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, and positive `point_delta`
 - `equip_effect` is only valid on templates that also author a valid `equip_slot`
+- runtime application of an `equip_effect` is fail-closed unless the selected character currently has a valid equipped item in that authored slot whose live `vnum` matches the same template
 - duplicate `vnum` entries are rejected
 
 The store normalizes and persists deterministic JSON: template names and effect messages are trimmed, equipment slot names are normalized, and templates are sorted by `vnum`.

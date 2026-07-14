@@ -2435,6 +2435,54 @@ func TestRuntimeEquipItemWithTemplateRejectsTransferGuardsWithoutMutatingState(t
 	}
 }
 
+func TestRuntimeApplyEquipTemplateEffectRequiresMatchingEquippedItem(t *testing.T) {
+	template := itemcatalog.Template{
+		Vnum:        12200,
+		Name:        "Practice Blade",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   inventory.EquipmentSlotWeapon.String(),
+		EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 10},
+	}
+
+	runtime := NewRuntime(loginticket.Character{Points: [255]int32{1: 25}}, SessionLink{})
+	if result, ok := runtime.ApplyEquipTemplateEffect(template, inventory.EquipmentSlotWeapon); ok {
+		t.Fatalf("expected equip effect without matching equipped item to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 25 {
+		t.Fatalf("expected missing equipped item rejection to leave point unchanged, got %d", got)
+	}
+
+	runtime = NewRuntime(loginticket.Character{
+		Points:    [255]int32{1: 25},
+		Equipment: []inventory.ItemInstance{{ID: 41, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
+	}, SessionLink{})
+	if result, ok := runtime.ApplyEquipTemplateEffect(template, inventory.EquipmentSlotWeapon); ok {
+		t.Fatalf("expected mismatched equipped vnum to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 25 {
+		t.Fatalf("expected mismatched equipped vnum rejection to leave point unchanged, got %d", got)
+	}
+
+	runtime = NewRuntime(loginticket.Character{
+		Points:    [255]int32{1: 25},
+		Equipment: []inventory.ItemInstance{{ID: 42, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
+	}, SessionLink{})
+	result, ok := runtime.ApplyEquipTemplateEffect(template, inventory.EquipmentSlotWeapon)
+	if !ok {
+		t.Fatal("expected matching equipped item to apply template-authored equip effect")
+	}
+	if result.PointType != 1 || result.PointAmount != 10 || result.PointValue != 35 {
+		t.Fatalf("unexpected equip effect result: %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 35 {
+		t.Fatalf("expected matching equip effect to update point to 35, got %d", got)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != 25 {
+		t.Fatalf("expected equip effect to remain live-only before commit, got persisted point %d", got)
+	}
+}
+
 func TestRuntimeRejectsLockedEquippedItemUnequipWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = nil

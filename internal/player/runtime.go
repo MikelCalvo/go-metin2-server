@@ -827,6 +827,17 @@ func (r *Runtime) ApplyEquipTemplateEffect(template itemcatalog.Template, equipS
 	if r == nil || !templateAuthoredForEquipSlot(template, equipSlot) || template.EquipEffect == nil {
 		return PointChangeResult{}, false
 	}
+	equippedIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
+	if equippedIndex < 0 {
+		return PointChangeResult{}, false
+	}
+	equippedItem := r.liveEquipment[equippedIndex]
+	if equippedItem.Vnum != template.Vnum || equippedItem.Count == 0 {
+		return PointChangeResult{}, false
+	}
+	if err := equippedItem.Validate(); err != nil {
+		return PointChangeResult{}, false
+	}
 	effect := *template.EquipEffect
 	currentPointValue := r.livePoints[effect.PointIndex]
 	if currentPointValue > (1<<31-1)-effect.PointDelta {

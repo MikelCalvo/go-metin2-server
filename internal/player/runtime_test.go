@@ -2705,6 +2705,7 @@ func TestRuntimeApplyEquipTemplateEffectAdjustsLivePointsWithoutMutatingPersiste
 		Points: [255]int32{
 			1: 700,
 		},
+		Equipment: []inventory.ItemInstance{{ID: 101, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
@@ -2843,6 +2844,7 @@ func TestRuntimeRemoveEquipTemplateEffectRevertsLivePointsWithoutMutatingPersist
 		Points: [255]int32{
 			1: 700,
 		},
+		Equipment: []inventory.ItemInstance{{ID: 101, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 
