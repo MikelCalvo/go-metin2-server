@@ -3,8 +3,10 @@ package contentbundle
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -79,6 +81,12 @@ func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionst
 }
 
 func Canonicalize(bundle Bundle) (Bundle, error) {
+	rollbackProfiles, err := registerPortableCombatProfileSnapshots(bundle.CombatProfiles)
+	if err != nil {
+		return Bundle{}, err
+	}
+	defer rollbackProfiles()
+
 	normalizedSpawnGroups := normalizeSpawnGroups(bundle.SpawnGroups)
 	normalizedStaticActors := normalizeStaticActors(bundle.StaticActors)
 	normalized := Bundle{
@@ -268,6 +276,66 @@ func combatProfilesForAuthoredActors(staticActors []StaticActor, spawnGroups []S
 		return nil
 	}
 	return profiles
+}
+
+func registerPortableCombatProfileSnapshots(profiles []worldruntime.StaticActorCombatProfileSnapshot) (func(), error) {
+	registered := make([]string, 0, len(profiles))
+	seen := make(map[string]struct{}, len(profiles))
+	rollback := func() {
+		for i := len(registered) - 1; i >= 0; i-- {
+			worldruntime.UnregisterStaticActorCombatProfile(registered[i])
+		}
+	}
+	for _, snapshot := range profiles {
+		profile := strings.TrimSpace(snapshot.Profile)
+		if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
+			continue
+		}
+		if _, exists := seen[profile]; exists {
+			rollback()
+			return nil, ErrInvalidBundle
+		}
+		seen[profile] = struct{}{}
+		if worldruntime.ValidStaticActorCombatProfile(profile) {
+			existing, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+			if !ok || !combatProfileSnapshotMatchesDefaults(snapshot, existing) {
+				rollback()
+				return nil, ErrInvalidBundle
+			}
+			continue
+		}
+		if snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || snapshot.RespawnDelayMs <= 0 {
+			rollback()
+			return nil, ErrInvalidBundle
+		}
+		if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+			MaxHP:                 snapshot.MaxHP,
+			DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
+			AttackValue:           snapshot.AttackValue,
+			DefenseValue:          snapshot.DefenseValue,
+			Level:                 snapshot.Level,
+			Rank:                  snapshot.Rank,
+			RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
+			DeathReward:           snapshot.DeathReward,
+		}) {
+			rollback()
+			return nil, ErrInvalidBundle
+		}
+		registered = append(registered, profile)
+	}
+	return rollback, nil
+}
+
+func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot, defaults worldruntime.StaticActorCombatProfileDefaults) bool {
+	return strings.TrimSpace(snapshot.Profile) != "" &&
+		snapshot.MaxHP == defaults.MaxHP &&
+		snapshot.DamagePerNormalAttack == defaults.DamagePerNormalAttack &&
+		snapshot.AttackValue == defaults.AttackValue &&
+		snapshot.DefenseValue == defaults.DefenseValue &&
+		snapshot.Level == defaults.Level &&
+		snapshot.Rank == defaults.Rank &&
+		time.Duration(snapshot.RespawnDelayMs)*time.Millisecond == defaults.RespawnDelay &&
+		reflect.DeepEqual(snapshot.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
 
 func appendCombatProfileSnapshot(profiles []worldruntime.StaticActorCombatProfileSnapshot, seen map[string]struct{}, profile string) []worldruntime.StaticActorCombatProfileSnapshot {

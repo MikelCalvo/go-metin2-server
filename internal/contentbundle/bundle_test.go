@@ -273,6 +273,94 @@ func TestCanonicalizeRejectsInvalidCombatProfile(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRegistersPortableCombatProfileSnapshotsBeforeValidatingActors(t *testing.T) {
+	const profile = "practice_portable_wolf"
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	bundle, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.portable_wolf",
+			Name:          "Portable Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   3,
+			Level:          7,
+			Rank:           2,
+			RespawnDelayMs: 1500,
+			DeathReward:    worldruntime.StaticActorDeathReward{Experience: 25, Gold: 11, DropVnums: []uint32{27002, 27001}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize portable combat profile bundle: %v", err)
+	}
+
+	want := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.portable_wolf",
+			Name:             "Portable Wolf",
+			MapIndex:         42,
+			X:                1775,
+			Y:                2875,
+			RaceNum:          101,
+			CombatProfile:    profile,
+			RewardExperience: 25,
+			RewardGold:       11,
+			RewardDropVnums:  []uint32{27001, 27002},
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			AttackValue:           8,
+			DefenseValue:          3,
+			Level:                 7,
+			Rank:                  2,
+			RespawnDelayMs:        1500,
+			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 25, Gold: 11, DropVnums: []uint32{27001, 27002}},
+		}},
+	}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected portable combat profile canonical bundle:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
+func TestCanonicalizeRollsBackPortableCombatProfileOnLaterValidationFailure(t *testing.T) {
+	const profile = "practice_portable_invalid_wolf"
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.portable_invalid_wolf",
+			Name:            "Portable Invalid Wolf",
+			MapIndex:        42,
+			X:               1775,
+			Y:               2875,
+			RaceNum:         101,
+			CombatProfile:   profile,
+			RewardDropVnums: []uint32{27001, 27001},
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   3,
+			RespawnDelayMs: 1500,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for invalid portable bundle, got %v", err)
+	}
+	if worldruntime.ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected failed bundle validation to roll back registered portable profile %q", profile)
+	}
+}
+
 func TestCanonicalizeTrimsStaticActorAuthoringFields(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
 		StaticActors: []StaticActor{{
