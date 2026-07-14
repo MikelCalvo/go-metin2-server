@@ -30,6 +30,7 @@ Each template must pass the current `internal/itemstore` validation before the r
 - `name` must be non-empty after trimming
 - `max_count` must be non-zero and fit the current bootstrap client-facing count field (`<= 255`)
 - non-stackable templates must use `max_count = 1`; `anti_stack` is accepted as explicit transfer-guard metadata and, when set, fails closed in current use/equip/merge/drop/sell paths rather than describing an alternate stackability mode
+- `anti_get` is a fail-closed acquisition guard for the currently owned bootstrap acquisition paths: ground pickup, template-backed merchant buy, and adjacent transfer-style mutations reject it before inventory, gold, quickslot, or persisted-state mutation
 - authored `equip_slot`, when present, must be one of the owned equipment slot names
 - `min_level`, when present and non-zero, requires the selected character's persisted `level` to be at least that value before template-driven item actions are accepted
 - `use_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, positive `point_delta`, and non-empty trimmed `message`

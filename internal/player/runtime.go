@@ -1033,7 +1033,7 @@ func applyItemRewriteHook(item inventory.ItemInstance, rewriteItem func(inventor
 }
 
 func (r *Runtime) ValidateMerchantBuy(template itemcatalog.Template, count uint16, price uint64) MerchantBuyFailure {
-	if r == nil || !r.CanUseTemplate(template) || count == 0 || count > template.MaxCount || price == 0 {
+	if r == nil || !r.CanUseTemplate(template) || template.AntiGet || count == 0 || count > template.MaxCount || price == 0 {
 		return MerchantBuyFailureInvalid
 	}
 	if !template.Stackable && count != 1 {

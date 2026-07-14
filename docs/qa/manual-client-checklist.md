@@ -924,12 +924,14 @@ Expected result:
 - [ ] Using the local merchant debug harness, prepare a buyer with several compatible partial `27001` carried stacks plus at least one free carried slot
 - [ ] Open the merchant context and run `/shop_buy <slot>` for an authored entry whose `count` requires filling those compatible carried stacks and placing the final remainder into the lowest free carried slot
 - [ ] Confirm the harness returns one inventory refresh per changed carried slot in carried-slot order (`ITEM_SET` for fresh slots, `ITEM_UPDATE` for existing stack fills) plus the current merchant success companion
+- [ ] Repeat with the merchant entry's template temporarily authored with `anti_get`
 - [ ] Confirm persisted `gold` and inventory match the same final state already frozen for the packet `SHOP BUY` path
 
 Expected result:
 - the local `/shop_buy` harness reuses the same deterministic carried-placement semantics as packet `SHOP BUY`
 - compatible existing stacks fill first in slot order, then the remainder lands in the lowest free carried slot
 - no harness-only placement drift appears in persisted or live runtime state
+- `anti_get` merchant templates reject before gold, inventory, quickslot, or persisted-state mutation
 
 ### 6.19 Packet carried inventory move/swap/split/merge smoke (packet-harness optional)
 
