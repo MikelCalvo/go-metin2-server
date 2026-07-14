@@ -16739,6 +16739,73 @@ func TestSharedWorldRegistryGroundGoldPickupRejectsStaleLiveCollectorSnapshotAft
 	}
 }
 
+func TestSharedWorldRegistryGroundItemPickupRejectsStaleCollectorIdentitySnapshot(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("IdentitySnapshotOwner", 0x0103014f, 0x0204014f, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("StaleIdentityCollector", 0x01030150, 0x02040150, 1120, 2120, 1, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	groundVID := uint32(0x0A0B0C3A)
+	item := inventory.ItemInstance{ID: 1015, Vnum: 27005, Count: 1, Slot: 9}
+	if !registry.RegisterGroundItem(ownerID, "identity-snapshot-owner", owner, groundVID, item) {
+		t.Fatal("expected owner ground item registration to succeed")
+	}
+	updatedCollector := collector
+	updatedCollector.Name = "FreshIdentityCollector"
+	updatedCollector.VID = 0x02040151
+	registry.UpdateCharacter(collectorID, updatedCollector)
+
+	if item, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); ok || item.Vnum != 0 {
+		t.Fatalf("expected stale collector identity visibility lookup to fail after registered collector rebinding, got ok=%v item=%+v", ok, item)
+	}
+	if pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok || pickup.Item.Vnum != 0 {
+		t.Fatalf("expected stale collector identity pickup lookup to fail after registered collector rebinding, got ok=%v pickup=%+v", ok, pickup)
+	}
+	if removed := registry.RemoveGroundItem(collectorID, collector, groundVID); removed {
+		t.Fatal("expected stale collector identity removal to fail after registered collector rebinding")
+	}
+	if pickup, ok := registry.GroundItemPickupFor(ownerID, owner, groundVID); !ok || pickup.Item.Vnum != item.Vnum {
+		t.Fatalf("expected rejected stale collector identity to leave ground item available for living owner, got ok=%v pickup=%+v", ok, pickup)
+	}
+}
+
+func TestSharedWorldRegistryGroundGoldPickupRejectsStaleCollectorIdentitySnapshot(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("IdentityGoldSnapshotOwner", 0x01030152, 0x02040152, 1100, 2100, 0, 101, 201)
+	collector := peerVisibilityCharacter("StaleIdentityGoldCollector", 0x01030153, 0x02040153, 1120, 2120, 1, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	collectorID, _ := registry.Join(collector, newPendingServerFrames(), nil)
+	if ownerID == 0 || collectorID == 0 {
+		t.Fatalf("expected owner and collector to join shared world, got owner=%d collector=%d", ownerID, collectorID)
+	}
+	groundVID := uint32(0x0A0B0C3B)
+	if !registry.RegisterGroundGold(ownerID, "identity-gold-snapshot-owner", owner, groundVID, 475) {
+		t.Fatal("expected owner ground gold registration to succeed")
+	}
+	updatedCollector := collector
+	updatedCollector.Name = "FreshIdentityGoldCollector"
+	updatedCollector.VID = 0x02040154
+	registry.UpdateCharacter(collectorID, updatedCollector)
+
+	if item, ok := registry.GroundItemVisibleTo(collectorID, collector, groundVID); ok || item.Vnum != 0 {
+		t.Fatalf("expected stale collector identity ground-gold visibility lookup to fail after registered collector rebinding, got ok=%v item=%+v", ok, item)
+	}
+	if pickup, ok := registry.GroundItemPickupFor(collectorID, collector, groundVID); ok || pickup.GoldAmount != 0 {
+		t.Fatalf("expected stale collector identity ground-gold pickup lookup to fail after registered collector rebinding, got ok=%v pickup=%+v", ok, pickup)
+	}
+	if removed := registry.RemoveGroundItem(collectorID, collector, groundVID); removed {
+		t.Fatal("expected stale collector identity ground-gold removal to fail after registered collector rebinding")
+	}
+	if pickup, ok := registry.GroundItemPickupFor(ownerID, owner, groundVID); !ok || pickup.GoldAmount != 475 {
+		t.Fatalf("expected rejected stale collector identity to leave ground gold available for living owner, got ok=%v pickup=%+v", ok, pickup)
+	}
+}
+
 func TestSharedWorldRegistryGroundItemPickupRejectsStaleNearCollectorSnapshotAfterCollectorMovesAway(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
