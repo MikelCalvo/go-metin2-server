@@ -5000,6 +5000,7 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 
 func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnapshot) (func(), error) {
 	registered := make([]string, 0, len(profiles))
+	seen := make(map[string]struct{}, len(profiles))
 	rollback := func() {
 		for i := len(registered) - 1; i >= 0; i-- {
 			worldruntime.UnregisterStaticActorCombatProfile(registered[i])
@@ -5010,6 +5011,11 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 		if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
 			continue
 		}
+		if _, exists := seen[profile]; exists {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
+		}
+		seen[profile] = struct{}{}
 		if worldruntime.ValidStaticActorCombatProfile(profile) {
 			existing, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
 			if !ok || !contentBundleCombatProfileSnapshotMatchesDefaults(snapshot, existing) {
