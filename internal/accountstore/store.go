@@ -1,10 +1,12 @@
 package accountstore
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,8 +66,8 @@ func (s *FileStore) Load(login string) (Account, error) {
 	}
 
 	var account Account
-	if err := json.Unmarshal(raw, &account); err != nil {
-		return Account{}, fmt.Errorf("decode account: %w", err)
+	if err := decodeAccountStrict(raw, &account); err != nil {
+		return Account{}, fmt.Errorf("%w: decode account: %v", ErrInvalidAccount, err)
 	}
 	account.Characters = normalizeAccountCharacters(account.Characters)
 	if err := validateLoadedAccount(account); err != nil {
@@ -114,6 +116,21 @@ func (s *FileStore) accountPath(login string) string {
 	normalized := strings.ToLower(login)
 	filename := hex.EncodeToString([]byte(normalized)) + ".json"
 	return filepath.Join(s.dir, filename)
+}
+
+func decodeAccountStrict(raw []byte, account *Account) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(account); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON value")
+		}
+		return err
+	}
+	return nil
 }
 
 func validateAccount(account Account) error {
