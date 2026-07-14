@@ -2256,6 +2256,16 @@ func connectedCharacterSnapshot(topology worldruntime.BootstrapTopology, charact
 }
 
 func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldruntime.StaticEntity) StaticActorSnapshot {
+	combatProfile := actor.CombatProfile
+	if combatProfile == "" {
+		combatProfile = actor.CombatKind
+	}
+	var combatLevel uint16
+	var combatRank uint8
+	if defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatProfile); ok {
+		combatLevel = defaults.Level
+		combatRank = defaults.Rank
+	}
 	return StaticActorSnapshot{
 		EntityID:         actor.Entity.ID,
 		Name:             actor.Entity.Name,
@@ -2263,7 +2273,9 @@ func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldrun
 		X:                actor.Position.X,
 		Y:                actor.Position.Y,
 		RaceNum:          actor.RaceNum,
-		CombatProfile:    actor.CombatProfile,
+		CombatProfile:    combatProfile,
+		CombatLevel:      combatLevel,
+		CombatRank:       combatRank,
 		InteractionKind:  actor.InteractionKind,
 		InteractionRef:   actor.InteractionRef,
 		SpawnGroupRef:    actor.SpawnGroupRef,

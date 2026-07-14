@@ -560,6 +560,64 @@ func TestGameRuntimeFailedContentBundleImportDoesNotLeakSpawnVisibilityFrames(t 
 	}
 }
 
+func TestGameRuntimeUpdateSpawnGroupActorSnapshotKeepsCombatLevelAndRank(t *testing.T) {
+	const profile = "practice_spawn_update_ranked_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  7,
+		Level:        19,
+		Rank:         4,
+		RespawnDelay: 1500 * time.Millisecond,
+	}) {
+		t.Fatalf("expected combat profile %q to register", profile)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.spawn_update_ranked",
+		Name:          "Ranked Practice Mob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: profile,
+	}}}); err != nil {
+		t.Fatalf("import ranked spawn group: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one runtime actor after import, got %d", len(actors))
+	}
+	if actors[0].CombatLevel != 19 || actors[0].CombatRank != 4 {
+		t.Fatalf("expected imported actor snapshot to expose combat level/rank, got %+v", actors[0])
+	}
+
+	updated, ok := runtime.UpdateStaticActor(actors[0].EntityID, "Ranked Practice Mob Moved", 42, 1800, 2900, 20351)
+	if !ok {
+		t.Fatal("expected spawn-backed actor update to succeed")
+	}
+	if updated.CombatProfile != profile || updated.CombatLevel != 19 || updated.CombatRank != 4 {
+		t.Fatalf("expected updated spawn actor snapshot to preserve combat profile level/rank, got %+v", updated)
+	}
+	refreshed := runtime.StaticActors()
+	if len(refreshed) != 1 || refreshed[0].CombatLevel != 19 || refreshed[0].CombatRank != 4 {
+		t.Fatalf("expected runtime actor snapshots to preserve combat level/rank after update, got %+v", refreshed)
+	}
+}
+
 func TestGameRuntimeUpdateSpawnGroupActorPreservesRewardDescriptor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
