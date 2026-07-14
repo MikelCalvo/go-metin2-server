@@ -345,6 +345,62 @@ func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testi
 	}
 }
 
+func TestGameRuntimeRejectsDuplicateImportedCombatProfileSnapshotsWithoutMutatingRuntime(t *testing.T) {
+	const profile = "practice_duplicate_import_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.duplicate_wolf",
+			Name:          "Practice Duplicate Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{
+			{
+				Profile:               profile,
+				MaxHP:                 24,
+				DamagePerNormalAttack: 3,
+				AttackValue:           7,
+				DefenseValue:          4,
+				RespawnDelayMs:        1500,
+			},
+			{
+				Profile:               profile,
+				MaxHP:                 24,
+				DamagePerNormalAttack: 3,
+				AttackValue:           7,
+				DefenseValue:          4,
+				RespawnDelayMs:        1500,
+			},
+		},
+	})
+	if !errors.Is(err, contentbundle.ErrInvalidBundle) {
+		t.Fatalf("expected duplicate imported combat profile snapshots to fail closed, got %v", err)
+	}
+	if worldruntime.ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected failed duplicate profile import not to leave profile %q registered", profile)
+	}
+	if actors := runtime.StaticActors(); len(actors) != 0 {
+		t.Fatalf("expected failed duplicate profile import not to materialize actors, got %+v", actors)
+	}
+}
+
 func TestGameRuntimeRejectsConflictingImportedCombatProfileSnapshot(t *testing.T) {
 	const profile = "practice_conflicting_import_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
