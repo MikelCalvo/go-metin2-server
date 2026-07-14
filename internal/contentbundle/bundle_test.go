@@ -275,7 +275,6 @@ func TestCanonicalizeRejectsInvalidCombatProfile(t *testing.T) {
 
 func TestCanonicalizeRegistersPortableCombatProfileSnapshotsBeforeValidatingActors(t *testing.T) {
 	const profile = "practice_portable_wolf"
-	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 
 	bundle, err := Canonicalize(Bundle{
 		SpawnGroups: []SpawnGroup{{
@@ -318,7 +317,7 @@ func TestCanonicalizeRegistersPortableCombatProfileSnapshotsBeforeValidatingActo
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               profile,
 			MaxHP:                 24,
-			DamagePerNormalAttack: 5,
+			DamagePerNormalAttack: 0,
 			AttackValue:           8,
 			DefenseValue:          3,
 			Level:                 7,
@@ -357,7 +356,42 @@ func TestCanonicalizeRollsBackPortableCombatProfileOnLaterValidationFailure(t *t
 		t.Fatalf("expected ErrInvalidBundle for invalid portable bundle, got %v", err)
 	}
 	if worldruntime.ValidStaticActorCombatProfile(profile) {
-		t.Fatalf("expected failed bundle validation to roll back registered portable profile %q", profile)
+		t.Fatalf("expected failed bundle validation not to register portable profile %q", profile)
+	}
+}
+
+func TestCanonicalizeRejectsUnreferencedCombatProfileSnapshot(t *testing.T) {
+	_, err := Canonicalize(Bundle{CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+		Profile:        "practice_unreferenced_wolf",
+		MaxHP:          24,
+		AttackValue:    8,
+		RespawnDelayMs: 1500,
+	}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for unreferenced combat profile snapshot, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsDuplicateCombatProfileSnapshots(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{Ref: "practice.imported_wolf", Name: "Imported Wolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: "practice_imported_wolf"}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{
+			{Profile: "practice_imported_wolf", MaxHP: 24, AttackValue: 8, RespawnDelayMs: 1500},
+			{Profile: " practice_imported_wolf ", MaxHP: 24, AttackValue: 8, RespawnDelayMs: 1500},
+		},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for duplicate combat profile snapshots, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsInvalidCombatProfileSnapshot(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups:    []SpawnGroup{{Ref: "practice.imported_wolf", Name: "Imported Wolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: "practice_imported_wolf"}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: "practice_imported_wolf", AttackValue: 8, RespawnDelayMs: 1500}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for invalid combat profile snapshot, got %v", err)
 	}
 }
 

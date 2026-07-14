@@ -212,6 +212,9 @@ The first content contract should fail closed when:
 - `map_index` is `0`
 - `race_num` is `0`
 - `combat_profile` is unknown when provided; an omitted profile is canonicalized to the bootstrap `practice_mob` profile for this first one-spawn-profile contract
+- a non-built-in `combat_profile` is referenced without a matching top-level `combat_profiles` snapshot and no matching profile is already registered locally
+- a `combat_profiles` snapshot is unreferenced by any authored static actor or spawn group, duplicates another snapshot after trimming its profile name, names a built-in profile, has a blank/non-canonical profile identity, or carries invalid HP/formula/respawn/reward defaults
+- when a spawn group omits explicit reward fields and references a custom bundled combat profile, canonicalization applies that profile snapshot's death-reward defaults so import, export, and loopback POST validation all share the same deterministic reward descriptor
 - coordinates are malformed for the current bundle schema
 - reward scalar values overflow the current bootstrap point-change carrier, or `reward_drop_vnums` contains `0` or duplicate drop vnums
 

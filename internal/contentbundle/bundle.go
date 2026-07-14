@@ -3,10 +3,8 @@ package contentbundle
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -81,18 +79,13 @@ func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionst
 }
 
 func Canonicalize(bundle Bundle) (Bundle, error) {
-	rollbackProfiles, err := registerPortableCombatProfileSnapshots(bundle.CombatProfiles)
-	if err != nil {
-		return Bundle{}, err
-	}
-	defer rollbackProfiles()
-
-	normalizedSpawnGroups := normalizeSpawnGroups(bundle.SpawnGroups)
 	normalizedStaticActors := normalizeStaticActors(bundle.StaticActors)
+	normalizedCombatProfiles := normalizeCombatProfiles(bundle.CombatProfiles)
+	normalizedSpawnGroups := normalizeSpawnGroups(bundle.SpawnGroups, normalizedCombatProfiles)
 	normalized := Bundle{
 		StaticActors:           normalizedStaticActors,
 		SpawnGroups:            normalizedSpawnGroups,
-		CombatProfiles:         combatProfilesForAuthoredActors(normalizedStaticActors, normalizedSpawnGroups),
+		CombatProfiles:         combatProfilesForAuthoredActors(normalizedStaticActors, normalizedSpawnGroups, normalizedCombatProfiles),
 		InteractionDefinitions: cloneDefinitions(bundle.InteractionDefinitions),
 	}
 	sort.Slice(normalized.StaticActors, func(i int, j int) bool {
@@ -162,6 +155,21 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 }
 
 func validateBundle(bundle Bundle) error {
+	profileSnapshots := make(map[string]worldruntime.StaticActorCombatProfileSnapshot, len(bundle.CombatProfiles))
+	referencedProfiles := referencedCombatProfileNames(bundle.StaticActors, bundle.SpawnGroups)
+	for _, profile := range bundle.CombatProfiles {
+		if !validCombatProfileSnapshot(profile) {
+			return ErrInvalidBundle
+		}
+		name := strings.TrimSpace(profile.Profile)
+		if _, referenced := referencedProfiles[name]; !referenced {
+			return ErrInvalidBundle
+		}
+		if _, ok := profileSnapshots[name]; ok {
+			return ErrInvalidBundle
+		}
+		profileSnapshots[name] = profile
+	}
 	definitionsByKey := make(map[string]struct{}, len(bundle.InteractionDefinitions))
 	for _, definition := range bundle.InteractionDefinitions {
 		if !validDefinition(definition) {
@@ -175,7 +183,7 @@ func validateBundle(bundle Bundle) error {
 	}
 	spawnGroupsByRef := make(map[string]struct{}, len(bundle.SpawnGroups))
 	for _, spawnGroup := range bundle.SpawnGroups {
-		if !validSpawnGroup(spawnGroup) {
+		if !validSpawnGroup(spawnGroup, profileSnapshots) {
 			return ErrInvalidBundle
 		}
 		if _, ok := spawnGroupsByRef[spawnGroup.Ref]; ok {
@@ -188,7 +196,7 @@ func validateBundle(bundle Bundle) error {
 		if strings.TrimSpace(actor.Name) == "" || actor.MapIndex == 0 || actor.RaceNum == 0 {
 			return ErrInvalidBundle
 		}
-		if !worldruntime.ValidStaticActorCombatProfile(actor.CombatProfile) {
+		if !validAuthoredCombatProfile(actor.CombatProfile, profileSnapshots) {
 			return ErrInvalidBundle
 		}
 		if !validInteractionMetadata(actor.InteractionKind, actor.InteractionRef) {
@@ -222,23 +230,50 @@ func validInteractionMetadata(kind string, ref string) bool {
 	return kind != "" && ref != ""
 }
 
-func validSpawnGroup(spawnGroup SpawnGroup) bool {
+func validSpawnGroup(spawnGroup SpawnGroup, profileSnapshots map[string]worldruntime.StaticActorCombatProfileSnapshot) bool {
 	if !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroup.Ref) || strings.TrimSpace(spawnGroup.Ref) == "" || strings.TrimSpace(spawnGroup.Name) == "" || spawnGroup.MapIndex == 0 || spawnGroup.RaceNum == 0 {
 		return false
 	}
-	if !worldruntime.ValidStaticActorCombatProfile(spawnGroup.CombatProfile) || spawnGroup.CombatProfile == "" {
+	if strings.TrimSpace(spawnGroup.CombatProfile) == "" || !validAuthoredCombatProfile(spawnGroup.CombatProfile, profileSnapshots) {
 		return false
 	}
 	return validRewardDescriptor(spawnGroup)
+}
+
+func validAuthoredCombatProfile(profile string, profileSnapshots map[string]worldruntime.StaticActorCombatProfileSnapshot) bool {
+	profile = strings.TrimSpace(profile)
+	if profile == "" {
+		return true
+	}
+	if worldruntime.ValidStaticActorCombatProfile(profile) {
+		return true
+	}
+	_, ok := profileSnapshots[profile]
+	return ok
+}
+
+func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSnapshot) bool {
+	name := strings.TrimSpace(profile.Profile)
+	if name == "" || name == worldruntime.StaticActorCombatProfilePracticeMob || name == worldruntime.StaticActorCombatProfileTrainingDummy {
+		return false
+	}
+	if profile.MaxHP == 0 || profile.AttackValue == 0 || profile.RespawnDelayMs <= 0 {
+		return false
+	}
+	return worldruntime.ValidStaticActorDeathReward(profile.DeathReward)
 }
 
 func validRewardDescriptor(spawnGroup SpawnGroup) bool {
 	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: spawnGroup.RewardExperience, Gold: spawnGroup.RewardGold, DropVnums: spawnGroup.RewardDropVnums})
 }
 
-func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
+func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldruntime.StaticActorCombatProfileSnapshot) []SpawnGroup {
 	if len(spawnGroups) == 0 {
 		return nil
+	}
+	profileRewards := make(map[string]worldruntime.StaticActorDeathReward, len(profileSnapshots))
+	for _, snapshot := range profileSnapshots {
+		profileRewards[strings.TrimSpace(snapshot.Profile)] = snapshot.DeathReward.Clone()
 	}
 	normalized := make([]SpawnGroup, len(spawnGroups))
 	for i, spawnGroup := range spawnGroups {
@@ -252,6 +287,10 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
 				spawnGroup.RewardExperience = reward.Experience
 				spawnGroup.RewardGold = reward.Gold
 				spawnGroup.RewardDropVnums = reward.DropVnums
+			} else if reward, ok := profileRewards[spawnGroup.CombatProfile]; ok {
+				spawnGroup.RewardExperience = reward.Experience
+				spawnGroup.RewardGold = reward.Gold
+				spawnGroup.RewardDropVnums = reward.DropVnums
 			}
 		}
 		spawnGroup.RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
@@ -260,9 +299,15 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
 	return normalized
 }
 
-func combatProfilesForAuthoredActors(staticActors []StaticActor, spawnGroups []SpawnGroup) []worldruntime.StaticActorCombatProfileSnapshot {
+func combatProfilesForAuthoredActors(staticActors []StaticActor, spawnGroups []SpawnGroup, importedProfiles []worldruntime.StaticActorCombatProfileSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {
 	seen := make(map[string]struct{})
 	profiles := make([]worldruntime.StaticActorCombatProfileSnapshot, 0)
+	for _, profile := range importedProfiles {
+		profile.Profile = strings.TrimSpace(profile.Profile)
+		profile.DeathReward = profile.DeathReward.Clone()
+		profiles = append(profiles, profile)
+		seen[profile.Profile] = struct{}{}
+	}
 	for _, actor := range staticActors {
 		profiles = appendCombatProfileSnapshot(profiles, seen, actor.CombatProfile)
 	}
@@ -278,66 +323,38 @@ func combatProfilesForAuthoredActors(staticActors []StaticActor, spawnGroups []S
 	return profiles
 }
 
-func registerPortableCombatProfileSnapshots(profiles []worldruntime.StaticActorCombatProfileSnapshot) (func(), error) {
-	registered := make([]string, 0, len(profiles))
-	seen := make(map[string]struct{}, len(profiles))
-	rollback := func() {
-		for i := len(registered) - 1; i >= 0; i-- {
-			worldruntime.UnregisterStaticActorCombatProfile(registered[i])
-		}
+func normalizeCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {
+	if len(profiles) == 0 {
+		return nil
 	}
-	for _, snapshot := range profiles {
-		profile := strings.TrimSpace(snapshot.Profile)
-		if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
-			continue
-		}
-		if _, exists := seen[profile]; exists {
-			rollback()
-			return nil, ErrInvalidBundle
-		}
-		seen[profile] = struct{}{}
-		if worldruntime.ValidStaticActorCombatProfile(profile) {
-			existing, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
-			if !ok || !combatProfileSnapshotMatchesDefaults(snapshot, existing) {
-				rollback()
-				return nil, ErrInvalidBundle
-			}
-			continue
-		}
-		if snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || snapshot.RespawnDelayMs <= 0 {
-			rollback()
-			return nil, ErrInvalidBundle
-		}
-		if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
-			MaxHP:                 snapshot.MaxHP,
-			DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
-			AttackValue:           snapshot.AttackValue,
-			DefenseValue:          snapshot.DefenseValue,
-			Level:                 snapshot.Level,
-			Rank:                  snapshot.Rank,
-			RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
-			DeathReward:           snapshot.DeathReward,
-		}) {
-			rollback()
-			return nil, ErrInvalidBundle
-		}
-		registered = append(registered, profile)
+	normalized := make([]worldruntime.StaticActorCombatProfileSnapshot, len(profiles))
+	copy(normalized, profiles)
+	for i := range normalized {
+		normalized[i].Profile = strings.TrimSpace(normalized[i].Profile)
+		normalized[i].DeathReward = normalized[i].DeathReward.Clone()
 	}
-	return rollback, nil
+	sort.Slice(normalized, func(i int, j int) bool {
+		return normalized[i].Profile < normalized[j].Profile
+	})
+	return normalized
 }
 
-func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot, defaults worldruntime.StaticActorCombatProfileDefaults) bool {
-	return strings.TrimSpace(snapshot.Profile) != "" &&
-		snapshot.MaxHP == defaults.MaxHP &&
-		snapshot.DamagePerNormalAttack == defaults.DamagePerNormalAttack &&
-		snapshot.AttackValue == defaults.AttackValue &&
-		snapshot.DefenseValue == defaults.DefenseValue &&
-		snapshot.Level == defaults.Level &&
-		snapshot.Rank == defaults.Rank &&
-		time.Duration(snapshot.RespawnDelayMs)*time.Millisecond == defaults.RespawnDelay &&
-		reflect.DeepEqual(snapshot.DeathReward.Clone(), defaults.DeathReward.Clone())
+func referencedCombatProfileNames(staticActors []StaticActor, spawnGroups []SpawnGroup) map[string]struct{} {
+	referenced := make(map[string]struct{}, len(staticActors)+len(spawnGroups))
+	for _, actor := range staticActors {
+		profile := strings.TrimSpace(actor.CombatProfile)
+		if profile != "" {
+			referenced[profile] = struct{}{}
+		}
+	}
+	for _, spawnGroup := range spawnGroups {
+		profile := strings.TrimSpace(spawnGroup.CombatProfile)
+		if profile != "" {
+			referenced[profile] = struct{}{}
+		}
+	}
+	return referenced
 }
-
 func appendCombatProfileSnapshot(profiles []worldruntime.StaticActorCombatProfileSnapshot, seen map[string]struct{}, profile string) []worldruntime.StaticActorCombatProfileSnapshot {
 	profile = strings.TrimSpace(profile)
 	if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
