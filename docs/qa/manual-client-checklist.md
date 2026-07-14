@@ -332,7 +332,19 @@ Expected result:
 - corrupt/disposable fixtures that try to apply an equipment point effect without a matching valid equipped item in the authored equipment cell fail closed with no point mutation
 - equipment whose template-authored `equip_effect` point delta would overflow the bootstrap signed 32-bit point value also fails closed before item, quickslot, point, or persistence mutation
 
-### 4.5.9 Merchant buy/sell template restrictions (`SHOP BUY` / `SHOP SELL2`)
+### 4.5.9 Unequip a template-backed equipment item (`ITEM_MOVE` from equipment cell)
+
+- [ ] Start with a known template-backed equipped item whose authored `equip_slot` matches the worn cell
+- [ ] Confirm the item template has the current narrow `equip_effect` point metadata
+- [ ] Drag the worn item back into an empty carried inventory cell
+- [ ] Repeat with a corrupt/disposable fixture where the removal metadata does not match the just-removed item `vnum`
+
+Expected result:
+- allowed unequip emits the self-only equipment clear, carried-cell set, template-authored negative `PLAYER_POINT_CHANGE`, and appearance update
+- the point-effect removal is backed by the just-removed item instance, so it still subtracts the authored delta after the item has moved out of the equipment slice
+- mismatched or malformed removal metadata fails closed with no point change and no committed inventory/equipment/persistence mutation
+
+### 4.5.10 Merchant buy/sell template restrictions (`SHOP BUY` / `SHOP SELL2`)
 
 - [ ] Open a known bootstrap merchant window with a disposable QA character
 - [ ] Attempt to buy a catalog item whose authored template requires a higher `min_level` than the selected character has

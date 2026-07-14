@@ -852,6 +852,34 @@ func (r *Runtime) RemoveEquipTemplateEffect(template itemcatalog.Template, equip
 	if r == nil || !templateAuthoredForEquipSlot(template, equipSlot) || template.EquipEffect == nil {
 		return PointChangeResult{}, false
 	}
+	equippedIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
+	if equippedIndex < 0 {
+		return PointChangeResult{}, false
+	}
+	equippedItem := r.liveEquipment[equippedIndex]
+	if equippedItem.Vnum != template.Vnum || equippedItem.Count == 0 {
+		return PointChangeResult{}, false
+	}
+	if err := equippedItem.Validate(); err != nil {
+		return PointChangeResult{}, false
+	}
+	return r.removeEquipTemplateEffectDelta(template)
+}
+
+func (r *Runtime) RemoveEquipTemplateEffectFromItem(template itemcatalog.Template, equipSlot inventory.EquipmentSlot, item inventory.ItemInstance) (PointChangeResult, bool) {
+	if r == nil || !templateAuthoredForEquipSlot(template, equipSlot) || template.EquipEffect == nil {
+		return PointChangeResult{}, false
+	}
+	if item.Vnum != template.Vnum || item.Count == 0 {
+		return PointChangeResult{}, false
+	}
+	if err := item.Validate(); err != nil {
+		return PointChangeResult{}, false
+	}
+	return r.removeEquipTemplateEffectDelta(template)
+}
+
+func (r *Runtime) removeEquipTemplateEffectDelta(template itemcatalog.Template) (PointChangeResult, bool) {
 	effect := *template.EquipEffect
 	currentPointValue := r.livePoints[effect.PointIndex]
 	if currentPointValue < (-1<<31)+effect.PointDelta {

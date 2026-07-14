@@ -38,6 +38,7 @@ Each template must pass the current `internal/itemstore` validation before the r
 - `equip_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, and positive `point_delta`
 - `equip_effect` is only valid on templates that also author a valid `equip_slot`
 - runtime application of an `equip_effect` is fail-closed unless the selected character currently has a valid equipped item in that authored slot whose live `vnum` matches the same template
+- runtime removal of an `equip_effect` is fail-closed unless either the selected character currently has that matching equipped item or the caller supplies the valid just-removed item instance from that authored slot; this keeps unequip subtraction template-backed without requiring the item to remain in equipment after the unequip mutation
 - duplicate `vnum` entries are rejected
 
 The store normalizes and persists deterministic JSON: template names and effect messages are trimmed, equipment slot names are normalized, and templates are sorted by `vnum`.

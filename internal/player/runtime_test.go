@@ -2865,3 +2865,59 @@ func TestRuntimeRemoveEquipTemplateEffectRevertsLivePointsWithoutMutatingPersist
 		t.Fatalf("expected live points[1] to be restored to 700, got %d", got)
 	}
 }
+
+func TestRuntimeRemoveEquipTemplateEffectRequiresMatchingEquippedItem(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+	}
+	template := bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10)
+
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	if result, ok := runtime.RemoveEquipTemplateEffect(template, inventory.EquipmentSlotWeapon); ok {
+		t.Fatalf("expected equip effect removal without matching equipped item to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 700 {
+		t.Fatalf("missing equipped item removal mutated live points: got %d want 700", got)
+	}
+
+	persisted.Equipment = []inventory.ItemInstance{{ID: 101, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}
+	runtime = NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	if result, ok := runtime.RemoveEquipTemplateEffect(template, inventory.EquipmentSlotWeapon); ok {
+		t.Fatalf("expected equip effect removal with mismatched equipped vnum to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 700 {
+		t.Fatalf("mismatched equipped item removal mutated live points: got %d want 700", got)
+	}
+}
+
+func TestRuntimeRemoveEquipTemplateEffectFromItemRequiresMatchingRemovedItem(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 710,
+		},
+	}, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10)
+
+	if result, ok := runtime.RemoveEquipTemplateEffectFromItem(template, inventory.EquipmentSlotWeapon, inventory.ItemInstance{ID: 101, Vnum: 11200, Count: 1, Equipped: false, EquipSlot: inventory.EquipmentSlotNone, Slot: 4}); ok {
+		t.Fatalf("expected equip effect removal with mismatched removed item to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 710 {
+		t.Fatalf("mismatched removed item removal mutated live points: got %d want 710", got)
+	}
+
+	result, ok := runtime.RemoveEquipTemplateEffectFromItem(template, inventory.EquipmentSlotWeapon, inventory.ItemInstance{ID: 101, Vnum: 12200, Count: 1, Equipped: false, EquipSlot: inventory.EquipmentSlotNone, Slot: 4})
+	if !ok {
+		t.Fatal("expected matching removed item to authorize template-backed effect removal")
+	}
+	if result.PointType != 1 || result.PointAmount != -10 || result.PointValue != 700 {
+		t.Fatalf("unexpected removed-item effect removal result: %+v", result)
+	}
+}
