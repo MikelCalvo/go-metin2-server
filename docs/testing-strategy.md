@@ -40,6 +40,8 @@ Use unit tests for:
 - repositories and data mappers
 - helper functions used by the protocol layer
 
+Persistence unit tests should prove both accepted round trips and fail-closed rejection of malformed durable snapshots. For account snapshots that means testing invalid item payloads, out-of-range carried slots, and duplicate equipped-slot claims as durable-data contracts. Some runtime recovery tests still seed duplicate carried-slot or duplicate live-item-ID snapshots deliberately to prove mutation paths fail closed; account-store validation should keep those states observable until the recovery lane replaces those fixtures with a dedicated quarantine/import path.
+
 Unit tests should be fast and deterministic.
 
 ## 3. End-to-end socket tests

@@ -214,6 +214,7 @@ Already present:
 - file-backed account/login-ticket snapshots,
 - persisted character position and selected bootstrap state,
 - persisted inventory/equipment/quickslot slices,
+- fail-closed account snapshot validation for malformed item payloads and duplicate equipped-slot claims while retaining observability for runtime recovery-path fixtures,
 - loopback-only operator/debug endpoints,
 - pprof/debugging docs.
 

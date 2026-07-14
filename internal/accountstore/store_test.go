@@ -41,6 +41,55 @@ func TestFileStoreLoadRejectsZeroCountInventoryItem(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsDuplicateEquipmentSlots(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	account := Account{
+		Login:  "mkmk",
+		Empire: 2,
+		Characters: []loginticket.Character{{
+			ID:   1,
+			Name: "MkmkWar",
+			Equipment: []inventory.ItemInstance{
+				{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+				{ID: 2002, Vnum: 29, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+			},
+		}},
+	}
+
+	if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for duplicate equipment slot, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsDuplicateEquipmentSlots(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[{"id":2001,"vnum":19,"count":1,"equipped":true,"equip_slot":2},{"id":2002,"vnum":29,"count":1,"equipped":true,"equip_slot":2}],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-equipment account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for duplicate equipment slot, got %v", err)
+	}
+}
+
+func TestFileStoreLoadAllowsDuplicateCarriedSlotsForRuntimeRecovery(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":27001,"count":5,"slot":8},{"id":1002,"vnum":27002,"count":3,"slot":8}],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-slot account snapshot: %v", err)
+	}
+
+	got, err := store.Load("mkmk")
+	if err != nil {
+		t.Fatalf("expected duplicate carried-slot snapshot to remain loadable for runtime recovery tests, got %v", err)
+	}
+	if len(got.Characters) != 1 || len(got.Characters[0].Inventory) != 2 {
+		t.Fatalf("unexpected duplicate-slot account load result: %#v", got)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	want := Account{

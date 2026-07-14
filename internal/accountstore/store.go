@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
 
@@ -67,7 +68,7 @@ func (s *FileStore) Load(login string) (Account, error) {
 		return Account{}, fmt.Errorf("decode account: %w", err)
 	}
 	account.Characters = normalizeAccountCharacters(account.Characters)
-	if err := validateAccount(account); err != nil {
+	if err := validateLoadedAccount(account); err != nil {
 		return Account{}, err
 	}
 	return account, nil
@@ -117,16 +118,52 @@ func (s *FileStore) accountPath(login string) string {
 
 func validateAccount(account Account) error {
 	for _, character := range account.Characters {
-		for _, item := range character.Inventory {
-			if err := item.Validate(); err != nil {
-				return fmt.Errorf("%w: inventory item %d: %v", ErrInvalidAccount, item.ID, err)
-			}
+		if err := validateCharacterItemPayloads(character); err != nil {
+			return err
 		}
-		for _, item := range character.Equipment {
-			if err := item.Validate(); err != nil {
-				return fmt.Errorf("%w: equipment item %d: %v", ErrInvalidAccount, item.ID, err)
-			}
+		if err := validateCharacterUniqueEquipmentSlots(character); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+func validateLoadedAccount(account Account) error {
+	for _, character := range account.Characters {
+		if err := validateCharacterItemPayloads(character); err != nil {
+			return err
+		}
+		if err := validateCharacterUniqueEquipmentSlots(character); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateCharacterItemPayloads(character loginticket.Character) error {
+	for _, item := range character.Inventory {
+		if err := item.Validate(); err != nil {
+			return fmt.Errorf("%w: inventory item %d: %v", ErrInvalidAccount, item.ID, err)
+		}
+		if item.Slot >= inventory.CarriedInventorySlotCount {
+			return fmt.Errorf("%w: inventory item %d: slot %d out of range", ErrInvalidAccount, item.ID, item.Slot)
+		}
+	}
+	for _, item := range character.Equipment {
+		if err := item.Validate(); err != nil {
+			return fmt.Errorf("%w: equipment item %d: %v", ErrInvalidAccount, item.ID, err)
+		}
+	}
+	return nil
+}
+
+func validateCharacterUniqueEquipmentSlots(character loginticket.Character) error {
+	equipmentSlots := make(map[uint8]uint64, len(character.Equipment))
+	for _, item := range character.Equipment {
+		if previousID, ok := equipmentSlots[uint8(item.EquipSlot)]; ok {
+			return fmt.Errorf("%w: equipment slot %s contains item %d and item %d", ErrInvalidAccount, item.EquipSlot.String(), previousID, item.ID)
+		}
+		equipmentSlots[uint8(item.EquipSlot)] = item.ID
 	}
 	return nil
 }
