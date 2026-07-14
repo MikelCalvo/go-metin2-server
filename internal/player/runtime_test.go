@@ -2619,6 +2619,53 @@ func TestRuntimePickupGroundItemFailsWhenPartialStacksNeedRemainderButNoFreshSlo
 	}
 }
 
+func TestRuntimeDropInventoryItemWithTemplateRejectsAuthoredRestrictionsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name   string
+		empire uint8
+		job    uint8
+		race   uint16
+		level  uint8
+		mutate func(*itemcatalog.Template)
+	}{
+		{name: "anti-get", empire: 1, job: 0, race: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiGet = true }},
+		{name: "anti-empire", empire: 2, job: 0, race: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiEmpireB = true }},
+		{name: "min-level", empire: 1, job: 0, race: 0, level: 9, mutate: func(template *itemcatalog.Template) { template.MinLevel = 10 }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "PeerTwo",
+				Empire:    tc.empire,
+				Job:       tc.job,
+				RaceNum:   tc.race,
+				Level:     tc.level,
+				Inventory: []inventory.ItemInstance{{ID: 101, Vnum: 27001, Count: 3, Slot: 8}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			template := itemcatalog.Template{Vnum: 27001, Name: "Restricted Drop Potion", Stackable: true, MaxCount: 200}
+			tc.mutate(&template)
+			before := runtime.LiveCharacter()
+
+			if result, ok := runtime.DropInventoryItemWithTemplate(8, 1, template); ok {
+				t.Fatalf("expected %s drop template to fail closed, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s drop mutated live character: got %#v want %#v", tc.name, got, before)
+			}
+			persistedAfter := runtime.PersistedSnapshot()
+			if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) {
+				t.Fatalf("%s drop mutated persisted inventory: got %#v want %#v", tc.name, persistedAfter.Inventory, persisted.Inventory)
+			}
+			if len(persistedAfter.Equipment) != 0 || len(persistedAfter.Quickslots) != 0 {
+				t.Fatalf("%s drop mutated unrelated persisted state: equipment=%#v quickslots=%#v", tc.name, persistedAfter.Equipment, persistedAfter.Quickslots)
+			}
+		})
+	}
+}
+
 func TestRuntimeEquipItemWithTemplateRejectsAntiGetWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

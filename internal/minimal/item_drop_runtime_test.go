@@ -2496,21 +2496,33 @@ func TestGameRuntimeItemUseToItemStaleSessionEmitsLocalFramesButDoesNotPersist(t
 
 func TestGameRuntimeItemDropRejectsAntiDropGiveSellGetTemplatesWithoutMutation(t *testing.T) {
 	cases := []struct {
-		name   string
-		login  string
-		vnum   uint32
-		mutate func(*itemcatalog.Template)
+		name     string
+		login    string
+		vnum     uint32
+		empire   uint8
+		raceNum  uint16
+		job      uint8
+		level    uint8
+		mutate   func(*itemcatalog.Template)
+		wantInfo bool
 	}{
-		{name: "anti-drop", login: "bound-drop-owner", vnum: 27019, mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }},
-		{name: "anti-give", login: "bound-give-owner", vnum: 27020, mutate: func(template *itemcatalog.Template) { template.AntiGive = true }},
-		{name: "anti-sell", login: "bound-sell-owner", vnum: 27021, mutate: func(template *itemcatalog.Template) { template.AntiSell = true }},
-		{name: "anti-get", login: "bound-get-owner", vnum: 27022, mutate: func(template *itemcatalog.Template) { template.AntiGet = true }},
+		{name: "anti-drop", login: "bound-drop-owner", vnum: 27019, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiDrop = true }, wantInfo: true},
+		{name: "anti-give", login: "bound-give-owner", vnum: 27020, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiGive = true }, wantInfo: true},
+		{name: "anti-sell", login: "bound-sell-owner", vnum: 27021, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiSell = true }, wantInfo: true},
+		{name: "anti-get", login: "bound-get-owner", vnum: 27022, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiGet = true }, wantInfo: true},
+		{name: "anti-warrior", login: "class-drop-owner", vnum: 27023, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiWarrior = true }},
+		{name: "anti-male", login: "sex-drop-owner", vnum: 27024, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiMale = true }},
+		{name: "anti-empire", login: "empire-drop-owner", vnum: 27025, empire: 2, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiEmpireB = true }},
+		{name: "min-level", login: "level-drop-owner", vnum: 27026, empire: 1, job: 0, raceNum: 0, level: 9, mutate: func(template *itemcatalog.Template) { template.MinLevel = 10 }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ticketStore := loginticket.NewFileStore(t.TempDir())
 			accounts := accountstore.NewFileStore(t.TempDir())
-			owner := peerVisibilityCharacter("BoundDropOwner", 0x01030191, 0x02040191, 1300, 2300, 0, 101, 201)
+			owner := peerVisibilityCharacter("BoundDropOwner", 0x01030191, 0x02040191, 1300, 2300, tc.raceNum, 101, 201)
+			owner.Empire = tc.empire
+			owner.Job = tc.job
+			owner.Level = tc.level
 			owner.Inventory = []inventory.ItemInstance{{ID: 1019, Vnum: tc.vnum, Count: 3, Slot: 5}}
 			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 			issuePeerTicket(t, ticketStore, tc.login, 0x19191919, owner)
@@ -2532,15 +2544,19 @@ func TestGameRuntimeItemDropRejectsAntiDropGiveSellGetTemplatesWithoutMutation(t
 			if err != nil {
 				t.Fatalf("unexpected %s item drop error: %v", tc.name, err)
 			}
-			if len(out) != 1 {
-				t.Fatalf("expected %s item drop to emit one info chat frame, got %d", tc.name, len(out))
-			}
-			info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
-			if err != nil {
-				t.Fatalf("decode %s info chat: %v", tc.name, err)
-			}
-			if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != itemDropRejectedInfoMessage {
-				t.Fatalf("unexpected %s info chat: %+v", tc.name, info)
+			if tc.wantInfo {
+				if len(out) != 1 {
+					t.Fatalf("expected %s item drop to emit one info chat frame, got %d", tc.name, len(out))
+				}
+				info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+				if err != nil {
+					t.Fatalf("decode %s info chat: %v", tc.name, err)
+				}
+				if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != itemDropRejectedInfoMessage {
+					t.Fatalf("unexpected %s info chat: %+v", tc.name, info)
+				}
+			} else if len(out) != 0 {
+				t.Fatalf("expected %s restricted item drop to fail closed without frames, got %d", tc.name, len(out))
 			}
 			account, err := accounts.Load(tc.login)
 			if err != nil {
