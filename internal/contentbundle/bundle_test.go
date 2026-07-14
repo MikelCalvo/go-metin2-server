@@ -230,6 +230,19 @@ func TestCanonicalizeRejectsDanglingInteractionReference(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsDuplicateStaticActorAuthoringRows(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
+			{Name: " VillageGuard ", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: " talk ", InteractionRef: " npc:village_guard "},
+		},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for duplicate authored static actor row, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsDuplicateInteractionDefinitions(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		InteractionDefinitions: []interactionstore.Definition{

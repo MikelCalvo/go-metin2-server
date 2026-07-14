@@ -287,6 +287,36 @@ func TestGameRuntimeImportContentBundleQueuesSpawnGroupVisibilityForOnlinePlayer
 	}
 }
 
+func TestGameRuntimeRejectsDuplicateStaticActorContentBundleWithoutMutatingRuntime(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{
+			{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
+			{Name: " VillageGuard ", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: " talk ", InteractionRef: " npc:village_guard "},
+		},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
+	})
+	if !errors.Is(err, contentbundle.ErrInvalidBundle) {
+		t.Fatalf("expected duplicate static actor content bundle to fail closed, got %v", err)
+	}
+	if actors := runtime.StaticActors(); len(actors) != 0 {
+		t.Fatalf("expected duplicate static actor import not to materialize runtime actors, got %+v", actors)
+	}
+	if definitions := runtime.InteractionDefinitions(); len(definitions) != 0 {
+		t.Fatalf("expected duplicate static actor import not to persist interaction definitions, got %+v", definitions)
+	}
+}
+
 func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testing.T) {
 	const profile = "practice_imported_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

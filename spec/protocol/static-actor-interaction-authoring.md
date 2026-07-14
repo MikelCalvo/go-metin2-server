@@ -69,6 +69,7 @@ Current rules:
 - exported static actors are **portable authored content**, not runtime entities, so the bundle omits runtime-only `entity_id`
 - import is full-replace for the authored bootstrap content currently loaded by `gamed`
 - import validates that every referenced interaction definition exists before mutating runtime state
+- import also rejects duplicate portable static-actor rows after canonical trimming, so a bundle cannot silently materialize the same authored actor twice
 - import also rejects malformed per-kind definition payloads, including invalid `warp` destinations and invalid `shop_preview` catalogs
 - import updates the live bootstrap runtime so the resulting static-actor content becomes the current authored state, not only the on-disk store contents
 

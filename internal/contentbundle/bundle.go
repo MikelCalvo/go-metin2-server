@@ -2,6 +2,7 @@ package contentbundle
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -174,6 +175,7 @@ func validateBundle(bundle Bundle) error {
 		}
 		spawnGroupsByRef[spawnGroup.Ref] = struct{}{}
 	}
+	staticActorsByKey := make(map[string]struct{}, len(bundle.StaticActors))
 	for _, actor := range bundle.StaticActors {
 		if strings.TrimSpace(actor.Name) == "" || actor.MapIndex == 0 || actor.RaceNum == 0 {
 			return ErrInvalidBundle
@@ -184,6 +186,11 @@ func validateBundle(bundle Bundle) error {
 		if !validInteractionMetadata(actor.InteractionKind, actor.InteractionRef) {
 			return ErrInvalidBundle
 		}
+		key := staticActorAuthoringKey(actor)
+		if _, ok := staticActorsByKey[key]; ok {
+			return ErrInvalidBundle
+		}
+		staticActorsByKey[key] = struct{}{}
 		if actor.InteractionKind == "" && actor.InteractionRef == "" {
 			continue
 		}
@@ -318,6 +325,19 @@ func compareUint32s(left []uint32, right []uint32) int {
 
 func interactionDefinitionKey(kind string, ref string) string {
 	return strings.TrimSpace(kind) + "\x00" + strings.TrimSpace(ref)
+}
+
+func staticActorAuthoringKey(actor StaticActor) string {
+	return strings.Join([]string{
+		strings.TrimSpace(actor.Name),
+		fmt.Sprintf("%d", actor.MapIndex),
+		fmt.Sprintf("%d", actor.X),
+		fmt.Sprintf("%d", actor.Y),
+		fmt.Sprintf("%d", actor.RaceNum),
+		strings.TrimSpace(actor.CombatProfile),
+		strings.TrimSpace(actor.InteractionKind),
+		strings.TrimSpace(actor.InteractionRef),
+	}, "\x00")
 }
 
 func normalizeStaticActors(actors []StaticActor) []StaticActor {
