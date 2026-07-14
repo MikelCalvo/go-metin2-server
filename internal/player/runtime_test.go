@@ -2619,6 +2619,37 @@ func TestRuntimePickupGroundItemFailsWhenPartialStacksNeedRemainderButNoFreshSlo
 	}
 }
 
+func TestRuntimeEquipItemWithTemplateRejectsAntiGetWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+		Inventory: []inventory.ItemInstance{{ID: 101, Vnum: 12200, Count: 1, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := bootstrapEquipmentPointTemplate(12200, inventory.EquipmentSlotWeapon, 1, 1, 10)
+	template.AntiGet = true
+
+	if item, ok := runtime.EquipItemWithTemplate(8, inventory.EquipmentSlotWeapon, template); ok {
+		t.Fatalf("expected anti-get equip template to fail closed, got %+v", item)
+	}
+	if !reflect.DeepEqual(runtime.LiveCharacter().Inventory, persisted.Inventory) {
+		t.Fatalf("anti-get equip mutated live inventory: got %#v want %#v", runtime.LiveCharacter().Inventory, persisted.Inventory)
+	}
+	if len(runtime.LiveCharacter().Equipment) != 0 {
+		t.Fatalf("anti-get equip mutated live equipment: got %#v", runtime.LiveCharacter().Equipment)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 700 {
+		t.Fatalf("anti-get equip mutated live points: got %d want 700", got)
+	}
+	if !reflect.DeepEqual(runtime.PersistedSnapshot().Inventory, persisted.Inventory) {
+		t.Fatalf("anti-get equip mutated persisted inventory: got %#v want %#v", runtime.PersistedSnapshot().Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeApplyEquipTemplateEffectAdjustsLivePointsWithoutMutatingPersistedSnapshot(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

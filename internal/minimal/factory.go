@@ -4849,7 +4849,7 @@ func runtimeTemplateAllowsEquip(template itemcatalog.Template, selectedPlayer *p
 	if selectedPlayer == nil || !selectedPlayer.CanUseTemplate(template) || !templateAuthoredForRuntimeEquipSlot(template, equipSlot) {
 		return false
 	}
-	return !template.AntiStack && !template.AntiDrop && !template.AntiGive && !template.AntiSell
+	return !template.AntiStack && !template.AntiGet && !template.AntiDrop && !template.AntiGive && !template.AntiSell
 }
 
 func templateAuthoredForRuntimeEquipSlot(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) bool {

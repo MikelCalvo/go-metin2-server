@@ -772,7 +772,7 @@ func (r *Runtime) EquipItem(from inventory.SlotIndex, equipSlot inventory.Equipm
 }
 
 func (r *Runtime) EquipItemWithTemplate(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot, template itemcatalog.Template) (inventory.ItemInstance, bool) {
-	if !templateAuthoredForEquipSlot(template, equipSlot) || !r.CanUseTemplate(template) || template.AntiStack || template.AntiDrop || template.AntiGive || template.AntiSell {
+	if !templateAuthoredForEquipSlot(template, equipSlot) || !r.CanUseTemplate(template) || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
 		return inventory.ItemInstance{}, false
 	}
 	fromIndex := findInventorySlot(r.liveInventory, from)
