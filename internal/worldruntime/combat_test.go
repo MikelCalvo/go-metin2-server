@@ -1,6 +1,10 @@
 package worldruntime
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestApplyBootstrapStaticActorNormalAttackDecrementsTrainingDummyCombatHP(t *testing.T) {
 	nextHP, hpPercent, ok := ApplyBootstrapStaticActorNormalAttack(StaticActorCombatKindTrainingDummy, TrainingDummyBootstrapMaxHP)
@@ -844,6 +848,35 @@ func TestStaticActorCombatProfileSnapshotsIncludeBuiltinsAndRegisteredProfiles(t
 	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
 	if !ok || defaults.DeathReward.DropVnums[0] != 27001 {
 		t.Fatalf("expected snapshots to deep-clone profile rewards, got defaults=%+v ok=%v", defaults, ok)
+	}
+}
+
+func TestStaticActorCombatProfileSnapshotsUseStableRewardJSONKeys(t *testing.T) {
+	const profile = "practice_json_reward_wolf"
+	UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 4,
+		AttackValue:           7,
+		DefenseValue:          3,
+		RespawnDelay:          1500 * 1000 * 1000,
+		DeathReward:           StaticActorDeathReward{Experience: 30, Gold: 11, DropVnums: []uint32{27002, 27001}},
+	}) {
+		t.Fatalf("expected %q profile registration to succeed", profile)
+	}
+
+	encoded, err := json.Marshal(StaticActorCombatProfileSnapshots())
+	if err != nil {
+		t.Fatalf("marshal combat profile snapshots: %v", err)
+	}
+	body := string(encoded)
+	if !strings.Contains(body, `"death_reward":{"experience":30,"gold":11,"drop_vnums":[27001,27002]}`) {
+		t.Fatalf("expected stable snake_case death reward JSON keys, got %s", body)
+	}
+	if strings.Contains(body, `"Experience"`) || strings.Contains(body, `"Gold"`) || strings.Contains(body, `"DropVnums"`) {
+		t.Fatalf("expected combat profile snapshots not to expose Go field names, got %s", body)
 	}
 }
 

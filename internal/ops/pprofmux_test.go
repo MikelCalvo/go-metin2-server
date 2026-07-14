@@ -684,7 +684,7 @@ func TestLocalStaticActorCombatProfileEndpointReturnsProfilesForLoopbackGet(t *t
 	if !strings.Contains(bodyText, `"profile":"practice_mob"`) || !strings.Contains(bodyText, `"profile":"training_dummy"`) || !strings.Contains(bodyText, `"profile":"ops_list_wolf"`) {
 		t.Fatalf("expected built-in and registered profiles in JSON response body %q", bodyText)
 	}
-	if !strings.Contains(bodyText, `"damage_per_normal_attack":5`) || !strings.Contains(bodyText, `"respawn_delay_ms":2000`) || !strings.Contains(bodyText, `"DropVnums":[27001,27002]`) {
+	if !strings.Contains(bodyText, `"damage_per_normal_attack":5`) || !strings.Contains(bodyText, `"respawn_delay_ms":2000`) || !strings.Contains(bodyText, `"drop_vnums":[27001,27002]`) {
 		t.Fatalf("expected canonical profile defaults and normalized reward drops in JSON response body %q", bodyText)
 	}
 }

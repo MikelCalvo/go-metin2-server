@@ -66,9 +66,9 @@ type StaticEntity struct {
 }
 
 type StaticActorDeathReward struct {
-	Experience uint64
-	Gold       uint64
-	DropVnums  []uint32
+	Experience uint64   `json:"experience"`
+	Gold       uint64   `json:"gold"`
+	DropVnums  []uint32 `json:"drop_vnums"`
 }
 
 func (r StaticActorDeathReward) Empty() bool {
