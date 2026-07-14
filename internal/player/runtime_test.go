@@ -774,6 +774,7 @@ func TestRuntimeUseItemRejectsAuthoredJobSexLevelAndTransferAntiFlagsWithoutMuta
 		{name: "anti empire c", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiEmpireC = true })},
 		{name: "min level", job: 0, raceNum: 0, level: 9, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.MinLevel = 10 })},
 		{name: "anti stack", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiStack = true })},
+		{name: "anti get", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiGet = true })},
 		{name: "anti drop", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiDrop = true })},
 		{name: "anti give", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiGive = true })},
 		{name: "anti sell", job: 0, raceNum: 0, level: 1, template: antiFlaggedConsumableTemplate(27001, func(t *itemcatalog.Template) { t.AntiSell = true })},

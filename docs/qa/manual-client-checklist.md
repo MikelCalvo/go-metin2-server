@@ -230,7 +230,7 @@ Expected result:
 - if the consumed stack reaches zero, the carried cell disappears and every item quickslot referencing that cell is cleared in deterministic quickslot-position order; unrelated skill/command quickslots remain
 - locked carried stacks fail closed: no point change, item refresh, quickslot change, or placeholder chat is visible
 - if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_USE` fails closed with no point change, item refresh, quickslot change, placeholder chat, or persisted-state mutation
-- templates marked `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` also fail closed for direct consumable use: no point change, item refresh, quickslot change, or placeholder chat is visible
+- templates marked `anti_stack`, `anti_get`, `anti_drop`, `anti_give`, or `anti_sell` also fail closed for direct consumable use: no point change, item refresh, quickslot change, or placeholder chat is visible
 - templates with authored job, sex, empire, or `min_level` restrictions for the selected character fail closed the same way
 - selected characters at the bootstrap zero-HP floor cannot consume carried items; the request fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a carried stack whose live count already exceeds its loaded template-authored `max_count` fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
