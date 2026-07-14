@@ -452,6 +452,58 @@ func TestGameRuntimeRollsBackImportedCombatProfilesWhenStaticActorPersistenceFai
 	}
 }
 
+func TestGameRuntimeFailedContentBundleImportDoesNotLeakSpawnVisibilityFrames(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	near := peerVisibilityCharacter("SpawnImportRollbackNear", 0x01035521, 3, 1800, 2900, 0, 101, 201)
+	near.MapIndex = 42
+	near.X = 1800
+	near.Y = 2900
+	issuePeerTicket(t, store, "spawn-import-rollback-near", 0x55552121, near)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "spawn-import-rollback-near", 0x55552121)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected base enter-game burst before failed spawn import, got %d frames", len(enterOut))
+	}
+	flushServerFrames(t, flow)
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{
+			Ref:           "practice.rollback_visible_first",
+			Name:          "RollbackVisiblePracticeMobFirst",
+			MapIndex:      42,
+			X:             1810,
+			Y:             2910,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		},
+		{
+			Ref:           "practice.rollback_visible_second",
+			Name:          "RollbackVisiblePracticeMobSecond",
+			MapIndex:      42,
+			X:             1820,
+			Y:             2920,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		},
+	}})
+	if err == nil {
+		t.Fatal("expected content bundle import to fail when a later spawn actor conflicts with a live player VID")
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected failed content import not to leak queued spawn visibility frames, got %d", len(queued))
+	}
+	if actors := runtime.StaticActors(); len(actors) != 0 {
+		t.Fatalf("expected failed content import not to materialize runtime static actors, got %+v", actors)
+	}
+}
+
 func TestGameRuntimeUpdateSpawnGroupActorPreservesRewardDescriptor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

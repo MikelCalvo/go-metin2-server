@@ -4944,18 +4944,44 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	if err != nil {
 		return contentbundle.Bundle{}, err
 	}
+	previousActors := r.StaticActors()
 	if err := r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: normalized.InteractionDefinitions}); err != nil {
 		rollbackProfiles()
 		return contentbundle.Bundle{}, err
 	}
-	if err := r.replaceStaticActorsFromBundle(normalized); err != nil {
+	if r.sharedWorld != nil {
+		r.sharedWorld.suppressStaticActorFanout = true
+	}
+	replaceErr := r.replaceStaticActorsFromBundle(normalized)
+	if r.sharedWorld != nil {
+		r.sharedWorld.suppressStaticActorFanout = false
+	}
+	if replaceErr != nil {
+		if r.sharedWorld != nil {
+			r.sharedWorld.suppressStaticActorFanout = true
+			r.sharedWorld.clearStaticActorsForContentImportRollback()
+		}
 		rollbackErr := r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions})
-		rollbackErr = errors.Join(rollbackErr, r.replaceStaticActorsFromBundle(previousBundle))
+		if r.sharedWorld != nil {
+			for _, actor := range previousActors {
+				_, ok := r.sharedWorld.registerStaticActor(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: append([]uint32(nil), actor.RewardDropVnums...)})
+				if !ok {
+					rollbackErr = errors.Join(rollbackErr, ErrContentBundleUnavailable)
+				}
+			}
+			r.sharedWorld.suppressStaticActorFanout = false
+		}
+		if !r.persistStaticActorSnapshot(previousActors) {
+			rollbackErr = errors.Join(rollbackErr, ErrContentBundleUnavailable)
+		}
 		rollbackProfiles()
 		if rollbackErr != nil {
-			return contentbundle.Bundle{}, errors.Join(err, rollbackErr)
+			return contentbundle.Bundle{}, errors.Join(replaceErr, rollbackErr)
 		}
-		return contentbundle.Bundle{}, err
+		return contentbundle.Bundle{}, replaceErr
+	}
+	if r.sharedWorld != nil {
+		r.sharedWorld.flushStaticActorImportFanout()
 	}
 	return normalized, nil
 }

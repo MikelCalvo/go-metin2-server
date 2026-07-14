@@ -47,6 +47,7 @@ type sharedWorldRegistry struct {
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
 	groundItemsByVID                map[uint32]sharedGroundItem
+	suppressStaticActorFanout       bool
 	now                             func() time.Time
 }
 
@@ -1599,13 +1600,15 @@ func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, 
 		return StaticActorSnapshot{}, false
 	}
 	r.syncStaticActorCombatStateLocked(registered)
-	frames := encodeStaticActorVisibilityFrames(registered)
-	if len(frames) > 0 {
-		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(registered) {
-			if characterAtBootstrapHPFloor(target.Character) {
-				continue
+	if !r.suppressStaticActorFanout {
+		frames := encodeStaticActorVisibilityFrames(registered)
+		if len(frames) > 0 {
+			for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(registered) {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				r.enqueueToEntityLocked(target.Entity.ID, frames)
 			}
-			r.enqueueToEntityLocked(target.Entity.ID, frames)
 		}
 	}
 	stored, ok := r.entities.StaticActor(registered.Entity.ID)
@@ -1701,6 +1704,42 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 		r.clearSelectedCombatTargetsLocked(targetVID, 0)
 	}
 	return r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)), true
+}
+
+func (r *sharedWorldRegistry) clearStaticActorsForContentImportRollback() {
+	if r == nil || r.entities == nil {
+		return
+	}
+	removed := r.entities.AllStaticActors()
+	for _, actor := range removed {
+		_, _ = r.entities.RemoveStaticActor(actor.Entity.ID)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, actor := range removed {
+		r.clearStaticActorCombatStateLocked(actor.Entity.ID)
+	}
+	r.sessionCombatTargets = make(map[uint64]uint32)
+}
+
+func (r *sharedWorldRegistry) flushStaticActorImportFanout() {
+	if r == nil || r.entities == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, actor := range r.entities.AllStaticActors() {
+		frames := encodeStaticActorVisibilityFrames(actor)
+		if len(frames) == 0 {
+			continue
+		}
+		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, frames)
+		}
+	}
 }
 
 func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
