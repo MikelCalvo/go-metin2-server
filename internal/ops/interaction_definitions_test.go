@@ -99,6 +99,44 @@ func TestLocalInteractionDefinitionsEndpointPropagatesCreateStatusForLoopbackPos
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointRejectsOversizedCreateBody(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+	oversizedText := strings.Repeat("a", maxLocalInteractionDefinitionBodyBytes+1)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"info","ref":"lore:oversized","text":"`+oversizedText+`"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if creator.calls != 0 {
+		t.Fatalf("expected interaction definition creator not to be called for oversized body, got %d calls", creator.calls)
+	}
+}
+
+func TestLocalInteractionDefinitionUpdateEndpointRejectsOversizedBody(t *testing.T) {
+	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
+	oversizedText := strings.Repeat("a", maxLocalInteractionDefinitionBodyBytes+1)
+
+	req := httptest.NewRequest(http.MethodPut, "/local/interactions/info/lore:oversized", strings.NewReader(`{"kind":"info","ref":"lore:oversized","text":"`+oversizedText+`"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if updater.calls != 0 {
+		t.Fatalf("expected interaction definition updater not to be called for oversized body, got %d calls", updater.calls)
+	}
+}
+
 func TestLocalInteractionDefinitionsEndpointCreatesWarpDefinitionForLoopbackPost(t *testing.T) {
 	creator := &stubInteractionDefinitionCreator{status: http.StatusOK, definition: map[string]any{"kind": "warp", "ref": "npc:teleporter", "map_index": float64(42), "x": float64(1700), "y": float64(2800), "text": "Step through the gate."}}
 	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)

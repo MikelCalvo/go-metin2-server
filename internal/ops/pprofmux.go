@@ -81,6 +81,8 @@ type localInteractionDefinitionRequest struct {
 	Y        int32                                   `json:"y"`
 }
 
+const maxLocalInteractionDefinitionBodyBytes = 4096
+
 func NewPprofMux(serviceName string) *http.ServeMux {
 	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, nil, nil, nil, nil, nil, nil, nil)
 }
@@ -416,9 +418,9 @@ func RegisterLocalInteractionDefinitionEndpoints(mux *http.ServeMux, interaction
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
-			request, ok := decodeLocalInteractionDefinitionRequest(r)
+			request, decodeStatus, ok := decodeLocalInteractionDefinitionRequest(r)
 			if !ok {
-				w.WriteHeader(http.StatusBadRequest)
+				w.WriteHeader(decodeStatus)
 				return
 			}
 			definition, status := createInteractionDefinition(request)
@@ -445,9 +447,12 @@ func RegisterLocalInteractionDefinitionUpdateEndpoint(mux *http.ServeMux, upsert
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		request, ok := decodeLocalInteractionDefinitionRequest(r)
+		request, decodeStatus, ok := decodeLocalInteractionDefinitionRequest(r)
 		if !ok || request.Kind != kind || request.Ref != ref {
-			w.WriteHeader(http.StatusBadRequest)
+			if ok {
+				decodeStatus = http.StatusBadRequest
+			}
+			w.WriteHeader(decodeStatus)
 			return
 		}
 		definition, status := upsertInteractionDefinition(request)
@@ -810,16 +815,23 @@ func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldr
 	return profile, defaults, true
 }
 
-func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.Definition, bool) {
+func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.Definition, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalInteractionDefinitionBodyBytes+1))
+	if err != nil {
+		return interactionstore.Definition{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalInteractionDefinitionBodyBytes {
+		return interactionstore.Definition{}, http.StatusRequestEntityTooLarge, false
+	}
 	var request localInteractionDefinitionRequest
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
-		return interactionstore.Definition{}, false
+		return interactionstore.Definition{}, http.StatusBadRequest, false
 	}
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return interactionstore.Definition{}, false
+		return interactionstore.Definition{}, http.StatusBadRequest, false
 	}
 	definition := interactionstore.NormalizeDefinition(interactionstore.Definition{
 		Kind:     strings.TrimSpace(request.Kind),
@@ -832,9 +844,9 @@ func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.
 		Y:        request.Y,
 	})
 	if !interactionstore.ValidDefinition(definition) {
-		return interactionstore.Definition{}, false
+		return interactionstore.Definition{}, http.StatusBadRequest, false
 	}
-	return definition, true
+	return definition, http.StatusOK, true
 }
 
 func decodeLocalInteractionDefinitionIdentity(r *http.Request) (string, string, bool) {
