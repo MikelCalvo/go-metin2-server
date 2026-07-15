@@ -326,6 +326,91 @@ func TestFileStoreListRejectsFilenameLoginMismatch(t *testing.T) {
 	}
 }
 
+func TestFileStoreBackupToCopiesCommittedSnapshots(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	accounts := []Account{
+		{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}},
+		{Login: "Beta", Empire: 1, Characters: []loginticket.Character{{ID: 2, Name: "BetaNinja"}}},
+	}
+	for _, account := range accounts {
+		if err := store.Save(account); err != nil {
+			t.Fatalf("save account %s: %v", account.Login, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(store.dir, ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp file: %v", err)
+	}
+
+	backupDir := filepath.Join(t.TempDir(), "account-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup accounts: %v", err)
+	}
+
+	backup := NewFileStore(backupDir)
+	got, err := backup.List()
+	if err != nil {
+		t.Fatalf("list backup: %v", err)
+	}
+	gotLogins := make([]string, 0, len(got))
+	for _, account := range got {
+		gotLogins = append(gotLogins, account.Login)
+	}
+	if want := []string{"Beta", "mkmk"}; !reflect.DeepEqual(gotLogins, want) {
+		t.Fatalf("unexpected backup logins: got %#v want %#v", gotLogins, want)
+	}
+	if _, err := os.Stat(filepath.Join(backupDir, ".account-crashed.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected crash temp file to be omitted from backup, stat err=%v", err)
+	}
+}
+
+func TestFileStoreBackupToRejectsCorruptSourceSnapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	path := store.accountPath("mkmk")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create store dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"login":"mkmk","empire":2,"characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt account: %v", err)
+	}
+
+	err := store.BackupTo(filepath.Join(t.TempDir(), "backup"))
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for corrupt source snapshot, got %v", err)
+	}
+}
+
+func TestFileStoreBackupToRejectsNonEmptyDestination(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	backupDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(backupDir, "README.txt"), []byte("operator notes"), 0o644); err != nil {
+		t.Fatalf("write existing destination file: %v", err)
+	}
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrBackupDirNotEmpty) {
+		t.Fatalf("expected ErrBackupDirNotEmpty, got %v", err)
+	}
+}
+
+func TestFileStoreBackupToTreatsMissingSourceAsEmptyBackup(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing-source"))
+	backupDir := filepath.Join(t.TempDir(), "backup")
+
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup missing source: %v", err)
+	}
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		t.Fatalf("read backup dir: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected empty backup dir, got %#v", entries)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	want := Account{

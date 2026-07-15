@@ -104,6 +104,8 @@ The bootstrap file stores intentionally fail closed on unknown top-level JSON fi
 
 Writes are committed through same-directory temp files, synced before rename, and followed by a directory sync after rename. Destructive login-ticket consumes also sync the store directory after deleting the consumed ticket, so successful authd-to-gamed handoff removal is part of the crash-safety boundary instead of only the issue/write path. Account-listing behavior therefore matches that crash-safety model: incomplete `.account-*.json` temp files are not treated as restorable accounts, while malformed committed snapshots stop the listing so future backup/migration tooling cannot silently skip bad durable state. This makes the current JSON stores more crash-tolerant on normal local filesystems while preserving the intentionally simple bootstrap format.
 
+The account store also has a narrow backup primitive for future operator/migration tooling. `FileStore.BackupTo(dstDir)` validates the source through the same deterministic `List()` path, copies only committed snapshots into an empty destination directory, omits crash temp files, and fails closed if any committed source snapshot is corrupt or filename-mismatched. The destination must be empty so a backup cannot silently merge with stale operator files. This is currently a programmatic primitive rather than an HTTP endpoint or automated scheduler.
+
 This is still bootstrap file persistence, not a migration-ready database layer. Future migration/backfill tooling should either emit the exact current schema or introduce an explicit versioned import/quarantine path instead of relying on silent field coercion.
 
 ### Bootstrap QA reference

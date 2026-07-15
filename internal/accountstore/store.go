@@ -18,10 +18,12 @@ import (
 )
 
 var (
-	ErrStoreDirRequired = errors.New("account store dir is required")
-	ErrLoginRequired    = errors.New("account login is required")
-	ErrAccountNotFound  = errors.New("account not found")
-	ErrInvalidAccount   = errors.New("invalid account snapshot")
+	ErrStoreDirRequired  = errors.New("account store dir is required")
+	ErrLoginRequired     = errors.New("account login is required")
+	ErrAccountNotFound   = errors.New("account not found")
+	ErrInvalidAccount    = errors.New("invalid account snapshot")
+	ErrBackupDirRequired = errors.New("account backup dir is required")
+	ErrBackupDirNotEmpty = errors.New("account backup dir is not empty")
 )
 
 type Account struct {
@@ -149,6 +151,49 @@ func (s *FileStore) Save(account Account) error {
 	}
 	if err := syncStoreDir(s.dir); err != nil {
 		return fmt.Errorf("sync account store dir: %w", err)
+	}
+	return nil
+}
+
+func (s *FileStore) BackupTo(dstDir string) error {
+	if s.dir == "" {
+		return ErrStoreDirRequired
+	}
+	if dstDir == "" {
+		return ErrBackupDirRequired
+	}
+	if err := ensureEmptyBackupDir(dstDir); err != nil {
+		return err
+	}
+	accounts, err := s.List()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return fmt.Errorf("create account backup dir: %w", err)
+	}
+	backup := NewFileStore(dstDir)
+	for _, account := range accounts {
+		if err := backup.Save(account); err != nil {
+			return fmt.Errorf("backup account %q: %w", account.Login, err)
+		}
+	}
+	if err := syncStoreDir(dstDir); err != nil {
+		return fmt.Errorf("sync account backup dir: %w", err)
+	}
+	return nil
+}
+
+func ensureEmptyBackupDir(path string) error {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read account backup dir: %w", err)
+	}
+	if len(entries) != 0 {
+		return ErrBackupDirNotEmpty
 	}
 	return nil
 }
