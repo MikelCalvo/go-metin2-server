@@ -168,7 +168,7 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 }
 
 func validateBundle(bundle Bundle) error {
-	itemTemplatesByVnum := make(map[uint32]struct{}, len(bundle.ItemTemplates))
+	itemTemplatesByVnum := make(map[uint32]itemcatalog.Template, len(bundle.ItemTemplates))
 	for _, template := range bundle.ItemTemplates {
 		normalizedTemplate := itemcatalog.NormalizeTemplate(template)
 		if !itemcatalog.ValidTemplate(normalizedTemplate) {
@@ -177,7 +177,7 @@ func validateBundle(bundle Bundle) error {
 		if _, ok := itemTemplatesByVnum[normalizedTemplate.Vnum]; ok {
 			return ErrInvalidBundle
 		}
-		itemTemplatesByVnum[normalizedTemplate.Vnum] = struct{}{}
+		itemTemplatesByVnum[normalizedTemplate.Vnum] = normalizedTemplate
 	}
 	profileSnapshots := make(map[string]worldruntime.StaticActorCombatProfileSnapshot, len(bundle.CombatProfiles))
 	referencedProfiles := referencedCombatProfileNames(bundle.StaticActors, bundle.SpawnGroups)
@@ -201,7 +201,11 @@ func validateBundle(bundle Bundle) error {
 		}
 		if len(itemTemplatesByVnum) > 0 && definition.Kind == interactionstore.KindShopPreview {
 			for _, entry := range definition.Catalog {
-				if _, ok := itemTemplatesByVnum[entry.ItemVnum]; !ok {
+				template, ok := itemTemplatesByVnum[entry.ItemVnum]
+				if !ok {
+					return ErrInvalidBundle
+				}
+				if !validMerchantCatalogCountForTemplate(entry, template) {
 					return ErrInvalidBundle
 				}
 			}
@@ -319,6 +323,16 @@ func combatProfileSnapshotFormulaDamage(profile worldruntime.StaticActorCombatPr
 
 func validRewardDescriptor(spawnGroup SpawnGroup) bool {
 	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: spawnGroup.RewardExperience, Gold: spawnGroup.RewardGold, DropVnums: spawnGroup.RewardDropVnums})
+}
+
+func validMerchantCatalogCountForTemplate(entry interactionstore.MerchantCatalogEntry, template itemcatalog.Template) bool {
+	if entry.Count == 0 || template.MaxCount == 0 {
+		return false
+	}
+	if !template.Stackable {
+		return entry.Count == 1
+	}
+	return entry.Count <= template.MaxCount
 }
 
 func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldruntime.StaticActorCombatProfileSnapshot) []SpawnGroup {

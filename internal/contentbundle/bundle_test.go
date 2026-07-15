@@ -185,6 +185,40 @@ func TestCanonicalizeRejectsMerchantCatalogRefMissingFromBundledItemTemplates(t 
 	}
 }
 
+func TestCanonicalizeRejectsMerchantCatalogCountAboveBundledStackLimit(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 10}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:merchant",
+			Title: "Village Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 11},
+			},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for merchant catalog count above stack limit, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsMerchantCatalogMultipleNonStackableBundledItem(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:merchant",
+			Title: "Village Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 11200, Price: 500, Count: 2},
+			},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for merchant catalog count above non-stackable limit, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsSparseMerchantCatalogSlots(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		InteractionDefinitions: []interactionstore.Definition{{

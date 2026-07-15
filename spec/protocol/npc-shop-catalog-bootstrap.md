@@ -118,6 +118,7 @@ The structured merchant catalog now already drives:
 - loopback interaction CRUD payloads
 - content-bundle export/import
 - bundled `item_templates` validation and runtime persistence for portable merchant bundles
+- bundled `item_templates` count checks, so a merchant entry cannot exceed a stackable template's `max_count` and non-stackable templates can only be sold one at a time
 - interaction-visibility previews
 - the merchant-window `GC::SHOP START` open response
 - the first buy-only `SHOP BUY` transaction gate
