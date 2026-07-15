@@ -3,6 +3,7 @@ package staticstore
 import (
 	"errors"
 	"sort"
+	"strings"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -40,6 +41,9 @@ type Store interface {
 
 func normalizeSnapshot(snapshot Snapshot) Snapshot {
 	normalized := Snapshot{StaticActors: cloneStaticActors(snapshot.StaticActors)}
+	for i := range normalized.StaticActors {
+		normalized.StaticActors[i] = normalizeStaticActor(normalized.StaticActors[i])
+	}
 	sort.Slice(normalized.StaticActors, func(i int, j int) bool {
 		if normalized.StaticActors[i].Name == normalized.StaticActors[j].Name {
 			return normalized.StaticActors[i].EntityID < normalized.StaticActors[j].EntityID
@@ -103,6 +107,15 @@ func hasRewardDescriptor(actor StaticActor) bool {
 
 func validRewardDescriptor(actor StaticActor) bool {
 	return worldruntime.ValidStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: actor.RewardDropVnums})
+}
+
+func normalizeStaticActor(actor StaticActor) StaticActor {
+	actor.Name = strings.TrimSpace(actor.Name)
+	actor.CombatProfile = strings.TrimSpace(actor.CombatProfile)
+	actor.InteractionKind = strings.TrimSpace(actor.InteractionKind)
+	actor.InteractionRef = strings.TrimSpace(actor.InteractionRef)
+	actor.SpawnGroupRef = strings.TrimSpace(actor.SpawnGroupRef)
+	return actor
 }
 
 func cloneStaticActors(actors []StaticActor) []StaticActor {

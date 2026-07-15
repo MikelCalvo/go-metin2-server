@@ -124,6 +124,22 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for invalid actor, got %v", err)
 	}
+	whitespaceName := Snapshot{StaticActors: []StaticActor{{EntityID: 24, Name: "   ", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355}}}
+	if err := store.Save(whitespaceName); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for whitespace-only actor name, got %v", err)
+	}
+	trimmedStaticActor := Snapshot{StaticActors: []StaticActor{{EntityID: 25, Name: "  TrimmedGuard  ", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, CombatProfile: " training_dummy ", InteractionKind: " info ", InteractionRef: " npc:trimmed_guard "}}}
+	if err := store.Save(trimmedStaticActor); err != nil {
+		t.Fatalf("expected trimmable actor metadata to save, got %v", err)
+	}
+	loadedTrimmedStaticActor, err := store.Load()
+	if err != nil {
+		t.Fatalf("load trimmed static actor snapshot: %v", err)
+	}
+	wantTrimmedStaticActor := Snapshot{StaticActors: []StaticActor{{EntityID: 25, Name: "TrimmedGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, InteractionKind: "info", InteractionRef: "npc:trimmed_guard"}}}
+	if !reflect.DeepEqual(loadedTrimmedStaticActor, wantTrimmedStaticActor) {
+		t.Fatalf("expected static actor metadata to be trimmed on persistence:\n got: %#v\nwant: %#v", loadedTrimmedStaticActor, wantTrimmedStaticActor)
+	}
 	invalidRaceNum := Snapshot{StaticActors: []StaticActor{{EntityID: 23, Name: "WideRaceGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: uint32(^uint16(0)) + 1}}}
 	if err := store.Save(invalidRaceNum); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for unencodable actor race number, got %v", err)

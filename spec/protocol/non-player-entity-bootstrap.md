@@ -19,7 +19,7 @@ This contract applies only to:
 - runtime-owned non-player identity and map presence
 - static or operator-seeded actors that exist as world-runtime data
 - deterministic lookup and map membership inside `internal/worldruntime`
-- a deterministic file-backed static-actor snapshot schema that can represent the full bootstrap actor set on disk before boot/runtime wiring lands
+- a deterministic file-backed static-actor snapshot schema that can represent the full bootstrap actor set on disk before boot/runtime wiring lands; the store trims authored string fields (`name`, `combat_profile`, `interaction_kind`, `interaction_ref`, and `spawn_group_ref`) before validation/persistence and rejects values that become invalid after trimming
 - runtime-owned boot-time restore plus successful create/update/delete persistence for that full static-actor snapshot on `gamed`
 - runtime-owned in-place edits of those static actors across non-player directories and map indexes while preserving entity identity
 - optional interaction-ready metadata (`interaction_kind` / `interaction_ref`) persisted and exposed through those same bootstrap actor seams without claiming interaction behavior yet
