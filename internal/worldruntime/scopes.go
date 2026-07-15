@@ -657,6 +657,9 @@ func AppendGroundItemsToMapOccupancySnapshots(topology BootstrapTopology, snapsh
 		byMap[snapshots[i].MapIndex] = i
 	}
 	for _, ground := range groundItems {
+		if ground.VID == 0 {
+			continue
+		}
 		mapIndex := topology.EffectiveMapIndex(loginticket.Character{MapIndex: ground.MapIndex})
 		idx, ok := byMap[mapIndex]
 		if !ok {
@@ -682,6 +685,9 @@ func VisibleGroundItems(topology BootstrapTopology, subject loginticket.Characte
 	}
 	visible := make([]GroundItemSnapshot, 0, len(groundItems))
 	for _, ground := range groundItems {
+		if ground.VID == 0 {
+			continue
+		}
 		groundCharacter := loginticket.Character{MapIndex: ground.MapIndex, X: ground.X, Y: ground.Y}
 		if !topology.SharesVisibleWorld(subject, groundCharacter) {
 			continue

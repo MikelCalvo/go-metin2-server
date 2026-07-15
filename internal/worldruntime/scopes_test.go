@@ -208,6 +208,74 @@ func TestScopesVisibleStaticActorsFollowConfiguredVisibilityPolicyAndOrder(t *te
 	}
 }
 
+func TestVisibleGroundItemsFollowConfiguredVisibilityPolicyAndRejectZeroVID(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	subject := entityRegistryCharacter("Subject", 0x02040101, 0, 1700, 2800)
+	groundItems := []GroundItemOccupancy{
+		{VID: 0x05030002, Vnum: 27002, Count: 1, OwnerName: "Bravo", MapIndex: 1, X: 1900, Y: 2900},
+		{VID: 0, Vnum: 27003, Count: 1, OwnerName: "Malformed", MapIndex: 1, X: 1750, Y: 2850},
+		{VID: 0x05030001, Vnum: 27001, Count: 2, OwnerName: "Alpha", MapIndex: 0, X: 1720, Y: 2820},
+		{VID: 0x05030003, Vnum: 27004, Count: 1, OwnerName: "Far", MapIndex: 1, X: 2600, Y: 3800},
+	}
+
+	visible := VisibleGroundItems(topology, subject, groundItems)
+	if len(visible) != 2 {
+		t.Fatalf("expected 2 visible non-zero ground items, got %+v", visible)
+	}
+	if visible[0].VID != 0x05030001 || visible[0].MapIndex != 1 || visible[1].VID != 0x05030002 || visible[1].MapIndex != 1 {
+		t.Fatalf("expected deterministic visible ground items with effective map indexes, got %+v", visible)
+	}
+}
+
+func TestAppendGroundItemsToMapOccupancySnapshotsRejectsZeroVIDAndKeepsStaticOnlyMaps(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	base := []MapOccupancySnapshot{{
+		MapIndex:         42,
+		StaticActorCount: 1,
+		StaticActors:     []StaticActorSnapshot{{EntityID: 7, Name: "Guard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300}},
+	}}
+	groundItems := []GroundItemOccupancy{
+		{VID: 0, Vnum: 27003, Count: 1, OwnerName: "Malformed", MapIndex: 42, X: 1750, Y: 2850},
+		{VID: 0x05030002, Vnum: 27002, Count: 1, OwnerName: "Bravo", MapIndex: 42, X: 1900, Y: 2900},
+		{VID: 0x05030001, Vnum: 27001, Count: 2, OwnerName: "Alpha", MapIndex: 99, X: 1720, Y: 2820},
+	}
+
+	snapshots := AppendGroundItemsToMapOccupancySnapshots(topology, base, groundItems)
+	if len(snapshots) != 2 {
+		t.Fatalf("expected static map plus ground-only map, got %+v", snapshots)
+	}
+	if snapshots[0].MapIndex != 42 || snapshots[0].StaticActorCount != 1 || snapshots[0].GroundItemCount != 1 || snapshots[0].GroundItems[0].VID != 0x05030002 {
+		t.Fatalf("expected map 42 to keep static actor and one valid ground item, got %+v", snapshots[0])
+	}
+	if snapshots[1].MapIndex != 99 || snapshots[1].GroundItemCount != 1 || snapshots[1].GroundItems[0].VID != 0x05030001 {
+		t.Fatalf("expected map 99 ground-only occupancy, got %+v", snapshots[1])
+	}
+}
+
+func TestRelocateGroundItemVisibilityDiffRejectsZeroVIDAndUsesConfiguredPolicy(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	current := entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800)
+	target := current
+	target.X = 2600
+	target.Y = 3800
+	groundItems := []GroundItemOccupancy{
+		{VID: 0, Vnum: 27003, Count: 1, OwnerName: "Malformed", MapIndex: 42, X: 1750, Y: 2850},
+		{VID: 0x05030001, Vnum: 27001, Count: 2, OwnerName: "NearBefore", MapIndex: 42, X: 1720, Y: 2820},
+		{VID: 0x05030002, Vnum: 27002, Count: 1, OwnerName: "NearAfter", MapIndex: 42, X: 2620, Y: 3820},
+	}
+
+	diff := RelocateGroundItemVisibilityDiff(topology, current, target, groundItems)
+	if len(diff.CurrentVisibleItems) != 1 || diff.CurrentVisibleItems[0].VID != 0x05030001 {
+		t.Fatalf("expected only pre-move valid ground item visible before relocate, got %+v", diff.CurrentVisibleItems)
+	}
+	if len(diff.TargetVisibleItems) != 1 || diff.TargetVisibleItems[0].VID != 0x05030002 {
+		t.Fatalf("expected only post-move valid ground item visible after relocate, got %+v", diff.TargetVisibleItems)
+	}
+	if len(diff.RemovedVisibleItems) != 1 || diff.RemovedVisibleItems[0].VID != 0x05030001 || len(diff.AddedVisibleItems) != 1 || diff.AddedVisibleItems[0].VID != 0x05030002 {
+		t.Fatalf("expected one removed and one added ground item, got removed=%+v added=%+v", diff.RemovedVisibleItems, diff.AddedVisibleItems)
+	}
+}
+
 func TestBuildStaticActorTargetDiffDeepClonesPlayerInventories(t *testing.T) {
 	current := []PlayerEntity{{
 		Entity:    Entity{ID: 10, Kind: EntityKindPlayer, Name: "CurrentPeer", VID: 0x02040110},

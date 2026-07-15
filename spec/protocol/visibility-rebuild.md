@@ -81,8 +81,9 @@ This prevents a nearby coordinate on another effective map from passing a later 
 
 For relocation preview / transfer result composition, callers pass the current pending ground-item occupancy set into `BuildRelocationPreviewWithGroundItems(...)`. The helper then:
 - evaluates current and target visible ground items through the configured topology/AOI policy
+- fails closed on malformed bootstrap ground handles with `VID == 0`, omitting them from visible-ground snapshots, visibility diffs, and map-occupancy augmentation
 - returns deterministic current/target/removed/added ground-item snapshots ordered by visible `VID`
-- preserves pending ground items in both before/after map-occupancy snapshots, including maps that would otherwise contain no connected players or static actors
+- preserves valid pending ground items in both before/after map-occupancy snapshots, including maps that would otherwise contain no connected players or static actors
 
 `internal/minimal` still owns ground-item packet emission, pickup/drop runtime state, and transport fanout. It now passes the current ground-item occupancy set into the world-runtime relocation preview helper instead of rebuilding preview ground-item deltas locally.
 
