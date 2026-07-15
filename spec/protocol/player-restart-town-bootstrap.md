@@ -60,6 +60,8 @@ The current bootstrap fallback rule is also explicit now:
 - if the persisted selected character snapshot has `empire = 0`, `/restart_town` falls back to the current session-ticket empire
 - if that fallback empire is also `0` or otherwise outside the owned table, the current legacy create-position helper falls back to the empire-`1` coordinates above
 
+Runtime regression coverage now exercises all three owned empire table rows plus the `0`/unknown fallback path through the full same-socket `/restart_town` recovery seam, not only through the standalone helper.
+
 This keeps the slice honest:
 - the repo already owns those positions as deterministic create positions
 - the repo does **not** yet claim that these are final compatibility-grade death respawn points for every map or content case
