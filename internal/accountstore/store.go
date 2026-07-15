@@ -13,6 +13,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 )
 
 var (
@@ -141,6 +142,9 @@ func validateAccount(account Account) error {
 		if err := validateCharacterUniqueEquipmentSlots(character); err != nil {
 			return err
 		}
+		if err := validateCharacterQuickslots(character); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -151,6 +155,9 @@ func validateLoadedAccount(account Account) error {
 			return err
 		}
 		if err := validateCharacterUniqueEquipmentSlots(character); err != nil {
+			return err
+		}
+		if err := validateCharacterQuickslots(character); err != nil {
 			return err
 		}
 	}
@@ -183,4 +190,36 @@ func validateCharacterUniqueEquipmentSlots(character loginticket.Character) erro
 		equipmentSlots[uint8(item.EquipSlot)] = item.ID
 	}
 	return nil
+}
+
+func validateCharacterQuickslots(character loginticket.Character) error {
+	quickslotPositions := make(map[uint8]loginticket.Quickslot, len(character.Quickslots))
+	for _, quickslot := range character.Quickslots {
+		if !validQuickslotTuple(quickslot) {
+			return fmt.Errorf("%w: quickslot position %d has invalid type %d slot %d", ErrInvalidAccount, quickslot.Position, quickslot.Type, quickslot.Slot)
+		}
+		if previous, ok := quickslotPositions[quickslot.Position]; ok {
+			return fmt.Errorf("%w: quickslot position %d contains type %d slot %d and type %d slot %d", ErrInvalidAccount, quickslot.Position, previous.Type, previous.Slot, quickslot.Type, quickslot.Slot)
+		}
+		quickslotPositions[quickslot.Position] = quickslot
+	}
+	return nil
+}
+
+func validQuickslotTuple(quickslot loginticket.Quickslot) bool {
+	if quickslot.Position >= 36 {
+		return false
+	}
+	switch quickslot.Type {
+	case quickslotproto.TypeNone:
+		return quickslot.Slot == 0
+	case quickslotproto.TypeItem:
+		return quickslot.Slot < uint8(inventory.CarriedInventorySlotCount)
+	case quickslotproto.TypeSkill:
+		return quickslot.Slot < 200
+	case quickslotproto.TypeCommand:
+		return quickslot.Slot < 60
+	default:
+		return false
+	}
 }

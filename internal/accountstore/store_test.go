@@ -74,6 +74,62 @@ func TestFileStoreLoadRejectsDuplicateEquipmentSlots(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsDuplicateQuickslotPositions(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	account := Account{
+		Login:  "mkmk",
+		Empire: 2,
+		Characters: []loginticket.Character{{
+			ID:   1,
+			Name: "MkmkWar",
+			Quickslots: []loginticket.Quickslot{
+				{Position: 3, Type: 1, Slot: 8},
+				{Position: 3, Type: 2, Slot: 9},
+			},
+		}},
+	}
+
+	if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for duplicate quickslot position, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsDuplicateQuickslotPositions(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[{"position":3,"type":1,"slot":8},{"position":3,"type":2,"slot":9}]}]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-quickslot account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for duplicate quickslot position, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsInvalidQuickslotTuples(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	cases := []struct {
+		name      string
+		quickslot loginticket.Quickslot
+	}{
+		{name: "position out of range", quickslot: loginticket.Quickslot{Position: 36, Type: 1, Slot: 8}},
+		{name: "unknown type", quickslot: loginticket.Quickslot{Position: 3, Type: 9, Slot: 8}},
+		{name: "item slot out of range", quickslot: loginticket.Quickslot{Position: 3, Type: 1, Slot: 180}},
+		{name: "skill slot out of range", quickslot: loginticket.Quickslot{Position: 3, Type: 2, Slot: 200}},
+		{name: "command slot out of range", quickslot: loginticket.Quickslot{Position: 3, Type: 3, Slot: 60}},
+		{name: "none keeps stale slot", quickslot: loginticket.Quickslot{Position: 3, Type: 0, Slot: 8}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar", Quickslots: []loginticket.Quickslot{tc.quickslot}}}}
+			if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
+				t.Fatalf("expected ErrInvalidAccount, got %v", err)
+			}
+		})
+	}
+}
+
 func TestFileStoreLoadAllowsDuplicateCarriedSlotsForRuntimeRecovery(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":27001,"count":5,"slot":8},{"id":1002,"vnum":27002,"count":3,"slot":8}],"equipment":[],"quickslots":[]}]}`)

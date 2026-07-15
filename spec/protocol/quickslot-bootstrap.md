@@ -123,7 +123,7 @@ The bootstrap account and login-ticket character snapshots now carry a `quickslo
 | `type` | `uint8` | `0 = none`, `1 = item`, `2 = skill`, `3 = command` |
 | `slot` | `uint8` | type-relative item cell / skill index / command index |
 
-Missing `quickslots` in older file-backed snapshots is normalized to an empty array. This preserves authd -> gamed ticket handoff and account-store round trips before any accepted runtime quickslot mutation is enabled.
+Missing `quickslots` in older file-backed snapshots is normalized to an empty array. Durable account snapshots fail closed on malformed quickslot state: duplicate quickslot positions, positions outside the owned `0..35` bar range, unknown quickslot types, stale `type = 0` slots with non-zero payload, item slots outside carried inventory, skill slots outside `0..199`, and command slots outside `0..59` are rejected on both save and load. This keeps authd -> gamed ticket handoff and account-store round trips deterministic before any accepted runtime quickslot mutation is replayed from disk.
 
 ## Loading-time bootstrap ownership
 
