@@ -185,6 +185,9 @@ func validateBundle(bundle Bundle) error {
 		if !validCombatProfileSnapshot(profile) {
 			return ErrInvalidBundle
 		}
+		if !validRewardDropRefs(profile.DeathReward.DropVnums, itemTemplatesByVnum) {
+			return ErrInvalidBundle
+		}
 		name := strings.TrimSpace(profile.Profile)
 		if _, referenced := referencedProfiles[name]; !referenced {
 			return ErrInvalidBundle
@@ -219,6 +222,9 @@ func validateBundle(bundle Bundle) error {
 	spawnGroupsByRef := make(map[string]struct{}, len(bundle.SpawnGroups))
 	for _, spawnGroup := range bundle.SpawnGroups {
 		if !validSpawnGroup(spawnGroup, profileSnapshots) {
+			return ErrInvalidBundle
+		}
+		if !validRewardDropRefs(spawnGroup.RewardDropVnums, itemTemplatesByVnum) {
 			return ErrInvalidBundle
 		}
 		if _, ok := spawnGroupsByRef[spawnGroup.Ref]; ok {
@@ -337,6 +343,18 @@ func validMerchantCatalogCountForTemplate(entry interactionstore.MerchantCatalog
 		return entry.Count == 1
 	}
 	return entry.Count <= template.MaxCount
+}
+
+func validRewardDropRefs(dropVnums []uint32, itemTemplatesByVnum map[uint32]itemcatalog.Template) bool {
+	if len(dropVnums) == 0 || len(itemTemplatesByVnum) == 0 {
+		return true
+	}
+	for _, vnum := range dropVnums {
+		if _, ok := itemTemplatesByVnum[vnum]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldruntime.StaticActorCombatProfileSnapshot) []SpawnGroup {

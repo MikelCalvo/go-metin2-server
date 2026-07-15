@@ -132,6 +132,8 @@ The first bootstrap spawn-group contract freezes these fields:
   - if all reward fields are omitted or zero/empty, bundle canonicalization now applies the selected combat profile's bootstrap death-reward defaults; the built-in `practice_mob` and `training_dummy` profiles remain rewardless, while registered reward-bearing profiles can provide deterministic defaults
   - explicit non-zero reward fields override profile defaults for that spawn group
   - non-empty drop-vnum lists canonicalize into ascending deterministic order across content bundles and file-backed static-actor snapshots
+  - when a bundle includes top-level `item_templates`, every authored reward drop vnum from either `spawn_groups` or bundled custom `combat_profiles` must resolve to one of those item templates; dangling reward drops fail canonicalization before loopback import/runtime mutation
+  - bundles that omit `item_templates` keep the older bootstrap behavior and validate only the reward descriptor shape, because the bundle is then not claiming a self-contained item catalog
   - non-zero values use the narrow reward contract in `non-player-reward-bootstrap.md` on the accepted killing hit
   - reward data belongs to the authored spawn group and round-trips through content bundles, static-actor snapshots, and runtime import/export; it is not live character persistence by itself
 - operator/runtime edits that preserve the same `spawn_group_ref` must preserve the authored `combat_profile` and reward descriptor while changing mutable actor presentation/placement fields; delete/recreate or bundle replacement remains the explicit way to replace reward metadata

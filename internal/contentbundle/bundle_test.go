@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
@@ -216,6 +217,74 @@ func TestCanonicalizeRejectsMerchantCatalogMultipleNonStackableBundledItem(t *te
 	})
 	if !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for merchant catalog count above non-stackable limit, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsRewardDropMissingFromBundledItemTemplates(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.reward_mob",
+			Name:            "Reward Mob",
+			MapIndex:        42,
+			X:               1785,
+			Y:               2885,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27002},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for reward drop missing from bundled item templates, got %v", err)
+	}
+}
+
+func TestCanonicalizeAcceptsRewardDropsBackedByBundledItemTemplates(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.reward_mob",
+			Name:            "Reward Mob",
+			MapIndex:        42,
+			X:               1785,
+			Y:               2885,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27002, 27001},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize reward drops backed by item templates: %v", err)
+	}
+	wantDrops := []uint32{27001, 27002}
+	if len(bundle.SpawnGroups) != 1 || !reflect.DeepEqual(bundle.SpawnGroups[0].RewardDropVnums, wantDrops) {
+		t.Fatalf("unexpected canonical reward drops: %+v", bundle.SpawnGroups)
+	}
+}
+
+func TestExampleBootstrapNPCServiceBundleStaysValid(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-npc-service-bundle.json"))
+	if err != nil {
+		t.Fatalf("read example content bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode example content bundle: %v", err)
+	}
+	canonical, err := Canonicalize(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize example content bundle: %v", err)
+	}
+	if len(canonical.ItemTemplates) == 0 || len(canonical.SpawnGroups) == 0 || len(canonical.InteractionDefinitions) == 0 {
+		t.Fatalf("example bundle should include item templates, spawn groups, and interaction definitions: %+v", canonical)
 	}
 }
 
