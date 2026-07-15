@@ -104,7 +104,7 @@ The bootstrap file stores intentionally fail closed on unknown top-level JSON fi
 
 Writes are committed through same-directory temp files, synced before rename, and followed by a directory sync after rename. This makes the current JSON stores more crash-tolerant on normal local filesystems while preserving the intentionally simple bootstrap format.
 
-Writes are committed through same-directory temp files, synced before rename, and followed by a directory sync after rename. This makes the current JSON stores more crash-tolerant on normal local filesystems while preserving the intentionally simple bootstrap format.
+Writes are committed through same-directory temp files, synced before rename, and followed by a directory sync after rename. Destructive login-ticket consumes also sync the store directory after deleting the consumed ticket, so successful authd-to-gamed handoff removal is part of the crash-safety boundary instead of only the issue/write path. This makes the current JSON stores more crash-tolerant on normal local filesystems while preserving the intentionally simple bootstrap format.
 
 This is still bootstrap file persistence, not a migration-ready database layer. Future migration/backfill tooling should either emit the exact current schema or introduce an explicit versioned import/quarantine path instead of relying on silent field coercion.
 

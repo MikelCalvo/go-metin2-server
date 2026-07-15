@@ -226,6 +226,9 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 		}
 		return Ticket{}, fmt.Errorf("delete consumed login ticket: %w", err)
 	}
+	if err := syncStoreDir(s.dir); err != nil {
+		return Ticket{}, fmt.Errorf("sync consumed login ticket store dir: %w", err)
+	}
 
 	return ticket, nil
 }

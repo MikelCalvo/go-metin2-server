@@ -230,6 +230,51 @@ func TestFileStoreReturnsNotFoundAfterSuccessfulConsume(t *testing.T) {
 	}
 }
 
+func TestFileStoreConsumeSyncsStoreDirectoryAfterDelete(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	var synced []string
+	syncStoreDir = func(path string) error {
+		synced = append(synced, path)
+		return nil
+	}
+
+	if _, err := store.Consume("mkmk", 0x01020304); err != nil {
+		t.Fatalf("consume ticket: %v", err)
+	}
+	if !reflect.DeepEqual(synced, []string{dir}) {
+		t.Fatalf("expected login ticket store directory sync after consume delete, got %#v", synced)
+	}
+}
+
+func TestFileStoreConsumeReportsStoreDirectorySyncFailure(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	syncStoreDir = func(path string) error {
+		return fmt.Errorf("sync %s failed", path)
+	}
+
+	if _, err := store.Consume("mkmk", 0x01020304); err == nil || !strings.Contains(err.Error(), "sync consumed login ticket store dir") {
+		t.Fatalf("expected consumed login ticket store directory sync failure, got %v", err)
+	}
+	_, err := store.Consume("mkmk", 0x01020304)
+	if !errors.Is(err, ErrTicketNotFound) {
+		t.Fatalf("expected ticket file to be deleted despite sync failure, got %v", err)
+	}
+}
+
 func TestCloneCharactersDeepCopiesItemStateSlices(t *testing.T) {
 	source := []Character{{
 		ID:         1,
