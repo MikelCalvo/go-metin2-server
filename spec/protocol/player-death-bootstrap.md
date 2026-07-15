@@ -17,8 +17,9 @@ Those documents already freeze:
 - fail-closed owner-side merchant-buy attempts at that same retaliation floor before inventory / gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path
 - fail-closed owner-side merchant-sell attempts at that same retaliation floor before inventory / gold / quickslot mutation can run through packet `SHOP SELL` / `SHOP SELL2`
 - fail-closed owner-side client/slash item-use attempts at that same retaliation floor before inventory consumption, carried-item stacking, or point restoration can run through the local `/use_item` harness path, carried-slot `ITEM_USE`, or `ITEM_USE_TO_ITEM`
-- fail-closed owner-side item/gold drop attempts at that same retaliation floor before ground-item registration, currency debit, or inventory persistence can run through `ITEM_DROP` / `ITEM_DROP2`
-- fail-closed owner-side carried-inventory move attempts at that same retaliation floor before runtime or persisted slot mutation can run through packet `ITEM_MOVE` or the local `/inventory_move` harness path
+- fail-closed owner-side item/gold drop attempts at that same floor before ground-item registration, currency debit, or inventory persistence can run through `ITEM_DROP` / `ITEM_DROP2`
+- fail-closed owner-side ground-item pickup attempts at that same floor before ground-handle removal, inventory/gold mutation, pickup feedback, or owner-delivery side effects can run through `ITEM_PICKUP`
+- fail-closed owner-side carried-inventory move attempts at that same floor before runtime or persisted slot mutation can run through packet `ITEM_MOVE` or the local `/inventory_move` harness path
 - fail-closed owner-side slash equipment mutation attempts at that same retaliation floor before carried/equipped item movement, appearance refresh, or template-backed point mutation can run through the local `/equip_item` and `/unequip_item` harness paths
 - fail-closed owner-side quickslot add/delete/swap attempts at that same retaliation floor before quickslot mutation can run through packet `QUICKSLOT_ADD` / `QUICKSLOT_DEL` / `QUICKSLOT_SWAP`
 
@@ -251,11 +252,12 @@ The current bootstrap player-death contract now also owns narrow post-floor item
 - the item-use denial happens before inventory consumption, carried-item stacking, point restoration, or persistence mutation can run
 - once that same floor has been reached, later `ITEM_DROP` / `ITEM_DROP2` attempts also fail closed for both inventory items and gold
 - the item-drop denial happens before inventory mutation, gold debit, ground-item registration, ownership delivery, quickslot sync, or persistence mutation can run
+- once that same floor has been reached, later `ITEM_PICKUP` attempts also fail closed before removing the ground item handle, mutating inventory or gold, emitting pickup feedback, or running fallback owner-delivery side effects
 - once that same floor has been reached, later packet `ITEM_MOVE` attempts also fail closed for carried-inventory moves before runtime slot mutation, persistence, item-set frames, or quickslot sync can run
 - the denial stays intentionally quiet in this slice: no synthetic failure info chat, no fallback revive packet, and no broader consumable/drop/move UI contract change are claimed yet
 
 This keeps the next post-floor expansion small and honest too:
-- after merchant-buy denial, client/slash item use, item drop, and packet item move were the next dangerous already-open gameplay contexts because they could still mutate runtime and persisted inventory/gold, restore points, stack or move carried items, or register visible ground items even if the owner had already died in the current bootstrap retaliation loop
+- after merchant-buy denial, client/slash item use, item drop, item pickup, and packet item move were the next dangerous already-open gameplay contexts because they could still mutate runtime and persisted inventory/gold, restore points, stack or move carried items, remove visible ground handles, or register visible ground items even if the owner had already died in the current bootstrap retaliation loop
 - the repo still does **not** yet claim revive policy or a broader general post-death action-lock contract at `0` HP
 
 ## First owned post-floor peer-facing chat / whisper denial

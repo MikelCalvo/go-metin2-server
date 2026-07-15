@@ -304,6 +304,7 @@ Expected result:
 - missing, malformed, mismatched, or ground-count-over-template-`max_count` authored pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
 - fallback/no-template pickup fixtures whose ground stack count exceeds the current one-byte item refresh range (`255`) fail closed before item pickup notice, inventory mutation, or ground-handle removal
 - loaded pickup template metadata marked `anti_get` / `anti_give` or restricted by the selected character's job/sex/min-level metadata also fails closed with the bootstrap inventory-full info message and leaves the ground handle available for a later valid retry
+- selected characters at the bootstrap zero-HP floor cannot pick up visible ground items; `ITEM_PICKUP` fails closed with no item pickup notice, inventory/gold mutation, or ground-handle removal
 - if a corrupt/disposable fixture already has the same non-zero item instance ID in carried inventory or equipment as the temporary ground item being picked up, pickup fails closed with the bootstrap inventory-full info message, no inventory mutation, and the ground handle remains available for a later valid retry
 
 ### 4.5.7 Drag inventory stack onto inventory stack (`ITEM_MOVE`)

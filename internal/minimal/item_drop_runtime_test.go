@@ -4,19 +4,24 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
@@ -3187,6 +3192,93 @@ func TestGameRuntimeItemPickupRejectsDeadCollectorWithoutRemovingGroundHandle(t 
 	}
 	if groundDel.VID != ground.VID {
 		t.Fatalf("unexpected owner pickup ground del after dead collector rejection: got %d want %d", groundDel.VID, ground.VID)
+	}
+}
+
+func TestGameSessionFlowPracticeMobItemPickupFailsClosedAfterImmediateRetaliationReachesOwnerHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupDeadOwner", 0x0103021c, 0x0204021c, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Inventory = []inventory.ItemInstance{{ID: 1111, Vnum: 27001, Count: 1, Slot: 5}}
+	issuePeerTicket(t, store, "pickup-dead-owner", 0x53535353, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-dead-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed immediate zero-HP pickup owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected pickup/practice-mob runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000830, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_pickup_floor",
+		Name:          "PracticeMobPickupFloor",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content practice-mob bundle for immediate zero-HP pickup denial: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one content-loaded practice mob before immediate zero-HP pickup denial, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-dead-owner", 0x53535353)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) < 8 {
+		t.Fatalf("expected pickup/practice-mob owner bootstrap to emit at least 8 frames, got %d", len(enterOut))
+	}
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(5))
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected pre-death dropped ground item to stay registered before pickup denial")
+	}
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before immediate zero-HP pickup denial: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP pickup denial, got %d", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error before immediate zero-HP pickup denial: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP pickup denial, got %d", len(attackOut))
+	}
+	currentTime = currentTime.Add(time.Second)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no delayed retaliation frames after immediate zero-HP pickup denial setup, got %d", len(queued))
+	}
+
+	pickupOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
+	if err != nil {
+		t.Fatalf("unexpected item pickup error after immediate retaliation reached owner HP floor: %v", err)
+	}
+	if len(pickupOut) != 0 {
+		t.Fatalf("expected item pickup to fail closed once immediate retaliation reached owner HP floor, got %d frames", len(pickupOut))
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected immediate zero-HP pickup denial to leave ground item registered")
+	}
+	persisted, err := accounts.Load("pickup-dead-owner")
+	if err != nil {
+		t.Fatalf("load persisted immediate zero-HP pickup owner account: %v", err)
+	}
+	if len(persisted.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected dropped item to remain out of persisted inventory after denied pickup, got %#v", persisted.Characters[0].Inventory)
 	}
 }
 
