@@ -172,6 +172,59 @@ func TestGameSessionFlowProjectsTemplateHighlightOnSelectedCharacterItemSet(t *t
 	}
 }
 
+func TestGameSessionFlowItemUseRefreshProjectsTemplateDisplaySocketsAndAttributes(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseDisplayAttrs", 0x0103055e, 0x0204055e, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 208, Vnum: 27005, Count: 2, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-use-display-attrs", 0x5050505e, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-display-attrs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed display-attrs item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27005,
+		Name:      "Socketed Display Potion",
+		Stackable: true,
+		MaxCount:  200,
+		Sockets:   itemcatalog.SocketValues{101, 202, -303},
+		Attributes: itemcatalog.AttributeValues{
+			{Type: 3, Value: 44},
+			{Type: 8, Value: -9},
+		},
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "display attr consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected display-attrs item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-display-attrs", 0x5050505e)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected display-attrs item-use packet error: %v", err)
+	}
+	if len(out) < 2 {
+		t.Fatalf("expected display-attrs ITEM_USE to emit point and item refresh frames, got %d", len(out))
+	}
+	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode display-attrs item update frame: %v", err)
+	}
+	if updated.Position != itemproto.InventoryPosition(5) || updated.Count != 1 {
+		t.Fatalf("unexpected display-attrs item update packet: %+v", updated)
+	}
+	wantSockets := [itemproto.ItemSocketCount]int32{101, 202, -303}
+	if updated.Sockets != wantSockets {
+		t.Fatalf("expected template-authored update sockets %+v, got %+v", wantSockets, updated.Sockets)
+	}
+	wantAttributes := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 3, Value: 44}, {Type: 8, Value: -9}}
+	if updated.Attributes != wantAttributes {
+		t.Fatalf("expected template-authored update attributes %+v, got %+v", wantAttributes, updated.Attributes)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemRejectsAtBootstrapHPFloorWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

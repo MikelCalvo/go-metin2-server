@@ -1524,7 +1524,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return gameflow.ItemUseResult{Accepted: false}
 			}
-			frames, err := itemUseResultFrames(selectedPlayer.LiveCharacter(), useResult)
+			frames, err := itemUseResultFrames(selectedPlayer.LiveCharacter(), useResult, runtime.itemTemplates)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -3732,11 +3732,21 @@ func inventoryMoveResultFrames(result inventory.MoveResult, templates map[uint32
 }
 
 func encodeInventoryItemUpdateFrame(item inventory.ItemInstance) ([]byte, error) {
+	return encodeInventoryItemUpdateFrameWithTemplates(item, nil)
+}
+
+func encodeInventoryItemUpdateFrameWithTemplates(item inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {
 	position, err := itemproto.CarriedInventoryPosition(uint16(item.Slot))
 	if err != nil {
 		return nil, err
 	}
-	return itemproto.EncodeUpdate(itemproto.UpdatePacket{Position: position, Count: uint8(item.Count)}), nil
+	template := templates[item.Vnum]
+	return itemproto.EncodeUpdate(itemproto.UpdatePacket{
+		Position:   position,
+		Count:      uint8(item.Count),
+		Sockets:    bootstrapItemSockets(template),
+		Attributes: bootstrapItemAttributes(template),
+	}), nil
 }
 
 func equipResultFrames(character loginticket.Character, from inventory.SlotIndex, equippedItem inventory.ItemInstance, pointChange *player.PointChangeResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
@@ -3777,7 +3787,7 @@ func unequipResultFrames(character loginticket.Character, from inventory.Equipme
 	return frames, nil
 }
 
-func itemUseResultFrames(character loginticket.Character, result player.ItemUseResult) ([][]byte, error) {
+func itemUseResultFrames(character loginticket.Character, result player.ItemUseResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
 	position, err := itemproto.CarriedInventoryPosition(uint16(result.Slot))
 	if err != nil {
 		return nil, err
@@ -3791,7 +3801,7 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 	if result.ItemRemoved {
 		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
 	} else {
-		updateFrame, err := encodeInventoryItemUpdateFrame(result.Item)
+		updateFrame, err := encodeInventoryItemUpdateFrameWithTemplates(result.Item, templates)
 		if err != nil {
 			return nil, err
 		}

@@ -150,7 +150,7 @@ Status: `[~]` broad bootstrap coverage with many legacy details still pending.
 Already present:
 
 - carried inventory/equipment bootstrap replay,
-- item set/delete/update refreshes, including selected-character `ITEM_SET` projection of the currently owned authored item flag metadata (`stackable`, `sell_count_per_gold`, `rare`, `unique`, and `confirm_when_use`), anti-flag metadata (`anti_get`, transfer/job/sex/empire guards, and stack guard), display socket/attribute metadata, and template-authored `highlight` hints while leaving unowned bits zero,
+- item set/delete/update refreshes, including selected-character `ITEM_SET` projection of the currently owned authored item flag metadata (`stackable`, `sell_count_per_gold`, `rare`, `unique`, and `confirm_when_use`), anti-flag metadata (`anti_get`, transfer/job/sex/empire guards, and stack guard), display socket/attribute metadata, and template-authored `highlight` hints while leaving unowned bits zero; partial-stack consumable `ITEM_UPDATE` refreshes preserve authored socket/attribute display arrays while only the count changes,
 - item move, swap, split, and merge cases,
 - stack compatibility checks and max-stack guards for current slices,
 - locked source/target and duplicate occupancy rejection paths,
