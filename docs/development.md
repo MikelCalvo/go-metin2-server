@@ -93,6 +93,17 @@ Service-specific overrides take precedence over global overrides for each field.
 
 Use the loopback-only `GET /local/runtime-config` endpoint to confirm the policy the running `gamed` process actually booted with.
 
+### Bootstrap file-backed persistence
+
+The current bootstrap runtime uses two small JSON-backed stores before a compatibility-grade database exists:
+
+- `internal/accountstore` stores durable account snapshots.
+- `internal/loginticket` stores one-shot authd-to-gamed login tickets.
+
+Both stores intentionally fail closed on unknown top-level JSON fields and trailing JSON values. The account store also validates persisted item/equipment/quickslot payloads before accepting a snapshot. The login-ticket store now uses the same strict decode boundary for ticket files; invalid ticket snapshots return `ErrInvalidTicket`, and a failed consume leaves the ticket file in place for inspection instead of deleting possibly corrupted handoff state.
+
+This is still bootstrap file persistence, not a migration-ready database layer. Future migration/backfill tooling should either emit the exact current schema or introduce an explicit versioned import/quarantine path instead of relying on silent field coercion.
+
 ### Bootstrap QA reference
 
 For the default stub credentials and the current real-client smoke flow, see the [manual client QA checklist](qa/manual-client-checklist.md).

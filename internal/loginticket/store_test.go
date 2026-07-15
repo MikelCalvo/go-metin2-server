@@ -1,6 +1,7 @@
 package loginticket
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"reflect"
@@ -269,4 +270,69 @@ func TestFileStoreLoadNormalizesMissingItemStateFromLegacySnapshot(t *testing.T)
 	if len(character.Quickslots) != 0 {
 		t.Fatalf("expected empty quickslots, got %#v", character.Quickslots)
 	}
+}
+
+func TestFileStoreLoadRejectsUnknownTicketFields(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := mustJSONWithUnknownField(t, Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)}, "schema_version", 99)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write unknown-field ticket: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for unknown ticket field, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsTrailingJSONValue(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := mustJSON(t, Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)})
+	raw = append(raw, ' ')
+	raw = append(raw, mustJSON(t, Ticket{Login: "shadow", LoginKey: 0x01020304})...)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write trailing-json ticket: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for trailing JSON value, got %v", err)
+	}
+}
+
+func TestFileStoreConsumeRejectsInvalidTicketWithoutDeletingIt(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	path := store.ticketPath(0x01020304)
+	raw := mustJSONWithUnknownField(t, Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)}, "schema_version", 99)
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("write invalid ticket: %v", err)
+	}
+
+	_, err := store.Consume("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for invalid consume, got %v", err)
+	}
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("expected invalid ticket to remain for inspection after failed consume, got %v", statErr)
+	}
+}
+
+func mustJSONWithUnknownField(t *testing.T, ticket Ticket, field string, value any) []byte {
+	t.Helper()
+	raw := mustJSON(t, ticket)
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		t.Fatalf("unmarshal ticket object: %v", err)
+	}
+	object[field] = value
+	return mustJSON(t, object)
+}
+
+func mustJSON(t *testing.T, value any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal JSON: %v", err)
+	}
+	return raw
 }

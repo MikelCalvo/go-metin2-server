@@ -1,9 +1,11 @@
 package loginticket
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,6 +18,7 @@ var (
 	ErrTicketExists        = errors.New("login ticket already exists")
 	ErrTicketNotFound      = errors.New("login ticket not found")
 	ErrTicketLoginMismatch = errors.New("login ticket login does not match")
+	ErrInvalidTicket       = errors.New("invalid login ticket snapshot")
 )
 
 type Character struct {
@@ -183,8 +186,8 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 	}
 
 	var ticket Ticket
-	if err := json.Unmarshal(raw, &ticket); err != nil {
-		return Ticket{}, fmt.Errorf("decode login ticket: %w", err)
+	if err := decodeTicketStrict(raw, &ticket); err != nil {
+		return Ticket{}, fmt.Errorf("%w: decode login ticket: %v", ErrInvalidTicket, err)
 	}
 	normalizeCharactersItemState(ticket.Characters)
 	if ticket.Login != login || ticket.LoginKey != loginKey {
@@ -205,4 +208,19 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 
 func (s *FileStore) ticketPath(loginKey uint32) string {
 	return filepath.Join(s.dir, fmt.Sprintf("%08x.json", loginKey))
+}
+
+func decodeTicketStrict(raw []byte, ticket *Ticket) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(ticket); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON value")
+		}
+		return err
+	}
+	return nil
 }
