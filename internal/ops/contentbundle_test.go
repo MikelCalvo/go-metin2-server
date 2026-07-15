@@ -237,8 +237,8 @@ func TestLocalContentBundleEndpointRejectsOversizedBodyBeforeImport(t *testing.T
 
 	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d for oversized content bundle body, got %d", http.StatusBadRequest, rec.Code)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d for oversized content bundle body, got %d", http.StatusRequestEntityTooLarge, rec.Code)
 	}
 	if importer.calls != 0 {
 		t.Fatalf("expected oversized bundle to be rejected before importer call, got %d calls", importer.calls)

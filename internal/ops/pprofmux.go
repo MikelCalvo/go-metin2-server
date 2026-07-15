@@ -546,9 +546,9 @@ func RegisterLocalContentBundleEndpoint(mux *http.ServeMux, exportContentBundle 
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
-			bundle, ok := decodeLocalContentBundleRequest(r)
+			bundle, status, ok := decodeLocalContentBundleRequest(r)
 			if !ok {
-				w.WriteHeader(http.StatusBadRequest)
+				w.WriteHeader(status)
 				return
 			}
 			normalized, err := contentbundle.Canonicalize(bundle)
@@ -872,23 +872,26 @@ func decodeLocalInteractionDefinitionIdentity(r *http.Request) (string, string, 
 	return kind, ref, true
 }
 
-func decodeLocalContentBundleRequest(r *http.Request) (contentbundle.Bundle, bool) {
+func decodeLocalContentBundleRequest(r *http.Request) (contentbundle.Bundle, int, bool) {
 	const maxContentBundleBodyBytes = 1 << 20
 	raw, err := io.ReadAll(io.LimitReader(r.Body, maxContentBundleBodyBytes+1))
-	if err != nil || len(raw) > maxContentBundleBodyBytes {
-		return contentbundle.Bundle{}, false
+	if err != nil {
+		return contentbundle.Bundle{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxContentBundleBodyBytes {
+		return contentbundle.Bundle{}, http.StatusRequestEntityTooLarge, false
 	}
 	var bundle contentbundle.Bundle
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&bundle); err != nil {
-		return contentbundle.Bundle{}, false
+		return contentbundle.Bundle{}, http.StatusBadRequest, false
 	}
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return contentbundle.Bundle{}, false
+		return contentbundle.Bundle{}, http.StatusBadRequest, false
 	}
-	return bundle, true
+	return bundle, http.StatusOK, true
 }
 
 func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {
