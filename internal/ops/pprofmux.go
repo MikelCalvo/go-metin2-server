@@ -517,6 +517,19 @@ func RegisterLocalContentBundleEndpoint(mux *http.ServeMux, exportContentBundle 
 				return
 			}
 			result, status := exportContentBundle()
+			if status >= 200 && status < 300 {
+				bundle, ok := result.(contentbundle.Bundle)
+				if !ok {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				normalized, err := contentbundle.Canonicalize(bundle)
+				if err != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				result = normalized
+			}
 			writeLocalJSONMutationResponse(w, result, status)
 		case http.MethodPost:
 			if importContentBundle == nil {

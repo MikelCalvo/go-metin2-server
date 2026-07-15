@@ -1,9 +1,11 @@
 package ops
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -36,6 +38,60 @@ func TestLocalContentBundleEndpointReturnsDeterministicJSONForLoopbackGet(t *tes
 	}
 	if !strings.Contains(string(body), `"static_actors"`) || !strings.Contains(string(body), `"interaction_definitions"`) || !strings.Contains(string(body), `"ref":"npc:village_guard"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalContentBundleEndpointCanonicalizesExporterBundleForLoopbackGet(t *testing.T) {
+	exporter := &stubContentBundleExporter{status: http.StatusOK, bundle: contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:            "  VillageGuard  ",
+			MapIndex:        42,
+			X:               1700,
+			Y:               2800,
+			RaceNum:         20300,
+			InteractionKind: " talk ",
+			InteractionRef:  " npc:village_guard ",
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: " talk ", Ref: " npc:village_guard ", Text: " Keep your blade sharp. "}},
+	}}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), exporter.ExportContentBundle, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	want := contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected exported bundle to be canonicalized:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleEndpointReturnsServerErrorWhenExporterBundleIsInvalid(t *testing.T) {
+	exporter := &stubContentBundleExporter{status: http.StatusOK, bundle: contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{Name: "VillageGuard", RaceNum: 20300}},
+	}}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), exporter.ExportContentBundle, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d for invalid exporter bundle, got %d", http.StatusInternalServerError, rec.Code)
 	}
 }
 
