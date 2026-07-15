@@ -316,7 +316,7 @@ func TestCanonicalizeAcceptsReferencedCustomCombatProfileSnapshot(t *testing.T) 
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               " practice_imported_wolf ",
 			MaxHP:                 24,
-			DamagePerNormalAttack: 3,
+			DamagePerNormalAttack: 6,
 			AttackValue:           8,
 			DefenseValue:          2,
 			Level:                 7,
@@ -344,7 +344,7 @@ func TestCanonicalizeAcceptsReferencedCustomCombatProfileSnapshot(t *testing.T) 
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               "practice_imported_wolf",
 			MaxHP:                 24,
-			DamagePerNormalAttack: 3,
+			DamagePerNormalAttack: 6,
 			AttackValue:           8,
 			DefenseValue:          2,
 			Level:                 7,
@@ -486,6 +486,55 @@ func TestCanonicalizeRejectsInvalidCombatProfileSnapshot(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for invalid combat profile snapshot, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileSnapshotWithConflictingLegacyDamage(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.conflicting_wolf",
+			Name:          "Conflicting Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_conflicting_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               "practice_conflicting_wolf",
+			MaxHP:                 24,
+			DamagePerNormalAttack: 3,
+			AttackValue:           8,
+			DefenseValue:          2,
+			RespawnDelayMs:        1500,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for conflicting combat profile damage, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileSnapshotFormulaDamageAboveMaxHP(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.burst_wolf",
+			Name:          "Burst Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_burst_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        "practice_burst_wolf",
+			MaxHP:          5,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: 1500,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for over-max combat profile formula damage, got %v", err)
 	}
 }
 

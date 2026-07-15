@@ -291,7 +291,30 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if profile.MaxHP == 0 || profile.AttackValue == 0 || profile.RespawnDelayMs <= 0 {
 		return false
 	}
+	if profile.AttackValue > profile.DefenseValue && profile.AttackValue-profile.DefenseValue > uint16(profile.MaxHP) {
+		return false
+	}
+	if profile.DamagePerNormalAttack != 0 {
+		expectedDamage := combatProfileSnapshotFormulaDamage(profile)
+		if profile.DamagePerNormalAttack != expectedDamage || profile.DamagePerNormalAttack > profile.MaxHP {
+			return false
+		}
+	}
 	return worldruntime.ValidStaticActorDeathReward(profile.DeathReward)
+}
+
+func combatProfileSnapshotFormulaDamage(profile worldruntime.StaticActorCombatProfileSnapshot) uint8 {
+	if profile.AttackValue <= profile.DefenseValue {
+		return 1
+	}
+	damage := profile.AttackValue - profile.DefenseValue
+	if damage == 0 {
+		return 1
+	}
+	if damage > uint16(profile.MaxHP) {
+		return profile.MaxHP
+	}
+	return uint8(damage)
 }
 
 func validRewardDescriptor(spawnGroup SpawnGroup) bool {
