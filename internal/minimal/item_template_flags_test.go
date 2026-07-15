@@ -25,3 +25,12 @@ func TestBootstrapItemFlagsProjectQuestUseAndApplicableMetadata(t *testing.T) {
 		t.Fatalf("expected quest_use/applicable template metadata to project flags %#x, got %#x", want, flags)
 	}
 }
+
+func TestBootstrapItemFlagsProjectQuestUseMultipleMetadata(t *testing.T) {
+	template := itemcatalog.Template{Vnum: 71124, Name: "Repeatable Quest Charm", Stackable: false, MaxCount: 1, QuestUseMultiple: true}
+
+	flags := bootstrapItemFlags(template)
+	if flags&itemproto.ItemFlagQuestUseMultiple == 0 {
+		t.Fatalf("expected quest_use_multiple template metadata to project ITEM_FLAG_QUEST_USE_MULTIPLE, got flags %#x", flags)
+	}
+}

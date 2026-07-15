@@ -430,6 +430,38 @@ func TestFileStoreSaveThenLoadRoundTripPreservesAntiFlagMetadata(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesQuestUseMultipleFlagMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:             71124,
+		Name:             "Repeatable Quest Charm",
+		Stackable:        false,
+		MaxCount:         1,
+		QuestUseMultiple: true,
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with quest-use-multiple flag metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with quest-use-multiple flag metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with quest-use-multiple flag metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with quest-use-multiple flag metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 71124,\n      \"name\": \"Repeatable Quest Charm\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"quest_use_multiple\": true\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with quest-use-multiple flag metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesMinLevelRestriction(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

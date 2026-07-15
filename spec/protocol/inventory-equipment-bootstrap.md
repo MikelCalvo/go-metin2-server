@@ -199,7 +199,7 @@ For current bootstrap `ITEM_SET` emissions, runtime-owned item-template anti-fla
 - `anti_give -> bit 13`
 - `anti_stack -> bit 15`
 
-Although the first logical item snapshot contract still does not assign gameplay meaning to sockets, attributes, or most legacy flag bits yet, the first codec carries them as opaque compatibility fields so later slices do not need to redraw the frame boundary. Template-backed `ITEM_SET.flags` currently project `stackable`, `sell_count_per_gold`, `rare`, `unique`, and `confirm_when_use`; unowned flag bits remain zero until a later slice owns their template metadata and runtime behavior. Unowned anti-flag bits such as save, pk-drop, myshop, and safebox remain zero until the corresponding template metadata and runtime behavior are owned.
+Although the first logical item snapshot contract still does not assign gameplay meaning to sockets, attributes, or most legacy flag bits yet, the first codec carries them as opaque compatibility fields so later slices do not need to redraw the frame boundary. Template-backed `ITEM_SET.flags` currently project `stackable`, `sell_count_per_gold`, `rare`, `unique`, `confirm_when_use`, `quest_use`, `quest_use_multiple`, and `applicable`; unowned flag bits remain zero until a later slice owns their template metadata and runtime behavior. Unowned anti-flag bits such as save, pk-drop, myshop, and safebox remain zero until the corresponding template metadata and runtime behavior are owned.
 
 This docs-first contract therefore now freezes **names, ordering, scope, byte layout, and non-goals** for the first owned item bootstrap family.
 

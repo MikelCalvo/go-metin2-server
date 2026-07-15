@@ -4212,6 +4212,9 @@ func bootstrapItemFlags(template itemcatalog.Template) uint32 {
 	if template.QuestUse {
 		flags |= itemproto.ItemFlagQuestUse
 	}
+	if template.QuestUseMultiple {
+		flags |= itemproto.ItemFlagQuestUseMultiple
+	}
 	if template.Applicable {
 		flags |= itemproto.ItemFlagApplicable
 	}
