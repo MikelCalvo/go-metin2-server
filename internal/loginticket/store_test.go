@@ -166,6 +166,43 @@ func TestFileStoreConsumeRejectsInvalidCharacterPayloadWithoutDeletingTicket(t *
 	}
 }
 
+func TestFileStoreRejectsDuplicateCharacterIDs(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	ticket := Ticket{Login: "mkmk", LoginKey: 0x12345678, Characters: []Character{
+		{ID: 1, Name: "MkmkWar"},
+		{ID: 1, Name: "MkmkNinja"},
+	}}
+
+	if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for duplicate character id, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsDuplicateCharacterNamesCaseInsensitive(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	ticket := Ticket{Login: "mkmk", LoginKey: 0x12345678, Characters: []Character{
+		{ID: 1, Name: "MkmkWar"},
+		{ID: 2, Name: "mkmkwar"},
+	}}
+
+	if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for duplicate character name, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsDuplicateCharacterIdentity(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","login_key":305419896,"empire":2,"issued_at":"2026-01-02T03:04:05Z","characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[]},{"id":2,"name":"MKMKWAR","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.ticketPath(0x12345678), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-character ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x12345678)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for duplicate character identity, got %v", err)
+	}
+}
+
 func TestFileStoreIssueThenConsumeRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	store := NewFileStore(dir)

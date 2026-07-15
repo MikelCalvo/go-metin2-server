@@ -152,6 +152,9 @@ func decodeAccountStrict(raw []byte, account *Account) error {
 }
 
 func validateAccount(account Account) error {
+	if err := validateUniqueCharacterIdentity(account.Characters); err != nil {
+		return err
+	}
 	for _, character := range account.Characters {
 		if err := validateCharacterItemPayloads(character); err != nil {
 			return err
@@ -162,6 +165,27 @@ func validateAccount(account Account) error {
 		if err := validateCharacterQuickslots(character); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateUniqueCharacterIdentity(characters []loginticket.Character) error {
+	ids := make(map[uint32]string, len(characters))
+	names := make(map[string]uint32, len(characters))
+	for _, character := range characters {
+		if previousName, ok := ids[character.ID]; ok {
+			return fmt.Errorf("%w: character id %d is used by %q and %q", ErrInvalidAccount, character.ID, previousName, character.Name)
+		}
+		ids[character.ID] = character.Name
+
+		normalizedName := strings.ToLower(strings.TrimSpace(character.Name))
+		if normalizedName == "" {
+			continue
+		}
+		if previousID, ok := names[normalizedName]; ok {
+			return fmt.Errorf("%w: character name %q is used by id %d and id %d", ErrInvalidAccount, character.Name, previousID, character.ID)
+		}
+		names[normalizedName] = character.ID
 	}
 	return nil
 }
