@@ -58,6 +58,7 @@ type sharedGroundItem struct {
 	OwnerCharacterID uint32
 	OwnerVID         uint32
 	OwnerName        string
+	OwnerHPPoint     int32
 	Item             inventory.ItemInstance
 	GoldAmount       uint32
 	MapIndex         uint32
@@ -1092,6 +1093,7 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 		OwnerCharacterID: character.ID,
 		OwnerVID:         character.VID,
 		OwnerName:        character.Name,
+		OwnerHPPoint:     character.Points[bootstrapPlayerPointValueIndex],
 		Item:             item,
 		GoldAmount:       goldAmount,
 		MapIndex:         r.topology.EffectiveMapIndex(character),
@@ -1321,7 +1323,7 @@ func (r *sharedWorldRegistry) GroundItemPickupFor(collectorID uint64, collector 
 }
 
 func groundItemOwnerStillMatches(ground sharedGroundItem, owner loginticket.Character) bool {
-	return owner.ID == ground.OwnerCharacterID && owner.VID == ground.OwnerVID && owner.Name == ground.OwnerName && owner.MapIndex == ground.MapIndex && owner.X == ground.X && owner.Y == ground.Y && owner.Z == ground.Z
+	return owner.ID == ground.OwnerCharacterID && owner.VID == ground.OwnerVID && owner.Name == ground.OwnerName && owner.Points[bootstrapPlayerPointValueIndex] == ground.OwnerHPPoint && owner.MapIndex == ground.MapIndex && owner.X == ground.X && owner.Y == ground.Y && owner.Z == ground.Z
 }
 
 func (r *sharedWorldRegistry) RemoveGroundItem(collectorID uint64, collector loginticket.Character, vid uint32) bool {
