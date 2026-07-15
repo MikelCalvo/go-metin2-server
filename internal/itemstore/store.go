@@ -28,12 +28,14 @@ type Template struct {
 	MaxCount         uint16          `json:"max_count"`
 	ShopBuyPrice     uint64          `json:"shop_buy_price,omitempty"`
 	SellCountPerGold bool            `json:"sell_count_per_gold,omitempty"`
+	SlowQuery        bool            `json:"slow_query,omitempty"`
 	Highlight        bool            `json:"highlight,omitempty"`
 	Rare             bool            `json:"rare,omitempty"`
 	Unique           bool            `json:"unique,omitempty"`
 	ConfirmWhenUse   bool            `json:"confirm_when_use,omitempty"`
 	QuestUse         bool            `json:"quest_use,omitempty"`
 	QuestUseMultiple bool            `json:"quest_use_multiple,omitempty"`
+	Log              bool            `json:"log,omitempty"`
 	Applicable       bool            `json:"applicable,omitempty"`
 	AntiSell         bool            `json:"anti_sell,omitempty"`
 	AntiDrop         bool            `json:"anti_drop,omitempty"`
@@ -73,12 +75,14 @@ type templateJSON struct {
 	MaxCount         uint16           `json:"max_count"`
 	ShopBuyPrice     uint64           `json:"shop_buy_price,omitempty"`
 	SellCountPerGold bool             `json:"sell_count_per_gold,omitempty"`
+	SlowQuery        bool             `json:"slow_query,omitempty"`
 	Highlight        bool             `json:"highlight,omitempty"`
 	Rare             bool             `json:"rare,omitempty"`
 	Unique           bool             `json:"unique,omitempty"`
 	ConfirmWhenUse   bool             `json:"confirm_when_use,omitempty"`
 	QuestUse         bool             `json:"quest_use,omitempty"`
 	QuestUseMultiple bool             `json:"quest_use_multiple,omitempty"`
+	Log              bool             `json:"log,omitempty"`
 	Applicable       bool             `json:"applicable,omitempty"`
 	AntiSell         bool             `json:"anti_sell,omitempty"`
 	AntiDrop         bool             `json:"anti_drop,omitempty"`
@@ -110,12 +114,14 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		MaxCount:         template.MaxCount,
 		ShopBuyPrice:     template.ShopBuyPrice,
 		SellCountPerGold: template.SellCountPerGold,
+		SlowQuery:        template.SlowQuery,
 		Highlight:        template.Highlight,
 		Rare:             template.Rare,
 		Unique:           template.Unique,
 		ConfirmWhenUse:   template.ConfirmWhenUse,
 		QuestUse:         template.QuestUse,
 		QuestUseMultiple: template.QuestUseMultiple,
+		Log:              template.Log,
 		Applicable:       template.Applicable,
 		AntiSell:         template.AntiSell,
 		AntiDrop:         template.AntiDrop,
@@ -159,12 +165,14 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		MaxCount:         jsonTemplate.MaxCount,
 		ShopBuyPrice:     jsonTemplate.ShopBuyPrice,
 		SellCountPerGold: jsonTemplate.SellCountPerGold,
+		SlowQuery:        jsonTemplate.SlowQuery,
 		Highlight:        jsonTemplate.Highlight,
 		Rare:             jsonTemplate.Rare,
 		Unique:           jsonTemplate.Unique,
 		ConfirmWhenUse:   jsonTemplate.ConfirmWhenUse,
 		QuestUse:         jsonTemplate.QuestUse,
 		QuestUseMultiple: jsonTemplate.QuestUseMultiple,
+		Log:              jsonTemplate.Log,
 		Applicable:       jsonTemplate.Applicable,
 		AntiSell:         jsonTemplate.AntiSell,
 		AntiDrop:         jsonTemplate.AntiDrop,

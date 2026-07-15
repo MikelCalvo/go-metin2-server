@@ -4200,6 +4200,9 @@ func bootstrapItemFlags(template itemcatalog.Template) uint32 {
 	if template.SellCountPerGold {
 		flags |= itemproto.ItemFlagCountPerGold
 	}
+	if template.SlowQuery {
+		flags |= itemproto.ItemFlagSlowQuery
+	}
 	if template.Rare {
 		flags |= itemproto.ItemFlagRare
 	}
@@ -4214,6 +4217,9 @@ func bootstrapItemFlags(template itemcatalog.Template) uint32 {
 	}
 	if template.QuestUseMultiple {
 		flags |= itemproto.ItemFlagQuestUseMultiple
+	}
+	if template.Log {
+		flags |= itemproto.ItemFlagLog
 	}
 	if template.Applicable {
 		flags |= itemproto.ItemFlagApplicable
