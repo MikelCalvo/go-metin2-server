@@ -252,16 +252,17 @@ Expected result:
 - restricted or invalid states (`anti_stack`, transfer anti-flags, missing/non-stackable/malformed/mismatched templates, source/target `vnum` mismatches, locked source/target stacks, selected-character job/sex/empire/min-level restrictions, duplicate source/target item instance IDs, duplicate live occupancy of the source or target carried cell, already-full targets, source/target counts already above template `max_count`, or selected characters at the bootstrap zero-HP floor) fail closed with no visible mutation; for `anti_stack`, both carried stacks and item quickslots should remain unchanged
 - a `min_level` restriction above the selected character's level or a selected character at the bootstrap zero-HP floor leaves both carried stacks and any source-cell item quickslot unchanged even when the source and target are otherwise compatible
 
-### 4.5.3 Retarget an item quickslot (`QUICKSLOT_ADD`)
+### 4.5.3 Retarget a quickslot tuple (`QUICKSLOT_ADD`)
 
 - [ ] Bind a carried inventory item cell to an item quickslot
 - [ ] Bind the same carried item cell to a different item quickslot position
-- [ ] If the client setup allows it, keep an unrelated skill or command quickslot whose byte slot value matches the carried item cell
+- [ ] If the client setup allows it, repeat the retarget with one skill binding and one command binding
+- [ ] If the client setup allows it, keep an unrelated quickslot of a different type whose byte slot value matches the retargeted tuple
 
 Expected result:
-- the older item quickslot for that carried cell is cleared
-- the new item quickslot binding is added and persists after reconnect
-- unrelated skill/command quickslots with the same byte slot value remain unchanged
+- the older same-type quickslot tuple is cleared before the new binding is added
+- the new item/skill/command quickslot binding persists after reconnect
+- unrelated quickslots of a different type with the same byte slot value remain unchanged
 - if stale/reclaimed-socket QA tooling is available, a reclaimed old socket may still see its own quickslot refresh frames, but reconnecting / inspecting the fresh authoritative session shows no persisted quickslot change from that stale socket
 
 ### 4.5.4 Delete an occupied quickslot (`QUICKSLOT_DEL` / `QUICKSLOT_ADD` type none)

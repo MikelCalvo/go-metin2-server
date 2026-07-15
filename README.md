@@ -157,7 +157,7 @@ Already present:
 - template-backed equip/unequip point-effect application and removal guards,
 - consumable item use,
 - `ITEM_USE_TO_ITEM` stack merge behavior,
-- quickslot add/delete/swap persistence,
+- quickslot add/delete/swap persistence, including type-scoped retarget cleanup when an item/skill/command tuple is rebound to a new bar position,
 - quickslot cleanup when item mutations remove or fully merge a source slot,
 - basic persisted account/character snapshots.
 
