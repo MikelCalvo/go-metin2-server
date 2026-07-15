@@ -113,6 +113,7 @@ func (r *EntityRegistry) RemoveStaticActor(id uint64) (StaticEntity, bool) {
 	if !ok {
 		return StaticEntity{}, false
 	}
+	r.staticActors.removeVisibilityVIDsForEntityID(id)
 	_, _ = r.staticActors.Remove(id)
 	return removed, true
 }
