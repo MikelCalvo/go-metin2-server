@@ -2,6 +2,7 @@ package accountstore
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -288,6 +289,41 @@ func TestFileStoreSaveDoesNotMutateCallerItemState(t *testing.T) {
 	}
 	if account.Characters[0].Quickslots != nil {
 		t.Fatalf("expected caller quickslots slice to remain nil, got %#v", account.Characters[0].Quickslots)
+	}
+}
+
+func TestFileStoreSaveSyncsStoreDirectoryAfterCommit(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	var synced []string
+	syncStoreDir = func(path string) error {
+		synced = append(synced, path)
+		return nil
+	}
+
+	if err := store.Save(Account{Login: "mkmk"}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if !reflect.DeepEqual(synced, []string{dir}) {
+		t.Fatalf("expected account store directory sync after commit, got %#v", synced)
+	}
+}
+
+func TestFileStoreSaveReportsStoreDirectorySyncFailure(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	syncStoreDir = func(path string) error {
+		return fmt.Errorf("sync %s failed", path)
+	}
+
+	if err := store.Save(Account{Login: "mkmk"}); err == nil || !strings.Contains(err.Error(), "sync account store dir") {
+		t.Fatalf("expected account store directory sync failure, got %v", err)
 	}
 }
 

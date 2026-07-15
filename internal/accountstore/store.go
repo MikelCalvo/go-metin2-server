@@ -104,13 +104,30 @@ func (s *FileStore) Save(account Account) error {
 	if err := json.NewEncoder(temp).Encode(account); err != nil {
 		return fmt.Errorf("encode account: %w", err)
 	}
+	if err := temp.Sync(); err != nil {
+		return fmt.Errorf("sync account temp file: %w", err)
+	}
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close account temp file: %w", err)
 	}
 	if err := os.Rename(temp.Name(), s.accountPath(account.Login)); err != nil {
 		return fmt.Errorf("commit account file: %w", err)
 	}
+	if err := syncStoreDir(s.dir); err != nil {
+		return fmt.Errorf("sync account store dir: %w", err)
+	}
 	return nil
+}
+
+var syncStoreDir = syncDir
+
+func syncDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func (s *FileStore) accountPath(login string) string {

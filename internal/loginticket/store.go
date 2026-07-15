@@ -154,6 +154,9 @@ func (s *FileStore) Issue(ticket Ticket) error {
 	if err := json.NewEncoder(temp).Encode(ticket); err != nil {
 		return fmt.Errorf("encode login ticket: %w", err)
 	}
+	if err := temp.Sync(); err != nil {
+		return fmt.Errorf("sync login ticket temp file: %w", err)
+	}
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close login ticket temp file: %w", err)
 	}
@@ -163,8 +166,22 @@ func (s *FileStore) Issue(ticket Ticket) error {
 		}
 		return fmt.Errorf("commit login ticket file: %w", err)
 	}
+	if err := syncStoreDir(s.dir); err != nil {
+		return fmt.Errorf("sync login ticket store dir: %w", err)
+	}
 
 	return nil
+}
+
+var syncStoreDir = syncDir
+
+func syncDir(path string) error {
+	dir, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func (s *FileStore) Load(login string, loginKey uint32) (Ticket, error) {

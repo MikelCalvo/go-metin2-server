@@ -3,6 +3,7 @@ package loginticket
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -309,6 +310,41 @@ func TestFileStoreIssuePersistsEmptyItemStateAsArrays(t *testing.T) {
 	}
 	if !strings.Contains(text, "\"quickslots\":[]") {
 		t.Fatalf("expected empty quickslots array, got %s", text)
+	}
+}
+
+func TestFileStoreIssueSyncsStoreDirectoryAfterCommit(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	var synced []string
+	syncStoreDir = func(path string) error {
+		synced = append(synced, path)
+		return nil
+	}
+
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+	if !reflect.DeepEqual(synced, []string{dir}) {
+		t.Fatalf("expected login ticket store directory sync after issue, got %#v", synced)
+	}
+}
+
+func TestFileStoreIssueReportsStoreDirectorySyncFailure(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	syncStoreDir = func(path string) error {
+		return fmt.Errorf("sync %s failed", path)
+	}
+
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304}); err == nil || !strings.Contains(err.Error(), "sync login ticket store dir") {
+		t.Fatalf("expected login ticket store directory sync failure, got %v", err)
 	}
 }
 
