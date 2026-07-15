@@ -4190,6 +4190,12 @@ func bootstrapItemFlags(template itemcatalog.Template) uint32 {
 	if template.SellCountPerGold {
 		flags |= itemproto.ItemFlagCountPerGold
 	}
+	if template.Rare {
+		flags |= itemproto.ItemFlagRare
+	}
+	if template.Unique {
+		flags |= itemproto.ItemFlagUnique
+	}
 	return flags
 }
 

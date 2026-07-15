@@ -8,7 +8,7 @@ The item-template store is intentionally narrow. It currently owns only the meta
 
 - stack behavior: `stackable`, `max_count`, and `anti_stack`
 - item restriction guards: `anti_sell`, `anti_drop`, `anti_give`, `anti_get`, `anti_male`, `anti_female`, `anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_empire_a`, `anti_empire_b`, `anti_empire_c`, and `min_level`
-- merchant pricing helpers and client-visible item flags: `shop_buy_price`, `sell_count_per_gold`, and `stackable`
+- merchant pricing helpers and client-visible item flags: `shop_buy_price`, `sell_count_per_gold`, `stackable`, `rare`, and `unique`
 - client-visible item refresh hints: `highlight`
 - equipment routing/effects: `equip_slot` and `equip_effect`
 - consumable point effects: `use_effect`
@@ -32,6 +32,7 @@ Each template must pass the current `internal/itemstore` validation before the r
 - `name` must be non-empty after trimming
 - `max_count` must be non-zero and fit the current bootstrap client-facing count field (`<= 255`)
 - `highlight`, when set, projects to the one-byte `ITEM_SET.highlight` field for selected-character inventory/equipment bootstrap and later template-backed full item refreshes
+- `rare` and `unique`, when set, project only to the owned `ITEM_SET.flags` bits `ITEM_FLAG_RARE` and `ITEM_FLAG_UNIQUE`; they are client-visible metadata in this slice and do not add runtime durability, ownership, or uniqueness policy yet
 - non-stackable templates must use `max_count = 1`; `anti_stack` is accepted as explicit transfer-guard metadata and, when set, fails closed in current use/equip/merge/drop/sell paths rather than describing an alternate stackability mode
 - `anti_get` is a fail-closed acquisition guard for the currently owned bootstrap acquisition paths: ground pickup, template-backed merchant buy, and adjacent transfer-style mutations reject it before inventory, gold, quickslot, or persisted-state mutation
 - authored `equip_slot`, when present, must be one of the owned equipment slot names
@@ -46,7 +47,7 @@ Each template must pass the current `internal/itemstore` validation before the r
 - runtime removal of an `equip_effect` is fail-closed unless either the selected character currently has that matching equipped item or the caller supplies the valid just-removed item instance from that authored slot; this keeps unequip subtraction template-backed without requiring the item to remain in equipment after the unequip mutation
 - duplicate `vnum` entries are rejected
 
-The store normalizes and persists deterministic JSON: template names and effect messages are trimmed, equipment slot names are normalized, fixed socket/attribute arrays are written in owned packet order, and templates are sorted by `vnum`.
+The store normalizes and persists deterministic JSON: template names and effect messages are trimmed, equipment slot names are normalized, owned boolean flag metadata such as `rare` / `unique` is written in a stable order, fixed socket/attribute arrays are written in owned packet order, and templates are sorted by `vnum`.
 
 ## Strict JSON hardening
 
@@ -72,6 +73,6 @@ The durable account snapshot store applies the same fail-closed item-instance va
 
 Current coverage:
 
-- `internal/itemstore` freezes deterministic save/load behavior, validation failures, anti-flag metadata round trips, highlight metadata, use/equip effect metadata, and strict load rejection for unknown fields or trailing JSON values.
+- `internal/itemstore` freezes deterministic save/load behavior, validation failures, anti-flag metadata round trips, highlight metadata, rare/unique item-flag metadata, use/equip effect metadata, and strict load rejection for unknown fields or trailing JSON values.
 - Runtime item-use, equip, merchant, drop/pickup, and drag-to-item stack slices resolve only through loaded template metadata or the deterministic missing-file fallback described above.
-- Selected-character `ITEM_SET` bootstrap frames and template-backed full item refreshes project the owned authored template metadata into the packet fields for both carried inventory and equipment snapshots: `stackable` maps to `ITEM_FLAG_STACKABLE`, `sell_count_per_gold` maps to `ITEM_FLAG_COUNT_PER_1GOLD`, owned anti-flag metadata maps into the packet `anti_flags` field (`anti_get`, the trade/drop/sell/give/stack guards, job/sex restrictions, and empire restrictions), `highlight` maps to the packet `highlight` byte as `0` or `1`, and authored `sockets` / `attributes` flow into the packet's display socket/attribute arrays. Unowned flag and anti-flag bits remain zero until a later slice owns them.
+- Selected-character `ITEM_SET` bootstrap frames and template-backed full item refreshes project the owned authored template metadata into the packet fields for both carried inventory and equipment snapshots: `stackable` maps to `ITEM_FLAG_STACKABLE`, `sell_count_per_gold` maps to `ITEM_FLAG_COUNT_PER_1GOLD`, `rare` maps to `ITEM_FLAG_RARE`, `unique` maps to `ITEM_FLAG_UNIQUE`, owned anti-flag metadata maps into the packet `anti_flags` field (`anti_get`, the trade/drop/sell/give/stack guards, job/sex restrictions, and empire restrictions), `highlight` maps to the packet `highlight` byte as `0` or `1`, and authored `sockets` / `attributes` flow into the packet's display socket/attribute arrays. Unowned flag and anti-flag bits remain zero until a later slice owns them.

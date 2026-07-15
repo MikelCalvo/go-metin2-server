@@ -105,6 +105,39 @@ func TestFileStoreSaveThenLoadRoundTripPreservesHighlightMetadata(t *testing.T) 
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesRareUniqueFlagMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:      71085,
+		Name:      "Rare Unique Charm",
+		Stackable: false,
+		MaxCount:  1,
+		Rare:      true,
+		Unique:    true,
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with rare/unique metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with rare/unique metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with rare/unique metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with rare/unique metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 71085,\n      \"name\": \"Rare Unique Charm\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"rare\": true,\n      \"unique\": true\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with rare/unique metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

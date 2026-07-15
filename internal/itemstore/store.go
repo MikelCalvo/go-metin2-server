@@ -29,6 +29,8 @@ type Template struct {
 	ShopBuyPrice     uint64          `json:"shop_buy_price,omitempty"`
 	SellCountPerGold bool            `json:"sell_count_per_gold,omitempty"`
 	Highlight        bool            `json:"highlight,omitempty"`
+	Rare             bool            `json:"rare,omitempty"`
+	Unique           bool            `json:"unique,omitempty"`
 	AntiSell         bool            `json:"anti_sell,omitempty"`
 	AntiDrop         bool            `json:"anti_drop,omitempty"`
 	AntiGive         bool            `json:"anti_give,omitempty"`
@@ -68,6 +70,8 @@ type templateJSON struct {
 	ShopBuyPrice     uint64           `json:"shop_buy_price,omitempty"`
 	SellCountPerGold bool             `json:"sell_count_per_gold,omitempty"`
 	Highlight        bool             `json:"highlight,omitempty"`
+	Rare             bool             `json:"rare,omitempty"`
+	Unique           bool             `json:"unique,omitempty"`
 	AntiSell         bool             `json:"anti_sell,omitempty"`
 	AntiDrop         bool             `json:"anti_drop,omitempty"`
 	AntiGive         bool             `json:"anti_give,omitempty"`
@@ -99,6 +103,8 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		ShopBuyPrice:     template.ShopBuyPrice,
 		SellCountPerGold: template.SellCountPerGold,
 		Highlight:        template.Highlight,
+		Rare:             template.Rare,
+		Unique:           template.Unique,
 		AntiSell:         template.AntiSell,
 		AntiDrop:         template.AntiDrop,
 		AntiGive:         template.AntiGive,
@@ -142,6 +148,8 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		ShopBuyPrice:     jsonTemplate.ShopBuyPrice,
 		SellCountPerGold: jsonTemplate.SellCountPerGold,
 		Highlight:        jsonTemplate.Highlight,
+		Rare:             jsonTemplate.Rare,
+		Unique:           jsonTemplate.Unique,
 		AntiSell:         jsonTemplate.AntiSell,
 		AntiDrop:         jsonTemplate.AntiDrop,
 		AntiGive:         jsonTemplate.AntiGive,
