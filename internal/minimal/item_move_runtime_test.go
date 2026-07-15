@@ -113,8 +113,8 @@ func TestGameRuntimeItemBootstrapFramesCarryTemplateAntiFlags(t *testing.T) {
 		t.Fatalf("seed anti-flag bootstrap account: %v", err)
 	}
 	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
-		{Vnum: 27091, Name: "Bound Practice Potion", Stackable: true, MaxCount: 200, AntiDrop: true, AntiGive: true, AntiSell: true, AntiStack: true},
-		{Vnum: 11200, Name: "Warrior-Locked Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String(), AntiWarrior: true, AntiMale: true},
+		{Vnum: 27091, Name: "Bound Practice Potion", Stackable: true, MaxCount: 200, AntiDrop: true, AntiGive: true, AntiSell: true, AntiStack: true, AntiGet: true},
+		{Vnum: 11200, Name: "Warrior-Locked Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String(), AntiWarrior: true, AntiMale: true, AntiEmpireC: true},
 	})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestGameRuntimeItemBootstrapFramesCarryTemplateAntiFlags(t *testing.T) {
 	if itemSets[0].Position != itemproto.InventoryPosition(5) || itemSets[0].Vnum != 27091 {
 		t.Fatalf("unexpected carried bootstrap item set: %+v", itemSets[0])
 	}
-	wantCarriedAntiFlags := itemproto.AntiFlagDrop | itemproto.AntiFlagGive | itemproto.AntiFlagSell | itemproto.AntiFlagStack
+	wantCarriedAntiFlags := itemproto.AntiFlagDrop | itemproto.AntiFlagGive | itemproto.AntiFlagSell | itemproto.AntiFlagStack | itemproto.AntiFlagGet
 	if itemSets[0].AntiFlags != wantCarriedAntiFlags {
 		t.Fatalf("expected carried item anti flags %#x, got %#x", wantCarriedAntiFlags, itemSets[0].AntiFlags)
 	}
@@ -151,7 +151,7 @@ func TestGameRuntimeItemBootstrapFramesCarryTemplateAntiFlags(t *testing.T) {
 	if itemSets[1].Position != weaponPosition || itemSets[1].Vnum != 11200 {
 		t.Fatalf("unexpected equipment bootstrap item set: %+v", itemSets[1])
 	}
-	wantEquipmentAntiFlags := itemproto.AntiFlagWarrior | itemproto.AntiFlagMale
+	wantEquipmentAntiFlags := itemproto.AntiFlagWarrior | itemproto.AntiFlagMale | itemproto.AntiFlagEmpireC
 	if itemSets[1].AntiFlags != wantEquipmentAntiFlags {
 		t.Fatalf("expected equipment item anti flags %#x, got %#x", wantEquipmentAntiFlags, itemSets[1].AntiFlags)
 	}

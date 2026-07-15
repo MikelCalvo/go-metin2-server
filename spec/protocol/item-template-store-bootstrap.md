@@ -69,3 +69,4 @@ Current coverage:
 
 - `internal/itemstore` freezes deterministic save/load behavior, validation failures, anti-flag metadata round trips, use/equip effect metadata, and strict load rejection for unknown fields or trailing JSON values.
 - Runtime item-use, equip, merchant, drop/pickup, and drag-to-item stack slices resolve only through loaded template metadata or the deterministic missing-file fallback described above.
+- Selected-character `ITEM_SET` bootstrap frames project the owned authored anti-flag metadata into the packet `anti_flags` field for both carried inventory and equipment snapshots, including `anti_get`, the trade/drop/sell/give/stack guards, job/sex restrictions, and empire restrictions. Unowned anti-flag bits remain zero until a later slice owns them.
