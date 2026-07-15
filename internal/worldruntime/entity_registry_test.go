@@ -256,6 +256,15 @@ func TestEntityRegistryRemoveClearsPlayerLookupWhenMapIndexEntryAlreadyMissing(t
 	}
 }
 
+func TestStaticActorVisibilityVIDRejectsUnencodableRaceNum(t *testing.T) {
+	if vid, ok := StaticActorVisibilityVID(StaticEntity{Entity: Entity{ID: 99}, RaceNum: 0}); ok {
+		t.Fatalf("expected zero race_num to be rejected for static actor visibility VID, got vid=%d", vid)
+	}
+	if vid, ok := StaticActorVisibilityVID(StaticEntity{Entity: Entity{ID: 99}, RaceNum: uint32(^uint16(0)) + 1}); ok {
+		t.Fatalf("expected overflowing race_num to be rejected for static actor visibility VID, got vid=%d", vid)
+	}
+}
+
 func TestEntityRegistryRegistersAndLooksUpStaticActors(t *testing.T) {
 	registry := NewEntityRegistry()
 	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
