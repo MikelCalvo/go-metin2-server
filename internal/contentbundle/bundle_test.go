@@ -214,6 +214,30 @@ func TestCanonicalizeRejectsMerchantCatalogRefMissingFromBundledItemTemplates(t 
 	}
 }
 
+func TestCanonicalizeRejectsUnreferencedItemTemplate(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		ItemTemplates:          append(testMerchantItemTemplates(), itemcatalog.Template{Vnum: 70001, Name: "Unused Relic", Stackable: false, MaxCount: 1}),
+		InteractionDefinitions: []interactionstore.Definition{testMerchantCatalogDefinition()},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for unreferenced item template, got %v", err)
+	}
+}
+
+func TestFromSnapshotsOmitsUnreferencedItemTemplates(t *testing.T) {
+	bundle, err := FromSnapshotsWithItems(
+		staticstore.Snapshot{},
+		interactionstore.Snapshot{Definitions: []interactionstore.Definition{testMerchantCatalogDefinition()}},
+		itemcatalog.Snapshot{Templates: append(testMerchantItemTemplates(), itemcatalog.Template{Vnum: 70001, Name: "Unused Relic", Stackable: false, MaxCount: 1})},
+	)
+	if err != nil {
+		t.Fatalf("from snapshots with unreferenced item template: %v", err)
+	}
+	if !reflect.DeepEqual(bundle.ItemTemplates, testMerchantItemTemplates()) {
+		t.Fatalf("unexpected exported item templates:\n got: %#v\nwant: %#v", bundle.ItemTemplates, testMerchantItemTemplates())
+	}
+}
+
 func TestCanonicalizeRejectsMerchantCatalogCountAboveBundledStackLimit(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 10}},

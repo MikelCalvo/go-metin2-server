@@ -52,7 +52,6 @@ func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionst
 
 func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot, items itemcatalog.Snapshot) (Bundle, error) {
 	bundle := Bundle{
-		ItemTemplates:          normalizeItemTemplates(items.Templates),
 		InteractionDefinitions: cloneDefinitions(interactions.Definitions),
 	}
 	bundle.StaticActors = make([]StaticActor, 0, len(staticActors.StaticActors))
@@ -84,6 +83,7 @@ func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions inte
 			InteractionRef:  actor.InteractionRef,
 		})
 	}
+	bundle.ItemTemplates = filterReferencedItemTemplates(items.Templates, referencedItemTemplateVnums(bundle.InteractionDefinitions, bundle.SpawnGroups, bundle.CombatProfiles))
 	return Canonicalize(bundle)
 }
 
@@ -221,6 +221,12 @@ func validateBundle(bundle Bundle) error {
 			return ErrInvalidBundle
 		}
 		definitionsByKey[key] = struct{}{}
+	}
+	referencedItemVnums := referencedItemTemplateVnums(bundle.InteractionDefinitions, bundle.SpawnGroups, bundle.CombatProfiles)
+	for vnum := range itemTemplatesByVnum {
+		if _, referenced := referencedItemVnums[vnum]; !referenced {
+			return ErrInvalidBundle
+		}
 	}
 	spawnGroupsByRef := make(map[string]struct{}, len(bundle.SpawnGroups))
 	for _, spawnGroup := range bundle.SpawnGroups {
@@ -554,4 +560,47 @@ func normalizeItemTemplates(templates []itemcatalog.Template) []itemcatalog.Temp
 		normalized[i] = itemcatalog.NormalizeTemplate(template)
 	}
 	return normalized
+}
+
+func filterReferencedItemTemplates(templates []itemcatalog.Template, referenced map[uint32]struct{}) []itemcatalog.Template {
+	if len(templates) == 0 || len(referenced) == 0 {
+		return nil
+	}
+	filtered := make([]itemcatalog.Template, 0, len(templates))
+	for _, template := range normalizeItemTemplates(templates) {
+		if _, ok := referenced[template.Vnum]; ok {
+			filtered = append(filtered, template)
+		}
+	}
+	return filtered
+}
+
+func referencedItemTemplateVnums(definitions []interactionstore.Definition, spawnGroups []SpawnGroup, combatProfiles []worldruntime.StaticActorCombatProfileSnapshot) map[uint32]struct{} {
+	referenced := make(map[uint32]struct{})
+	for _, definition := range definitions {
+		definition = interactionstore.NormalizeDefinition(definition)
+		if definition.Kind != interactionstore.KindShopPreview {
+			continue
+		}
+		for _, entry := range definition.Catalog {
+			if entry.ItemVnum != 0 {
+				referenced[entry.ItemVnum] = struct{}{}
+			}
+		}
+	}
+	for _, spawnGroup := range spawnGroups {
+		for _, vnum := range spawnGroup.RewardDropVnums {
+			if vnum != 0 {
+				referenced[vnum] = struct{}{}
+			}
+		}
+	}
+	for _, profile := range combatProfiles {
+		for _, vnum := range profile.DeathReward.DropVnums {
+			if vnum != 0 {
+				referenced[vnum] = struct{}{}
+			}
+		}
+	}
+	return referenced
 }
