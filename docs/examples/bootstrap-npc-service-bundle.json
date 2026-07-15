@@ -44,6 +44,21 @@
       ]
     }
   ],
+  "item_templates": [
+    {
+      "vnum": 11200,
+      "name": "Wooden Sword",
+      "stackable": false,
+      "max_count": 1
+    },
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5
+    }
+  ],
   "interaction_definitions": [
     {
       "kind": "shop_preview",

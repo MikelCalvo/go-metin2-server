@@ -72,6 +72,7 @@ Current rules:
 - exported interaction definitions preserve the current per-kind payload fields, including the structured `shop_preview` `title + catalog[]` merchant contract frozen in `npc-shop-catalog-bootstrap.md`
 - exported item templates preserve the owned item-template fields needed by merchant previews/buys and item bootstrap behavior, sorted deterministically by `vnum`
 - when a bundle includes `item_templates`, every `shop_preview` catalog entry must reference one of those bundled templates; this keeps portable merchant bundles self-contained instead of relying on an implicit default item catalog
+- the deterministic example bundle at `docs/examples/bootstrap-npc-service-bundle.json` is intentionally self-contained for merchant QA: its `item_templates` section carries every item referenced by the `shop_preview` catalog
 - exported static actors are **portable authored content**, not runtime entities, so the bundle omits runtime-only `entity_id`
 - import is full-replace for the authored bootstrap content currently loaded by `gamed`
 - import validates that every referenced interaction definition exists before mutating runtime state

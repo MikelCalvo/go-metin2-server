@@ -779,6 +779,35 @@ func TestExampleBootstrapNPCServiceBundleCanonicalizes(t *testing.T) {
 	}
 }
 
+func TestExampleBootstrapNPCServiceBundleCarriesMerchantItemTemplates(t *testing.T) {
+	path := filepath.Join("..", "..", "docs", "examples", "bootstrap-npc-service-bundle.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode example bundle: %v", err)
+	}
+	if len(bundle.ItemTemplates) == 0 {
+		t.Fatalf("expected example bundle to carry item templates for merchant catalog refs")
+	}
+	templatesByVnum := make(map[uint32]struct{}, len(bundle.ItemTemplates))
+	for _, template := range bundle.ItemTemplates {
+		templatesByVnum[template.Vnum] = struct{}{}
+	}
+	for _, definition := range bundle.InteractionDefinitions {
+		if definition.Kind != interactionstore.KindShopPreview {
+			continue
+		}
+		for _, entry := range definition.Catalog {
+			if _, ok := templatesByVnum[entry.ItemVnum]; !ok {
+				t.Fatalf("expected example merchant catalog item vnum %d to have a bundled item template", entry.ItemVnum)
+			}
+		}
+	}
+}
+
 func TestFromSnapshotsSeparatesSpawnGroupsFromStaticActors(t *testing.T) {
 	bundle, err := FromSnapshots(
 		staticstore.Snapshot{StaticActors: []staticstore.StaticActor{
