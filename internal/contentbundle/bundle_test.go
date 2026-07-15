@@ -51,7 +51,7 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 	}
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(customProfile) })
 
-	bundle, err := FromSnapshots(
+	bundle, err := FromSnapshotsWithItems(
 		staticstore.Snapshot{StaticActors: []staticstore.StaticActor{
 			{EntityID: 9, Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
 			{EntityID: 3, Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20301},
@@ -67,6 +67,9 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 			testMerchantCatalogDefinition(),
 		}},
+		itemcatalog.Snapshot{Templates: append(testMerchantItemTemplates(),
+			itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		)},
 	)
 	if err != nil {
 		t.Fatalf("from snapshots: %v", err)
@@ -94,6 +97,9 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 			RespawnDelayMs:        1500,
 			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 12, Gold: 7, DropVnums: []uint32{27001, 27002}},
 		}},
+		ItemTemplates: append(testMerchantItemTemplates(),
+			itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		),
 		InteractionDefinitions: []interactionstore.Definition{
 			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
 			testMerchantCatalogDefinition(),
@@ -107,19 +113,22 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 }
 
 func TestCanonicalizeNormalizesStructuredShopPreviewCatalog(t *testing.T) {
-	bundle, err := Canonicalize(Bundle{InteractionDefinitions: []interactionstore.Definition{{
-		Kind:  interactionstore.KindShopPreview,
-		Ref:   "npc:merchant",
-		Title: "Village Merchant",
-		Catalog: []interactionstore.MerchantCatalogEntry{
-			{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
-			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
-		},
-	}}})
+	bundle, err := Canonicalize(Bundle{
+		ItemTemplates: testMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:merchant",
+			Title: "Village Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			},
+		}},
+	})
 	if err != nil {
 		t.Fatalf("canonicalize structured shop preview bundle: %v", err)
 	}
-	want := Bundle{InteractionDefinitions: []interactionstore.Definition{testMerchantCatalogDefinition()}}
+	want := Bundle{ItemTemplates: testMerchantItemTemplates(), InteractionDefinitions: []interactionstore.Definition{testMerchantCatalogDefinition()}}
 	if !reflect.DeepEqual(bundle, want) {
 		t.Fatalf("unexpected canonical structured shop preview bundle:\n got: %#v\nwant: %#v", bundle, want)
 	}
@@ -127,6 +136,10 @@ func TestCanonicalizeNormalizesStructuredShopPreviewCatalog(t *testing.T) {
 
 func TestCanonicalizeMerchantBundleKeepsStableBuySlotAddressing(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+			{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
+		},
 		StaticActors: []StaticActor{{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
 		InteractionDefinitions: []interactionstore.Definition{{
 			Kind:  interactionstore.KindShopPreview,
@@ -140,6 +153,12 @@ func TestCanonicalizeMerchantBundleKeepsStableBuySlotAddressing(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("canonicalize merchant buy bundle: %v", err)
+	}
+	if len(bundle.ItemTemplates) != 2 {
+		t.Fatalf("expected two item templates, got %d", len(bundle.ItemTemplates))
+	}
+	if got, want := bundle.ItemTemplates[0].Vnum, uint32(11200); got != want {
+		t.Fatalf("first item template vnum = %d, want %d", got, want)
 	}
 	if len(bundle.InteractionDefinitions) != 1 {
 		t.Fatalf("expected 1 interaction definition, got %d", len(bundle.InteractionDefinitions))
@@ -173,6 +192,15 @@ func TestCanonicalizeNormalizesItemTemplatesAndValidatesMerchantCatalogRefs(t *t
 	}
 	if !reflect.DeepEqual(bundle, want) {
 		t.Fatalf("unexpected canonical item-template bundle:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
+func TestCanonicalizeRejectsMerchantCatalogWithoutBundledItemTemplates(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		InteractionDefinitions: []interactionstore.Definition{testMerchantCatalogDefinition()},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for merchant catalog without bundled item templates, got %v", err)
 	}
 }
 

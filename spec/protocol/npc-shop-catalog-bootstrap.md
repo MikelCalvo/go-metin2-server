@@ -74,6 +74,7 @@ The structured merchant contract must validate all of the following:
 - each `slot` must be unique inside the catalog
 - slots must form a dense zero-based sequence after sorting (`0..n-1`) so later transaction addressing stays deterministic
 - each `item_vnum` must be non-zero and must resolve to a valid template in the loaded `internal/itemstore` catalog
+- portable content bundles that include `shop_preview` definitions must also include the referenced `item_templates`; canonicalization rejects merchant bundles that omit the item-template section instead of deferring that failure to runtime import
 - each `price` must be greater than zero
 - each `count` must be greater than zero
 - if the referenced template is non-stackable, `count` must equal `1`
@@ -118,6 +119,7 @@ The structured merchant catalog now already drives:
 - loopback interaction CRUD payloads
 - content-bundle export/import
 - bundled `item_templates` validation and runtime persistence for portable merchant bundles
+- bundled `item_templates` presence checks, so merchant catalogs cannot be imported as portable content without their referenced item-template definitions
 - bundled `item_templates` count checks, so a merchant entry cannot exceed a stackable template's `max_count` and non-stackable templates can only be sold one at a time
 - interaction-visibility previews
 - the merchant-window `GC::SHOP START` open response

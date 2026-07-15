@@ -22325,6 +22325,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMerchantWi
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
 		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+		ItemTemplates:          defaultMerchantItemTemplates(),
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
 		t.Fatalf("import content bundle for merchant immediate floor-close test: %v", err)
@@ -22471,6 +22472,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMerchantWind
 			RaceNum:       101,
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
 		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
@@ -27662,6 +27664,7 @@ func TestGameSessionFlowPracticeMobPacketShopBuyFailsClosedAfterImmediateRetalia
 			RaceNum:       101,
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
 		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
@@ -27789,6 +27792,7 @@ func TestGameSessionFlowPracticeMobSlashShopBuyFailsClosedAfterDelayedRetaliatio
 			RaceNum:       101,
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
 		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
@@ -27925,6 +27929,7 @@ func TestGameSessionFlowPracticeMobPacketShopSellFailsClosedAfterImmediateRetali
 			RaceNum:       101,
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
 		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
@@ -28048,6 +28053,7 @@ func TestGameSessionFlowPracticeMobPacketShopSell2FailsClosedAfterDelayedRetalia
 			RaceNum:       101,
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
 		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
@@ -28182,6 +28188,7 @@ func TestGameSessionFlowPracticeMobMerchantBuyKeepsRetaliationPointLossRuntimeOn
 			RaceNum:       101,
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
 		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
@@ -28338,6 +28345,7 @@ func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterImmediateRetaliation
 			RaceNum:       101,
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
 		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
@@ -28444,6 +28452,7 @@ func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterDelayedRetaliationRe
 			RaceNum:       101,
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
 		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {

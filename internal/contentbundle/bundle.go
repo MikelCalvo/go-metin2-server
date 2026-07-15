@@ -202,7 +202,10 @@ func validateBundle(bundle Bundle) error {
 		if !validDefinition(definition) {
 			return ErrInvalidBundle
 		}
-		if len(itemTemplatesByVnum) > 0 && definition.Kind == interactionstore.KindShopPreview {
+		if definition.Kind == interactionstore.KindShopPreview {
+			if len(itemTemplatesByVnum) == 0 {
+				return ErrInvalidBundle
+			}
 			for _, entry := range definition.Catalog {
 				template, ok := itemTemplatesByVnum[entry.ItemVnum]
 				if !ok {

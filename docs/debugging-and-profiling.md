@@ -91,7 +91,7 @@ Exports or imports the deterministic authored bootstrap content bundle used by s
 
 `GET` canonicalizes and validates the exported bundle before writing JSON, so local operators always receive the same deterministic shape used by bundle import/example tests. If the runtime exporter ever returns an invalid bundle, the endpoint fails closed with `500` instead of leaking a partial or non-canonical snapshot.
 
-`POST` canonicalizes and validates the whole bundle before applying it. In addition to the per-row validation, non-built-in `combat_profiles` entries must be referenced by at least one static actor or spawn group in the same bundle; unreferenced snapshots are rejected so this endpoint cannot mutate process-local combat profiles without importing authored content that uses them.
+`POST` canonicalizes and validates the whole bundle before applying it. In addition to the per-row validation, non-built-in `combat_profiles` entries must be referenced by at least one static actor or spawn group in the same bundle; unreferenced snapshots are rejected so this endpoint cannot mutate process-local combat profiles without importing authored content that uses them. Structured merchant `shop_preview` definitions must also carry the referenced `item_templates` in the same portable bundle; bundles that omit those templates are rejected before import.
 
 ### `POST /local/notice`
 
