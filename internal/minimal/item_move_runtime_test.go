@@ -113,7 +113,7 @@ func TestGameRuntimeItemBootstrapFramesCarryTemplateAntiFlags(t *testing.T) {
 		t.Fatalf("seed anti-flag bootstrap account: %v", err)
 	}
 	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
-		{Vnum: 27091, Name: "Bound Practice Potion", Stackable: true, MaxCount: 200, AntiDrop: true, AntiGive: true, AntiSell: true, AntiStack: true, AntiGet: true},
+		{Vnum: 27091, Name: "Bound Practice Potion", Stackable: true, MaxCount: 200, SellCountPerGold: true, AntiDrop: true, AntiGive: true, AntiSell: true, AntiStack: true, AntiGet: true},
 		{Vnum: 11200, Name: "Warrior-Locked Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String(), AntiWarrior: true, AntiMale: true, AntiEmpireC: true},
 	})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
@@ -143,6 +143,10 @@ func TestGameRuntimeItemBootstrapFramesCarryTemplateAntiFlags(t *testing.T) {
 	wantCarriedAntiFlags := itemproto.AntiFlagDrop | itemproto.AntiFlagGive | itemproto.AntiFlagSell | itemproto.AntiFlagStack | itemproto.AntiFlagGet
 	if itemSets[0].AntiFlags != wantCarriedAntiFlags {
 		t.Fatalf("expected carried item anti flags %#x, got %#x", wantCarriedAntiFlags, itemSets[0].AntiFlags)
+	}
+	wantCarriedFlags := itemproto.ItemFlagStackable | itemproto.ItemFlagCountPerGold
+	if itemSets[0].Flags != wantCarriedFlags {
+		t.Fatalf("expected carried item flags %#x, got %#x", wantCarriedFlags, itemSets[0].Flags)
 	}
 	weaponPosition, err := itemproto.EquipmentPosition(4)
 	if err != nil {

@@ -8,7 +8,7 @@ The item-template store is intentionally narrow. It currently owns only the meta
 
 - stack behavior: `stackable`, `max_count`, and `anti_stack`
 - item restriction guards: `anti_sell`, `anti_drop`, `anti_give`, `anti_get`, `anti_male`, `anti_female`, `anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_empire_a`, `anti_empire_b`, `anti_empire_c`, and `min_level`
-- merchant pricing helpers: `shop_buy_price` and `sell_count_per_gold`
+- merchant pricing helpers and client-visible item flags: `shop_buy_price`, `sell_count_per_gold`, and `stackable`
 - equipment routing/effects: `equip_slot` and `equip_effect`
 - consumable point effects: `use_effect`
 
@@ -69,4 +69,4 @@ Current coverage:
 
 - `internal/itemstore` freezes deterministic save/load behavior, validation failures, anti-flag metadata round trips, use/equip effect metadata, and strict load rejection for unknown fields or trailing JSON values.
 - Runtime item-use, equip, merchant, drop/pickup, and drag-to-item stack slices resolve only through loaded template metadata or the deterministic missing-file fallback described above.
-- Selected-character `ITEM_SET` bootstrap frames project the owned authored anti-flag metadata into the packet `anti_flags` field for both carried inventory and equipment snapshots, including `anti_get`, the trade/drop/sell/give/stack guards, job/sex restrictions, and empire restrictions. Unowned anti-flag bits remain zero until a later slice owns them.
+- Selected-character `ITEM_SET` bootstrap frames project the owned authored template metadata into the packet flags fields for both carried inventory and equipment snapshots: `stackable` maps to `ITEM_FLAG_STACKABLE`, `sell_count_per_gold` maps to `ITEM_FLAG_COUNT_PER_1GOLD`, and owned anti-flag metadata maps into the packet `anti_flags` field (`anti_get`, the trade/drop/sell/give/stack guards, job/sex restrictions, and empire restrictions). Unowned flag and anti-flag bits remain zero until a later slice owns them.

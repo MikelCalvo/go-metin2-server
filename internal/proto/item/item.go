@@ -60,6 +60,24 @@ const (
 )
 
 const (
+	ItemFlagRefineable uint32 = 1 << iota
+	ItemFlagSave
+	ItemFlagStackable
+	ItemFlagCountPerGold
+	ItemFlagSlowQuery
+	ItemFlagRare
+	ItemFlagUnique
+	ItemFlagMakeCount
+	ItemFlagIrremovable
+	ItemFlagConfirmWhenUse
+	ItemFlagQuestUse
+	ItemFlagQuestUseMultiple
+	ItemFlagUnused03
+	ItemFlagLog
+	ItemFlagApplicable
+)
+
+const (
 	AntiFlagFemale uint32 = 1 << iota
 	AntiFlagMale
 	AntiFlagWarrior

@@ -4168,13 +4168,26 @@ func encodeBootstrapItemFrameWithTemplates(position itemproto.Position, instance
 	if instance.Count > 255 {
 		return nil, fmt.Errorf("bootstrap item count exceeds legacy uint8: %d", instance.Count)
 	}
+	template := templates[instance.Vnum]
 	packet := itemproto.SetPacket{
 		Position:  position,
 		Vnum:      instance.Vnum,
 		Count:     uint8(instance.Count),
-		AntiFlags: bootstrapItemAntiFlags(templates[instance.Vnum]),
+		Flags:     bootstrapItemFlags(template),
+		AntiFlags: bootstrapItemAntiFlags(template),
 	}
 	return itemproto.EncodeSet(packet), nil
+}
+
+func bootstrapItemFlags(template itemcatalog.Template) uint32 {
+	var flags uint32
+	if template.Stackable {
+		flags |= itemproto.ItemFlagStackable
+	}
+	if template.SellCountPerGold {
+		flags |= itemproto.ItemFlagCountPerGold
+	}
+	return flags
 }
 
 func bootstrapItemAntiFlags(template itemcatalog.Template) uint32 {
