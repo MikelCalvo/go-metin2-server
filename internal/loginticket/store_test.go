@@ -85,6 +85,86 @@ func TestFileStoreIssueThenLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFileStoreIssueRejectsZeroCountInventoryItem(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	ticket := Ticket{
+		Login:    "mkmk",
+		LoginKey: 0x01020304,
+		Characters: []Character{{
+			ID:        1,
+			Name:      "MkmkWar",
+			Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 0, Slot: 8}},
+		}},
+	}
+
+	if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for zero-count inventory item, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsZeroCountInventoryItem(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":27001,"count":0,"slot":8}],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write invalid zero-count ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for loaded zero-count inventory item, got %v", err)
+	}
+}
+
+func TestFileStoreIssueRejectsDuplicateEquipmentSlots(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	ticket := Ticket{
+		Login:    "mkmk",
+		LoginKey: 0x01020304,
+		Characters: []Character{{
+			ID:   1,
+			Name: "MkmkWar",
+			Equipment: []inventory.ItemInstance{
+				{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+				{ID: 2002, Vnum: 29, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+			},
+		}},
+	}
+
+	if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for duplicate equipment slot, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsDuplicateQuickslotPositions(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[{"position":3,"type":1,"slot":8},{"position":3,"type":2,"slot":9}]}]}`)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-quickslot ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for duplicate quickslot position, got %v", err)
+	}
+}
+
+func TestFileStoreConsumeRejectsInvalidCharacterPayloadWithoutDeletingTicket(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	path := store.ticketPath(0x01020304)
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":27001,"count":0,"slot":8}],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("write invalid ticket: %v", err)
+	}
+
+	_, err := store.Consume("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for invalid consume, got %v", err)
+	}
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("expected invalid ticket to remain for inspection after failed consume, got %v", statErr)
+	}
+}
+
 func TestFileStoreIssueThenConsumeRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	store := NewFileStore(dir)

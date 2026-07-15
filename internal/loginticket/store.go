@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 )
 
 var (
@@ -127,6 +128,9 @@ func (s *FileStore) Issue(ticket Ticket) error {
 	}
 	ticket.Characters = CloneCharacters(ticket.Characters)
 	normalizeCharactersItemState(ticket.Characters)
+	if err := validateTicket(ticket); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create login ticket store dir: %w", err)
 	}
@@ -190,6 +194,9 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 		return Ticket{}, fmt.Errorf("%w: decode login ticket: %v", ErrInvalidTicket, err)
 	}
 	normalizeCharactersItemState(ticket.Characters)
+	if err := validateTicket(ticket); err != nil {
+		return Ticket{}, err
+	}
 	if ticket.Login != login || ticket.LoginKey != loginKey {
 		return Ticket{}, ErrTicketLoginMismatch
 	}
@@ -223,4 +230,79 @@ func decodeTicketStrict(raw []byte, ticket *Ticket) error {
 		return err
 	}
 	return nil
+}
+
+func validateTicket(ticket Ticket) error {
+	for _, character := range ticket.Characters {
+		if err := validateCharacterItemPayloads(character); err != nil {
+			return err
+		}
+		if err := validateCharacterUniqueEquipmentSlots(character); err != nil {
+			return err
+		}
+		if err := validateCharacterQuickslots(character); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateCharacterItemPayloads(character Character) error {
+	for _, item := range character.Inventory {
+		if err := item.Validate(); err != nil {
+			return fmt.Errorf("%w: inventory item %d: %v", ErrInvalidTicket, item.ID, err)
+		}
+		if item.Slot >= inventory.CarriedInventorySlotCount {
+			return fmt.Errorf("%w: inventory item %d: slot %d out of range", ErrInvalidTicket, item.ID, item.Slot)
+		}
+	}
+	for _, item := range character.Equipment {
+		if err := item.Validate(); err != nil {
+			return fmt.Errorf("%w: equipment item %d: %v", ErrInvalidTicket, item.ID, err)
+		}
+	}
+	return nil
+}
+
+func validateCharacterUniqueEquipmentSlots(character Character) error {
+	equipmentSlots := make(map[uint8]uint64, len(character.Equipment))
+	for _, item := range character.Equipment {
+		if previousID, ok := equipmentSlots[uint8(item.EquipSlot)]; ok {
+			return fmt.Errorf("%w: equipment slot %s contains item %d and item %d", ErrInvalidTicket, item.EquipSlot.String(), previousID, item.ID)
+		}
+		equipmentSlots[uint8(item.EquipSlot)] = item.ID
+	}
+	return nil
+}
+
+func validateCharacterQuickslots(character Character) error {
+	quickslotPositions := make(map[uint8]Quickslot, len(character.Quickslots))
+	for _, quickslot := range character.Quickslots {
+		if !validQuickslotTuple(quickslot) {
+			return fmt.Errorf("%w: quickslot position %d has invalid type %d slot %d", ErrInvalidTicket, quickslot.Position, quickslot.Type, quickslot.Slot)
+		}
+		if previous, ok := quickslotPositions[quickslot.Position]; ok {
+			return fmt.Errorf("%w: quickslot position %d contains type %d slot %d and type %d slot %d", ErrInvalidTicket, quickslot.Position, previous.Type, previous.Slot, quickslot.Type, quickslot.Slot)
+		}
+		quickslotPositions[quickslot.Position] = quickslot
+	}
+	return nil
+}
+
+func validQuickslotTuple(quickslot Quickslot) bool {
+	if quickslot.Position >= 36 {
+		return false
+	}
+	switch quickslot.Type {
+	case quickslotproto.TypeNone:
+		return quickslot.Slot == 0
+	case quickslotproto.TypeItem:
+		return quickslot.Slot < uint8(inventory.CarriedInventorySlotCount)
+	case quickslotproto.TypeSkill:
+		return quickslot.Slot < 200
+	case quickslotproto.TypeCommand:
+		return quickslot.Slot < 60
+	default:
+		return false
+	}
 }
