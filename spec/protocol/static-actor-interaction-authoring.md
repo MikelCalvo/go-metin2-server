@@ -39,6 +39,7 @@ Current rules:
 - update body `kind + ref` must match the path exactly
 - delete fails closed while any bootstrap static actor still references that definition
 - the backing catalog remains deterministic and file-backed under `internal/interactionstore`
+- the file-backed loader rejects unknown top-level JSON fields and trailing JSON instead of accepting a partial object silently
 
 ## Interaction-focused QA visibility
 

@@ -133,6 +133,20 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 		t.Fatalf("expected ErrInvalidSnapshot for malformed json, got %v", err)
 	}
 
+	if err := os.WriteFile(path, []byte("{\"definitions\":[],\"unknown\":true}"), 0o644); err != nil {
+		t.Fatalf("write unknown-field snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for unknown snapshot field, got %v", err)
+	}
+
+	if err := os.WriteFile(path, []byte("{\"definitions\":[]}{}"), 0o644); err != nil {
+		t.Fatalf("write trailing-json snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for trailing json, got %v", err)
+	}
+
 	invalidKind := Snapshot{Definitions: []Definition{{Kind: "shop", Ref: "npc:merchant", Text: "not yet"}}}
 	if err := store.Save(invalidKind); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for invalid kind, got %v", err)

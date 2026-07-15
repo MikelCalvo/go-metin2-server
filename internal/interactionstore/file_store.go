@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type FileStore struct {
@@ -30,8 +32,13 @@ func (s *FileStore) Load() (Snapshot, error) {
 	}
 
 	var snapshot Snapshot
-	if err := json.Unmarshal(raw, &snapshot); err != nil {
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&snapshot); err != nil {
 		return Snapshot{}, fmt.Errorf("%w: decode interaction snapshot: %v", ErrInvalidSnapshot, err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return Snapshot{}, fmt.Errorf("%w: trailing interaction snapshot content", ErrInvalidSnapshot)
 	}
 	normalized := normalizeSnapshot(snapshot)
 	if err := validateSnapshot(normalized); err != nil {
