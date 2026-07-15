@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
@@ -40,6 +41,39 @@ func normalizeAccountCharacters(characters []loginticket.Character) []loginticke
 type Store interface {
 	Load(login string) (Account, error)
 	Save(account Account) error
+}
+
+func (s *FileStore) List() ([]Account, error) {
+	if s.dir == "" {
+		return nil, ErrStoreDirRequired
+	}
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []Account{}, nil
+		}
+		return nil, fmt.Errorf("read account store dir: %w", err)
+	}
+
+	accounts := make([]Account, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		login, err := decodeAccountFilenameLogin(entry.Name())
+		if err != nil {
+			return nil, err
+		}
+		account, err := s.Load(login)
+		if err != nil {
+			return nil, err
+		}
+		accounts = append(accounts, account)
+	}
+	sort.Slice(accounts, func(i, j int) bool {
+		return strings.ToLower(accounts[i].Login) < strings.ToLower(accounts[j].Login)
+	})
+	return accounts, nil
 }
 
 type FileStore struct {
@@ -134,6 +168,19 @@ func (s *FileStore) accountPath(login string) string {
 	normalized := strings.ToLower(login)
 	filename := hex.EncodeToString([]byte(normalized)) + ".json"
 	return filepath.Join(s.dir, filename)
+}
+
+func decodeAccountFilenameLogin(filename string) (string, error) {
+	encoded := strings.TrimSuffix(filename, ".json")
+	decoded, err := hex.DecodeString(encoded)
+	if err != nil {
+		return "", fmt.Errorf("%w: account filename %q is not hex login JSON", ErrInvalidAccount, filename)
+	}
+	login := string(decoded)
+	if login == "" {
+		return "", fmt.Errorf("%w: account filename %q decodes to empty login", ErrInvalidAccount, filename)
+	}
+	return login, nil
 }
 
 func decodeAccountStrict(raw []byte, account *Account) error {

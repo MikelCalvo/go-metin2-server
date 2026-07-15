@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -233,6 +234,95 @@ func TestFileStoreLoadRejectsDuplicateCharacterIdentity(t *testing.T) {
 	_, err := store.Load("mkmk")
 	if !errors.Is(err, ErrInvalidAccount) {
 		t.Fatalf("expected ErrInvalidAccount for duplicate character identity, got %v", err)
+	}
+}
+
+func TestFileStoreListReturnsAccountsInDeterministicLoginOrder(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	accounts := []Account{
+		{Login: "zeta", Empire: 3, Characters: []loginticket.Character{{ID: 3, Name: "ZetaWar"}}},
+		{Login: "alpha", Empire: 1, Characters: []loginticket.Character{{ID: 1, Name: "AlphaWar"}}},
+		{Login: "Beta", Empire: 2, Characters: []loginticket.Character{{ID: 2, Name: "BetaWar"}}},
+	}
+	for _, account := range accounts {
+		if err := store.Save(account); err != nil {
+			t.Fatalf("save %s: %v", account.Login, err)
+		}
+	}
+
+	got, err := store.List()
+	if err != nil {
+		t.Fatalf("list accounts: %v", err)
+	}
+	gotLogins := make([]string, 0, len(got))
+	for _, account := range got {
+		gotLogins = append(gotLogins, account.Login)
+	}
+	wantLogins := []string{"alpha", "Beta", "zeta"}
+	if !reflect.DeepEqual(gotLogins, wantLogins) {
+		t.Fatalf("unexpected account order: got %#v want %#v", gotLogins, wantLogins)
+	}
+}
+
+func TestFileStoreListTreatsMissingDirectoryAsEmpty(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing"))
+
+	got, err := store.List()
+	if err != nil {
+		t.Fatalf("list missing store: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected no accounts for missing store dir, got %#v", got)
+	}
+}
+
+func TestFileStoreListIgnoresCrashTempFiles(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(store.dir, ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	got, err := store.List()
+	if err != nil {
+		t.Fatalf("list accounts: %v", err)
+	}
+	if len(got) != 1 || got[0].Login != "mkmk" {
+		t.Fatalf("expected only committed account, got %#v", got)
+	}
+}
+
+func TestFileStoreListRejectsCorruptCommittedSnapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	path := store.accountPath("mkmk")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create store dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"login":"mkmk","empire":2,"characters":[]`), 0o644); err != nil {
+		t.Fatalf("write corrupt account: %v", err)
+	}
+
+	_, err := store.List()
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for corrupt committed snapshot, got %v", err)
+	}
+}
+
+func TestFileStoreListRejectsFilenameLoginMismatch(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	path := store.accountPath("mkmk")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create store dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"login":"shadow","empire":2,"characters":[]}`), 0o644); err != nil {
+		t.Fatalf("write mismatched account: %v", err)
+	}
+
+	_, err := store.List()
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for mismatched account filename, got %v", err)
 	}
 }
 
