@@ -275,6 +275,44 @@ func TestEntityRegistryRegistersAndLooksUpStaticActors(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryRejectsUnencodableStaticActorRaceNum(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "InvisibleOverflow"}, Position: NewPosition(42, 1700, 2800), RaceNum: uint32(^uint16(0)) + 1})
+	if ok {
+		t.Fatalf("expected unencodable static actor race_num to fail closed, got %+v", actor)
+	}
+	if actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "ZeroRace"}, Position: NewPosition(42, 1800, 2900), RaceNum: 0}); ok {
+		t.Fatalf("expected zero static actor race_num to fail closed, got %+v", actor)
+	}
+	if next := registry.NextEntityID(); next != 1 {
+		t.Fatalf("expected rejected static actor registration not to consume an entity ID, got next=%d", next)
+	}
+	if actors := registry.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected rejected static actors not to enter map occupancy, got %+v", actors)
+	}
+}
+
+func TestEntityRegistryRejectsStaticActorUpdateToUnencodableRaceNum(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := guard
+	updated.RaceNum = uint32(^uint16(0)) + 1
+	if actor, ok := registry.UpdateStaticActor(updated); ok {
+		t.Fatalf("expected unencodable static actor race_num update to fail closed, got %+v", actor)
+	}
+	lookup, ok := registry.StaticActor(guard.Entity.ID)
+	if !ok || lookup.RaceNum != 20300 || lookup.Entity.Name != "VillageGuard" {
+		t.Fatalf("expected failed race_num update to preserve original actor, got actor=%+v ok=%v", lookup, ok)
+	}
+	if actors := registry.StaticActors(42); len(actors) != 1 || actors[0].RaceNum != 20300 {
+		t.Fatalf("expected failed race_num update to preserve map occupancy, got %+v", actors)
+	}
+}
+
 func TestEntityRegistryRejectsExplicitStaticActorIDAlreadyOwnedByPlayer(t *testing.T) {
 	registry := NewEntityRegistry()
 	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
@@ -750,19 +788,19 @@ func TestEntityRegistryRejectsStaticActorUpdateThatWouldCollideWithPlayerVID(t *
 	if player.Entity.ID == 0 {
 		t.Fatal("expected player registration to succeed")
 	}
-	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Name: "InvisibleGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: uint32(^uint16(0)) + 1})
+	actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300})
 	if !ok {
-		t.Fatal("expected non-encodable static actor registration to succeed before becoming visible")
+		t.Fatal("expected static actor registration to succeed before colliding update")
 	}
 
 	updated := actor
-	updated.RaceNum = 20300
+	updated.Entity.ID = uint64(player.Entity.VID)
 	if result, ok := registry.UpdateStaticActor(updated); ok {
-		t.Fatalf("expected update to encodable static actor with player VID collision to fail closed, got %+v", result)
+		t.Fatalf("expected update to static actor with player VID collision to fail closed, got %+v", result)
 	}
 	lookup, ok := registry.StaticActor(actor.Entity.ID)
-	if !ok || lookup.RaceNum != uint32(^uint16(0))+1 || lookup.Entity.Name != "InvisibleGuard" {
-		t.Fatalf("expected original non-encodable static actor to remain unchanged, got actor=%+v ok=%v", lookup, ok)
+	if !ok || lookup.Entity.ID != actor.Entity.ID || lookup.Entity.Name != "VillageGuard" {
+		t.Fatalf("expected original static actor to remain unchanged, got actor=%+v ok=%v", lookup, ok)
 	}
 	playerLookup, ok := registry.Player(player.Entity.ID)
 	if !ok || playerLookup.Entity.VID != player.Entity.VID || playerLookup.Entity.Name != "Alpha" {
@@ -779,19 +817,19 @@ func TestEntityRegistryRejectsStaticActorUpdateThatWouldCollideWithMapOnlyPlayer
 	if _, ok := registry.players.Remove(player.Entity.ID); !ok {
 		t.Fatal("expected direct player-directory removal to simulate partial index loss")
 	}
-	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Name: "InvisibleGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: uint32(^uint16(0)) + 1})
+	actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300})
 	if !ok {
-		t.Fatal("expected non-encodable static actor registration to succeed before becoming visible")
+		t.Fatal("expected static actor registration to succeed before colliding update")
 	}
 
 	updated := actor
-	updated.RaceNum = 20300
+	updated.Entity.ID = uint64(player.Entity.VID)
 	if result, ok := registry.UpdateStaticActor(updated); ok {
-		t.Fatalf("expected update to encodable static actor with map-only player VID collision to fail closed, got %+v", result)
+		t.Fatalf("expected update to static actor with map-only player VID collision to fail closed, got %+v", result)
 	}
 	lookup, ok := registry.StaticActor(actor.Entity.ID)
-	if !ok || lookup.RaceNum != uint32(^uint16(0))+1 || lookup.Entity.Name != "InvisibleGuard" {
-		t.Fatalf("expected original non-encodable static actor to remain unchanged, got actor=%+v ok=%v", lookup, ok)
+	if !ok || lookup.Entity.ID != actor.Entity.ID || lookup.Entity.Name != "VillageGuard" {
+		t.Fatalf("expected original static actor to remain unchanged, got actor=%+v ok=%v", lookup, ok)
 	}
 	playerLookup, ok := registry.maps.Remove(player.Entity.ID)
 	if !ok || playerLookup.Entity.VID != player.Entity.VID || playerLookup.Entity.Name != "Alpha" {

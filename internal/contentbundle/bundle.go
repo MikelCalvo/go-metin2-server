@@ -272,7 +272,7 @@ func validInteractionMetadata(kind string, ref string) bool {
 }
 
 func validBootstrapRaceNum(raceNum uint32) bool {
-	return raceNum != 0 && raceNum <= uint32(^uint16(0))
+	return worldruntime.ValidStaticActorVisibilityRaceNum(raceNum)
 }
 
 func validSpawnGroup(spawnGroup SpawnGroup, profileSnapshots map[string]worldruntime.StaticActorCombatProfileSnapshot) bool {

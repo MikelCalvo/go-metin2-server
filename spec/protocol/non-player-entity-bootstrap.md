@@ -52,7 +52,7 @@ A bootstrap non-player actor is only required to own:
 - map coordinates
 - one minimal class/template identifier suitable for future packet/content work
 - optional display/name identifier for deterministic lookup, debugging, or tooling
-- a non-zero class/template/race identifier that fits the current bootstrap `CHARACTER_ADD` wire projection (`uint16`)
+- a non-zero class/template/race identifier that fits the current bootstrap `CHARACTER_ADD` wire projection (`uint16`); runtime registration/update, file-backed restore, and content-bundle import all fail closed instead of accepting unencodable static actors that later visibility paths would have to skip
 - optional interaction-ready metadata (`interaction_kind` / `interaction_ref`) for later self-only interaction slices
 
 In other words, the runtime is about to own the fact that a non-player actor exists in the world, where it is, and what kind of actor it is.

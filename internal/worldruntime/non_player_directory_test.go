@@ -103,20 +103,20 @@ func TestNonPlayerDirectoryUpdatePrunesOrphanedVisibilityVIDConflict(t *testing.
 	actor := StaticEntity{
 		Entity:   Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"},
 		Position: NewPosition(42, 1700, 2800),
-		RaceNum:  uint32(^uint16(0)) + 1,
+		RaceNum:  20300,
 	}
 	if !directory.Register(actor) {
-		t.Fatal("expected non-encodable static actor registration to succeed")
+		t.Fatal("expected static actor registration to succeed")
 	}
 	directory.entityIDByVID[7] = 999
 
 	updated := actor
-	updated.RaceNum = 20300
+	updated.Entity.Name = "VillageGuardRenamed"
 	if !directory.Update(updated) {
 		t.Fatal("expected static actor update to prune orphaned VID conflict")
 	}
 	lookup, ok := directory.ByVID(7)
-	if !ok || lookup.Entity.ID != actor.Entity.ID || lookup.RaceNum != 20300 {
+	if !ok || lookup.Entity.ID != actor.Entity.ID || lookup.Entity.Name != "VillageGuardRenamed" {
 		t.Fatalf("expected current visibility VID lookup after update orphan prune, got actor=%+v ok=%v", lookup, ok)
 	}
 }
@@ -149,7 +149,7 @@ func TestNonPlayerDirectoryUpdateReplacesStaticActorByEntityID(t *testing.T) {
 	}
 }
 
-func TestNonPlayerDirectoryUpdateClearsVisibilityVIDLookupWhenActorStopsBeingEncodable(t *testing.T) {
+func TestNonPlayerDirectoryUpdateRejectsActorThatStopsBeingVisibilityEncodable(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
 		Entity:   Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"},
@@ -165,11 +165,12 @@ func TestNonPlayerDirectoryUpdateClearsVisibilityVIDLookupWhenActorStopsBeingEnc
 
 	updated := actor
 	updated.RaceNum = uint32(^uint16(0)) + 1
-	if !directory.Update(updated) {
-		t.Fatal("expected static actor update to succeed even when actor stops being visibility-encodable")
+	if directory.Update(updated) {
+		t.Fatal("expected static actor update that stops being visibility-encodable to fail closed")
 	}
-	if _, ok := directory.ByVID(7); ok {
-		t.Fatal("expected static actor VID lookup to be cleared after actor stops being visibility-encodable")
+	lookup, ok := directory.ByVID(7)
+	if !ok || lookup.RaceNum != 20300 {
+		t.Fatalf("expected original static actor VID lookup to remain after rejected update, got actor=%+v ok=%v", lookup, ok)
 	}
 }
 
