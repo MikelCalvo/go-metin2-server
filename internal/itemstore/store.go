@@ -31,6 +31,7 @@ type Template struct {
 	Highlight        bool            `json:"highlight,omitempty"`
 	Rare             bool            `json:"rare,omitempty"`
 	Unique           bool            `json:"unique,omitempty"`
+	ConfirmWhenUse   bool            `json:"confirm_when_use,omitempty"`
 	AntiSell         bool            `json:"anti_sell,omitempty"`
 	AntiDrop         bool            `json:"anti_drop,omitempty"`
 	AntiGive         bool            `json:"anti_give,omitempty"`
@@ -72,6 +73,7 @@ type templateJSON struct {
 	Highlight        bool             `json:"highlight,omitempty"`
 	Rare             bool             `json:"rare,omitempty"`
 	Unique           bool             `json:"unique,omitempty"`
+	ConfirmWhenUse   bool             `json:"confirm_when_use,omitempty"`
 	AntiSell         bool             `json:"anti_sell,omitempty"`
 	AntiDrop         bool             `json:"anti_drop,omitempty"`
 	AntiGive         bool             `json:"anti_give,omitempty"`
@@ -105,6 +107,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		Highlight:        template.Highlight,
 		Rare:             template.Rare,
 		Unique:           template.Unique,
+		ConfirmWhenUse:   template.ConfirmWhenUse,
 		AntiSell:         template.AntiSell,
 		AntiDrop:         template.AntiDrop,
 		AntiGive:         template.AntiGive,
@@ -150,6 +153,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		Highlight:        jsonTemplate.Highlight,
 		Rare:             jsonTemplate.Rare,
 		Unique:           jsonTemplate.Unique,
+		ConfirmWhenUse:   jsonTemplate.ConfirmWhenUse,
 		AntiSell:         jsonTemplate.AntiSell,
 		AntiDrop:         jsonTemplate.AntiDrop,
 		AntiGive:         jsonTemplate.AntiGive,
