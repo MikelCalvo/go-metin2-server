@@ -53,7 +53,7 @@ func validateSnapshot(snapshot Snapshot) error {
 	seen := make(map[uint64]struct{}, len(snapshot.StaticActors))
 	spawnGroupRefs := make(map[string]struct{}, len(snapshot.StaticActors))
 	for _, actor := range snapshot.StaticActors {
-		if actor.EntityID == 0 || actor.Name == "" || actor.MapIndex == 0 || actor.RaceNum == 0 {
+		if actor.EntityID == 0 || actor.Name == "" || actor.MapIndex == 0 || !validBootstrapRaceNum(actor.RaceNum) {
 			return ErrInvalidSnapshot
 		}
 		if !validInteractionMetadata(actor.InteractionKind, actor.InteractionRef) {
@@ -91,6 +91,10 @@ func validInteractionMetadata(kind string, ref string) bool {
 		return true
 	}
 	return kind != "" && ref != ""
+}
+
+func validBootstrapRaceNum(raceNum uint32) bool {
+	return raceNum != 0 && raceNum <= uint32(^uint16(0))
 }
 
 func hasRewardDescriptor(actor StaticActor) bool {
