@@ -116,6 +116,62 @@ func TestGameSessionFlowItemUseRejectsAntiGetTemplateWithoutMutation(t *testing.
 	}
 }
 
+func TestGameSessionFlowProjectsTemplateHighlightOnSelectedCharacterItemSet(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseHighlight", 0x0103054e, 0x0204054e, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 207, Vnum: 27004, Count: 2, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-use-highlight", 0x5050504e, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-highlight", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed highlighted item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27004,
+		Name:      "Highlighted Potion",
+		Stackable: true,
+		MaxCount:  200,
+		Highlight: true,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "highlighted consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected highlighted item-use runtime error: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-highlight", 0x5050504e)
+	defer closeSessionFlow(t, flow)
+
+	var itemSet *itemproto.SetPacket
+	for _, raw := range enterOut {
+		set, err := itemproto.DecodeSet(decodeSingleFrame(t, raw))
+		if err == nil && set.Position == itemproto.InventoryPosition(5) {
+			itemSet = &set
+			break
+		}
+	}
+	if itemSet == nil {
+		t.Fatalf("expected selected-character bootstrap to include highlighted inventory item set, got %d frames", len(enterOut))
+	}
+	if itemSet.Vnum != 27004 || itemSet.Count != 2 || itemSet.Highlight != 1 {
+		t.Fatalf("unexpected highlighted bootstrap item set packet: %+v", *itemSet)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected highlighted item-use packet error: %v", err)
+	}
+	if len(out) < 2 {
+		t.Fatalf("expected highlighted ITEM_USE to emit point and item refresh frames, got %d", len(out))
+	}
+	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode highlighted item update frame: %v", err)
+	}
+	if updated.Position != itemproto.InventoryPosition(5) || updated.Count != 1 {
+		t.Fatalf("unexpected highlighted item update packet: %+v", updated)
+	}
+}
+
 func TestGameSessionFlowItemUseToItemRejectsAtBootstrapHPFloorWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

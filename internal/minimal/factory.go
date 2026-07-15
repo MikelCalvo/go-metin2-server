@@ -4175,6 +4175,7 @@ func encodeBootstrapItemFrameWithTemplates(position itemproto.Position, instance
 		Count:      uint8(instance.Count),
 		Flags:      bootstrapItemFlags(template),
 		AntiFlags:  bootstrapItemAntiFlags(template),
+		Highlight:  bootstrapItemHighlight(template),
 		Sockets:    bootstrapItemSockets(template),
 		Attributes: bootstrapItemAttributes(template),
 	}
@@ -4190,6 +4191,13 @@ func bootstrapItemFlags(template itemcatalog.Template) uint32 {
 		flags |= itemproto.ItemFlagCountPerGold
 	}
 	return flags
+}
+
+func bootstrapItemHighlight(template itemcatalog.Template) uint8 {
+	if template.Highlight {
+		return 1
+	}
+	return 0
 }
 
 func bootstrapItemSockets(template itemcatalog.Template) [itemproto.ItemSocketCount]int32 {

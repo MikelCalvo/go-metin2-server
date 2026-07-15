@@ -15,7 +15,7 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(path)
 	want := Snapshot{Templates: []Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
-		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, SellCountPerGold: true, AntiSell: true},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, SellCountPerGold: true, Highlight: true, AntiSell: true},
 	}}
 
 	if err := store.Save(want); err != nil {
@@ -70,6 +70,38 @@ func TestFileStoreLoadReturnsNotFoundForMissingSnapshot(t *testing.T) {
 	_, err := store.Load()
 	if !errors.Is(err, ErrSnapshotNotFound) {
 		t.Fatalf("expected ErrSnapshotNotFound, got %v", err)
+	}
+}
+
+func TestFileStoreSaveThenLoadRoundTripPreservesHighlightMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:      27001,
+		Name:      "Highlighted Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+		Highlight: true,
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with highlight metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with highlight metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with highlight metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with highlight metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27001,\n      \"name\": \"Highlighted Red Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"highlight\": true\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with highlight metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
 	}
 }
 
