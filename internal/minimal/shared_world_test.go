@@ -1288,6 +1288,29 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleOwnerIdentitySnapsh
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleOwnerPointSnapshot(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("StalePointRewardOwner", 0x010301b7, 0x020401b7, 1200, 2200, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 10
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected reward owner join to allocate a shared-world entity id")
+	}
+	updatedOwner := owner
+	updatedOwner.Points[bootstrapPlayerPointValueIndex] = 9
+	registry.UpdateCharacter(ownerID, updatedOwner)
+
+	if registry.RegisterGroundItem(ownerID, "stale-point-reward-owner", owner, 0x07000030, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected stale owner point ground-item registration to fail closed after registered owner point state changes")
+	}
+	if registry.RegisterGroundGold(ownerID, "stale-point-reward-owner", owner, 0x07000031, 250) {
+		t.Fatal("expected stale owner point ground-gold registration to fail closed after registered owner point state changes")
+	}
+	if registry.GroundItemExists(0x07000030) || registry.GroundItemExists(0x07000031) {
+		t.Fatal("expected rejected stale-point reward ground entries to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryGroundRewardPickupWithholdsOwnerDeliveryAfterOwnerIdentityChanges(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("IdentityPickupOwner", 0x010301aa, 0x020401aa, 1200, 2200, 0, 101, 201)

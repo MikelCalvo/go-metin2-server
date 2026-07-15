@@ -1079,7 +1079,7 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	defer r.mu.Unlock()
 
 	registeredOwner, ok := r.playerCharacter(ownerID)
-	if !ok || characterAtBootstrapHPFloor(registeredOwner) || characterAtBootstrapHPFloor(character) || !sameGroundRewardOwnerLocation(registeredOwner, character) {
+	if !ok || characterAtBootstrapHPFloor(registeredOwner) || characterAtBootstrapHPFloor(character) || !sameGroundRewardOwnerSnapshot(registeredOwner, character) {
 		return false
 	}
 	if _, exists := r.groundItemsByVID[vid]; exists {
@@ -1124,6 +1124,10 @@ func validRewardOwnerMetadata(value string) bool {
 
 func sameGroundRewardOwnerLocation(registered loginticket.Character, supplied loginticket.Character) bool {
 	return sameGroundRewardCharacterLocation(registered, supplied)
+}
+
+func sameGroundRewardOwnerSnapshot(registered loginticket.Character, supplied loginticket.Character) bool {
+	return sameGroundRewardOwnerLocation(registered, supplied) && registered.Points[bootstrapPlayerPointValueIndex] == supplied.Points[bootstrapPlayerPointValueIndex]
 }
 
 func sameGroundRewardCollectorLocation(registered loginticket.Character, supplied loginticket.Character) bool {
