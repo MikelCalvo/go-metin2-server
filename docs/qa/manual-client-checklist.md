@@ -685,6 +685,7 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] Approach and select the visible practice mob
 - [ ] Land accepted normal attacks and wait through delayed retaliation beats until the player reaches the owned zero-HP floor
 - [ ] Confirm the owner receives the final `PLAYER_POINT_CHANGE` to `0`, then `DEAD(owner_vid)`, then `TARGET(0, 0)`
+- [ ] If a merchant window is open when the immediate or delayed retaliation beat reaches `0` HP, confirm one self-only `GC::SHOP END` follows the death/clear sequence and later `SHOP END` / `SHOP BUY` attempts fail closed until a fresh merchant interaction opens a new window
 - [ ] Try a fresh target or attack while still at `0` HP
 - [ ] Confirm the attempt fails closed with no new combat-visible frames
 - [ ] Try one carried-inventory `ITEM_MOVE` drag while still at `0` HP
