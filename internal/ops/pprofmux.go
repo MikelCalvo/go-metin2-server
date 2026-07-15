@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -860,8 +861,13 @@ func decodeLocalInteractionDefinitionIdentity(r *http.Request) (string, string, 
 }
 
 func decodeLocalContentBundleRequest(r *http.Request) (contentbundle.Bundle, bool) {
+	const maxContentBundleBodyBytes = 1 << 20
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxContentBundleBodyBytes+1))
+	if err != nil || len(raw) > maxContentBundleBodyBytes {
+		return contentbundle.Bundle{}, false
+	}
 	var bundle contentbundle.Bundle
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&bundle); err != nil {
 		return contentbundle.Bundle{}, false

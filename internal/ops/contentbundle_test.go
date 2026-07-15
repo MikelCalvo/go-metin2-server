@@ -226,6 +226,25 @@ func TestLocalContentBundleEndpointRejectsDanglingRewardDropsBeforeImport(t *tes
 	}
 }
 
+func TestLocalContentBundleEndpointRejectsOversizedBodyBeforeImport(t *testing.T) {
+	importer := &stubContentBundleImporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
+
+	body := `{"interaction_definitions":[]}` + strings.Repeat(" ", 1<<20)
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for oversized content bundle body, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if importer.calls != 0 {
+		t.Fatalf("expected oversized bundle to be rejected before importer call, got %d calls", importer.calls)
+	}
+}
+
 type stubContentBundleExporter struct {
 	bundle contentbundle.Bundle
 	status int

@@ -22324,8 +22324,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMerchantWi
 			RaceNum:       101,
 			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
 		}},
-		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 		ItemTemplates:          defaultMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
 	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
 		t.Fatalf("import content bundle for merchant immediate floor-close test: %v", err)
