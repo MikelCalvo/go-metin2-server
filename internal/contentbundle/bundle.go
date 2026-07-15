@@ -228,7 +228,7 @@ func validateBundle(bundle Bundle) error {
 	}
 	staticActorsByKey := make(map[string]struct{}, len(bundle.StaticActors))
 	for _, actor := range bundle.StaticActors {
-		if strings.TrimSpace(actor.Name) == "" || actor.MapIndex == 0 || actor.RaceNum == 0 {
+		if strings.TrimSpace(actor.Name) == "" || actor.MapIndex == 0 || !validBootstrapRaceNum(actor.RaceNum) {
 			return ErrInvalidBundle
 		}
 		if !validAuthoredCombatProfile(actor.CombatProfile, profileSnapshots) {
@@ -265,8 +265,12 @@ func validInteractionMetadata(kind string, ref string) bool {
 	return kind != "" && ref != ""
 }
 
+func validBootstrapRaceNum(raceNum uint32) bool {
+	return raceNum != 0 && raceNum <= uint32(^uint16(0))
+}
+
 func validSpawnGroup(spawnGroup SpawnGroup, profileSnapshots map[string]worldruntime.StaticActorCombatProfileSnapshot) bool {
-	if !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroup.Ref) || strings.TrimSpace(spawnGroup.Ref) == "" || strings.TrimSpace(spawnGroup.Name) == "" || spawnGroup.MapIndex == 0 || spawnGroup.RaceNum == 0 {
+	if !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroup.Ref) || strings.TrimSpace(spawnGroup.Ref) == "" || strings.TrimSpace(spawnGroup.Name) == "" || spawnGroup.MapIndex == 0 || !validBootstrapRaceNum(spawnGroup.RaceNum) {
 		return false
 	}
 	if strings.TrimSpace(spawnGroup.CombatProfile) == "" || !validAuthoredCombatProfile(spawnGroup.CombatProfile, profileSnapshots) {

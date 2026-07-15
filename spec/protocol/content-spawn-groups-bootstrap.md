@@ -211,7 +211,8 @@ The first content contract should fail closed when:
 - `ref` is empty, duplicated, or not in the canonical dotted lowercase form `[a-z][a-z0-9_]*(.[a-z][a-z0-9_]*)+`
 - `name` is empty after trimming whitespace
 - `map_index` is `0`
-- `race_num` is `0`
+- `race_num` is `0` or larger than the current bootstrap visibility packet field can encode (`uint16`, max `65535`)
+- static-actor and spawn-group bundle validation share that same fail-closed `race_num` range because both are projected through the owned `CHARACTER_ADD` bootstrap visibility family
 - `combat_profile` is unknown when provided; an omitted profile is canonicalized to the bootstrap `practice_mob` profile for this first one-spawn-profile contract
 - a non-built-in `combat_profile` is referenced without a matching top-level `combat_profiles` snapshot and no matching profile is already registered locally
 - a `combat_profiles` snapshot is unreferenced by any authored static actor or spawn group, duplicates another snapshot after trimming its profile name, names a built-in profile, has a blank/non-canonical profile identity, carries conflicting legacy/formula damage values, has formula damage above `max_hp`, or carries invalid HP/formula/respawn/reward defaults

@@ -839,7 +839,35 @@ func TestCanonicalizeRejectsSpawnGroupWithBlankName(t *testing.T) {
 		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
 	}}})
 	if !errors.Is(err, ErrInvalidBundle) {
-		t.Fatalf("expected ErrInvalidBundle for spawn group without explicit name, got %v", err)
+		t.Fatalf("expected ErrInvalidBundle for blank spawn-group name, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsStaticActorRaceNumOutsideBootstrapWireRange(t *testing.T) {
+	_, err := Canonicalize(Bundle{StaticActors: []StaticActor{{
+		Name:     "OversizedActor",
+		MapIndex: 42,
+		X:        1775,
+		Y:        2875,
+		RaceNum:  uint32(^uint16(0)) + 1,
+	}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for static actor race_num outside bootstrap wire range, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsSpawnGroupRaceNumOutsideBootstrapWireRange(t *testing.T) {
+	_, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
+		Ref:           "practice.oversized_mob",
+		Name:          "Oversized Mob",
+		MapIndex:      42,
+		X:             1775,
+		Y:             2875,
+		RaceNum:       uint32(^uint16(0)) + 1,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+	}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for spawn-group race_num outside bootstrap wire range, got %v", err)
 	}
 }
 
