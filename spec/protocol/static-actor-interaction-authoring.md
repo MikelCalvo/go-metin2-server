@@ -65,18 +65,24 @@ The first owned bundle surface is:
 Current rules:
 - export returns one deterministic JSON artifact containing:
   - `static_actors`
+  - `spawn_groups` when authored spawn-backed actors are present
+  - `combat_profiles` when a referenced non-default combat profile must travel with spawn content
+  - `item_templates` when the runtime has an authored item-template snapshot loaded
   - `interaction_definitions`
 - exported interaction definitions preserve the current per-kind payload fields, including the structured `shop_preview` `title + catalog[]` merchant contract frozen in `npc-shop-catalog-bootstrap.md`
+- exported item templates preserve the owned item-template fields needed by merchant previews/buys and item bootstrap behavior, sorted deterministically by `vnum`
+- when a bundle includes `item_templates`, every `shop_preview` catalog entry must reference one of those bundled templates; this keeps portable merchant bundles self-contained instead of relying on an implicit default item catalog
 - exported static actors are **portable authored content**, not runtime entities, so the bundle omits runtime-only `entity_id`
 - import is full-replace for the authored bootstrap content currently loaded by `gamed`
 - import validates that every referenced interaction definition exists before mutating runtime state
 - import also rejects duplicate portable static-actor rows after canonical trimming, so a bundle cannot silently materialize the same authored actor twice
-- import also rejects malformed per-kind definition payloads, including invalid `warp` destinations and invalid `shop_preview` catalogs
-- import updates the live bootstrap runtime so the resulting static-actor content becomes the current authored state, not only the on-disk store contents
+- import also rejects malformed per-kind definition payloads, including invalid `warp` destinations, invalid item templates, and invalid `shop_preview` catalogs
+- import persists bundled `item_templates` to the file-backed item-template store and updates the live runtime template index before exposing the imported content
+- import updates the live bootstrap runtime so the resulting static-actor, item-template, and interaction-definition content becomes the current authored state, not only the on-disk store contents
 
 ## Success definition
 
 After this slice, the repository should be able to say:
 - minimal `info`, `talk`, and `warp` definitions plus the structured `shop_preview` merchant catalog are authorable through loopback HTTP today
 - visible interactables can still be inspected live with compact resolved previews for the currently previewable kinds and fail-closed markers otherwise
-- bootstrap static actors and their interaction definitions can be exported/imported as one deterministic authored-content bundle, with the structured merchant export/import shape already wired through that bundle surface
+- bootstrap static actors, item templates, and their interaction definitions can be exported/imported as one deterministic authored-content bundle, with the structured merchant export/import shape already wired through that bundle surface

@@ -8,6 +8,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -99,6 +100,46 @@ func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *
 	}
 	if len(persistedActors.StaticActors) != 1 || persistedActors.StaticActors[0].Name != "VillageGuard" || persistedActors.StaticActors[0].EntityID == 0 || persistedActors.StaticActors[0].InteractionRef != "npc:village_guard" {
 		t.Fatalf("unexpected persisted static actors after import: %#v", persistedActors)
+	}
+}
+
+func TestGameRuntimeImportContentBundlePersistsBundledItemTemplates(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemPath := t.TempDir() + "/item-templates.json"
+	itemStore := itemcatalog.NewFileStore(itemPath)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+	})
+	if err != nil {
+		t.Fatalf("import content bundle with item templates: %v", err)
+	}
+	wantBundle := contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+	}
+	if !reflect.DeepEqual(imported, wantBundle) {
+		t.Fatalf("unexpected imported bundle with item templates:\n got: %#v\nwant: %#v", imported, wantBundle)
+	}
+	if exported, err := runtime.ExportContentBundle(); err != nil {
+		t.Fatalf("export content bundle with item templates: %v", err)
+	} else if !reflect.DeepEqual(exported, wantBundle) {
+		t.Fatalf("unexpected exported bundle with item templates:\n got: %#v\nwant: %#v", exported, wantBundle)
+	}
+	persisted, err := itemStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted item templates: %v", err)
+	}
+	if !reflect.DeepEqual(persisted, itemcatalog.Snapshot{Templates: defaultMerchantItemTemplates()}) {
+		t.Fatalf("unexpected persisted item templates:\n got: %#v\nwant: %#v", persisted, itemcatalog.Snapshot{Templates: defaultMerchantItemTemplates()})
 	}
 }
 

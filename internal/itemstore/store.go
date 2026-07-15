@@ -89,6 +89,14 @@ func normalizeTemplate(template Template) Template {
 	return template
 }
 
+func NormalizeTemplate(template Template) Template {
+	return normalizeTemplate(template)
+}
+
+func NormalizeSnapshot(snapshot Snapshot) Snapshot {
+	return normalizeSnapshot(snapshot)
+}
+
 func validateSnapshot(snapshot Snapshot) error {
 	seen := make(map[uint32]struct{}, len(snapshot.Templates))
 	for _, template := range snapshot.Templates {

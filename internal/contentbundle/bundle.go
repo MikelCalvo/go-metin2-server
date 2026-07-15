@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -41,11 +42,19 @@ type Bundle struct {
 	StaticActors           []StaticActor                                   `json:"static_actors"`
 	SpawnGroups            []SpawnGroup                                    `json:"spawn_groups,omitempty"`
 	CombatProfiles         []worldruntime.StaticActorCombatProfileSnapshot `json:"combat_profiles,omitempty"`
+	ItemTemplates          []itemcatalog.Template                          `json:"item_templates,omitempty"`
 	InteractionDefinitions []interactionstore.Definition                   `json:"interaction_definitions"`
 }
 
 func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot) (Bundle, error) {
-	bundle := Bundle{InteractionDefinitions: cloneDefinitions(interactions.Definitions)}
+	return FromSnapshotsWithItems(staticActors, interactions, itemcatalog.Snapshot{})
+}
+
+func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot, items itemcatalog.Snapshot) (Bundle, error) {
+	bundle := Bundle{
+		ItemTemplates:          normalizeItemTemplates(items.Templates),
+		InteractionDefinitions: cloneDefinitions(interactions.Definitions),
+	}
 	bundle.StaticActors = make([]StaticActor, 0, len(staticActors.StaticActors))
 	bundle.SpawnGroups = make([]SpawnGroup, 0, len(staticActors.StaticActors))
 	for _, actor := range staticActors.StaticActors {
@@ -86,6 +95,7 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		StaticActors:           normalizedStaticActors,
 		SpawnGroups:            normalizedSpawnGroups,
 		CombatProfiles:         combatProfilesForAuthoredActors(normalizedStaticActors, normalizedSpawnGroups, normalizedCombatProfiles),
+		ItemTemplates:          normalizeItemTemplates(bundle.ItemTemplates),
 		InteractionDefinitions: cloneDefinitions(bundle.InteractionDefinitions),
 	}
 	sort.Slice(normalized.StaticActors, func(i int, j int) bool {
@@ -148,6 +158,9 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		}
 		return normalized.InteractionDefinitions[i].Kind < normalized.InteractionDefinitions[j].Kind
 	})
+	sort.Slice(normalized.ItemTemplates, func(i int, j int) bool {
+		return normalized.ItemTemplates[i].Vnum < normalized.ItemTemplates[j].Vnum
+	})
 	if err := validateBundle(normalized); err != nil {
 		return Bundle{}, err
 	}
@@ -155,6 +168,17 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 }
 
 func validateBundle(bundle Bundle) error {
+	itemTemplatesByVnum := make(map[uint32]struct{}, len(bundle.ItemTemplates))
+	for _, template := range bundle.ItemTemplates {
+		normalizedTemplate := itemcatalog.NormalizeTemplate(template)
+		if !itemcatalog.ValidTemplate(normalizedTemplate) {
+			return ErrInvalidBundle
+		}
+		if _, ok := itemTemplatesByVnum[normalizedTemplate.Vnum]; ok {
+			return ErrInvalidBundle
+		}
+		itemTemplatesByVnum[normalizedTemplate.Vnum] = struct{}{}
+	}
 	profileSnapshots := make(map[string]worldruntime.StaticActorCombatProfileSnapshot, len(bundle.CombatProfiles))
 	referencedProfiles := referencedCombatProfileNames(bundle.StaticActors, bundle.SpawnGroups)
 	for _, profile := range bundle.CombatProfiles {
@@ -174,6 +198,13 @@ func validateBundle(bundle Bundle) error {
 	for _, definition := range bundle.InteractionDefinitions {
 		if !validDefinition(definition) {
 			return ErrInvalidBundle
+		}
+		if len(itemTemplatesByVnum) > 0 && definition.Kind == interactionstore.KindShopPreview {
+			for _, entry := range definition.Catalog {
+				if _, ok := itemTemplatesByVnum[entry.ItemVnum]; !ok {
+					return ErrInvalidBundle
+				}
+			}
 		}
 		key := interactionDefinitionKey(definition.Kind, definition.Ref)
 		if _, ok := definitionsByKey[key]; ok {
@@ -450,4 +481,15 @@ func cloneDefinitions(definitions []interactionstore.Definition) []interactionst
 		cloned[i] = interactionstore.NormalizeDefinition(definition)
 	}
 	return cloned
+}
+
+func normalizeItemTemplates(templates []itemcatalog.Template) []itemcatalog.Template {
+	if len(templates) == 0 {
+		return nil
+	}
+	normalized := make([]itemcatalog.Template, len(templates))
+	for i, template := range templates {
+		normalized[i] = itemcatalog.NormalizeTemplate(template)
+	}
+	return normalized
 }

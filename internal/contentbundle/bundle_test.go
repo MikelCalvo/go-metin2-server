@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -23,6 +24,13 @@ func testMerchantCatalogDefinition() interactionstore.Definition {
 			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
 			{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
 		},
+	}
+}
+
+func testMerchantItemTemplates() []itemcatalog.Template {
+	return []itemcatalog.Template{
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 	}
 }
 
@@ -144,6 +152,36 @@ func TestCanonicalizeMerchantBundleKeepsStableBuySlotAddressing(t *testing.T) {
 	}
 	if catalog[1].Slot != 1 || catalog[1].ItemVnum != 11200 || catalog[1].Price != 500 || catalog[1].Count != 1 {
 		t.Fatalf("unexpected canonical merchant slot 1: %+v", catalog[1])
+	}
+}
+
+func TestCanonicalizeNormalizesItemTemplatesAndValidatesMerchantCatalogRefs(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: " Small Red Potion ", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+			{Vnum: 11200, Name: " Wooden Sword ", Stackable: false, MaxCount: 1},
+		},
+		InteractionDefinitions: []interactionstore.Definition{testMerchantCatalogDefinition()},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize bundle with item templates: %v", err)
+	}
+	want := Bundle{
+		ItemTemplates:          testMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{testMerchantCatalogDefinition()},
+	}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected canonical item-template bundle:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
+func TestCanonicalizeRejectsMerchantCatalogRefMissingFromBundledItemTemplates(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		ItemTemplates:          []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+		InteractionDefinitions: []interactionstore.Definition{testMerchantCatalogDefinition()},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for merchant catalog item missing from bundled item templates, got %v", err)
 	}
 }
 

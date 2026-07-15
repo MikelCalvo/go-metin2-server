@@ -117,6 +117,7 @@ With the structured merchant catalog wired, runtime behavior now stays narrow in
 The structured merchant catalog now already drives:
 - loopback interaction CRUD payloads
 - content-bundle export/import
+- bundled `item_templates` validation and runtime persistence for portable merchant bundles
 - interaction-visibility previews
 - the merchant-window `GC::SHOP START` open response
 - the first buy-only `SHOP BUY` transaction gate

@@ -4697,8 +4697,40 @@ func (r *gameRuntime) loadItemTemplates() error {
 		}
 		return err
 	}
+	if len(snapshot.Templates) == 0 {
+		r.itemTemplates = buildItemTemplateIndex(defaultBootstrapItemTemplateSnapshot())
+		r.itemTemplatesAuthored = false
+		return nil
+	}
 	r.itemTemplates = buildItemTemplateIndex(snapshot)
 	r.itemTemplatesAuthored = true
+	return nil
+}
+
+func (r *gameRuntime) buildItemTemplateSnapshot() itemcatalog.Snapshot {
+	if r == nil || !r.itemTemplatesAuthored || len(r.itemTemplates) == 0 {
+		return itemcatalog.Snapshot{}
+	}
+	templates := make([]itemcatalog.Template, 0, len(r.itemTemplates))
+	for _, template := range r.itemTemplates {
+		templates = append(templates, template)
+	}
+	return itemcatalog.NormalizeSnapshot(itemcatalog.Snapshot{Templates: templates})
+}
+
+func (r *gameRuntime) replaceItemTemplates(snapshot itemcatalog.Snapshot) error {
+	if r == nil || r.itemStore == nil {
+		return ErrContentBundleUnavailable
+	}
+	normalized := itemcatalog.NormalizeSnapshot(snapshot)
+	if err := r.itemStore.Save(normalized); err != nil {
+		return err
+	}
+	r.itemTemplates = buildItemTemplateIndex(normalized)
+	r.itemTemplatesAuthored = len(normalized.Templates) > 0
+	if !r.itemTemplatesAuthored {
+		r.itemTemplates = buildItemTemplateIndex(defaultBootstrapItemTemplateSnapshot())
+	}
 	return nil
 }
 
@@ -4922,7 +4954,7 @@ func (r *gameRuntime) ExportContentBundle() (contentbundle.Bundle, error) {
 	if r == nil || r.staticStore == nil || r.interactionStore == nil {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable
 	}
-	return contentbundle.FromSnapshots(buildStaticActorStoreSnapshot(r.StaticActors()), buildInteractionDefinitionSnapshot(r.interactionDefinitions))
+	return contentbundle.FromSnapshotsWithItems(buildStaticActorStoreSnapshot(r.StaticActors()), buildInteractionDefinitionSnapshot(r.interactionDefinitions), r.buildItemTemplateSnapshot())
 }
 
 func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentbundle.Bundle, error) {
@@ -4944,7 +4976,12 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return contentbundle.Bundle{}, err
 	}
 	previousActors := r.StaticActors()
+	if err := r.replaceItemTemplates(itemcatalog.Snapshot{Templates: normalized.ItemTemplates}); err != nil {
+		rollbackProfiles()
+		return contentbundle.Bundle{}, err
+	}
 	if err := r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: normalized.InteractionDefinitions}); err != nil {
+		_ = r.replaceItemTemplates(itemcatalog.Snapshot{Templates: previousBundle.ItemTemplates})
 		rollbackProfiles()
 		return contentbundle.Bundle{}, err
 	}
@@ -4960,7 +4997,8 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 			r.sharedWorld.suppressStaticActorFanout = true
 			r.sharedWorld.clearStaticActorsForContentImportRollback()
 		}
-		rollbackErr := r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions})
+		rollbackErr := r.replaceItemTemplates(itemcatalog.Snapshot{Templates: previousBundle.ItemTemplates})
+		rollbackErr = errors.Join(rollbackErr, r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions}))
 		if r.sharedWorld != nil {
 			for _, actor := range previousActors {
 				_, ok := r.sharedWorld.registerStaticActor(actor.EntityID, actor.Name, actor.MapIndex, actor.X, actor.Y, actor.RaceNum, actor.InteractionKind, actor.InteractionRef, actor.CombatProfile, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{Experience: actor.RewardExperience, Gold: actor.RewardGold, DropVnums: append([]uint32(nil), actor.RewardDropVnums...)})
