@@ -80,6 +80,22 @@ func TestNonPlayerDirectoryLookupPrunesStaleVisibilityVID(t *testing.T) {
 	}
 }
 
+func TestNonPlayerDirectoryRemovePrunesStaleVisibilityVIDWhenActorEntryMissing(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	directory.entityIDByVID[7] = 13
+	directory.entityIDByVID[99] = 13
+
+	if actor, ok := directory.Remove(13); ok {
+		t.Fatalf("expected remove to report missing actor entry, got %+v", actor)
+	}
+	if _, exists := directory.entityIDByVID[7]; exists {
+		t.Fatal("expected stale visibility VID 7 to be pruned during remove")
+	}
+	if _, exists := directory.entityIDByVID[99]; exists {
+		t.Fatal("expected stale visibility VID 99 to be pruned during remove")
+	}
+}
+
 func TestNonPlayerDirectoryRegisterPrunesOrphanedVisibilityVIDConflict(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	directory.entityIDByVID[7] = 999

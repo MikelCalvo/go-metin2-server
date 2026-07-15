@@ -82,6 +82,7 @@ func (d *NonPlayerDirectory) Remove(entityID uint64) (StaticEntity, bool) {
 	}
 	actor, ok := d.byEntityID[entityID]
 	if !ok {
+		d.removeVisibilityVIDsForEntityID(entityID)
 		return StaticEntity{}, false
 	}
 	delete(d.byEntityID, entityID)
