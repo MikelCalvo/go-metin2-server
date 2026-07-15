@@ -173,6 +173,32 @@ func TestFileStoreLoadRejectsTrailingJSONValue(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsEmptySnapshotLogin(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"","empire":2,"characters":[]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write empty-login account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for empty snapshot login, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsMismatchedSnapshotLogin(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"shadow","empire":2,"characters":[]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write mismatched-login account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for mismatched snapshot login, got %v", err)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	want := Account{

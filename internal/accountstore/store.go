@@ -71,7 +71,7 @@ func (s *FileStore) Load(login string) (Account, error) {
 		return Account{}, fmt.Errorf("%w: decode account: %v", ErrInvalidAccount, err)
 	}
 	account.Characters = normalizeAccountCharacters(account.Characters)
-	if err := validateLoadedAccount(account); err != nil {
+	if err := validateLoadedAccountForLogin(login, account); err != nil {
 		return Account{}, err
 	}
 	return account, nil
@@ -166,19 +166,14 @@ func validateAccount(account Account) error {
 	return nil
 }
 
-func validateLoadedAccount(account Account) error {
-	for _, character := range account.Characters {
-		if err := validateCharacterItemPayloads(character); err != nil {
-			return err
-		}
-		if err := validateCharacterUniqueEquipmentSlots(character); err != nil {
-			return err
-		}
-		if err := validateCharacterQuickslots(character); err != nil {
-			return err
-		}
+func validateLoadedAccountForLogin(requestedLogin string, account Account) error {
+	if account.Login == "" {
+		return fmt.Errorf("%w: account login is empty", ErrInvalidAccount)
 	}
-	return nil
+	if !strings.EqualFold(account.Login, requestedLogin) {
+		return fmt.Errorf("%w: snapshot login %q does not match requested login %q", ErrInvalidAccount, account.Login, requestedLogin)
+	}
+	return validateAccount(account)
 }
 
 func validateCharacterItemPayloads(character loginticket.Character) error {
