@@ -18,12 +18,15 @@ import (
 )
 
 var (
-	ErrStoreDirRequired  = errors.New("account store dir is required")
-	ErrLoginRequired     = errors.New("account login is required")
-	ErrAccountNotFound   = errors.New("account not found")
-	ErrInvalidAccount    = errors.New("invalid account snapshot")
-	ErrBackupDirRequired = errors.New("account backup dir is required")
-	ErrBackupDirNotEmpty = errors.New("account backup dir is not empty")
+	ErrStoreDirRequired      = errors.New("account store dir is required")
+	ErrLoginRequired         = errors.New("account login is required")
+	ErrAccountNotFound       = errors.New("account not found")
+	ErrInvalidAccount        = errors.New("invalid account snapshot")
+	ErrBackupDirRequired     = errors.New("account backup dir is required")
+	ErrBackupDirNotEmpty     = errors.New("account backup dir is not empty")
+	ErrRestoreSourceRequired = errors.New("account restore source dir is required")
+	ErrRestoreSourceNotFound = errors.New("account restore source dir not found")
+	ErrRestoreDirNotEmpty    = errors.New("account restore dir is not empty")
 )
 
 type Account struct {
@@ -162,7 +165,7 @@ func (s *FileStore) BackupTo(dstDir string) error {
 	if dstDir == "" {
 		return ErrBackupDirRequired
 	}
-	if err := ensureEmptyBackupDir(dstDir); err != nil {
+	if err := ensureEmptyDir(dstDir, ErrBackupDirNotEmpty, "read account backup dir"); err != nil {
 		return err
 	}
 	accounts, err := s.List()
@@ -184,16 +187,51 @@ func (s *FileStore) BackupTo(dstDir string) error {
 	return nil
 }
 
-func ensureEmptyBackupDir(path string) error {
+func (s *FileStore) RestoreFrom(srcDir string) error {
+	if s.dir == "" {
+		return ErrStoreDirRequired
+	}
+	if srcDir == "" {
+		return ErrRestoreSourceRequired
+	}
+	if _, err := os.Stat(srcDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ErrRestoreSourceNotFound
+		}
+		return fmt.Errorf("stat account restore source dir: %w", err)
+	}
+	if err := ensureEmptyDir(s.dir, ErrRestoreDirNotEmpty, "read account restore dir"); err != nil {
+		return err
+	}
+	source := NewFileStore(srcDir)
+	accounts, err := source.List()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return fmt.Errorf("create account restore dir: %w", err)
+	}
+	for _, account := range accounts {
+		if err := s.Save(account); err != nil {
+			return fmt.Errorf("restore account %q: %w", account.Login, err)
+		}
+	}
+	if err := syncStoreDir(s.dir); err != nil {
+		return fmt.Errorf("sync account restore dir: %w", err)
+	}
+	return nil
+}
+
+func ensureEmptyDir(path string, nonEmptyErr error, readContext string) error {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		return fmt.Errorf("read account backup dir: %w", err)
+		return fmt.Errorf("%s: %w", readContext, err)
 	}
 	if len(entries) != 0 {
-		return ErrBackupDirNotEmpty
+		return nonEmptyErr
 	}
 	return nil
 }
