@@ -1,9 +1,11 @@
 package staticstore
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -30,7 +32,16 @@ func (s *FileStore) Load() (Snapshot, error) {
 	}
 
 	var snapshot Snapshot
-	if err := json.Unmarshal(raw, &snapshot); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&snapshot); err != nil {
+		return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: trailing json value", ErrInvalidSnapshot)
+		}
 		return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
 	}
 	normalized := normalizeSnapshot(snapshot)

@@ -100,7 +100,7 @@ The current bootstrap runtime uses two small JSON-backed stores before a compati
 - `internal/accountstore` stores durable account snapshots.
 - `internal/loginticket` stores one-shot authd-to-gamed login tickets.
 
-Both stores intentionally fail closed on unknown top-level JSON fields and trailing JSON values. The account store also validates persisted item/equipment/quickslot payloads before accepting a snapshot. The login-ticket store now uses the same strict decode boundary for ticket files; invalid ticket snapshots return `ErrInvalidTicket`, and a failed consume leaves the ticket file in place for inspection instead of deleting possibly corrupted handoff state.
+The bootstrap file stores intentionally fail closed on unknown JSON fields and trailing JSON values. The account store also validates persisted item/equipment/quickslot payloads before accepting a snapshot. The login-ticket store uses the same strict decode boundary for ticket files; invalid ticket snapshots return `ErrInvalidTicket`, and a failed consume leaves the ticket file in place for inspection instead of deleting possibly corrupted handoff state. The static-actor store now applies that strict decode boundary to restored world/content snapshots before validating actors, interaction metadata, spawn-group refs, and reward descriptors.
 
 This is still bootstrap file persistence, not a migration-ready database layer. Future migration/backfill tooling should either emit the exact current schema or introduce an explicit versioned import/quarantine path instead of relying on silent field coercion.
 

@@ -105,6 +105,20 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for malformed json, got %v", err)
 	}
+	unknownField := []byte(`{"static_actors":[{"entity_id":7,"name":"VillageGuard","map_index":1,"x":469300,"y":964200,"race_num":20355,"unknown":true}]}`)
+	if err := os.WriteFile(path, unknownField, 0o644); err != nil {
+		t.Fatalf("write unknown-field snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for unknown fields, got %v", err)
+	}
+	trailingJSON := []byte(`{"static_actors":[{"entity_id":7,"name":"VillageGuard","map_index":1,"x":469300,"y":964200,"race_num":20355}]} {}`)
+	if err := os.WriteFile(path, trailingJSON, 0o644); err != nil {
+		t.Fatalf("write trailing-json snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for trailing JSON, got %v", err)
+	}
 
 	invalid := Snapshot{StaticActors: []StaticActor{{EntityID: 7, Name: "", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355}}}
 	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
