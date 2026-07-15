@@ -32,6 +32,8 @@ type Template struct {
 	Rare             bool            `json:"rare,omitempty"`
 	Unique           bool            `json:"unique,omitempty"`
 	ConfirmWhenUse   bool            `json:"confirm_when_use,omitempty"`
+	QuestUse         bool            `json:"quest_use,omitempty"`
+	Applicable       bool            `json:"applicable,omitempty"`
 	AntiSell         bool            `json:"anti_sell,omitempty"`
 	AntiDrop         bool            `json:"anti_drop,omitempty"`
 	AntiGive         bool            `json:"anti_give,omitempty"`
@@ -74,6 +76,8 @@ type templateJSON struct {
 	Rare             bool             `json:"rare,omitempty"`
 	Unique           bool             `json:"unique,omitempty"`
 	ConfirmWhenUse   bool             `json:"confirm_when_use,omitempty"`
+	QuestUse         bool             `json:"quest_use,omitempty"`
+	Applicable       bool             `json:"applicable,omitempty"`
 	AntiSell         bool             `json:"anti_sell,omitempty"`
 	AntiDrop         bool             `json:"anti_drop,omitempty"`
 	AntiGive         bool             `json:"anti_give,omitempty"`
@@ -108,6 +112,8 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		Rare:             template.Rare,
 		Unique:           template.Unique,
 		ConfirmWhenUse:   template.ConfirmWhenUse,
+		QuestUse:         template.QuestUse,
+		Applicable:       template.Applicable,
 		AntiSell:         template.AntiSell,
 		AntiDrop:         template.AntiDrop,
 		AntiGive:         template.AntiGive,
@@ -154,6 +160,8 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		Rare:             jsonTemplate.Rare,
 		Unique:           jsonTemplate.Unique,
 		ConfirmWhenUse:   jsonTemplate.ConfirmWhenUse,
+		QuestUse:         jsonTemplate.QuestUse,
+		Applicable:       jsonTemplate.Applicable,
 		AntiSell:         jsonTemplate.AntiSell,
 		AntiDrop:         jsonTemplate.AntiDrop,
 		AntiGive:         jsonTemplate.AntiGive,

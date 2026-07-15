@@ -15,3 +15,13 @@ func TestBootstrapItemFlagsProjectConfirmWhenUseMetadata(t *testing.T) {
 		t.Fatalf("expected confirm_when_use template metadata to project ITEM_FLAG_CONFIRM_WHEN_USE, got flags %#x", flags)
 	}
 }
+
+func TestBootstrapItemFlagsProjectQuestUseAndApplicableMetadata(t *testing.T) {
+	template := itemcatalog.Template{Vnum: 71123, Name: "Quest Applicable Charm", Stackable: false, MaxCount: 1, QuestUse: true, Applicable: true}
+
+	flags := bootstrapItemFlags(template)
+	want := itemproto.ItemFlagQuestUse | itemproto.ItemFlagApplicable
+	if flags&want != want {
+		t.Fatalf("expected quest_use/applicable template metadata to project flags %#x, got %#x", want, flags)
+	}
+}
