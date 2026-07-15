@@ -4170,11 +4170,13 @@ func encodeBootstrapItemFrameWithTemplates(position itemproto.Position, instance
 	}
 	template := templates[instance.Vnum]
 	packet := itemproto.SetPacket{
-		Position:  position,
-		Vnum:      instance.Vnum,
-		Count:     uint8(instance.Count),
-		Flags:     bootstrapItemFlags(template),
-		AntiFlags: bootstrapItemAntiFlags(template),
+		Position:   position,
+		Vnum:       instance.Vnum,
+		Count:      uint8(instance.Count),
+		Flags:      bootstrapItemFlags(template),
+		AntiFlags:  bootstrapItemAntiFlags(template),
+		Sockets:    bootstrapItemSockets(template),
+		Attributes: bootstrapItemAttributes(template),
 	}
 	return itemproto.EncodeSet(packet), nil
 }
@@ -4188,6 +4190,18 @@ func bootstrapItemFlags(template itemcatalog.Template) uint32 {
 		flags |= itemproto.ItemFlagCountPerGold
 	}
 	return flags
+}
+
+func bootstrapItemSockets(template itemcatalog.Template) [itemproto.ItemSocketCount]int32 {
+	return [itemproto.ItemSocketCount]int32(template.Sockets)
+}
+
+func bootstrapItemAttributes(template itemcatalog.Template) [itemproto.ItemAttributeCount]itemproto.Attribute {
+	var attributes [itemproto.ItemAttributeCount]itemproto.Attribute
+	for i, attribute := range template.Attributes {
+		attributes[i] = itemproto.Attribute{Type: attribute.Type, Value: attribute.Value}
+	}
+	return attributes
 }
 
 func bootstrapItemAntiFlags(template itemcatalog.Template) uint32 {

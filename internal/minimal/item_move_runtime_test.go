@@ -102,6 +102,60 @@ func TestGameRuntimeItemMoveRetargetsSourceItemQuickslotAndDeletesStaleDestinati
 	}
 }
 
+func TestGameRuntimeItemBootstrapFramesCarryTemplateDisplaySocketsAndAttributes(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DisplayAttrsBootstrap", 0x0103069b, 0x0204069b, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 6603, Vnum: 71084, Count: 1, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "display-attrs-bootstrap", 0x6060609b, owner)
+	if err := accounts.Save(accountstore.Account{Login: "display-attrs-bootstrap", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed display-attrs bootstrap account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      71084,
+		Name:      "Socketed Practice Charm",
+		Stackable: false,
+		MaxCount:  1,
+		Sockets:   itemcatalog.SocketValues{11, -2, 33},
+		Attributes: itemcatalog.AttributeValues{
+			{Type: 1, Value: 25},
+			{Type: 7, Value: -3},
+		},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected display-attrs bootstrap runtime error: %v", err)
+	}
+
+	_, frames := enterGameWithLoginTicket(t, runtime.SessionFactory(), "display-attrs-bootstrap", 0x6060609b)
+	var itemSet itemproto.SetPacket
+	for _, raw := range frames {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != itemproto.HeaderSet {
+			continue
+		}
+		packet, err := itemproto.DecodeSet(frame)
+		if err != nil {
+			t.Fatalf("decode bootstrap item set: %v", err)
+		}
+		if packet.Vnum == 71084 {
+			itemSet = packet
+			break
+		}
+	}
+	if itemSet.Vnum != 71084 {
+		t.Fatalf("expected socketed practice charm ITEM_SET in bootstrap frames")
+	}
+	wantSockets := [itemproto.ItemSocketCount]int32{11, -2, 33}
+	if itemSet.Sockets != wantSockets {
+		t.Fatalf("expected template-authored sockets %+v, got %+v", wantSockets, itemSet.Sockets)
+	}
+	wantAttributes := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	if itemSet.Attributes != wantAttributes {
+		t.Fatalf("expected template-authored attributes %+v, got %+v", wantAttributes, itemSet.Attributes)
+	}
+}
+
 func TestGameRuntimeItemBootstrapFramesCarryTemplateAntiFlags(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

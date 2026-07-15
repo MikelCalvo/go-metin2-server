@@ -1,6 +1,8 @@
 package itemstore
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strings"
@@ -14,31 +16,154 @@ var (
 	ErrInvalidSnapshot   = errors.New("invalid item template snapshot")
 )
 
+const (
+	ItemSocketCount    = 3
+	ItemAttributeCount = 7
+)
+
 type Template struct {
-	Vnum             uint32       `json:"vnum"`
-	Name             string       `json:"name"`
-	Stackable        bool         `json:"stackable"`
-	MaxCount         uint16       `json:"max_count"`
-	ShopBuyPrice     uint64       `json:"shop_buy_price,omitempty"`
-	SellCountPerGold bool         `json:"sell_count_per_gold,omitempty"`
-	AntiSell         bool         `json:"anti_sell,omitempty"`
-	AntiDrop         bool         `json:"anti_drop,omitempty"`
-	AntiGive         bool         `json:"anti_give,omitempty"`
-	AntiStack        bool         `json:"anti_stack,omitempty"`
-	AntiGet          bool         `json:"anti_get,omitempty"`
-	AntiMale         bool         `json:"anti_male,omitempty"`
-	AntiFemale       bool         `json:"anti_female,omitempty"`
-	AntiWarrior      bool         `json:"anti_warrior,omitempty"`
-	AntiAssassin     bool         `json:"anti_assassin,omitempty"`
-	AntiSura         bool         `json:"anti_sura,omitempty"`
-	AntiShaman       bool         `json:"anti_shaman,omitempty"`
-	AntiEmpireA      bool         `json:"anti_empire_a,omitempty"`
-	AntiEmpireB      bool         `json:"anti_empire_b,omitempty"`
-	AntiEmpireC      bool         `json:"anti_empire_c,omitempty"`
-	MinLevel         uint8        `json:"min_level,omitempty"`
-	EquipSlot        string       `json:"equip_slot,omitempty"`
-	UseEffect        *UseEffect   `json:"use_effect,omitempty"`
-	EquipEffect      *PointEffect `json:"equip_effect,omitempty"`
+	Vnum             uint32          `json:"vnum"`
+	Name             string          `json:"name"`
+	Stackable        bool            `json:"stackable"`
+	MaxCount         uint16          `json:"max_count"`
+	ShopBuyPrice     uint64          `json:"shop_buy_price,omitempty"`
+	SellCountPerGold bool            `json:"sell_count_per_gold,omitempty"`
+	AntiSell         bool            `json:"anti_sell,omitempty"`
+	AntiDrop         bool            `json:"anti_drop,omitempty"`
+	AntiGive         bool            `json:"anti_give,omitempty"`
+	AntiStack        bool            `json:"anti_stack,omitempty"`
+	AntiGet          bool            `json:"anti_get,omitempty"`
+	AntiMale         bool            `json:"anti_male,omitempty"`
+	AntiFemale       bool            `json:"anti_female,omitempty"`
+	AntiWarrior      bool            `json:"anti_warrior,omitempty"`
+	AntiAssassin     bool            `json:"anti_assassin,omitempty"`
+	AntiSura         bool            `json:"anti_sura,omitempty"`
+	AntiShaman       bool            `json:"anti_shaman,omitempty"`
+	AntiEmpireA      bool            `json:"anti_empire_a,omitempty"`
+	AntiEmpireB      bool            `json:"anti_empire_b,omitempty"`
+	AntiEmpireC      bool            `json:"anti_empire_c,omitempty"`
+	MinLevel         uint8           `json:"min_level,omitempty"`
+	EquipSlot        string          `json:"equip_slot,omitempty"`
+	Sockets          SocketValues    `json:"sockets,omitempty"`
+	Attributes       AttributeValues `json:"attributes,omitempty"`
+	UseEffect        *UseEffect      `json:"use_effect,omitempty"`
+	EquipEffect      *PointEffect    `json:"equip_effect,omitempty"`
+}
+
+type SocketValues [ItemSocketCount]int32
+
+type AttributeValues [ItemAttributeCount]Attribute
+
+type Attribute struct {
+	Type  uint8 `json:"type"`
+	Value int16 `json:"value"`
+}
+
+type templateJSON struct {
+	Vnum             uint32           `json:"vnum"`
+	Name             string           `json:"name"`
+	Stackable        bool             `json:"stackable"`
+	MaxCount         uint16           `json:"max_count"`
+	ShopBuyPrice     uint64           `json:"shop_buy_price,omitempty"`
+	SellCountPerGold bool             `json:"sell_count_per_gold,omitempty"`
+	AntiSell         bool             `json:"anti_sell,omitempty"`
+	AntiDrop         bool             `json:"anti_drop,omitempty"`
+	AntiGive         bool             `json:"anti_give,omitempty"`
+	AntiStack        bool             `json:"anti_stack,omitempty"`
+	AntiGet          bool             `json:"anti_get,omitempty"`
+	AntiMale         bool             `json:"anti_male,omitempty"`
+	AntiFemale       bool             `json:"anti_female,omitempty"`
+	AntiWarrior      bool             `json:"anti_warrior,omitempty"`
+	AntiAssassin     bool             `json:"anti_assassin,omitempty"`
+	AntiSura         bool             `json:"anti_sura,omitempty"`
+	AntiShaman       bool             `json:"anti_shaman,omitempty"`
+	AntiEmpireA      bool             `json:"anti_empire_a,omitempty"`
+	AntiEmpireB      bool             `json:"anti_empire_b,omitempty"`
+	AntiEmpireC      bool             `json:"anti_empire_c,omitempty"`
+	MinLevel         uint8            `json:"min_level,omitempty"`
+	EquipSlot        string           `json:"equip_slot,omitempty"`
+	Sockets          *SocketValues    `json:"sockets,omitempty"`
+	Attributes       *AttributeValues `json:"attributes,omitempty"`
+	UseEffect        *UseEffect       `json:"use_effect,omitempty"`
+	EquipEffect      *PointEffect     `json:"equip_effect,omitempty"`
+}
+
+func (template Template) MarshalJSON() ([]byte, error) {
+	jsonTemplate := templateJSON{
+		Vnum:             template.Vnum,
+		Name:             template.Name,
+		Stackable:        template.Stackable,
+		MaxCount:         template.MaxCount,
+		ShopBuyPrice:     template.ShopBuyPrice,
+		SellCountPerGold: template.SellCountPerGold,
+		AntiSell:         template.AntiSell,
+		AntiDrop:         template.AntiDrop,
+		AntiGive:         template.AntiGive,
+		AntiStack:        template.AntiStack,
+		AntiGet:          template.AntiGet,
+		AntiMale:         template.AntiMale,
+		AntiFemale:       template.AntiFemale,
+		AntiWarrior:      template.AntiWarrior,
+		AntiAssassin:     template.AntiAssassin,
+		AntiSura:         template.AntiSura,
+		AntiShaman:       template.AntiShaman,
+		AntiEmpireA:      template.AntiEmpireA,
+		AntiEmpireB:      template.AntiEmpireB,
+		AntiEmpireC:      template.AntiEmpireC,
+		MinLevel:         template.MinLevel,
+		EquipSlot:        template.EquipSlot,
+		UseEffect:        template.UseEffect,
+		EquipEffect:      template.EquipEffect,
+	}
+	if template.Sockets != (SocketValues{}) {
+		jsonTemplate.Sockets = &template.Sockets
+	}
+	if template.Attributes != (AttributeValues{}) {
+		jsonTemplate.Attributes = &template.Attributes
+	}
+	return json.Marshal(jsonTemplate)
+}
+
+func (template *Template) UnmarshalJSON(raw []byte) error {
+	var jsonTemplate templateJSON
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&jsonTemplate); err != nil {
+		return err
+	}
+	*template = Template{
+		Vnum:             jsonTemplate.Vnum,
+		Name:             jsonTemplate.Name,
+		Stackable:        jsonTemplate.Stackable,
+		MaxCount:         jsonTemplate.MaxCount,
+		ShopBuyPrice:     jsonTemplate.ShopBuyPrice,
+		SellCountPerGold: jsonTemplate.SellCountPerGold,
+		AntiSell:         jsonTemplate.AntiSell,
+		AntiDrop:         jsonTemplate.AntiDrop,
+		AntiGive:         jsonTemplate.AntiGive,
+		AntiStack:        jsonTemplate.AntiStack,
+		AntiGet:          jsonTemplate.AntiGet,
+		AntiMale:         jsonTemplate.AntiMale,
+		AntiFemale:       jsonTemplate.AntiFemale,
+		AntiWarrior:      jsonTemplate.AntiWarrior,
+		AntiAssassin:     jsonTemplate.AntiAssassin,
+		AntiSura:         jsonTemplate.AntiSura,
+		AntiShaman:       jsonTemplate.AntiShaman,
+		AntiEmpireA:      jsonTemplate.AntiEmpireA,
+		AntiEmpireB:      jsonTemplate.AntiEmpireB,
+		AntiEmpireC:      jsonTemplate.AntiEmpireC,
+		MinLevel:         jsonTemplate.MinLevel,
+		EquipSlot:        jsonTemplate.EquipSlot,
+		UseEffect:        jsonTemplate.UseEffect,
+		EquipEffect:      jsonTemplate.EquipEffect,
+	}
+	if jsonTemplate.Sockets != nil {
+		template.Sockets = *jsonTemplate.Sockets
+	}
+	if jsonTemplate.Attributes != nil {
+		template.Attributes = *jsonTemplate.Attributes
+	}
+	return nil
 }
 
 type PointEffect struct {
@@ -124,11 +249,23 @@ func validTemplate(template Template) bool {
 	if !template.Stackable && template.MaxCount != 1 {
 		return false
 	}
+	if !validDisplayAttributes(template.Attributes) {
+		return false
+	}
 	if template.EquipSlot == "" {
 		return template.EquipEffect == nil && validUseEffect(template.UseEffect)
 	}
 	_, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
 	return ok && template.UseEffect == nil && validPointEffect(template.EquipEffect)
+}
+
+func validDisplayAttributes(attributes AttributeValues) bool {
+	for _, attribute := range attributes {
+		if attribute.Type == 0 && attribute.Value != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func validUseEffect(effect *UseEffect) bool {

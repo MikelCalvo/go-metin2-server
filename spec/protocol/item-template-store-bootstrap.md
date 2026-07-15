@@ -11,6 +11,7 @@ The item-template store is intentionally narrow. It currently owns only the meta
 - merchant pricing helpers and client-visible item flags: `shop_buy_price`, `sell_count_per_gold`, and `stackable`
 - equipment routing/effects: `equip_slot` and `equip_effect`
 - consumable point effects: `use_effect`
+- client-visible display metadata for occupied-slot refreshes: `sockets` and `attributes`
 
 This is not a complete legacy item proto system yet.
 
@@ -35,13 +36,15 @@ Each template must pass the current `internal/itemstore` validation before the r
 - `min_level`, when present and non-zero, requires the selected character's persisted `level` to be at least that value before template-driven item actions are accepted
 - `use_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, positive `point_delta`, and non-empty trimmed `message`
 - `use_effect` is valid only on carried-use templates that do not author an `equip_slot`; equipment templates with `use_effect` are rejected so direct item use and equip side effects cannot both be authored on one bootstrap template
+- `sockets`, when present, must contain exactly three signed 32-bit display values
+- `attributes`, when present, must contain exactly seven `{type, value}` entries; an entry with `type = 0` must also use `value = 0` so malformed placeholder bonus rows fail closed
 - `equip_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, and positive `point_delta`
 - `equip_effect` is only valid on templates that also author a valid `equip_slot`
 - runtime application of an `equip_effect` is fail-closed unless the selected character currently has a valid equipped item in that authored slot whose live `vnum` matches the same template
 - runtime removal of an `equip_effect` is fail-closed unless either the selected character currently has that matching equipped item or the caller supplies the valid just-removed item instance from that authored slot; this keeps unequip subtraction template-backed without requiring the item to remain in equipment after the unequip mutation
 - duplicate `vnum` entries are rejected
 
-The store normalizes and persists deterministic JSON: template names and effect messages are trimmed, equipment slot names are normalized, and templates are sorted by `vnum`.
+The store normalizes and persists deterministic JSON: template names and effect messages are trimmed, equipment slot names are normalized, fixed socket/attribute arrays are written in owned packet order, and templates are sorted by `vnum`.
 
 ## Strict JSON hardening
 
@@ -69,4 +72,4 @@ Current coverage:
 
 - `internal/itemstore` freezes deterministic save/load behavior, validation failures, anti-flag metadata round trips, use/equip effect metadata, and strict load rejection for unknown fields or trailing JSON values.
 - Runtime item-use, equip, merchant, drop/pickup, and drag-to-item stack slices resolve only through loaded template metadata or the deterministic missing-file fallback described above.
-- Selected-character `ITEM_SET` bootstrap frames project the owned authored template metadata into the packet flags fields for both carried inventory and equipment snapshots: `stackable` maps to `ITEM_FLAG_STACKABLE`, `sell_count_per_gold` maps to `ITEM_FLAG_COUNT_PER_1GOLD`, and owned anti-flag metadata maps into the packet `anti_flags` field (`anti_get`, the trade/drop/sell/give/stack guards, job/sex restrictions, and empire restrictions). Unowned flag and anti-flag bits remain zero until a later slice owns them.
+- Selected-character `ITEM_SET` bootstrap frames project the owned authored template metadata into the packet flags fields for both carried inventory and equipment snapshots: `stackable` maps to `ITEM_FLAG_STACKABLE`, `sell_count_per_gold` maps to `ITEM_FLAG_COUNT_PER_1GOLD`, owned anti-flag metadata maps into the packet `anti_flags` field (`anti_get`, the trade/drop/sell/give/stack guards, job/sex restrictions, and empire restrictions), and authored `sockets` / `attributes` flow into the packet's display socket/attribute arrays. Unowned flag and anti-flag bits remain zero until a later slice owns them.

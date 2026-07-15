@@ -232,6 +232,60 @@ func TestFileStoreSaveRejectsInvalidUseEffectMetadata(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesDisplaySocketAndAttributeMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:      71084,
+		Name:      "Socketed Practice Charm",
+		Stackable: false,
+		MaxCount:  1,
+		Sockets:   SocketValues{11, -2, 33},
+		Attributes: AttributeValues{
+			{Type: 1, Value: 25},
+			{Type: 7, Value: -3},
+		},
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with display socket/attribute metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with display socket/attribute metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with display socket/attribute metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with display socket/attribute metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 71084,\n      \"name\": \"Socketed Practice Charm\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"sockets\": [\n        11,\n        -2,\n        33\n      ],\n      \"attributes\": [\n        {\n          \"type\": 1,\n          \"value\": 25\n        },\n        {\n          \"type\": 7,\n          \"value\": -3\n        },\n        {\n          \"type\": 0,\n          \"value\": 0\n        },\n        {\n          \"type\": 0,\n          \"value\": 0\n        },\n        {\n          \"type\": 0,\n          \"value\": 0\n        },\n        {\n          \"type\": 0,\n          \"value\": 0\n        },\n        {\n          \"type\": 0,\n          \"value\": 0\n        }\n      ]\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with display socket/attribute metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreSaveRejectsInvalidDisplayAttributeMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+
+	zeroTypeWithValue := Snapshot{Templates: []Template{{
+		Vnum:      71084,
+		Name:      "Broken Practice Charm",
+		Stackable: false,
+		MaxCount:  1,
+		Attributes: AttributeValues{
+			{Type: 0, Value: 25},
+		},
+	}}}
+	if err := store.Save(zeroTypeWithValue); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for zero display attribute type with value, got %v", err)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesAntiFlagMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
