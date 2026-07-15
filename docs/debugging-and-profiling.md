@@ -221,6 +221,7 @@ Temporary pending ground items are surfaced with their visible `vid`, `vnum`, op
 
 Returns a flat JSON snapshot of all currently pending bootstrap ground entries, sorted by visible ground `vid`.
 This is a loopback-only debug view of the same transient item-shaped and gold-shaped rewards already included in `/local/maps`; it does not expose a gameplay pickup API and does not mutate ground state.
+Successful gameplay pickup removes the entry from this flat list, the by-VID lookup below, and `/local/maps` occupancy together.
 
 Each entry includes:
 

@@ -11358,6 +11358,13 @@ func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 	if withDrop[0].GroundItems[0].VID != ground.VID || withDrop[0].GroundItems[0].Vnum != 27001 || withDrop[0].GroundItems[0].OwnerName != killer.Name {
 		t.Fatalf("unexpected ground item occupancy snapshot after reward drop: %+v", withDrop[0].GroundItems[0])
 	}
+	flatWithDrop := runtime.GroundItems()
+	if len(flatWithDrop) != 1 || flatWithDrop[0].VID != ground.VID || flatWithDrop[0].Vnum != 27001 || flatWithDrop[0].OwnerName != killer.Name {
+		t.Fatalf("expected flat ground debug snapshot to include reward drop, got %+v", flatWithDrop)
+	}
+	if byVID, ok := runtime.GroundItem(ground.VID); !ok || byVID.VID != ground.VID || byVID.Vnum != 27001 || byVID.OwnerName != killer.Name {
+		t.Fatalf("expected single ground debug snapshot to resolve reward drop, got snapshot=%+v ok=%v", byVID, ok)
+	}
 
 	pickupOut := pickupGroundItem(t, flow, ground.VID)
 	if len(pickupOut) != 3 {
@@ -11369,6 +11376,12 @@ func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 	}
 	if withoutDrop[0].GroundItemCount != 0 || len(withoutDrop[0].GroundItems) != 0 {
 		t.Fatalf("expected reward pickup to remove ground item from map occupancy, got %+v", withoutDrop[0])
+	}
+	if flatWithoutDrop := runtime.GroundItems(); len(flatWithoutDrop) != 0 {
+		t.Fatalf("expected reward pickup to remove flat ground debug snapshot, got %+v", flatWithoutDrop)
+	}
+	if byVID, ok := runtime.GroundItem(ground.VID); ok {
+		t.Fatalf("expected reward pickup to remove single ground debug snapshot, got %+v", byVID)
 	}
 }
 
