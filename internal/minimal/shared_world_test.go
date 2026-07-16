@@ -31877,6 +31877,32 @@ func (c *plainTCPTestClient) writeFrame(t *testing.T, raw []byte) {
 	writePlainTCPFrame(t, c.conn, raw)
 }
 
+func (c *plainTCPTestClient) expectNoFrame(t *testing.T, context string) {
+	t.Helper()
+	if len(c.queued) != 0 {
+		t.Fatalf("expected no queued tcp frame for %s, got %d", context, len(c.queued))
+	}
+	buffer := make([]byte, 8192)
+	if err := c.conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond)); err != nil {
+		t.Fatalf("set tcp idle read deadline for %s: %v", context, err)
+	}
+	n, err := c.conn.Read(buffer)
+	if err == nil {
+		frames, decodeErr := c.decoder.Feed(buffer[:n])
+		if decodeErr != nil {
+			t.Fatalf("decode unexpected tcp idle bytes for %s: %v", context, decodeErr)
+		}
+		t.Fatalf("expected no tcp frame for %s, got %d decoded frames from %d bytes", context, len(frames), n)
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		return
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return
+	}
+	t.Fatalf("expected tcp idle timeout for %s, got %v", context, err)
+}
+
 type practiceMobTCPHarness struct {
 	runtime      *gameRuntime
 	flow         service.SessionFlow
@@ -32288,6 +32314,13 @@ func TestGameSessionFlowPracticeMobRestartHereOverPlainTCP(t *testing.T) {
 	if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 1 {
 		t.Fatalf("expected tcp restart-here to rebuild persisted HP value 1, got %+v", restartPoints)
 	}
+
+	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
+	h.client.expectNoFrame(t, "stale restart-here attack before fresh target")
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 90 {
+		t.Fatalf("expected tcp restart-here fresh target to preserve still-live mob at 90%% HP, got %+v", selected)
+	}
 }
 
 func TestGameSessionFlowPracticeMobRestartTownOverPlainTCP(t *testing.T) {
@@ -32346,6 +32379,9 @@ func TestGameSessionFlowPracticeMobRestartTownOverPlainTCP(t *testing.T) {
 	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
 		t.Fatalf("expected tcp restart-town to keep retaliation HP loss runtime-only in persisted snapshot, got %+v", persisted.Characters[0])
 	}
+
+	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
+	h.client.expectNoFrame(t, "stale restart-town attack before fresh target")
 }
 
 func drivePracticeMobOwnerKill(t *testing.T, ownerFlow service.SessionFlow, targetVID uint32, context string, advance func(time.Duration)) [][]byte {
