@@ -78,6 +78,16 @@ Request body JSON fields:
 
 The backup path uses the same committed-snapshot list/validate contract as `/local/account-store/validate`: hidden crash-temp files are ignored, corrupt committed snapshots fail closed, and successful responses contain `account_count`, `character_count`, and deterministic `logins` for the backup that was just written. The destination must be empty so this endpoint does not silently merge unrelated operator files with a runtime backup.
 
+### `POST /local/account-store/restore`
+
+Restores the durable bootstrap account snapshot store from an operator-supplied source backup directory into the active store directory and returns the validation summary of the restored snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, and returns `409` if the source backup is missing or invalid, the active account-store directory is non-empty, or the restore cannot be completed.
+
+Request body JSON fields:
+
+- `src_dir` — source backup directory; it must be non-empty after trimming and contain committed account snapshots that pass the strict account-store loader
+
+The restore path uses the same committed-snapshot list/validate contract as backup: hidden crash-temp files in the backup are ignored, corrupt committed snapshots fail closed, and restore refuses to merge into a non-empty active store directory. Operators should use this only as a bootstrap recovery primitive for an empty replacement account-store path, not as an online merge/import API.
+
 ### `GET /local/runtime-config`
 
 Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:

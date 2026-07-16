@@ -36,6 +36,56 @@ type staticItemTemplateStore struct {
 	snapshot itemcatalog.Snapshot
 }
 
+func TestGameRuntimeRestoreAccountStoreRestoresValidatedBackup(t *testing.T) {
+	backupDir := t.TempDir()
+	backup := accountstore.NewFileStore(backupDir)
+	if err := backup.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	active := accountstore.NewFileStore(filepath.Join(t.TempDir(), "active"))
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, nil, active)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.RestoreAccountStore(backupDir)
+	if err != nil {
+		t.Fatalf("restore account store: %v", err)
+	}
+	want := accountstore.SnapshotSummary{AccountCount: 1, CharacterCount: 1, Logins: []string{"mkmk"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected restore summary: got %#v want %#v", summary, want)
+	}
+	got, err := active.Load("mkmk")
+	if err != nil {
+		t.Fatalf("load restored account: %v", err)
+	}
+	if got.Login != "mkmk" || len(got.Characters) != 1 || got.Characters[0].Name != "MkmkWar" {
+		t.Fatalf("unexpected restored account: %#v", got)
+	}
+}
+
+func TestGameRuntimeRestoreAccountStoreFailsClosedForInvalidBackup(t *testing.T) {
+	backupDir := t.TempDir()
+	path := filepath.Join(backupDir, "6d6b6d6b.json")
+	if err := os.WriteFile(path, []byte(`{"login":"mkmk","empire":2,"characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt backup: %v", err)
+	}
+	active := accountstore.NewFileStore(filepath.Join(t.TempDir(), "active"))
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, nil, active)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	_, err = runtime.RestoreAccountStore(backupDir)
+	if !errors.Is(err, accountstore.ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount, got %v", err)
+	}
+	if summary, err := active.Validate(); err != nil || summary.AccountCount != 0 {
+		t.Fatalf("expected active store to remain empty, summary=%#v err=%v", summary, err)
+	}
+}
+
 func (s staticItemTemplateStore) Load() (itemcatalog.Snapshot, error) {
 	return s.snapshot, nil
 }

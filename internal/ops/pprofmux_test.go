@@ -230,6 +230,109 @@ func TestLocalAccountStoreBackupEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalAccountStoreRestoreEndpointRestoresFromLoopbackRequestedDirectory(t *testing.T) {
+	restorer := &stubAccountStoreRestorer{summary: map[string]any{"account_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}}}
+	mux := RegisterLocalAccountStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/restore", strings.NewReader(`{"src_dir":"/tmp/account-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if restorer.calls != 1 || restorer.srcDir != "/tmp/account-backup" {
+		t.Fatalf("expected restore callback once with requested src dir, calls=%d src=%q", restorer.calls, restorer.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"account_count":2`, `"character_count":3`, `"logins":["alpha","zeta"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalAccountStoreRestoreEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	restorer := &stubAccountStoreRestorer{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/restore", strings.NewReader(`{"src_dir":"/tmp/account-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
+func TestLocalAccountStoreRestoreEndpointRejectsInvalidBody(t *testing.T) {
+	restorer := &stubAccountStoreRestorer{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	for _, body := range []string{``, `{"src_dir":"   "}`, `{"src_dir":"/tmp/account-backup","extra":true}`, `{"src_dir":"/tmp/account-backup"} {}`} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/local/account-store/restore", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+			}
+		})
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
+func TestLocalAccountStoreRestoreEndpointReportsRestoreFailure(t *testing.T) {
+	restorer := &stubAccountStoreRestorer{err: errStubAccountStoreInvalid}
+	mux := RegisterLocalAccountStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/restore", strings.NewReader(`{"src_dir":"/tmp/account-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if restorer.calls != 1 {
+		t.Fatalf("expected restore callback to be called once, got %d", restorer.calls)
+	}
+}
+
+func TestLocalAccountStoreRestoreEndpointRejectsWrongMethod(t *testing.T) {
+	restorer := &stubAccountStoreRestorer{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/restore", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
 type stubAccountStoreValidator struct {
 	summary any
 	err     error
@@ -253,6 +356,19 @@ type stubAccountStoreBacker struct {
 func (s *stubAccountStoreBacker) Backup(dstDir string) (any, error) {
 	s.calls++
 	s.dstDir = dstDir
+	return s.summary, s.err
+}
+
+type stubAccountStoreRestorer struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubAccountStoreRestorer) Restore(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
 	return s.summary, s.err
 }
 

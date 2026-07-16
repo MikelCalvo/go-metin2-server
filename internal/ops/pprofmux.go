@@ -30,6 +30,10 @@ type localAccountStoreBackupRequest struct {
 	DstDir string `json:"dst_dir"`
 }
 
+type localAccountStoreRestoreRequest struct {
+	SrcDir string `json:"src_dir"`
+}
+
 type localStaticActorRequest struct {
 	Name            string `json:"name"`
 	MapIndex        uint32 `json:"map_index"`
@@ -151,6 +155,36 @@ func RegisterLocalAccountStoreBackupEndpoint(mux *http.ServeMux, backup func(str
 		summary, err := backup(request.DstDir)
 		if err != nil {
 			slog.Warn("local account store backup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalAccountStoreRestoreEndpoint(mux *http.ServeMux, restore func(string) (any, error)) *http.ServeMux {
+	if mux == nil || restore == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/account-store/restore", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, ok := decodeLocalAccountStoreRestoreRequest(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		summary, err := restore(request.SrcDir)
+		if err != nil {
+			slog.Warn("local account store restore failed", "err", err)
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
@@ -905,18 +939,12 @@ func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldr
 }
 
 func decodeLocalAccountStoreBackupRequest(r *http.Request) (localAccountStoreBackupRequest, bool) {
-	raw, err := io.ReadAll(io.LimitReader(r.Body, 4096))
-	if err != nil || len(bytes.TrimSpace(raw)) == 0 {
+	raw, err := readNonEmptyLocalAccountStoreMutationBody(r)
+	if err != nil {
 		return localAccountStoreBackupRequest{}, false
 	}
 	var request localAccountStoreBackupRequest
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		return localAccountStoreBackupRequest{}, false
-	}
-	var trailing struct{}
-	if err := decoder.Decode(&trailing); err != io.EOF {
+	if !decodeStrictLocalAccountStoreMutationRequest(raw, &request) {
 		return localAccountStoreBackupRequest{}, false
 	}
 	request.DstDir = strings.TrimSpace(request.DstDir)
@@ -924,6 +952,40 @@ func decodeLocalAccountStoreBackupRequest(r *http.Request) (localAccountStoreBac
 		return localAccountStoreBackupRequest{}, false
 	}
 	return request, true
+}
+
+func decodeLocalAccountStoreRestoreRequest(r *http.Request) (localAccountStoreRestoreRequest, bool) {
+	raw, err := readNonEmptyLocalAccountStoreMutationBody(r)
+	if err != nil {
+		return localAccountStoreRestoreRequest{}, false
+	}
+	var request localAccountStoreRestoreRequest
+	if !decodeStrictLocalAccountStoreMutationRequest(raw, &request) {
+		return localAccountStoreRestoreRequest{}, false
+	}
+	request.SrcDir = strings.TrimSpace(request.SrcDir)
+	if request.SrcDir == "" {
+		return localAccountStoreRestoreRequest{}, false
+	}
+	return request, true
+}
+
+func readNonEmptyLocalAccountStoreMutationBody(r *http.Request) ([]byte, error) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil || len(bytes.TrimSpace(raw)) == 0 {
+		return nil, fmt.Errorf("invalid account store mutation body")
+	}
+	return raw, nil
+}
+
+func decodeStrictLocalAccountStoreMutationRequest(raw []byte, request any) bool {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(request); err != nil {
+		return false
+	}
+	var trailing struct{}
+	return decoder.Decode(&trailing) == io.EOF
 }
 
 func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.Definition, int, bool) {

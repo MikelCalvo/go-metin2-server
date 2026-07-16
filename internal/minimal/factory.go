@@ -298,6 +298,22 @@ func (r *gameRuntime) BackupAccountStore(dstDir string) (accountstore.SnapshotSu
 	return backup.Validate()
 }
 
+func (r *gameRuntime) RestoreAccountStore(srcDir string) (accountstore.SnapshotSummary, error) {
+	if r == nil || r.accountStore == nil {
+		return accountstore.SnapshotSummary{Logins: []string{}}, nil
+	}
+	restorer, ok := r.accountStore.(interface {
+		RestoreFrom(string) error
+	})
+	if !ok {
+		return accountstore.SnapshotSummary{}, fmt.Errorf("account store restore is not supported")
+	}
+	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return accountstore.SnapshotSummary{}, err
+	}
+	return r.ValidateAccountStore()
+}
+
 func (r *gameRuntime) flushReadyStaticActorRespawns() {
 	if r == nil || r.sharedWorld == nil {
 		return
