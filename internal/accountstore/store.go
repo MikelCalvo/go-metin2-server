@@ -277,15 +277,33 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create account restore dir: %w", err)
 	}
+	committed := make([]Account, 0, len(accounts))
 	for _, account := range accounts {
+		committed = append(committed, account)
 		if err := s.Save(account); err != nil {
-			return fmt.Errorf("restore account %q: %w", account.Login, err)
+			return s.rollbackRestoreFailure(committed, fmt.Errorf("restore account %q: %w", account.Login, err))
 		}
 	}
 	if err := syncStoreDir(s.dir); err != nil {
-		return fmt.Errorf("sync account restore dir: %w", err)
+		return s.rollbackRestoreFailure(committed, fmt.Errorf("sync account restore dir: %w", err))
 	}
 	return nil
+}
+
+func (s *FileStore) rollbackRestoreFailure(accounts []Account, restoreErr error) error {
+	var rollbackErrs []error
+	for _, account := range accounts {
+		if err := os.Remove(s.accountPath(account.Login)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("remove restored account %q: %w", account.Login, err))
+		}
+	}
+	if err := syncStoreDir(s.dir); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync account restore rollback dir: %w", err))
+	}
+	if len(rollbackErrs) == 0 {
+		return restoreErr
+	}
+	return errors.Join(append([]error{restoreErr}, rollbackErrs...)...)
 }
 
 func (s *FileStore) ValidateBackupFrom(srcDir string) (SnapshotSummary, error) {

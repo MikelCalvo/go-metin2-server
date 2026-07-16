@@ -722,6 +722,44 @@ func TestFileStoreRestoreFromRejectsCorruptBackupSnapshot(t *testing.T) {
 	}
 }
 
+func TestFileStoreRestoreFromRollsBackCommittedFilesWhenSaveFails(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	accounts := []Account{
+		{Login: "alpha", Empire: 1},
+		{Login: "zeta", Empire: 3},
+	}
+	for _, account := range accounts {
+		if err := backup.Save(account); err != nil {
+			t.Fatalf("save backup account %s: %v", account.Login, err)
+		}
+	}
+
+	restoreDir := filepath.Join(t.TempDir(), "restored")
+	restored := NewFileStore(restoreDir)
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	syncStoreDir = func(path string) error {
+		if path == restoreDir {
+			return fmt.Errorf("synthetic restore dir sync failure")
+		}
+		return originalSyncStoreDir(path)
+	}
+
+	err := restored.RestoreFrom(backup.dir)
+	if err == nil || !strings.Contains(err.Error(), "restore account") {
+		t.Fatalf("expected restore account failure, got %v", err)
+	}
+	entries, readErr := os.ReadDir(restoreDir)
+	if readErr != nil {
+		t.Fatalf("read restore dir after failed restore: %v", readErr)
+	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".json") {
+			t.Fatalf("expected restore rollback to remove committed account files, found %s", entry.Name())
+		}
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	want := Account{
