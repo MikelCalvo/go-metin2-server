@@ -273,6 +273,9 @@ func (m *MapIndex) RegisterStatic(actor StaticEntity) bool {
 	if _, ok := m.staticByEntityID[actor.Entity.ID]; ok {
 		return false
 	}
+	if _, ok := m.byEntityID[actor.Entity.ID]; ok {
+		return false
+	}
 	if _, ok := m.playerMapPresenceLocked(actor.Entity.ID); ok {
 		return false
 	}
@@ -299,6 +302,12 @@ func (m *MapIndex) UpdateStatic(actor StaticEntity) bool {
 		if _, found := m.staticActorMapPresenceLocked(actor.Entity.ID); !found {
 			return false
 		}
+	}
+	if _, ok := m.byEntityID[actor.Entity.ID]; ok {
+		return false
+	}
+	if _, ok := m.playerMapPresenceLocked(actor.Entity.ID); ok {
+		return false
 	}
 	nextMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
 	m.removeStaticMapPresenceLocked(actor.Entity.ID)
