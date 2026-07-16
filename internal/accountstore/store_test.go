@@ -520,6 +520,54 @@ func TestFileStoreRestoreFromRejectsBackupManifestChecksumMismatch(t *testing.T)
 	}
 }
 
+func TestFileStoreValidateBackupFromValidatesManifestWithoutRestoring(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	accounts := []Account{
+		{Login: "alpha", Empire: 1, Characters: []loginticket.Character{{ID: 1, Name: "AlphaWar"}, {ID: 2, Name: "AlphaNinja"}}},
+		{Login: "zeta", Empire: 3, Characters: []loginticket.Character{{ID: 3, Name: "ZetaWar"}}},
+	}
+	for _, account := range accounts {
+		if err := backup.Save(account); err != nil {
+			t.Fatalf("save backup account %s: %v", account.Login, err)
+		}
+	}
+	if err := backup.writeBackupManifest(accounts); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	restoreTarget := NewFileStore(filepath.Join(t.TempDir(), "restore-target"))
+
+	summary, err := restoreTarget.ValidateBackupFrom(backup.dir)
+	if err != nil {
+		t.Fatalf("validate backup: %v", err)
+	}
+	want := SnapshotSummary{AccountCount: 2, CharacterCount: 3, Logins: []string{"alpha", "zeta"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected backup validation summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(restoreTarget.dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected dry-run validation not to create restore target dir, stat err=%v", err)
+	}
+}
+
+func TestFileStoreValidateBackupFromRejectsManifestChecksumMismatch(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
+	if err := backup.Save(account); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := backup.writeBackupManifest([]Account{account}); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	if err := os.WriteFile(backup.accountPath("mkmk"), []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"Tampered"}]}`), 0o644); err != nil {
+		t.Fatalf("tamper backup account: %v", err)
+	}
+
+	_, err := NewFileStore(filepath.Join(t.TempDir(), "restore-target")).ValidateBackupFrom(backup.dir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest, got %v", err)
+	}
+}
+
 func TestFileStoreRestoreFromRejectsMalformedBackupManifest(t *testing.T) {
 	backup := NewFileStore(t.TempDir())
 	if err := backup.Save(Account{Login: "mkmk", Empire: 2}); err != nil {

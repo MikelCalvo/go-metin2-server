@@ -298,6 +298,19 @@ func (r *gameRuntime) BackupAccountStore(dstDir string) (accountstore.SnapshotSu
 	return backup.Validate()
 }
 
+func (r *gameRuntime) ValidateAccountStoreBackup(srcDir string) (accountstore.SnapshotSummary, error) {
+	if r == nil || r.accountStore == nil {
+		return accountstore.SnapshotSummary{Logins: []string{}}, nil
+	}
+	validator, ok := r.accountStore.(interface {
+		ValidateBackupFrom(string) (accountstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return accountstore.SnapshotSummary{}, fmt.Errorf("account store backup validation is not supported")
+	}
+	return validator.ValidateBackupFrom(srcDir)
+}
+
 func (r *gameRuntime) RestoreAccountStore(srcDir string) (accountstore.SnapshotSummary, error) {
 	if r == nil || r.accountStore == nil {
 		return accountstore.SnapshotSummary{Logins: []string{}}, nil

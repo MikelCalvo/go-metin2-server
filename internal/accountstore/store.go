@@ -267,24 +267,11 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 	if s.dir == "" {
 		return ErrStoreDirRequired
 	}
-	if srcDir == "" {
-		return ErrRestoreSourceRequired
-	}
-	if _, err := os.Stat(srcDir); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return ErrRestoreSourceNotFound
-		}
-		return fmt.Errorf("stat account restore source dir: %w", err)
-	}
 	if err := ensureEmptyDir(s.dir, ErrRestoreDirNotEmpty, "read account restore dir"); err != nil {
 		return err
 	}
-	source := NewFileStore(srcDir)
-	accounts, err := source.List()
+	accounts, err := s.loadBackupAccountsForRestore(srcDir)
 	if err != nil {
-		return err
-	}
-	if err := source.validateBackupManifest(accounts); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
@@ -299,6 +286,40 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 		return fmt.Errorf("sync account restore dir: %w", err)
 	}
 	return nil
+}
+
+func (s *FileStore) ValidateBackupFrom(srcDir string) (SnapshotSummary, error) {
+	accounts, err := s.loadBackupAccountsForRestore(srcDir)
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	summary := SnapshotSummary{AccountCount: len(accounts), Logins: make([]string, 0, len(accounts))}
+	for _, account := range accounts {
+		summary.Logins = append(summary.Logins, account.Login)
+		summary.CharacterCount += len(account.Characters)
+	}
+	return summary, nil
+}
+
+func (s *FileStore) loadBackupAccountsForRestore(srcDir string) ([]Account, error) {
+	if srcDir == "" {
+		return nil, ErrRestoreSourceRequired
+	}
+	if _, err := os.Stat(srcDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, ErrRestoreSourceNotFound
+		}
+		return nil, fmt.Errorf("stat account restore source dir: %w", err)
+	}
+	source := NewFileStore(srcDir)
+	accounts, err := source.List()
+	if err != nil {
+		return nil, err
+	}
+	if err := source.validateBackupManifest(accounts); err != nil {
+		return nil, err
+	}
+	return accounts, nil
 }
 
 func (s *FileStore) validateBackupManifest(accounts []Account) error {

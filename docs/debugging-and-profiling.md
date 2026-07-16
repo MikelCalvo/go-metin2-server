@@ -78,6 +78,16 @@ Request body JSON fields:
 
 The backup path uses the same committed-snapshot list/validate contract as `/local/account-store/validate`: hidden crash-temp files are ignored, corrupt committed snapshots fail closed, and successful responses contain `account_count`, `character_count`, and deterministic `logins` for the backup that was just written. A successful backup also writes `account-backup-manifest.json` with the backup format marker, copied snapshot summary, per-account filenames, byte sizes, and SHA-256 checksums. The destination must be empty so this endpoint does not silently merge unrelated operator files with a runtime backup.
 
+### `POST /local/account-store/backup/validate`
+
+Dry-runs an operator-supplied account backup source through the same strict restore-source loader and backup-manifest checks used by `/local/account-store/restore`, but does not create or mutate the active account-store directory. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, and returns `409` if the source backup is missing, corrupt, or has an invalid manifest.
+
+Request body JSON fields:
+
+- `src_dir` — source backup directory; it must be non-empty after trimming and contain committed account snapshots that pass the strict account-store loader
+
+Successful responses are the deterministic backup summary (`account_count`, `character_count`, sorted `logins`) that would be restored. Use this endpoint as the preflight check before pointing a fresh replacement account-store path at `/local/account-store/restore`.
+
 ### `POST /local/account-store/restore`
 
 Restores the durable bootstrap account snapshot store from an operator-supplied source backup directory into the active store directory and returns the validation summary of the restored snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, and returns `409` if the source backup is missing or invalid, the active account-store directory is non-empty, or the restore cannot be completed.

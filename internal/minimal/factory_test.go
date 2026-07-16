@@ -86,6 +86,52 @@ func TestGameRuntimeRestoreAccountStoreFailsClosedForInvalidBackup(t *testing.T)
 	}
 }
 
+func TestGameRuntimeValidateAccountStoreBackupDryRunsRestoreSource(t *testing.T) {
+	backupDir := t.TempDir()
+	backup := accountstore.NewFileStore(backupDir)
+	if err := backup.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	active := accountstore.NewFileStore(filepath.Join(t.TempDir(), "active"))
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, nil, active)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateAccountStoreBackup(backupDir)
+	if err != nil {
+		t.Fatalf("validate account store backup: %v", err)
+	}
+	want := accountstore.SnapshotSummary{AccountCount: 1, CharacterCount: 1, Logins: []string{"mkmk"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected backup validation summary: got %#v want %#v", summary, want)
+	}
+	if activeSummary, err := active.Validate(); err != nil || activeSummary.AccountCount != 0 {
+		t.Fatalf("expected dry-run validation not to mutate active store, summary=%#v err=%v", activeSummary, err)
+	}
+}
+
+func TestGameRuntimeValidateAccountStoreBackupFailsClosedForInvalidManifest(t *testing.T) {
+	backupDir := t.TempDir()
+	backup := accountstore.NewFileStore(backupDir)
+	if err := backup.Save(accountstore.Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, accountstore.BackupManifestFilename), []byte(`{"format":"manual"}`), 0o644); err != nil {
+		t.Fatalf("write invalid backup manifest: %v", err)
+	}
+	active := accountstore.NewFileStore(filepath.Join(t.TempDir(), "active"))
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, nil, active)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	_, err = runtime.ValidateAccountStoreBackup(backupDir)
+	if !errors.Is(err, accountstore.ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest, got %v", err)
+	}
+}
+
 func (s staticItemTemplateStore) Load() (itemcatalog.Snapshot, error) {
 	return s.snapshot, nil
 }

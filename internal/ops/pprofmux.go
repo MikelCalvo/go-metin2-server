@@ -163,6 +163,36 @@ func RegisterLocalAccountStoreBackupEndpoint(mux *http.ServeMux, backup func(str
 	return mux
 }
 
+func RegisterLocalAccountStoreBackupValidateEndpoint(mux *http.ServeMux, validate func(string) (any, error)) *http.ServeMux {
+	if mux == nil || validate == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/account-store/backup/validate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, ok := decodeLocalAccountStoreRestoreRequest(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		summary, err := validate(request.SrcDir)
+		if err != nil {
+			slog.Warn("local account store backup validation failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalAccountStoreRestoreEndpoint(mux *http.ServeMux, restore func(string) (any, error)) *http.ServeMux {
 	if mux == nil || restore == nil {
 		return mux
