@@ -3000,6 +3000,10 @@ func TestRuntimeSellMerchantItemWithTemplateRejectsRestrictedTemplatesWithoutMut
 			template: itemcatalog.Template{Vnum: 27001, Name: "No Give Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiGive: true},
 		},
 		{
+			name:     "anti stack",
+			template: itemcatalog.Template{Vnum: 27001, Name: "No Stack Sell Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiStack: true},
+		},
+		{
 			name:     "template vnum mismatch",
 			template: itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500},
 		},

@@ -1175,7 +1175,7 @@ func (r *Runtime) SellMerchantItem(slot inventory.SlotIndex, count uint16, unitP
 }
 
 func (r *Runtime) SellMerchantItemWithTemplate(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (MerchantSellResult, bool) {
-	if r == nil || !r.CanUseTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
+	if r == nil || !r.CanUseTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack {
 		return MerchantSellResult{}, false
 	}
 	index := findInventorySlot(r.liveInventory, slot)
