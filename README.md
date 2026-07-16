@@ -176,7 +176,7 @@ Status: `[~]` useful first vertical, not a real economy yet.
 
 Already present:
 
-- carried item drop and counted drop,
+- carried item drop and counted drop with template-authored transfer guards, including `anti_stack`,
 - temporary ground handles,
 - ground-item visibility to peers in scope,
 - pickup into inventory with stack-merge behavior,

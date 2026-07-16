@@ -2515,6 +2515,7 @@ func TestGameRuntimeItemDropRejectsAntiDropGiveSellGetTemplatesWithoutMutation(t
 		{name: "anti-give", login: "bound-give-owner", vnum: 27020, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiGive = true }, wantInfo: true},
 		{name: "anti-sell", login: "bound-sell-owner", vnum: 27021, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiSell = true }, wantInfo: true},
 		{name: "anti-get", login: "bound-get-owner", vnum: 27022, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiGet = true }, wantInfo: true},
+		{name: "anti-stack", login: "bound-stack-owner", vnum: 27027, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiStack = true }, wantInfo: true},
 		{name: "anti-warrior", login: "class-drop-owner", vnum: 27023, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiWarrior = true }},
 		{name: "anti-male", login: "sex-drop-owner", vnum: 27024, empire: 1, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiMale = true }},
 		{name: "anti-empire", login: "empire-drop-owner", vnum: 27025, empire: 2, job: 0, raceNum: 0, level: 1, mutate: func(template *itemcatalog.Template) { template.AntiEmpireB = true }},
@@ -3951,7 +3952,7 @@ func TestGameRuntimeItemPickupRejectsMismatchedLoadedTemplateWithoutRemovingGrou
 	}
 }
 
-func TestGameRuntimeItemPickupAntiStackTemplateRestoresFreshSlotWithoutMerging(t *testing.T) {
+func TestGameRuntimeItemPickupAntiStackTemplateFailsClosedWithoutRemovingGround(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PickupAntiStackOwner", 0x0103018f, 0x0204018f, 1400, 2400, 0, 101, 201)
@@ -3977,32 +3978,39 @@ func TestGameRuntimeItemPickupAntiStackTemplateRestoresFreshSlotWithoutMerging(t
 	}
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-anti-stack-owner", 0x8f8f8f8f)
 	flushServerFrames(t, flow)
-	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(6))
+	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
+	if !ok {
+		t.Fatal("expected anti-stack owner to be registered in shared world")
+	}
+	const groundVID uint32 = 0x07008f8f
+	if !runtime.sharedWorld.RegisterGroundItem(ownerEntity.Entity.ID, "pickup-anti-stack-owner", owner, groundVID, inventory.ItemInstance{ID: 3019, Vnum: 27003, Count: 2, Slot: 6}) {
+		t.Fatal("expected direct anti-stack ground registration to succeed")
+	}
+	accountBeforePickup, err := accounts.Load("pickup-anti-stack-owner")
+	if err != nil {
+		t.Fatalf("load pickup anti-stack owner account before pickup: %v", err)
+	}
 
-	pickupOut := pickupGroundItem(t, flow, ground.VID)
-	if len(pickupOut) != 3 {
-		t.Fatalf("expected anti-stack pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
+	pickupOut := pickupGroundItem(t, flow, groundVID)
+	if len(pickupOut) != 1 {
+		t.Fatalf("expected anti-stack pickup to emit one inventory-full info frame, got %d frames", len(pickupOut))
 	}
-	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, pickupOut[0]))
 	if err != nil {
-		t.Fatalf("decode anti-stack pickup item set: %v", err)
+		t.Fatalf("decode anti-stack pickup info chat: %v", err)
 	}
-	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27003 || set.Count != 2 {
-		t.Fatalf("expected anti-stack pickup to restore dropped stack into fresh slot 6 without merging, got %+v", set)
+	if chat.Type != chatproto.ChatTypeInfo || chat.VID != 0 || chat.Message != itemPickupInventoryFullInfoMessage {
+		t.Fatalf("unexpected anti-stack pickup rejection chat: %+v", chat)
 	}
-	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
-	if err != nil {
-		t.Fatalf("decode anti-stack pickup get: %v", err)
-	}
-	if get != (itemproto.GetPacket{Vnum: 27003, Count: 2, Arg: itemproto.GetArgNormal}) {
-		t.Fatalf("unexpected anti-stack pickup get: %+v", get)
+	if !runtime.sharedWorld.GroundItemExists(groundVID) {
+		t.Fatalf("expected anti-stack pickup rejection to leave ground handle %08x pending", groundVID)
 	}
 	account, err := accounts.Load("pickup-anti-stack-owner")
 	if err != nil {
 		t.Fatalf("load pickup anti-stack owner account: %v", err)
 	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("expected anti-stack pickup to preserve separate stacks, got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	if !reflect.DeepEqual(account.Characters[0].Inventory, accountBeforePickup.Characters[0].Inventory) {
+		t.Fatalf("expected anti-stack pickup rejection to preserve inventory, got %#v want %#v", account.Characters[0].Inventory, accountBeforePickup.Characters[0].Inventory)
 	}
 }
 

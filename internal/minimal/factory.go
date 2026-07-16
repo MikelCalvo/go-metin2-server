@@ -1692,7 +1692,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if runtime.itemTemplatesAuthored && !hasDropTemplate {
 				return nil, false
 			}
-			if hasDropTemplate && (dropTemplate.AntiGet || dropTemplate.AntiDrop || dropTemplate.AntiGive || dropTemplate.AntiSell) {
+			if hasDropTemplate && (dropTemplate.AntiGet || dropTemplate.AntiDrop || dropTemplate.AntiGive || dropTemplate.AntiSell || dropTemplate.AntiStack) {
 				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemDropRejectedInfoMessage})}, true
 			}
 			for _, item := range selectedPlayer.LiveInventory() {
@@ -1833,13 +1833,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if template.EquipSlot != "" {
 							return nil, false
 						}
-						if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || !ownerRuntime.CanUseTemplate(template) {
+						if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || !ownerRuntime.CanUseTemplate(template) {
 							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 						}
 						if pickup.Item.Count > template.MaxCount {
 							return nil, false
 						}
-						if template.Stackable && !template.AntiStack {
+						if template.Stackable {
 							pickupMaxCount = template.MaxCount
 						}
 					} else if runtime.itemTemplatesAuthored {
@@ -1924,13 +1924,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if template.EquipSlot != "" {
 						return nil, false
 					}
-					if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || !selectedPlayer.CanUseTemplate(template) {
+					if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || !selectedPlayer.CanUseTemplate(template) {
 						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
 					}
 					if pickup.Item.Count > template.MaxCount {
 						return nil, false
 					}
-					if template.Stackable && !template.AntiStack {
+					if template.Stackable {
 						pickupMaxCount = template.MaxCount
 					}
 				} else if runtime.itemTemplatesAuthored {

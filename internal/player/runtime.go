@@ -386,7 +386,7 @@ func (r *Runtime) DropInventoryItem(slot inventory.SlotIndex, count uint16) (inv
 }
 
 func (r *Runtime) DropInventoryItemWithTemplate(slot inventory.SlotIndex, count uint16, template itemcatalog.Template) (inventory.MoveResult, bool) {
-	if !itemcatalog.ValidTemplate(template) || !r.CanUseTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
+	if !itemcatalog.ValidTemplate(template) || !r.CanUseTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack {
 		return inventory.MoveResult{}, false
 	}
 	return r.dropInventoryItem(slot, count, template)
@@ -445,11 +445,11 @@ func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, temp
 }
 
 func (r *Runtime) PickupGroundItemWithTemplate(item inventory.ItemInstance, preferred inventory.SlotIndex, template itemcatalog.Template) (GroundItemPickupResult, bool) {
-	if !itemcatalog.ValidTemplate(template) || template.EquipSlot != "" || item.Vnum != template.Vnum || item.Count > template.MaxCount || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || !r.CanUseTemplate(template) {
+	if !itemcatalog.ValidTemplate(template) || template.EquipSlot != "" || item.Vnum != template.Vnum || item.Count > template.MaxCount || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || !r.CanUseTemplate(template) {
 		return GroundItemPickupResult{}, false
 	}
 	maxCount := uint16(0)
-	if template.Stackable && !template.AntiStack {
+	if template.Stackable {
 		maxCount = template.MaxCount
 	}
 	return r.PickupGroundItem(item, preferred, maxCount)

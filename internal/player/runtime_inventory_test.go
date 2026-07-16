@@ -86,6 +86,10 @@ func TestDropInventoryItemWithTemplateRejectsDropTransferGuardsWithoutMutation(t
 			name:     "anti sell",
 			template: itemcatalog.Template{Vnum: 27001, Name: "Unsellable Potion", Stackable: true, MaxCount: 200, AntiSell: true},
 		},
+		{
+			name:     "anti stack",
+			template: itemcatalog.Template{Vnum: 27001, Name: "No Stack Drop Potion", Stackable: true, MaxCount: 200, AntiStack: true},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -247,33 +251,22 @@ func TestPickupGroundItemWithTemplateRejectsAuthoredEquipSlotWithoutMutation(t *
 	}
 }
 
-func TestPickupGroundItemWithTemplateAntiStackSkipsCompatibleMergeTargets(t *testing.T) {
+func TestPickupGroundItemWithTemplateAntiStackFailsClosedWithoutMutation(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{
 			{ID: 11, Vnum: 27001, Count: 198, Slot: 2},
 			{ID: 12, Vnum: 27001, Count: 199, Slot: 5},
 		},
 	}, SessionLink{})
+	before := runtime.LiveInventory()
 	template := itemcatalog.Template{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, AntiStack: true}
 	ground := inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 1, Slot: 9}
 
-	result, ok := runtime.PickupGroundItemWithTemplate(ground, 9, template)
-	if !ok {
-		t.Fatal("expected anti-stack pickup to use a fresh carried slot instead of merging")
+	if result, ok := runtime.PickupGroundItemWithTemplate(ground, 9, template); ok {
+		t.Fatalf("expected anti-stack pickup to fail closed, got %+v", result)
 	}
-	if result.Merged || result.Split || result.Updated.ID != 0 || len(result.UpdatedItems) != 0 {
-		t.Fatalf("anti-stack pickup unexpectedly merged into compatible stacks: %+v", result)
-	}
-	if result.Placed != (inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 1, Slot: 9}) {
-		t.Fatalf("unexpected anti-stack placed item: %+v", result.Placed)
-	}
-	want := []inventory.ItemInstance{
-		{ID: 11, Vnum: 27001, Count: 198, Slot: 2},
-		{ID: 12, Vnum: 27001, Count: 199, Slot: 5},
-		{ID: 31, Vnum: 27001, Count: 1, Slot: 9},
-	}
-	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("anti-stack pickup mutated merge targets or placed wrong item: got %#v want %#v", got, want)
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("anti-stack pickup mutated inventory: got %#v want %#v", got, before)
 	}
 }
 
@@ -453,54 +446,6 @@ func TestPickupGroundItemRejectsFallbackWideGroundStackBeforeMutation(t *testing
 	}
 	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
 		t.Fatalf("fallback wide-stack pickup mutated inventory: got %#v want %#v", got, before)
-	}
-}
-
-func TestPickupGroundItemWithAntiStackTemplateUsesFreshCarriedSlot(t *testing.T) {
-	runtime := NewRuntime(loginticket.Character{
-		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27001, Count: 198, Slot: 5}},
-	}, SessionLink{})
-	template := itemcatalog.Template{Vnum: 27001, Name: "Bound Red Potion", Stackable: true, MaxCount: 200, AntiStack: true}
-	groundItem := inventory.ItemInstance{ID: 42, Vnum: 27001, Count: 2}
-
-	result, ok := runtime.PickupGroundItemWithTemplate(groundItem, 5, template)
-	if !ok {
-		t.Fatal("expected anti-stack pickup to use a fresh carried slot instead of merging")
-	}
-	if result.Merged || result.Split || result.Updated.ID != 0 || len(result.UpdatedItems) != 0 {
-		t.Fatalf("expected fresh-slot anti-stack pickup result, got %+v", result)
-	}
-	if result.Placed.ID != 42 || result.Placed.Vnum != 27001 || result.Placed.Count != 2 || result.Placed.Slot != 0 {
-		t.Fatalf("unexpected anti-stack placed item: %+v", result.Placed)
-	}
-	wantInventory := []inventory.ItemInstance{
-		{ID: 42, Vnum: 27001, Count: 2, Slot: 0},
-		{ID: 41, Vnum: 27001, Count: 198, Slot: 5},
-	}
-	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, wantInventory) {
-		t.Fatalf("anti-stack pickup should not merge with compatible stack: got %#v want %#v", got, wantInventory)
-	}
-}
-
-func TestPickupGroundItemWithAntiStackTemplateRejectsWhenNoFreshSlotExists(t *testing.T) {
-	items := make([]inventory.ItemInstance, 0, inventory.CarriedInventorySlotCount)
-	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
-		item := inventory.ItemInstance{ID: uint64(slot) + 1, Vnum: 11200, Count: 1, Slot: slot}
-		if slot == 5 {
-			item = inventory.ItemInstance{ID: uint64(slot) + 1, Vnum: 27001, Count: 198, Slot: slot}
-		}
-		items = append(items, item)
-	}
-	runtime := NewRuntime(loginticket.Character{Inventory: items}, SessionLink{})
-	before := runtime.LiveInventory()
-	template := itemcatalog.Template{Vnum: 27001, Name: "Bound Red Potion", Stackable: true, MaxCount: 200, AntiStack: true}
-	groundItem := inventory.ItemInstance{ID: 301, Vnum: 27001, Count: 1, Slot: 9}
-
-	if result, ok := runtime.PickupGroundItemWithTemplate(groundItem, 9, template); ok {
-		t.Fatalf("expected anti-stack pickup with no fresh carried slot to fail closed instead of merging, got %+v", result)
-	}
-	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
-		t.Fatalf("failed anti-stack pickup mutated inventory: got %#v want %#v", got, before)
 	}
 }
 
