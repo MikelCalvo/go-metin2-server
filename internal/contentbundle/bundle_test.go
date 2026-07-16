@@ -318,12 +318,28 @@ func TestCanonicalizeAcceptsRewardDropsBackedByBundledItemTemplates(t *testing.T
 }
 
 func TestExampleBootstrapNPCServiceBundleStaysValid(t *testing.T) {
+	raw, canonical := readCanonicalExampleBundle(t, "bootstrap-npc-service-bundle.json")
+	if len(canonical.ItemTemplates) == 0 || len(canonical.SpawnGroups) == 0 || len(canonical.InteractionDefinitions) == 0 {
+		t.Fatalf("example bundle should include item templates, spawn groups, and interaction definitions: %+v", canonical)
+	}
+	canonicalJSON, err := json.MarshalIndent(canonical, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal canonical example content bundle: %v", err)
+	}
+	canonicalJSON = append(canonicalJSON, '\n')
+	if string(raw) != string(canonicalJSON) {
+		t.Fatalf("example content bundle is not byte-for-byte canonical; update docs/examples/bootstrap-npc-service-bundle.json to:\n%s", string(canonicalJSON))
+	}
+}
+
+func readCanonicalExampleBundle(t *testing.T, name string) ([]byte, Bundle) {
+	t.Helper()
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate contentbundle test file")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
-	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-npc-service-bundle.json"))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", name))
 	if err != nil {
 		t.Fatalf("read example content bundle: %v", err)
 	}
@@ -335,9 +351,7 @@ func TestExampleBootstrapNPCServiceBundleStaysValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canonicalize example content bundle: %v", err)
 	}
-	if len(canonical.ItemTemplates) == 0 || len(canonical.SpawnGroups) == 0 || len(canonical.InteractionDefinitions) == 0 {
-		t.Fatalf("example bundle should include item templates, spawn groups, and interaction definitions: %+v", canonical)
-	}
+	return raw, canonical
 }
 
 func TestCanonicalizeRejectsSparseMerchantCatalogSlots(t *testing.T) {

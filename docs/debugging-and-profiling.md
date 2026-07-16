@@ -131,7 +131,7 @@ Validates and canonicalizes an authored bootstrap content bundle without importi
 
 Successful responses return the canonical bundle JSON that would be accepted by import. Invalid JSON, unknown fields, dangling refs, invalid static actors/spawn groups/combat profiles, missing merchant item templates, and other bundle validation failures return `400`; non-loopback callers return `403`; methods other than `POST` return `405`.
 
-Use this as an on-box dry-run check before applying a larger content bundle or before committing updates to deterministic example bundles.
+Use this as an on-box dry-run check before applying a larger content bundle or before committing updates to deterministic example bundles. The repository-owned `docs/examples/bootstrap-npc-service-bundle.json` fixture is required to stay byte-for-byte canonical under this same validation path, so operators can paste it directly into `/local/content-bundle/validate` or `/local/content-bundle` without hidden normalization drift.
 
 ### `POST /local/notice`
 

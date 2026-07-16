@@ -5,7 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -267,6 +270,35 @@ func TestLocalContentBundleValidateEndpointReturnsCanonicalBundleForLoopbackPost
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected canonical validation response:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleValidateEndpointAcceptsExampleBundle(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-npc-service-bundle.json"))
+	if err != nil {
+		t.Fatalf("read example content bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", strings.NewReader(string(raw)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d for example bundle validation, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode example validation response: %v", err)
+	}
+	if len(got.StaticActors) != 3 || len(got.SpawnGroups) != 1 || len(got.ItemTemplates) != 2 || len(got.InteractionDefinitions) != 3 {
+		t.Fatalf("unexpected canonical example validation response: %+v", got)
 	}
 }
 
