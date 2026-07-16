@@ -83,6 +83,7 @@ The current owned responsibilities are:
 - keep register, move, update, and remove bookkeeping explicit instead of rebuilding occupancy from whole-world scans by default
 - tolerate partial teardown when either the player/static entity index or map bucket has already been cleared first, so cleanup can still remove the remaining index state
 - prune stale same-kind map-bucket ownership for the same entity ID during player/static registration before inserting the new effective-map presence, so reconnect/reclaim repair paths cannot leave ghost occupancy on older maps
+- prune duplicate player map-bucket ownership for the same entity ID during player movement/update before inserting the new effective-map presence, so a surviving stale bucket cannot leave one player occupying two maps after a repair update
 - reject cross-kind player/static collisions even when the opposite-kind primary entity index is missing but its map-bucket ownership survives
 
 This keeps map occupancy as an owned runtime primitive, and the current connected-player / visibility / map-occupancy / static-actor introspection snapshots can now be composed through `internal/worldruntime/scopes.go` instead of bootstrap-local shared-world conversion code.

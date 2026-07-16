@@ -70,23 +70,14 @@ func (m *MapIndex) Update(player PlayerEntity) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	previous, ok := m.byEntityID[player.Entity.ID]
-	if !ok {
-		var found bool
-		previous, found = m.playerMapPresenceLocked(player.Entity.ID)
-		if !found {
+	if _, ok := m.byEntityID[player.Entity.ID]; !ok {
+		if _, found := m.playerMapPresenceLocked(player.Entity.ID); !found {
 			return false
 		}
 	}
 
-	previousMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: previous.Position().MapIndex})
 	nextMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: player.Position().MapIndex})
-	if bucket := m.byMapIndex[previousMapIndex]; bucket != nil {
-		delete(bucket, player.Entity.ID)
-		if len(bucket) == 0 {
-			delete(m.byMapIndex, previousMapIndex)
-		}
-	}
+	m.removePlayerMapPresenceLocked(player.Entity.ID)
 
 	m.byEntityID[player.Entity.ID] = clonePlayerEntity(player)
 	m.effectiveMapByEntityID[player.Entity.ID] = nextMapIndex
@@ -142,17 +133,7 @@ func (m *MapIndex) Remove(entityID uint64) (PlayerEntity, bool) {
 }
 
 func (m *MapIndex) removePlayerMapPresenceLocked(entityID uint64) {
-	mapIndex, ok := m.effectiveMapByEntityID[entityID]
-	if ok {
-		delete(m.effectiveMapByEntityID, entityID)
-		if bucket := m.byMapIndex[mapIndex]; bucket != nil {
-			delete(bucket, entityID)
-			if len(bucket) == 0 {
-				delete(m.byMapIndex, mapIndex)
-			}
-		}
-		return
-	}
+	delete(m.effectiveMapByEntityID, entityID)
 	for mapIndex, bucket := range m.byMapIndex {
 		if _, ok := bucket[entityID]; !ok {
 			continue
@@ -161,7 +142,6 @@ func (m *MapIndex) removePlayerMapPresenceLocked(entityID uint64) {
 		if len(bucket) == 0 {
 			delete(m.byMapIndex, mapIndex)
 		}
-		return
 	}
 }
 

@@ -79,6 +79,38 @@ func TestMapIndexUpdateRepairsEntityIndexWhenMapBucketSurvives(t *testing.T) {
 	}
 }
 
+func TestMapIndexUpdatePrunesDuplicatePlayerMapBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := newPlayerEntity(7, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	if !index.Register(alpha) {
+		t.Fatal("expected map-index registration to succeed")
+	}
+	stale := alpha
+	stale.Character.MapIndex = 77
+	stale.Character.X = 9999
+	stale.Character.Y = 8888
+	index.byMapIndex[77] = map[uint64]PlayerEntity{alpha.Entity.ID: stale}
+
+	updated := alpha
+	updated.Character.MapIndex = 99
+	updated.Character.X = 1700
+	updated.Character.Y = 2800
+	if !index.Update(updated) {
+		t.Fatal("expected player update to prune duplicate map-bucket ownership")
+	}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected old map player bucket to be empty after update, got %+v", characters)
+	}
+	if characters := index.PlayerCharacters(77); len(characters) != 0 {
+		t.Fatalf("expected duplicate stale player bucket to be pruned after update, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(99)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].X != 1700 || characters[0].Y != 2800 {
+		t.Fatalf("expected updated Alpha only in map 99 bucket, got %+v", characters)
+	}
+}
+
 func TestMapIndexRemoveClearsOccupancy(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	alpha := newPlayerEntity(1, entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
