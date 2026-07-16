@@ -1,6 +1,9 @@
 package accountstore
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -414,6 +417,81 @@ func TestFileStoreBackupToCopiesCommittedSnapshots(t *testing.T) {
 	}
 }
 
+func TestFileStoreBackupToWritesDeterministicManifest(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	accounts := []Account{
+		{Login: "zeta", Empire: 3, Characters: []loginticket.Character{{ID: 3, Name: "ZetaWar"}}},
+		{Login: "alpha", Empire: 1, Characters: []loginticket.Character{{ID: 1, Name: "AlphaWar"}, {ID: 2, Name: "AlphaNinja"}}},
+	}
+	for _, account := range accounts {
+		if err := store.Save(account); err != nil {
+			t.Fatalf("save account %s: %v", account.Login, err)
+		}
+	}
+
+	backupDir := filepath.Join(t.TempDir(), "account-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup accounts: %v", err)
+	}
+
+	manifestRaw, err := os.ReadFile(filepath.Join(backupDir, BackupManifestFilename))
+	if err != nil {
+		t.Fatalf("read backup manifest: %v", err)
+	}
+	var manifest BackupManifest
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		t.Fatalf("decode backup manifest: %v", err)
+	}
+	if manifest.Format != BackupManifestFormat {
+		t.Fatalf("unexpected manifest format: got %q want %q", manifest.Format, BackupManifestFormat)
+	}
+	wantSummary := SnapshotSummary{AccountCount: 2, CharacterCount: 3, Logins: []string{"alpha", "zeta"}}
+	if !reflect.DeepEqual(manifest.Summary, wantSummary) {
+		t.Fatalf("unexpected manifest summary: got %#v want %#v", manifest.Summary, wantSummary)
+	}
+	wantLogins := []string{"alpha", "zeta"}
+	gotLogins := make([]string, 0, len(manifest.Files))
+	for _, file := range manifest.Files {
+		gotLogins = append(gotLogins, file.Login)
+		raw, err := os.ReadFile(filepath.Join(backupDir, file.Filename))
+		if err != nil {
+			t.Fatalf("read manifest account file %s: %v", file.Filename, err)
+		}
+		checksum := sha256.Sum256(raw)
+		if gotChecksum := hex.EncodeToString(checksum[:]); gotChecksum != file.SHA256 {
+			t.Fatalf("unexpected checksum for %s: got %s want %s", file.Login, file.SHA256, gotChecksum)
+		}
+		if int64(len(raw)) != file.SizeBytes {
+			t.Fatalf("unexpected size for %s: got %d want %d", file.Login, file.SizeBytes, len(raw))
+		}
+	}
+	if !reflect.DeepEqual(gotLogins, wantLogins) {
+		t.Fatalf("unexpected manifest file order: got %#v want %#v", gotLogins, wantLogins)
+	}
+}
+
+func TestFileStoreRestoreFromIgnoresBackupManifest(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	if err := backup.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backup.dir, BackupManifestFilename), []byte(`{"format":"manual"}`), 0o644); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+
+	restored := NewFileStore(filepath.Join(t.TempDir(), "restored"))
+	if err := restored.RestoreFrom(backup.dir); err != nil {
+		t.Fatalf("restore accounts with manifest: %v", err)
+	}
+	got, err := restored.List()
+	if err != nil {
+		t.Fatalf("list restored accounts: %v", err)
+	}
+	if len(got) != 1 || got[0].Login != "mkmk" {
+		t.Fatalf("unexpected restored accounts: %#v", got)
+	}
+}
+
 func TestFileStoreBackupToRejectsCorruptSourceSnapshot(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	path := store.accountPath("mkmk")
@@ -457,8 +535,20 @@ func TestFileStoreBackupToTreatsMissingSourceAsEmptyBackup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read backup dir: %v", err)
 	}
-	if len(entries) != 0 {
-		t.Fatalf("expected empty backup dir, got %#v", entries)
+	if len(entries) != 1 || entries[0].Name() != BackupManifestFilename {
+		t.Fatalf("expected only backup manifest for missing source backup, got %#v", entries)
+	}
+	manifestRaw, err := os.ReadFile(filepath.Join(backupDir, BackupManifestFilename))
+	if err != nil {
+		t.Fatalf("read backup manifest: %v", err)
+	}
+	var manifest BackupManifest
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		t.Fatalf("decode backup manifest: %v", err)
+	}
+	want := SnapshotSummary{AccountCount: 0, CharacterCount: 0, Logins: []string{}}
+	if !reflect.DeepEqual(manifest.Summary, want) {
+		t.Fatalf("unexpected empty backup manifest summary: got %#v want %#v", manifest.Summary, want)
 	}
 }
 

@@ -2,6 +2,7 @@ package accountstore
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,6 +16,11 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
+)
+
+const (
+	BackupManifestFilename = "account-backup-manifest.json"
+	BackupManifestFormat   = "go-metin2-account-backup-v1"
 )
 
 var (
@@ -39,6 +45,19 @@ type SnapshotSummary struct {
 	AccountCount   int      `json:"account_count"`
 	CharacterCount int      `json:"character_count"`
 	Logins         []string `json:"logins"`
+}
+
+type BackupManifest struct {
+	Format  string               `json:"format"`
+	Summary SnapshotSummary      `json:"summary"`
+	Files   []BackupManifestFile `json:"files"`
+}
+
+type BackupManifestFile struct {
+	Login     string `json:"login"`
+	Filename  string `json:"filename"`
+	SizeBytes int64  `json:"size_bytes"`
+	SHA256    string `json:"sha256"`
 }
 
 func normalizeAccountCharacters(characters []loginticket.Character) []loginticket.Character {
@@ -68,6 +87,9 @@ func (s *FileStore) List() ([]Account, error) {
 
 	accounts := make([]Account, 0, len(entries))
 	for _, entry := range entries {
+		if entry.Name() == BackupManifestFilename {
+			continue
+		}
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
@@ -203,10 +225,41 @@ func (s *FileStore) BackupTo(dstDir string) error {
 			return fmt.Errorf("backup account %q: %w", account.Login, err)
 		}
 	}
+	if err := backup.writeBackupManifest(accounts); err != nil {
+		return err
+	}
 	if err := syncStoreDir(dstDir); err != nil {
 		return fmt.Errorf("sync account backup dir: %w", err)
 	}
 	return nil
+}
+
+func (s *FileStore) writeBackupManifest(accounts []Account) error {
+	manifest := BackupManifest{
+		Format: BackupManifestFormat,
+		Summary: SnapshotSummary{
+			AccountCount: len(accounts),
+			Logins:       make([]string, 0, len(accounts)),
+		},
+		Files: make([]BackupManifestFile, 0, len(accounts)),
+	}
+	for _, account := range accounts {
+		manifest.Summary.Logins = append(manifest.Summary.Logins, account.Login)
+		manifest.Summary.CharacterCount += len(account.Characters)
+		filename := filepath.Base(s.accountPath(account.Login))
+		raw, err := os.ReadFile(filepath.Join(s.dir, filename))
+		if err != nil {
+			return fmt.Errorf("read backup account %q for manifest: %w", account.Login, err)
+		}
+		checksum := sha256.Sum256(raw)
+		manifest.Files = append(manifest.Files, BackupManifestFile{
+			Login:     account.Login,
+			Filename:  filename,
+			SizeBytes: int64(len(raw)),
+			SHA256:    hex.EncodeToString(checksum[:]),
+		})
+	}
+	return writeJSONFileAtomically(s.dir, BackupManifestFilename, manifest, "account backup manifest")
 }
 
 func (s *FileStore) RestoreFrom(srcDir string) error {
@@ -254,6 +307,32 @@ func ensureEmptyDir(path string, nonEmptyErr error, readContext string) error {
 	}
 	if len(entries) != 0 {
 		return nonEmptyErr
+	}
+	return nil
+}
+
+func writeJSONFileAtomically(dir, filename string, value any, context string) error {
+	temp, err := os.CreateTemp(dir, ".account-*.json")
+	if err != nil {
+		return fmt.Errorf("create %s temp file: %w", context, err)
+	}
+	defer func() {
+		_ = temp.Close()
+		_ = os.Remove(temp.Name())
+	}()
+	encoder := json.NewEncoder(temp)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(value); err != nil {
+		return fmt.Errorf("encode %s: %w", context, err)
+	}
+	if err := temp.Sync(); err != nil {
+		return fmt.Errorf("sync %s temp file: %w", context, err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close %s temp file: %w", context, err)
+	}
+	if err := os.Rename(temp.Name(), filepath.Join(dir, filename)); err != nil {
+		return fmt.Errorf("commit %s file: %w", context, err)
 	}
 	return nil
 }
