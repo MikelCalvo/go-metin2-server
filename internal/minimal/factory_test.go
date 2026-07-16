@@ -1856,6 +1856,48 @@ func TestNewGameSessionFactoryItemMovePacketEquipsInventoryItem(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactoryItemMovePacketRejectsIrremovableTemplateUnequipWithoutMutation(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemTemplates := staticItemTemplateStore{snapshot: itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:        0x11223344,
+		Name:        "Fixed Armor",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   inventory.EquipmentSlotBody.String(),
+		Irremovable: true,
+	}}}}
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{}
+	characters[1].Equipment = []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	flow := newStartedGameFlowWithItemStore(t, store, accounts, itemTemplates)
+	bodyPosition := mustEquipmentPosition(t, 0)
+	unequipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{Source: bodyPosition, Destination: itemproto.InventoryPosition(8)})))
+	if err != nil {
+		t.Fatalf("unexpected irremovable unequip packet error: %v", err)
+	}
+	if len(unequipOut) != 0 {
+		t.Fatalf("expected irremovable unequip to fail closed with no frames, got %d", len(unequipOut))
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if !sameItemInstances(account.Characters[1].Equipment, characters[1].Equipment) {
+		t.Fatalf("expected irremovable unequip to leave equipment unchanged, got %#v want %#v", account.Characters[1].Equipment, characters[1].Equipment)
+	}
+	if len(account.Characters[1].Inventory) != 0 {
+		t.Fatalf("expected irremovable unequip to leave inventory empty, got %#v", account.Characters[1].Inventory)
+	}
+}
+
 func TestNewGameSessionFactoryItemMovePacketUnequipsEquipmentItem(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

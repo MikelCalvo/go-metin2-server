@@ -68,8 +68,9 @@ The minimal runtime accepts an item move only when all of these are true:
 17. when an item-template snapshot is explicitly authored/loaded, missing, invalid, or live-source-`vnum`-mismatched template metadata is authoritative and fails closed before equipment mutation;
 18. the template-authored `vnum`, `equip_slot`, selected-character anti flags, and transfer guard flags are fail-closed for both the equipment mutation and any template-backed point side effect, so missing metadata, a mismatched source `vnum`, a mismatched slot, a restricted selected character, or guarded template metadata emits no frames and leaves live/persisted item state unchanged;
 19. applying a template-backed equip point side effect must also fit the bootstrap signed 32-bit `PLAYER_POINT_CHANGE` value range; overflow fails closed before the point effect is committed;
-20. packet unequip succeeds only when the equipment source exists and is not locked, the destination carried slot is empty, and the runtime can encode both touched cells;
-21. equipment-cell equip or unequip requests require `count = 0`; non-zero counted equipment requests fail closed before mutation.
+20. packet unequip through explicitly authored item-template metadata succeeds only when the equipment source exists, is not locked, has a valid template whose `equip_slot` matches the source wear cell, passes selected-character restrictions, is not marked `irremovable`, the destination carried slot is empty, and the runtime can encode both touched cells; missing/invalid template metadata in an authored snapshot, mismatched `vnum`/slot metadata, selected-character restrictions, or `irremovable` metadata fail closed before any equipment, carried-inventory, point, or persistence mutation;
+21. packet unequip with the deterministic missing-file fallback preserves the existing bootstrap fixtures: non-effect, movable fallback equipment may still use the legacy narrow no-template unequip path, while fallback templates with point effects or `irremovable` metadata are enforced through the template-backed path;
+22. equipment-cell equip or unequip requests require `count = 0`; non-zero counted equipment requests fail closed before mutation.
 
 Rejected requests fail closed and emit no frames.
 

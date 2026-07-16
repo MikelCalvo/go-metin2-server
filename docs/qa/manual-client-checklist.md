@@ -340,12 +340,13 @@ Expected result:
 - [ ] Start with a known template-backed equipped item whose authored `equip_slot` matches the worn cell
 - [ ] Confirm the item template has the current narrow `equip_effect` point metadata
 - [ ] Drag the worn item back into an empty carried inventory cell
+- [ ] Repeat with otherwise matching equipment metadata marked `irremovable`
 - [ ] Repeat with a corrupt/disposable fixture where the removal metadata does not match the just-removed item `vnum`
 
 Expected result:
 - allowed unequip emits the self-only equipment clear, carried-cell set, template-authored negative `PLAYER_POINT_CHANGE`, and appearance update
 - the point-effect removal is backed by the just-removed item instance, so it still subtracts the authored delta after the item has moved out of the equipment slice
-- mismatched or malformed removal metadata fails closed with no point change and no committed inventory/equipment/persistence mutation
+- `irremovable`, mismatched, or malformed removal metadata fails closed with no point change and no committed inventory/equipment/persistence mutation
 
 ### 4.5.10 Merchant buy/sell template restrictions (`SHOP BUY` / `SHOP SELL2`)
 

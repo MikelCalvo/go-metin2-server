@@ -154,7 +154,7 @@ Already present:
 - item move, swap, split, and merge cases,
 - stack compatibility checks and max-stack guards for current slices,
 - locked source/target and duplicate occupancy rejection paths,
-- template-backed equip/unequip point-effect application and removal guards,
+- template-backed equip/unequip point-effect application and removal guards, including authored `irremovable` equipment unequip rejection,
 - consumable item use,
 - `ITEM_USE_TO_ITEM` stack merge behavior,
 - quickslot add/delete/swap persistence, including type-scoped retarget cleanup when an item/skill/command tuple is rebound to a new bar position,

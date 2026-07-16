@@ -2435,6 +2435,49 @@ func TestRuntimeEquipItemWithTemplateRejectsTransferGuardsWithoutMutatingState(t
 	}
 }
 
+func TestRuntimeUnequipItemWithTemplateRejectsIrremovableWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "IrremovableGuard",
+		Inventory: []inventory.ItemInstance{},
+		Equipment: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "irremovable-guard", CharacterIndex: 0})
+	template := itemcatalog.Template{Vnum: 0x11223344, Name: "Fixed Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), Irremovable: true}
+
+	if item, ok := runtime.UnequipItemWithTemplate(inventory.EquipmentSlotBody, 8, template); ok {
+		t.Fatalf("expected irremovable authored equipment to reject unequip, got %#v", item)
+	}
+	if got := runtime.LiveEquipment(); !reflect.DeepEqual(got, character.Equipment) {
+		t.Fatalf("expected equipment unchanged after irremovable template unequip, got %#v want %#v", got, character.Equipment)
+	}
+	if got := runtime.LiveInventory(); len(got) != 0 {
+		t.Fatalf("expected inventory unchanged after irremovable template unequip, got %#v", got)
+	}
+}
+
+func TestRuntimeUnequipItemWithTemplateAcceptsMovableMatchingTemplate(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "IrremovableGuard",
+		Inventory: []inventory.ItemInstance{},
+		Equipment: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "irremovable-guard", CharacterIndex: 0})
+	template := itemcatalog.Template{Vnum: 0x11223344, Name: "Movable Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+
+	item, ok := runtime.UnequipItemWithTemplate(inventory.EquipmentSlotBody, 8, template)
+	if !ok {
+		t.Fatal("expected movable matching authored equipment template to allow unequip")
+	}
+	if item.Vnum != 0x11223344 || item.Equipped || item.Slot != 8 || item.EquipSlot != inventory.EquipmentSlotNone {
+		t.Fatalf("unexpected inventory item after template unequip: %#v", item)
+	}
+	if got := runtime.LiveEquipment(); len(got) != 0 {
+		t.Fatalf("expected equipment to be empty after template unequip, got %#v", got)
+	}
+}
+
 func TestRuntimeApplyEquipTemplateEffectRequiresMatchingEquippedItem(t *testing.T) {
 	template := itemcatalog.Template{
 		Vnum:        12200,

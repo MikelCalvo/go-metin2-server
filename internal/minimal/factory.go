@@ -2289,13 +2289,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: false}
 						}
 						previousSelected := selectedPlayer.LiveCharacter()
-						template, hasEquipTemplate := runtime.resolveRuntimeUnequipTemplate(selectedPlayer, equipSlot)
-						inventoryItem, ok := selectedPlayer.UnequipItem(equipSlot, toSlot)
+						template, hasUnequipTemplate, ok := runtime.resolveRuntimeUnequipTemplate(selectedPlayer, equipSlot)
+						if !ok {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						var inventoryItem inventory.ItemInstance
+						if hasUnequipTemplate {
+							inventoryItem, ok = selectedPlayer.UnequipItemWithTemplate(equipSlot, toSlot, template)
+						} else {
+							inventoryItem, ok = selectedPlayer.UnequipItem(equipSlot, toSlot)
+						}
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						var pointChange *player.PointChangeResult
-						if hasEquipTemplate {
+						if hasUnequipTemplate {
 							result, ok := selectedPlayer.RemoveEquipTemplateEffectFromItem(template, equipSlot, inventoryItem)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -2565,13 +2573,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
-						template, hasEquipTemplate := runtime.resolveRuntimeUnequipTemplate(selectedPlayer, equipSlot)
-						inventoryItem, ok := selectedPlayer.UnequipItem(equipSlot, inventory.SlotIndex(packet.Destination.Cell))
+						template, hasUnequipTemplate, ok := runtime.resolveRuntimeUnequipTemplate(selectedPlayer, equipSlot)
+						if !ok {
+							return gameflow.ItemMoveResult{Accepted: false}
+						}
+						var inventoryItem inventory.ItemInstance
+						if hasUnequipTemplate {
+							inventoryItem, ok = selectedPlayer.UnequipItemWithTemplate(equipSlot, inventory.SlotIndex(packet.Destination.Cell), template)
+						} else {
+							inventoryItem, ok = selectedPlayer.UnequipItem(equipSlot, inventory.SlotIndex(packet.Destination.Cell))
+						}
 						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						var pointChange *player.PointChangeResult
-						if hasEquipTemplate {
+						if hasUnequipTemplate {
 							result, ok := selectedPlayer.RemoveEquipTemplateEffectFromItem(template, equipSlot, inventoryItem)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -4996,17 +5012,27 @@ func (r *gameRuntime) resolveRuntimeEquipTemplate(selectedPlayer *player.Runtime
 	return itemcatalog.Template{}, false, false
 }
 
-func (r *gameRuntime) resolveRuntimeUnequipTemplate(selectedPlayer *player.Runtime, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool) {
+func (r *gameRuntime) resolveRuntimeUnequipTemplate(selectedPlayer *player.Runtime, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool, bool) {
 	if r == nil || selectedPlayer == nil || !equipSlot.Valid() {
-		return itemcatalog.Template{}, false
+		return itemcatalog.Template{}, false, false
 	}
 	for _, item := range selectedPlayer.LiveEquipment() {
 		if !item.Equipped || item.EquipSlot != equipSlot {
 			continue
 		}
-		return r.resolveRuntimeTemplateBackedEquipEffect(item.Vnum, equipSlot)
+		template, ok := r.itemTemplates[item.Vnum]
+		if !ok || !itemcatalog.ValidTemplate(template) {
+			return itemcatalog.Template{}, false, !r.itemTemplatesAuthored
+		}
+		if template.EquipSlot == "" {
+			return itemcatalog.Template{}, false, !r.itemTemplatesAuthored
+		}
+		if template.EquipEffect == nil && !template.Irremovable && !r.itemTemplatesAuthored {
+			return itemcatalog.Template{}, false, true
+		}
+		return template, true, true
 	}
-	return itemcatalog.Template{}, false
+	return itemcatalog.Template{}, false, false
 }
 
 func (r *gameRuntime) resolveRuntimeTemplateBackedEquipEffect(vnum uint32, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool) {

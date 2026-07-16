@@ -823,6 +823,17 @@ func (r *Runtime) UnequipItem(equipSlot inventory.EquipmentSlot, to inventory.Sl
 	return item, true
 }
 
+func (r *Runtime) UnequipItemWithTemplate(equipSlot inventory.EquipmentSlot, to inventory.SlotIndex, template itemcatalog.Template) (inventory.ItemInstance, bool) {
+	if !templateAuthoredForEquipSlot(template, equipSlot) || !r.CanUseTemplate(template) || template.Irremovable {
+		return inventory.ItemInstance{}, false
+	}
+	equipIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
+	if equipIndex < 0 || r.liveEquipment[equipIndex].Vnum != template.Vnum {
+		return inventory.ItemInstance{}, false
+	}
+	return r.UnequipItem(equipSlot, to)
+}
+
 func (r *Runtime) ApplyEquipTemplateEffect(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) (PointChangeResult, bool) {
 	if r == nil || !templateAuthoredForEquipSlot(template, equipSlot) || template.EquipEffect == nil {
 		return PointChangeResult{}, false
