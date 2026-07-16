@@ -178,6 +178,41 @@ func TestFileStoreSaveThenLoadRoundTripPreservesClientVisibleUseFlagMetadata(t *
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesStorageAndShopAntiFlagMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:        71124,
+		Name:        "Protected Storage Charm",
+		Stackable:   false,
+		MaxCount:    1,
+		AntiSave:    true,
+		AntiPKDrop:  true,
+		AntiMyShop:  true,
+		AntiSafebox: true,
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with storage/shop anti-flag metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with storage/shop anti-flag metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with storage/shop anti-flag metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with storage/shop anti-flag metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 71124,\n      \"name\": \"Protected Storage Charm\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"anti_save\": true,\n      \"anti_pk_drop\": true,\n      \"anti_myshop\": true,\n      \"anti_safebox\": true\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with storage/shop anti-flag metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

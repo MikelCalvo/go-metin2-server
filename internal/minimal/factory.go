@@ -4317,6 +4317,18 @@ func bootstrapItemAntiFlags(template itemcatalog.Template) uint32 {
 	if template.AntiGet {
 		flags |= itemproto.AntiFlagGet
 	}
+	if template.AntiSave {
+		flags |= itemproto.AntiFlagSave
+	}
+	if template.AntiPKDrop {
+		flags |= itemproto.AntiFlagPKDrop
+	}
+	if template.AntiMyShop {
+		flags |= itemproto.AntiFlagMyShop
+	}
+	if template.AntiSafebox {
+		flags |= itemproto.AntiFlagSafebox
+	}
 	return flags
 }
 

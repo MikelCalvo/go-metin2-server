@@ -221,7 +221,7 @@ Run this only with a disposable QA character and known seeded item-template data
 ### 4.5.1 Consume a carried item (`ITEM_USE`)
 
 - [ ] Put a known template-backed consumable in one carried inventory cell
-- [ ] If packet logging is available, confirm the initial `ITEM_SET` for template-authored fixtures carries the owned item `flags` bits for `refineable` / `save` / `stackable` / `sell_count_per_gold` / `slow_query` / `rare` / `unique` / `make_count` / `irremovable` / `confirm_when_use` / `quest_use` / `quest_use_multiple` / `log` / `applicable`, carries the owned `anti_flags` bits for `anti_get`, transfer/job/sex/empire guards, projects authored socket/attribute display arrays and the template `highlight` byte, and leaves unowned bits zero
+- [ ] If packet logging is available, confirm the initial `ITEM_SET` for template-authored fixtures carries the owned item `flags` bits for `refineable` / `save` / `stackable` / `sell_count_per_gold` / `slow_query` / `rare` / `unique` / `make_count` / `irremovable` / `confirm_when_use` / `quest_use` / `quest_use_multiple` / `log` / `applicable`, carries the owned `anti_flags` bits for `anti_get`, transfer/job/sex/empire guards, storage/shop metadata bits (`anti_save`, `anti_pk_drop`, `anti_myshop`, `anti_safebox`), projects authored socket/attribute display arrays and the template `highlight` byte, and leaves unowned bits zero
 - [ ] Bind that carried cell to an item quickslot and also keep an unrelated skill/command quickslot that uses the same byte slot value if the client setup allows it
 - [ ] Use the item once from inventory or the quickslot
 

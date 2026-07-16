@@ -55,6 +55,10 @@ type Template struct {
 	AntiEmpireA      bool            `json:"anti_empire_a,omitempty"`
 	AntiEmpireB      bool            `json:"anti_empire_b,omitempty"`
 	AntiEmpireC      bool            `json:"anti_empire_c,omitempty"`
+	AntiSave         bool            `json:"anti_save,omitempty"`
+	AntiPKDrop       bool            `json:"anti_pk_drop,omitempty"`
+	AntiMyShop       bool            `json:"anti_myshop,omitempty"`
+	AntiSafebox      bool            `json:"anti_safebox,omitempty"`
 	MinLevel         uint8           `json:"min_level,omitempty"`
 	EquipSlot        string          `json:"equip_slot,omitempty"`
 	Sockets          SocketValues    `json:"sockets,omitempty"`
@@ -106,6 +110,10 @@ type templateJSON struct {
 	AntiEmpireA      bool             `json:"anti_empire_a,omitempty"`
 	AntiEmpireB      bool             `json:"anti_empire_b,omitempty"`
 	AntiEmpireC      bool             `json:"anti_empire_c,omitempty"`
+	AntiSave         bool             `json:"anti_save,omitempty"`
+	AntiPKDrop       bool             `json:"anti_pk_drop,omitempty"`
+	AntiMyShop       bool             `json:"anti_myshop,omitempty"`
+	AntiSafebox      bool             `json:"anti_safebox,omitempty"`
 	MinLevel         uint8            `json:"min_level,omitempty"`
 	EquipSlot        string           `json:"equip_slot,omitempty"`
 	Sockets          *SocketValues    `json:"sockets,omitempty"`
@@ -149,6 +157,10 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		AntiEmpireA:      template.AntiEmpireA,
 		AntiEmpireB:      template.AntiEmpireB,
 		AntiEmpireC:      template.AntiEmpireC,
+		AntiSave:         template.AntiSave,
+		AntiPKDrop:       template.AntiPKDrop,
+		AntiMyShop:       template.AntiMyShop,
+		AntiSafebox:      template.AntiSafebox,
 		MinLevel:         template.MinLevel,
 		EquipSlot:        template.EquipSlot,
 		UseEffect:        template.UseEffect,
@@ -204,6 +216,10 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		AntiEmpireA:      jsonTemplate.AntiEmpireA,
 		AntiEmpireB:      jsonTemplate.AntiEmpireB,
 		AntiEmpireC:      jsonTemplate.AntiEmpireC,
+		AntiSave:         jsonTemplate.AntiSave,
+		AntiPKDrop:       jsonTemplate.AntiPKDrop,
+		AntiMyShop:       jsonTemplate.AntiMyShop,
+		AntiSafebox:      jsonTemplate.AntiSafebox,
 		MinLevel:         jsonTemplate.MinLevel,
 		EquipSlot:        jsonTemplate.EquipSlot,
 		UseEffect:        jsonTemplate.UseEffect,
