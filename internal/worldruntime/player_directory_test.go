@@ -144,6 +144,22 @@ func TestPlayerDirectoryLookupPrunesStaleVIDAndNameIndexes(t *testing.T) {
 	}
 }
 
+func TestPlayerDirectoryRemovePrunesStaleVIDAndNameIndexes(t *testing.T) {
+	directory := NewPlayerDirectory()
+	directory.entityIDByVID[0x02040101] = 99
+	directory.entityIDByName["Ghost"] = 99
+
+	if player, ok := directory.Remove(99); ok {
+		t.Fatalf("expected remove to report missing player entry, got %+v", player)
+	}
+	if _, exists := directory.entityIDByVID[0x02040101]; exists {
+		t.Fatal("expected stale VID index to be pruned during remove")
+	}
+	if _, exists := directory.entityIDByName["Ghost"]; exists {
+		t.Fatal("expected stale exact-name index to be pruned during remove")
+	}
+}
+
 func TestPlayerDirectoryLookupsDeepCloneItemState(t *testing.T) {
 	registry := NewEntityRegistry()
 	alphaCharacter := entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100)

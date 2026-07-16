@@ -66,7 +66,7 @@ The current owned responsibilities are:
 - index connected player entities by client-visible `VID`
 - index connected player entities by exact character name
 - keep deterministic player snapshot output for higher-level scope helpers
-- prune stale secondary `VID` / name index entries when the primary entity entry is already gone, so partial teardown does not leave ghost lookup ownership that can block reconnect or replacement registration
+- prune stale secondary `VID` / name index entries when the primary entity entry is already gone, including lookup and removal paths, so partial teardown does not leave ghost lookup ownership that can block reconnect, replacement registration, or later cleanup
 
 The stale-index pruning rule is deliberately narrow: a secondary lookup whose primary entity still exists remains authoritative and still blocks conflicting ownership; only orphaned secondary pointers are reclaimed.
 

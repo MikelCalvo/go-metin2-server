@@ -82,11 +82,11 @@ func (d *PlayerDirectory) Remove(entityID uint64) (PlayerEntity, bool) {
 
 	player, ok := d.byEntityID[entityID]
 	if !ok {
+		d.removeSecondaryIndexesForEntityIDLocked(entityID)
 		return PlayerEntity{}, false
 	}
 	delete(d.byEntityID, entityID)
-	delete(d.entityIDByVID, player.Entity.VID)
-	delete(d.entityIDByName, player.Entity.Name)
+	d.removeSecondaryIndexesForEntityIDLocked(entityID)
 	return player, true
 }
 
@@ -161,6 +161,22 @@ func clonePlayerEntity(player PlayerEntity) PlayerEntity {
 
 func validPlayerDirectoryEntity(player PlayerEntity) bool {
 	return player.Entity.ID != 0 && player.Entity.Kind == EntityKindPlayer && player.Entity.VID != 0 && player.Entity.Name != ""
+}
+
+func (d *PlayerDirectory) removeSecondaryIndexesForEntityIDLocked(entityID uint64) {
+	if d == nil || entityID == 0 {
+		return
+	}
+	for vid, indexedEntityID := range d.entityIDByVID {
+		if indexedEntityID == entityID {
+			delete(d.entityIDByVID, vid)
+		}
+	}
+	for name, indexedEntityID := range d.entityIDByName {
+		if indexedEntityID == entityID {
+			delete(d.entityIDByName, name)
+		}
+	}
 }
 
 func (d *PlayerDirectory) conflictingEntityIDByVIDLocked(vid uint32, entityID uint64) bool {
