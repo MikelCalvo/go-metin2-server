@@ -1,8 +1,10 @@
 package contentbundle
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -32,6 +34,36 @@ func testMerchantItemTemplates() []itemcatalog.Template {
 	return []itemcatalog.Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+	}
+}
+
+func TestBootstrapNPCServiceExampleBundleIsCanonicalAndValid(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve contentbundle test path")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(root, "docs", "examples", "bootstrap-npc-service-bundle.json"))
+	if err != nil {
+		t.Fatalf("read bootstrap NPC service example bundle: %v", err)
+	}
+
+	var decoded Bundle
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&decoded); err != nil {
+		t.Fatalf("decode bootstrap NPC service example bundle: %v", err)
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		t.Fatal("bootstrap NPC service example bundle has trailing JSON")
+	}
+
+	canonical, err := Canonicalize(decoded)
+	if err != nil {
+		t.Fatalf("canonicalize bootstrap NPC service example bundle: %v", err)
+	}
+	if !reflect.DeepEqual(canonical, decoded) {
+		t.Fatalf("bootstrap NPC service example bundle is not canonical:\n got: %#v\nwant: %#v", decoded, canonical)
 	}
 }
 
