@@ -5232,6 +5232,37 @@ func TestGameSessionFlowRejectsInfoChatAfterDelayedRetaliationReachesOwnerHPFloo
 	}
 }
 
+func TestGameSessionFlowRejectsNonTalkingSlashRestartAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeInfo, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected non-talking /restart_here error: %v", err)
+	}
+	if len(restartOut) != 0 {
+		t.Fatalf("expected non-talking /restart_here to fail closed at zero HP, got %d frames", len(restartOut))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected non-talking /restart_here to queue no peer frames, got %d", len(queued))
+	}
+
+	connected := runtime.ConnectedCharacters()
+	var ownerSnapshot *ConnectedCharacterSnapshot
+	for i := range connected {
+		if connected[i].Name == owner.Name {
+			ownerSnapshot = &connected[i]
+			break
+		}
+	}
+	if ownerSnapshot == nil || !ownerSnapshot.Dead {
+		t.Fatalf("expected non-talking /restart_here to leave owner dead, got %+v in %+v", ownerSnapshot, connected)
+	}
+}
+
 func TestGameSessionFlowRejectsQuickslotMutationsAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
 	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
 	defer closeSessionFlow(t, ownerFlow)

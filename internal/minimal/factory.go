@@ -2351,6 +2351,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 
 					if command, ok := slashGameCommand(packet.Message); ok {
+						if packet.Type != chatproto.ChatTypeTalking {
+							return gameflow.ChatResult{Accepted: false}
+						}
 						leaveSharedWorld := func() {
 							if !joinedSharedWorld || sharedWorldID == 0 {
 								return

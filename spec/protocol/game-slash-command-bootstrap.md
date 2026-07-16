@@ -27,6 +27,7 @@ They are **not** echoed back as `CHAT_TYPE_TALKING`.
 
 The current parser is deliberately exact for the owned command family:
 - the input must contain exactly one slash command token
+- the packet must be normal talking chat (`CHAT_TYPE_TALKING`); the same slash-looking text in `INFO`, `PARTY`, `GUILD`, `SHOUT`, or any other chat subtype is not a command trigger
 - `/quit`, `/logout`, `/phase_select`, `/restart_here`, and `/restart_town` are accepted as standalone tokens only
 - argument-bearing forms such as `/restart_town 2` or `/quit now` stay outside the owned slash-command ingress and fall through to the ordinary chat policy instead of partially executing the leading token
 
@@ -60,6 +61,7 @@ The current parser is deliberately exact for the owned command family:
 
 ### `/restart_here`
 - accepted only while the session is in `GAME`, still owns a live shared-world player entry, and the selected live runtime is already at the current retaliation-owned `0`-HP floor
+- accepted only from the normal talking-chat command ingress; slash-looking text in any other chat subtype fails closed and must not recover the dead owner
 - otherwise fails closed with no normal chat echo
 - keeps the session in `GAME`
 - rebuilds the selected live runtime from the persisted account snapshot while preserving the current in-world position
