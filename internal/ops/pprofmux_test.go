@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -44,6 +45,100 @@ func TestPprofIndexIsReachable(t *testing.T) {
 		t.Fatalf("expected pprof index page, got %q", rec.Body.String())
 	}
 }
+
+func TestLocalAccountStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
+	validator := &stubAccountStoreValidator{summary: map[string]any{"account_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}}}
+	mux := RegisterLocalAccountStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validator to be called once, got %d", validator.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"account_count":2`, `"character_count":3`, `"logins":["alpha","zeta"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalAccountStoreValidateEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	validator := &stubAccountStoreValidator{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/validate", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalAccountStoreValidateEndpointRejectsWrongMethod(t *testing.T) {
+	validator := &stubAccountStoreValidator{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalAccountStoreValidateEndpointReportsValidationFailure(t *testing.T) {
+	validator := &stubAccountStoreValidator{err: errStubAccountStoreInvalid}
+	mux := RegisterLocalAccountStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validator to be called once, got %d", validator.calls)
+	}
+}
+
+type stubAccountStoreValidator struct {
+	summary any
+	err     error
+	calls   int
+}
+
+func (s *stubAccountStoreValidator) Validate() (any, error) {
+	s.calls++
+	return s.summary, s.err
+}
+
+var errStubAccountStoreInvalid = errors.New("account store invalid")
 
 func TestLocalNoticeEndpointQueuesBroadcastForLoopbackPost(t *testing.T) {
 	broadcaster := &stubNoticeBroadcaster{delivered: 2}

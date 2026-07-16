@@ -35,6 +35,12 @@ type Account struct {
 	Characters []loginticket.Character `json:"characters"`
 }
 
+type SnapshotSummary struct {
+	AccountCount   int      `json:"account_count"`
+	CharacterCount int      `json:"character_count"`
+	Logins         []string `json:"logins"`
+}
+
 func normalizeAccountCharacters(characters []loginticket.Character) []loginticket.Character {
 	cloned := loginticket.CloneCharacters(characters)
 	for i := range cloned {
@@ -79,6 +85,22 @@ func (s *FileStore) List() ([]Account, error) {
 		return strings.ToLower(accounts[i].Login) < strings.ToLower(accounts[j].Login)
 	})
 	return accounts, nil
+}
+
+func (s *FileStore) Validate() (SnapshotSummary, error) {
+	accounts, err := s.List()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	summary := SnapshotSummary{
+		AccountCount: len(accounts),
+		Logins:       make([]string, 0, len(accounts)),
+	}
+	for _, account := range accounts {
+		summary.Logins = append(summary.Logins, account.Login)
+		summary.CharacterCount += len(account.Characters)
+	}
+	return summary, nil
 }
 
 type FileStore struct {

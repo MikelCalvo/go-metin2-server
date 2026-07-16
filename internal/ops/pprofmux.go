@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	stdpprof "net/http/pprof"
@@ -97,6 +98,31 @@ func NewPprofMuxWithLocalRelocation(serviceName string, broadcastNotice func(str
 
 func NewPprofMuxWithLocalRuntimeSnapshot(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, connectedCharacters func() any) *http.ServeMux {
 	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, broadcastNotice, relocateCharacter, nil, nil, connectedCharacters, nil, nil)
+}
+
+func RegisterLocalAccountStoreValidateEndpoint(mux *http.ServeMux, validate func() (any, error)) *http.ServeMux {
+	if mux == nil || validate == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/account-store/validate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		summary, err := validate()
+		if err != nil {
+			slog.Warn("local account store validation failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
 }
 
 func RegisterLocalRuntimeConfigEndpoint(mux *http.ServeMux, runtimeConfig func() any) *http.ServeMux {

@@ -212,6 +212,7 @@ type gameRuntime struct {
 	sessionFactory          service.SessionFactory
 	sharedWorld             *sharedWorldRegistry
 	staticStore             staticstore.Store
+	accountStore            accountstore.Store
 	itemStore               itemcatalog.Store
 	interactionStore        interactionstore.Store
 	itemTemplates           map[uint32]itemcatalog.Template
@@ -265,6 +266,19 @@ func (r *gameRuntime) BroadcastNotice(message string) int {
 		return 0
 	}
 	return r.sharedWorld.EnqueueSystemNotice(message)
+}
+
+func (r *gameRuntime) ValidateAccountStore() (accountstore.SnapshotSummary, error) {
+	if r == nil || r.accountStore == nil {
+		return accountstore.SnapshotSummary{Logins: []string{}}, nil
+	}
+	validator, ok := r.accountStore.(interface {
+		Validate() (accountstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return accountstore.SnapshotSummary{}, fmt.Errorf("account store validation is not supported")
+	}
+	return validator.Validate()
 }
 
 func (r *gameRuntime) flushReadyStaticActorRespawns() {
@@ -832,6 +846,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 	runtime := &gameRuntime{
 		sharedWorld:          sharedWorld,
 		staticStore:          staticActors,
+		accountStore:         accounts,
 		itemStore:            items,
 		interactionStore:     interactions,
 		liveCharactersByName: make(map[string]liveCharacterRegistration),

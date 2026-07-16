@@ -60,6 +60,10 @@ func main() {
 		func() any { return gameRuntime.CharacterVisibility() },
 		func() any { return gameRuntime.MapOccupancy() },
 	)
+	opsHandler = ops.RegisterLocalAccountStoreValidateEndpoint(
+		opsHandler,
+		func() (any, error) { return gameRuntime.ValidateAccountStore() },
+	)
 	opsHandler = ops.RegisterLocalRuntimeConfigEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.RuntimeConfigSnapshot() },

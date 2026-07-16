@@ -326,6 +326,57 @@ func TestFileStoreListRejectsFilenameLoginMismatch(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateReportsDeterministicSnapshotSummary(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	accounts := []Account{
+		{Login: "zeta", Empire: 3, Characters: []loginticket.Character{{ID: 3, Name: "ZetaWar"}, {ID: 4, Name: "ZetaNinja"}}},
+		{Login: "alpha", Empire: 1, Characters: []loginticket.Character{{ID: 1, Name: "AlphaWar"}}},
+	}
+	for _, account := range accounts {
+		if err := store.Save(account); err != nil {
+			t.Fatalf("save %s: %v", account.Login, err)
+		}
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate account store: %v", err)
+	}
+	want := SnapshotSummary{AccountCount: 2, CharacterCount: 3, Logins: []string{"alpha", "zeta"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateTreatsMissingStoreAsEmpty(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing"))
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate missing account store: %v", err)
+	}
+	want := SnapshotSummary{AccountCount: 0, CharacterCount: 0, Logins: []string{}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected empty validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateFailsClosedOnCorruptSnapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	path := store.accountPath("mkmk")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create store dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"login":"mkmk","empire":2,"characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt account: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for corrupt account store validation, got %v", err)
+	}
+}
+
 func TestFileStoreBackupToCopiesCommittedSnapshots(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	accounts := []Account{
