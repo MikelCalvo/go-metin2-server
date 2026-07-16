@@ -3342,6 +3342,119 @@ func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliati
 	}
 }
 
+func TestNewGameSessionFactoryPracticeMobServerOriginRetaliationTicksUntilOwnerFloorAndClearsTarget(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ServerRetaliationOwner", 0x01030105, 0x02040105, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 3
+	issuePeerTicket(t, store, "server-retaliation-owner", 0x15151515, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000502, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_alpha",
+		Name:          "PracticeMobAlpha",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "server-retaliation-owner", 0x15151515)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(enterOut))
+	}
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected combat target error before server-origin retaliation floor test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before server-origin retaliation floor test, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected first owner attack before server-origin retaliation floor: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected first owner attack to emit target refresh and immediate retaliation, got %d", len(attackOut))
+	}
+	firstPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode first immediate retaliation point-change: %v", err)
+	}
+	if firstPoint.Type != bootstrapPlayerPointType || firstPoint.Amount != -1 || firstPoint.Value != 2 {
+		t.Fatalf("expected first immediate retaliation to lower owner HP to 2, got %+v", firstPoint)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	firstQueued := flushServerFrames(t, flow)
+	if len(firstQueued) != 1 {
+		t.Fatalf("expected first delayed server-origin retaliation point-change, got %d frames", len(firstQueued))
+	}
+	secondPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, firstQueued[0]))
+	if err != nil {
+		t.Fatalf("decode first delayed server-origin retaliation point-change: %v", err)
+	}
+	if secondPoint.Type != bootstrapPlayerPointType || secondPoint.Amount != -1 || secondPoint.Value != 1 {
+		t.Fatalf("expected first delayed server-origin retaliation to lower owner HP to 1, got %+v", secondPoint)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	floorQueued := flushServerFrames(t, flow)
+	if len(floorQueued) != 3 {
+		t.Fatalf("expected owner-floor retaliation to emit point-change, player dead, and target clear, got %d frames", len(floorQueued))
+	}
+	floorPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, floorQueued[0]))
+	if err != nil {
+		t.Fatalf("decode owner-floor server-origin retaliation point-change: %v", err)
+	}
+	if floorPoint.Type != bootstrapPlayerPointType || floorPoint.Amount != -1 || floorPoint.Value != 0 {
+		t.Fatalf("expected owner-floor server-origin retaliation to lower owner HP to 0, got %+v", floorPoint)
+	}
+	ownerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, floorQueued[1]))
+	if err != nil {
+		t.Fatalf("decode owner-floor dead frame: %v", err)
+	}
+	if ownerDead.VID != owner.VID {
+		t.Fatalf("expected owner-floor dead frame for owner %#08x, got %#08x", owner.VID, ownerDead.VID)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, floorQueued[2]))
+	if err != nil {
+		t.Fatalf("decode owner-floor target clear frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected owner-floor target clear, got %+v", clearTarget)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if staleQueued := flushServerFrames(t, flow); len(staleQueued) != 0 {
+		t.Fatalf("expected owner-floor retaliation to clear further pending server-origin retaliation, got %d frames", len(staleQueued))
+	}
+	postFloorAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor attack dispatch error: %v", err)
+	}
+	if len(postFloorAttack) != 0 {
+		t.Fatalf("expected post-floor attack to fail closed after target clear, got %d frames", len(postFloorAttack))
+	}
+}
+
 func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeReplaysDeadTrainingDummyVisibility(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	killer := peerVisibilityCharacter("Killer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
