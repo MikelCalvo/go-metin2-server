@@ -284,6 +284,9 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 			return s.rollbackRestoreFailure(committed, fmt.Errorf("restore account %q: %w", account.Login, err))
 		}
 	}
+	if err := s.writeBackupManifest(accounts); err != nil {
+		return s.rollbackRestoreFailure(committed, err)
+	}
 	if err := syncStoreDir(s.dir); err != nil {
 		return s.rollbackRestoreFailure(committed, fmt.Errorf("sync account restore dir: %w", err))
 	}
@@ -296,6 +299,9 @@ func (s *FileStore) rollbackRestoreFailure(accounts []Account, restoreErr error)
 		if err := os.Remove(s.accountPath(account.Login)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			rollbackErrs = append(rollbackErrs, fmt.Errorf("remove restored account %q: %w", account.Login, err))
 		}
+	}
+	if err := os.Remove(filepath.Join(s.dir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove restored backup manifest: %w", err))
 	}
 	if err := syncStoreDir(s.dir); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync account restore rollback dir: %w", err))

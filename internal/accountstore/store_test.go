@@ -679,6 +679,17 @@ func TestFileStoreRestoreFromCopiesValidatedBackupIntoEmptyStore(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(restoreDir, ".account-crashed.json")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected crash temp file to be omitted from restore, stat err=%v", err)
 	}
+	if _, err := os.Stat(filepath.Join(restoreDir, BackupManifestFilename)); err != nil {
+		t.Fatalf("expected restored account store to include a fresh backup manifest: %v", err)
+	}
+	validatedSummary, err := NewFileStore(filepath.Join(t.TempDir(), "restore-preflight-target")).ValidateBackupFrom(restoreDir)
+	if err != nil {
+		t.Fatalf("expected restored account store to be usable as a validated backup source: %v", err)
+	}
+	wantSummary := SnapshotSummary{AccountCount: 2, CharacterCount: 2, Logins: []string{"Beta", "mkmk"}}
+	if !reflect.DeepEqual(validatedSummary, wantSummary) {
+		t.Fatalf("unexpected restored backup validation summary: got %#v want %#v", validatedSummary, wantSummary)
+	}
 }
 
 func TestFileStoreRestoreFromRejectsNonEmptyDestination(t *testing.T) {
