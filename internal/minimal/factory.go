@@ -1731,7 +1731,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
-			frames, err := itemDropResultFrames(previousSelected, result, droppedItem)
+			frames, err := itemDropResultFramesWithTemplates(previousSelected, result, droppedItem, runtime.itemTemplates)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -4024,6 +4024,10 @@ func itemDropTemplateForSlot(templates map[uint32]itemcatalog.Template, characte
 }
 
 func itemDropResultFrames(character loginticket.Character, result inventory.MoveResult, droppedItem inventory.ItemInstance) ([][]byte, error) {
+	return itemDropResultFramesWithTemplates(character, result, droppedItem, nil)
+}
+
+func itemDropResultFramesWithTemplates(character loginticket.Character, result inventory.MoveResult, droppedItem inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
 	if !result.Changed {
 		return nil, nil
 	}
@@ -4033,7 +4037,7 @@ func itemDropResultFrames(character loginticket.Character, result inventory.Move
 	}
 	frames := make([][]byte, 0, 2)
 	if result.FromOccupied {
-		updateFrame, err := encodeBootstrapItemUpdateFrame(position, result.FromItem)
+		updateFrame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, result.FromItem, templates)
 		if err != nil {
 			return nil, err
 		}

@@ -291,6 +291,58 @@ func TestGameRuntimeItemDrop2PartialStackKeepsSourceItemQuickslots(t *testing.T)
 	}
 }
 
+func TestGameRuntimeItemDrop2PartialStackRefreshCarriesTemplateDisplayMetadata(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DropDisplayAttrs", 0x0103019e, 0x0204019e, 1250, 2250, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1030, Vnum: 27005, Count: 5, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "drop-display-attrs", 0x9e9e9e9e, owner)
+	if err := accounts.Save(accountstore.Account{Login: "drop-display-attrs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed display-metadata partial drop owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27005,
+		Name:      "Socketed Drop Potion",
+		Stackable: true,
+		MaxCount:  200,
+		Sockets:   itemcatalog.SocketValues{11, -22, 33},
+		Attributes: itemcatalog.AttributeValues{
+			{Type: 4, Value: 55},
+			{Type: 9, Value: -7},
+		},
+	}})
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected display-metadata item-drop2 runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-display-attrs", 0x9e9e9e9e)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected display-metadata item-drop2 error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected display-metadata partial drop to emit ITEM_UPDATE, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode display-metadata partial drop update: %v", err)
+	}
+	if update.Position != itemproto.InventoryPosition(5) || update.Count != 3 {
+		t.Fatalf("unexpected display-metadata partial drop update identity/count: %+v", update)
+	}
+	wantSockets := [itemproto.ItemSocketCount]int32{11, -22, 33}
+	if update.Sockets != wantSockets {
+		t.Fatalf("expected template-authored drop update sockets %+v, got %+v", wantSockets, update.Sockets)
+	}
+	wantAttributes := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	if update.Attributes != wantAttributes {
+		t.Fatalf("expected template-authored drop update attributes %+v, got %+v", wantAttributes, update.Attributes)
+	}
+}
+
 func TestGameRuntimeItemDropRejectsAtBootstrapHPFloorWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

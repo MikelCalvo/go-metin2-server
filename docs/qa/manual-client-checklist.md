@@ -291,6 +291,7 @@ Expected result:
 ### 4.5.6 Drop and pick up a carried item or gold (`ITEM_DROP` / `ITEM_PICKUP`)
 
 - [ ] Drop a known template-backed carried item stack in a safe visible location
+- [ ] If packet logging is available, repeat as a counted `ITEM_DROP2` partial-stack drop and confirm the source-slot `ITEM_UPDATE` preserves the template-authored socket/attribute display arrays while updating only the remaining count
 - [ ] Pick up the same temporary ground handle while still in range
 - [ ] Drop a small amount of gold/elk through the client gold-drop path and, if QA tooling can vary the packed item position, repeat with a non-carried position while the gold amount is non-zero
 - [ ] If possible in the QA fixture, repeat with a deliberately missing, malformed, mismatched, or ground-count-over-template-`max_count` authored item-template/state fixture for that `vnum`
