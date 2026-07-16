@@ -31858,14 +31858,15 @@ func (c *plainTCPTestClient) writeFrame(t *testing.T, raw []byte) {
 }
 
 type practiceMobTCPHarness struct {
-	runtime  *gameRuntime
-	flow     service.SessionFlow
-	conn     net.Conn
-	client   *plainTCPTestClient
-	cancel   context.CancelFunc
-	errCh    <-chan error
-	targetID uint32
-	now      time.Time
+	runtime      *gameRuntime
+	flow         service.SessionFlow
+	conn         net.Conn
+	client       *plainTCPTestClient
+	cancel       context.CancelFunc
+	errCh        <-chan error
+	targetID     uint32
+	now          time.Time
+	accountStore *accountstore.FileStore
 }
 
 func newPracticeMobTCPHarness(t *testing.T, login string, loginKey uint32, spawnRef string, hp int32) *practiceMobTCPHarness {
@@ -31877,20 +31878,39 @@ func newPracticeMobTCPHarness(t *testing.T, login string, loginKey uint32, spawn
 func newPracticeMobTCPRewardHarness(t *testing.T, login string, loginKey uint32, spawnRef string, hp int32, reward worldruntime.StaticActorDeathReward) *practiceMobTCPHarness {
 	t.Helper()
 
+	return newPracticeMobTCPAccountRewardHarness(t, login, loginKey, spawnRef, hp, 0, reward)
+}
+
+func newPracticeMobTCPAccountHarness(t *testing.T, login string, loginKey uint32, spawnRef string, hp int32, empire uint8) *practiceMobTCPHarness {
+	t.Helper()
+
+	return newPracticeMobTCPAccountRewardHarness(t, login, loginKey, spawnRef, hp, empire, worldruntime.StaticActorDeathReward{})
+}
+
+func newPracticeMobTCPAccountRewardHarness(t *testing.T, login string, loginKey uint32, spawnRef string, hp int32, empire uint8, reward worldruntime.StaticActorDeathReward) *practiceMobTCPHarness {
+	t.Helper()
+
 	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerTCP", 0x01030131, 0x02040131, 1100, 2100, 0, 101, 201)
+	if empire != 0 {
+		owner.Empire = empire
+	}
 	if hp > 0 {
 		owner.Points[bootstrapPlayerPointValueIndex] = hp
 	}
 	issuePeerTicket(t, store, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed tcp practice-mob account: %v", err)
+	}
 
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected tcp practice-mob runtime error: %v", err)
 	}
-	h := &practiceMobTCPHarness{runtime: runtime, now: time.Unix(1700000700, 0)}
+	h := &practiceMobTCPHarness{runtime: runtime, now: time.Unix(1700000700, 0), accountStore: accounts}
 	runtime.now = func() time.Time { return h.now }
 	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
 		Ref:              spawnRef,
@@ -31944,6 +31964,44 @@ func (h *practiceMobTCPHarness) selectTarget(t *testing.T) combatproto.ServerTar
 		t.Fatalf("decode tcp target-select response: %v", err)
 	}
 	return selected
+}
+
+func (h *practiceMobTCPHarness) driveOwnerDeathFromImmediateRetaliation(t *testing.T, context string) {
+	t.Helper()
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp pre-%s select to return full-HP mob %d, got %+v", context, h.targetID, selected)
+	}
+	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
+	refresh, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp %s-triggering target refresh: %v", context, err)
+	}
+	if refresh.TargetVID != h.targetID || refresh.HPPercent != 90 {
+		t.Fatalf("expected tcp %s-triggering attack to refresh target %d at 90%% HP, got %+v", context, h.targetID, refresh)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp %s-triggering retaliation point-change: %v", context, err)
+	}
+	if pointChange.Type != bootstrapPlayerPointValueIndex || pointChange.Amount != -1 || pointChange.Value != 0 {
+		t.Fatalf("expected tcp %s-triggering retaliation to reduce player HP to 0, got %+v", context, pointChange)
+	}
+	dead, err := worldproto.DecodeDead(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp %s-triggering self dead: %v", context, err)
+	}
+	if dead.VID != 0x02040131 {
+		t.Fatalf("expected tcp %s-triggering self dead for selected character VID 0x02040131, got %+v", context, dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp %s-triggering target clear: %v", context, err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected tcp %s-triggering death to clear target, got %+v", context, clear)
+	}
 }
 
 func (h *practiceMobTCPHarness) attack(t *testing.T) []frame.Frame {
@@ -32179,40 +32237,7 @@ func TestGameSessionFlowPracticeMobRestartHereOverPlainTCP(t *testing.T) {
 	h := newPracticeMobTCPHarness(t, "tcp-restart-here", 0x81818181, "practice.mob_tcp_restart_here", 1)
 	defer h.close(t)
 
-	selected := h.selectTarget(t)
-	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
-		t.Fatalf("expected tcp pre-restart select to return full-HP mob %d, got %+v", h.targetID, selected)
-	}
-
-	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
-	refresh, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
-	if err != nil {
-		t.Fatalf("decode tcp restart-triggering target refresh: %v", err)
-	}
-	if refresh.TargetVID != h.targetID || refresh.HPPercent != 90 {
-		t.Fatalf("expected tcp restart-triggering attack to refresh target %d at 90%% HP, got %+v", h.targetID, refresh)
-	}
-	pointChange, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
-	if err != nil {
-		t.Fatalf("decode tcp restart-triggering retaliation point-change: %v", err)
-	}
-	if pointChange.Type != bootstrapPlayerPointValueIndex || pointChange.Amount != -1 || pointChange.Value != 0 {
-		t.Fatalf("expected tcp restart-triggering retaliation to reduce player HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(h.client.readFrame(t))
-	if err != nil {
-		t.Fatalf("decode tcp restart-triggering self dead: %v", err)
-	}
-	if dead.VID != 0x02040131 {
-		t.Fatalf("expected tcp restart-triggering self dead for selected character VID 0x02040131, got %+v", dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
-	if err != nil {
-		t.Fatalf("decode tcp restart-triggering target clear: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected tcp restart-triggering death to clear target, got %+v", clear)
-	}
+	h.driveOwnerDeathFromImmediateRetaliation(t, "restart_here")
 
 	h.client.writeFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"}))
 	restartAdd, err := worldproto.DecodeCharacterAdd(h.client.readFrame(t))
@@ -32242,6 +32267,64 @@ func TestGameSessionFlowPracticeMobRestartHereOverPlainTCP(t *testing.T) {
 	}
 	if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 1 {
 		t.Fatalf("expected tcp restart-here to rebuild persisted HP value 1, got %+v", restartPoints)
+	}
+}
+
+func TestGameSessionFlowPracticeMobRestartTownOverPlainTCP(t *testing.T) {
+	h := newPracticeMobTCPAccountHarness(t, "tcp-restart-town", 0x91919191, "practice.mob_tcp_restart_town", 1, 2)
+	defer h.close(t)
+
+	h.driveOwnerDeathFromImmediateRetaliation(t, "restart_town")
+
+	h.client.writeFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"}))
+	restartAdd, err := worldproto.DecodeCharacterAdd(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-town self character add: %v", err)
+	}
+	if restartAdd.VID != 0x02040131 || restartAdd.X != 52070 || restartAdd.Y != 166600 {
+		t.Fatalf("expected tcp restart-town self add to rebuild selected character at empire-2 town position, got %+v", restartAdd)
+	}
+	restartInfo, err := worldproto.DecodeCharacterAdditionalInfo(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-town self additional info: %v", err)
+	}
+	if restartInfo.VID != 0x02040131 || restartInfo.Name != "PeerTCP" {
+		t.Fatalf("expected tcp restart-town self additional info for PeerTCP, got %+v", restartInfo)
+	}
+	restartUpdate, err := worldproto.DecodeCharacterUpdate(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-town self update: %v", err)
+	}
+	if restartUpdate.VID != 0x02040131 {
+		t.Fatalf("expected tcp restart-town self update for selected character, got %+v", restartUpdate)
+	}
+	restartPoints, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-town self point refresh: %v", err)
+	}
+	if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 1 {
+		t.Fatalf("expected tcp restart-town to rebuild persisted HP value 1, got %+v", restartPoints)
+	}
+	sourceMobDelete, err := worldproto.DecodeCharacterDeleteNotice(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp restart-town source practice-mob delete: %v", err)
+	}
+	if sourceMobDelete.VID != h.targetID {
+		t.Fatalf("expected tcp restart-town to delete source-map practice mob %d from self visibility, got %+v", h.targetID, sourceMobDelete)
+	}
+
+	persisted, err := h.accountStore.Load("tcp-restart-town")
+	if err != nil {
+		t.Fatalf("load tcp restart-town account after recovery: %v", err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected one persisted character after tcp restart-town, got %+v", persisted)
+	}
+	if persisted.Characters[0].MapIndex != 21 || persisted.Characters[0].X != 52070 || persisted.Characters[0].Y != 166600 {
+		t.Fatalf("expected tcp restart-town to persist empire-2 town position, got %+v", persisted.Characters[0])
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+		t.Fatalf("expected tcp restart-town to keep retaliation HP loss runtime-only in persisted snapshot, got %+v", persisted.Characters[0])
 	}
 }
 

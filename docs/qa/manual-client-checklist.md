@@ -720,12 +720,14 @@ Run this when the QA character can safely exercise the bootstrap town-return rec
 - [ ] Drive the selected player to `0` HP through the current practice-mob retaliation loop
 - [ ] Issue `/restart_town` on the same socket
 - [ ] Confirm the character stays in `GAME` and receives the ordinary self bootstrap burst at the owned empire town-return position
+- [ ] If the town-return crosses maps away from a visible practice mob, confirm the same socket also receives the ordinary source-map `CHARACTER_DEL` teardown for that mob after the self bootstrap burst
 - [ ] Confirm later movement/interaction works from the town-return position after recovery
 - [ ] Reconnect and confirm the town-return position persisted, while the retaliation HP loss itself did not persist
 
 Expected result:
 - `/restart_town` is accepted only after the zero-HP floor
 - the selected player rebuilds from persisted state and moves to the currently owned empire create-position fallback
+- source-map non-player visibility is torn down through existing delete frames when the town restart leaves that map
 - the recovery does not invent a separate revive packet or claim final map-specific death-return rules
 
 ---

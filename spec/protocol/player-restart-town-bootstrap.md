@@ -13,6 +13,7 @@ Those documents already freeze:
 - the retaliation-owned player-death floor at `0` HP, including self `DEAD(owner_vid)` + `TARGET(0, 0)` and the current post-floor denial gates
 - the first same-socket `/restart_here` recovery seam that rebuilds in place from persisted player state
 - the reusable self transfer rebootstrap burst plus trailing visibility deltas on the same game socket
+- the plain TCP harness that now freezes both slash-backed same-socket restart outcomes through the real socket/service path
 
 ## Question
 
@@ -81,7 +82,8 @@ When accepted, `/restart_town`:
    - source visible peers leave through `CHARACTER_DEL`
    - destination visible peers enter through the ordinary add/info/update burst
    - source and destination static-actor visibility still reuse the ordinary transfer/static-actor delta families already frozen elsewhere
-6. keeps the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
+6. when the source map contains a still-visible practice mob and the restart moves the player to a different town map, the same socket also receives the ordinary source-map non-player visibility teardown (`CHARACTER_DEL(mob_vid)`) after the self bootstrap burst
+7. keeps the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
 
 For this bootstrap slice, the recovery stays intentionally asymmetric with the engaged practice mob:
 - the player rebuilds from persisted player state and moves to the owned town-return target
