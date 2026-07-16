@@ -156,6 +156,7 @@ func (m *MapIndex) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 	defer m.mu.Unlock()
 	for _, player := range m.byEntityID {
 		if player.Entity.VID == vid {
+			m.repairPlayerMapPresenceLocked(player)
 			return clonePlayerEntity(player), true
 		}
 	}
@@ -177,9 +178,22 @@ func (m *MapIndex) Player(entityID uint64) (PlayerEntity, bool) {
 	defer m.mu.Unlock()
 	player, ok := m.byEntityID[entityID]
 	if ok {
+		m.repairPlayerMapPresenceLocked(player)
 		return clonePlayerEntity(player), true
 	}
 	return m.playerMapPresenceLocked(entityID)
+}
+
+func (m *MapIndex) repairPlayerMapPresenceLocked(player PlayerEntity) {
+	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: player.Position().MapIndex})
+	m.removePlayerMapPresenceLocked(player.Entity.ID)
+	m.effectiveMapByEntityID[player.Entity.ID] = mapIndex
+	bucket := m.byMapIndex[mapIndex]
+	if bucket == nil {
+		bucket = make(map[uint64]PlayerEntity)
+		m.byMapIndex[mapIndex] = bucket
+	}
+	bucket[player.Entity.ID] = clonePlayerEntity(player)
 }
 
 func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {

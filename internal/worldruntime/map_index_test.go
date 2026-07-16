@@ -225,6 +225,30 @@ func TestMapIndexRegisterClearsStaleMapBucketsForSameEntityID(t *testing.T) {
 	}
 }
 
+func TestMapIndexPlayerLookupPrunesDuplicateStaleMapBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(14, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	index.byEntityID[stale.Entity.ID] = current
+	index.effectiveMapByEntityID[stale.Entity.ID] = 77
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	lookup, ok := index.Player(stale.Entity.ID)
+	if !ok || lookup.Entity.Name != "Alpha" || lookup.Character.MapIndex != 77 {
+		t.Fatalf("expected current player lookup, got player=%+v ok=%v", lookup, ok)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale player map bucket to be pruned after lookup, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].MapIndex != 77 {
+		t.Fatalf("expected current map bucket to remain after lookup prune, got %+v", characters)
+	}
+}
+
 func TestMapIndexRegisterRejectsStaticBucketCollisionWhenStaticEntityIndexMissing(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	actor := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
