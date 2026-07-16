@@ -26,6 +26,10 @@ type localRelocationRequest struct {
 	Y        int32  `json:"y"`
 }
 
+type localAccountStoreBackupRequest struct {
+	DstDir string `json:"dst_dir"`
+}
+
 type localStaticActorRequest struct {
 	Name            string `json:"name"`
 	MapIndex        uint32 `json:"map_index"`
@@ -117,6 +121,36 @@ func RegisterLocalAccountStoreValidateEndpoint(mux *http.ServeMux, validate func
 		summary, err := validate()
 		if err != nil {
 			slog.Warn("local account store validation failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalAccountStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
+	if mux == nil || backup == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/account-store/backup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, ok := decodeLocalAccountStoreBackupRequest(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		summary, err := backup(request.DstDir)
+		if err != nil {
+			slog.Warn("local account store backup failed", "err", err)
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
@@ -868,6 +902,28 @@ func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldr
 		},
 	}
 	return profile, defaults, true
+}
+
+func decodeLocalAccountStoreBackupRequest(r *http.Request) (localAccountStoreBackupRequest, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil || len(bytes.TrimSpace(raw)) == 0 {
+		return localAccountStoreBackupRequest{}, false
+	}
+	var request localAccountStoreBackupRequest
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		return localAccountStoreBackupRequest{}, false
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return localAccountStoreBackupRequest{}, false
+	}
+	request.DstDir = strings.TrimSpace(request.DstDir)
+	if request.DstDir == "" {
+		return localAccountStoreBackupRequest{}, false
+	}
+	return request, true
 }
 
 func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.Definition, int, bool) {

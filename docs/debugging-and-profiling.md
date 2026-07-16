@@ -68,6 +68,16 @@ Successful responses are JSON summaries with:
 
 Crash leftovers such as hidden `.account-*.json` temp files are ignored, matching the committed-snapshot list/backup contract.
 
+### `POST /local/account-store/backup`
+
+Copies the durable bootstrap account snapshot store into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, and returns `409` if the source store is invalid, the destination is non-empty, or the backup cannot be completed.
+
+Request body JSON fields:
+
+- `dst_dir` — destination directory for the backup; it must be non-empty after trimming and should point to a local path prepared by the operator
+
+The backup path uses the same committed-snapshot list/validate contract as `/local/account-store/validate`: hidden crash-temp files are ignored, corrupt committed snapshots fail closed, and successful responses contain `account_count`, `character_count`, and deterministic `logins` for the backup that was just written. The destination must be empty so this endpoint does not silently merge unrelated operator files with a runtime backup.
+
 ### `GET /local/runtime-config`
 
 Returns JSON describing the active bootstrap runtime selection. This endpoint is read-only, rejects non-`GET` methods with `405`, and exposes only the local runtime facts needed for AOI/debugging:

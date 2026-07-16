@@ -281,6 +281,23 @@ func (r *gameRuntime) ValidateAccountStore() (accountstore.SnapshotSummary, erro
 	return validator.Validate()
 }
 
+func (r *gameRuntime) BackupAccountStore(dstDir string) (accountstore.SnapshotSummary, error) {
+	if r == nil || r.accountStore == nil {
+		return accountstore.SnapshotSummary{Logins: []string{}}, nil
+	}
+	backer, ok := r.accountStore.(interface {
+		BackupTo(string) error
+	})
+	if !ok {
+		return accountstore.SnapshotSummary{}, fmt.Errorf("account store backup is not supported")
+	}
+	if err := backer.BackupTo(dstDir); err != nil {
+		return accountstore.SnapshotSummary{}, err
+	}
+	backup := accountstore.NewFileStore(dstDir)
+	return backup.Validate()
+}
+
 func (r *gameRuntime) flushReadyStaticActorRespawns() {
 	if r == nil || r.sharedWorld == nil {
 		return

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"net"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -117,6 +119,74 @@ func TestGameRuntimeConfigSnapshotReportsRadiusPolicy(t *testing.T) {
 	snapshot := runtime.RuntimeConfigSnapshot()
 	if snapshot.LocalChannelID != 1 || snapshot.VisibilityMode != "radius" || snapshot.VisibilityRadius != 400 || snapshot.VisibilitySectorSize != 200 {
 		t.Fatalf("unexpected runtime config snapshot: %+v", snapshot)
+	}
+}
+
+func TestGameRuntimeBackupAccountStoreCopiesValidatedSnapshots(t *testing.T) {
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "zeta", Empire: 3, Characters: []loginticket.Character{{ID: 3, Name: "ZetaWar"}}}); err != nil {
+		t.Fatalf("save zeta account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "alpha", Empire: 1, Characters: []loginticket.Character{{ID: 1, Name: "AlphaWar"}, {ID: 2, Name: "AlphaNinja"}}}); err != nil {
+		t.Fatalf("save alpha account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accounts,
+		nil,
+		nil,
+		staticItemTemplateStore{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	backupDir := filepath.Join(t.TempDir(), "account-backup")
+	summary, err := runtime.BackupAccountStore(backupDir)
+	if err != nil {
+		t.Fatalf("backup account store: %v", err)
+	}
+	want := accountstore.SnapshotSummary{AccountCount: 2, CharacterCount: 3, Logins: []string{"alpha", "zeta"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected backup summary: got %#v want %#v", summary, want)
+	}
+	backup := accountstore.NewFileStore(backupDir)
+	backupSummary, err := backup.Validate()
+	if err != nil {
+		t.Fatalf("validate backup: %v", err)
+	}
+	if !reflect.DeepEqual(backupSummary, want) {
+		t.Fatalf("unexpected persisted backup summary: got %#v want %#v", backupSummary, want)
+	}
+}
+
+func TestGameRuntimeBackupAccountStoreRejectsNonEmptyDestination(t *testing.T) {
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accounts,
+		nil,
+		nil,
+		staticItemTemplateStore{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	backupDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(backupDir, "operator-note.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatalf("seed non-empty destination: %v", err)
+	}
+
+	_, err = runtime.BackupAccountStore(backupDir)
+	if !errors.Is(err, accountstore.ErrBackupDirNotEmpty) {
+		t.Fatalf("expected ErrBackupDirNotEmpty, got %v", err)
 	}
 }
 

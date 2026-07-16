@@ -127,6 +127,109 @@ func TestLocalAccountStoreValidateEndpointReportsValidationFailure(t *testing.T)
 	}
 }
 
+func TestLocalAccountStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
+	backer := &stubAccountStoreBacker{summary: map[string]any{"account_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}}}
+	mux := RegisterLocalAccountStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/backup", strings.NewReader(`{"dst_dir":"/tmp/account-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if backer.calls != 1 || backer.dstDir != "/tmp/account-backup" {
+		t.Fatalf("expected backup callback once with requested dst dir, calls=%d dst=%q", backer.calls, backer.dstDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"account_count":2`, `"character_count":3`, `"logins":["alpha","zeta"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalAccountStoreBackupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	backer := &stubAccountStoreBacker{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/backup", strings.NewReader(`{"dst_dir":"/tmp/account-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalAccountStoreBackupEndpointRejectsInvalidBody(t *testing.T) {
+	backer := &stubAccountStoreBacker{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	for _, body := range []string{``, `{"dst_dir":"   "}`, `{"dst_dir":"/tmp/account-backup","extra":true}`, `{"dst_dir":"/tmp/account-backup"} {}`} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/local/account-store/backup", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+			}
+		})
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalAccountStoreBackupEndpointReportsBackupFailure(t *testing.T) {
+	backer := &stubAccountStoreBacker{err: errStubAccountStoreInvalid}
+	mux := RegisterLocalAccountStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/backup", strings.NewReader(`{"dst_dir":"/tmp/account-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if backer.calls != 1 {
+		t.Fatalf("expected backup callback to be called once, got %d", backer.calls)
+	}
+}
+
+func TestLocalAccountStoreBackupEndpointRejectsWrongMethod(t *testing.T) {
+	backer := &stubAccountStoreBacker{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/backup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
 type stubAccountStoreValidator struct {
 	summary any
 	err     error
@@ -139,6 +242,19 @@ func (s *stubAccountStoreValidator) Validate() (any, error) {
 }
 
 var errStubAccountStoreInvalid = errors.New("account store invalid")
+
+type stubAccountStoreBacker struct {
+	summary any
+	err     error
+	calls   int
+	dstDir  string
+}
+
+func (s *stubAccountStoreBacker) Backup(dstDir string) (any, error) {
+	s.calls++
+	s.dstDir = dstDir
+	return s.summary, s.err
+}
 
 func TestLocalNoticeEndpointQueuesBroadcastForLoopbackPost(t *testing.T) {
 	broadcaster := &stubNoticeBroadcaster{delivered: 2}
