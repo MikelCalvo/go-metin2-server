@@ -637,6 +637,45 @@ func TestEntityRegistryUpdateStaticActorSortsDeathRewardDrops(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryUpdatePlayerRebuildsMissingMapPresence(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("MaplessAlpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+
+	registry.maps.mu.Lock()
+	delete(registry.maps.byEntityID, alpha.Entity.ID)
+	delete(registry.maps.effectiveMapByEntityID, alpha.Entity.ID)
+	for mapIndex, bucket := range registry.maps.byMapIndex {
+		delete(bucket, alpha.Entity.ID)
+		if len(bucket) == 0 {
+			delete(registry.maps.byMapIndex, mapIndex)
+		}
+	}
+	registry.maps.mu.Unlock()
+
+	updated := alpha.Character
+	updated.Name = "MaplessAlphaMoved"
+	updated.MapIndex = 99
+	updated.X = 900
+	updated.Y = 1200
+	if !registry.UpdatePlayer(alpha.Entity.ID, updated) {
+		t.Fatal("expected player update to rebuild missing map presence")
+	}
+	lookup, ok := registry.Player(alpha.Entity.ID)
+	if !ok || lookup.Entity.Name != "MaplessAlphaMoved" || lookup.Character.MapIndex != 99 || lookup.Character.X != 900 || lookup.Character.Y != 1200 {
+		t.Fatalf("expected player lookup to reflect rebuilt update, got player=%+v ok=%v", lookup, ok)
+	}
+	characters := registry.MapCharacters(99)
+	if len(characters) != 1 || characters[0].Name != "MaplessAlphaMoved" || characters[0].MapIndex != 99 {
+		t.Fatalf("expected rebuilt player in map 99 snapshot, got %+v", characters)
+	}
+	if occupancy := registry.MapOccupancy(); len(occupancy) != 1 || occupancy[0].MapIndex != 99 || len(occupancy[0].Characters) != 1 || occupancy[0].Characters[0].Name != "MaplessAlphaMoved" {
+		t.Fatalf("expected rebuilt player map occupancy, got %+v", occupancy)
+	}
+}
+
 func TestEntityRegistryUpdateStaticActorRebuildsMissingMapPresence(t *testing.T) {
 	registry := NewEntityRegistry()
 	guard, ok := registry.RegisterStaticActor(StaticEntity{

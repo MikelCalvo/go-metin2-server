@@ -126,7 +126,7 @@ Status: `[~]` real in-process runtime, not production world architecture.
 Already present:
 
 - connected session registry,
-- player directory and map index,
+- player directory and map index, including tolerant player/static partial-teardown repair when one owned index is cleared before another,
 - topology model,
 - AOI/radius-style visibility boundaries,
 - visibility rebuild helpers,

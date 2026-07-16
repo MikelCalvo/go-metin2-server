@@ -231,8 +231,10 @@ func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character
 		return false
 	}
 	if !r.maps.Update(updated) {
-		_ = r.players.Update(previous)
-		return false
+		if !r.maps.Register(updated) {
+			_ = r.players.Update(previous)
+			return false
+		}
 	}
 	return true
 }
