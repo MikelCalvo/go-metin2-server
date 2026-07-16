@@ -75,6 +75,9 @@ func (m *MapIndex) Update(player PlayerEntity) bool {
 			return false
 		}
 	}
+	if _, ok := m.staticActorMapPresenceLocked(player.Entity.ID); ok {
+		return false
+	}
 
 	nextMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: player.Position().MapIndex})
 	m.removePlayerMapPresenceLocked(player.Entity.ID)

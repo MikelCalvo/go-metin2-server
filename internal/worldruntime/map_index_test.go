@@ -111,6 +111,36 @@ func TestMapIndexUpdatePrunesDuplicatePlayerMapBuckets(t *testing.T) {
 	}
 }
 
+func TestMapIndexUpdateRejectsStaticBucketCollisionWhenStaticEntityIndexMissing(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := newPlayerEntity(15, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	if !index.Register(alpha) {
+		t.Fatal("expected player registration to succeed")
+	}
+	actor := StaticEntity{Entity: Entity{ID: alpha.Entity.ID, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{actor.Entity.ID: actor}
+
+	updated := alpha
+	updated.Character.MapIndex = 99
+	updated.Character.X = 1900
+	updated.Character.Y = 3000
+	if index.Update(updated) {
+		t.Fatal("expected player update to reject surviving static actor map-bucket ownership")
+	}
+
+	characters := index.PlayerCharacters(42)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].MapIndex != 42 {
+		t.Fatalf("expected original player map bucket to remain after rejected update, got %+v", characters)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.ID != actor.Entity.ID || actors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected surviving static actor map bucket to remain after rejected player update, got %+v", actors)
+	}
+	if characters := index.PlayerCharacters(99); len(characters) != 0 {
+		t.Fatalf("expected rejected player update not to insert destination bucket, got %+v", characters)
+	}
+}
+
 func TestMapIndexRemoveClearsOccupancy(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	alpha := newPlayerEntity(1, entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
