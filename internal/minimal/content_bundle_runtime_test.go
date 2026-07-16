@@ -256,23 +256,27 @@ func TestGameRuntimeImportContentBundleMaterializesSpawnGroupsAsAttackablePracti
 	staticPath := t.TempDir() + "/static-actors.json"
 	staticActorStore := staticstore.NewFileStore(staticPath)
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 
-	wantBundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:              "practice.mob_alpha",
-		Name:             "PracticeMobAlpha",
-		MapIndex:         42,
-		X:                1800,
-		Y:                2900,
-		RaceNum:          101,
-		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
-		RewardExperience: 75,
-		RewardGold:       60,
-		RewardDropVnums:  []uint32{27001},
-	}}}
+	wantBundle := contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.mob_alpha",
+			Name:             "PracticeMobAlpha",
+			MapIndex:         42,
+			X:                1800,
+			Y:                2900,
+			RaceNum:          101,
+			CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  []uint32{27001},
+		}},
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+	}
 	imported, err := runtime.ImportContentBundle(wantBundle)
 	if err != nil {
 		t.Fatalf("import spawn-group content bundle: %v", err)
@@ -522,22 +526,26 @@ func TestGameRuntimeImportContentBundleRestoresPreviousContentWhenStaticActorPer
 func TestGameRuntimeUpdateSpawnGroupStaticActorPreservesRewardDescriptor(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
-	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:              "practice.mob_alpha",
-		Name:             "PracticeMobAlpha",
-		MapIndex:         42,
-		X:                1800,
-		Y:                2900,
-		RaceNum:          101,
-		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
-		RewardExperience: 75,
-		RewardGold:       60,
-		RewardDropVnums:  []uint32{27001},
-	}}}); err != nil {
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.mob_alpha",
+			Name:             "PracticeMobAlpha",
+			MapIndex:         42,
+			X:                1800,
+			Y:                2900,
+			RaceNum:          101,
+			CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  []uint32{27001},
+		}},
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+	}); err != nil {
 		t.Fatalf("import spawn-group content bundle: %v", err)
 	}
 	actors := runtime.StaticActors()

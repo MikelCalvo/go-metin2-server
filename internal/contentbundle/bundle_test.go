@@ -459,6 +459,10 @@ func TestCanonicalizeRejectsInvalidWarpInteractionDefinition(t *testing.T) {
 
 func TestCanonicalizeAcceptsReferencedCustomCombatProfileSnapshot(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
 		SpawnGroups: []SpawnGroup{{
 			Ref:           "practice.imported_wolf",
 			Name:          "Imported Wolf",
@@ -496,6 +500,10 @@ func TestCanonicalizeAcceptsReferencedCustomCombatProfileSnapshot(t *testing.T) 
 			RewardGold:       11,
 			RewardDropVnums:  []uint32{27001, 27002},
 		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               "practice_imported_wolf",
 			MaxHP:                 24,
@@ -526,6 +534,10 @@ func TestCanonicalizeRegistersPortableCombatProfileSnapshotsBeforeValidatingActo
 	const profile = "practice_portable_wolf"
 
 	bundle, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
 		SpawnGroups: []SpawnGroup{{
 			Ref:           "practice.portable_wolf",
 			Name:          "Portable Wolf",
@@ -563,6 +575,10 @@ func TestCanonicalizeRegistersPortableCombatProfileSnapshotsBeforeValidatingActo
 			RewardGold:       11,
 			RewardDropVnums:  []uint32{27001, 27002},
 		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               profile,
 			MaxHP:                 24,
@@ -756,33 +772,45 @@ func TestCanonicalizeRejectsNonCanonicalSpawnGroupRefs(t *testing.T) {
 
 func TestCanonicalizeKeepsSpawnGroupRewardDescriptor(t *testing.T) {
 	dropVnums := []uint32{27002, 27001}
-	bundle, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
-		Ref:              "practice.reward_mob",
-		Name:             " Reward Mob ",
-		MapIndex:         42,
-		X:                1775,
-		Y:                2875,
-		RaceNum:          101,
-		CombatProfile:    " training_dummy ",
-		RewardExperience: 75,
-		RewardGold:       60,
-		RewardDropVnums:  dropVnums,
-	}}})
+	bundle, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.reward_mob",
+			Name:             " Reward Mob ",
+			MapIndex:         42,
+			X:                1775,
+			Y:                2875,
+			RaceNum:          101,
+			CombatProfile:    " training_dummy ",
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  dropVnums,
+		}},
+	})
 	if err != nil {
 		t.Fatalf("canonicalize reward spawn group: %v", err)
 	}
-	want := Bundle{SpawnGroups: []SpawnGroup{{
-		Ref:              "practice.reward_mob",
-		Name:             "Reward Mob",
-		MapIndex:         42,
-		X:                1775,
-		Y:                2875,
-		RaceNum:          101,
-		CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
-		RewardExperience: 75,
-		RewardGold:       60,
-		RewardDropVnums:  []uint32{27001, 27002},
-	}}}
+	want := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.reward_mob",
+			Name:             "Reward Mob",
+			MapIndex:         42,
+			X:                1775,
+			Y:                2875,
+			RaceNum:          101,
+			CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  []uint32{27001, 27002},
+		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+	}
 	if !reflect.DeepEqual(bundle, want) {
 		t.Fatalf("unexpected canonical reward spawn group:\n got: %#v\nwant: %#v", bundle, want)
 	}
@@ -808,15 +836,21 @@ func TestCanonicalizeAppliesRegisteredProfileRewardDefaultsToSpawnGroupWithoutRe
 	}
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 
-	bundle, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
-		Ref:           "practice.mob_alpha",
-		Name:          "Practice Mob Alpha",
-		MapIndex:      42,
-		X:             1775,
-		Y:             2875,
-		RaceNum:       101,
-		CombatProfile: profile,
-	}}})
+	bundle, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.mob_alpha",
+			Name:          "Practice Mob Alpha",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+	})
 	if err != nil {
 		t.Fatalf("canonicalize reward-default spawn group: %v", err)
 	}
@@ -833,6 +867,10 @@ func TestCanonicalizeAppliesRegisteredProfileRewardDefaultsToSpawnGroupWithoutRe
 			RewardGold:       10,
 			RewardDropVnums:  []uint32{27001, 27002},
 		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               profile,
 			MaxHP:                 24,
@@ -900,18 +938,24 @@ func TestCanonicalizeAcceptsRegisteredSpawnGroupCombatProfile(t *testing.T) {
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 
 	dropVnums := []uint32{27002, 27001}
-	bundle, err := Canonicalize(Bundle{SpawnGroups: []SpawnGroup{{
-		Ref:              "practice.bundle_wolf",
-		Name:             "Practice Bundle Wolf",
-		MapIndex:         42,
-		X:                1775,
-		Y:                2875,
-		RaceNum:          101,
-		CombatProfile:    " practice_bundle_wolf ",
-		RewardExperience: 75,
-		RewardGold:       60,
-		RewardDropVnums:  dropVnums,
-	}}})
+	bundle, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.bundle_wolf",
+			Name:             "Practice Bundle Wolf",
+			MapIndex:         42,
+			X:                1775,
+			Y:                2875,
+			RaceNum:          101,
+			CombatProfile:    " practice_bundle_wolf ",
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  dropVnums,
+		}},
+	})
 	if err != nil {
 		t.Fatalf("expected spawn group using registered combat profile to canonicalize, got %v", err)
 	}
@@ -929,6 +973,10 @@ func TestCanonicalizeAcceptsRegisteredSpawnGroupCombatProfile(t *testing.T) {
 			RewardGold:       60,
 			RewardDropVnums:  []uint32{27001, 27002},
 		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               profile,
 			MaxHP:                 24,
@@ -1041,19 +1089,27 @@ func TestExampleBootstrapNPCServiceBundleCarriesMerchantItemTemplates(t *testing
 }
 
 func TestFromSnapshotsSeparatesSpawnGroupsFromStaticActors(t *testing.T) {
-	bundle, err := FromSnapshots(
+	bundle, err := FromSnapshotsWithItems(
 		staticstore.Snapshot{StaticActors: []staticstore.StaticActor{
 			{EntityID: 5, Name: "PracticeMobAlpha", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.mob_alpha", RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001, 27002}},
 			{EntityID: 9, Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"},
 		}},
 		interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}}},
+		itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		}},
 	)
 	if err != nil {
 		t.Fatalf("from snapshots with spawn group: %v", err)
 	}
 	want := Bundle{
-		StaticActors:           []StaticActor{{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}},
-		SpawnGroups:            []SpawnGroup{{Ref: "practice.mob_alpha", Name: "PracticeMobAlpha", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001, 27002}}},
+		StaticActors: []StaticActor{{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}},
+		SpawnGroups:  []SpawnGroup{{Ref: "practice.mob_alpha", Name: "PracticeMobAlpha", MapIndex: 42, X: 1775, Y: 2875, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001, 27002}}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
 		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
 	}
 	if !reflect.DeepEqual(bundle, want) {
