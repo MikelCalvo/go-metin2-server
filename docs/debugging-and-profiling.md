@@ -105,6 +105,14 @@ Exports or imports the deterministic authored bootstrap content bundle used by s
 
 `POST` canonicalizes and validates the whole bundle before applying it. The request body is bounded to 1 MiB and oversized bodies are rejected before import. In addition to the per-row validation, non-built-in `combat_profiles` entries must be referenced by at least one static actor or spawn group in the same bundle; unreferenced snapshots are rejected so this endpoint cannot mutate process-local combat profiles without importing authored content that uses them. Structured merchant `shop_preview` definitions must also carry the referenced `item_templates` in the same portable bundle; bundles that omit those templates are rejected before import.
 
+### `POST /local/content-bundle/validate`
+
+Validates and canonicalizes an authored bootstrap content bundle without importing or mutating runtime state. This loopback-only endpoint uses the same 1 MiB request bound, strict JSON decoding, and `contentbundle.Canonicalize(...)` rules as `POST /local/content-bundle`.
+
+Successful responses return the canonical bundle JSON that would be accepted by import. Invalid JSON, unknown fields, dangling refs, invalid static actors/spawn groups/combat profiles, missing merchant item templates, and other bundle validation failures return `400`; non-loopback callers return `403`; methods other than `POST` return `405`.
+
+Use this as an on-box dry-run check before applying a larger content bundle or before committing updates to deterministic example bundles.
+
 ### `POST /local/notice`
 
 - request body: raw plain-text notice message

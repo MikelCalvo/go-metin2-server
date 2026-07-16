@@ -236,6 +236,7 @@ func main() {
 			}
 		},
 	)
+	opsHandler = ops.RegisterLocalContentBundleValidateEndpoint(opsHandler)
 	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {
 		logger.Error("service stopped with error", "err", err)
 		fmt.Fprintln(os.Stderr, err)

@@ -245,6 +245,73 @@ func TestLocalContentBundleEndpointRejectsOversizedBodyBeforeImport(t *testing.T
 	}
 }
 
+func TestLocalContentBundleValidateEndpointReturnsCanonicalBundleForLoopbackPost(t *testing.T) {
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", strings.NewReader(`{"static_actors":[{"name":"  VillageGuard  ","map_index":42,"x":1700,"y":2800,"race_num":20300,"interaction_kind":" talk ","interaction_ref":" npc:village_guard "}],"interaction_definitions":[{"kind":" talk ","ref":" npc:village_guard ","text":" Keep your blade sharp. "}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.Bundle
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	want := contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("expected canonical validation response:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleValidateEndpointRejectsInvalidBundle(t *testing.T) {
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", strings.NewReader(`{"static_actors":[{"name":"VillageGuard","race_num":20300}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for invalid bundle, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestLocalContentBundleValidateEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+}
+
+func TestLocalContentBundleValidateEndpointRejectsWrongMethod(t *testing.T) {
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+}
+
 type stubContentBundleExporter struct {
 	bundle contentbundle.Bundle
 	status int
