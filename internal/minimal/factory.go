@@ -3888,7 +3888,7 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 		if err != nil {
 			return nil, err
 		}
-		updateFrame, err := encodeBootstrapItemUpdateFrame(position, change.Item)
+		updateFrame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, change.Item, templates)
 		if err != nil {
 			return nil, err
 		}
@@ -4333,12 +4333,19 @@ func bootstrapItemAntiFlags(template itemcatalog.Template) uint32 {
 }
 
 func encodeBootstrapItemUpdateFrame(position itemproto.Position, instance inventory.ItemInstance) ([]byte, error) {
+	return encodeBootstrapItemUpdateFrameWithTemplates(position, instance, nil)
+}
+
+func encodeBootstrapItemUpdateFrameWithTemplates(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {
 	if instance.Count > 255 {
 		return nil, fmt.Errorf("bootstrap item count exceeds legacy uint8: %d", instance.Count)
 	}
+	template := templates[instance.Vnum]
 	return itemproto.EncodeUpdate(itemproto.UpdatePacket{
-		Position: position,
-		Count:    uint8(instance.Count),
+		Position:   position,
+		Count:      uint8(instance.Count),
+		Sockets:    bootstrapItemSockets(template),
+		Attributes: bootstrapItemAttributes(template),
 	}), nil
 }
 

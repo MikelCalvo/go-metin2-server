@@ -942,6 +942,7 @@ Expected result:
 - [ ] Using the local merchant debug harness, prepare a buyer with several compatible partial `27001` carried stacks plus at least one free carried slot
 - [ ] Open the merchant context and run `/shop_buy <slot>` for an authored entry whose `count` requires filling those compatible carried stacks and placing the final remainder into the lowest free carried slot
 - [ ] Confirm the harness returns one inventory refresh per changed carried slot in carried-slot order (`ITEM_SET` for fresh slots, `ITEM_UPDATE` for existing stack fills) plus the current merchant success companion
+- [ ] If the QA template authors visible sockets/attributes for that stackable item, confirm each existing-stack `ITEM_UPDATE` preserves those display arrays instead of zeroing them while only the count changes
 - [ ] Repeat with the merchant entry's template temporarily authored with `anti_get`
 - [ ] Confirm persisted `gold` and inventory match the same final state already frozen for the packet `SHOP BUY` path
 
