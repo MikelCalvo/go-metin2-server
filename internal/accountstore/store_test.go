@@ -470,12 +470,12 @@ func TestFileStoreBackupToWritesDeterministicManifest(t *testing.T) {
 	}
 }
 
-func TestFileStoreRestoreFromIgnoresBackupManifest(t *testing.T) {
+func TestFileStoreRestoreFromValidatesBackupManifest(t *testing.T) {
 	backup := NewFileStore(t.TempDir())
 	if err := backup.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
 		t.Fatalf("save backup account: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(backup.dir, BackupManifestFilename), []byte(`{"format":"manual"}`), 0o644); err != nil {
+	if err := backup.writeBackupManifest([]Account{{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}}); err != nil {
 		t.Fatalf("write backup manifest: %v", err)
 	}
 
@@ -489,6 +489,50 @@ func TestFileStoreRestoreFromIgnoresBackupManifest(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Login != "mkmk" {
 		t.Fatalf("unexpected restored accounts: %#v", got)
+	}
+}
+
+func TestFileStoreRestoreFromRejectsBackupManifestChecksumMismatch(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
+	if err := backup.Save(account); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := backup.writeBackupManifest([]Account{account}); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	path := backup.accountPath("mkmk")
+	if err := os.WriteFile(path, []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWarTampered"}]}`), 0o644); err != nil {
+		t.Fatalf("tamper backup account: %v", err)
+	}
+
+	restored := NewFileStore(filepath.Join(t.TempDir(), "restored"))
+	err := restored.RestoreFrom(backup.dir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for checksum mismatch, got %v", err)
+	}
+	entries, readErr := os.ReadDir(restored.dir)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		t.Fatalf("read restore dir after failed restore: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected failed manifest validation to leave restore dir empty, got %#v", entries)
+	}
+}
+
+func TestFileStoreRestoreFromRejectsMalformedBackupManifest(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	if err := backup.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backup.dir, BackupManifestFilename), []byte(`{"format":"manual"}`), 0o644); err != nil {
+		t.Fatalf("write malformed backup manifest: %v", err)
+	}
+
+	restored := NewFileStore(filepath.Join(t.TempDir(), "restored"))
+	err := restored.RestoreFrom(backup.dir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for malformed manifest, got %v", err)
 	}
 }
 

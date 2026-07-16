@@ -33,6 +33,7 @@ var (
 	ErrRestoreSourceRequired = errors.New("account restore source dir is required")
 	ErrRestoreSourceNotFound = errors.New("account restore source dir not found")
 	ErrRestoreDirNotEmpty    = errors.New("account restore dir is not empty")
+	ErrInvalidBackupManifest = errors.New("invalid account backup manifest")
 )
 
 type Account struct {
@@ -283,6 +284,9 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 	if err != nil {
 		return err
 	}
+	if err := source.validateBackupManifest(accounts); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create account restore dir: %w", err)
 	}
@@ -293,6 +297,73 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 	}
 	if err := syncStoreDir(s.dir); err != nil {
 		return fmt.Errorf("sync account restore dir: %w", err)
+	}
+	return nil
+}
+
+func (s *FileStore) validateBackupManifest(accounts []Account) error {
+	manifestPath := filepath.Join(s.dir, BackupManifestFilename)
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read account backup manifest: %w", err)
+	}
+
+	var manifest BackupManifest
+	if err := decodeBackupManifestStrict(raw, &manifest); err != nil {
+		return fmt.Errorf("%w: decode manifest: %v", ErrInvalidBackupManifest, err)
+	}
+	if manifest.Format != BackupManifestFormat {
+		return fmt.Errorf("%w: format %q", ErrInvalidBackupManifest, manifest.Format)
+	}
+
+	wantSummary := SnapshotSummary{AccountCount: len(accounts), Logins: make([]string, 0, len(accounts))}
+	for _, account := range accounts {
+		wantSummary.Logins = append(wantSummary.Logins, account.Login)
+		wantSummary.CharacterCount += len(account.Characters)
+	}
+	if !snapshotSummariesEqual(manifest.Summary, wantSummary) {
+		return fmt.Errorf("%w: summary does not match committed snapshots", ErrInvalidBackupManifest)
+	}
+	if len(manifest.Files) != len(accounts) {
+		return fmt.Errorf("%w: manifest lists %d files for %d accounts", ErrInvalidBackupManifest, len(manifest.Files), len(accounts))
+	}
+
+	accountsByLogin := make(map[string]Account, len(accounts))
+	seenFiles := make(map[string]struct{}, len(manifest.Files))
+	for _, account := range accounts {
+		accountsByLogin[strings.ToLower(account.Login)] = account
+	}
+	for _, file := range manifest.Files {
+		account, ok := accountsByLogin[strings.ToLower(file.Login)]
+		if !ok {
+			return fmt.Errorf("%w: manifest references unknown login %q", ErrInvalidBackupManifest, file.Login)
+		}
+		if file.Filename == "" || filepath.Base(file.Filename) != file.Filename {
+			return fmt.Errorf("%w: manifest filename %q is not a base name", ErrInvalidBackupManifest, file.Filename)
+		}
+		wantFilename := filepath.Base(s.accountPath(account.Login))
+		if file.Filename != wantFilename {
+			return fmt.Errorf("%w: manifest filename %q does not match login %q", ErrInvalidBackupManifest, file.Filename, file.Login)
+		}
+		if _, ok := seenFiles[file.Filename]; ok {
+			return fmt.Errorf("%w: manifest repeats filename %q", ErrInvalidBackupManifest, file.Filename)
+		}
+		seenFiles[file.Filename] = struct{}{}
+
+		raw, err := os.ReadFile(filepath.Join(s.dir, file.Filename))
+		if err != nil {
+			return fmt.Errorf("%w: read manifest account %q: %v", ErrInvalidBackupManifest, file.Login, err)
+		}
+		if int64(len(raw)) != file.SizeBytes {
+			return fmt.Errorf("%w: account %q size mismatch", ErrInvalidBackupManifest, file.Login)
+		}
+		checksum := sha256.Sum256(raw)
+		if got := hex.EncodeToString(checksum[:]); got != file.SHA256 {
+			return fmt.Errorf("%w: account %q checksum mismatch", ErrInvalidBackupManifest, file.Login)
+		}
 	}
 	return nil
 }
@@ -380,6 +451,33 @@ func decodeAccountStrict(raw []byte, account *Account) error {
 		return err
 	}
 	return nil
+}
+
+func decodeBackupManifestStrict(raw []byte, manifest *BackupManifest) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(manifest); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+func snapshotSummariesEqual(a, b SnapshotSummary) bool {
+	if a.AccountCount != b.AccountCount || a.CharacterCount != b.CharacterCount || len(a.Logins) != len(b.Logins) {
+		return false
+	}
+	for i := range a.Logins {
+		if a.Logins[i] != b.Logins[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func validateAccount(account Account) error {

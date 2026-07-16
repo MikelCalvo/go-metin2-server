@@ -86,7 +86,7 @@ Request body JSON fields:
 
 - `src_dir` — source backup directory; it must be non-empty after trimming and contain committed account snapshots that pass the strict account-store loader
 
-The restore path uses the same committed-snapshot list/validate contract as backup: `account-backup-manifest.json` is treated as metadata and ignored by the account loader, hidden crash-temp files in the backup are ignored, corrupt committed snapshots fail closed, and restore refuses to merge into a non-empty active store directory. Operators should use this only as a bootstrap recovery primitive for an empty replacement account-store path, not as an online merge/import API.
+The restore path uses the same committed-snapshot list/validate contract as backup: `account-backup-manifest.json` is treated as metadata and ignored by the account loader, hidden crash-temp files in the backup are ignored, corrupt committed snapshots fail closed, and restore refuses to merge into a non-empty active store directory. When a backup manifest is present, restore validates the format marker, deterministic summary, per-account filenames, byte sizes, and SHA-256 checksums before creating or copying into the destination store; malformed manifests or checksum drift fail closed with `409` and leave the empty destination untouched. Operators should use this only as a bootstrap recovery primitive for an empty replacement account-store path, not as an online merge/import API.
 
 ### `GET /local/runtime-config`
 
