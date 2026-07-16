@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -94,7 +95,7 @@ func validInteractionMetadata(kind string, ref string) bool {
 	if kind == "" && ref == "" {
 		return true
 	}
-	return kind != "" && ref != ""
+	return kind != "" && ref != "" && interactionstore.ValidKind(kind)
 }
 
 func validBootstrapRaceNum(raceNum uint32) bool {

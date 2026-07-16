@@ -224,6 +224,26 @@ func TestCanonicalizeRejectsUnreferencedItemTemplate(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsDuplicateItemTemplates(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27001, Name: "Duplicate Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:merchant",
+			Title: "Village Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for duplicate item templates, got %v", err)
+	}
+}
+
 func TestFromSnapshotsOmitsUnreferencedItemTemplates(t *testing.T) {
 	bundle, err := FromSnapshotsWithItems(
 		staticstore.Snapshot{},

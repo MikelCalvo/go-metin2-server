@@ -101,6 +101,10 @@ func validKind(kind string) bool {
 	}
 }
 
+func ValidKind(kind string) bool {
+	return validKind(strings.TrimSpace(kind))
+}
+
 func validDefinition(definition Definition) bool {
 	if !validKind(definition.Kind) || definition.Ref == "" {
 		return false

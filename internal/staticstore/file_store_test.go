@@ -148,6 +148,10 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(invalidInteraction); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for partial interaction metadata, got %v", err)
 	}
+	unsupportedInteractionKind := Snapshot{StaticActors: []StaticActor{{EntityID: 10, Name: "QuestMarker", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "quest", InteractionRef: "quest:first_steps"}}}
+	if err := store.Save(unsupportedInteractionKind); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for unsupported interaction kind, got %v", err)
+	}
 	invalidCombatProfile := Snapshot{StaticActors: []StaticActor{{EntityID: 12, Name: "BrokenDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: "boss"}}}
 	if err := store.Save(invalidCombatProfile); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for invalid combat profile, got %v", err)
