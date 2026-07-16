@@ -26,6 +26,15 @@
       "race_num": 20302,
       "interaction_kind": "talk",
       "interaction_ref": "npc:qa_guide"
+    },
+    {
+      "name": "VillageSignpost",
+      "map_index": 1,
+      "x": 469200,
+      "y": 964200,
+      "race_num": 20303,
+      "interaction_kind": "info",
+      "interaction_ref": "lore:qa_square"
     }
   ],
   "spawn_groups": [
@@ -60,6 +69,11 @@
     }
   ],
   "interaction_definitions": [
+    {
+      "kind": "info",
+      "ref": "lore:qa_square",
+      "text": "The QA square contains a merchant, teleporter, guide, and reward mob."
+    },
     {
       "kind": "shop_preview",
       "ref": "npc:qa_merchant",

@@ -38,6 +38,47 @@ func testMerchantItemTemplates() []itemcatalog.Template {
 }
 
 func TestBootstrapNPCServiceExampleBundleIsCanonicalAndValid(t *testing.T) {
+	decoded := loadBootstrapNPCServiceExampleBundle(t)
+
+	canonical, err := Canonicalize(decoded)
+	if err != nil {
+		t.Fatalf("canonicalize bootstrap NPC service example bundle: %v", err)
+	}
+	if !reflect.DeepEqual(canonical, decoded) {
+		t.Fatalf("bootstrap NPC service example bundle is not canonical:\n got: %#v\nwant: %#v", decoded, canonical)
+	}
+}
+
+func TestBootstrapNPCServiceExampleBundleCoversOwnedServiceInteractionKinds(t *testing.T) {
+	decoded := loadBootstrapNPCServiceExampleBundle(t)
+	wantKinds := map[string]struct{}{
+		interactionstore.KindInfo:        {},
+		interactionstore.KindTalk:        {},
+		interactionstore.KindWarp:        {},
+		interactionstore.KindShopPreview: {},
+	}
+	seenDefinitions := make(map[string]struct{}, len(decoded.InteractionDefinitions))
+	for _, definition := range decoded.InteractionDefinitions {
+		seenDefinitions[definition.Kind] = struct{}{}
+	}
+	seenActors := make(map[string]struct{}, len(decoded.StaticActors))
+	for _, actor := range decoded.StaticActors {
+		if actor.InteractionKind != "" {
+			seenActors[actor.InteractionKind] = struct{}{}
+		}
+	}
+	for kind := range wantKinds {
+		if _, ok := seenDefinitions[kind]; !ok {
+			t.Fatalf("bootstrap NPC service example lacks %q interaction definition", kind)
+		}
+		if _, ok := seenActors[kind]; !ok {
+			t.Fatalf("bootstrap NPC service example lacks %q static actor", kind)
+		}
+	}
+}
+
+func loadBootstrapNPCServiceExampleBundle(t *testing.T) Bundle {
+	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("resolve contentbundle test path")
@@ -57,14 +98,7 @@ func TestBootstrapNPCServiceExampleBundleIsCanonicalAndValid(t *testing.T) {
 	if decoder.Decode(&struct{}{}) != io.EOF {
 		t.Fatal("bootstrap NPC service example bundle has trailing JSON")
 	}
-
-	canonical, err := Canonicalize(decoded)
-	if err != nil {
-		t.Fatalf("canonicalize bootstrap NPC service example bundle: %v", err)
-	}
-	if !reflect.DeepEqual(canonical, decoded) {
-		t.Fatalf("bootstrap NPC service example bundle is not canonical:\n got: %#v\nwant: %#v", decoded, canonical)
-	}
+	return decoded
 }
 
 func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
