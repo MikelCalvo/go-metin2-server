@@ -113,9 +113,13 @@ func TestFileStoreSaveThenLoadRoundTripPreservesClientVisibleFlagMetadata(t *tes
 		Name:           "Rare Unique Confirm Charm",
 		Stackable:      false,
 		MaxCount:       1,
+		Refineable:     true,
+		Save:           true,
 		SlowQuery:      true,
 		Rare:           true,
 		Unique:         true,
+		MakeCount:      true,
+		Irremovable:    true,
 		ConfirmWhenUse: true,
 		Log:            true,
 	}}}
@@ -135,7 +139,7 @@ func TestFileStoreSaveThenLoadRoundTripPreservesClientVisibleFlagMetadata(t *tes
 	if err != nil {
 		t.Fatalf("read persisted snapshot with client-visible flag metadata: %v", err)
 	}
-	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 71085,\n      \"name\": \"Rare Unique Confirm Charm\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"slow_query\": true,\n      \"rare\": true,\n      \"unique\": true,\n      \"confirm_when_use\": true,\n      \"log\": true\n    }\n  ]\n}\n"
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 71085,\n      \"name\": \"Rare Unique Confirm Charm\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"refineable\": true,\n      \"save\": true,\n      \"slow_query\": true,\n      \"rare\": true,\n      \"unique\": true,\n      \"make_count\": true,\n      \"irremovable\": true,\n      \"confirm_when_use\": true,\n      \"log\": true\n    }\n  ]\n}\n"
 	if string(raw) != wantJSON {
 		t.Fatalf("unexpected deterministic snapshot with client-visible flag metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
 	}

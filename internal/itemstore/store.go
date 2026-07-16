@@ -27,11 +27,15 @@ type Template struct {
 	Stackable        bool            `json:"stackable"`
 	MaxCount         uint16          `json:"max_count"`
 	ShopBuyPrice     uint64          `json:"shop_buy_price,omitempty"`
+	Refineable       bool            `json:"refineable,omitempty"`
+	Save             bool            `json:"save,omitempty"`
 	SellCountPerGold bool            `json:"sell_count_per_gold,omitempty"`
 	SlowQuery        bool            `json:"slow_query,omitempty"`
 	Highlight        bool            `json:"highlight,omitempty"`
 	Rare             bool            `json:"rare,omitempty"`
 	Unique           bool            `json:"unique,omitempty"`
+	MakeCount        bool            `json:"make_count,omitempty"`
+	Irremovable      bool            `json:"irremovable,omitempty"`
 	ConfirmWhenUse   bool            `json:"confirm_when_use,omitempty"`
 	QuestUse         bool            `json:"quest_use,omitempty"`
 	QuestUseMultiple bool            `json:"quest_use_multiple,omitempty"`
@@ -74,11 +78,15 @@ type templateJSON struct {
 	Stackable        bool             `json:"stackable"`
 	MaxCount         uint16           `json:"max_count"`
 	ShopBuyPrice     uint64           `json:"shop_buy_price,omitempty"`
+	Refineable       bool             `json:"refineable,omitempty"`
+	Save             bool             `json:"save,omitempty"`
 	SellCountPerGold bool             `json:"sell_count_per_gold,omitempty"`
 	SlowQuery        bool             `json:"slow_query,omitempty"`
 	Highlight        bool             `json:"highlight,omitempty"`
 	Rare             bool             `json:"rare,omitempty"`
 	Unique           bool             `json:"unique,omitempty"`
+	MakeCount        bool             `json:"make_count,omitempty"`
+	Irremovable      bool             `json:"irremovable,omitempty"`
 	ConfirmWhenUse   bool             `json:"confirm_when_use,omitempty"`
 	QuestUse         bool             `json:"quest_use,omitempty"`
 	QuestUseMultiple bool             `json:"quest_use_multiple,omitempty"`
@@ -113,11 +121,15 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		Stackable:        template.Stackable,
 		MaxCount:         template.MaxCount,
 		ShopBuyPrice:     template.ShopBuyPrice,
+		Refineable:       template.Refineable,
+		Save:             template.Save,
 		SellCountPerGold: template.SellCountPerGold,
 		SlowQuery:        template.SlowQuery,
 		Highlight:        template.Highlight,
 		Rare:             template.Rare,
 		Unique:           template.Unique,
+		MakeCount:        template.MakeCount,
+		Irremovable:      template.Irremovable,
 		ConfirmWhenUse:   template.ConfirmWhenUse,
 		QuestUse:         template.QuestUse,
 		QuestUseMultiple: template.QuestUseMultiple,
@@ -164,11 +176,15 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		Stackable:        jsonTemplate.Stackable,
 		MaxCount:         jsonTemplate.MaxCount,
 		ShopBuyPrice:     jsonTemplate.ShopBuyPrice,
+		Refineable:       jsonTemplate.Refineable,
+		Save:             jsonTemplate.Save,
 		SellCountPerGold: jsonTemplate.SellCountPerGold,
 		SlowQuery:        jsonTemplate.SlowQuery,
 		Highlight:        jsonTemplate.Highlight,
 		Rare:             jsonTemplate.Rare,
 		Unique:           jsonTemplate.Unique,
+		MakeCount:        jsonTemplate.MakeCount,
+		Irremovable:      jsonTemplate.Irremovable,
 		ConfirmWhenUse:   jsonTemplate.ConfirmWhenUse,
 		QuestUse:         jsonTemplate.QuestUse,
 		QuestUseMultiple: jsonTemplate.QuestUseMultiple,

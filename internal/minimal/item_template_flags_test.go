@@ -8,12 +8,12 @@ import (
 )
 
 func TestBootstrapItemFlagsProjectConfirmWhenUseMetadata(t *testing.T) {
-	template := itemcatalog.Template{Vnum: 27005, Name: "Confirm Elixir", Stackable: true, MaxCount: 200, SlowQuery: true, ConfirmWhenUse: true, Log: true}
+	template := itemcatalog.Template{Vnum: 27005, Name: "Confirm Elixir", Stackable: true, MaxCount: 200, Refineable: true, Save: true, SlowQuery: true, MakeCount: true, Irremovable: true, ConfirmWhenUse: true, Log: true}
 
 	flags := bootstrapItemFlags(template)
-	want := itemproto.ItemFlagSlowQuery | itemproto.ItemFlagConfirmWhenUse | itemproto.ItemFlagLog
+	want := itemproto.ItemFlagRefineable | itemproto.ItemFlagSave | itemproto.ItemFlagSlowQuery | itemproto.ItemFlagMakeCount | itemproto.ItemFlagIrremovable | itemproto.ItemFlagConfirmWhenUse | itemproto.ItemFlagLog
 	if flags&want != want {
-		t.Fatalf("expected slow_query/confirm_when_use/log template metadata to project flags %#x, got %#x", want, flags)
+		t.Fatalf("expected refineable/save/slow_query/make_count/irremovable/confirm_when_use/log template metadata to project flags %#x, got %#x", want, flags)
 	}
 }
 

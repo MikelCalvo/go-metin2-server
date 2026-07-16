@@ -4194,6 +4194,12 @@ func encodeBootstrapItemFrameWithTemplates(position itemproto.Position, instance
 
 func bootstrapItemFlags(template itemcatalog.Template) uint32 {
 	var flags uint32
+	if template.Refineable {
+		flags |= itemproto.ItemFlagRefineable
+	}
+	if template.Save {
+		flags |= itemproto.ItemFlagSave
+	}
 	if template.Stackable {
 		flags |= itemproto.ItemFlagStackable
 	}
@@ -4208,6 +4214,12 @@ func bootstrapItemFlags(template itemcatalog.Template) uint32 {
 	}
 	if template.Unique {
 		flags |= itemproto.ItemFlagUnique
+	}
+	if template.MakeCount {
+		flags |= itemproto.ItemFlagMakeCount
+	}
+	if template.Irremovable {
+		flags |= itemproto.ItemFlagIrremovable
 	}
 	if template.ConfirmWhenUse {
 		flags |= itemproto.ItemFlagConfirmWhenUse
