@@ -45,6 +45,9 @@ func (m *MapIndex) Register(player PlayerEntity) bool {
 	if _, ok := m.byEntityID[player.Entity.ID]; ok {
 		return false
 	}
+	if _, ok := m.staticByEntityID[player.Entity.ID]; ok {
+		return false
+	}
 	if _, ok := m.staticActorMapPresenceLocked(player.Entity.ID); ok {
 		return false
 	}
@@ -74,6 +77,9 @@ func (m *MapIndex) Update(player PlayerEntity) bool {
 		if _, found := m.playerMapPresenceLocked(player.Entity.ID); !found {
 			return false
 		}
+	}
+	if _, ok := m.staticByEntityID[player.Entity.ID]; ok {
+		return false
 	}
 	if _, ok := m.staticActorMapPresenceLocked(player.Entity.ID); ok {
 		return false
