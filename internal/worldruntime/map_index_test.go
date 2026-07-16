@@ -163,6 +163,25 @@ func TestMapIndexRegisterClearsStaleMapBucketsForSameEntityID(t *testing.T) {
 	}
 }
 
+func TestMapIndexRegisterRejectsStaticBucketCollisionWhenStaticEntityIndexMissing(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{actor.Entity.ID: actor}
+
+	player := newPlayerEntity(actor.Entity.ID, entityRegistryCharacter("Alpha", 0x02040101, 77, 900, 1200))
+	if index.Register(player) {
+		t.Fatal("expected player registration to reject surviving static actor map-bucket ownership")
+	}
+
+	actors := index.StaticActors(42)
+	if len(actors) != 1 || actors[0].Entity.ID != actor.Entity.ID || actors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected original static actor map bucket to remain after rejected player registration, got %+v", actors)
+	}
+	if characters := index.PlayerCharacters(77); len(characters) != 0 {
+		t.Fatalf("expected no player to be inserted after rejected collision, got %+v", characters)
+	}
+}
+
 func TestMapIndexSnapshotReturnsStableSortedCharactersPerMap(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	if !index.Register(newPlayerEntity(3, entityRegistryCharacter("Zulu", 0x02040103, 42, 1900, 3000))) {
@@ -463,6 +482,25 @@ func TestMapIndexRegisterStaticClearsStaleMapBucketsForSameEntityID(t *testing.T
 	actors := index.StaticActors(77)
 	if len(actors) != 1 || actors[0].Entity.ID != stale.Entity.ID || actors[0].Entity.Name != "VillageGuard" || actors[0].Position.MapIndex != 77 {
 		t.Fatalf("expected registered actor only in map 77 bucket, got %+v", actors)
+	}
+}
+
+func TestMapIndexRegisterStaticRejectsPlayerBucketCollisionWhenPlayerEntityIndexMissing(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(14, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	index.byMapIndex[42] = map[uint64]PlayerEntity{player.Entity.ID: player}
+
+	actor := StaticEntity{Entity: Entity{ID: player.Entity.ID, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(77, 900, 1200), RaceNum: 20300}
+	if index.RegisterStatic(actor) {
+		t.Fatal("expected static actor registration to reject surviving player map-bucket ownership")
+	}
+
+	characters := index.PlayerCharacters(42)
+	if len(characters) != 1 || characters[0].Name != "Alpha" {
+		t.Fatalf("expected original player map bucket to remain after rejected static registration, got %+v", characters)
+	}
+	if actors := index.StaticActors(77); len(actors) != 0 {
+		t.Fatalf("expected no static actor to be inserted after rejected collision, got %+v", actors)
 	}
 }
 

@@ -45,6 +45,9 @@ func (m *MapIndex) Register(player PlayerEntity) bool {
 	if _, ok := m.byEntityID[player.Entity.ID]; ok {
 		return false
 	}
+	if _, ok := m.staticActorMapPresenceLocked(player.Entity.ID); ok {
+		return false
+	}
 
 	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: player.Position().MapIndex})
 	m.removePlayerMapPresenceLocked(player.Entity.ID)
@@ -265,6 +268,9 @@ func (m *MapIndex) RegisterStatic(actor StaticEntity) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, ok := m.staticByEntityID[actor.Entity.ID]; ok {
+		return false
+	}
+	if _, ok := m.playerMapPresenceLocked(actor.Entity.ID); ok {
 		return false
 	}
 	actor = cloneStaticEntity(actor)

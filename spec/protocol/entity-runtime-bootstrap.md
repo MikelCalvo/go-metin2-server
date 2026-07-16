@@ -77,14 +77,16 @@ The runtime now owns a dedicated effective-map membership boundary in:
 
 The current owned responsibilities are:
 - track player entity membership by effective `MapIndex`
+- track static-actor membership by effective `MapIndex`
 - normalize bootstrap `MapIndex = 0` through topology-aware effective-map semantics
-- expose deterministic per-map character snapshots for runtime callers
-- keep register, move, and remove bookkeeping explicit instead of rebuilding occupancy from whole-world scans by default
-- tolerate partial teardown when either the player entity index or map bucket has already been cleared first, so cleanup can still remove the remaining index state
-- prune stale map-bucket ownership for the same entity ID during player registration before inserting the new effective-map presence, so reconnect/reclaim repair paths cannot leave ghost player occupancy on older maps
+- expose deterministic per-map character and static-actor snapshots for runtime callers
+- keep register, move, update, and remove bookkeeping explicit instead of rebuilding occupancy from whole-world scans by default
+- tolerate partial teardown when either the player/static entity index or map bucket has already been cleared first, so cleanup can still remove the remaining index state
+- prune stale same-kind map-bucket ownership for the same entity ID during player/static registration before inserting the new effective-map presence, so reconnect/reclaim repair paths cannot leave ghost occupancy on older maps
+- reject cross-kind player/static collisions even when the opposite-kind primary entity index is missing but its map-bucket ownership survives
 
 This keeps map occupancy as an owned runtime primitive, and the current connected-player / visibility / map-occupancy / static-actor introspection snapshots can now be composed through `internal/worldruntime/scopes.go` instead of bootstrap-local shared-world conversion code.
-The tolerant cleanup rules are deliberately narrow: they make reconnect/close/register repair idempotent across owned runtime indexes without treating stale map/index remnants as a live player session.
+The tolerant cleanup rules are deliberately narrow: they make reconnect/close/register repair idempotent across owned runtime indexes without treating stale map/index remnants as a live session. Cross-kind bucket remnants are still authoritative enough to block conflicting registration because player and static-actor entity IDs share one runtime identity space.
 
 ### Session directory
 
