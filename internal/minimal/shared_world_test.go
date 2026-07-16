@@ -22920,6 +22920,26 @@ func TestGameSessionFlowShopSellRejectsAntiSellTemplateWithoutMutation(t *testin
 	assertMerchantStateUnchanged(t, runtime, accounts, login, buyer, "anti-sell packet shop sell2")
 }
 
+func TestGameSessionFlowShopSellRejectsAntiStackTemplateWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacketAntiStack", 0x0104012d, 0x0205012d, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-anti-stack", 0x2d2d2d2d, buyer)
+	defer closeSessionFlow(t, flow)
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "No Stack Sell Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiStack: true}
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected anti-stack packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected anti-stack packet shop sell2 to emit 1 invalid-pos frame, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode anti-stack packet shop sell2 invalid-pos frame: %v", err)
+	}
+	assertMerchantStateUnchanged(t, runtime, accounts, login, buyer, "anti-stack packet shop sell2")
+}
+
 func TestGameSessionFlowShopBuyAndSellRejectSelectedCharacterAntiFlagTemplatesWithoutMutation(t *testing.T) {
 	buyBuyer := merchantBuyerCharacter("MerchantBuyerPacketAntiFlag", 0x01040128, 0x02050128, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
 	buyBuyer.Job = 0

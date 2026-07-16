@@ -353,7 +353,7 @@ Expected result:
 - [ ] Open a known bootstrap merchant window with a disposable QA character
 - [ ] Attempt to buy a catalog item whose authored template requires a higher `min_level` than the selected character has
 - [ ] Attempt to sell a carried item whose authored template requires a higher `min_level` than the selected character has
-- [ ] Attempt to sell carried items whose authored templates are marked `anti_get`, `anti_drop`, `anti_give`, or `anti_sell`
+- [ ] Attempt to sell carried items whose authored templates are marked `anti_get`, `anti_drop`, `anti_give`, `anti_sell`, or `anti_stack`
 
 Expected result:
 - restricted packet paths fail with the current merchant invalid-position companion and no inventory, item quickslot, gold, or persisted account mutation is visible

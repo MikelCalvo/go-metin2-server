@@ -2967,6 +2967,7 @@ func TestMerchantSellCreditRejectsTransferRestrictedTemplates(t *testing.T) {
 		{name: "anti get", template: itemcatalog.Template{Vnum: 27001, Name: "No Sellback Pickup Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiGet: true}},
 		{name: "anti drop", template: itemcatalog.Template{Vnum: 27001, Name: "No Transfer Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiDrop: true}},
 		{name: "anti give", template: itemcatalog.Template{Vnum: 27001, Name: "No Give Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiGive: true}},
+		{name: "anti stack", template: itemcatalog.Template{Vnum: 27001, Name: "No Stack Sell Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiStack: true}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

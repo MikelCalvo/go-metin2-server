@@ -1508,7 +1508,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return frames, true
 			}
 			template, ok := merchantSellTemplateForSlot(runtime.itemTemplates, selectedPlayer, slot)
-			if !ok || !selectedPlayer.CanUseTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
+			if !ok || !selectedPlayer.CanUseTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack {
 				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
 				if !ok {
 					return nil, false

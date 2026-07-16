@@ -1264,7 +1264,7 @@ func (r *Runtime) SellMerchantItemForCredit(slot inventory.SlotIndex, count uint
 }
 
 func MerchantSellCredit(template itemcatalog.Template, count uint16) (uint64, bool) {
-	if !itemcatalog.ValidTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || count == 0 {
+	if !itemcatalog.ValidTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || count == 0 {
 		return 0, false
 	}
 	var price uint64
