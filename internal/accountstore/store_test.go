@@ -409,6 +409,22 @@ func TestFileStoreListRejectsFilenameLoginMismatch(t *testing.T) {
 	}
 }
 
+func TestFileStoreListRejectsCaseVariantDuplicateAccountFiles(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save lowercase account: %v", err)
+	}
+	upperPath := filepath.Join(store.dir, hex.EncodeToString([]byte("MKMK"))+".json")
+	if err := os.WriteFile(upperPath, []byte(`{"login":"MKMK","empire":2,"characters":[]}`), 0o644); err != nil {
+		t.Fatalf("write uppercase duplicate account: %v", err)
+	}
+
+	_, err := store.List()
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for case-variant duplicate account files, got %v", err)
+	}
+}
+
 func TestFileStoreValidateReportsDeterministicSnapshotSummary(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	accounts := []Account{

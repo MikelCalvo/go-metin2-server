@@ -58,7 +58,7 @@ Unless noted otherwise, non-loopback callers are rejected with `403`.
 
 ### `POST /local/account-store/validate`
 
-Validates the durable bootstrap account snapshot store through the same strict loader used by runtime backup/restore primitives, without mutating any account files. This endpoint is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed account snapshot is corrupt, has an invalid filename/login pairing, or violates the deterministic account snapshot invariants.
+Validates the durable bootstrap account snapshot store through the same strict loader used by runtime backup/restore primitives, without mutating any account files. This endpoint is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed account snapshot is corrupt, has an invalid filename/login pairing, uses a non-canonical case-variant filename, duplicates a login by case variant, or violates the deterministic account snapshot invariants.
 
 Successful responses are JSON summaries with:
 

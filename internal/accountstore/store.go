@@ -90,6 +90,7 @@ func (s *FileStore) List() ([]Account, error) {
 	}
 
 	accounts := make([]Account, 0, len(entries))
+	seenLogins := make(map[string]string, len(entries))
 	for _, entry := range entries {
 		if entry.Name() == BackupManifestFilename {
 			continue
@@ -101,10 +102,18 @@ func (s *FileStore) List() ([]Account, error) {
 		if err != nil {
 			return nil, err
 		}
+		if canonicalFilename := filepath.Base(s.accountPath(login)); entry.Name() != canonicalFilename {
+			return nil, fmt.Errorf("%w: account filename %q is not canonical for login %q", ErrInvalidAccount, entry.Name(), login)
+		}
 		account, err := s.Load(login)
 		if err != nil {
 			return nil, err
 		}
+		normalizedLogin := strings.ToLower(account.Login)
+		if previousLogin, ok := seenLogins[normalizedLogin]; ok {
+			return nil, fmt.Errorf("%w: account login %q duplicates %q", ErrInvalidAccount, account.Login, previousLogin)
+		}
+		seenLogins[normalizedLogin] = account.Login
 		accounts = append(accounts, account)
 	}
 	sort.Slice(accounts, func(i, j int) bool {
