@@ -208,6 +208,27 @@ func TestScopesVisibleStaticActorsFollowConfiguredVisibilityPolicyAndOrder(t *te
 	}
 }
 
+func TestScopesVisibleStaticActorsRepairFromMapIndexPresence(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	subject := registry.RegisterPlayer(entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800))
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1750, 2850), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if _, ok := registry.staticActors.Remove(guard.Entity.ID); !ok {
+		t.Fatal("expected direct non-player-directory removal to simulate partial teardown")
+	}
+
+	actors := NewScopes(topology, registry).VisibleStaticActors(subject.Character)
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected visible static actors to repair from surviving map-index presence, got %+v", actors)
+	}
+	if _, ok := registry.StaticActorByVID(uint32(guard.Entity.ID)); !ok {
+		t.Fatal("expected scope visibility repair to restore static actor visibility-VID lookup")
+	}
+}
+
 func TestVisibleGroundItemsFollowConfiguredVisibilityPolicyAndRejectZeroVID(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	subject := entityRegistryCharacter("Subject", 0x02040101, 0, 1700, 2800)

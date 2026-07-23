@@ -84,6 +84,7 @@ The current owned responsibilities are:
 - prune orphaned visibility-`VID` entries when their primary static-actor entry is already gone
 - prune non-canonical visibility-`VID` aliases that point at a surviving actor whose current canonical visibility `VID` is different
 - allow later register/update repair paths to reclaim orphaned or non-canonical aliases while preserving real live conflicts
+- repair non-player-directory presence from surviving map-index presence during runtime lookups by entity ID, client-visible static-actor `VID`, or full static-actor snapshots, so partial teardown or repair that loses the directory entry does not hide visible actors from interaction/targeting/scope readers until the next update path
 
 This keeps interaction/targeting and visibility bootstrap lookups from resolving through ghost non-player aliases after partial teardown or in-place repair.
 
@@ -107,6 +108,7 @@ The current owned responsibilities are:
 - rebuild player map-index presence from the player directory during player updates when the map index was partially cleared first, mirroring static-actor update repair and keeping movement/transfer refresh paths tolerant of map-index-only loss
 - rebuild player-directory presence from surviving player map-index presence during player updates when the directory entry was partially cleared first, so movement/transfer refresh paths can repair the exact-name and `VID` lookups instead of requiring disconnect/reconnect cleanup
 - repair duplicate player map-bucket ownership when lookup by `VID` discovers a stale bucket for an older player `VID` while the primary entity index already points at the player's newer canonical `VID`; the stale lookup fails closed, prunes the old map bucket, and preserves the current canonical `VID` lookup
+- expose static-actor lookup by client-visible `VID` directly from surviving map-index presence, and expose all static actors from map-index state, so entity-registry repair and scope visibility readers can recover non-player directory presence after partial teardown
 
 This keeps map occupancy as an owned runtime primitive, and the current connected-player / visibility / map-occupancy / static-actor introspection snapshots can now be composed through `internal/worldruntime/scopes.go` instead of bootstrap-local shared-world conversion code.
 The tolerant cleanup rules are deliberately narrow: they make reconnect/close/register repair idempotent across owned runtime indexes without treating stale map/index remnants as a live session. Cross-kind primary-index and bucket remnants are still authoritative enough to block conflicting registration because player and static-actor entity IDs share one runtime identity space.

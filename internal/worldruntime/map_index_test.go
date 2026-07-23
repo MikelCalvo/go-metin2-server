@@ -759,6 +759,44 @@ func TestMapIndexStaticActorLookupPrunesDuplicateStaleMapBuckets(t *testing.T) {
 	}
 }
 
+func TestMapIndexStaticActorByVIDFindsMapOnlyPresence(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 15, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	delete(index.staticByEntityID, guard.Entity.ID)
+
+	lookup, ok := index.StaticActorByVID(uint32(guard.Entity.ID))
+	if !ok || lookup.Entity.ID != guard.Entity.ID || lookup.Entity.Name != "VillageGuard" {
+		t.Fatalf("expected visibility VID lookup through surviving map bucket, got actor=%+v ok=%v", lookup, ok)
+	}
+	lookup.RaceNum = 99999
+	second, ok := index.StaticActorByVID(uint32(guard.Entity.ID))
+	if !ok || second.RaceNum != 20300 {
+		t.Fatalf("expected map-only visibility lookup to clone actor snapshots, got actor=%+v ok=%v", second, ok)
+	}
+}
+
+func TestMapIndexAllStaticActorsIncludesMapOnlyPresence(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 16, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(guard) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	delete(index.staticByEntityID, guard.Entity.ID)
+
+	actors := index.AllStaticActors()
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected all-static snapshot to include surviving map-only actor, got %+v", actors)
+	}
+	actors[0].RaceNum = 99999
+	lookup, ok := index.StaticActor(guard.Entity.ID)
+	if !ok || lookup.RaceNum != 20300 {
+		t.Fatalf("expected all-static snapshot to be cloned from map-index state, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestMapIndexRegisterStaticClonesDeathRewardDropVnums(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	guard := StaticEntity{

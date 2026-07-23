@@ -521,6 +521,69 @@ func TestEntityRegistryLooksUpStaticActorsByVisibilityVID(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryStaticActorLookupRepairsNonPlayerDirectoryWhenMapIndexEntrySurvives(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if _, ok := registry.staticActors.Remove(guard.Entity.ID); !ok {
+		t.Fatal("expected direct non-player-directory removal to simulate partial teardown")
+	}
+
+	lookup, ok := registry.StaticActor(guard.Entity.ID)
+	if !ok || lookup.Entity.ID != guard.Entity.ID || lookup.Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected static actor lookup to repair from map-index presence, got actor=%+v ok=%v", lookup, ok)
+	}
+	byVID, ok := registry.StaticActorByVID(uint32(guard.Entity.ID))
+	if !ok || byVID.Entity.ID != guard.Entity.ID || byVID.Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected repaired visibility-VID lookup to return guard, got actor=%+v ok=%v", byVID, ok)
+	}
+	actors := registry.AllStaticActors()
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected repaired static actor directory snapshot, got %+v", actors)
+	}
+}
+
+func TestEntityRegistryStaticActorByVIDRepairsNonPlayerDirectoryWhenMapIndexEntrySurvives(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if _, ok := registry.staticActors.Remove(guard.Entity.ID); !ok {
+		t.Fatal("expected direct non-player-directory removal to simulate partial teardown")
+	}
+
+	lookup, ok := registry.StaticActorByVID(uint32(guard.Entity.ID))
+	if !ok || lookup.Entity.ID != guard.Entity.ID || lookup.Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected static actor visibility-VID lookup to repair from map-index presence, got actor=%+v ok=%v", lookup, ok)
+	}
+	byID, ok := registry.StaticActor(guard.Entity.ID)
+	if !ok || byID.Entity.ID != guard.Entity.ID || byID.Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected repaired entity lookup to return guard, got actor=%+v ok=%v", byID, ok)
+	}
+}
+
+func TestEntityRegistryAllStaticActorsRepairsNonPlayerDirectoryFromMapIndexPresence(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if _, ok := registry.staticActors.Remove(guard.Entity.ID); !ok {
+		t.Fatal("expected direct non-player-directory removal to simulate partial teardown")
+	}
+
+	actors := registry.AllStaticActors()
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected all-static snapshot to repair from surviving map-index presence, got %+v", actors)
+	}
+	if _, ok := registry.StaticActorByVID(uint32(guard.Entity.ID)); !ok {
+		t.Fatal("expected all-static repair to restore visibility-VID lookup")
+	}
+}
+
 func TestEntityRegistryReturnsDeterministicSortedStaticActors(t *testing.T) {
 	registry := NewEntityRegistry()
 	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})

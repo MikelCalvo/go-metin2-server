@@ -193,7 +193,21 @@ func (r *EntityRegistry) StaticActor(id uint64) (StaticEntity, bool) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.staticActors.ByEntityID(id)
+	actor, ok := r.staticActors.ByEntityID(id)
+	if ok {
+		return actor, true
+	}
+	if r.maps == nil {
+		return StaticEntity{}, false
+	}
+	actor, ok = r.maps.StaticActor(id)
+	if !ok {
+		return StaticEntity{}, false
+	}
+	if !r.staticActors.Register(actor) {
+		return StaticEntity{}, false
+	}
+	return actor, true
 }
 
 func (r *EntityRegistry) StaticActorByVID(vid uint32) (StaticEntity, bool) {
@@ -202,7 +216,21 @@ func (r *EntityRegistry) StaticActorByVID(vid uint32) (StaticEntity, bool) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.staticActors.ByVID(vid)
+	actor, ok := r.staticActors.ByVID(vid)
+	if ok {
+		return actor, true
+	}
+	if r.maps == nil {
+		return StaticEntity{}, false
+	}
+	actor, ok = r.maps.StaticActorByVID(vid)
+	if !ok {
+		return StaticEntity{}, false
+	}
+	if !r.staticActors.Register(actor) {
+		return StaticEntity{}, false
+	}
+	return actor, true
 }
 
 func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bool) {
@@ -348,7 +376,26 @@ func (r *EntityRegistry) AllStaticActors() []StaticEntity {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.staticActors.StaticActors()
+	actors := r.staticActors.StaticActors()
+	if r.maps == nil {
+		return actors
+	}
+	known := make(map[uint64]struct{}, len(actors))
+	for _, actor := range actors {
+		known[actor.Entity.ID] = struct{}{}
+	}
+	for _, actor := range r.maps.AllStaticActors() {
+		if _, exists := known[actor.Entity.ID]; exists {
+			continue
+		}
+		if !r.staticActors.Register(actor) {
+			continue
+		}
+		actors = append(actors, actor)
+		known[actor.Entity.ID] = struct{}{}
+	}
+	sortStaticEntities(actors)
+	return actors
 }
 
 func (r *EntityRegistry) StaticActors(mapIndex uint32) []StaticEntity {
