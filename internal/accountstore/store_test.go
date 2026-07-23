@@ -653,6 +653,62 @@ func TestFileStoreBackupToRejectsNonEmptyDestination(t *testing.T) {
 	}
 }
 
+func TestFileStoreBackupToRejectsDestinationInsideSourceStore(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	backupDir := filepath.Join(store.dir, "nested-backup")
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrBackupDirInsideStore) {
+		t.Fatalf("expected ErrBackupDirInsideStore, got %v", err)
+	}
+	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected nested backup directory not to be created, stat err=%v", statErr)
+	}
+}
+
+func TestFileStoreBackupToRejectsDestinationEqualSourceStoreEvenWhenEmpty(t *testing.T) {
+	storeDir := filepath.Join(t.TempDir(), "accounts")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatalf("create empty account store dir: %v", err)
+	}
+	store := NewFileStore(storeDir)
+
+	err := store.BackupTo(storeDir)
+	if !errors.Is(err, ErrBackupDirInsideStore) {
+		t.Fatalf("expected ErrBackupDirInsideStore, got %v", err)
+	}
+	entries, readErr := os.ReadDir(storeDir)
+	if readErr != nil {
+		t.Fatalf("read account store after rejected self-backup: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected rejected self-backup to leave empty store untouched, got %#v", entries)
+	}
+}
+
+func TestFileStoreBackupToRejectsDestinationSymlinkInsideSourceStore(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	outsideDir := t.TempDir()
+	dstLink := filepath.Join(outsideDir, "account-backup-link")
+	if err := os.Symlink(filepath.Join(store.dir, "nested-backup"), dstLink); err != nil {
+		t.Fatalf("create destination symlink into account store: %v", err)
+	}
+
+	err := store.BackupTo(dstLink)
+	if !errors.Is(err, ErrBackupDirInsideStore) {
+		t.Fatalf("expected ErrBackupDirInsideStore for symlinked backup destination, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(store.dir, "nested-backup")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected symlinked nested backup target not to be created, stat err=%v", statErr)
+	}
+}
+
 func TestFileStoreBackupToRollsBackAccountFilesWhenSaveFailsAfterCommit(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	if err := store.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {

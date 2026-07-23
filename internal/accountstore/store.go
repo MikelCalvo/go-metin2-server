@@ -30,6 +30,7 @@ var (
 	ErrInvalidAccount         = errors.New("invalid account snapshot")
 	ErrBackupDirRequired      = errors.New("account backup dir is required")
 	ErrBackupDirNotEmpty      = errors.New("account backup dir is not empty")
+	ErrBackupDirInsideStore   = errors.New("account backup dir is inside account store")
 	ErrRestoreSourceRequired  = errors.New("account restore source dir is required")
 	ErrRestoreSourceNotFound  = errors.New("account restore source dir not found")
 	ErrRestoreDirNotEmpty     = errors.New("account restore dir is not empty")
@@ -210,6 +211,9 @@ func (s *FileStore) BackupTo(dstDir string) error {
 	}
 	if dstDir == "" {
 		return ErrBackupDirRequired
+	}
+	if err := rejectBackupDestinationInsideStore(s.dir, dstDir); err != nil {
+		return err
 	}
 	if err := ensureEmptyDir(dstDir, ErrBackupDirNotEmpty, "read account backup dir"); err != nil {
 		return err
@@ -447,6 +451,90 @@ func ensureEmptyDir(path string, nonEmptyErr error, readContext string) error {
 		return nonEmptyErr
 	}
 	return nil
+}
+
+func rejectBackupDestinationInsideStore(storeDir string, dstDir string) error {
+	storePath, err := filepath.Abs(filepath.Clean(storeDir))
+	if err != nil {
+		return fmt.Errorf("resolve account store dir: %w", err)
+	}
+	dstPath, err := filepath.Abs(filepath.Clean(dstDir))
+	if err != nil {
+		return fmt.Errorf("resolve account backup dir: %w", err)
+	}
+	inside, err := pathInsideOrEqual(storePath, dstPath)
+	if err != nil {
+		return fmt.Errorf("compare account backup dir: %w", err)
+	}
+	if inside {
+		return ErrBackupDirInsideStore
+	}
+
+	resolvedStorePath, err := resolveExistingPath(storePath)
+	if err != nil {
+		return fmt.Errorf("resolve account store symlinks: %w", err)
+	}
+	resolvedDstPath, err := resolveExistingPath(dstPath)
+	if err != nil {
+		return fmt.Errorf("resolve account backup symlinks: %w", err)
+	}
+	inside, err = pathInsideOrEqual(resolvedStorePath, resolvedDstPath)
+	if err != nil {
+		return fmt.Errorf("compare resolved account backup dir: %w", err)
+	}
+	if inside {
+		return ErrBackupDirInsideStore
+	}
+	return nil
+}
+
+func pathInsideOrEqual(root string, candidate string) (bool, error) {
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil {
+		return false, err
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))), nil
+}
+
+func resolveExistingPath(path string) (string, error) {
+	path, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	for range 255 {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			return filepath.Abs(filepath.Clean(resolved))
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		info, lstatErr := os.Lstat(path)
+		if lstatErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return "", err
+			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(path), target)
+			}
+			path = filepath.Clean(target)
+			continue
+		}
+		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
+			return "", lstatErr
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return filepath.Abs(filepath.Clean(path))
+		}
+		parentResolved, err := resolveExistingPath(parent)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Abs(filepath.Clean(filepath.Join(parentResolved, filepath.Base(path))))
+	}
+	return "", errors.New("too many symlinks while resolving path")
 }
 
 func writeJSONFileAtomically(dir, filename string, value any, context string) error {
