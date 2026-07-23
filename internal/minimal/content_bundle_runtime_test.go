@@ -10,6 +10,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -563,6 +564,34 @@ func TestGameRuntimeImportContentBundleRejectsDuplicateCombatProfilesWithoutMuta
 	}
 }
 
+type failOnSaveStaticActorStore struct {
+	delegate   staticstore.Store
+	failOnSave int
+	saveCalls  int
+	err        error
+}
+
+func (s *failOnSaveStaticActorStore) Load() (staticstore.Snapshot, error) {
+	if s == nil || s.delegate == nil {
+		return staticstore.Snapshot{}, staticstore.ErrSnapshotNotFound
+	}
+	return s.delegate.Load()
+}
+
+func (s *failOnSaveStaticActorStore) Save(snapshot staticstore.Snapshot) error {
+	if s == nil || s.delegate == nil {
+		return staticstore.ErrStorePathRequired
+	}
+	s.saveCalls++
+	if s.failOnSave > 0 && s.saveCalls == s.failOnSave {
+		if s.err != nil {
+			return s.err
+		}
+		return errors.New("static actor save failed")
+	}
+	return s.delegate.Save(snapshot)
+}
+
 func TestGameRuntimeImportContentBundleRestoresPreviousContentWhenStaticActorPersistenceFails(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
@@ -605,6 +634,120 @@ func TestGameRuntimeImportContentBundleRestoresPreviousContentWhenStaticActorPer
 	}
 	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].Name != "VillageGuide" || persisted.StaticActors[0].InteractionRef != "npc:guide" {
 		t.Fatalf("expected previous static actor snapshot to be restored after failed import, got %#v", persisted)
+	}
+}
+
+func TestGameRuntimeImportContentBundleFlushesStaticActorReplacementFanoutAfterSuccess(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	player := peerVisibilityCharacter("BundleWatcher", 0x01036002, 0x02046002, 1800, 2900, 0, 101, 201)
+	player.MapIndex = 42
+	issuePeerTicket(t, store, "bundle-watcher", 0x60600202, player)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	initial := contentbundle.Bundle{StaticActors: []contentbundle.StaticActor{{Name: "OldGuide", MapIndex: 42, X: 1810, Y: 2910, RaceNum: 20300}}}
+	if _, err := runtime.ImportContentBundle(initial); err != nil {
+		t.Fatalf("import initial static-actor content bundle: %v", err)
+	}
+	oldActors := runtime.StaticActors()
+	if len(oldActors) != 1 {
+		t.Fatalf("expected one initial actor before replacement import, got %+v", oldActors)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "bundle-watcher", 0x60600202)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected self bootstrap plus initial static actor visibility, got %d frames", len(enterOut))
+	}
+	flushServerFrames(t, flow)
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{StaticActors: []contentbundle.StaticActor{{Name: "NewGuide", MapIndex: 42, X: 1820, Y: 2920, RaceNum: 20301}}})
+	if err != nil {
+		t.Fatalf("replace static actor content bundle: %v", err)
+	}
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 4 {
+		t.Fatalf("expected old actor delete plus new actor bootstrap after successful import, got %d frames", len(queued))
+	}
+	oldDelete, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode old actor delete after successful replacement import: %v", err)
+	}
+	if oldDelete.VID != uint32(oldActors[0].EntityID) {
+		t.Fatalf("unexpected old actor delete after successful replacement import: %+v", oldDelete)
+	}
+	newAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode new actor add after successful replacement import: %v", err)
+	}
+	if newAdd.Type != 1 || newAdd.X != 1820 || newAdd.Y != 2920 || newAdd.RaceNum != 20301 {
+		t.Fatalf("unexpected new actor add after successful replacement import: %+v", newAdd)
+	}
+	newInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2]))
+	if err != nil {
+		t.Fatalf("decode new actor info after successful replacement import: %v", err)
+	}
+	if newInfo.VID != newAdd.VID || newInfo.Name != "NewGuide" {
+		t.Fatalf("unexpected new actor info after successful replacement import: %+v add=%+v", newInfo, newAdd)
+	}
+	newUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, queued[3]))
+	if err != nil {
+		t.Fatalf("decode new actor update after successful replacement import: %v", err)
+	}
+	if newUpdate.VID != newAdd.VID {
+		t.Fatalf("unexpected new actor update after successful replacement import: %+v add=%+v", newUpdate, newAdd)
+	}
+}
+
+func TestGameRuntimeImportContentBundleDoesNotLeakStaticActorFanoutWhenReplacementPersistenceFails(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	player := peerVisibilityCharacter("BundleWatcher", 0x01036001, 0x02046001, 1800, 2900, 0, 101, 201)
+	player.MapIndex = 42
+	issuePeerTicket(t, store, "bundle-watcher", 0x60600101, player)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	initial := contentbundle.Bundle{StaticActors: []contentbundle.StaticActor{{Name: "OldGuide", MapIndex: 42, X: 1810, Y: 2910, RaceNum: 20300}}}
+	if _, err := runtime.ImportContentBundle(initial); err != nil {
+		t.Fatalf("import initial static-actor content bundle: %v", err)
+	}
+	previous, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export previous content bundle: %v", err)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "bundle-watcher", 0x60600101)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected self bootstrap plus initial static actor visibility, got %d frames", len(enterOut))
+	}
+	flushServerFrames(t, flow)
+
+	runtime.staticStore = &failOnSaveStaticActorStore{delegate: staticActorStore, failOnSave: 3, err: errors.New("static actor rollback persistence failure")}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{StaticActors: []contentbundle.StaticActor{
+		{Name: "ImportedGuide", MapIndex: 42, X: 1820, Y: 2920, RaceNum: 20301},
+		{Name: "ImportedSmith", MapIndex: 42, X: 1830, Y: 2930, RaceNum: 20302},
+	}})
+	if err == nil {
+		t.Fatal("expected content bundle import to fail during replacement persistence")
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected failed content-bundle import not to leak delete/add visibility frames, got %d", len(queued))
+	}
+	current, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("re-export content bundle after failed live import: %v", err)
+	}
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatalf("expected runtime content bundle to restore previous content after failed live import:\n got: %#v\nwant: %#v", current, previous)
 	}
 }
 

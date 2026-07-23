@@ -48,6 +48,7 @@ type sharedWorldRegistry struct {
 	lastKnownCharacters             map[uint64]loginticket.Character
 	groundItemsByVID                map[uint32]sharedGroundItem
 	suppressStaticActorFanout       bool
+	pendingStaticActorImportDeletes []worldruntime.StaticEntity
 	now                             func() time.Time
 }
 
@@ -1729,7 +1730,17 @@ func (r *sharedWorldRegistry) clearStaticActorsForContentImportRollback() {
 	for _, actor := range removed {
 		r.clearStaticActorCombatStateLocked(actor.Entity.ID)
 	}
+	r.pendingStaticActorImportDeletes = nil
 	r.sessionCombatTargets = make(map[uint64]uint32)
+}
+
+func (r *sharedWorldRegistry) discardStaticActorImportFanout() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.pendingStaticActorImportDeletes = nil
 }
 
 func (r *sharedWorldRegistry) flushStaticActorImportFanout() {
@@ -1738,8 +1749,22 @@ func (r *sharedWorldRegistry) flushStaticActorImportFanout() {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	deletedActors := append([]worldruntime.StaticEntity(nil), r.pendingStaticActorImportDeletes...)
+	r.pendingStaticActorImportDeletes = nil
+	for _, actor := range deletedActors {
+		deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
+		if !encodable {
+			continue
+		}
+		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
+		}
+	}
 	for _, actor := range r.entities.AllStaticActors() {
-		frames := encodeStaticActorVisibilityFrames(actor)
+		frames := r.encodeStaticActorVisibilityStateFramesLocked(actor)
 		if len(frames) == 0 {
 			continue
 		}
@@ -2040,13 +2065,17 @@ func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSna
 	}
 	removedSnapshot := r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor))
 	r.clearStaticActorCombatStateLocked(entityID)
-	deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
-	if encodable {
-		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
-			if characterAtBootstrapHPFloor(target.Character) {
-				continue
+	if r.suppressStaticActorFanout {
+		r.pendingStaticActorImportDeletes = append(r.pendingStaticActorImportDeletes, actor)
+	} else {
+		deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
+		if encodable {
+			for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
 			}
-			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
 		}
 	}
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {

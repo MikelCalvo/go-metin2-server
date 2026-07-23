@@ -5220,6 +5220,9 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		if !r.persistStaticActorSnapshot(previousActors) {
 			rollbackErr = errors.Join(rollbackErr, ErrContentBundleUnavailable)
 		}
+		if r.sharedWorld != nil {
+			r.sharedWorld.discardStaticActorImportFanout()
+		}
 		rollbackProfiles()
 		if rollbackErr != nil {
 			return contentbundle.Bundle{}, errors.Join(replaceErr, rollbackErr)

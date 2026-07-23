@@ -203,7 +203,7 @@ Already present:
 - interaction definition store,
 - `info`, `talk`, `warp`, and `shop_preview` interaction kinds,
 - structured merchant catalogs,
-- content bundle import/export,
+- content bundle import/export with commit-only live visibility replay for static-actor replacement,
 - loopback-only local endpoints for static actors, interactions, visibility, and content bundles,
 - example bootstrap NPC service bundle.
 

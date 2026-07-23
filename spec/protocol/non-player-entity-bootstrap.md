@@ -30,13 +30,15 @@ This contract applies only to:
 - the first live operator-delete visibility teardown for removing static actors that are currently visible to connected players under those same bootstrap topology/AOI rules
 - the first live operator-update refresh for in-place edits that keep the actor in the same visible world set for already-connected players under those same bootstrap topology/AOI rules
 - the first live operator-update visibility rebuild for in-place edits that move the actor across map/AOI boundaries and therefore change which already-connected players can see it
+- content-bundle replacement replays removed static-actor deletes and imported static-actor bootstrap bursts to already-visible online players only after the replacement commits; failed replacement/rollback paths suppress those staged visibility frames
 
-This slice now claims only seven narrow client-visible behaviors for non-player actors:
+This slice now claims only eight narrow client-visible behaviors for non-player actors:
 - when a player enters `GAME`, already-visible bootstrap static actors can be appended to that enter-game result with deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` frames; combat-profile actors copy their resolved profile `level` into `CHAR_ADDITIONAL_INFO.level`, while runtime/operator snapshots expose the resolved profile `rank` as descriptor metadata only
 - when an operator seeds a new static actor while players are already online, sessions that already share visible world with that actor can immediately receive the same deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst
 - when an operator removes a static actor while players are already online, sessions that currently share visible world with that actor can immediately receive a deterministic `CHARACTER_DEL`
 - when an operator updates a static actor while players are already online and the actor remains in the same visible world set for those sessions, those already-visible sessions can immediately receive a deterministic `CHARACTER_DEL` followed by the actor's refreshed `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst
 - when an operator updates a static actor while players are already online and that update changes which sessions share visible world with the actor, sessions leaving visibility can immediately receive `CHARACTER_DEL` while sessions entering visibility can immediately receive the actor's deterministic `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` burst
+- when a committed content-bundle replacement changes the static-actor set, already-visible online sessions receive removed-actor `CHARACTER_DEL` frames before newly imported actor `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` bursts; failed replacements do not leak those staged frames
 - when that same player later crosses the configured AOI boundary through `MOVE` or `SYNC_POSITION`, the runtime can queue the corresponding self-facing static-actor add/delete rebuild frames
 - when gameplay-triggered transfer rebootstrap moves that player into another visible-world scope, the runtime can append the corresponding self-facing static-actor delete/add rebuild frames after the relocated self burst
 
