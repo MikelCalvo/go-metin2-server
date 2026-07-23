@@ -404,6 +404,82 @@ func TestLocalContentBundleSummaryEndpointReturnsSummaryJSONForLoopbackGet(t *te
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"static_actors":[{"name":"VillageGuide","map_index":1,"x":469350,"y":964200,"race_num":20302,"interaction_kind":"talk","interaction_ref":"npc:qa_guide"},{"name":"Merchant","map_index":1,"x":469500,"y":964200,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:qa_merchant"}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5}],"interaction_definitions":[{"kind":"talk","ref":"npc:qa_guide","text":"Welcome."},{"kind":"shop_preview","ref":"npc:qa_merchant","title":"QA Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1}]},{"kind":"info","ref":"lore:unused","text":"Unused lore."}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode dry-run summary response body: %v", err)
+	}
+	want := contentbundle.Summary{
+		StaticActorCount:                       2,
+		ItemTemplateCount:                      1,
+		InteractionDefinitionCount:             3,
+		ReferencedInteractionDefinitionCount:   2,
+		UnreferencedInteractionDefinitionCount: 1,
+		InteractionKinds: []contentbundle.InteractionKindSummary{
+			{Kind: interactionstore.KindInfo, Count: 1},
+			{Kind: interactionstore.KindShopPreview, Count: 1},
+			{Kind: interactionstore.KindTalk, Count: 1},
+		},
+		Maps: []contentbundle.MapContentSummary{{MapIndex: 1, StaticActorCount: 2}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected dry-run summary response:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleSummaryEndpointRejectsInvalidDryRunBundle(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(`{"static_actors":[{"name":"BrokenActor","race_num":20300}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for invalid dry-run bundle, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected invalid dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleSummaryEndpointRejectsOversizedDryRunBundle(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"interaction_definitions":[]}` + strings.Repeat(" ", 1<<20)
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d for oversized dry-run bundle, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected oversized dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
@@ -422,11 +498,29 @@ func TestLocalContentBundleSummaryEndpointRejectsNonLoopbackRemoteAddr(t *testin
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointRejectsDryRunNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback dry-run caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointRejectsWrongMethod(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
 
-	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", nil)
+	req := httptest.NewRequest(http.MethodDelete, "/local/content-bundle/summary", nil)
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 

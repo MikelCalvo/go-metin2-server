@@ -65,6 +65,7 @@ The first owned bundle surface is:
 - `GET /local/content-bundle`
 - `POST /local/content-bundle`
 - `GET /local/content-bundle/summary`
+- `POST /local/content-bundle/summary`
 - `POST /local/content-bundle/validate`
 
 Current rules:
@@ -88,6 +89,7 @@ Current rules:
 - import persists bundled `item_templates` to the file-backed item-template store and updates the live runtime template index before exposing the imported content
 - import updates the live bootstrap runtime so the resulting static-actor, item-template, and interaction-definition content becomes the current authored state, not only the on-disk store contents
 - `GET /local/content-bundle/summary` is a read-only operator view over the same canonical export path; it returns deterministic counts by content family, interaction kind, referenced/unreferenced interaction definitions, and per-map authored static-actor / spawn-group occupancy without returning the full bundle payload
+- `POST /local/content-bundle/summary` is a loopback-only dry-run summary for an operator-supplied bundle; it uses the same strict decode and canonicalization rules as import/validate, returns only the compact deterministic summary, and does not call the live runtime exporter or mutate authored content
 
 ## Success definition
 
@@ -95,4 +97,4 @@ After this slice, the repository should be able to say:
 - minimal `info`, `talk`, and `warp` definitions plus the structured `shop_preview` merchant catalog are authorable through loopback HTTP today
 - visible interactables can still be inspected live with compact resolved previews for the currently previewable kinds and fail-closed markers otherwise
 - bootstrap static actors, item templates, and their interaction definitions can be exported/imported as one deterministic authored-content bundle, with the structured merchant export/import shape already wired through that bundle surface
-- local operators can inspect a compact deterministic content-bundle summary before deciding whether to fetch or import the full bundle payload
+- local operators can inspect a compact deterministic content-bundle summary for either the live exported bundle or a candidate bundle before deciding whether to fetch or import the full bundle payload

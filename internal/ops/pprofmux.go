@@ -698,16 +698,33 @@ func RegisterLocalContentBundleSummaryEndpoint(mux *http.ServeMux, exportContent
 	}
 
 	mux.HandleFunc("/local/content-bundle/summary", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			summary, status := exportContentBundleSummary()
+			writeLocalJSONMutationResponse(w, summary, status)
+		case http.MethodPost:
+			if !isLoopbackRemoteAddr(r.RemoteAddr) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			bundle, status, ok := decodeLocalContentBundleRequest(r)
+			if !ok {
+				w.WriteHeader(status)
+				return
+			}
+			summary, err := contentbundle.Summarize(bundle)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
 		}
-		if !isLoopbackRemoteAddr(r.RemoteAddr) {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		summary, status := exportContentBundleSummary()
-		writeLocalJSONMutationResponse(w, summary, status)
 	})
 	return mux
 }

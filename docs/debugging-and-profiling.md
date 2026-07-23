@@ -135,11 +135,15 @@ Exports or imports the deterministic authored bootstrap content bundle used by s
 
 `POST` canonicalizes and validates the whole bundle before applying it. The request body is bounded to 1 MiB and oversized bodies are rejected before import. In addition to the per-row validation, non-built-in `combat_profiles` entries must be referenced by at least one static actor or spawn group in the same bundle; unreferenced snapshots are rejected so this endpoint cannot mutate process-local combat profiles without importing authored content that uses them. Structured merchant `shop_preview` definitions and item-shaped reward drops (`reward_drop_vnums` on spawn groups or bundled combat-profile defaults) must also carry the referenced `item_templates` in the same portable bundle; bundles that omit those templates are rejected before import.
 
-### `GET /local/content-bundle/summary`
+### `GET` / `POST /local/content-bundle/summary`
 
-Returns a loopback-only JSON summary of the currently exported canonical content bundle without returning the full authoring payload.
+Returns a loopback-only JSON summary of authored content bundles without returning the full authoring payload.
 
-The summary includes deterministic counts for static actors, spawn groups, portable combat profiles, item templates, interaction definitions, referenced/unreferenced interaction definitions, interaction kinds, and per-map static actor / spawn-group occupancy. It is read-only and uses the same export + canonicalization rules as `GET /local/content-bundle`; if the live authored content cannot be exported as a valid bundle, the endpoint fails closed with `500` rather than summarizing a partial snapshot. Non-loopback callers return `403`, and methods other than `GET` return `405`.
+`GET` summarizes the currently exported canonical bundle. It is read-only and uses the same export + canonicalization rules as `GET /local/content-bundle`; if the live authored content cannot be exported as a valid bundle, the endpoint fails closed with `500` rather than summarizing a partial snapshot.
+
+`POST` is a dry-run helper for candidate bundles. It uses the same 1 MiB request bound, strict JSON decoding, and `contentbundle.Canonicalize(...)` rules as `POST /local/content-bundle` / `POST /local/content-bundle/validate`, then returns only the compact summary. It does not call the live runtime exporter and does not import or mutate runtime state. Use it when an operator wants quick counts/kind/map impact for a candidate bundle before requesting the full canonical payload from `/local/content-bundle/validate` or committing it with `/local/content-bundle`.
+
+The summary includes deterministic counts for static actors, spawn groups, portable combat profiles, item templates, interaction definitions, referenced/unreferenced interaction definitions, interaction kinds, and per-map static actor / spawn-group occupancy. Invalid candidate bundles return `400`, non-loopback callers return `403`, and methods other than `GET` / `POST` return `405`.
 
 ### `POST /local/content-bundle/validate`
 
