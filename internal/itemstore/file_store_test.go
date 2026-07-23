@@ -361,6 +361,43 @@ func TestFileStoreSaveThenLoadRoundTripPreservesUseEffectMetadata(t *testing.T) 
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesNegativeUseEffectMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:      27006,
+		Name:      "Cursed Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{
+			PointType:  7,
+			PointIndex: 1,
+			PointDelta: -25,
+			Message:    "consume:27006:-25",
+		},
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with negative use effect metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with negative use effect metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with negative use effect metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with negative use effect metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27006,\n      \"name\": \"Cursed Practice Elixir\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"use_effect\": {\n        \"point_type\": 7,\n        \"point_index\": 1,\n        \"point_delta\": -25,\n        \"message\": \"consume:27006:-25\"\n      }\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with negative use effect metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreSaveRejectsInvalidUseEffectMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
@@ -396,6 +433,17 @@ func TestFileStoreSaveRejectsInvalidUseEffectMetadata(t *testing.T) {
 	}}}
 	if err := store.Save(zeroDelta); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for zero use-effect point delta, got %v", err)
+	}
+
+	nonReversibleDelta := Snapshot{Templates: []Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{PointType: 7, PointIndex: 1, PointDelta: -1 << 31, Message: "consume:27002:min"},
+	}}}
+	if err := store.Save(nonReversibleDelta); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for non-reversible use-effect point delta, got %v", err)
 	}
 
 	invalidPointIndex := Snapshot{Templates: []Template{{

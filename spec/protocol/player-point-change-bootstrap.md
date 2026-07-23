@@ -64,9 +64,10 @@ This is good enough for the first `PLAYER_POINT_CHANGE` slice, but not yet the f
 
 The same packet is now also reused by the first owned `/use_item <slot>` vertical:
 - runtime `type` comes from `item_template.use_effect.point_type`
-- runtime `amount` comes from `item_template.use_effect.point_delta`
+- runtime `amount` comes from the authored signed `item_template.use_effect.point_delta`; positive consumable deltas increase the selected point and negative consumable deltas decrease it
 - runtime `value` mirrors the updated selected-character point at `item_template.use_effect.point_index`
 - the current seeded bootstrap consumable template still resolves to `type = 1`, `amount = 50`, and `value = updated Points[1]`
+- applying the signed delta must stay inside the current signed 32-bit point range; positive overflow and negative underflow fail closed before item, point, quickslot, or persistence mutation
 
 The same packet is now also reused by the first narrow template-backed equip/unequip point slice:
 - successful `/equip_item <from> <equip_slot>` and `/unequip_item <equip_slot> <to>` can append one self-only `PLAYER_POINT_CHANGE` when the matched item template carries `equip_effect` on that same authored `equip_slot`

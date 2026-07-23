@@ -1088,6 +1088,54 @@ func TestUseItemRejectsRuntimeWideTemplateMaxWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestUseItemAppliesTemplateAuthoredNegativePointDelta(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27006, Count: 2, Slot: 5}},
+		Points:    [255]int32{1: 125},
+	}, SessionLink{})
+	template := itemcatalog.Template{Vnum: 27006, Name: "Cursed Practice Elixir", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: -25, Message: "consume:27006:-25"}}
+
+	result, ok := runtime.UseItem(5, template)
+	if !ok {
+		t.Fatal("expected template-authored negative ITEM_USE point delta to succeed")
+	}
+	if result.PointType != 1 || result.PointAmount != -25 || result.PointValue != 100 || result.EffectMessage != "consume:27006:-25" {
+		t.Fatalf("unexpected negative ITEM_USE result: %+v", result)
+	}
+	if result.ItemRemoved || result.Item.Count != 1 || result.Item.Slot != 5 || result.Item.Vnum != 27006 {
+		t.Fatalf("unexpected negative ITEM_USE item result: %+v", result)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 100 {
+		t.Fatalf("expected negative ITEM_USE to reduce point value to 100, got %d", got)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, []inventory.ItemInstance{{ID: 41, Vnum: 27006, Count: 1, Slot: 5}}) {
+		t.Fatalf("unexpected inventory after negative ITEM_USE: got %#v", got)
+	}
+	if runtime.PersistedSnapshot().Points[1] != 125 {
+		t.Fatalf("expected negative ITEM_USE to leave persisted points unchanged before commit, got %d", runtime.PersistedSnapshot().Points[1])
+	}
+}
+
+func TestUseItemRejectsTemplateAuthoredNegativePointUnderflowWithoutMutation(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27006, Count: 2, Slot: 5}},
+		Points:    [255]int32{1: -1<<31 + 10},
+	}, SessionLink{})
+	beforeInventory := runtime.LiveInventory()
+	beforePoints := runtime.LiveCharacter().Points
+	template := itemcatalog.Template{Vnum: 27006, Name: "Cursed Practice Elixir", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: -25, Message: "must not underflow"}}
+
+	if result, ok := runtime.UseItem(5, template); ok {
+		t.Fatalf("expected negative ITEM_USE point underflow to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+		t.Fatalf("negative ITEM_USE underflow mutated inventory: got %#v want %#v", got, beforeInventory)
+	}
+	if got := runtime.LiveCharacter().Points; got != beforePoints {
+		t.Fatalf("negative ITEM_USE underflow mutated points: got %#v want %#v", got, beforePoints)
+	}
+}
+
 func TestUseItemRejectsMalformedTemplateUseEffectWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string

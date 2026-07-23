@@ -340,7 +340,7 @@ func validUseEffect(effect *UseEffect) bool {
 	if effect == nil {
 		return true
 	}
-	if !validPositivePointFields(effect.PointType, effect.PointIndex, effect.PointDelta) {
+	if !validNonZeroPointFields(effect.PointType, effect.PointIndex, effect.PointDelta) {
 		return false
 	}
 	return strings.TrimSpace(effect.Message) != ""
@@ -351,13 +351,6 @@ func validPointEffect(effect *PointEffect) bool {
 		return true
 	}
 	return validNonZeroPointFields(effect.PointType, effect.PointIndex, effect.PointDelta)
-}
-
-func validPositivePointFields(pointType uint8, pointIndex uint8, pointDelta int32) bool {
-	if !validNonZeroPointFields(pointType, pointIndex, pointDelta) {
-		return false
-	}
-	return pointDelta > 0
 }
 
 func validNonZeroPointFields(pointType uint8, pointIndex uint8, pointDelta int32) bool {

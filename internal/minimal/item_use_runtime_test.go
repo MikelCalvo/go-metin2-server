@@ -1109,6 +1109,124 @@ func TestGameSessionFlowItemUseRejectsPointOverflowWithoutMutation(t *testing.T)
 	}
 }
 
+func TestGameSessionFlowItemUseAppliesTemplateAuthoredNegativePointDelta(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseNegative", 0x0103057f, 0x0204057f, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 453, Vnum: 27006, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 125
+	issuePeerTicket(t, ticketStore, "item-use-negative", 0x5050507f, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-negative", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed negative item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27006,
+		Name:      "Cursed Template Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: -25, Message: "consume:27006:-25"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected negative item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-negative", 0x5050507f)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected negative item-use packet error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected negative item-use to emit point, item update, info chat; got %d", len(out))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode negative item-use point-change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != -25 || pointChange.Value != 100 {
+		t.Fatalf("unexpected negative item-use point-change: %+v", pointChange)
+	}
+	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode negative item-use update: %v", err)
+	}
+	if updated.Position != itemproto.InventoryPosition(5) || updated.Count != 1 {
+		t.Fatalf("unexpected negative item-use update: %+v", updated)
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode negative item-use info chat: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != "consume:27006:-25" {
+		t.Fatalf("unexpected negative item-use info chat: %+v", info)
+	}
+	persisted, err := accounts.Load("item-use-negative")
+	if err != nil {
+		t.Fatalf("load persisted negative item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 453, Vnum: 27006, Count: 1, Slot: 5}}) {
+		t.Fatalf("negative item-use persisted unexpected inventory: %+v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("negative item-use mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 100 {
+		t.Fatalf("negative item-use persisted point value: got %d want 100", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowItemUseRejectsNegativePointUnderflowWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseUnderflow", 0x01030580, 0x02040580, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 454, Vnum: 27006, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = -1<<31 + 10
+	issuePeerTicket(t, ticketStore, "item-use-underflow", 0x50505080, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-underflow", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed negative-underflow item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27006,
+		Name:      "Underflow Template Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: -25, Message: "must not underflow"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected negative-underflow item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-underflow", 0x50505080)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected negative-underflow item-use packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected negative-underflow item-use to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after negative-underflow item-use rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("item-use-underflow")
+	if err != nil {
+		t.Fatalf("load persisted negative-underflow item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("negative-underflow item-use mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("negative-underflow item-use mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("negative-underflow item-use mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameSessionFlowItemUseRejectsOverUint8TemplateMaxWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

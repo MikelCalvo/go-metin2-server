@@ -957,10 +957,11 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 		return ItemUseResult{}, false
 	}
 	currentPointValue := r.livePoints[effect.PointIndex]
-	if currentPointValue > (1<<31-1)-effect.PointDelta {
+	nextPointValue := int64(currentPointValue) + int64(effect.PointDelta)
+	if nextPointValue < -1<<31 || nextPointValue > 1<<31-1 {
 		return ItemUseResult{}, false
 	}
-	updatedPointValue := currentPointValue + effect.PointDelta
+	updatedPointValue := int32(nextPointValue)
 	result := ItemUseResult{
 		Slot:          slot,
 		PointType:     effect.PointType,

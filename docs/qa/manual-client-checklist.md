@@ -227,6 +227,7 @@ Run this only with a disposable QA character and known seeded item-template data
 
 Expected result:
 - the client receives a `PLAYER_POINT_CHANGE` from the template-authored `use_effect`
+- template-authored negative `use_effect.point_delta` consumables are allowed in this bootstrap path: the self-only `PLAYER_POINT_CHANGE.amount` should be negative, `value` should be the decreased signed point value, and the normal item refresh plus placeholder info message still follow
 - if more than one item remains in the stack, the carried cell refreshes with the decremented count, preserves authored socket/attribute display arrays in the `ITEM_UPDATE`, and both item and non-item quickslots for that still-occupied cell remain unchanged
 - if the consumed stack reaches zero, the carried cell disappears and every item quickslot referencing that cell is cleared in deterministic quickslot-position order; unrelated skill/command quickslots remain
 - locked carried stacks fail closed: no point change, item refresh, quickslot change, or placeholder chat is visible
@@ -239,6 +240,7 @@ Expected result:
 - a carried stack whose live count already exceeds its loaded template-authored `max_count` fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose resolved template `max_count` cannot fit the current one-byte item refresh count range fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose template-authored point delta would overflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
+- a consumable whose template-authored negative point delta would underflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - the placeholder `CHAT_TYPE_INFO` message uses the template-authored `use_effect.message`
 
 ### 4.5.2 Drag stack onto stack (`ITEM_USE_TO_ITEM`)

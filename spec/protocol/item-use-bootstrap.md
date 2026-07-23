@@ -93,9 +93,11 @@ Exactly one consumable shape is frozen here:
 - that `use_effect` payload currently owns:
   - the point target index (`point_index`)
   - the point-change packet `type` (`point_type`)
-  - the per-consume delta (`point_delta`)
+  - the per-consume signed delta (`point_delta`)
   - the temporary self-only placeholder text (`message`)
 - the current seeded bootstrap consumable template still uses `vnum = 27001`, `point_index = 1`, `point_type = 1`, `point_delta = 50`, and `message = consume:27001:+50`
+
+`use_effect.point_delta` is now signed for the runtime contract: positive values increase the selected point, and negative values decrease it. The first negative-delta slice remains self-only and template-backed; it does not introduce buffs, poison, cooldowns, or peer-visible effects.
 
 This is intentionally the first template-backed consumable prototype, not the final quest-scripted or compatibility-grade item-use system.
 
@@ -107,7 +109,7 @@ That companion document owns merge/new-slot/fail-closed placement semantics for 
 When `/use_item <slot>` or `ITEM_USE(TItemPos{window = INVENTORY, cell = slot})` targets a carried inventory slot whose item resolves to a valid template-backed `use_effect` with `count >= 1`:
 
 1. the runtime decrements the stack by exactly `1` while preserving the carried-stack bounds frozen in `item-stack-bootstrap.md`
-2. the selected character's live `Points[point_index]` increases by exactly `point_delta`
+2. the selected character's live `Points[point_index]` changes by exactly the signed `point_delta`
 3. the updated selected-character snapshot must be persisted before the new live state is committed
 4. the server emits a deterministic self-only response burst in this order:
    1. `PLAYER_POINT_CHANGE`
@@ -132,7 +134,7 @@ The item refresh for the consumed slot must use the existing owned item family:
 - if the stack remains non-zero after consume, emit `ITEM_UPDATE(slot)` with the decremented `count`
 - if the consumed stack reaches zero, emit `ITEM_DEL(slot)`
 
-The minimal session/runtime packet path now freezes partial-stack `ITEM_USE` with template-authored output: `PLAYER_POINT_CHANGE`, `ITEM_UPDATE` for the already-known carried cell's decremented count, then the template-authored `CHAT_TYPE_INFO` placeholder. The `ITEM_UPDATE` refresh carries the same template-authored display socket and attribute arrays owned for selected-character `ITEM_SET` bootstrap, so count-only consumable refreshes do not clear authored visible item metadata. The persisted account snapshot keeps the item instance in the same carried slot with the decremented count, persists the updated point value, and leaves both item and non-item quickslots for that still-occupied cell unchanged.
+The minimal session/runtime packet path now freezes partial-stack `ITEM_USE` with template-authored output: `PLAYER_POINT_CHANGE`, `ITEM_UPDATE` for the already-known carried cell's decremented count, then the template-authored `CHAT_TYPE_INFO` placeholder. The `ITEM_UPDATE` refresh carries the same template-authored display socket and attribute arrays owned for selected-character `ITEM_SET` bootstrap, so count-only consumable refreshes do not clear authored visible item metadata. The persisted account snapshot keeps the item instance in the same carried slot with the decremented count, persists the updated point value, and leaves both item and non-item quickslots for that still-occupied cell unchanged. The same burst applies when the template-authored `point_delta` is negative: `PLAYER_POINT_CHANGE.amount` carries the negative delta and `value` carries the decreased signed point value.
 
 The minimal session/runtime packet path now freezes last-stack `ITEM_USE` with template-authored output: `PLAYER_POINT_CHANGE`, `ITEM_DEL`, every item-only `QUICKSLOT_DEL` in deterministic quickslot-position order, then the template-authored `CHAT_TYPE_INFO` placeholder. The persisted account snapshot removes the consumed stack, persists the updated point value, deletes all item quickslots that referenced the removed carried cell, and preserves non-item quickslots that carry the same byte slot value.
 
@@ -159,7 +161,7 @@ The first consumable path must fail closed when any of these are true:
 - the requested carried cell has duplicate live item occupancy
 - the carried live item stack count already exceeds the resolved template-authored `max_count`; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - the resolved template `max_count` exceeds the current one-byte item refresh count range (`> 255`); the player mutation boundary and minimal session/runtime packet path both freeze this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged even if such malformed metadata is injected after store validation
-- applying the template-authored `use_effect.point_delta` would overflow the current signed 32-bit point-value range exposed by the bootstrap `PLAYER_POINT_CHANGE` path; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
+- applying the template-authored `use_effect.point_delta` would overflow or underflow the current signed 32-bit point-value range exposed by the bootstrap `PLAYER_POINT_CHANGE` path; the minimal session/runtime packet path freezes both positive overflow and negative underflow as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - the selected character is at the bootstrap zero-HP floor; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - the resolved template carries an authored job/sex/empire anti flag for the selected character
 - the resolved template carries an authored `min_level` above the selected character's current persisted `level`
