@@ -428,6 +428,9 @@ func (s *FileStore) validateBackupManifest(accounts []Account) error {
 		if !ok {
 			return fmt.Errorf("%w: manifest references unknown login %q", ErrInvalidBackupManifest, file.Login)
 		}
+		if file.Login != account.Login {
+			return fmt.Errorf("%w: manifest login %q does not match committed snapshot login %q", ErrInvalidBackupManifest, file.Login, account.Login)
+		}
 		if file.Filename == "" || filepath.Base(file.Filename) != file.Filename {
 			return fmt.Errorf("%w: manifest filename %q is not a base name", ErrInvalidBackupManifest, file.Filename)
 		}

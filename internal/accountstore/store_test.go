@@ -664,6 +664,63 @@ func TestFileStoreValidateBackupFromRejectsManifestChecksumMismatch(t *testing.T
 	}
 }
 
+func TestFileStoreValidateBackupFromRejectsManifestFileLoginCaseDrift(t *testing.T) {
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
+	backup := createBackupWithManifestFileLogin(t, account, "MKMK")
+
+	_, err := NewFileStore(filepath.Join(t.TempDir(), "restore-target")).ValidateBackupFrom(backup.dir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for case-drifted manifest login, got %v", err)
+	}
+}
+
+func TestFileStoreRestoreFromRejectsManifestFileLoginCaseDrift(t *testing.T) {
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
+	backup := createBackupWithManifestFileLogin(t, account, "MKMK")
+	restoreDir := filepath.Join(t.TempDir(), "restore-target")
+
+	err := NewFileStore(restoreDir).RestoreFrom(backup.dir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for case-drifted manifest login, got %v", err)
+	}
+	entries, readErr := os.ReadDir(restoreDir)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		t.Fatalf("read restore dir after rejected case-drifted manifest: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected rejected case-drifted manifest to leave restore dir empty, got %#v", entries)
+	}
+}
+
+func createBackupWithManifestFileLogin(t *testing.T, account Account, manifestLogin string) *FileStore {
+	t.Helper()
+	backup := NewFileStore(t.TempDir())
+	if err := backup.Save(account); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := backup.writeBackupManifest([]Account{account}); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	manifestPath := filepath.Join(backup.dir, BackupManifestFilename)
+	manifestRaw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read backup manifest: %v", err)
+	}
+	var manifest BackupManifest
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		t.Fatalf("decode backup manifest: %v", err)
+	}
+	manifest.Files[0].Login = manifestLogin
+	updatedManifest, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("encode modified backup manifest: %v", err)
+	}
+	if err := os.WriteFile(manifestPath, updatedManifest, 0o644); err != nil {
+		t.Fatalf("write modified backup manifest: %v", err)
+	}
+	return backup
+}
+
 func TestFileStoreRestoreFromRejectsMalformedBackupManifest(t *testing.T) {
 	backup := NewFileStore(t.TempDir())
 	if err := backup.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
