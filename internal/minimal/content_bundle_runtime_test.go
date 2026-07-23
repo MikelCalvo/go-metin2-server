@@ -53,6 +53,43 @@ func TestGameRuntimeExportContentBundleBuildsDeterministicPortableBundle(t *test
 	}
 }
 
+func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+		{Kind: interactionstore.KindInfo, Ref: "lore:unused", Text: "Unused lore kept for later QA."},
+		{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Keep your blade sharp."},
+	})
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", 42, 1700, 2800, 20300, interactionstore.KindTalk, "npc:village_guard"); !ok {
+		t.Fatal("expected talk static actor registration to succeed")
+	}
+	if _, ok := runtime.RegisterStaticActor("Blacksmith", 42, 1750, 2850, 20301); !ok {
+		t.Fatal("expected plain static actor registration to succeed")
+	}
+
+	summary, err := runtime.ExportContentBundleSummary()
+	if err != nil {
+		t.Fatalf("export content bundle summary: %v", err)
+	}
+	want := contentbundle.Summary{
+		StaticActorCount:                       2,
+		InteractionDefinitionCount:             2,
+		ReferencedInteractionDefinitionCount:   1,
+		UnreferencedInteractionDefinitionCount: 1,
+		InteractionKinds: []contentbundle.InteractionKindSummary{
+			{Kind: interactionstore.KindInfo, Count: 1},
+			{Kind: interactionstore.KindTalk, Count: 1},
+		},
+		Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 2}},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected exported content bundle summary:\n got: %#v\nwant: %#v", summary, want)
+	}
+}
+
 func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *testing.T) {
 	staticPath := t.TempDir() + "/static-actors.json"
 	staticActorStore := staticstore.NewFileStore(staticPath)

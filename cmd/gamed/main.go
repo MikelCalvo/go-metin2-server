@@ -248,6 +248,16 @@ func main() {
 			}
 		},
 	)
+	opsHandler = ops.RegisterLocalContentBundleSummaryEndpoint(
+		opsHandler,
+		func() (any, int) {
+			summary, err := gameRuntime.ExportContentBundleSummary()
+			if err != nil {
+				return nil, http.StatusInternalServerError
+			}
+			return summary, http.StatusOK
+		},
+	)
 	opsHandler = ops.RegisterLocalContentBundleValidateEndpoint(opsHandler)
 	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {
 		logger.Error("service stopped with error", "err", err)

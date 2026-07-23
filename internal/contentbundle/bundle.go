@@ -46,6 +46,29 @@ type Bundle struct {
 	InteractionDefinitions []interactionstore.Definition                   `json:"interaction_definitions"`
 }
 
+type Summary struct {
+	StaticActorCount                       int                      `json:"static_actor_count"`
+	SpawnGroupCount                        int                      `json:"spawn_group_count"`
+	CombatProfileCount                     int                      `json:"combat_profile_count"`
+	ItemTemplateCount                      int                      `json:"item_template_count"`
+	InteractionDefinitionCount             int                      `json:"interaction_definition_count"`
+	ReferencedInteractionDefinitionCount   int                      `json:"referenced_interaction_definition_count"`
+	UnreferencedInteractionDefinitionCount int                      `json:"unreferenced_interaction_definition_count"`
+	InteractionKinds                       []InteractionKindSummary `json:"interaction_kinds,omitempty"`
+	Maps                                   []MapContentSummary      `json:"maps,omitempty"`
+}
+
+type InteractionKindSummary struct {
+	Kind  string `json:"kind"`
+	Count int    `json:"count"`
+}
+
+type MapContentSummary struct {
+	MapIndex         uint32 `json:"map_index"`
+	StaticActorCount int    `json:"static_actor_count"`
+	SpawnGroupCount  int    `json:"spawn_group_count"`
+}
+
 func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot) (Bundle, error) {
 	return FromSnapshotsWithItems(staticActors, interactions, itemcatalog.Snapshot{})
 }
@@ -165,6 +188,79 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		return Bundle{}, err
 	}
 	return normalized, nil
+}
+
+func Summarize(bundle Bundle) (Summary, error) {
+	normalized, err := Canonicalize(bundle)
+	if err != nil {
+		return Summary{}, err
+	}
+
+	summary := Summary{
+		StaticActorCount:           len(normalized.StaticActors),
+		SpawnGroupCount:            len(normalized.SpawnGroups),
+		CombatProfileCount:         len(normalized.CombatProfiles),
+		ItemTemplateCount:          len(normalized.ItemTemplates),
+		InteractionDefinitionCount: len(normalized.InteractionDefinitions),
+	}
+
+	referencedDefinitions := make(map[string]struct{})
+	for _, actor := range normalized.StaticActors {
+		if actor.InteractionKind != "" && actor.InteractionRef != "" {
+			referencedDefinitions[interactionDefinitionKey(actor.InteractionKind, actor.InteractionRef)] = struct{}{}
+		}
+	}
+	summary.ReferencedInteractionDefinitionCount = len(referencedDefinitions)
+	summary.UnreferencedInteractionDefinitionCount = summary.InteractionDefinitionCount - summary.ReferencedInteractionDefinitionCount
+
+	interactionKindCounts := make(map[string]int)
+	for _, definition := range normalized.InteractionDefinitions {
+		interactionKindCounts[definition.Kind]++
+	}
+	if len(interactionKindCounts) > 0 {
+		kinds := make([]string, 0, len(interactionKindCounts))
+		for kind := range interactionKindCounts {
+			kinds = append(kinds, kind)
+		}
+		sort.Strings(kinds)
+		summary.InteractionKinds = make([]InteractionKindSummary, 0, len(kinds))
+		for _, kind := range kinds {
+			summary.InteractionKinds = append(summary.InteractionKinds, InteractionKindSummary{Kind: kind, Count: interactionKindCounts[kind]})
+		}
+	}
+
+	mapCounts := make(map[uint32]*MapContentSummary)
+	for _, actor := range normalized.StaticActors {
+		entry := mapContentSummaryForIndex(mapCounts, actor.MapIndex)
+		entry.StaticActorCount++
+	}
+	for _, spawnGroup := range normalized.SpawnGroups {
+		entry := mapContentSummaryForIndex(mapCounts, spawnGroup.MapIndex)
+		entry.SpawnGroupCount++
+	}
+	if len(mapCounts) > 0 {
+		mapIndexes := make([]uint32, 0, len(mapCounts))
+		for mapIndex := range mapCounts {
+			mapIndexes = append(mapIndexes, mapIndex)
+		}
+		sort.Slice(mapIndexes, func(i int, j int) bool { return mapIndexes[i] < mapIndexes[j] })
+		summary.Maps = make([]MapContentSummary, 0, len(mapIndexes))
+		for _, mapIndex := range mapIndexes {
+			summary.Maps = append(summary.Maps, *mapCounts[mapIndex])
+		}
+	}
+
+	return summary, nil
+}
+
+func mapContentSummaryForIndex(counts map[uint32]*MapContentSummary, mapIndex uint32) *MapContentSummary {
+	entry, ok := counts[mapIndex]
+	if ok {
+		return entry
+	}
+	entry = &MapContentSummary{MapIndex: mapIndex}
+	counts[mapIndex] = entry
+	return entry
 }
 
 func validateBundle(bundle Bundle) error {

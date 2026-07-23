@@ -5182,6 +5182,14 @@ func (r *gameRuntime) ExportContentBundle() (contentbundle.Bundle, error) {
 	return contentbundle.FromSnapshotsWithItems(buildStaticActorStoreSnapshot(r.StaticActors()), buildInteractionDefinitionSnapshot(r.interactionDefinitions), r.buildItemTemplateSnapshot())
 }
 
+func (r *gameRuntime) ExportContentBundleSummary() (contentbundle.Summary, error) {
+	bundle, err := r.ExportContentBundle()
+	if err != nil {
+		return contentbundle.Summary{}, err
+	}
+	return contentbundle.Summarize(bundle)
+}
+
 func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentbundle.Bundle, error) {
 	if r == nil || r.staticStore == nil || r.interactionStore == nil {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable

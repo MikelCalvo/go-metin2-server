@@ -37,6 +37,62 @@ func testMerchantItemTemplates() []itemcatalog.Template {
 	}
 }
 
+func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "  VillageGuide  ", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: " talk ", InteractionRef: " npc:guide "},
+			{Name: "Merchant", MapIndex: 2, X: 1200, Y: 2200, RaceNum: 20300, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+		},
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.reward_mob",
+			Name:            "Reward Mob",
+			MapIndex:        2,
+			X:               1300,
+			Y:               2300,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardDropVnums: []uint32{27001},
+		}},
+		ItemTemplates: testMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused", Text: "Unused lore kept for a later authored actor."},
+			testMerchantCatalogDefinition(),
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize content bundle: %v", err)
+	}
+	want := Summary{
+		StaticActorCount:                       2,
+		SpawnGroupCount:                        1,
+		CombatProfileCount:                     0,
+		ItemTemplateCount:                      2,
+		InteractionDefinitionCount:             3,
+		ReferencedInteractionDefinitionCount:   2,
+		UnreferencedInteractionDefinitionCount: 1,
+		InteractionKinds: []InteractionKindSummary{
+			{Kind: interactionstore.KindInfo, Count: 1},
+			{Kind: interactionstore.KindShopPreview, Count: 1},
+			{Kind: interactionstore.KindTalk, Count: 1},
+		},
+		Maps: []MapContentSummary{
+			{MapIndex: 1, StaticActorCount: 1, SpawnGroupCount: 0},
+			{MapIndex: 2, StaticActorCount: 1, SpawnGroupCount: 1},
+		},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected content bundle summary:\n got: %#v\nwant: %#v", summary, want)
+	}
+}
+
+func TestSummarizeRejectsInvalidBundle(t *testing.T) {
+	_, err := Summarize(Bundle{StaticActors: []StaticActor{{Name: "BrokenActor", RaceNum: 20300}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for invalid summarized bundle, got %v", err)
+	}
+}
+
 func TestBootstrapNPCServiceExampleBundleIsCanonicalAndValid(t *testing.T) {
 	decoded := loadBootstrapNPCServiceExampleBundle(t)
 

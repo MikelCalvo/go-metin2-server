@@ -362,6 +362,84 @@ func TestLocalContentBundleValidateEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsSummaryJSONForLoopbackGet(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{
+		StaticActorCount:                       2,
+		SpawnGroupCount:                        1,
+		CombatProfileCount:                     1,
+		ItemTemplateCount:                      2,
+		InteractionDefinitionCount:             3,
+		ReferencedInteractionDefinitionCount:   2,
+		UnreferencedInteractionDefinitionCount: 1,
+		InteractionKinds: []contentbundle.InteractionKindSummary{
+			{Kind: interactionstore.KindInfo, Count: 1},
+			{Kind: interactionstore.KindShopPreview, Count: 1},
+			{Kind: interactionstore.KindTalk, Count: 1},
+		},
+		Maps: []contentbundle.MapContentSummary{
+			{MapIndex: 1, StaticActorCount: 1},
+			{MapIndex: 42, StaticActorCount: 1, SpawnGroupCount: 1},
+		},
+	}}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/summary", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 1 {
+		t.Fatalf("expected content bundle summary exporter to be called once, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode summary response body: %v", err)
+	}
+	if !reflect.DeepEqual(got, summaryer.summary) {
+		t.Fatalf("unexpected summary response:\n got: %#v\nwant: %#v", got, summaryer.summary)
+	}
+}
+
+func TestLocalContentBundleSummaryEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/summary", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback caller, got %d", http.StatusForbidden, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
+func TestLocalContentBundleSummaryEndpointRejectsWrongMethod(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected content bundle summary exporter not to be called, got %d calls", summaryer.calls)
+	}
+}
+
 type stubContentBundleExporter struct {
 	bundle contentbundle.Bundle
 	status int
@@ -384,4 +462,15 @@ func (s *stubContentBundleImporter) ImportContentBundle(bundle contentbundle.Bun
 	s.calls++
 	s.lastBundle = bundle
 	return s.bundle, s.status
+}
+
+type stubContentBundleSummaryExporter struct {
+	summary contentbundle.Summary
+	status  int
+	calls   int
+}
+
+func (s *stubContentBundleSummaryExporter) ExportContentBundleSummary() (any, int) {
+	s.calls++
+	return s.summary, s.status
 }
