@@ -221,18 +221,39 @@ func (s *FileStore) BackupTo(dstDir string) error {
 		return fmt.Errorf("create account backup dir: %w", err)
 	}
 	backup := NewFileStore(dstDir)
+	committed := make([]Account, 0, len(accounts))
 	for _, account := range accounts {
+		committed = append(committed, account)
 		if err := backup.Save(account); err != nil {
-			return fmt.Errorf("backup account %q: %w", account.Login, err)
+			return backup.rollbackBackupFailure(committed, fmt.Errorf("backup account %q: %w", account.Login, err))
 		}
 	}
 	if err := backup.writeBackupManifest(accounts); err != nil {
-		return err
+		return backup.rollbackBackupFailure(committed, err)
 	}
 	if err := syncStoreDir(dstDir); err != nil {
-		return fmt.Errorf("sync account backup dir: %w", err)
+		return backup.rollbackBackupFailure(committed, fmt.Errorf("sync account backup dir: %w", err))
 	}
 	return nil
+}
+
+func (s *FileStore) rollbackBackupFailure(accounts []Account, backupErr error) error {
+	var rollbackErrs []error
+	for _, account := range accounts {
+		if err := os.Remove(s.accountPath(account.Login)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("remove backup account %q: %w", account.Login, err))
+		}
+	}
+	if err := os.Remove(filepath.Join(s.dir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove backup manifest: %w", err))
+	}
+	if err := syncStoreDir(s.dir); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync account backup rollback dir: %w", err))
+	}
+	if len(rollbackErrs) == 0 {
+		return backupErr
+	}
+	return errors.Join(append([]error{backupErr}, rollbackErrs...)...)
 }
 
 func (s *FileStore) writeBackupManifest(accounts []Account) error {

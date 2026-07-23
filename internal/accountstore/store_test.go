@@ -616,6 +616,68 @@ func TestFileStoreBackupToRejectsNonEmptyDestination(t *testing.T) {
 	}
 }
 
+func TestFileStoreBackupToRollsBackAccountFilesWhenSaveFailsAfterCommit(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	injectedErr := errors.New("injected backup save sync failure")
+	oldSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = oldSyncStoreDir })
+	syncStoreDir = func(path string) error {
+		if path == backupDir {
+			return injectedErr
+		}
+		return syncDir(path)
+	}
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("expected injected sync error, got %v", err)
+	}
+	entries, readErr := os.ReadDir(backupDir)
+	if readErr != nil {
+		t.Fatalf("read backup dir after failed backup: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected failed backup to roll back committed account files, got %#v", entries)
+	}
+}
+
+func TestFileStoreBackupToRollsBackManifestWhenFinalDirectorySyncFails(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	injectedErr := errors.New("injected final backup sync failure")
+	oldSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = oldSyncStoreDir })
+	backupDirSyncCalls := 0
+	syncStoreDir = func(path string) error {
+		if path == backupDir {
+			backupDirSyncCalls++
+			if backupDirSyncCalls == 2 {
+				return injectedErr
+			}
+		}
+		return syncDir(path)
+	}
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("expected injected sync error, got %v", err)
+	}
+	entries, readErr := os.ReadDir(backupDir)
+	if readErr != nil {
+		t.Fatalf("read backup dir after failed backup: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected failed final sync to roll back account files and manifest, got %#v", entries)
+	}
+}
+
 func TestFileStoreBackupToTreatsMissingSourceAsEmptyBackup(t *testing.T) {
 	store := NewFileStore(filepath.Join(t.TempDir(), "missing-source"))
 	backupDir := filepath.Join(t.TempDir(), "backup")
