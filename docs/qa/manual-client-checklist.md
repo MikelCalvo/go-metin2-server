@@ -699,6 +699,7 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 - [ ] Confirm the character rebuilds in place with the ordinary self bootstrap burst and restored persisted HP
 - [ ] Confirm a stale attack still fails until the practice mob is selected again
 - [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
+- [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_here` and confirm it fails closed with no recovery burst
 
 ### 5.12.1 Practice-mob pending-retaliation cleanup on mob death
 
@@ -715,6 +716,7 @@ Expected result:
 - owner-side retaliation death uses `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`
 - `/restart_here` is accepted only after the zero-HP floor and keeps the session in `GAME`
 - player HP is rebuilt from persisted state, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition
+- if persisted player HP is already `0`, `/restart_here` is not treated as a revival source and emits no recovery frames
 - post-floor `ITEM_MOVE` is silent and non-mutating until a restart/recovery seam is used
 - mob death cancels pending delayed retaliation and respawn does not resurrect stale retaliation work without fresh target acquisition
 
@@ -728,10 +730,12 @@ Run this when the QA character can safely exercise the bootstrap town-return rec
 - [ ] If the town-return crosses maps away from a visible practice mob, confirm the same socket also receives the ordinary source-map `CHARACTER_DEL` teardown for that mob after the self bootstrap burst
 - [ ] Confirm later movement/interaction works from the town-return position after recovery
 - [ ] Reconnect and confirm the town-return position persisted, while the retaliation HP loss itself did not persist
+- [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_town` and confirm it fails closed with no recovery burst and no persisted town-coordinate update
 
 Expected result:
 - `/restart_town` is accepted only after the zero-HP floor
 - the selected player rebuilds from persisted state and moves to the currently owned empire create-position fallback
+- if persisted player HP is already `0`, `/restart_town` is not treated as a revival source and does not persist a new town-return position
 - source-map non-player visibility is torn down through existing delete frames when the town restart leaves that map
 - the recovery does not invent a separate revive packet or claim final map-specific death-return rules
 

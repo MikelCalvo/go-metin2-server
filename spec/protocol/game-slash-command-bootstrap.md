@@ -61,6 +61,7 @@ The current parser is deliberately exact for the owned command family:
 
 ### `/restart_here`
 - accepted only while the session is in `GAME`, still owns a live shared-world player entry, and the selected live runtime is already at the current retaliation-owned `0`-HP floor
+- accepted only when the persisted selected-character snapshot that would be replayed by the in-place recovery is present and above that same HP floor
 - accepted only from the normal talking-chat command ingress; slash-looking text in any other chat subtype fails closed and must not recover the dead owner
 - otherwise fails closed with no normal chat echo
 - keeps the session in `GAME`
@@ -70,6 +71,7 @@ The current parser is deliberately exact for the owned command family:
 
 ### `/restart_town`
 - accepted only while the session is in `GAME`, still owns a live shared-world player entry, and the selected live runtime is already at the current retaliation-owned `0`-HP floor
+- accepted only when the persisted selected-character snapshot that would be replayed by the town recovery is present and above that same HP floor
 - otherwise fails closed with no normal chat echo
 - keeps the session in `GAME`
 - rebuilds the selected live runtime from the persisted account snapshot at the owned legacy empire town-return target

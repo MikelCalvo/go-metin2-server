@@ -43,6 +43,7 @@ It does **not** yet claim:
 `/restart_town` is accepted only when all of these are true:
 - the session still owns a live shared-world player entry
 - the selected live player runtime is already at the retaliation-owned `0`-HP floor
+- the persisted selected-character snapshot that would be replayed by the recovery is present and above that same HP floor
 - the session is still in `GAME`
 
 Otherwise it fails closed.
@@ -87,6 +88,7 @@ When accepted, `/restart_town`:
 
 For this bootstrap slice, the recovery stays intentionally asymmetric with the engaged practice mob:
 - the player rebuilds from persisted player state and moves to the owned town-return target
+- that persisted player state must be a usable live snapshot; if it is itself already at `0` HP, the town restart fails closed before persisting new town-return coordinates or queuing visibility deltas
 - a still-live practice mob keeps its current runtime-owned HP and its current engagement-reset rules instead of resetting because the owner used `/restart_town`
 - source-map live sessions that still see that practice mob after the restarting owner leaves can reselect it and observe the current runtime-owned HP percentage instead of a full-HP reset
 
@@ -110,6 +112,7 @@ The narrow bootstrap rule is:
 - `/restart_town` rebuilds points/inventory/equipment from the persisted account snapshot
 - `/restart_town` does persist the owned town-return position before runtime commit, reusing the existing bootstrap transfer ordering
 - therefore `/restart_town` clears the runtime-only retaliation loss while still saving the owned town-return coordinates
+- if the persisted account snapshot is already at the bootstrap HP floor, `/restart_town` emits no recovery frames, queues no peer-visible transfer/rebuild deltas, and leaves the persisted coordinates unchanged until a later, explicitly owned revival source exists
 
 ## Post-restart combat rule
 

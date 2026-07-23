@@ -39,6 +39,7 @@ It does **not** yet claim:
 `/restart_here` is accepted only when all of these are true:
 - the session still owns a live shared-world player entry
 - the selected live player runtime is already at the retaliation-owned `0`-HP floor
+- the persisted selected-character snapshot that would be replayed by the recovery is present and above that same HP floor
 - the session is still in `GAME`
 
 Otherwise it fails closed.
@@ -62,6 +63,7 @@ When accepted, `/restart_here` now:
 
 For this bootstrap slice, the self recovery rebuild is intentionally asymmetric with the engaged practice mob:
 - the player rebuilds from persisted player state
+- that persisted player state must be a usable live snapshot; if it is itself already at `0` HP, the restart fails closed instead of replaying a dead bootstrap as a recovery
 - a still-live practice mob keeps its current runtime-owned HP and engagement reset rules
 
 ## Peer-visible result
@@ -89,6 +91,7 @@ The narrow bootstrap rule is:
 - retaliation-owned HP loss is still runtime-only
 - `/restart_here` rebuilds from the persisted account snapshot for points/inventory/equipment
 - therefore `/restart_here` implicitly clears the runtime-only retaliation loss instead of persisting it
+- if the persisted account snapshot is already at the bootstrap HP floor, `/restart_here` emits no recovery frames and leaves the connected runtime dead until a later, explicitly owned revival source exists
 
 ## Post-restart combat rule
 

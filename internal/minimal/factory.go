@@ -2411,7 +2411,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								return gameflow.ChatResult{Accepted: false}
 							}
 							restartedSelected := selectedPlayer.PersistedSnapshot()
-							if restartedSelected.ID == 0 {
+							if restartedSelected.ID == 0 || characterAtBootstrapHPFloor(restartedSelected) {
 								return gameflow.ChatResult{Accepted: false}
 							}
 							restartedSelected.MapIndex = previousSelected.MapIndex
@@ -2445,7 +2445,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 								return gameflow.ChatResult{Accepted: false}
 							}
 							restartedSelected := selectedPlayer.PersistedSnapshot()
-							if restartedSelected.ID == 0 {
+							if restartedSelected.ID == 0 || characterAtBootstrapHPFloor(restartedSelected) {
 								return gameflow.ChatResult{Accepted: false}
 							}
 							restartEmpire := restartedSelected.Empire

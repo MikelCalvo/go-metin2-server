@@ -6337,6 +6337,39 @@ func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhileAlive(t *testing.T
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhenPersistedSnapshotIsAtHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PersistedDeadHere", 0x0103019f, 0x0204019f, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "persisted-dead-here", 0x91919199, owner)
+	if err := accounts.Save(accountstore.Account{Login: "persisted-dead-here", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed persisted-dead /restart_here account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error for persisted-dead /restart_here guard: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "persisted-dead-here", 0x91919199)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for persisted-dead /restart_here guard, got %d", len(enterOut))
+	}
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected persisted-dead /restart_here error: %v", err)
+	}
+	if len(restartOut) != 0 {
+		t.Fatalf("expected /restart_here to fail closed when the persisted rebuild snapshot is still at the HP floor, got %d frames", len(restartOut))
+	}
+	connected := runtime.ConnectedCharacters()
+	if len(connected) != 1 || !connected[0].Dead {
+		t.Fatalf("expected rejected persisted-dead /restart_here to leave owner connected and dead, got %+v", connected)
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartHereLatePeerSeesRecoveredOwnerAlive(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -7459,6 +7492,47 @@ func TestGameSessionFlowPracticeMobRestartTownFailsClosedWhileAlive(t *testing.T
 	}
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
 		t.Fatalf("expected alive /restart_town to avoid peer fanout, got %d queued frames", len(queued))
+	}
+}
+
+func TestGameSessionFlowPracticeMobRestartTownFailsClosedWhenPersistedSnapshotIsAtHPFloor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PersistedDeadTown", 0x010301a0, 0x020401a0, 1100, 2100, 0, 101, 201)
+	owner.Empire = 2
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "persisted-dead-town", 0x92929299, owner)
+	if err := accounts.Save(accountstore.Account{Login: "persisted-dead-town", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed persisted-dead /restart_town account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error for persisted-dead /restart_town guard: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "persisted-dead-town", 0x92929299)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for persisted-dead /restart_town guard, got %d", len(enterOut))
+	}
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
+	if err != nil {
+		t.Fatalf("unexpected persisted-dead /restart_town error: %v", err)
+	}
+	if len(restartOut) != 0 {
+		t.Fatalf("expected /restart_town to fail closed when the persisted rebuild snapshot is still at the HP floor, got %d frames", len(restartOut))
+	}
+	connected := runtime.ConnectedCharacters()
+	if len(connected) != 1 || !connected[0].Dead {
+		t.Fatalf("expected rejected persisted-dead /restart_town to leave owner connected and dead, got %+v", connected)
+	}
+	persisted, err := accounts.Load("persisted-dead-town")
+	if err != nil {
+		t.Fatalf("load persisted-dead /restart_town account after rejection: %v", err)
+	}
+	if len(persisted.Characters) != 1 || persisted.Characters[0].MapIndex != owner.MapIndex || persisted.Characters[0].X != owner.X || persisted.Characters[0].Y != owner.Y || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected rejected persisted-dead /restart_town to leave persisted snapshot unchanged, got %+v", persisted.Characters)
 	}
 }
 
