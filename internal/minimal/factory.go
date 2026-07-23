@@ -2123,6 +2123,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return worldentry.EnterGameResult{Rejected: true}
 					}
 					bootstrapFrames = append(bootstrapFrames, itemBootstrapFrames...)
+					if characterAtBootstrapHPFloor(selected) {
+						bootstrapFrames = append(bootstrapFrames, worldproto.EncodeDead(worldproto.DeadPacket{VID: selected.VID}))
+					}
 					var trailingFrames [][]byte
 					if !joinedSharedWorld {
 						var existingPeers []loginticket.Character

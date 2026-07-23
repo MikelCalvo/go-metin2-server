@@ -6337,6 +6337,45 @@ func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhileAlive(t *testing.T
 	}
 }
 
+func TestGameSessionFlowPersistedDeadEnterGameReplaysSelfDead(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PersistedDeadEntry", 0x0103019e, 0x0204019e, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "persisted-dead-entry", 0x90909099, owner)
+	if err := accounts.Save(accountstore.Account{Login: "persisted-dead-entry", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed persisted-dead entry account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error for persisted-dead entry replay: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "persisted-dead-entry", 0x90909099)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 6 {
+		t.Fatalf("expected 6 bootstrap frames including self DEAD for persisted-dead entry, got %d", len(enterOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, enterOut[4]))
+	if err != nil {
+		t.Fatalf("decode persisted-dead entry point-change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Value != 0 {
+		t.Fatalf("expected persisted-dead entry point-change at HP floor, got %+v", pointChange)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, enterOut[5]))
+	if err != nil {
+		t.Fatalf("decode persisted-dead entry self dead: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected persisted-dead entry self DEAD for owner vid %d, got %+v", owner.VID, dead)
+	}
+	connected := runtime.ConnectedCharacters()
+	if len(connected) != 1 || !connected[0].Dead {
+		t.Fatalf("expected persisted-dead entry to leave owner connected and dead, got %+v", connected)
+	}
+}
+
 func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhenPersistedSnapshotIsAtHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -6353,8 +6392,8 @@ func TestGameSessionFlowPracticeMobRestartHereFailsClosedWhenPersistedSnapshotIs
 	}
 	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "persisted-dead-here", 0x91919199)
 	defer closeSessionFlow(t, flow)
-	if len(enterOut) != 5 {
-		t.Fatalf("expected 5 bootstrap frames for persisted-dead /restart_here guard, got %d", len(enterOut))
+	if len(enterOut) != 6 {
+		t.Fatalf("expected 6 bootstrap frames including self DEAD for persisted-dead /restart_here guard, got %d", len(enterOut))
 	}
 
 	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
@@ -7512,8 +7551,8 @@ func TestGameSessionFlowPracticeMobRestartTownFailsClosedWhenPersistedSnapshotIs
 	}
 	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "persisted-dead-town", 0x92929299)
 	defer closeSessionFlow(t, flow)
-	if len(enterOut) != 5 {
-		t.Fatalf("expected 5 bootstrap frames for persisted-dead /restart_town guard, got %d", len(enterOut))
+	if len(enterOut) != 6 {
+		t.Fatalf("expected 6 bootstrap frames including self DEAD for persisted-dead /restart_town guard, got %d", len(enterOut))
 	}
 
 	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))

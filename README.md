@@ -231,7 +231,7 @@ Already present:
 - delayed respawn rebuild path,
 - engagement ownership to prevent noisy multi-owner combat loops,
 - retaliation ticks against the engaged player,
-- player death floor with denial gates for several live actions,
+- player death floor with denial gates for several live actions, including self `DEAD` replay when entering `GAME` from an already-`0`-HP selected-character snapshot,
 - restart-here and restart-town slash-command recovery seams,
 - deterministic EXP/gold/fixed-drop reward descriptors for accepted non-player deaths,
 - extensive TCP-level regression tests around watcher/owner respawn, retarget, cleanup, and reward cases.
