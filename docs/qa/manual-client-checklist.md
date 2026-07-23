@@ -355,10 +355,12 @@ Expected result:
 - [ ] Attempt to buy a catalog item whose authored template requires a higher `min_level` than the selected character has
 - [ ] Attempt to sell a carried item whose authored template requires a higher `min_level` than the selected character has
 - [ ] Attempt to sell carried items whose authored templates are marked `anti_get`, `anti_drop`, `anti_give`, `anti_sell`, or `anti_stack`
+- [ ] If packet logging is available, sell part of a carried stack whose authored template has non-zero display sockets/attributes
 
 Expected result:
 - restricted packet paths fail with the current merchant invalid-position companion and no inventory, item quickslot, gold, or persisted account mutation is visible
 - adjacent allowed merchant buy/sell cases still use the template-authored price/sell-credit behavior
+- partial-stack `SHOP SELL2` success refreshes the remaining stack with `ITEM_UPDATE`, preserves the authored display socket/attribute arrays while changing only the count, credits gold, and keeps item quickslots for the still-occupied cell unchanged
 
 ---
 

@@ -1545,7 +1545,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				}
 				return frames, true
 			}
-			frames, err := merchantSellResultFrames(selectedPlayer.LiveCharacter(), sellResult)
+			frames, err := merchantSellResultFrames(selectedPlayer.LiveCharacter(), sellResult, runtime.itemTemplates)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -3978,7 +3978,7 @@ func merchantSellTemplateForSlot(templates map[uint32]itemcatalog.Template, sele
 	return itemcatalog.Template{}, false
 }
 
-func merchantSellResultFrames(character loginticket.Character, result player.MerchantSellResult) ([][]byte, error) {
+func merchantSellResultFrames(character loginticket.Character, result player.MerchantSellResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
 	position, err := itemproto.CarriedInventoryPosition(uint16(result.Slot))
 	if err != nil {
 		return nil, err
@@ -3987,7 +3987,7 @@ func merchantSellResultFrames(character loginticket.Character, result player.Mer
 	if result.ItemRemoved {
 		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
 	} else {
-		updateFrame, err := encodeBootstrapItemUpdateFrame(position, result.Item)
+		updateFrame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, result.Item, templates)
 		if err != nil {
 			return nil, err
 		}

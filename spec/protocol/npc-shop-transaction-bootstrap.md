@@ -283,7 +283,7 @@ The repository now owns that packet shape at the codec level:
 
 This packet shape is now reused by the first lighter-weight runtime refresh slice.
 The current bootstrap merchant buy path still emits `ITEM_SET` for changed non-empty stacks, and whole-stack merchant sells still emit `ITEM_DEL` for removed stacks.
-Partial-stack `SHOP SELL2` success now emits `ITEM_UPDATE` for the already-known carried cell instead of replaying a full `ITEM_SET` with `vnum`, flags, anti-flags, or highlight.
+Partial-stack `SHOP SELL2` success now emits `ITEM_UPDATE` for the already-known carried cell instead of replaying a full `ITEM_SET` with `vnum`, flags, anti-flags, or highlight, and the runtime fills that count refresh from the loaded item-template display metadata so authored sockets/attributes are preserved while only the stack count changes.
 
 ### Runtime-locked item sell guard
 
@@ -353,7 +353,7 @@ The first live sell-back contract remains intentionally narrow:
 - the updated selected-character snapshot is persisted before the live shared-world registration is refreshed
 - if persistence/writeback fails, the runtime rolls the selected character's live gold and carried inventory back to the pre-sell snapshot, emits no success frames, and leaves the persisted account snapshot unchanged
 - whole-stack success emits self-only `ITEM_DEL(slot)`, then zero or more self-only `QUICKSLOT_DEL(position)` frames for item quickslots that referenced the removed carried slot, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`
-- partial-stack success emits self-only `ITEM_UPDATE(slot, remaining_count)`, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`; it does not delete quickslots because the item remains at the source cell
+- partial-stack success emits self-only `ITEM_UPDATE(slot, remaining_count)`, preserving the loaded template-authored display sockets/attributes for that carried item, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`; it does not delete quickslots because the item remains at the source cell
 - packet `SHOP SELL` / `SHOP SELL2` success does not append an extra bare self-only `GC::SHOP OK`; the owned visible success companion is the item refresh plus gold `POINT_CHANGE`
 - invalid slots, locked carried items, equipped items, explicit `SELL2` count `0`, over-count `SELL2`, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
 - an invalid packet/runtime sell while an active merchant window exists returns bare self-only `GC::SHOP INVALID_POS`
@@ -403,6 +403,6 @@ After this slice, the repository should be able to say:
 - the project now knows the buy-only gate sits on top of the existing structured `shop_preview` merchant surface
 - the known `SHOP` family names and headers are recorded without overstating full UI ownership
 - the minimum stable `BUY` addressing fact is frozen: the second trailing byte selects the authored catalog slot
-- active merchant sessions can now route real client `SHOP BUY` requests through the same authoritative gold/inventory mutation contract
+- active merchant sessions can now route real client `SHOP BUY`, `SHOP SELL`, and `SHOP SELL2` requests through the same authoritative gold/inventory mutation contract
 - the temporary `/shop_buy <catalog_slot>` harness remains available only as a local debug seam
-- focused tests can target gold debit, inventory grant, insufficient-gold rejection, and no-free-slot rejection without pretending sell or full merchant-window choreography already exist
+- focused tests can target gold debit, inventory grant, sell-back credit, partial-stack sell `ITEM_UPDATE` refresh metadata, insufficient-gold rejection, and no-free-slot rejection without pretending full merchant-window choreography is complete

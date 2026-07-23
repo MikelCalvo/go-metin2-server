@@ -181,7 +181,7 @@ Already present:
 - ground-item visibility to peers in scope,
 - pickup into inventory with stack-merge behavior,
 - first owner-delivery/notice shape for pickups,
-- merchant preview/catalog/open/close/buy/sell slices, including template-authored `anti_stack` fail-closed sell-back rejection,
+- merchant preview/catalog/open/close/buy/sell slices, including template-authored `anti_stack` fail-closed sell-back rejection and partial-stack sell `ITEM_UPDATE` refreshes that preserve authored display sockets/attributes,
 - gold mutation for current merchant and reward cases.
 
 Still missing:
