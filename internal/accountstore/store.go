@@ -34,6 +34,7 @@ var (
 	ErrRestoreSourceRequired  = errors.New("account restore source dir is required")
 	ErrRestoreSourceNotFound  = errors.New("account restore source dir not found")
 	ErrRestoreDirNotEmpty     = errors.New("account restore dir is not empty")
+	ErrRestoreDirInsideSource = errors.New("account restore dir is inside backup source")
 	ErrBackupManifestRequired = errors.New("account backup manifest is required")
 	ErrInvalidBackupManifest  = errors.New("invalid account backup manifest")
 )
@@ -293,6 +294,12 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 	if s.dir == "" {
 		return ErrStoreDirRequired
 	}
+	if srcDir == "" {
+		return ErrRestoreSourceRequired
+	}
+	if err := rejectRestoreDestinationInsideSource(srcDir, s.dir); err != nil {
+		return err
+	}
 	if err := ensureEmptyDir(s.dir, ErrRestoreDirNotEmpty, "read account restore dir"); err != nil {
 		return err
 	}
@@ -454,36 +461,44 @@ func ensureEmptyDir(path string, nonEmptyErr error, readContext string) error {
 }
 
 func rejectBackupDestinationInsideStore(storeDir string, dstDir string) error {
-	storePath, err := filepath.Abs(filepath.Clean(storeDir))
+	return rejectPathInsideOrEqual(storeDir, dstDir, ErrBackupDirInsideStore, "account store", "account backup")
+}
+
+func rejectRestoreDestinationInsideSource(srcDir string, dstDir string) error {
+	return rejectPathInsideOrEqual(srcDir, dstDir, ErrRestoreDirInsideSource, "account restore source", "account restore")
+}
+
+func rejectPathInsideOrEqual(root string, candidate string, rejectedErr error, rootContext string, candidateContext string) error {
+	rootPath, err := filepath.Abs(filepath.Clean(root))
 	if err != nil {
-		return fmt.Errorf("resolve account store dir: %w", err)
+		return fmt.Errorf("resolve %s dir: %w", rootContext, err)
 	}
-	dstPath, err := filepath.Abs(filepath.Clean(dstDir))
+	candidatePath, err := filepath.Abs(filepath.Clean(candidate))
 	if err != nil {
-		return fmt.Errorf("resolve account backup dir: %w", err)
+		return fmt.Errorf("resolve %s dir: %w", candidateContext, err)
 	}
-	inside, err := pathInsideOrEqual(storePath, dstPath)
+	inside, err := pathInsideOrEqual(rootPath, candidatePath)
 	if err != nil {
-		return fmt.Errorf("compare account backup dir: %w", err)
+		return fmt.Errorf("compare %s dir: %w", candidateContext, err)
 	}
 	if inside {
-		return ErrBackupDirInsideStore
+		return rejectedErr
 	}
 
-	resolvedStorePath, err := resolveExistingPath(storePath)
+	resolvedRootPath, err := resolveExistingPath(rootPath)
 	if err != nil {
-		return fmt.Errorf("resolve account store symlinks: %w", err)
+		return fmt.Errorf("resolve %s symlinks: %w", rootContext, err)
 	}
-	resolvedDstPath, err := resolveExistingPath(dstPath)
+	resolvedCandidatePath, err := resolveExistingPath(candidatePath)
 	if err != nil {
-		return fmt.Errorf("resolve account backup symlinks: %w", err)
+		return fmt.Errorf("resolve %s symlinks: %w", candidateContext, err)
 	}
-	inside, err = pathInsideOrEqual(resolvedStorePath, resolvedDstPath)
+	inside, err = pathInsideOrEqual(resolvedRootPath, resolvedCandidatePath)
 	if err != nil {
-		return fmt.Errorf("compare resolved account backup dir: %w", err)
+		return fmt.Errorf("compare resolved %s dir: %w", candidateContext, err)
 	}
 	if inside {
-		return ErrBackupDirInsideStore
+		return rejectedErr
 	}
 	return nil
 }

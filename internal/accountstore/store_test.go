@@ -867,6 +867,55 @@ func TestFileStoreRestoreFromRejectsNonEmptyDestination(t *testing.T) {
 	}
 }
 
+func TestFileStoreRestoreFromRejectsDestinationInsideBackupSource(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	restoreDir := filepath.Join(backupDir, "restored-accounts")
+	restored := NewFileStore(restoreDir)
+
+	err := restored.RestoreFrom(backupDir)
+	if !errors.Is(err, ErrRestoreDirInsideSource) {
+		t.Fatalf("expected ErrRestoreDirInsideSource, got %v", err)
+	}
+	if _, statErr := os.Stat(restoreDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected rejected nested restore dir not to be created, stat err=%v", statErr)
+	}
+	if _, validateErr := NewFileStore(filepath.Join(t.TempDir(), "dry-run-target")).ValidateBackupFrom(backupDir); validateErr != nil {
+		t.Fatalf("expected rejected nested restore to leave source backup valid: %v", validateErr)
+	}
+}
+
+func TestFileStoreRestoreFromRejectsDestinationSymlinkInsideBackupSource(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	restoreLink := filepath.Join(t.TempDir(), "restore-link")
+	nestedTarget := filepath.Join(backupDir, "restored-via-link")
+	if err := os.Symlink(nestedTarget, restoreLink); err != nil {
+		t.Fatalf("create restore symlink into backup source: %v", err)
+	}
+	restored := NewFileStore(restoreLink)
+
+	err := restored.RestoreFrom(backupDir)
+	if !errors.Is(err, ErrRestoreDirInsideSource) {
+		t.Fatalf("expected ErrRestoreDirInsideSource for symlinked nested restore dir, got %v", err)
+	}
+	if _, statErr := os.Stat(nestedTarget); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected symlinked nested restore target not to be created, stat err=%v", statErr)
+	}
+}
+
 func TestFileStoreRestoreFromRejectsMissingBackupSource(t *testing.T) {
 	restored := NewFileStore(filepath.Join(t.TempDir(), "restored"))
 	err := restored.RestoreFrom(filepath.Join(t.TempDir(), "missing-backup"))
