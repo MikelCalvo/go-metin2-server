@@ -86,6 +86,38 @@ func TestFileStoreIssueThenLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFileStoreIssueDoesNotOverwriteTicketCommittedAfterPreflight(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	loginKey := uint32(0x01020304)
+	existingIssuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	existing := Ticket{Login: "existing", LoginKey: loginKey, IssuedAt: existingIssuedAt}
+
+	originalLinkTicketFile := linkTicketFile
+	t.Cleanup(func() { linkTicketFile = originalLinkTicketFile })
+	linkTicketFile = func(oldname string, newname string) error {
+		if newname != store.ticketPath(loginKey) {
+			return originalLinkTicketFile(oldname, newname)
+		}
+		if err := os.WriteFile(newname, mustJSON(t, existing), 0o644); err != nil {
+			return err
+		}
+		return originalLinkTicketFile(oldname, newname)
+	}
+
+	err := store.Issue(Ticket{Login: "mkmk", LoginKey: loginKey})
+	if !errors.Is(err, ErrTicketExists) {
+		t.Fatalf("expected ErrTicketExists for ticket committed after preflight, got %v", err)
+	}
+
+	got, err := store.Load("existing", loginKey)
+	if err != nil {
+		t.Fatalf("load pre-existing ticket after rejected race: %v", err)
+	}
+	if !reflect.DeepEqual(got, existing) {
+		t.Fatalf("existing ticket was overwritten:\n got: %#v\nwant: %#v", got, existing)
+	}
+}
+
 func TestFileStoreIssueRejectsZeroCountInventoryItem(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	ticket := Ticket{

@@ -161,12 +161,13 @@ func (s *FileStore) Issue(ticket Ticket) error {
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close login ticket temp file: %w", err)
 	}
-	if err := os.Rename(temp.Name(), path); err != nil {
+	if err := linkTicketFile(temp.Name(), path); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return ErrTicketExists
 		}
 		return fmt.Errorf("commit login ticket file: %w", err)
 	}
+	_ = os.Remove(temp.Name())
 	if err := syncStoreDir(s.dir); err != nil {
 		return fmt.Errorf("sync login ticket store dir: %w", err)
 	}
@@ -175,6 +176,8 @@ func (s *FileStore) Issue(ticket Ticket) error {
 }
 
 var syncStoreDir = syncDir
+
+var linkTicketFile = os.Link
 
 func syncDir(path string) error {
 	dir, err := os.Open(path)
