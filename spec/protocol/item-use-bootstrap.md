@@ -83,6 +83,7 @@ Exactly one consumable shape is frozen here:
 - only non-equippable templates with a valid `use_effect` payload are currently eligible for `/use_item <slot>` or `ITEM_USE`
 - templates with an authored `equip_slot` are rejected for direct consumable use even if they also carry a valid `use_effect`, so equipment metadata cannot accidentally execute the consumable point-effect path
 - templates with authored `confirm_when_use = true` are rejected for direct consumable use even if they also carry a valid `use_effect`, so the runtime cannot consume confirmation-gated items before a confirmation request/ack flow is owned
+- templates with authored `quest_use`, `quest_use_multiple`, or `applicable` metadata are rejected for direct consumable use even if they also carry a valid `use_effect`, so quest/applicable item families stay fail-closed until their dedicated flows are owned
 - templates with authored job/sex/empire restrictions for the selected character (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, `anti_empire_a`, `anti_empire_b`, or `anti_empire_c`) are rejected before point effects or stack mutations are applied
 - templates with authored `min_level` above the selected character's current persisted `level` are rejected before point effects or stack mutations are applied
 - templates with authored transfer/trade guards (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, or `anti_sell`) are rejected for this direct consumable path too, so bound/untransferable bootstrap templates cannot be consumed through `ITEM_USE` while other item mutation paths treat them as restricted
@@ -163,6 +164,7 @@ The first consumable path must fail closed when any of these are true:
 - the resolved template carries an authored job/sex/empire anti flag for the selected character
 - the resolved template carries an authored `min_level` above the selected character's current persisted `level`
 - the resolved template carries authored `confirm_when_use = true`; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, point values, and placeholder chat unchanged until a later slice owns confirmation
+- the resolved template carries authored `quest_use`, `quest_use_multiple`, or `applicable` metadata; the minimal session/runtime packet path freezes these as no-frame/no-mutation behavior with inventory, quickslots, point values, and placeholder chat unchanged until later quest/applicable item flows are owned
 - the resolved template carries an authored `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` guard; for `ITEM_USE_TO_ITEM`, the packet path freezes these as no-frame/no-mutation transfer guards rather than chat-emitting drop/pickup policy
 - the item is not in carried inventory
 - the request uses any `TItemPos` outside the current carried-inventory-only subset

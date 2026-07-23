@@ -838,6 +838,61 @@ func TestRuntimeUseItemRejectsConfirmWhenUseTemplateWithoutMutation(t *testing.T
 	}
 }
 
+func TestRuntimeUseItemRejectsUnownedQuestUseFlagsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*itemcatalog.Template)
+	}{
+		{
+			name: "quest use",
+			mutate: func(template *itemcatalog.Template) {
+				template.QuestUse = true
+			},
+		},
+		{
+			name: "quest use multiple",
+			mutate: func(template *itemcatalog.Template) {
+				template.QuestUseMultiple = true
+			},
+		},
+		{
+			name: "applicable",
+			mutate: func(template *itemcatalog.Template) {
+				template.Applicable = true
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:        0x01030102,
+				VID:       0x02040102,
+				Name:      "QuestUsePeer",
+				Level:     10,
+				Points:    [255]int32{1: 700},
+				Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+				Quickslots: []loginticket.Quickslot{
+					{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "quest-use-peer", CharacterIndex: 0})
+			before := runtime.LiveCharacter()
+			template := bootstrapConsumableTemplate(27001, 1, 1, 50, "quest:27001:+50")
+			tc.mutate(&template)
+
+			if result, ok := runtime.UseItem(5, template); ok {
+				t.Fatalf("expected %s item use to fail closed until quest/applicable flows are owned, got %+v", tc.name, result)
+			}
+			if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+				t.Fatalf("%s item use mutated live character: got %#v want %#v", tc.name, got, before)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
+				t.Fatalf("%s item use mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", tc.name, got.Inventory, got.Quickslots, got.Points[1])
+			}
+		})
+	}
+}
+
 func TestRuntimeDropInventoryItemRejectsDuplicateSlotOccupancyWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

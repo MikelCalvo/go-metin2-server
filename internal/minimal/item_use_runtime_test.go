@@ -167,6 +167,89 @@ func TestGameSessionFlowItemUseRejectsConfirmWhenUseTemplateWithoutMutation(t *t
 	}
 }
 
+func TestGameSessionFlowItemUseRejectsQuestUseTemplateFlagsWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name   string
+		login  string
+		mutate func(*itemcatalog.Template)
+	}{
+		{
+			name:  "quest_use",
+			login: "item-use-quest-use",
+			mutate: func(template *itemcatalog.Template) {
+				template.QuestUse = true
+			},
+		},
+		{
+			name:  "quest_use_multiple",
+			login: "item-use-quest-use-multiple",
+			mutate: func(template *itemcatalog.Template) {
+				template.QuestUseMultiple = true
+			},
+		},
+		{
+			name:  "applicable",
+			login: "item-use-applicable",
+			mutate: func(template *itemcatalog.Template) {
+				template.Applicable = true
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("UseQuestFlag", 0x0103054f, 0x0204054f, 1100, 2100, 0, 101, 201)
+			owner.Points[bootstrapPlayerPointValueIndex] = 25
+			owner.Inventory = []inventory.ItemInstance{{ID: 207, Vnum: 27004, Count: 2, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, ticketStore, tc.login, 0x5050504f, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s item-use account: %v", tc.name, err)
+			}
+			template := itemcatalog.Template{
+				Vnum:      27004,
+				Name:      "Quest Flag Potion",
+				Stackable: true,
+				MaxCount:  200,
+				UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume quest/applicable"},
+			}
+			tc.mutate(&template)
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s item-use runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x5050504f)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+			if err != nil {
+				t.Fatalf("unexpected %s item-use packet error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s ITEM_USE to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s ITEM_USE rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load persisted %s item-use account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s ITEM_USE mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s ITEM_USE mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+			if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+				t.Fatalf("%s ITEM_USE mutated point value: got %d want %d", tc.name, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+			}
+		})
+	}
+}
+
 func TestGameSessionFlowProjectsTemplateHighlightOnSelectedCharacterItemSet(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
