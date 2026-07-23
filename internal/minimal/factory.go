@@ -3775,7 +3775,7 @@ func inventoryMoveResultFrames(result inventory.MoveResult, templates map[uint32
 	frames := make([][]byte, 0, 2)
 	if result.CountOnly {
 		if result.FromOccupied {
-			frame, err := encodeInventoryItemUpdateFrame(result.FromItem)
+			frame, err := encodeInventoryItemUpdateFrameWithTemplates(result.FromItem, templates)
 			if err != nil {
 				return nil, err
 			}
@@ -3784,7 +3784,7 @@ func inventoryMoveResultFrames(result inventory.MoveResult, templates map[uint32
 			frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.InventoryPosition(uint16(result.From))}))
 		}
 		if result.ToOccupied {
-			frame, err := encodeInventoryItemUpdateFrame(result.ToItem)
+			frame, err := encodeInventoryItemUpdateFrameWithTemplates(result.ToItem, templates)
 			if err != nil {
 				return nil, err
 			}
@@ -3809,10 +3809,6 @@ func inventoryMoveResultFrames(result inventory.MoveResult, templates map[uint32
 		frames = append(frames, frame)
 	}
 	return frames, nil
-}
-
-func encodeInventoryItemUpdateFrame(item inventory.ItemInstance) ([]byte, error) {
-	return encodeInventoryItemUpdateFrameWithTemplates(item, nil)
 }
 
 func encodeInventoryItemUpdateFrameWithTemplates(item inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {

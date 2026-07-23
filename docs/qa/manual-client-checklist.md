@@ -316,8 +316,8 @@ Expected result:
 
 Expected result:
 - stackable, non-`anti_stack` items merge only up to the template-authored `max_count`
-- if the target has only partial room, both source and target counts refresh, source and target item quickslots remain stable, and non-item quickslots with the same byte slot remain unchanged
-- an exact counted or zero-count full-stack merge removes the source cell, refreshes the destination count, deletes every source item quickslot in deterministic quickslot-position order, leaves target item quickslots stable, and leaves unrelated skill/command quickslots unchanged
+- if the target has only partial room, both source and target counts refresh, those `ITEM_UPDATE` frames preserve template-authored socket/attribute display arrays while changing only count, source and target item quickslots remain stable, and non-item quickslots with the same byte slot remain unchanged
+- an exact counted or zero-count full-stack merge removes the source cell, refreshes the destination count with an `ITEM_UPDATE` that preserves template-authored socket/attribute display arrays, deletes every source item quickslot in deterministic quickslot-position order, leaves target item quickslots stable, and leaves unrelated skill/command quickslots unchanged
 - `anti_stack` and non-stackable same-`vnum` full-stack drag requests do not merge; they use the full-stack carried swap path instead, refreshing both cells and retargeting item quickslots for the moved source identity while preserving unrelated skill/command quickslots
 - `anti_drop`, `anti_give`, and `anti_sell` templates, same-`vnum` merge attempts with missing source-template metadata in an explicitly authored item-template snapshot, duplicate source/target cell occupancy fixtures, and corrupt fixtures where source and target cells carry the same item instance ID fail closed: no item counts change, no source cell disappears, no quickslot change is persisted, and no item refresh frames are visible
 
