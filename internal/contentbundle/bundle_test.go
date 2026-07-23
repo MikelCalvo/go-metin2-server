@@ -377,6 +377,50 @@ func TestCanonicalizeRejectsRewardDropMissingFromBundledItemTemplates(t *testing
 	}
 }
 
+func TestCanonicalizeRejectsRewardDropWithoutBundledItemTemplates(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.reward_mob",
+			Name:            "Reward Mob",
+			MapIndex:        42,
+			X:               1785,
+			Y:               2885,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27001},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for reward drop without bundled item templates, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCombatProfileRewardDropWithoutBundledItemTemplates(t *testing.T) {
+	const profile = "practice_reward_drop_defaults"
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.reward_default_mob",
+			Name:          "Reward Default Mob",
+			MapIndex:      42,
+			X:             1785,
+			Y:             2885,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   3,
+			RespawnDelayMs: 1500,
+			DeathReward:    worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001}},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for combat-profile reward drop without bundled item templates, got %v", err)
+	}
+}
+
 func TestCanonicalizeAcceptsRewardDropsBackedByBundledItemTemplates(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
 		ItemTemplates: []itemcatalog.Template{

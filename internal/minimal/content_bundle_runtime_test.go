@@ -351,6 +351,44 @@ func TestGameRuntimeImportContentBundleRejectsInvalidSpawnGroupWithoutMutatingRu
 	}
 }
 
+func TestGameRuntimeImportContentBundleRejectsRewardDropsWithoutBundledItemTemplates(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	initial := contentbundle.Bundle{StaticActors: []contentbundle.StaticActor{{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300}}}
+	if _, err := runtime.ImportContentBundle(initial); err != nil {
+		t.Fatalf("import initial content bundle: %v", err)
+	}
+	previous, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export previous content bundle: %v", err)
+	}
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:             "practice.reward_mob",
+		Name:            "Reward Mob",
+		MapIndex:        42,
+		X:               1785,
+		Y:               2885,
+		RaceNum:         101,
+		CombatProfile:   string(worldruntime.StaticActorCombatProfilePracticeMob),
+		RewardDropVnums: []uint32{27001},
+	}}})
+	if !errors.Is(err, contentbundle.ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for reward-drop import without bundled item templates, got %v", err)
+	}
+	current, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("re-export content bundle after failed reward-drop import: %v", err)
+	}
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatalf("expected runtime content bundle to remain unchanged after reward-drop import without item templates:\n got: %#v\nwant: %#v", current, previous)
+	}
+}
+
 func TestGameRuntimeImportContentBundleRejectsDuplicateSpawnGroupRefsWithoutMutatingRuntime(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")

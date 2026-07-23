@@ -132,8 +132,8 @@ The first bootstrap spawn-group contract freezes these fields:
   - if all reward fields are omitted or zero/empty, bundle canonicalization now applies the selected combat profile's bootstrap death-reward defaults; the built-in `practice_mob` and `training_dummy` profiles remain rewardless, while registered reward-bearing profiles can provide deterministic defaults
   - explicit non-zero reward fields override profile defaults for that spawn group
   - non-empty drop-vnum lists canonicalize into ascending deterministic order across content bundles and file-backed static-actor snapshots
-  - when a bundle includes top-level `item_templates`, every authored reward drop vnum from either `spawn_groups` or bundled custom `combat_profiles` must resolve to one of those item templates; dangling drop-vnum references fail closed before loopback import/runtime mutation
-  - reward-bearing content bundles may still omit `item_templates` for ambient-runtime catalogs; bundles that do include item templates remain self-consistent and deterministic
+  - every authored reward drop vnum from either `spawn_groups` or bundled custom `combat_profiles` must resolve to one top-level bundled `item_templates` entry; item-shaped reward bundles that omit `item_templates` fail closed before loopback import/runtime mutation instead of relying on an ambient runtime catalog
+  - EXP/gold-only reward descriptors may still omit `item_templates`, but any non-empty `reward_drop_vnums` list makes the portable bundle self-contained with item templates
   - non-zero values use the narrow reward contract in `non-player-reward-bootstrap.md` on the accepted killing hit
   - reward data belongs to the authored spawn group and round-trips through content bundles, static-actor snapshots, and runtime import/export; it is not live character persistence by itself
 - operator/runtime edits that preserve the same `spawn_group_ref` must preserve the authored `combat_profile` and reward descriptor while changing mutable actor presentation/placement fields; delete/recreate or bundle replacement remains the explicit way to replace reward metadata
@@ -218,7 +218,7 @@ The first content contract should fail closed when:
 - `combat_profile` is unknown when provided; an omitted profile is canonicalized to the bootstrap `practice_mob` profile for this first one-spawn-profile contract
 - a non-built-in `combat_profile` is referenced without a matching top-level `combat_profiles` snapshot and no matching profile is already registered locally
 - a `combat_profiles` snapshot is unreferenced by any authored static actor or spawn group, duplicates another snapshot after trimming its profile name, names a built-in profile, has a blank/non-canonical profile identity, carries conflicting legacy/formula damage values, has formula damage above `max_hp`, or carries invalid HP/formula/respawn/reward defaults
-- when a spawn group omits explicit reward fields and references a custom bundled combat profile, canonicalization applies that profile snapshot's death-reward defaults so import, export, and loopback POST validation all share the same deterministic reward descriptor
+- when a spawn group omits explicit reward fields and references a custom bundled combat profile, canonicalization applies that profile snapshot's death-reward defaults so import, export, and loopback POST validation all share the same deterministic reward descriptor; if those defaults include drop vnums, the same bundle must also carry matching `item_templates`
 - coordinates are malformed for the current bundle schema
 - reward scalar values overflow the current bootstrap point-change carrier, or `reward_drop_vnums` contains `0` or duplicate drop vnums
 

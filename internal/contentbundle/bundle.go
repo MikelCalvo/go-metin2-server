@@ -355,8 +355,11 @@ func validMerchantCatalogCountForTemplate(entry interactionstore.MerchantCatalog
 }
 
 func validRewardDropRefs(dropVnums []uint32, itemTemplatesByVnum map[uint32]itemcatalog.Template) bool {
-	if len(dropVnums) == 0 || len(itemTemplatesByVnum) == 0 {
+	if len(dropVnums) == 0 {
 		return true
+	}
+	if len(itemTemplatesByVnum) == 0 {
+		return false
 	}
 	for _, vnum := range dropVnums {
 		if _, ok := itemTemplatesByVnum[vnum]; !ok {

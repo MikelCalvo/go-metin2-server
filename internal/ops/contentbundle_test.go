@@ -229,6 +229,24 @@ func TestLocalContentBundleEndpointRejectsDanglingRewardDropsBeforeImport(t *tes
 	}
 }
 
+func TestLocalContentBundleEndpointRejectsRewardDropsWithoutBundledItemTemplatesBeforeImport(t *testing.T) {
+	importer := &stubContentBundleImporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(`{"spawn_groups":[{"ref":"practice.reward_mob","name":"Reward Mob","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if importer.calls != 0 {
+		t.Fatalf("expected reward-drop bundle without item templates to be rejected before importer call, got %d calls", importer.calls)
+	}
+}
+
 func TestLocalContentBundleEndpointRejectsOversizedBodyBeforeImport(t *testing.T) {
 	importer := &stubContentBundleImporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)

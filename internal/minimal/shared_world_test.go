@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -322,12 +323,13 @@ func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testi
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		loginticket.NewFileStore(t.TempDir()),
 		accountstore.NewFileStore(t.TempDir()),
 		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
 		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
 		nil,
 	)
 	if err != nil {
@@ -354,6 +356,7 @@ func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testi
 			RespawnDelayMs:        1500,
 			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 15, Gold: 10, DropVnums: []uint32{27002, 27001}},
 		}},
+		ItemTemplates: rewardDropItemTemplates(27001, 27002),
 	}
 
 	imported, err := runtime.ImportContentBundle(bundle)
@@ -653,30 +656,34 @@ func TestGameRuntimeUpdateSpawnGroupActorPreservesRewardDescriptor(t *testing.T)
 	accounts := accountstore.NewFileStore(t.TempDir())
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
 		store,
 		accounts,
 		staticActorStore,
 		interactionStore,
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
 		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 
-	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:              "practice.mob_alpha",
-		Name:             "Practice Mob Alpha",
-		MapIndex:         42,
-		X:                1700,
-		Y:                2800,
-		RaceNum:          20350,
-		CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
-		RewardExperience: 125,
-		RewardGold:       75,
-		RewardDropVnums:  []uint32{3001, 3002},
-	}}})
+	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.mob_alpha",
+			Name:             "Practice Mob Alpha",
+			MapIndex:         42,
+			X:                1700,
+			Y:                2800,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardExperience: 125,
+			RewardGold:       75,
+			RewardDropVnums:  []uint32{3001, 3002},
+		}},
+		ItemTemplates: rewardDropItemTemplates(3001, 3002),
+	})
 	if err != nil {
 		t.Fatalf("import spawn group bundle: %v", err)
 	}
@@ -16586,24 +16593,27 @@ func TestGameRuntimePracticeMobRespawnPreservesAuthoredSpawnRewardSnapshot(t *te
 
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore, itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"), nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 	currentTime := time.Unix(1700000601, 0)
 	runtime.now = func() time.Time { return currentTime }
-	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:              "practice.reward_respawn",
-		Name:             "RewardRespawnMob",
-		MapIndex:         bootstrapMapIndex,
-		X:                1200,
-		Y:                2200,
-		RaceNum:          20350,
-		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
-		RewardExperience: 7,
-		RewardGold:       13,
-		RewardDropVnums:  []uint32{3001, 3002},
-	}}}
+	bundle := contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.reward_respawn",
+			Name:             "RewardRespawnMob",
+			MapIndex:         bootstrapMapIndex,
+			X:                1200,
+			Y:                2200,
+			RaceNum:          20350,
+			CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+			RewardExperience: 7,
+			RewardGold:       13,
+			RewardDropVnums:  []uint32{3001, 3002},
+		}},
+		ItemTemplates: rewardDropItemTemplates(3001, 3002),
+	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
 		t.Fatalf("import reward respawn spawn-group bundle: %v", err)
 	}
@@ -19241,24 +19251,27 @@ func TestNewGameSessionFactoryAppliesAuthoredSpawnGroupPracticeMobDeathReward(t 
 	if err := accounts.Save(accountstore.Account{Login: "authored-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
 		t.Fatalf("seed authored reward killer account: %v", err)
 	}
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticstore.NewFileStore(t.TempDir()+"/static-actors.json"), interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"))
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticstore.NewFileStore(t.TempDir()+"/static-actors.json"), interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"), itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"), nil)
 	if err != nil {
 		t.Fatalf("new game runtime: %v", err)
 	}
 	currentTime := time.Unix(1_700_000_700, 0)
 	runtime.now = func() time.Time { return currentTime }
-	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:              "practice.authored_reward_mob",
-		Name:             "AuthoredRewardMob",
-		MapIndex:         bootstrapMapIndex,
-		X:                1200,
-		Y:                2200,
-		RaceNum:          20350,
-		CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
-		RewardExperience: 75,
-		RewardGold:       60,
-		RewardDropVnums:  []uint32{27001},
-	}}})
+	imported, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.authored_reward_mob",
+			Name:             "AuthoredRewardMob",
+			MapIndex:         bootstrapMapIndex,
+			X:                1200,
+			Y:                2200,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  []uint32{27001},
+		}},
+		ItemTemplates: rewardDropItemTemplates(27001),
+	})
 	if err != nil {
 		t.Fatalf("import authored reward spawn group: %v", err)
 	}
@@ -31942,6 +31955,7 @@ type practiceMobTCPHarness struct {
 	cancel       context.CancelFunc
 	errCh        <-chan error
 	targetID     uint32
+	mu           sync.Mutex
 	now          time.Time
 	accountStore *accountstore.FileStore
 }
@@ -31983,24 +31997,31 @@ func newPracticeMobTCPAccountRewardHarness(t *testing.T, login string, loginKey 
 
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
-	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"), nil)
 	if err != nil {
 		t.Fatalf("unexpected tcp practice-mob runtime error: %v", err)
 	}
 	h := &practiceMobTCPHarness{runtime: runtime, now: time.Unix(1700000700, 0), accountStore: accounts}
-	runtime.now = func() time.Time { return h.now }
-	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:              spawnRef,
-		Name:             "PracticeMobTCP",
-		MapIndex:         bootstrapMapIndex,
-		X:                1200,
-		Y:                2200,
-		RaceNum:          101,
-		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
-		RewardExperience: reward.Experience,
-		RewardGold:       reward.Gold,
-		RewardDropVnums:  append([]uint32(nil), reward.DropVnums...),
-	}}}
+	runtime.now = func() time.Time {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.now
+	}
+	bundle := contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              spawnRef,
+			Name:             "PracticeMobTCP",
+			MapIndex:         bootstrapMapIndex,
+			X:                1200,
+			Y:                2200,
+			RaceNum:          101,
+			CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+			RewardExperience: reward.Experience,
+			RewardGold:       reward.Gold,
+			RewardDropVnums:  append([]uint32(nil), reward.DropVnums...),
+		}},
+		ItemTemplates: rewardDropItemTemplates(reward.DropVnums...),
+	}
 	if _, err := runtime.ImportContentBundle(bundle); err != nil {
 		t.Fatalf("import tcp practice-mob content bundle: %v", err)
 	}
@@ -32030,6 +32051,8 @@ func (h *practiceMobTCPHarness) close(t *testing.T) {
 }
 
 func (h *practiceMobTCPHarness) advance(duration time.Duration) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.now = h.now.Add(duration)
 }
 
@@ -36532,6 +36555,25 @@ func defaultMerchantItemTemplates() []itemcatalog.Template {
 			UseEffect:    &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"},
 		},
 	}
+}
+
+func rewardDropItemTemplates(vnums ...uint32) []itemcatalog.Template {
+	if len(vnums) == 0 {
+		return nil
+	}
+	seen := make(map[uint32]struct{}, len(vnums))
+	templates := make([]itemcatalog.Template, 0, len(vnums))
+	for _, vnum := range vnums {
+		if vnum == 0 {
+			continue
+		}
+		if _, ok := seen[vnum]; ok {
+			continue
+		}
+		seen[vnum] = struct{}{}
+		templates = append(templates, itemcatalog.Template{Vnum: vnum, Name: fmt.Sprintf("Reward Drop %d", vnum), Stackable: true, MaxCount: 200})
+	}
+	return templates
 }
 
 func defaultMerchantCatalogDefinition() interactionstore.Definition {
