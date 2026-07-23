@@ -4202,14 +4202,14 @@ func encodeBootstrapEquipmentItemFrameWithTemplates(instance inventory.ItemInsta
 func encodeBootstrapGroundPickupInventoryFrames(result player.GroundItemPickupResult, templates map[uint32]itemcatalog.Template) ([][]byte, bool) {
 	frames := make([][]byte, 0, len(result.UpdatedItems)+1)
 	if result.Merged {
-		frame, ok := encodeBootstrapGroundPickupUpdateFrame(result.Updated)
+		frame, ok := encodeBootstrapGroundPickupUpdateFrame(result.Updated, templates)
 		if !ok {
 			return nil, false
 		}
 		frames = append(frames, frame)
 	} else if result.Split {
 		for _, updated := range result.UpdatedItems {
-			frame, ok := encodeBootstrapGroundPickupUpdateFrame(updated)
+			frame, ok := encodeBootstrapGroundPickupUpdateFrame(updated, templates)
 			if !ok {
 				return nil, false
 			}
@@ -4238,12 +4238,12 @@ func encodeBootstrapGroundPickupSetFrame(instance inventory.ItemInstance, templa
 	return frame, true
 }
 
-func encodeBootstrapGroundPickupUpdateFrame(instance inventory.ItemInstance) ([]byte, bool) {
+func encodeBootstrapGroundPickupUpdateFrame(instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, bool) {
 	position, err := itemproto.CarriedInventoryPosition(uint16(instance.Slot))
 	if err != nil {
 		return nil, false
 	}
-	frame, err := encodeBootstrapItemUpdateFrame(position, instance)
+	frame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, instance, templates)
 	if err != nil {
 		return nil, false
 	}

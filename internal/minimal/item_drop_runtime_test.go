@@ -160,6 +160,81 @@ func TestGameRuntimeItemPickupDoesNotQueueDuplicateCollectorGroundDel(t *testing
 	}
 }
 
+func TestGameRuntimeItemPickupMergedStackRefreshCarriesTemplateDisplayMetadata(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupDisplayAttrs", 0x0103018e, 0x0204018e, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1005, Vnum: 27006, Count: 198, Slot: 2},
+		{ID: 1006, Vnum: 27006, Count: 2, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "pickup-display-attrs", 0x8e8e8e8e, owner)
+	if err := accounts.Save(accountstore.Account{Login: "pickup-display-attrs", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup display-metadata account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27006,
+		Name:      "Socketed Pickup Potion",
+		Stackable: true,
+		MaxCount:  200,
+		Sockets:   itemcatalog.SocketValues{101, -202, 303},
+		Attributes: itemcatalog.AttributeValues{
+			{Type: 5, Value: 66},
+			{Type: 10, Value: -8},
+		},
+	}})
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected pickup display-metadata runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pickup-display-attrs", 0x8e8e8e8e)
+	defer closeSessionFlow(t, flow)
+
+	dropOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected display-metadata item drop before pickup: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected display-metadata drop to emit ITEM_DEL, GROUND_ADD, and OWNERSHIP, got %d frames", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode display-metadata dropped ground item: %v", err)
+	}
+
+	pickupOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
+	if err != nil {
+		t.Fatalf("unexpected display-metadata item pickup error: %v", err)
+	}
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected display-metadata pickup to emit GROUND_DEL, ITEM_UPDATE, and ITEM_GET, got %d frames", len(pickupOut))
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode pickup merged-stack update: %v", err)
+	}
+	if update.Position != itemproto.InventoryPosition(2) || update.Count != 200 {
+		t.Fatalf("unexpected pickup merged-stack update identity/count: %+v", update)
+	}
+	wantSockets := [itemproto.ItemSocketCount]int32{101, -202, 303}
+	if update.Sockets != wantSockets {
+		t.Fatalf("expected template-authored pickup update sockets %+v, got %+v", wantSockets, update.Sockets)
+	}
+	wantAttributes := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 5, Value: 66}, {Type: 10, Value: -8}}
+	if update.Attributes != wantAttributes {
+		t.Fatalf("expected template-authored pickup update attributes %+v, got %+v", wantAttributes, update.Attributes)
+	}
+	account, err := accounts.Load("pickup-display-attrs")
+	if err != nil {
+		t.Fatalf("load pickup display-metadata account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 1005, Vnum: 27006, Count: 200, Slot: 2}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("expected pickup merge to persist filled target stack, got %#v", account.Characters[0].Inventory)
+	}
+}
+
 func TestGameRuntimeItemDropDeletesAllSourceItemQuickslots(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
