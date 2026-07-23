@@ -306,6 +306,33 @@ func TestMapIndexPlayerByVIDPrunesStaleAliasForSurvivingPlayer(t *testing.T) {
 	}
 }
 
+func TestMapIndexPlayerByNamePrunesStaleAliasForSurvivingPlayer(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(17, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	index.byEntityID[stale.Entity.ID] = current
+	index.effectiveMapByEntityID[stale.Entity.ID] = 77
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	if lookup, ok := index.PlayerByName(stale.Entity.Name); ok {
+		t.Fatalf("expected stale player name alias to fail closed, got player=%+v", lookup)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale player map bucket to be pruned after old name lookup, got %+v", characters)
+	}
+	lookup, ok := index.PlayerByName(current.Entity.Name)
+	if !ok || lookup.Entity.Name != "Alpha" || lookup.Character.MapIndex != 77 {
+		t.Fatalf("expected current player name lookup to remain intact, got player=%+v ok=%v", lookup, ok)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].VID != current.Entity.VID {
+		t.Fatalf("expected current player map bucket to remain after old name prune, got %+v", characters)
+	}
+}
+
 func TestMapIndexRegisterRejectsStaticBucketCollisionWhenStaticEntityIndexMissing(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	actor := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}

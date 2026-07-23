@@ -295,6 +295,70 @@ func TestEntityRegistryRemoveClearsPlayerLookupWhenMapIndexEntryAlreadyMissing(t
 	}
 }
 
+func TestEntityRegistryPlayerLookupRepairsPlayerDirectoryWhenMapIndexEntrySurvives(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	lookup, ok := registry.Player(alpha.Entity.ID)
+	if !ok || lookup.Entity.ID != alpha.Entity.ID || lookup.Character.MapIndex != 42 {
+		t.Fatalf("expected player lookup to repair from map-index presence, got entity=%+v ok=%v", lookup, ok)
+	}
+	byVID, ok := registry.PlayerByVID(alpha.Entity.VID)
+	if !ok || byVID.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected repaired VID lookup to return Alpha, got entity=%+v ok=%v", byVID, ok)
+	}
+	byName, ok := registry.PlayerByName(alpha.Entity.Name)
+	if !ok || byName.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected repaired exact-name lookup to return Alpha, got entity=%+v ok=%v", byName, ok)
+	}
+}
+
+func TestEntityRegistryPlayerByVIDRepairsPlayerDirectoryWhenMapIndexEntrySurvives(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	lookup, ok := registry.PlayerByVID(alpha.Entity.VID)
+	if !ok || lookup.Entity.ID != alpha.Entity.ID || lookup.Character.MapIndex != 42 {
+		t.Fatalf("expected VID lookup to repair from map-index presence, got entity=%+v ok=%v", lookup, ok)
+	}
+	byName, ok := registry.PlayerByName(alpha.Entity.Name)
+	if !ok || byName.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected repaired exact-name lookup to return Alpha, got entity=%+v ok=%v", byName, ok)
+	}
+}
+
+func TestEntityRegistryPlayerByNameRepairsPlayerDirectoryWhenMapIndexEntrySurvives(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	lookup, ok := registry.PlayerByName(alpha.Entity.Name)
+	if !ok || lookup.Entity.ID != alpha.Entity.ID || lookup.Character.MapIndex != 42 {
+		t.Fatalf("expected exact-name lookup to repair from map-index presence, got entity=%+v ok=%v", lookup, ok)
+	}
+	byVID, ok := registry.PlayerByVID(alpha.Entity.VID)
+	if !ok || byVID.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected repaired VID lookup to return Alpha, got entity=%+v ok=%v", byVID, ok)
+	}
+}
+
 func TestStaticActorVisibilityVIDRejectsUnencodableRaceNum(t *testing.T) {
 	if vid, ok := StaticActorVisibilityVID(StaticEntity{Entity: Entity{ID: 99}, RaceNum: 0}); ok {
 		t.Fatalf("expected zero race_num to be rejected for static actor visibility VID, got vid=%d", vid)

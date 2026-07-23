@@ -124,7 +124,21 @@ func (r *EntityRegistry) Player(id uint64) (PlayerEntity, bool) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.players.ByEntityID(id)
+	player, ok := r.players.ByEntityID(id)
+	if ok {
+		return player, true
+	}
+	if r.maps == nil {
+		return PlayerEntity{}, false
+	}
+	player, ok = r.maps.Player(id)
+	if !ok {
+		return PlayerEntity{}, false
+	}
+	if !r.players.Register(player) {
+		return PlayerEntity{}, false
+	}
+	return player, true
 }
 
 func (r *EntityRegistry) PlayerByVID(vid uint32) (PlayerEntity, bool) {
@@ -133,7 +147,21 @@ func (r *EntityRegistry) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.players.ByVID(vid)
+	player, ok := r.players.ByVID(vid)
+	if ok {
+		return player, true
+	}
+	if r.maps == nil {
+		return PlayerEntity{}, false
+	}
+	player, ok = r.maps.PlayerByVID(vid)
+	if !ok {
+		return PlayerEntity{}, false
+	}
+	if !r.players.Register(player) {
+		return PlayerEntity{}, false
+	}
+	return player, true
 }
 
 func (r *EntityRegistry) PlayerByName(name string) (PlayerEntity, bool) {
@@ -142,7 +170,21 @@ func (r *EntityRegistry) PlayerByName(name string) (PlayerEntity, bool) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.players.ByName(name)
+	player, ok := r.players.ByName(name)
+	if ok {
+		return player, true
+	}
+	if r.maps == nil {
+		return PlayerEntity{}, false
+	}
+	player, ok = r.maps.PlayerByName(name)
+	if !ok {
+		return PlayerEntity{}, false
+	}
+	if !r.players.Register(player) {
+		return PlayerEntity{}, false
+	}
+	return player, true
 }
 
 func (r *EntityRegistry) StaticActor(id uint64) (StaticEntity, bool) {

@@ -69,6 +69,7 @@ The current owned responsibilities are:
 - keep deterministic player snapshot output for higher-level scope helpers
 - prune stale secondary `VID` / name index entries when the primary entity entry is already gone, including lookup and removal paths, so partial teardown does not leave ghost lookup ownership that can block reconnect, replacement registration, or later cleanup
 - prune stale secondary `VID` / name aliases that still point at a surviving player entity but no longer match that entity's current canonical `VID` / exact name; lookup fails closed for the stale alias while leaving the current canonical indexes intact, and register/update paths remove every old alias for the entity before writing the current keys
+- repair player-directory presence from surviving map-index presence during runtime lookups by entity ID, client-visible `VID`, or exact character name, so a partial teardown or repair that loses the directory entry does not strand whisper/scope/introspection lookups until the next update path
 
 The stale-index pruning rule is deliberately narrow: a secondary lookup whose primary entity still exists remains authoritative only when the key matches that entity's current canonical identity. Orphaned secondary pointers and non-canonical aliases for the same surviving entity are reclaimed, while conflicting secondary keys that still point at a different live entity continue to block ownership changes.
 

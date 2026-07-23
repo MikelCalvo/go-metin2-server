@@ -184,6 +184,36 @@ func (m *MapIndex) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 	return PlayerEntity{}, false
 }
 
+func (m *MapIndex) PlayerByName(name string) (PlayerEntity, bool) {
+	if m == nil || name == "" {
+		return PlayerEntity{}, false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, player := range m.byEntityID {
+		if player.Entity.Name == name {
+			m.repairPlayerMapPresenceLocked(player)
+			return clonePlayerEntity(player), true
+		}
+	}
+	for _, bucket := range m.byMapIndex {
+		for _, player := range bucket {
+			if player.Entity.Name != name {
+				continue
+			}
+			if current, ok := m.byEntityID[player.Entity.ID]; ok {
+				m.repairPlayerMapPresenceLocked(current)
+				if current.Entity.Name == name {
+					return clonePlayerEntity(current), true
+				}
+				continue
+			}
+			return clonePlayerEntity(player), true
+		}
+	}
+	return PlayerEntity{}, false
+}
+
 func (m *MapIndex) Player(entityID uint64) (PlayerEntity, bool) {
 	if m == nil || entityID == 0 {
 		return PlayerEntity{}, false
