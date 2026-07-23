@@ -209,6 +209,45 @@ func TestEntityRegistryTracksPlayersByEffectiveMapIndex(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryUpdateRepairsPlayerDirectoryWhenPlayerDirectoryEntryAlreadyMissing(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	moved := alpha.Character
+	moved.MapIndex = 99
+	moved.X = 1900
+	moved.Y = 2900
+	if !registry.UpdatePlayer(alpha.Entity.ID, moved) {
+		t.Fatal("expected player update to repair the missing player-directory entry from surviving map presence")
+	}
+
+	lookup, ok := registry.Player(alpha.Entity.ID)
+	if !ok || lookup.Character.MapIndex != 99 || lookup.Character.X != 1900 || lookup.Character.Y != 2900 {
+		t.Fatalf("expected repaired player lookup with updated position, got entity=%+v ok=%v", lookup, ok)
+	}
+	byVID, ok := registry.PlayerByVID(alpha.Entity.VID)
+	if !ok || byVID.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected repaired VID lookup to return Alpha, got entity=%+v ok=%v", byVID, ok)
+	}
+	byName, ok := registry.PlayerByName(alpha.Entity.Name)
+	if !ok || byName.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected repaired exact-name lookup to return Alpha, got entity=%+v ok=%v", byName, ok)
+	}
+	if oldMapCharacters := registry.MapCharacters(42); len(oldMapCharacters) != 0 {
+		t.Fatalf("expected old map bucket to be cleared after repair update, got %+v", oldMapCharacters)
+	}
+	newMapCharacters := registry.MapCharacters(99)
+	if len(newMapCharacters) != 1 || newMapCharacters[0].Name != "Alpha" || newMapCharacters[0].X != 1900 || newMapCharacters[0].Y != 2900 {
+		t.Fatalf("expected repaired map occupancy on destination map, got %+v", newMapCharacters)
+	}
+}
+
 func TestEntityRegistryRemoveClearsMapOccupancyWhenPlayerDirectoryEntryAlreadyMissing(t *testing.T) {
 	registry := NewEntityRegistry()
 	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))

@@ -210,9 +210,13 @@ func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	previous, ok := r.players.ByEntityID(id)
-	if !ok {
-		return false
+	previous, hadDirectoryEntry := r.players.ByEntityID(id)
+	if !hadDirectoryEntry {
+		var ok bool
+		previous, ok = r.maps.Player(id)
+		if !ok {
+			return false
+		}
 	}
 	updated := newPlayerEntity(id, character)
 	if r.staticActors != nil {
@@ -227,12 +231,20 @@ func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character
 			}
 		}
 	}
-	if !r.players.Update(updated) {
+	if hadDirectoryEntry {
+		if !r.players.Update(updated) {
+			return false
+		}
+	} else if !r.players.Register(updated) {
 		return false
 	}
 	if !r.maps.Update(updated) {
 		if !r.maps.Register(updated) {
-			_ = r.players.Update(previous)
+			if hadDirectoryEntry {
+				_ = r.players.Update(previous)
+			} else {
+				_, _ = r.players.Remove(updated.Entity.ID)
+			}
 			return false
 		}
 	}
