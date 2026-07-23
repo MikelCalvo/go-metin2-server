@@ -48,9 +48,11 @@ type Bundle struct {
 
 type Summary struct {
 	StaticActorCount                       int                                     `json:"static_actor_count"`
+	InteractableStaticActorCount           int                                     `json:"interactable_static_actor_count"`
 	SpawnGroupCount                        int                                     `json:"spawn_group_count"`
 	CombatProfileCount                     int                                     `json:"combat_profile_count"`
 	ItemTemplateCount                      int                                     `json:"item_template_count"`
+	ShopCatalogEntryCount                  int                                     `json:"shop_catalog_entry_count"`
 	InteractionDefinitionCount             int                                     `json:"interaction_definition_count"`
 	ReferencedInteractionDefinitionCount   int                                     `json:"referenced_interaction_definition_count"`
 	UnreferencedInteractionDefinitionCount int                                     `json:"unreferenced_interaction_definition_count"`
@@ -73,9 +75,10 @@ type InteractionDefinitionReferenceSummary struct {
 }
 
 type MapContentSummary struct {
-	MapIndex         uint32 `json:"map_index"`
-	StaticActorCount int    `json:"static_actor_count"`
-	SpawnGroupCount  int    `json:"spawn_group_count"`
+	MapIndex                     uint32 `json:"map_index"`
+	StaticActorCount             int    `json:"static_actor_count"`
+	InteractableStaticActorCount int    `json:"interactable_static_actor_count"`
+	SpawnGroupCount              int    `json:"spawn_group_count"`
 }
 
 func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot) (Bundle, error) {
@@ -227,6 +230,9 @@ func Summarize(bundle Bundle) (Summary, error) {
 	interactionKindUnreferencedCounts := make(map[string]int)
 	for _, definition := range normalized.InteractionDefinitions {
 		interactionKindCounts[definition.Kind]++
+		if definition.Kind == interactionstore.KindShopPreview {
+			summary.ShopCatalogEntryCount += len(definition.Catalog)
+		}
 		reference := InteractionDefinitionReferenceSummary{Kind: definition.Kind, Ref: definition.Ref}
 		if _, ok := referencedDefinitions[interactionDefinitionKey(definition.Kind, definition.Ref)]; ok {
 			interactionKindReferencedCounts[definition.Kind]++
@@ -257,6 +263,10 @@ func Summarize(bundle Bundle) (Summary, error) {
 	for _, actor := range normalized.StaticActors {
 		entry := mapContentSummaryForIndex(mapCounts, actor.MapIndex)
 		entry.StaticActorCount++
+		if actor.InteractionKind != "" && actor.InteractionRef != "" {
+			summary.InteractableStaticActorCount++
+			entry.InteractableStaticActorCount++
+		}
 	}
 	for _, spawnGroup := range normalized.SpawnGroups {
 		entry := mapContentSummaryForIndex(mapCounts, spawnGroup.MapIndex)

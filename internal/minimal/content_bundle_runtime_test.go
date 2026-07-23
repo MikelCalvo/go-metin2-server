@@ -76,6 +76,7 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 	}
 	want := contentbundle.Summary{
 		StaticActorCount:                       2,
+		InteractableStaticActorCount:           1,
 		InteractionDefinitionCount:             2,
 		ReferencedInteractionDefinitionCount:   1,
 		UnreferencedInteractionDefinitionCount: 1,
@@ -89,7 +90,7 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 		UnreferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
-		Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 2}},
+		Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 2, InteractableStaticActorCount: 1}},
 	}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected exported content bundle summary:\n got: %#v\nwant: %#v", summary, want)

@@ -65,9 +65,11 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 	}
 	want := Summary{
 		StaticActorCount:                       2,
+		InteractableStaticActorCount:           2,
 		SpawnGroupCount:                        1,
 		CombatProfileCount:                     0,
 		ItemTemplateCount:                      2,
+		ShopCatalogEntryCount:                  2,
 		InteractionDefinitionCount:             3,
 		ReferencedInteractionDefinitionCount:   2,
 		UnreferencedInteractionDefinitionCount: 1,
@@ -84,8 +86,8 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
 		Maps: []MapContentSummary{
-			{MapIndex: 1, StaticActorCount: 1, SpawnGroupCount: 0},
-			{MapIndex: 2, StaticActorCount: 1, SpawnGroupCount: 1},
+			{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 0},
+			{MapIndex: 2, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 1},
 		},
 	}
 	if !reflect.DeepEqual(summary, want) {

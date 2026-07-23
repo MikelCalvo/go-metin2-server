@@ -365,9 +365,11 @@ func TestLocalContentBundleValidateEndpointRejectsWrongMethod(t *testing.T) {
 func TestLocalContentBundleSummaryEndpointReturnsSummaryJSONForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{
 		StaticActorCount:                       2,
+		InteractableStaticActorCount:           2,
 		SpawnGroupCount:                        1,
 		CombatProfileCount:                     1,
 		ItemTemplateCount:                      2,
+		ShopCatalogEntryCount:                  2,
 		InteractionDefinitionCount:             3,
 		ReferencedInteractionDefinitionCount:   2,
 		UnreferencedInteractionDefinitionCount: 1,
@@ -384,8 +386,8 @@ func TestLocalContentBundleSummaryEndpointReturnsSummaryJSONForLoopbackGet(t *te
 			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
 		Maps: []contentbundle.MapContentSummary{
-			{MapIndex: 1, StaticActorCount: 1},
-			{MapIndex: 42, StaticActorCount: 1, SpawnGroupCount: 1},
+			{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1},
+			{MapIndex: 42, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 1},
 		},
 	}}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
@@ -434,7 +436,9 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 	}
 	want := contentbundle.Summary{
 		StaticActorCount:                       2,
+		InteractableStaticActorCount:           2,
 		ItemTemplateCount:                      1,
+		ShopCatalogEntryCount:                  1,
 		InteractionDefinitionCount:             3,
 		ReferencedInteractionDefinitionCount:   2,
 		UnreferencedInteractionDefinitionCount: 1,
@@ -450,7 +454,7 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 		UnreferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
-		Maps: []contentbundle.MapContentSummary{{MapIndex: 1, StaticActorCount: 2}},
+		Maps: []contentbundle.MapContentSummary{{MapIndex: 1, StaticActorCount: 2, InteractableStaticActorCount: 2}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected dry-run summary response:\n got: %#v\nwant: %#v", got, want)

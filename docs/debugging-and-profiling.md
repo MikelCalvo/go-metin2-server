@@ -143,7 +143,7 @@ Returns a loopback-only JSON summary of authored content bundles without returni
 
 `POST` is a dry-run helper for candidate bundles. It uses the same 1 MiB request bound, strict JSON decoding, and `contentbundle.Canonicalize(...)` rules as `POST /local/content-bundle` / `POST /local/content-bundle/validate`, then returns only the compact summary. It does not call the live runtime exporter and does not import or mutate runtime state. Use it when an operator wants quick counts/kind/map impact for a candidate bundle before requesting the full canonical payload from `/local/content-bundle/validate` or committing it with `/local/content-bundle`.
 
-The summary includes deterministic counts for static actors, spawn groups, portable combat profiles, item templates, interaction definitions, per-kind referenced/unreferenced interaction definitions, exact referenced/unreferenced interaction definition identities, and per-map static actor / spawn-group occupancy. Invalid candidate bundles return `400`, non-loopback callers return `403`, and methods other than `GET` / `POST` return `405`.
+The summary includes deterministic counts for static actors, interactable static actors, spawn groups, portable combat profiles, item templates, structured shop catalog entries, interaction definitions, per-kind referenced/unreferenced interaction definitions, exact referenced/unreferenced interaction definition identities, and per-map static actor / interactable static actor / spawn-group occupancy. Invalid candidate bundles return `400`, non-loopback callers return `403`, and methods other than `GET` / `POST` return `405`.
 
 ### `POST /local/content-bundle/validate`
 
