@@ -920,6 +920,45 @@ func TestEntityRegistryRejectsStaticActorVisibilityVIDAlreadyOwnedByMapOnlyPlaye
 	}
 }
 
+func TestEntityRegistryPrunesStalePlayerMapVIDAliasDuringStaticActorRegistration(t *testing.T) {
+	registry := NewEntityRegistry()
+	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if player.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	updated := player
+	updated.Entity.VID = 0x02040111
+	updated.Character.VID = updated.Entity.VID
+	updated.Character.ID = updated.Entity.VID
+	updated.Character.MapIndex = 77
+	updated.Character.X = 1900
+	updated.Character.Y = 3000
+	registry.maps.mu.Lock()
+	registry.maps.byEntityID[player.Entity.ID] = updated
+	registry.maps.effectiveMapByEntityID[player.Entity.ID] = 77
+	registry.maps.byMapIndex[42] = map[uint64]PlayerEntity{player.Entity.ID: player}
+	registry.maps.byMapIndex[77] = map[uint64]PlayerEntity{player.Entity.ID: updated}
+	registry.maps.mu.Unlock()
+	if !registry.players.Update(updated) {
+		t.Fatal("expected player directory update to move canonical player VID")
+	}
+
+	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Name: "VillageGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration to prune stale old player VID map alias")
+	}
+	if actor.Entity.ID != uint64(player.Entity.VID) {
+		t.Fatalf("expected static actor to claim freed old visibility VID, got %+v", actor)
+	}
+	if characters := registry.MapCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale old-map player bucket to be pruned during registration, got %+v", characters)
+	}
+	playerLookup, ok := registry.PlayerByVID(updated.Entity.VID)
+	if !ok || playerLookup.Entity.ID != player.Entity.ID || playerLookup.Character.MapIndex != 77 {
+		t.Fatalf("expected current player VID lookup to stay intact, got player=%+v ok=%v", playerLookup, ok)
+	}
+}
+
 func TestEntityRegistryRejectsStaticActorUpdateThatWouldCollideWithPlayerVID(t *testing.T) {
 	registry := NewEntityRegistry()
 	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))

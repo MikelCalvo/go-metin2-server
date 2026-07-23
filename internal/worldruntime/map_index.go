@@ -168,9 +168,17 @@ func (m *MapIndex) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 	}
 	for _, bucket := range m.byMapIndex {
 		for _, player := range bucket {
-			if player.Entity.VID == vid {
-				return clonePlayerEntity(player), true
+			if player.Entity.VID != vid {
+				continue
 			}
+			if current, ok := m.byEntityID[player.Entity.ID]; ok {
+				m.repairPlayerMapPresenceLocked(current)
+				if current.Entity.VID == vid {
+					return clonePlayerEntity(current), true
+				}
+				continue
+			}
+			return clonePlayerEntity(player), true
 		}
 	}
 	return PlayerEntity{}, false
