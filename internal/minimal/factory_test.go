@@ -37,10 +37,13 @@ type staticItemTemplateStore struct {
 }
 
 func TestGameRuntimeRestoreAccountStoreRestoresValidatedBackup(t *testing.T) {
-	backupDir := t.TempDir()
-	backup := accountstore.NewFileStore(backupDir)
-	if err := backup.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
-		t.Fatalf("save backup account: %v", err)
+	source := accountstore.NewFileStore(t.TempDir())
+	if err := source.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
 	}
 	active := accountstore.NewFileStore(filepath.Join(t.TempDir(), "active"))
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, nil, active)
@@ -87,10 +90,13 @@ func TestGameRuntimeRestoreAccountStoreFailsClosedForInvalidBackup(t *testing.T)
 }
 
 func TestGameRuntimeValidateAccountStoreBackupDryRunsRestoreSource(t *testing.T) {
-	backupDir := t.TempDir()
-	backup := accountstore.NewFileStore(backupDir)
-	if err := backup.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
-		t.Fatalf("save backup account: %v", err)
+	source := accountstore.NewFileStore(t.TempDir())
+	if err := source.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
 	}
 	active := accountstore.NewFileStore(filepath.Join(t.TempDir(), "active"))
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, nil, active)

@@ -584,6 +584,43 @@ func TestFileStoreRestoreFromRejectsMalformedBackupManifest(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateBackupFromRejectsMissingBackupManifest(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	if err := backup.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	restoreTarget := NewFileStore(filepath.Join(t.TempDir(), "restore-target"))
+
+	_, err := restoreTarget.ValidateBackupFrom(backup.dir)
+	if !errors.Is(err, ErrBackupManifestRequired) {
+		t.Fatalf("expected ErrBackupManifestRequired for missing manifest, got %v", err)
+	}
+	if _, statErr := os.Stat(restoreTarget.dir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected dry-run validation not to create restore target dir, stat err=%v", statErr)
+	}
+}
+
+func TestFileStoreRestoreFromRejectsMissingBackupManifest(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	if err := backup.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	restoreDir := filepath.Join(t.TempDir(), "restored")
+	restored := NewFileStore(restoreDir)
+
+	err := restored.RestoreFrom(backup.dir)
+	if !errors.Is(err, ErrBackupManifestRequired) {
+		t.Fatalf("expected ErrBackupManifestRequired for missing manifest, got %v", err)
+	}
+	entries, readErr := os.ReadDir(restoreDir)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		t.Fatalf("read restore dir after failed restore: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected missing-manifest restore to leave destination empty, got %#v", entries)
+	}
+}
+
 func TestFileStoreBackupToRejectsCorruptSourceSnapshot(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	path := store.accountPath("mkmk")
@@ -707,23 +744,27 @@ func TestFileStoreBackupToTreatsMissingSourceAsEmptyBackup(t *testing.T) {
 }
 
 func TestFileStoreRestoreFromCopiesValidatedBackupIntoEmptyStore(t *testing.T) {
-	backup := NewFileStore(t.TempDir())
+	source := NewFileStore(t.TempDir())
 	accounts := []Account{
 		{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}},
 		{Login: "Beta", Empire: 1, Characters: []loginticket.Character{{ID: 2, Name: "BetaNinja"}}},
 	}
 	for _, account := range accounts {
-		if err := backup.Save(account); err != nil {
-			t.Fatalf("save backup account %s: %v", account.Login, err)
+		if err := source.Save(account); err != nil {
+			t.Fatalf("save source account %s: %v", account.Login, err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(backup.dir, ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
 		t.Fatalf("write backup temp file: %v", err)
 	}
 
 	restoreDir := filepath.Join(t.TempDir(), "restored-accounts")
 	restored := NewFileStore(restoreDir)
-	if err := restored.RestoreFrom(backup.dir); err != nil {
+	if err := restored.RestoreFrom(backupDir); err != nil {
 		t.Fatalf("restore accounts: %v", err)
 	}
 
@@ -796,15 +837,19 @@ func TestFileStoreRestoreFromRejectsCorruptBackupSnapshot(t *testing.T) {
 }
 
 func TestFileStoreRestoreFromRollsBackCommittedFilesWhenSaveFails(t *testing.T) {
-	backup := NewFileStore(t.TempDir())
+	source := NewFileStore(t.TempDir())
 	accounts := []Account{
 		{Login: "alpha", Empire: 1},
 		{Login: "zeta", Empire: 3},
 	}
 	for _, account := range accounts {
-		if err := backup.Save(account); err != nil {
-			t.Fatalf("save backup account %s: %v", account.Login, err)
+		if err := source.Save(account); err != nil {
+			t.Fatalf("save source account %s: %v", account.Login, err)
 		}
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
 	}
 
 	restoreDir := filepath.Join(t.TempDir(), "restored")
@@ -818,7 +863,7 @@ func TestFileStoreRestoreFromRollsBackCommittedFilesWhenSaveFails(t *testing.T) 
 		return originalSyncStoreDir(path)
 	}
 
-	err := restored.RestoreFrom(backup.dir)
+	err := restored.RestoreFrom(backupDir)
 	if err == nil || !strings.Contains(err.Error(), "restore account") {
 		t.Fatalf("expected restore account failure, got %v", err)
 	}

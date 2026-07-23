@@ -24,16 +24,17 @@ const (
 )
 
 var (
-	ErrStoreDirRequired      = errors.New("account store dir is required")
-	ErrLoginRequired         = errors.New("account login is required")
-	ErrAccountNotFound       = errors.New("account not found")
-	ErrInvalidAccount        = errors.New("invalid account snapshot")
-	ErrBackupDirRequired     = errors.New("account backup dir is required")
-	ErrBackupDirNotEmpty     = errors.New("account backup dir is not empty")
-	ErrRestoreSourceRequired = errors.New("account restore source dir is required")
-	ErrRestoreSourceNotFound = errors.New("account restore source dir not found")
-	ErrRestoreDirNotEmpty    = errors.New("account restore dir is not empty")
-	ErrInvalidBackupManifest = errors.New("invalid account backup manifest")
+	ErrStoreDirRequired       = errors.New("account store dir is required")
+	ErrLoginRequired          = errors.New("account login is required")
+	ErrAccountNotFound        = errors.New("account not found")
+	ErrInvalidAccount         = errors.New("invalid account snapshot")
+	ErrBackupDirRequired      = errors.New("account backup dir is required")
+	ErrBackupDirNotEmpty      = errors.New("account backup dir is not empty")
+	ErrRestoreSourceRequired  = errors.New("account restore source dir is required")
+	ErrRestoreSourceNotFound  = errors.New("account restore source dir not found")
+	ErrRestoreDirNotEmpty     = errors.New("account restore dir is not empty")
+	ErrBackupManifestRequired = errors.New("account backup manifest is required")
+	ErrInvalidBackupManifest  = errors.New("invalid account backup manifest")
 )
 
 type Account struct {
@@ -372,7 +373,7 @@ func (s *FileStore) validateBackupManifest(accounts []Account) error {
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil
+			return ErrBackupManifestRequired
 		}
 		return fmt.Errorf("read account backup manifest: %w", err)
 	}
