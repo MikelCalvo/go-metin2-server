@@ -26,6 +26,24 @@ func TestNonPlayerDirectoryRegistersLooksUpAndRemovesStaticActors(t *testing.T) 
 	}
 }
 
+func TestNonPlayerDirectoryRejectsPathAmbiguousInteractionRef(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:          Entity{ID: 2, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position:        NewPosition(42, 1700, 2800),
+		RaceNum:         20300,
+		InteractionKind: "talk",
+		InteractionRef:  "npc/village_guard",
+	}
+
+	if directory.Register(actor) {
+		t.Fatal("expected path-ambiguous interaction ref registration to fail closed")
+	}
+	if _, ok := directory.ByEntityID(actor.Entity.ID); ok {
+		t.Fatal("expected rejected static actor not to be registered")
+	}
+}
+
 func TestNonPlayerDirectoryLooksUpStaticActorsByVisibilityVID(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{

@@ -118,6 +118,24 @@ func TestLocalInteractionDefinitionsEndpointRejectsOversizedCreateBody(t *testin
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointRejectsPathAmbiguousRefBeforeCreate(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"info","ref":"lore/alchemist","text":"The alchemist studies forgotten herbs."}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if creator.calls != 0 {
+		t.Fatalf("expected interaction definition creator not to be called for path-ambiguous ref, got %d calls", creator.calls)
+	}
+}
+
 func TestLocalInteractionDefinitionUpdateEndpointRejectsOversizedBody(t *testing.T) {
 	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK}
 	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)

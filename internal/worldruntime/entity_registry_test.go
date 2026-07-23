@@ -392,6 +392,16 @@ func TestEntityRegistryStaticActorsPreserveInteractionMetadata(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryRejectsPathAmbiguousStaticActorInteractionRef(t *testing.T) {
+	registry := NewEntityRegistry()
+	if actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, InteractionKind: "talk", InteractionRef: "npc/village_guard"}); ok {
+		t.Fatalf("expected path-ambiguous static actor interaction ref to fail closed, got %+v", actor)
+	}
+	if actors := registry.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor not to be retained, got %+v", actors)
+	}
+}
+
 func TestEntityRegistryLooksUpStaticActorsByVisibilityVID(t *testing.T) {
 	registry := NewEntityRegistry()
 	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})

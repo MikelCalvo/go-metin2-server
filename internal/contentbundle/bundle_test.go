@@ -592,6 +592,16 @@ func TestCanonicalizeRejectsDuplicateInteractionDefinitions(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsPathAmbiguousInteractionRefs(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors:           []StaticActor{{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc/village_guard"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc/village_guard", Text: "Keep your blade sharp."}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for path-ambiguous interaction refs, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsInvalidWarpInteractionDefinition(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", X: 1700, Y: 2800}},

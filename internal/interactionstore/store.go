@@ -105,8 +105,39 @@ func ValidKind(kind string) bool {
 	return validKind(strings.TrimSpace(kind))
 }
 
+func validRef(ref string) bool {
+	ref = strings.TrimSpace(ref)
+	parts := strings.Split(ref, ":")
+	if len(parts) != 2 {
+		return false
+	}
+	return validRefSegment(parts[0]) && validRefSegment(parts[1])
+}
+
+func validRefSegment(segment string) bool {
+	if segment == "" {
+		return false
+	}
+	first := segment[0]
+	if first < 'a' || first > 'z' {
+		return false
+	}
+	for i := 1; i < len(segment); i++ {
+		c := segment[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func ValidRef(ref string) bool {
+	return validRef(ref)
+}
+
 func validDefinition(definition Definition) bool {
-	if !validKind(definition.Kind) || definition.Ref == "" {
+	if !validKind(definition.Kind) || !validRef(definition.Ref) {
 		return false
 	}
 	switch definition.Kind {

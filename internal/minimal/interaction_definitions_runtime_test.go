@@ -127,6 +127,18 @@ func TestGameRuntimeCreateInteractionDefinitionRejectsDuplicateDefinition(t *tes
 	}
 }
 
+func TestGameRuntimeCreateInteractionDefinitionRejectsPathAmbiguousRef(t *testing.T) {
+	interactionStore := newInteractionDefinitionStore(t, nil)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	if _, err := runtime.CreateInteractionDefinition(interactionstore.Definition{Kind: interactionstore.KindInfo, Ref: "lore/alchemist", Text: "The alchemist studies forgotten herbs."}); !errors.Is(err, interactionstore.ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for path-ambiguous interaction ref, got %v", err)
+	}
+}
+
 func TestGameRuntimeUpsertInteractionDefinitionPersistsDefinitionText(t *testing.T) {
 	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "Old text."}})
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)

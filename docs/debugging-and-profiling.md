@@ -369,6 +369,7 @@ Current authored shapes:
   - optional `text`
 
 `POST`, `PATCH`, and `PUT` bodies are bounded to 4 KiB; oversized authored interaction requests fail closed with `413` before reaching runtime mutation callbacks. `PATCH` and `PUT` are full-identity upserts, so body `kind` + `ref` must match the path exactly.
+Interaction `ref` values must use the canonical path-safe `<namespace>:<name>` form (for example `npc:qa_merchant` or `lore:qa_square`); slashes, whitespace, dots, hyphens, uppercase letters, missing namespaces, blank segments, and extra `:` separators are rejected before persistence/import.
 Deletes fail closed while a bootstrap static actor still references the definition.
 
 ### Combat ownership troubleshooting workflow

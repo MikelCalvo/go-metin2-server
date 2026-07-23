@@ -148,6 +148,14 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(invalidInteraction); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for partial interaction metadata, got %v", err)
 	}
+	interactionRefWithoutNamespace := Snapshot{StaticActors: []StaticActor{{EntityID: 26, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk", InteractionRef: "village_guard"}}}
+	if err := store.Save(interactionRefWithoutNamespace); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for interaction ref without namespace, got %v", err)
+	}
+	pathAmbiguousInteractionRef := Snapshot{StaticActors: []StaticActor{{EntityID: 27, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk", InteractionRef: "npc/village_guard"}}}
+	if err := store.Save(pathAmbiguousInteractionRef); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for path-ambiguous interaction ref, got %v", err)
+	}
 	unsupportedInteractionKind := Snapshot{StaticActors: []StaticActor{{EntityID: 10, Name: "QuestMarker", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "quest", InteractionRef: "quest:first_steps"}}}
 	if err := store.Save(unsupportedInteractionKind); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for unsupported interaction kind, got %v", err)

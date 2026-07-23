@@ -86,6 +86,8 @@ The first owned operator surface for interaction content is loopback-only:
 
 The current contract is intentionally narrow:
 - request/response bodies always use `kind` and `ref`
+- `ref` must be a canonical path-safe `<namespace>:<name>` interaction key; both segments start with a lowercase ASCII letter and then contain only lowercase ASCII letters, digits, or `_`
+- refs containing `/`, whitespace, dots, hyphens, uppercase letters, blank segments, missing namespace separators, or extra `:` separators are rejected before reaching runtime mutation callbacks
 - `info` / `talk` use authored `text`
 - `shop_preview` uses authored `title + catalog[]`
 - `warp` uses authored `map_index`, `x`, `y`, with optional `text`

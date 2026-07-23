@@ -20,6 +20,20 @@ func testMerchantCatalogDefinition() Definition {
 	}
 }
 
+func TestValidRefAcceptsOnlyNamespacedLowerSnakeInteractionRefs(t *testing.T) {
+	for _, ref := range []string{"lore:alchemist", "npc:village_guard", "old:lore", "npc:qa_merchant2"} {
+		if !ValidRef(ref) {
+			t.Fatalf("expected interaction ref %q to be valid", ref)
+		}
+	}
+
+	for _, ref := range []string{"", "alchemist", "npc/village_guard", "npc:VillageGuard", "npc:village-guard", "npc:village.guard", "npc:village guard", "npc:", ":merchant", "npc:merchant:extra"} {
+		if ValidRef(ref) {
+			t.Fatalf("expected interaction ref %q to be invalid", ref)
+		}
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)
@@ -154,6 +168,18 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	blankRef := Snapshot{Definitions: []Definition{{Kind: KindInfo, Ref: "", Text: "missing ref"}}}
 	if err := store.Save(blankRef); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for blank ref, got %v", err)
+	}
+	refWithoutNamespace := Snapshot{Definitions: []Definition{{Kind: KindInfo, Ref: "alchemist", Text: "missing namespace"}}}
+	if err := store.Save(refWithoutNamespace); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for interaction ref without namespace, got %v", err)
+	}
+	pathAmbiguousRef := Snapshot{Definitions: []Definition{{Kind: KindTalk, Ref: "npc/village_guard", Text: "path ambiguous ref"}}}
+	if err := store.Save(pathAmbiguousRef); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for path-ambiguous interaction ref, got %v", err)
+	}
+	whitespaceRef := Snapshot{Definitions: []Definition{{Kind: KindInfo, Ref: "lore:al chemist", Text: "whitespace ref"}}}
+	if err := store.Save(whitespaceRef); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for interaction ref with embedded whitespace, got %v", err)
 	}
 	blankText := Snapshot{Definitions: []Definition{{Kind: KindTalk, Ref: "npc:village_guard", Text: "   "}}}
 	if err := store.Save(blankText); !errors.Is(err, ErrInvalidSnapshot) {

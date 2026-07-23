@@ -31,7 +31,14 @@ A bootstrap static actor may now carry two optional fields:
 
 These fields are intentionally tiny:
 - `interaction_kind` identifies the interaction family
-- `interaction_ref` is an opaque stable lookup key owned by later slices
+- `interaction_ref` is a stable authoring lookup key owned by later slices
+
+Current `interaction_ref` values are intentionally path-safe and canonical:
+- exactly one namespace separator: `<namespace>:<name>`
+- each segment must be lower-snake-ish: starts with `[a-z]`, then `[a-z0-9_]*`
+- `/`, whitespace, dots, hyphens, uppercase letters, blank segments, and extra `:` separators are rejected
+
+This keeps interaction identities safe for the current JSON stores and `/local/interactions/{kind}/{ref}` operator routes before broader quest/content naming exists.
 
 ## Validity rule
 
@@ -39,11 +46,14 @@ The first owned validation rule is:
 - both fields empty = no interaction
 - both fields non-empty = interaction metadata present
 - exactly one field present = invalid
+- when present, `interaction_ref` must satisfy the canonical `<namespace>:<name>` rule above
 
 This rule applies consistently in:
 - runtime registration/update validation
 - local operator request decoding
 - file-backed static-actor snapshot validation
+- interaction-definition store validation
+- content-bundle canonicalization/import validation
 
 ## Current owned behavior
 

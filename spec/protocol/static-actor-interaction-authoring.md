@@ -32,6 +32,8 @@ The first owned catalog surface is:
 
 Current rules:
 - bodies always use JSON `kind` and `ref`
+- `ref` is a canonical path-safe interaction key in the form `<namespace>:<name>`; both segments start with a lowercase ASCII letter and then contain only lowercase ASCII letters, digits, or `_`
+- refs without a namespace, refs containing `/`, whitespace, dots, hyphens, uppercase letters, blank segments, or extra `:` separators are rejected before persistence/import
 - `info` / `talk` currently use authored `text`
 - `shop_preview` currently uses authored `title + catalog[]`
 - `warp` currently uses authored `map_index`, `x`, `y`, with optional `text`
@@ -78,6 +80,7 @@ Current rules:
 - exported static actors are **portable authored content**, not runtime entities, so the bundle omits runtime-only `entity_id`
 - import is full-replace for the authored bootstrap content currently loaded by `gamed`
 - import validates that every referenced interaction definition exists before mutating runtime state
+- import rejects non-canonical interaction refs before mutating runtime state, using the same `<namespace>:<name>` rule as the interaction-definition store and static-actor store
 - import also rejects duplicate portable static-actor rows after canonical trimming, so a bundle cannot silently materialize the same authored actor twice
 - import also rejects malformed per-kind definition payloads, including invalid `warp` destinations, invalid item templates, and invalid `shop_preview` catalogs
 - import persists bundled `item_templates` to the file-backed item-template store and updates the live runtime template index before exposing the imported content

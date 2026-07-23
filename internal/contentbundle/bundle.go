@@ -277,7 +277,7 @@ func validInteractionMetadata(kind string, ref string) bool {
 	if kind == "" && ref == "" {
 		return true
 	}
-	return kind != "" && ref != ""
+	return kind != "" && ref != "" && interactionstore.ValidRef(ref)
 }
 
 func validBootstrapRaceNum(raceNum uint32) bool {

@@ -3,6 +3,8 @@ package worldruntime
 import (
 	"sort"
 	"strings"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 )
 
 type NonPlayerDirectory struct {
@@ -160,7 +162,7 @@ func ValidStaticActorInteractionMetadata(kind string, ref string) bool {
 	if kind == "" && ref == "" {
 		return true
 	}
-	return kind != "" && ref != ""
+	return kind != "" && ref != "" && interactionstore.ValidRef(ref)
 }
 
 func ValidStaticActorCombatKind(kind string) bool {

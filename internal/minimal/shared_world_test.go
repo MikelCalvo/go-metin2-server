@@ -24413,7 +24413,7 @@ func TestGameRuntimeResolveStaticActorWarpInteractionRejectsInvalidDestinationDe
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
-	actor, ok := runtime.sharedWorld.RegisterStaticActorWithInteraction(0, "BrokenTeleporter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindWarp, "npc:broken-teleporter")
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithInteraction(0, "BrokenTeleporter", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindWarp, "npc:broken_teleporter")
 	if !ok {
 		t.Fatal("expected direct shared-world registration with warp metadata to succeed for invalid-destination runtime test")
 	}
@@ -24421,7 +24421,7 @@ func TestGameRuntimeResolveStaticActorWarpInteractionRejectsInvalidDestinationDe
 	if runtime.interactionDefinitions == nil {
 		runtime.interactionDefinitions = make(map[string]interactionstore.Definition)
 	}
-	runtime.interactionDefinitions[interactionDefinitionKey(interactionstore.KindWarp, "npc:broken-teleporter")] = InteractionDefinition{Kind: interactionstore.KindWarp, Ref: "npc:broken-teleporter", MapIndex: 0, X: 1700, Y: 2800}
+	runtime.interactionDefinitions[interactionDefinitionKey(interactionstore.KindWarp, "npc:broken_teleporter")] = InteractionDefinition{Kind: interactionstore.KindWarp, Ref: "npc:broken_teleporter", MapIndex: 0, X: 1700, Y: 2800}
 	runtime.interactionDefinitionMu.Unlock()
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
 	defer closeSessionFlow(t, flow)
