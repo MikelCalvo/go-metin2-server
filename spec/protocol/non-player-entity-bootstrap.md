@@ -55,7 +55,7 @@ A bootstrap non-player actor is only required to own:
 - one minimal class/template identifier suitable for future packet/content work
 - optional display/name identifier for deterministic lookup, debugging, or tooling
 - a non-zero class/template/race identifier that fits the current bootstrap `CHARACTER_ADD` wire projection (`uint16`); runtime registration/update, file-backed restore, and content-bundle import all fail closed instead of accepting unencodable static actors that later visibility paths would have to skip
-- optional interaction-ready metadata (`interaction_kind` / `interaction_ref`) for later self-only interaction slices
+- optional interaction-ready metadata (`interaction_kind` / `interaction_ref`) limited to the currently owned interaction-definition kinds, so unsupported actor behaviors fail closed at runtime registration/update instead of becoming visible dangling content
 
 In other words, the runtime is about to own the fact that a non-player actor exists in the world, where it is, and what kind of actor it is.
 It is **not** yet owning what that actor does.
@@ -130,6 +130,7 @@ The next runtime checkpoint after this document should be able to say:
 - runtime/operator map-occupancy snapshots can now surface those static actors on their effective maps
 - relocate-preview and transfer results can now also expose explicit added/removed visible static actors beside the before/after occupancy snapshots
 - runtime/operator static-actor, visibility, map-occupancy, relocate-preview, and transfer snapshots can now expose resolved `combat_rank` for combat-profile actors without changing current packet output or combat math
+- runtime static-actor registration/update now rejects unsupported `interaction_kind` values instead of relying only on later store/bundle validation
 - `gamed` can seed, inspect, update, and remove those bootstrap static actors through loopback-only operator paths
 - entering players can now receive a first deterministic bootstrap burst for static actors that already share their visible world, reusing `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`
 - newly seeded static actors can now also enqueue that same deterministic visibility burst to already-visible online players without requiring those players to relog or move first

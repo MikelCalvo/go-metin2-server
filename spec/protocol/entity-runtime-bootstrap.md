@@ -85,6 +85,7 @@ The current owned responsibilities are:
 - prune non-canonical visibility-`VID` aliases that point at a surviving actor whose current canonical visibility `VID` is different
 - allow later register/update repair paths to reclaim orphaned or non-canonical aliases while preserving real live conflicts
 - repair non-player-directory presence from surviving map-index presence during runtime lookups by entity ID, client-visible static-actor `VID`, or full static-actor snapshots, so partial teardown or repair that loses the directory entry does not hide visible actors from interaction/targeting/scope readers until the next update path
+- reject unsupported static-actor `interaction_kind` values in the runtime directory itself, keeping runtime create/update validation aligned with the interaction-definition store and content-bundle boundaries
 
 This keeps interaction/targeting and visibility bootstrap lookups from resolving through ghost non-player aliases after partial teardown or in-place repair.
 

@@ -46,6 +46,7 @@ The first owned validation rule is:
 - both fields empty = no interaction
 - both fields non-empty = interaction metadata present
 - exactly one field present = invalid
+- when present, `interaction_kind` must be one of the currently owned interaction-definition kinds: `info`, `talk`, `warp`, or `shop_preview`
 - when present, `interaction_ref` must satisfy the canonical `<namespace>:<name>` rule above
 
 This rule applies consistently in:
@@ -59,6 +60,7 @@ This rule applies consistently in:
 
 At this stage, the repository owns metadata plus the first narrow interaction-ready behavior:
 - static actors can preserve `interaction_kind` / `interaction_ref` in runtime state
+- runtime static-actor registration/update now rejects unsupported interaction kinds before they can reach visibility, interaction, or persistence paths
 - `/local/static-actors` create/update responses can surface that metadata
 - runtime snapshot/introspection surfaces can report that metadata
 - file-backed static-actor snapshots can persist and restore that metadata across boot

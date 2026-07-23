@@ -1857,6 +1857,24 @@ func TestLocalStaticActorsEndpointRegistersActorWithInteractionMetadataForLoopba
 	}
 }
 
+func TestLocalStaticActorsEndpointRejectsUnsupportedInteractionKind(t *testing.T) {
+	registrar := &stubStaticActorRegistrar{registered: true}
+	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), nil, registrar.RegisterStaticActor)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors", strings.NewReader(`{"name":"QuestMarker","map_index":42,"x":1700,"y":2800,"race_num":20300,"interaction_kind":"quest","interaction_ref":"quest:first_steps"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if registrar.calls != 0 {
+		t.Fatalf("expected static actor registrar not to be called, got %d calls", registrar.calls)
+	}
+}
+
 func TestLocalStaticActorsEndpointRegistersActorWithCombatProfileForLoopbackPost(t *testing.T) {
 	registrar := &stubStaticActorRegistrar{registered: true, actor: map[string]any{"entity_id": uint64(1), "name": "TrainingDummy", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20350), "combat_profile": "training_dummy"}}
 	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), nil, registrar.RegisterStaticActor)
@@ -1972,6 +1990,24 @@ func TestLocalStaticActorUpdateEndpointUpdatesInteractionMetadataForLoopbackPatc
 	}
 	if !strings.Contains(string(body), `"interaction_kind":"info"`) || !strings.Contains(string(body), `"interaction_ref":"lore:merchant"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorUpdateEndpointRejectsUnsupportedInteractionKind(t *testing.T) {
+	updater := &stubStaticActorUpdater{updated: true}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodPatch, "/local/static-actors/7", strings.NewReader(`{"name":"QuestMarker","map_index":42,"x":1700,"y":2800,"race_num":20300,"interaction_kind":"quest","interaction_ref":"quest:first_steps"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if updater.calls != 0 {
+		t.Fatalf("expected static actor updater not to be called, got %d calls", updater.calls)
 	}
 }
 

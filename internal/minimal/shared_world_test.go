@@ -16126,6 +16126,20 @@ func TestGameRuntimeRegisterStaticActorWithInteractionRejectsUnknownInteractionD
 	}
 }
 
+func TestGameRuntimeRegisterStaticActorWithInteractionRejectsUnsupportedInteractionKind(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	if actor, ok := runtime.RegisterStaticActorWithInteraction("QuestMarker", 42, 1700, 2800, 20300, "quest", "quest:first_steps"); ok || actor.EntityID != 0 {
+		t.Fatalf("expected unsupported interaction kind registration to fail closed, got actor=%+v ok=%v", actor, ok)
+	}
+	if actors := runtime.StaticActors(); len(actors) != 0 {
+		t.Fatalf("expected runtime static actors to remain empty after unsupported interaction registration, got %+v", actors)
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorWithInteractionRejectsUnknownInteractionDefinition(t *testing.T) {
 	interactionStore := newInteractionDefinitionStore(t, nil)
 	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore)
@@ -16143,6 +16157,25 @@ func TestGameRuntimeUpdateStaticActorWithInteractionRejectsUnknownInteractionDef
 	actors := runtime.StaticActors()
 	if len(actors) != 1 || actors[0].InteractionKind != "" || actors[0].InteractionRef != "" {
 		t.Fatalf("expected runtime static actor snapshot to remain without interaction metadata after failed update, got %+v", actors)
+	}
+}
+
+func TestGameRuntimeUpdateStaticActorWithInteractionRejectsUnsupportedInteractionKind(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("VillageGuard", 42, 1700, 2800, 20300)
+	if !ok {
+		t.Fatal("expected base static actor registration to succeed")
+	}
+
+	if updated, ok := runtime.UpdateStaticActorWithInteraction(actor.EntityID, "VillageGuard", 42, 1700, 2800, 20300, "quest", "quest:first_steps"); ok || updated.EntityID != 0 {
+		t.Fatalf("expected unsupported interaction kind update to fail closed, got actor=%+v ok=%v", updated, ok)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].InteractionKind != "" || actors[0].InteractionRef != "" {
+		t.Fatalf("expected runtime static actor snapshot to remain without interaction metadata after unsupported update, got %+v", actors)
 	}
 }
 
@@ -24715,14 +24748,6 @@ func TestGameRuntimeResolveStaticActorFailureInteractionReturnsSelfOnlyChatDeliv
 	if !ok {
 		t.Fatal("expected direct shared-world registration with dangling ref to succeed for fail-closed runtime test")
 	}
-	unsupportedActor, ok := runtime.sharedWorld.RegisterStaticActorWithInteraction(0, "MysticPreview", bootstrapMapIndex, 1200, 2200, 20300, "quest_offer", "npc:mystic")
-	if !ok {
-		t.Fatal("expected direct shared-world registration with unsupported kind to succeed for fail-closed runtime test")
-	}
-	runtime.interactionDefinitionMu.Lock()
-	runtime.interactionDefinitions[interactionDefinitionKey("quest_offer", "npc:mystic")] = InteractionDefinition{Kind: "quest_offer", Ref: "npc:mystic", Text: "preview"}
-	runtime.interactionDefinitionMu.Unlock()
-
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
 	defer closeSessionFlow(t, flow)
 
@@ -24742,7 +24767,6 @@ func TestGameRuntimeResolveStaticActorFailureInteractionReturnsSelfOnlyChatDeliv
 		{name: "target not visible", subjectID: subject.Entity.ID, targetVID: uint32(farActor.EntityID), wantFailure: StaticActorInteractionFailureTargetNotVisible, wantMessage: "You cannot interact with that target right now."},
 		{name: "target has no interaction", subjectID: subject.Entity.ID, targetVID: uint32(blacksmith.EntityID), wantFailure: StaticActorInteractionFailureTargetHasNoInteraction, wantMessage: "Nothing happens."},
 		{name: "interaction definition not found", subjectID: subject.Entity.ID, targetVID: uint32(brokenActor.EntityID), wantFailure: staticActorInteractionFailureDefinitionNotFound, wantMessage: "Interaction content is missing."},
-		{name: "unsupported interaction kind", subjectID: subject.Entity.ID, targetVID: uint32(unsupportedActor.EntityID), wantFailure: staticActorInteractionFailureUnsupportedKind, wantMessage: "Interaction not supported yet."},
 	}
 
 	for _, tc := range tests {

@@ -973,6 +973,9 @@ func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bo
 	if (request.InteractionKind == "") != (request.InteractionRef == "") {
 		return localStaticActorRequest{}, false
 	}
+	if !worldruntime.ValidStaticActorInteractionMetadata(request.InteractionKind, request.InteractionRef) {
+		return localStaticActorRequest{}, false
+	}
 	return request, true
 }
 

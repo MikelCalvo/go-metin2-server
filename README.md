@@ -201,7 +201,7 @@ Already present:
 
 - static actor store,
 - interaction definition store,
-- `info`, `talk`, `warp`, and `shop_preview` interaction kinds,
+- `info`, `talk`, `warp`, and `shop_preview` interaction kinds, with static-actor runtime validation now rejecting unsupported interaction kinds before they can be registered or updated,
 - structured merchant catalogs,
 - content bundle import/export with commit-only live visibility replay for static-actor replacement,
 - loopback-only local endpoints for static actors, interactions, visibility, and content bundles,

@@ -162,7 +162,7 @@ func ValidStaticActorInteractionMetadata(kind string, ref string) bool {
 	if kind == "" && ref == "" {
 		return true
 	}
-	return kind != "" && ref != "" && interactionstore.ValidRef(ref)
+	return kind != "" && ref != "" && interactionstore.ValidKind(kind) && interactionstore.ValidRef(ref)
 }
 
 func ValidStaticActorCombatKind(kind string) bool {

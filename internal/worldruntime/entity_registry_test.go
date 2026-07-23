@@ -505,6 +505,31 @@ func TestEntityRegistryRejectsPathAmbiguousStaticActorInteractionRef(t *testing.
 	}
 }
 
+func TestEntityRegistryRejectsUnsupportedStaticActorInteractionKind(t *testing.T) {
+	registry := NewEntityRegistry()
+	if actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "QuestMarker"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, InteractionKind: "quest", InteractionRef: "quest:first_steps"}); ok {
+		t.Fatalf("expected unsupported interaction kind registration to fail closed, got %+v", actor)
+	}
+	if actors := registry.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor not to be retained, got %+v", actors)
+	}
+
+	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300, InteractionKind: "talk", InteractionRef: "npc:village_guard"})
+	if !ok {
+		t.Fatal("expected supported interaction kind registration to succeed")
+	}
+	updated := registered
+	updated.InteractionKind = "quest"
+	updated.InteractionRef = "quest:first_steps"
+	if actor, ok := registry.UpdateStaticActor(updated); ok {
+		t.Fatalf("expected unsupported interaction kind update to fail closed, got %+v", actor)
+	}
+	lookup, ok := registry.StaticActor(registered.Entity.ID)
+	if !ok || lookup.InteractionKind != "talk" || lookup.InteractionRef != "npc:village_guard" {
+		t.Fatalf("expected original interaction metadata to survive rejected update, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestEntityRegistryLooksUpStaticActorsByVisibilityVID(t *testing.T) {
 	registry := NewEntityRegistry()
 	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})

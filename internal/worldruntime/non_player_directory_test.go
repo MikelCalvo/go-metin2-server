@@ -44,6 +44,45 @@ func TestNonPlayerDirectoryRejectsPathAmbiguousInteractionRef(t *testing.T) {
 	}
 }
 
+func TestNonPlayerDirectoryRejectsUnsupportedInteractionKind(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	unsupported := StaticEntity{
+		Entity:          Entity{ID: 3, Kind: EntityKindStaticActor, Name: "QuestMarker"},
+		Position:        NewPosition(42, 1700, 2800),
+		RaceNum:         20300,
+		InteractionKind: "quest",
+		InteractionRef:  "quest:first_steps",
+	}
+
+	if directory.Register(unsupported) {
+		t.Fatal("expected unsupported interaction kind registration to fail closed")
+	}
+	if _, ok := directory.ByEntityID(unsupported.Entity.ID); ok {
+		t.Fatal("expected unsupported interaction actor not to be registered")
+	}
+
+	supported := StaticEntity{
+		Entity:          Entity{ID: 4, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position:        NewPosition(42, 1700, 2800),
+		RaceNum:         20300,
+		InteractionKind: "talk",
+		InteractionRef:  "npc:village_guard",
+	}
+	if !directory.Register(supported) {
+		t.Fatal("expected supported interaction kind registration to succeed")
+	}
+	updated := supported
+	updated.InteractionKind = "quest"
+	updated.InteractionRef = "quest:first_steps"
+	if directory.Update(updated) {
+		t.Fatal("expected unsupported interaction kind update to fail closed")
+	}
+	lookup, ok := directory.ByEntityID(supported.Entity.ID)
+	if !ok || lookup.InteractionKind != "talk" || lookup.InteractionRef != "npc:village_guard" {
+		t.Fatalf("expected original interaction metadata to survive rejected update, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestNonPlayerDirectoryLooksUpStaticActorsByVisibilityVID(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
