@@ -236,6 +236,7 @@ Current runtime rules:
 - the imported actor uses the authored placement, `race_num`, and normalized `combat_profile`
 - when a successful import materializes a spawn-backed actor while players are already online, the runtime enqueues the normal static-actor visibility bootstrap burst (`CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`) only to sessions that currently share the actor's visible world/AOI
 - sessions outside the configured visibility policy do not receive the imported spawn actor until a later enter-game or AOI/transfer visibility rebuild makes it visible
+- before mutating the runtime replacement set, import must be able to export the current canonical content bundle used for rollback; if that preflight export fails after a bundle temporarily registered process-local combat profiles, those imported profiles are rolled back before the error is reported
 - if static-actor persistence fails after interaction definitions have already been replaced, import fails closed and restores the previously exported content bundle before reporting failure
 - the operator endpoint remains loopback-only bootstrap tooling; it is not a gameplay packet or public API
 

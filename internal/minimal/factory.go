@@ -5163,6 +5163,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	}
 	previousBundle, err := r.ExportContentBundle()
 	if err != nil {
+		rollbackProfiles()
 		return contentbundle.Bundle{}, err
 	}
 	previousActors := r.StaticActors()

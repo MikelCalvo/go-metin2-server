@@ -423,6 +423,53 @@ func TestGameRuntimeImportContentBundleRejectsUnreferencedCombatProfileWithoutRe
 	}
 }
 
+func TestGameRuntimeImportContentBundleRollsBackImportedCombatProfileWhenPreviousExportFails(t *testing.T) {
+	const profile = "practice_export_preflight_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.interactionDefinitionMu.Lock()
+	if runtime.interactionDefinitions == nil {
+		runtime.interactionDefinitions = make(map[string]interactionstore.Definition)
+	}
+	runtime.interactionDefinitions[interactionDefinitionKey(interactionstore.KindShopPreview, "npc:merchant")] = defaultMerchantCatalogDefinition()
+	runtime.interactionDefinitionMu.Unlock()
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.export_preflight_wolf",
+			Name:          "ExportPreflightWolf",
+			MapIndex:      42,
+			X:             1810,
+			Y:             2910,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    7,
+			DefenseValue:   4,
+			RespawnDelayMs: 1500,
+		}},
+	})
+	if err == nil {
+		t.Fatal("expected content bundle import to fail while exporting the previous invalid runtime snapshot")
+	}
+	if worldruntime.ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected failed previous-export preflight not to leak registered combat profile %q", profile)
+	}
+	if actors := runtime.StaticActors(); len(actors) != 0 {
+		t.Fatalf("expected failed previous-export preflight not to materialize imported actors, got %+v", actors)
+	}
+}
+
 func TestGameRuntimeImportContentBundleRejectsDuplicateCombatProfilesWithoutMutatingRuntime(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
