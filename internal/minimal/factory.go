@@ -2262,7 +2262,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if requiresTemplate && !runtimeTemplateAllowsEquip(template, selectedPlayer, equipSlot) {
 							return gameflow.ChatResult{Accepted: false}
 						}
-						equippedItem, ok := selectedPlayer.EquipItem(fromSlot, equipSlot)
+						var equippedItem inventory.ItemInstance
+						if requiresTemplate {
+							equippedItem, ok = selectedPlayer.EquipItemWithTemplate(fromSlot, equipSlot, template)
+						} else {
+							equippedItem, ok = selectedPlayer.EquipItem(fromSlot, equipSlot)
+						}
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
 						}
@@ -2642,7 +2647,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if requiresTemplate && !runtimeTemplateAllowsEquip(template, selectedPlayer, equipSlot) {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
-						equippedItem, ok := selectedPlayer.EquipItem(inventory.SlotIndex(packet.Source.Cell), equipSlot)
+						fromSlot := inventory.SlotIndex(packet.Source.Cell)
+						var equippedItem inventory.ItemInstance
+						if requiresTemplate {
+							equippedItem, ok = selectedPlayer.EquipItemWithTemplate(fromSlot, equipSlot, template)
+						} else {
+							equippedItem, ok = selectedPlayer.EquipItem(fromSlot, equipSlot)
+						}
 						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
@@ -2656,7 +2667,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 							pointChange = &result
 						}
-						fromSlot := inventory.SlotIndex(packet.Source.Cell)
 						frames, err := equipResultFrames(selectedPlayer.LiveCharacter(), fromSlot, equippedItem, pointChange, runtime.itemTemplates)
 						if err != nil {
 							selectedPlayer.ApplyPersistedSnapshot(previousSelected)

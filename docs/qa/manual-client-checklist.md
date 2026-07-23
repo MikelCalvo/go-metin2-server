@@ -342,6 +342,7 @@ Expected result:
 - selected-character anti-flagged, mismatched-`vnum`, mismatched-slot, or transfer-guarded equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
 - corrupt/disposable fixtures that try to apply an equipment point effect without a matching valid equipped item in the authored equipment cell fail closed with no point mutation
 - equipment whose template-authored `equip_effect` point delta would overflow the bootstrap signed 32-bit point value also fails closed before item, quickslot, point, or persistence mutation
+- corrupt/disposable equipment fixtures whose live carried source count exceeds the authored template `max_count` fail closed before item refresh, quickslot cleanup, point, appearance, or persisted-state mutation
 
 ### 4.5.9 Unequip a template-backed equipment item (`ITEM_MOVE` from equipment cell)
 
@@ -355,6 +356,7 @@ Expected result:
 - allowed unequip emits the self-only equipment clear, carried-cell set, template-authored negative `PLAYER_POINT_CHANGE`, and appearance update
 - the point-effect removal is backed by the just-removed item instance, so it still subtracts the authored delta after the item has moved out of the equipment slice
 - `irremovable`, mismatched, or malformed removal metadata fails closed with no point change and no committed inventory/equipment/persistence mutation
+- corrupt/disposable equipped-source fixtures whose live count exceeds the authored template `max_count` fail closed the same way: no item refresh, no point change, no appearance update, and no committed inventory/equipment/persistence mutation
 
 ### 4.5.10 Merchant buy/sell template restrictions (`SHOP BUY` / `SHOP SELL2`)
 

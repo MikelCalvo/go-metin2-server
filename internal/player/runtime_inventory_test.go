@@ -2428,6 +2428,26 @@ func TestRuntimeEquipItemWithTemplateRejectsTransferGuardsWithoutMutatingState(t
 	}
 }
 
+func TestRuntimeEquipItemWithTemplateRejectsOverTemplateMaxCountWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "TemplateGuard",
+		Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 2, Slot: 8}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "template-guard", CharacterIndex: 0})
+	template := itemcatalog.Template{Vnum: 0x11223344, Name: "Practice Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+
+	if item, ok := runtime.EquipItemWithTemplate(8, inventory.EquipmentSlotBody, template); ok {
+		t.Fatalf("expected over-template-max equipment source to reject equip, got %#v", item)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, character.Inventory) {
+		t.Fatalf("expected inventory unchanged after over-template-max equip, got %#v want %#v", got, character.Inventory)
+	}
+	if got := runtime.LiveEquipment(); len(got) != 0 {
+		t.Fatalf("expected no live equipment after over-template-max equip, got %#v", got)
+	}
+}
+
 func TestRuntimeUnequipItemWithTemplateRejectsIrremovableWithoutMutatingState(t *testing.T) {
 	character := loginticket.Character{
 		ID:        1,
@@ -2446,6 +2466,27 @@ func TestRuntimeUnequipItemWithTemplateRejectsIrremovableWithoutMutatingState(t 
 	}
 	if got := runtime.LiveInventory(); len(got) != 0 {
 		t.Fatalf("expected inventory unchanged after irremovable template unequip, got %#v", got)
+	}
+}
+
+func TestRuntimeUnequipItemWithTemplateRejectsOverTemplateMaxCountWithoutMutatingState(t *testing.T) {
+	character := loginticket.Character{
+		ID:        1,
+		Name:      "IrremovableGuard",
+		Inventory: []inventory.ItemInstance{},
+		Equipment: []inventory.ItemInstance{{ID: 1001, Vnum: 0x11223344, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}},
+	}
+	runtime := NewRuntime(character, SessionLink{Login: "irremovable-guard", CharacterIndex: 0})
+	template := itemcatalog.Template{Vnum: 0x11223344, Name: "Fixed Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
+
+	if item, ok := runtime.UnequipItemWithTemplate(inventory.EquipmentSlotBody, 8, template); ok {
+		t.Fatalf("expected over-template-max equipped item to reject unequip, got %#v", item)
+	}
+	if got := runtime.LiveEquipment(); !reflect.DeepEqual(got, character.Equipment) {
+		t.Fatalf("expected equipment unchanged after over-template-max unequip, got %#v want %#v", got, character.Equipment)
+	}
+	if got := runtime.LiveInventory(); len(got) != 0 {
+		t.Fatalf("expected inventory unchanged after over-template-max unequip, got %#v", got)
 	}
 }
 

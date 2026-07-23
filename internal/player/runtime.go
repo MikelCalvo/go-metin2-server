@@ -777,7 +777,7 @@ func (r *Runtime) EquipItemWithTemplate(from inventory.SlotIndex, equipSlot inve
 		return inventory.ItemInstance{}, false
 	}
 	fromIndex := findInventorySlot(r.liveInventory, from)
-	if fromIndex < 0 || r.liveInventory[fromIndex].Vnum != template.Vnum {
+	if fromIndex < 0 || r.liveInventory[fromIndex].Vnum != template.Vnum || r.liveInventory[fromIndex].Count == 0 || r.liveInventory[fromIndex].Count > template.MaxCount {
 		return inventory.ItemInstance{}, false
 	}
 	return r.equipItem(from, equipSlot)
@@ -829,7 +829,7 @@ func (r *Runtime) UnequipItemWithTemplate(equipSlot inventory.EquipmentSlot, to 
 		return inventory.ItemInstance{}, false
 	}
 	equipIndex := findEquipmentSlot(r.liveEquipment, equipSlot)
-	if equipIndex < 0 || r.liveEquipment[equipIndex].Vnum != template.Vnum {
+	if equipIndex < 0 || r.liveEquipment[equipIndex].Vnum != template.Vnum || r.liveEquipment[equipIndex].Count == 0 || r.liveEquipment[equipIndex].Count > template.MaxCount {
 		return inventory.ItemInstance{}, false
 	}
 	return r.UnequipItem(equipSlot, to)

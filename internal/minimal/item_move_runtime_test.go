@@ -1103,6 +1103,126 @@ func TestGameRuntimeItemMoveEquipRejectsPointOverflowWithoutMutation(t *testing.
 	}
 }
 
+func TestGameRuntimeItemMoveEquipRejectsOverTemplateMaxSourceWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	template := itemcatalog.Template{
+		Vnum:        11500,
+		Name:        "Count-Bounded Test Armor",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   inventory.EquipmentSlotBody.String(),
+		EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+	}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("seed count-bounded equip template: %v", err)
+	}
+	owner := peerVisibilityCharacter("OverMaxEquipOwner", 0x01030255, 0x02040255, 1300, 2300, 2, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 5501, Vnum: template.Vnum, Count: 2, Slot: 5}}
+	owner.Equipment = nil
+	owner.Points[1] = 750
+	issuePeerTicket(t, ticketStore, "over-max-equip-owner", 0x55555555, owner)
+	if err := accounts.Save(accountstore.Account{Login: "over-max-equip-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed over-max equip owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected over-max equip runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "over-max-equip-owner", 0x55555555)
+	defer closeSessionFlow(t, flow)
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: bodyPosition,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected over-max equip error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected over-max equip to emit no frames, got %d", len(out))
+	}
+	account, err := accounts.Load("over-max-equip-owner")
+	if err != nil {
+		t.Fatalf("load over-max equip owner account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("over-max equip mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, owner.Inventory)
+	}
+	if len(account.Characters[0].Equipment) != 0 {
+		t.Fatalf("over-max equip mutated persisted equipment: got %#v", account.Characters[0].Equipment)
+	}
+	if account.Characters[0].Points[1] != owner.Points[1] {
+		t.Fatalf("over-max equip mutated persisted point: got %d want %d", account.Characters[0].Points[1], owner.Points[1])
+	}
+}
+
+func TestGameRuntimeItemMoveUnequipRejectsOverTemplateMaxSourceWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	template := itemcatalog.Template{
+		Vnum:        11500,
+		Name:        "Count-Bounded Test Armor",
+		Stackable:   false,
+		MaxCount:    1,
+		EquipSlot:   inventory.EquipmentSlotBody.String(),
+		EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 50},
+	}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{template}}); err != nil {
+		t.Fatalf("seed count-bounded unequip template: %v", err)
+	}
+	owner := peerVisibilityCharacter("OverMaxUnequipOwner", 0x01030256, 0x02040256, 1300, 2300, 2, 101, 201)
+	owner.Inventory = nil
+	owner.Equipment = []inventory.ItemInstance{{ID: 5601, Vnum: template.Vnum, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	owner.Points[1] = 750
+	issuePeerTicket(t, ticketStore, "over-max-unequip-owner", 0x56565656, owner)
+	if err := accounts.Save(accountstore.Account{Login: "over-max-unequip-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed over-max unequip owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected over-max unequip runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "over-max-unequip-owner", 0x56565656)
+	defer closeSessionFlow(t, flow)
+	bodyPosition, err := itemproto.EquipmentPosition(0)
+	if err != nil {
+		t.Fatalf("build body equipment position: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      bodyPosition,
+		Destination: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected over-max unequip error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected over-max unequip to emit no frames, got %d", len(out))
+	}
+	account, err := accounts.Load("over-max-unequip-owner")
+	if err != nil {
+		t.Fatalf("load over-max unequip owner account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("over-max unequip mutated persisted inventory: got %#v", account.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Equipment, owner.Equipment) {
+		t.Fatalf("over-max unequip mutated persisted equipment: got %#v want %#v", account.Characters[0].Equipment, owner.Equipment)
+	}
+	if account.Characters[0].Points[1] != owner.Points[1] {
+		t.Fatalf("over-max unequip mutated persisted point: got %d want %d", account.Characters[0].Points[1], owner.Points[1])
+	}
+}
+
 func TestGameRuntimeItemMoveEquipRejectsMissingTemplateWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
