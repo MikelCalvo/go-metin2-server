@@ -2887,7 +2887,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.InteractionResult{Accepted: false}
 					}
 					if resolution.Definition.Kind == interactionstore.KindShopPreview {
-						start, ok := merchantShopStartPacket(uint32(resolution.Actor.EntityID), resolution.Definition)
+						start, ok := merchantShopStartPacket(uint32(resolution.Actor.EntityID), resolution.Definition, runtime.itemTemplates)
 						if !ok {
 							clearActiveMerchantBuy()
 							return gameflow.InteractionResult{Accepted: false}
@@ -4141,7 +4141,7 @@ func merchantBuyFailureFrames(failure player.MerchantBuyFailure, packetFailureFr
 	return nil, false
 }
 
-func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition) (shopproto.ServerStartPacket, bool) {
+func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition, templates map[uint32]itemcatalog.Template) (shopproto.ServerStartPacket, bool) {
 	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview {
 		return shopproto.ServerStartPacket{}, false
 	}
@@ -4153,11 +4153,17 @@ func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition) 
 		if entry.Price > uint64(^uint32(0)) || entry.Count > uint16(^uint8(0)) {
 			return shopproto.ServerStartPacket{}, false
 		}
+		template, ok := templates[entry.ItemVnum]
+		if !ok || !itemcatalog.ValidTemplate(template) {
+			return shopproto.ServerStartPacket{}, false
+		}
 		packet.Items[entry.Slot] = shopproto.ItemEntry{
 			Vnum:       entry.ItemVnum,
 			Price:      uint32(entry.Price),
 			Count:      uint8(entry.Count),
 			DisplayPos: uint8(entry.Slot),
+			Sockets:    bootstrapItemSockets(template),
+			Attributes: bootstrapItemAttributes(template),
 		}
 	}
 	return packet, true

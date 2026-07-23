@@ -409,6 +409,7 @@ If the lab currently has no such content, either:
 - [ ] Approach a visible authored QA NPC with `info`, `talk`, or merchant `shop_preview`
 - [ ] For `info` / `talk`, interact once and wait for the self-only response
 - [ ] For a merchant actor, interact once and confirm a merchant window opens instead of only a chat preview
+- [ ] If packet logging is available and the QA merchant item template authors display sockets/attributes, confirm the non-empty `GC::SHOP START` catalog entries carry those socket/attribute values instead of zeroed display metadata
 - [ ] If the authored QA merchant catalog exposes an affordable test item, attempt one packet `SHOP BUY` from the open window and confirm the success path returns self-only inventory refreshes without an extra merchant-family `GC::SHOP OK` or the older placeholder info chat; newly occupied slots should use `ITEM_SET`, while merges into already-known carried stacks should use `ITEM_UPDATE`
 - [ ] If the QA setup allows it, sell one carried item stack from the open merchant window and confirm the success path returns a carried-slot refresh (`ITEM_DEL` for whole-stack removal or `ITEM_UPDATE` for partial-stack decrement) followed by `PLAYER_POINT_CHANGE(POINT_GOLD)`, with no extra bare merchant-family `GC::SHOP OK`
 - [ ] If a corrupt/disposable fixture has duplicate live items in the same carried cell, confirm merchant sell-back from that cell fails closed with no gold or inventory mutation
@@ -431,7 +432,7 @@ If the lab currently has no such content, either:
 
 Expected result:
 - `info` and `talk` still return deterministic self-only text
-- merchant interaction opens a stable bootstrap `GC::SHOP START` window
+- merchant interaction opens a stable bootstrap `GC::SHOP START` window whose non-empty catalog entries are backed by the resolved item template's authored socket/attribute display metadata when that metadata exists
 - a bootstrap `SHOP BUY` request can debit gold and grant the authored item without disconnecting the client, and successful packet buys now return self-only inventory refreshes (`ITEM_SET` for newly occupied slots, `ITEM_UPDATE` for existing-stack count refreshes) without an extra merchant-family `GC::SHOP OK`
 - a bootstrap `SHOP SELL` / `SELL2` request can credit gold and remove or decrement the authored carried item without disconnecting the client, and successful packet sells now return only the carried-slot refresh plus `PLAYER_POINT_CHANGE(POINT_GOLD)` without an extra merchant-family `GC::SHOP OK`
 - merchant sell-back fails closed if the live carried inventory contains duplicate authoritative entries for the same cell, preserving gold and inventory rather than deleting an arbitrary duplicate

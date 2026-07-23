@@ -108,6 +108,7 @@ With the structured merchant catalog wired, runtime behavior now stays narrow in
 - the runtime keeps the existing visibility and distance checks
 - the runtime keeps the existing per-session per-target `1s` cooldown
 - live session handling of `INTERACT` now opens the current bootstrap merchant window through `GC::SHOP START`, built from that structured catalog
+- non-empty `GC::SHOP START` entries keep their catalog-authored `vnum`, `price`, `count`, and `display_pos`, and now copy the resolved item template's authored display `sockets` and `attributes` into the shop entry
 - the same deterministic preview render remains available for QA/debug and lower-level resolution surfaces without opening the live merchant window
 - later `SHOP BUY` / `SHOP END` handling continues to reuse the same active merchant context and the same authored catalog identity
 - no peer-visible frames are emitted
@@ -122,7 +123,7 @@ The structured merchant catalog now already drives:
 - bundled `item_templates` presence checks, so merchant catalogs cannot be imported as portable content without their referenced item-template definitions
 - bundled `item_templates` count checks, so a merchant entry cannot exceed a stackable template's `max_count` and non-stackable templates can only be sold one at a time
 - interaction-visibility previews
-- the merchant-window `GC::SHOP START` open response
+- the merchant-window `GC::SHOP START` open response, including template-authored display socket/attribute metadata for rendered catalog entries
 - the first buy-only `SHOP BUY` transaction gate
 
 The next merchant slices are now about richer compatibility-facing `GC::SHOP` acknowledgement choreography and broader merchant semantics, not about replacing text-backed payloads anymore.

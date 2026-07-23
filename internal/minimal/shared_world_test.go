@@ -22002,6 +22002,57 @@ func TestGameSessionFlowShopEndClosesMerchantWindowContext(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowShopStartUsesTemplateAuthoredDisplayMetadata(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	buyer := merchantBuyerCharacter("MerchantCatalogMetadata", 0x01040137, 0x02050137, 125, nil)
+	issuePeerTicket(t, ticketStore, "merchant-catalog-metadata", 0x37373737, buyer)
+	if err := accounts.Save(accountstore.Account{Login: "merchant-catalog-metadata", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed merchant catalog metadata account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	templates := defaultMerchantItemTemplates()
+	templates[1].Sockets = itemcatalog.SocketValues{11, -2, 33}
+	templates[1].Attributes = itemcatalog.AttributeValues{
+		{Type: 1, Value: 25},
+		{Type: 7, Value: -3},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected merchant catalog metadata runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "merchant-catalog-metadata", 0x37373737)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected merchant interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected one shop start frame, got %d", len(out))
+	}
+	start, err := shopproto.DecodeServerStart(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode merchant shop start: %v", err)
+	}
+	wantSockets := [itemproto.ItemSocketCount]int32{11, -2, 33}
+	if start.Items[0].Sockets != wantSockets {
+		t.Fatalf("shop start slot 0 sockets not backed by template metadata: got %+v want %+v", start.Items[0].Sockets, wantSockets)
+	}
+	wantAttributes := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	if start.Items[0].Attributes != wantAttributes {
+		t.Fatalf("shop start slot 0 attributes not backed by template metadata: got %+v want %+v", start.Items[0].Attributes, wantAttributes)
+	}
+	if start.Items[2].Sockets != wantSockets || start.Items[2].Attributes != wantAttributes {
+		t.Fatalf("shop start repeated potion slot did not reuse template display metadata: slot2=%+v", start.Items[2])
+	}
+}
+
 func TestGameSessionFlowTransferTriggerClosesOpenMerchantWindowBeforeRebootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

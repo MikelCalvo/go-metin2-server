@@ -174,6 +174,14 @@ This yields:
 For the first owned fixtures, the repository may deliberately keep many trailing entries zeroed.
 That still counts as a fully exact wire shape because the item array size, field order, and packing are now frozen.
 
+Runtime rendering of non-empty `START` entries is now template-backed for the owned display metadata:
+- each authored catalog entry must still resolve to a valid loaded item template before the merchant window opens
+- the entry `vnum`, `price`, `count`, and `display_pos` continue to come from the structured merchant catalog
+- the entry `sockets[3]` and `attributes[7]` now come from the resolved item template's authored display metadata
+- missing or malformed template metadata fails the open path closed instead of sending a partially rendered shop window
+
+This is still only display metadata for the currently owned `START` entry shape. It does not add stock state, dynamic pricing, or item-effect behavior to the merchant window.
+
 ### Server `GC::SHOP END`
 
 The first owned close response is the smallest possible server merchant frame:
@@ -337,11 +345,12 @@ The exact mandatory role of:
 
 is still capture-gated before the repository claims full merchant-window choreography ownership.
 
-The current live runtime now narrows one packet-path success seam and two error seams:
-- `OK` is the frozen merchant-family success companion for packet `SHOP BUY` after self-only `ITEM_SET` refreshes on successful authoritative mutation
+The current live runtime now narrows one packet-path success seam and three error seams:
+- successful packet `SHOP BUY` uses the self-only carried-slot refreshes as the complete visible success companion and does not append an extra bare `OK`
 - `NOT_ENOUGH_MONEY` is the frozen merchant-family failure companion for packet `SHOP BUY` when the selected character lacks enough gold
 - `INVENTORY_FULL` is the frozen merchant-family failure companion for packet `SHOP BUY` when no valid carried placement exists
-- broader merchant-window update choreography still remains unfrozen beyond those three bare packet companions
+- `INVALID_POS` is the frozen merchant-family failure companion for packet `SHOP BUY` when the requested authored catalog slot is unknown in the bound snapshot
+- broader merchant-window update choreography still remains unfrozen beyond those packet companions
 
 ## Explicit remaining unknowns after the first runtime GREEN
 
