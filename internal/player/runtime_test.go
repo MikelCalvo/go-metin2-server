@@ -810,6 +810,34 @@ func TestRuntimeUseItemRejectsAuthoredJobSexLevelAndTransferAntiFlagsWithoutMuta
 	}
 }
 
+func TestRuntimeUseItemRejectsConfirmWhenUseTemplateWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:        0x01030102,
+		VID:       0x02040102,
+		Name:      "ConfirmUsePeer",
+		Level:     10,
+		Points:    [255]int32{1: 700},
+		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 3, Slot: 5}},
+		Quickslots: []loginticket.Quickslot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "confirm-use-peer", CharacterIndex: 0})
+	before := runtime.LiveCharacter()
+	template := bootstrapConsumableTemplate(27001, 1, 1, 50, "confirm:27001:+50")
+	template.ConfirmWhenUse = true
+
+	if result, ok := runtime.UseItem(5, template); ok {
+		t.Fatalf("expected confirm_when_use item use to fail closed until confirmation flow is owned, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("confirm_when_use item use mutated live character: got %#v want %#v", got, before)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) || !reflect.DeepEqual(got.Quickslots, persisted.Quickslots) || got.Points[1] != persisted.Points[1] {
+		t.Fatalf("confirm_when_use item use mutated persisted state: inventory=%#v quickslots=%#v points[1]=%d", got.Inventory, got.Quickslots, got.Points[1])
+	}
+}
+
 func TestRuntimeDropInventoryItemRejectsDuplicateSlotOccupancyWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

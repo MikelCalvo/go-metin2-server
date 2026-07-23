@@ -155,7 +155,7 @@ Already present:
 - stack compatibility checks and max-stack guards for current slices,
 - locked source/target and duplicate occupancy rejection paths,
 - template-backed equip/unequip point-effect application and removal guards, including signed equip-effect penalties and authored `irremovable` equipment unequip rejection,
-- consumable item use,
+- consumable item use, with template-authored `confirm_when_use` consumables failing closed until a confirmation request/ack flow is owned,
 - `ITEM_USE_TO_ITEM` stack merge behavior,
 - quickslot add/delete/swap persistence, including type-scoped retarget cleanup when an item/skill/command tuple is rebound to a new bar position,
 - quickslot cleanup when item mutations remove or fully merge a source slot,

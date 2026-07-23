@@ -82,6 +82,7 @@ Exactly one consumable shape is frozen here:
 - the runtime resolves the consumed slot through file-backed item-template metadata keyed by that item's `vnum`
 - only non-equippable templates with a valid `use_effect` payload are currently eligible for `/use_item <slot>` or `ITEM_USE`
 - templates with an authored `equip_slot` are rejected for direct consumable use even if they also carry a valid `use_effect`, so equipment metadata cannot accidentally execute the consumable point-effect path
+- templates with authored `confirm_when_use = true` are rejected for direct consumable use even if they also carry a valid `use_effect`, so the runtime cannot consume confirmation-gated items before a confirmation request/ack flow is owned
 - templates with authored job/sex/empire restrictions for the selected character (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, `anti_empire_a`, `anti_empire_b`, or `anti_empire_c`) are rejected before point effects or stack mutations are applied
 - templates with authored `min_level` above the selected character's current persisted `level` are rejected before point effects or stack mutations are applied
 - templates with authored transfer/trade guards (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, or `anti_sell`) are rejected for this direct consumable path too, so bound/untransferable bootstrap templates cannot be consumed through `ITEM_USE` while other item mutation paths treat them as restricted
@@ -149,7 +150,7 @@ This effect placeholder exists only because there is not yet an owned visual-eff
 
 The first consumable path must fail closed when any of these are true:
 - the slot is empty
-- the slot's `vnum` does not resolve to a valid non-equippable item template with a valid `use_effect` for direct `ITEM_USE`; `ITEM_USE_TO_ITEM` reuses the template's stack metadata only and does not require or execute `use_effect`
+- the slot's `vnum` does not resolve to a valid non-equippable item template with a valid non-confirmation-gated `use_effect` for direct `ITEM_USE`; `ITEM_USE_TO_ITEM` reuses the template's stack metadata only and does not require or execute `use_effect`
 - the resolved template `vnum` does not match the live carried item `vnum`; the player mutation boundary treats mismatched template metadata as fail-closed for both direct `ITEM_USE` and `ITEM_USE_TO_ITEM`
 - the resolved template carries an authored `equip_slot`; for `ITEM_USE_TO_ITEM`, this is frozen by player-boundary and packet-path tests as a transfer guard even when source and target stacks otherwise match
 - the carried live item snapshot is malformed under the bootstrap item-instance validation rules, including zero-count stacks
@@ -161,6 +162,7 @@ The first consumable path must fail closed when any of these are true:
 - the selected character is at the bootstrap zero-HP floor; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, and point values unchanged
 - the resolved template carries an authored job/sex/empire anti flag for the selected character
 - the resolved template carries an authored `min_level` above the selected character's current persisted `level`
+- the resolved template carries authored `confirm_when_use = true`; the minimal session/runtime packet path freezes this as no-frame/no-mutation behavior with inventory, quickslots, point values, and placeholder chat unchanged until a later slice owns confirmation
 - the resolved template carries an authored `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell` guard; for `ITEM_USE_TO_ITEM`, the packet path freezes these as no-frame/no-mutation transfer guards rather than chat-emitting drop/pickup policy
 - the item is not in carried inventory
 - the request uses any `TItemPos` outside the current carried-inventory-only subset

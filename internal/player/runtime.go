@@ -938,7 +938,7 @@ func (r *Runtime) CanUseTemplate(template itemcatalog.Template) bool {
 }
 
 func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Template) (ItemUseResult, bool) {
-	if r == nil || slot >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
+	if r == nil || slot >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil || template.ConfirmWhenUse || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
 		return ItemUseResult{}, false
 	}
 	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
