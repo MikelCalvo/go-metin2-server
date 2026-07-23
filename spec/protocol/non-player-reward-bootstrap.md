@@ -112,7 +112,7 @@ Current rules:
 - the updated selected-character account snapshot is saved before the corresponding point-change frame is appended
 - if the player runtime rejects the scalar reward because the descriptor or resulting live values would overflow the signed 32-bit visible carriers, the accepted death/clear frames remain, scalar reward frames are omitted, the live EXP/gold scalar values stay at their pre-reward values, and independent valid drop rewards still continue through their normal ground-add / ownership path
 - dedicated runtime coverage freezes this independent-drop behavior for both overflowing EXP and overflowing gold rewards so either scalar channel can fail closed without suppressing valid item-shaped drop feedback
-- if account persistence fails after a scalar reward was tentatively applied, the accepted death/clear frames remain, scalar reward frames are omitted, and the live EXP/gold scalar values roll back to their pre-reward values; other live runtime state such as the current in-world position must not be clobbered
+- if account persistence fails after a scalar reward was tentatively applied, the accepted death/clear frames remain, scalar reward frames are omitted, and the live EXP/gold scalar values roll back to their pre-reward values; other live runtime state such as the current in-world position must not be clobbered, and independent valid item-shaped drop rewards still continue through their normal ground-add / ownership path
 
 ## Drop rewards
 

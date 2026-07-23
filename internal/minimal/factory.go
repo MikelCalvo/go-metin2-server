@@ -3007,26 +3007,26 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 									selectedPlayer.SetLiveGold(previousSelected.Gold)
 									selectedPlayer.SetLivePoint(bootstrapExperiencePointType, previousSelected.Points[bootstrapExperiencePointType])
 									refreshLiveCharacterRegistration()
-									return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
-								}
-								sessionTicket.Characters = updatedCharacters
-								selectedPlayer.SetPersistedSnapshot(persistedSelected)
-								refreshLiveCharacterRegistration()
-								if reward.Experience != 0 {
-									frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-										VID:    previousSelected.VID,
-										Type:   bootstrapExperiencePointType,
-										Amount: int32(reward.Experience),
-										Value:  reward.ExperienceAfter,
-									}))
-								}
-								if reward.Gold != 0 {
-									frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-										VID:    previousSelected.VID,
-										Type:   bootstrapGoldPointType,
-										Amount: int32(reward.Gold),
-										Value:  int32(reward.GoldAfter),
-									}))
+								} else {
+									sessionTicket.Characters = updatedCharacters
+									selectedPlayer.SetPersistedSnapshot(persistedSelected)
+									refreshLiveCharacterRegistration()
+									if reward.Experience != 0 {
+										frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+											VID:    previousSelected.VID,
+											Type:   bootstrapExperiencePointType,
+											Amount: int32(reward.Experience),
+											Value:  reward.ExperienceAfter,
+										}))
+									}
+									if reward.Gold != 0 {
+										frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+											VID:    previousSelected.VID,
+											Type:   bootstrapGoldPointType,
+											Amount: int32(reward.Gold),
+											Value:  int32(reward.GoldAfter),
+										}))
+									}
 								}
 							}
 						}

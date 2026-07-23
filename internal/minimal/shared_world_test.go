@@ -10842,6 +10842,94 @@ func TestGameRuntimeScalarRewardPersistenceFailureRollsBackLiveScalarsWithoutClo
 	}
 }
 
+func TestGameRuntimeScalarRewardPersistenceFailureKeepsValidDropReward(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105022B, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105022B, Name: "SaveFailScalarDropMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.save_fail_scalar_drop_mob",
+	}
+	killer := peerVisibilityCharacter("SaveFailScalarDropKiller", 0x0103012B, 0x0204012B, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 25
+	killer.Gold = 40
+	issuePeerTicket(t, store, "save-fail-scalar-drop-killer", 0x2B2B2B2B, killer)
+
+	accounts := loadableFailingAccountStore{
+		account: accountstore.Account{Login: "save-fail-scalar-drop-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}},
+		saveErr: errors.New("forced scalar reward save failure"),
+	}
+	currentTime := time.Unix(1_700_000_422, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected save-fail scalar/drop mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001}}) {
+		t.Fatal("expected save-fail scalar/drop reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "save-fail-scalar-drop-killer", 0x2B2B2B2B)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before save-fail scalar/drop reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on save-fail scalar/drop reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected failed scalar persistence to omit scalar frames but keep valid drop reward, got %d frames", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode save-fail scalar/drop dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode save-fail scalar/drop clear-target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("unexpected save-fail scalar/drop clear target: %+v", clearTarget)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode save-fail scalar/drop ground add: %v", err)
+	}
+	if ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y {
+		t.Fatalf("unexpected save-fail scalar/drop ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode save-fail scalar/drop ownership: %v", err)
+	}
+	if ownership.VID != ground.VID || ownership.OwnerName != killer.Name {
+		t.Fatalf("unexpected save-fail scalar/drop ownership: %+v", ownership)
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected valid drop reward to remain registered after scalar persistence failure")
+	}
+	playerEntity, ok := runtime.sharedWorld.entities.PlayerByName("SaveFailScalarDropKiller")
+	if !ok {
+		t.Fatal("expected save-fail scalar/drop killer to remain in shared world")
+	}
+	if playerEntity.Character.Points[bootstrapExperiencePointType] != 25 || playerEntity.Character.Gold != 40 {
+		t.Fatalf("expected failed scalar reward persistence to roll back live scalars while keeping drop, got exp=%d gold=%d", playerEntity.Character.Points[bootstrapExperiencePointType], playerEntity.Character.Gold)
+	}
+}
+
 func TestGameRuntimeDropRewardCollisionFailsClosedWithoutDuplicateGroundItem(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
