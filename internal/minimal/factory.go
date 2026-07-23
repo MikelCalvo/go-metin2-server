@@ -2984,6 +2984,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 									return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 								}
 								seenVIDs[groundVID] = struct{}{}
+								if !runtime.rewardDropTemplateAllowed(selectedPlayer, vnum) {
+									continue
+								}
 								item := inventory.ItemInstance{ID: uint64(groundVID), Vnum: vnum, Count: 1}
 								if sharedWorld != nil && sharedWorld.GroundItemExists(groundVID) {
 									continue
@@ -4127,6 +4130,20 @@ func bootstrapRewardGroundItemVID(character loginticket.Character, vnum uint32, 
 		return uint32(index) + 1
 	}
 	return vid
+}
+
+func (r *gameRuntime) rewardDropTemplateAllowed(selectedPlayer *player.Runtime, vnum uint32) bool {
+	if r == nil || selectedPlayer == nil || vnum == 0 {
+		return false
+	}
+	template, ok := r.itemTemplates[vnum]
+	if !ok {
+		return !r.itemTemplatesAuthored
+	}
+	if !itemcatalog.ValidTemplate(template) || template.Vnum != vnum || template.EquipSlot != "" || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack {
+		return false
+	}
+	return selectedPlayer.CanUseTemplate(template)
 }
 
 func merchantBuyFailureFrames(failure player.MerchantBuyFailure, packetFailureFrames bool) ([][]byte, bool) {

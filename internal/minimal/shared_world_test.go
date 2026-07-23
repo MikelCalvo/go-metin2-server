@@ -11009,6 +11009,94 @@ func TestGameRuntimeDropRewardCollisionFailsClosedWithoutDuplicateGroundItem(t *
 	}
 }
 
+func TestGameRuntimeDropRewardTemplateRestrictionsSkipOnlyInvalidDrop(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105022C, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105022C, Name: "TemplateRestrictedRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1150, 2150),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.template_restricted_reward_mob",
+	}
+	killer := peerVisibilityCharacter("TemplateRewardKiller", 0x0103012C, 0x0204012C, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "tmpl-reward-killer", 0x2C2C2C2C, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "tmpl-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed template-restricted reward killer account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Allowed Reward Drop", Stackable: true, MaxCount: 200},
+		{Vnum: 27002, Name: "Restricted Reward Drop", Stackable: true, MaxCount: 200, AntiGet: true},
+	})
+	currentTime := time.Unix(1_700_000_423, 0)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("new game runtime with reward templates: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected template-restricted reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{DropVnums: []uint32{27001, 27002}}) {
+		t.Fatal("expected template-restricted reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "tmpl-reward-killer", 0x2C2C2C2C)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before template-restricted reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected template-restricted reward attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected template-restricted reward kill to return dead, clear-target, and only the allowed drop frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode template-restricted reward dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode template-restricted reward clear target: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("unexpected template-restricted reward clear target: %+v", clearTarget)
+	}
+	allowedGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode allowed template reward ground add: %v", err)
+	}
+	allowedVID := bootstrapRewardGroundItemVID(killer, 27001, 0)
+	if allowedGround.Vnum != 27001 || allowedGround.VID != allowedVID {
+		t.Fatalf("expected only allowed reward drop vnum=27001 vid=%d, got %+v", allowedVID, allowedGround)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode allowed template reward ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: allowedVID, OwnerName: killer.Name}) {
+		t.Fatalf("unexpected allowed template reward ownership: %+v", ownership)
+	}
+	if !runtime.sharedWorld.GroundItemExists(allowedVID) {
+		t.Fatalf("expected allowed reward ground item %d to be registered", allowedVID)
+	}
+	restrictedVID := bootstrapRewardGroundItemVID(killer, 27002, 1)
+	if runtime.sharedWorld.GroundItemExists(restrictedVID) {
+		t.Fatalf("expected anti-get reward drop vid %d to be suppressed", restrictedVID)
+	}
+}
+
 func TestGameRuntimeDropRewardCollisionSkipsOnlyCollidingDrop(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
