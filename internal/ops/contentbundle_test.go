@@ -372,9 +372,16 @@ func TestLocalContentBundleSummaryEndpointReturnsSummaryJSONForLoopbackGet(t *te
 		ReferencedInteractionDefinitionCount:   2,
 		UnreferencedInteractionDefinitionCount: 1,
 		InteractionKinds: []contentbundle.InteractionKindSummary{
-			{Kind: interactionstore.KindInfo, Count: 1},
-			{Kind: interactionstore.KindShopPreview, Count: 1},
-			{Kind: interactionstore.KindTalk, Count: 1},
+			{Kind: interactionstore.KindInfo, Count: 1, ReferencedCount: 0, UnreferencedCount: 1},
+			{Kind: interactionstore.KindShopPreview, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
+			{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
+		},
+		ReferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant"},
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide"},
+		},
+		UnreferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
 		Maps: []contentbundle.MapContentSummary{
 			{MapIndex: 1, StaticActorCount: 1},
@@ -432,9 +439,16 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 		ReferencedInteractionDefinitionCount:   2,
 		UnreferencedInteractionDefinitionCount: 1,
 		InteractionKinds: []contentbundle.InteractionKindSummary{
-			{Kind: interactionstore.KindInfo, Count: 1},
-			{Kind: interactionstore.KindShopPreview, Count: 1},
-			{Kind: interactionstore.KindTalk, Count: 1},
+			{Kind: interactionstore.KindInfo, Count: 1, ReferencedCount: 0, UnreferencedCount: 1},
+			{Kind: interactionstore.KindShopPreview, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
+			{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
+		},
+		ReferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:qa_merchant"},
+			{Kind: interactionstore.KindTalk, Ref: "npc:qa_guide"},
+		},
+		UnreferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
 		Maps: []contentbundle.MapContentSummary{{MapIndex: 1, StaticActorCount: 2}},
 	}

@@ -80,8 +80,14 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 		ReferencedInteractionDefinitionCount:   1,
 		UnreferencedInteractionDefinitionCount: 1,
 		InteractionKinds: []contentbundle.InteractionKindSummary{
-			{Kind: interactionstore.KindInfo, Count: 1},
-			{Kind: interactionstore.KindTalk, Count: 1},
+			{Kind: interactionstore.KindInfo, Count: 1, ReferencedCount: 0, UnreferencedCount: 1},
+			{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
+		},
+		ReferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
+			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard"},
+		},
+		UnreferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
 		Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 2}},
 	}

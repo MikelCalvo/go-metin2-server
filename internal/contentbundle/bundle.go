@@ -47,20 +47,29 @@ type Bundle struct {
 }
 
 type Summary struct {
-	StaticActorCount                       int                      `json:"static_actor_count"`
-	SpawnGroupCount                        int                      `json:"spawn_group_count"`
-	CombatProfileCount                     int                      `json:"combat_profile_count"`
-	ItemTemplateCount                      int                      `json:"item_template_count"`
-	InteractionDefinitionCount             int                      `json:"interaction_definition_count"`
-	ReferencedInteractionDefinitionCount   int                      `json:"referenced_interaction_definition_count"`
-	UnreferencedInteractionDefinitionCount int                      `json:"unreferenced_interaction_definition_count"`
-	InteractionKinds                       []InteractionKindSummary `json:"interaction_kinds,omitempty"`
-	Maps                                   []MapContentSummary      `json:"maps,omitempty"`
+	StaticActorCount                       int                                     `json:"static_actor_count"`
+	SpawnGroupCount                        int                                     `json:"spawn_group_count"`
+	CombatProfileCount                     int                                     `json:"combat_profile_count"`
+	ItemTemplateCount                      int                                     `json:"item_template_count"`
+	InteractionDefinitionCount             int                                     `json:"interaction_definition_count"`
+	ReferencedInteractionDefinitionCount   int                                     `json:"referenced_interaction_definition_count"`
+	UnreferencedInteractionDefinitionCount int                                     `json:"unreferenced_interaction_definition_count"`
+	InteractionKinds                       []InteractionKindSummary                `json:"interaction_kinds,omitempty"`
+	ReferencedInteractionDefinitions       []InteractionDefinitionReferenceSummary `json:"referenced_interaction_definitions,omitempty"`
+	UnreferencedInteractionDefinitions     []InteractionDefinitionReferenceSummary `json:"unreferenced_interaction_definitions,omitempty"`
+	Maps                                   []MapContentSummary                     `json:"maps,omitempty"`
 }
 
 type InteractionKindSummary struct {
-	Kind  string `json:"kind"`
-	Count int    `json:"count"`
+	Kind              string `json:"kind"`
+	Count             int    `json:"count"`
+	ReferencedCount   int    `json:"referenced_count"`
+	UnreferencedCount int    `json:"unreferenced_count"`
+}
+
+type InteractionDefinitionReferenceSummary struct {
+	Kind string `json:"kind"`
+	Ref  string `json:"ref"`
 }
 
 type MapContentSummary struct {
@@ -214,8 +223,18 @@ func Summarize(bundle Bundle) (Summary, error) {
 	summary.UnreferencedInteractionDefinitionCount = summary.InteractionDefinitionCount - summary.ReferencedInteractionDefinitionCount
 
 	interactionKindCounts := make(map[string]int)
+	interactionKindReferencedCounts := make(map[string]int)
+	interactionKindUnreferencedCounts := make(map[string]int)
 	for _, definition := range normalized.InteractionDefinitions {
 		interactionKindCounts[definition.Kind]++
+		reference := InteractionDefinitionReferenceSummary{Kind: definition.Kind, Ref: definition.Ref}
+		if _, ok := referencedDefinitions[interactionDefinitionKey(definition.Kind, definition.Ref)]; ok {
+			interactionKindReferencedCounts[definition.Kind]++
+			summary.ReferencedInteractionDefinitions = append(summary.ReferencedInteractionDefinitions, reference)
+			continue
+		}
+		interactionKindUnreferencedCounts[definition.Kind]++
+		summary.UnreferencedInteractionDefinitions = append(summary.UnreferencedInteractionDefinitions, reference)
 	}
 	if len(interactionKindCounts) > 0 {
 		kinds := make([]string, 0, len(interactionKindCounts))
@@ -225,7 +244,12 @@ func Summarize(bundle Bundle) (Summary, error) {
 		sort.Strings(kinds)
 		summary.InteractionKinds = make([]InteractionKindSummary, 0, len(kinds))
 		for _, kind := range kinds {
-			summary.InteractionKinds = append(summary.InteractionKinds, InteractionKindSummary{Kind: kind, Count: interactionKindCounts[kind]})
+			summary.InteractionKinds = append(summary.InteractionKinds, InteractionKindSummary{
+				Kind:              kind,
+				Count:             interactionKindCounts[kind],
+				ReferencedCount:   interactionKindReferencedCounts[kind],
+				UnreferencedCount: interactionKindUnreferencedCounts[kind],
+			})
 		}
 	}
 

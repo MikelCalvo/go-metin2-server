@@ -72,9 +72,16 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 		ReferencedInteractionDefinitionCount:   2,
 		UnreferencedInteractionDefinitionCount: 1,
 		InteractionKinds: []InteractionKindSummary{
-			{Kind: interactionstore.KindInfo, Count: 1},
-			{Kind: interactionstore.KindShopPreview, Count: 1},
-			{Kind: interactionstore.KindTalk, Count: 1},
+			{Kind: interactionstore.KindInfo, Count: 1, ReferencedCount: 0, UnreferencedCount: 1},
+			{Kind: interactionstore.KindShopPreview, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
+			{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
+		},
+		ReferencedInteractionDefinitions: []InteractionDefinitionReferenceSummary{
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant"},
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide"},
+		},
+		UnreferencedInteractionDefinitions: []InteractionDefinitionReferenceSummary{
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
 		Maps: []MapContentSummary{
 			{MapIndex: 1, StaticActorCount: 1, SpawnGroupCount: 0},
