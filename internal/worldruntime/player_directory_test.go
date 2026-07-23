@@ -144,6 +144,97 @@ func TestPlayerDirectoryLookupPrunesStaleVIDAndNameIndexes(t *testing.T) {
 	}
 }
 
+func TestPlayerDirectoryLookupPrunesStaleAliasesForSurvivingEntity(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
+	directory := NewPlayerDirectory()
+	if !directory.Register(alpha) {
+		t.Fatal("expected player directory registration to succeed")
+	}
+	directory.entityIDByVID[0x02040999] = alpha.Entity.ID
+	directory.entityIDByName["GhostAlpha"] = alpha.Entity.ID
+
+	if player, ok := directory.ByVID(0x02040999); ok {
+		t.Fatalf("expected stale VID alias for surviving entity to fail, got %+v", player)
+	}
+	if _, exists := directory.entityIDByVID[0x02040999]; exists {
+		t.Fatal("expected stale VID alias for surviving entity to be pruned after lookup")
+	}
+	if player, ok := directory.ByName("GhostAlpha"); ok {
+		t.Fatalf("expected stale name alias for surviving entity to fail, got %+v", player)
+	}
+	if _, exists := directory.entityIDByName["GhostAlpha"]; exists {
+		t.Fatal("expected stale name alias for surviving entity to be pruned after lookup")
+	}
+	if player, ok := directory.ByVID(alpha.Entity.VID); !ok || player.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected current VID lookup to remain intact, got player=%+v ok=%v", player, ok)
+	}
+	if player, ok := directory.ByName(alpha.Entity.Name); !ok || player.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected current exact-name lookup to remain intact, got player=%+v ok=%v", player, ok)
+	}
+}
+
+func TestPlayerDirectoryRegisterPrunesStaleAliasesForSameEntityID(t *testing.T) {
+	directory := NewPlayerDirectory()
+	player := newPlayerEntity(17, entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
+	directory.entityIDByVID[0x02040999] = player.Entity.ID
+	directory.entityIDByName["GhostAlpha"] = player.Entity.ID
+
+	if !directory.Register(player) {
+		t.Fatal("expected player registration to prune stale aliases for the same entity ID")
+	}
+	if _, ok := directory.ByVID(0x02040999); ok {
+		t.Fatal("expected stale VID alias to be absent after registration")
+	}
+	if _, ok := directory.ByName("GhostAlpha"); ok {
+		t.Fatal("expected stale exact-name alias to be absent after registration")
+	}
+	if lookup, ok := directory.ByVID(player.Entity.VID); !ok || lookup.Entity.ID != player.Entity.ID {
+		t.Fatalf("expected current VID lookup after registration, got player=%+v ok=%v", lookup, ok)
+	}
+	if lookup, ok := directory.ByName(player.Entity.Name); !ok || lookup.Entity.ID != player.Entity.ID {
+		t.Fatalf("expected current exact-name lookup after registration, got player=%+v ok=%v", lookup, ok)
+	}
+}
+
+func TestPlayerDirectoryUpdatePrunesStaleAliasesForSameEntityID(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
+	directory := NewPlayerDirectory()
+	if !directory.Register(alpha) {
+		t.Fatal("expected player directory registration to succeed")
+	}
+	directory.entityIDByVID[0x02040999] = alpha.Entity.ID
+	directory.entityIDByName["GhostAlpha"] = alpha.Entity.ID
+
+	updated := alpha
+	updated.Entity.VID = 0x02040111
+	updated.Entity.Name = "AlphaPrime"
+	updated.Character.VID = 0x02040111
+	updated.Character.Name = "AlphaPrime"
+	if !directory.Update(updated) {
+		t.Fatal("expected player directory update to succeed")
+	}
+	if _, ok := directory.ByVID(alpha.Entity.VID); ok {
+		t.Fatal("expected previous VID lookup to be cleared after update")
+	}
+	if _, ok := directory.ByName(alpha.Entity.Name); ok {
+		t.Fatal("expected previous exact-name lookup to be cleared after update")
+	}
+	if _, ok := directory.ByVID(0x02040999); ok {
+		t.Fatal("expected stale VID alias to be absent after update")
+	}
+	if _, ok := directory.ByName("GhostAlpha"); ok {
+		t.Fatal("expected stale exact-name alias to be absent after update")
+	}
+	if lookup, ok := directory.ByVID(updated.Entity.VID); !ok || lookup.Entity.ID != updated.Entity.ID || lookup.Entity.Name != "AlphaPrime" {
+		t.Fatalf("expected current VID lookup after update, got player=%+v ok=%v", lookup, ok)
+	}
+	if lookup, ok := directory.ByName(updated.Entity.Name); !ok || lookup.Entity.ID != updated.Entity.ID || lookup.Entity.VID != updated.Entity.VID {
+		t.Fatalf("expected current exact-name lookup after update, got player=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestPlayerDirectoryRemovePrunesStaleVIDAndNameIndexes(t *testing.T) {
 	directory := NewPlayerDirectory()
 	directory.entityIDByVID[0x02040101] = 99

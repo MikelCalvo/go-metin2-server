@@ -39,6 +39,7 @@ func (d *PlayerDirectory) Register(player PlayerEntity) bool {
 		return false
 	}
 
+	d.removeSecondaryIndexesForEntityIDLocked(player.Entity.ID)
 	d.byEntityID[player.Entity.ID] = clonePlayerEntity(player)
 	d.entityIDByVID[player.Entity.VID] = player.Entity.ID
 	d.entityIDByName[player.Entity.Name] = player.Entity.ID
@@ -64,8 +65,7 @@ func (d *PlayerDirectory) Update(player PlayerEntity) bool {
 		return false
 	}
 
-	delete(d.entityIDByVID, previous.Entity.VID)
-	delete(d.entityIDByName, previous.Entity.Name)
+	d.removeSecondaryIndexesForEntityIDLocked(previous.Entity.ID)
 	d.byEntityID[player.Entity.ID] = clonePlayerEntity(player)
 	d.entityIDByVID[player.Entity.VID] = player.Entity.ID
 	d.entityIDByName[player.Entity.Name] = player.Entity.ID
@@ -117,6 +117,10 @@ func (d *PlayerDirectory) ByVID(vid uint32) (PlayerEntity, bool) {
 		delete(d.entityIDByVID, vid)
 		return PlayerEntity{}, false
 	}
+	if player.Entity.VID != vid {
+		delete(d.entityIDByVID, vid)
+		return PlayerEntity{}, false
+	}
 	return clonePlayerEntity(player), true
 }
 
@@ -133,6 +137,10 @@ func (d *PlayerDirectory) ByName(name string) (PlayerEntity, bool) {
 	}
 	player, ok := d.byEntityID[entityID]
 	if !ok {
+		delete(d.entityIDByName, name)
+		return PlayerEntity{}, false
+	}
+	if player.Entity.Name != name {
 		delete(d.entityIDByName, name)
 		return PlayerEntity{}, false
 	}
