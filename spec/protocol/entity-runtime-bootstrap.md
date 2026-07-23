@@ -19,6 +19,7 @@ This slice documents the runtime concepts that the repository now owns or is int
 - map-occupancy index ownership
 - session-directory ownership for transport hooks
 - visibility/AOI policy ownership
+- static-actor visibility-`VID` lookup ownership for non-player actors
 
 It does **not** claim that all of those pieces are fully implemented yet.
 The point of this slice is to stop treating those boundaries as implicit future refactors.
@@ -70,6 +71,20 @@ The current owned responsibilities are:
 - prune stale secondary `VID` / name aliases that still point at a surviving player entity but no longer match that entity's current canonical `VID` / exact name; lookup fails closed for the stale alias while leaving the current canonical indexes intact, and register/update paths remove every old alias for the entity before writing the current keys
 
 The stale-index pruning rule is deliberately narrow: a secondary lookup whose primary entity still exists remains authoritative only when the key matches that entity's current canonical identity. Orphaned secondary pointers and non-canonical aliases for the same surviving entity are reclaimed, while conflicting secondary keys that still point at a different live entity continue to block ownership changes.
+
+### Static-actor visibility-VID directory
+
+The runtime now owns non-player static-actor lookup by the temporary client-visible visibility `VID` in:
+- `internal/worldruntime/non_player_directory.go`
+
+The current owned responsibilities are:
+- index static actors by their canonical encodable visibility `VID`, currently the runtime entity ID when it fits `uint32` and the actor has a non-zero `race_num` that fits the current `CHARACTER_ADD` projection
+- reject live cross-actor conflicts on that visibility `VID`
+- prune orphaned visibility-`VID` entries when their primary static-actor entry is already gone
+- prune non-canonical visibility-`VID` aliases that point at a surviving actor whose current canonical visibility `VID` is different
+- allow later register/update repair paths to reclaim orphaned or non-canonical aliases while preserving real live conflicts
+
+This keeps interaction/targeting and visibility bootstrap lookups from resolving through ghost non-player aliases after partial teardown or in-place repair.
 
 ### Map-occupancy index
 

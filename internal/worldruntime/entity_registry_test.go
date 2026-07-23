@@ -764,6 +764,27 @@ func TestEntityRegistryUpdateStaticActorRebuildsMissingDirectoryEntry(t *testing
 	}
 }
 
+func TestEntityRegistryPrunesNonCanonicalStaticActorVisibilityVIDAliasDuringPlayerRegistration(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: 13, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	registry.staticActors.entityIDByVID[0x02040101] = guard.Entity.ID
+
+	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1800, 2900))
+	if player.Entity.ID == 0 || player.Entity.VID != 0x02040101 || player.Entity.Name != "Alpha" {
+		t.Fatalf("expected player registration to reclaim stale static actor VID alias, got %+v", player)
+	}
+	if _, exists := registry.staticActors.entityIDByVID[0x02040101]; exists {
+		t.Fatal("expected stale static actor VID alias to be pruned during player registration")
+	}
+	lookup, ok := registry.StaticActorByVID(uint32(guard.Entity.ID))
+	if !ok || lookup.Entity.ID != guard.Entity.ID || lookup.Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected guard canonical static actor VID lookup to remain intact, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestEntityRegistryRejectsPlayerVIDAlreadyOwnedByStaticActorVisibilityVID(t *testing.T) {
 	registry := NewEntityRegistry()
 	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: 0x02040101, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})

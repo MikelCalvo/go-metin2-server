@@ -80,6 +80,30 @@ func TestNonPlayerDirectoryLookupPrunesStaleVisibilityVID(t *testing.T) {
 	}
 }
 
+func TestNonPlayerDirectoryLookupPrunesStaleVisibilityAliasesForSurvivingActor(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:   Entity{ID: 13, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	directory.entityIDByVID[99] = actor.Entity.ID
+
+	if lookup, ok := directory.ByVID(99); ok {
+		t.Fatalf("expected stale non-canonical visibility VID alias to fail, got %+v", lookup)
+	}
+	if _, exists := directory.entityIDByVID[99]; exists {
+		t.Fatal("expected stale non-canonical visibility VID alias to be pruned after lookup")
+	}
+	lookup, ok := directory.ByVID(uint32(actor.Entity.ID))
+	if !ok || lookup.Entity.ID != actor.Entity.ID || lookup.Entity.Name != actor.Entity.Name {
+		t.Fatalf("expected canonical visibility VID lookup to remain intact, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestNonPlayerDirectoryRemovePrunesStaleVisibilityVIDWhenActorEntryMissing(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	directory.entityIDByVID[7] = 13
@@ -114,6 +138,36 @@ func TestNonPlayerDirectoryRegisterPrunesOrphanedVisibilityVIDConflict(t *testin
 	}
 }
 
+func TestNonPlayerDirectoryRegisterPrunesNonCanonicalVisibilityVIDConflictForSurvivingActor(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	guard := StaticEntity{
+		Entity:   Entity{ID: 13, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+	if !directory.Register(guard) {
+		t.Fatal("expected guard registration to succeed")
+	}
+	directory.entityIDByVID[99] = guard.Entity.ID
+
+	blacksmith := StaticEntity{
+		Entity:   Entity{ID: 99, Kind: EntityKindStaticActor, Name: "Blacksmith"},
+		Position: NewPosition(42, 1900, 3000),
+		RaceNum:  20301,
+	}
+	if !directory.Register(blacksmith) {
+		t.Fatal("expected static actor registration to prune non-canonical VID conflict")
+	}
+	lookup, ok := directory.ByVID(99)
+	if !ok || lookup.Entity.ID != blacksmith.Entity.ID || lookup.Entity.Name != blacksmith.Entity.Name {
+		t.Fatalf("expected current visibility VID lookup after non-canonical prune, got actor=%+v ok=%v", lookup, ok)
+	}
+	guardLookup, ok := directory.ByVID(uint32(guard.Entity.ID))
+	if !ok || guardLookup.Entity.ID != guard.Entity.ID || guardLookup.Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected guard canonical VID lookup to remain intact, got actor=%+v ok=%v", guardLookup, ok)
+	}
+}
+
 func TestNonPlayerDirectoryUpdatePrunesOrphanedVisibilityVIDConflict(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
@@ -134,6 +188,38 @@ func TestNonPlayerDirectoryUpdatePrunesOrphanedVisibilityVIDConflict(t *testing.
 	lookup, ok := directory.ByVID(7)
 	if !ok || lookup.Entity.ID != actor.Entity.ID || lookup.Entity.Name != "VillageGuardRenamed" {
 		t.Fatalf("expected current visibility VID lookup after update orphan prune, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
+func TestNonPlayerDirectoryUpdatePrunesNonCanonicalVisibilityVIDConflictForSurvivingActor(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	guard := StaticEntity{
+		Entity:   Entity{ID: 13, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+	blacksmith := StaticEntity{
+		Entity:   Entity{ID: 99, Kind: EntityKindStaticActor, Name: "Blacksmith"},
+		Position: NewPosition(42, 1900, 3000),
+		RaceNum:  20301,
+	}
+	if !directory.Register(guard) || !directory.Register(blacksmith) {
+		t.Fatal("expected static actor registrations to succeed")
+	}
+	directory.entityIDByVID[99] = guard.Entity.ID
+
+	updated := blacksmith
+	updated.Entity.Name = "BlacksmithRenamed"
+	if !directory.Update(updated) {
+		t.Fatal("expected static actor update to prune non-canonical VID conflict")
+	}
+	lookup, ok := directory.ByVID(99)
+	if !ok || lookup.Entity.ID != blacksmith.Entity.ID || lookup.Entity.Name != "BlacksmithRenamed" {
+		t.Fatalf("expected current visibility VID lookup after update non-canonical prune, got actor=%+v ok=%v", lookup, ok)
+	}
+	guardLookup, ok := directory.ByVID(uint32(guard.Entity.ID))
+	if !ok || guardLookup.Entity.ID != guard.Entity.ID || guardLookup.Entity.Name != guard.Entity.Name {
+		t.Fatalf("expected guard canonical VID lookup to remain intact, got actor=%+v ok=%v", guardLookup, ok)
 	}
 }
 

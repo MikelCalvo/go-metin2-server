@@ -54,6 +54,11 @@ func (d *NonPlayerDirectory) ByVID(vid uint32) (StaticEntity, bool) {
 		delete(d.entityIDByVID, vid)
 		return StaticEntity{}, false
 	}
+	canonicalVID, ok := StaticActorVisibilityVID(actor)
+	if !ok || canonicalVID != vid {
+		delete(d.entityIDByVID, vid)
+		return StaticEntity{}, false
+	}
 	return cloneStaticEntity(actor), true
 }
 
@@ -106,11 +111,17 @@ func (d *NonPlayerDirectory) conflictingVisibilityVID(vid uint32, entityID uint6
 	if !ok || indexedEntityID == entityID {
 		return false
 	}
-	if _, exists := d.byEntityID[indexedEntityID]; exists {
-		return true
+	indexedActor, exists := d.byEntityID[indexedEntityID]
+	if !exists {
+		delete(d.entityIDByVID, vid)
+		return false
 	}
-	delete(d.entityIDByVID, vid)
-	return false
+	canonicalVID, ok := StaticActorVisibilityVID(indexedActor)
+	if !ok || canonicalVID != vid {
+		delete(d.entityIDByVID, vid)
+		return false
+	}
+	return true
 }
 
 func (d *NonPlayerDirectory) StaticActors() []StaticEntity {
