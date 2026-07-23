@@ -2881,24 +2881,31 @@ func TestNewGameSessionFactoryItemUsePacketPersistsPointChangeAndDecrementsTheCo
 	if err != nil {
 		t.Fatalf("unexpected packet item-use error: %v", err)
 	}
-	if len(useOut) != 3 {
-		t.Fatalf("expected point-change + item-update + info frames for packet item use, got %d", len(useOut))
+	if len(useOut) != 4 {
+		t.Fatalf("expected use echo + point-change + item-update + info frames for packet item use, got %d", len(useOut))
 	}
-	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
+	usePacket, err := itemproto.DecodeUse(decodeSingleFrame(t, useOut[0]))
+	if err != nil {
+		t.Fatalf("decode packet item-use echo frame: %v", err)
+	}
+	if usePacket.Position != itemproto.InventoryPosition(5) || usePacket.CharacterVID != wantVID || usePacket.VictimVID != wantVID || usePacket.Vnum != 27001 {
+		t.Fatalf("unexpected packet item-use echo packet: %+v", usePacket)
+	}
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[1]))
 	if err != nil {
 		t.Fatalf("decode point-change frame: %v", err)
 	}
 	if pointPacket.VID != wantVID || pointPacket.Type != bootstrapPlayerPointType || pointPacket.Amount != 50 || pointPacket.Value != 750 {
 		t.Fatalf("unexpected point-change packet: %+v", pointPacket)
 	}
-	setPacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useOut[1]))
+	setPacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useOut[2]))
 	if err != nil {
 		t.Fatalf("decode packet item-use update frame: %v", err)
 	}
 	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 5 || setPacket.Count != 2 {
 		t.Fatalf("unexpected packet item-use update packet: %+v", setPacket)
 	}
-	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[2]))
+	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[3]))
 	if err != nil {
 		t.Fatalf("decode packet item-use info frame: %v", err)
 	}
@@ -3142,31 +3149,34 @@ func TestNewGameSessionFactoryItemUsePacketConsumesLastStackAndDeletesOnlyItemQu
 	if err != nil {
 		t.Fatalf("unexpected packet item-use last-stack error: %v", err)
 	}
-	if len(useOut) != 5 {
-		t.Fatalf("expected point-change, item-del, two quickslot-del frames, and info for packet last-stack item use, got %d", len(useOut))
+	if len(useOut) != 6 {
+		t.Fatalf("expected use echo, point-change, item-del, two quickslot-del frames, and info for packet last-stack item use, got %d", len(useOut))
 	}
-	if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0])); err != nil {
+	if useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, useOut[0])); err != nil || useEcho.Position != itemproto.InventoryPosition(5) || useEcho.Vnum != 27001 {
+		t.Fatalf("unexpected packet last-stack use echo: %+v err=%v", useEcho, err)
+	}
+	if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[1])); err != nil {
 		t.Fatalf("decode packet last-stack point-change: %v", err)
 	}
-	del, err := itemproto.DecodeDel(decodeSingleFrame(t, useOut[1]))
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, useOut[2]))
 	if err != nil {
 		t.Fatalf("decode packet last-stack item del: %v", err)
 	}
 	if del.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected packet last-stack item del: %+v", del)
 	}
-	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[2]))
+	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[3]))
 	if err != nil {
 		t.Fatalf("decode first packet last-stack quickslot del: %v", err)
 	}
-	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[3]))
+	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[4]))
 	if err != nil {
 		t.Fatalf("decode second packet last-stack quickslot del: %v", err)
 	}
 	if firstQuickslotDel.Position != 1 || secondQuickslotDel.Position != 2 {
 		t.Fatalf("unexpected packet last-stack quickslot deletes: %+v %+v", firstQuickslotDel, secondQuickslotDel)
 	}
-	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[4]))
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[5]))
 	if err != nil {
 		t.Fatalf("decode packet last-stack info: %v", err)
 	}

@@ -294,10 +294,10 @@ func TestGameSessionFlowProjectsTemplateHighlightOnSelectedCharacterItemSet(t *t
 	if err != nil {
 		t.Fatalf("unexpected highlighted item-use packet error: %v", err)
 	}
-	if len(out) < 2 {
+	if len(out) < 3 {
 		t.Fatalf("expected highlighted ITEM_USE to emit point and item refresh frames, got %d", len(out))
 	}
-	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[2]))
 	if err != nil {
 		t.Fatalf("decode highlighted item update frame: %v", err)
 	}
@@ -339,10 +339,10 @@ func TestGameSessionFlowItemUseRefreshProjectsTemplateDisplaySocketsAndAttribute
 	if err != nil {
 		t.Fatalf("unexpected display-attrs item-use packet error: %v", err)
 	}
-	if len(out) < 2 {
+	if len(out) < 3 {
 		t.Fatalf("expected display-attrs ITEM_USE to emit point and item refresh frames, got %d", len(out))
 	}
-	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[2]))
 	if err != nil {
 		t.Fatalf("decode display-attrs item update frame: %v", err)
 	}
@@ -1138,24 +1138,27 @@ func TestGameSessionFlowItemUseAppliesTemplateAuthoredNegativePointDelta(t *test
 	if err != nil {
 		t.Fatalf("unexpected negative item-use packet error: %v", err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("expected negative item-use to emit point, item update, info chat; got %d", len(out))
+	if len(out) != 4 {
+		t.Fatalf("expected negative item-use to emit use echo, point, item update, info chat; got %d", len(out))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, out[0])); err != nil || useEcho.Position != itemproto.InventoryPosition(5) || useEcho.Vnum != 27006 {
+		t.Fatalf("unexpected negative item-use echo: %+v err=%v", useEcho, err)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
 	if err != nil {
 		t.Fatalf("decode negative item-use point-change: %v", err)
 	}
 	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != -25 || pointChange.Value != 100 {
 		t.Fatalf("unexpected negative item-use point-change: %+v", pointChange)
 	}
-	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[2]))
 	if err != nil {
 		t.Fatalf("decode negative item-use update: %v", err)
 	}
 	if updated.Position != itemproto.InventoryPosition(5) || updated.Count != 1 {
 		t.Fatalf("unexpected negative item-use update: %+v", updated)
 	}
-	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[2]))
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[3]))
 	if err != nil {
 		t.Fatalf("decode negative item-use info chat: %v", err)
 	}
@@ -1987,24 +1990,27 @@ func TestGameSessionFlowItemUseStaleAfterReclaimIsSelfLocalOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected stale item-use packet error: %v", err)
 	}
-	if len(staleOut) != 3 {
-		t.Fatalf("expected stale item-use to emit self-local point change, item update, and info chat only, got %d", len(staleOut))
+	if len(staleOut) != 4 {
+		t.Fatalf("expected stale item-use to emit self-local use echo, point change, item update, and info chat only, got %d", len(staleOut))
 	}
-	stalePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, staleOut[0]))
+	if useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, staleOut[0])); err != nil || useEcho.Position != itemproto.InventoryPosition(5) || useEcho.Vnum != 27001 {
+		t.Fatalf("unexpected stale item-use echo: %+v err=%v", useEcho, err)
+	}
+	stalePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, staleOut[1]))
 	if err != nil {
 		t.Fatalf("decode stale item-use point change: %v", err)
 	}
 	if stalePointChange.VID != owner.VID || stalePointChange.Type != bootstrapPlayerPointType || stalePointChange.Amount != 50 || stalePointChange.Value != 75 {
 		t.Fatalf("unexpected stale item-use point change: %+v", stalePointChange)
 	}
-	staleItemSet, err := itemproto.DecodeUpdate(decodeSingleFrame(t, staleOut[1]))
+	staleItemSet, err := itemproto.DecodeUpdate(decodeSingleFrame(t, staleOut[2]))
 	if err != nil {
 		t.Fatalf("decode stale item-use item update: %v", err)
 	}
 	if staleItemSet.Position != itemproto.InventoryPosition(5) || staleItemSet.Count != 2 {
 		t.Fatalf("unexpected stale item-use item update: %+v", staleItemSet)
 	}
-	staleInfoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, staleOut[2]))
+	staleInfoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, staleOut[3]))
 	if err != nil {
 		t.Fatalf("decode stale item-use info chat: %v", err)
 	}
@@ -2029,10 +2035,10 @@ func TestGameSessionFlowItemUseStaleAfterReclaimIsSelfLocalOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected replacement item-use packet error: %v", err)
 	}
-	if len(replacementOut) != 3 {
+	if len(replacementOut) != 4 {
 		t.Fatalf("expected replacement owner to still see original partial-stack item-use after stale local use, got %d frames", len(replacementOut))
 	}
-	replacementItemSet, err := itemproto.DecodeUpdate(decodeSingleFrame(t, replacementOut[1]))
+	replacementItemSet, err := itemproto.DecodeUpdate(decodeSingleFrame(t, replacementOut[2]))
 	if err != nil {
 		t.Fatalf("decode replacement item-use item update: %v", err)
 	}
@@ -2298,6 +2304,67 @@ func TestGameSessionFlowItemUseToItemStalePartialMergeAfterReclaimIsSelfLocalOnl
 	}
 }
 
+func TestGameSessionFlowItemUsePartialStackEmitsUseEchoBeforePointAndItemUpdate(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseEchoPartial", 0x0103051f, 0x0204051f, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 108, Vnum: 27001, Count: 4, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-echo-partial", 0x5050505f, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-echo-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-use echo partial owner account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "template consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-use echo partial runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-echo-partial", 0x5050505f)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected item-use echo partial packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected item-use partial stack to emit use echo, point change, item update, and info chat, got %d", len(out))
+	}
+	useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode item-use echo frame: %v", err)
+	}
+	if useEcho.Position != itemproto.InventoryPosition(5) || useEcho.CharacterVID != owner.VID || useEcho.VictimVID != owner.VID || useEcho.Vnum != 27001 {
+		t.Fatalf("unexpected item-use echo packet: %+v", useEcho)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode item-use echo point change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 50 || pointChange.Value != 75 {
+		t.Fatalf("unexpected item-use echo point change: %+v", pointChange)
+	}
+	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode item-use echo item update: %v", err)
+	}
+	if itemUpdate.Position != itemproto.InventoryPosition(5) || itemUpdate.Count != 3 {
+		t.Fatalf("unexpected item-use echo item update: %+v", itemUpdate)
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode item-use echo info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != "template consume" {
+		t.Fatalf("unexpected item-use echo info chat: %+v", infoChat)
+	}
+}
+
 func TestGameSessionFlowItemUsePartialStackEmitsItemUpdateInsteadOfFullSet(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -2327,24 +2394,27 @@ func TestGameSessionFlowItemUsePartialStackEmitsItemUpdateInsteadOfFullSet(t *te
 	if err != nil {
 		t.Fatalf("unexpected item-use partial-update packet error: %v", err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("expected item-use partial stack to emit point change, item update, and info chat only, got %d", len(out))
+	if len(out) != 4 {
+		t.Fatalf("expected item-use partial stack to emit use echo, point change, item update, and info chat only, got %d", len(out))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, out[0])); err != nil || useEcho.Position != itemproto.InventoryPosition(5) || useEcho.Vnum != 27001 {
+		t.Fatalf("unexpected item-use echo packet: %+v err=%v", useEcho, err)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
 	if err != nil {
 		t.Fatalf("decode partial-update item-use point change: %v", err)
 	}
 	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 50 || pointChange.Value != 75 {
 		t.Fatalf("unexpected partial-update item-use point change: %+v", pointChange)
 	}
-	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[2]))
 	if err != nil {
 		t.Fatalf("decode partial-update item-use item update: %v", err)
 	}
 	if itemUpdate.Position != itemproto.InventoryPosition(5) || itemUpdate.Count != 3 {
 		t.Fatalf("unexpected partial-update item-use item update: %+v", itemUpdate)
 	}
-	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[2]))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[3]))
 	if err != nil {
 		t.Fatalf("decode partial-update item-use info chat: %v", err)
 	}
@@ -2397,24 +2467,27 @@ func TestGameSessionFlowItemUsePartialStackRefreshesItemAndPreservesQuickslot(t 
 	if err != nil {
 		t.Fatalf("unexpected item-use partial-stack packet error: %v", err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("expected item-use partial stack to emit point change, item update, and info chat only, got %d", len(out))
+	if len(out) != 4 {
+		t.Fatalf("expected item-use partial stack to emit use echo, point change, item update, and info chat only, got %d", len(out))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, out[0])); err != nil || useEcho.Position != itemproto.InventoryPosition(5) || useEcho.Vnum != 27001 {
+		t.Fatalf("unexpected item-use echo packet: %+v err=%v", useEcho, err)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
 	if err != nil {
 		t.Fatalf("decode partial-stack item-use point change: %v", err)
 	}
 	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 50 || pointChange.Value != 75 {
 		t.Fatalf("unexpected partial-stack item-use point change: %+v", pointChange)
 	}
-	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[2]))
 	if err != nil {
 		t.Fatalf("decode partial-stack item-use item update: %v", err)
 	}
 	if itemUpdate.Position != itemproto.InventoryPosition(5) || itemUpdate.Count != 2 {
 		t.Fatalf("unexpected partial-stack item-use item update: %+v", itemUpdate)
 	}
-	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[2]))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[3]))
 	if err != nil {
 		t.Fatalf("decode partial-stack item-use info chat: %v", err)
 	}
@@ -2471,38 +2544,41 @@ func TestGameSessionFlowItemUseLastStackDeletesOnlyItemQuickslot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected item-use last-stack packet error: %v", err)
 	}
-	if len(out) != 5 {
-		t.Fatalf("expected item-use last stack to emit point change, item delete, two quickslot deletes, and info chat, got %d", len(out))
+	if len(out) != 6 {
+		t.Fatalf("expected item-use last stack to emit use echo, point change, item delete, two quickslot deletes, and info chat, got %d", len(out))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, out[0])); err != nil || useEcho.Position != itemproto.InventoryPosition(5) || useEcho.Vnum != 27001 {
+		t.Fatalf("unexpected item-use last-stack echo: %+v err=%v", useEcho, err)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
 	if err != nil {
 		t.Fatalf("decode item-use point change: %v", err)
 	}
 	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 50 || pointChange.Value != 75 {
 		t.Fatalf("unexpected item-use point change: %+v", pointChange)
 	}
-	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {
 		t.Fatalf("decode item-use item del: %v", err)
 	}
 	if itemDel.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected item-use item del: %+v", itemDel)
 	}
-	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[3]))
 	if err != nil {
 		t.Fatalf("decode first item-use quickslot del: %v", err)
 	}
 	if quickslotDel.Position != 2 {
 		t.Fatalf("expected first item quickslot position 2 to be deleted, got %+v", quickslotDel)
 	}
-	quickslotDel, err = quickslotproto.DecodeDel(decodeSingleFrame(t, out[3]))
+	quickslotDel, err = quickslotproto.DecodeDel(decodeSingleFrame(t, out[4]))
 	if err != nil {
 		t.Fatalf("decode second item-use quickslot del: %v", err)
 	}
 	if quickslotDel.Position != 4 {
 		t.Fatalf("expected second item quickslot position 4 to be deleted, got %+v", quickslotDel)
 	}
-	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[4]))
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[5]))
 	if err != nil {
 		t.Fatalf("decode item-use info chat: %v", err)
 	}

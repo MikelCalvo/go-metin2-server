@@ -149,6 +149,49 @@ func TestEncodeClientUseToItemBuildsAFrame(t *testing.T) {
 	}
 }
 
+func TestEncodeUseBuildsAServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderUse, []byte{
+		WindowInventory, 5, 0,
+		0x44, 0x33, 0x22, 0x11,
+		0x88, 0x77, 0x66, 0x55,
+		0xdd, 0xcc, 0xbb, 0xaa,
+	})
+	got := EncodeUse(UsePacket{Position: InventoryPosition(5), CharacterVID: 0x11223344, VictimVID: 0x55667788, Vnum: 0xaabbccdd})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected item use frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeUseReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeUse(decodeSingleFrame(t, frame.Encode(HeaderUse, []byte{
+		WindowInventory, 5, 0,
+		0x44, 0x33, 0x22, 0x11,
+		0x88, 0x77, 0x66, 0x55,
+		0xdd, 0xcc, 0xbb, 0xaa,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	want := UsePacket{Position: InventoryPosition(5), CharacterVID: 0x11223344, VictimVID: 0x55667788, Vnum: 0xaabbccdd}
+	if packet != want {
+		t.Fatalf("unexpected item-use server packet: got %+v want %+v", packet, want)
+	}
+}
+
+func TestDecodeUseRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeUse(frame.Frame{Header: HeaderUse + 1, Length: 19, Payload: make([]byte, usePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeUseRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeUse(frame.Frame{Header: HeaderUse, Length: 18, Payload: make([]byte, usePayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestDecodeClientUseToItemReturnsExpectedFields(t *testing.T) {
 	packet, err := DecodeClientUseToItem(decodeSingleFrame(t, frame.Encode(HeaderClientUseToItem, []byte{WindowInventory, 5, 0, WindowInventory, 6, 0})))
 	if err != nil {

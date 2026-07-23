@@ -226,6 +226,7 @@ Run this only with a disposable QA character and known seeded item-template data
 - [ ] Use the item once from inventory or the quickslot
 
 Expected result:
+- packet-originated `ITEM_USE` first receives a self-only server `ITEM_USE` echo (`0x0512`) for the consumed cell and item `vnum`; the slash `/use_item <slot>` harness does not emit this packet-only echo
 - the client receives a `PLAYER_POINT_CHANGE` from the template-authored `use_effect`
 - template-authored negative `use_effect.point_delta` consumables are allowed in this bootstrap path: the self-only `PLAYER_POINT_CHANGE.amount` should be negative, `value` should be the decreased signed point value, and the normal item refresh plus placeholder info message still follow
 - if more than one item remains in the stack, the carried cell refreshes with the decremented count, preserves authored socket/attribute display arrays in the `ITEM_UPDATE`, and both item and non-item quickslots for that still-occupied cell remain unchanged

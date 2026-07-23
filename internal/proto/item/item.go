@@ -16,6 +16,7 @@ const (
 	HeaderClientUseToItem uint16 = 0x0506
 	HeaderDel             uint16 = 0x0510
 	HeaderSet             uint16 = 0x0511
+	HeaderUse             uint16 = 0x0512
 	HeaderUpdate          uint16 = 0x0514
 	HeaderGroundAdd       uint16 = 0x0515
 	HeaderGroundDel       uint16 = 0x0516
@@ -46,6 +47,7 @@ const (
 	clientUseToItemPayloadSize = positionSize + positionSize
 	delPayloadSize             = positionSize
 	setPayloadSize             = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
+	usePayloadSize             = positionSize + 4 + 4 + 4
 	updatePayloadSize          = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 	groundAddPayloadSize       = 4 + 4 + 4 + 4 + 4
 	groundDelPayloadSize       = 4
@@ -128,6 +130,13 @@ type SetPacket struct {
 
 type DelPacket struct {
 	Position Position
+}
+
+type UsePacket struct {
+	Position     Position
+	CharacterVID uint32
+	VictimVID    uint32
+	Vnum         uint32
 }
 
 type UpdatePacket struct {
@@ -398,6 +407,35 @@ func DecodeDel(f frame.Frame) (DelPacket, error) {
 		return DelPacket{}, ErrInvalidPayload
 	}
 	return DelPacket{Position: decodePosition(f.Payload)}, nil
+}
+
+func EncodeUse(packet UsePacket) []byte {
+	payload := make([]byte, usePayloadSize)
+	encodePosition(payload[:positionSize], packet.Position)
+	offset := positionSize
+	binary.LittleEndian.PutUint32(payload[offset:], packet.CharacterVID)
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], packet.VictimVID)
+	offset += 4
+	binary.LittleEndian.PutUint32(payload[offset:], packet.Vnum)
+	return frame.Encode(HeaderUse, payload)
+}
+
+func DecodeUse(f frame.Frame) (UsePacket, error) {
+	if f.Header != HeaderUse {
+		return UsePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != usePayloadSize {
+		return UsePacket{}, ErrInvalidPayload
+	}
+	offset := positionSize
+	packet := UsePacket{Position: decodePosition(f.Payload[:positionSize])}
+	packet.CharacterVID = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	packet.VictimVID = binary.LittleEndian.Uint32(f.Payload[offset:])
+	offset += 4
+	packet.Vnum = binary.LittleEndian.Uint32(f.Payload[offset:])
+	return packet, nil
 }
 
 func EncodeUpdate(packet UpdatePacket) []byte {

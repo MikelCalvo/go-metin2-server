@@ -36682,38 +36682,41 @@ func TestGameRuntimeItemUseLastStackRemovesAllSourceItemQuickslots(t *testing.T)
 	if err != nil {
 		t.Fatalf("unexpected last-stack item-use packet error: %v", err)
 	}
-	if len(useOut) != 5 {
-		t.Fatalf("expected point-change + item-del + two quickslot-del + info frames for last-stack item use, got %d", len(useOut))
+	if len(useOut) != 6 {
+		t.Fatalf("expected use echo + point-change + item-del + two quickslot-del + info frames for last-stack item use, got %d", len(useOut))
 	}
-	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[0]))
+	if useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, useOut[0])); err != nil || useEcho.Position != itemproto.InventoryPosition(5) || useEcho.Vnum != 27002 || useEcho.CharacterVID != owner.VID || useEcho.VictimVID != owner.VID {
+		t.Fatalf("unexpected last-stack item-use echo: %+v err=%v", useEcho, err)
+	}
+	pointPacket, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[1]))
 	if err != nil {
 		t.Fatalf("decode last-stack item-use point change: %v", err)
 	}
 	if pointPacket.VID != owner.VID || pointPacket.Type != 7 || pointPacket.Amount != 25 || pointPacket.Value != 725 {
 		t.Fatalf("unexpected last-stack item-use point change: %+v", pointPacket)
 	}
-	delPacket, err := itemproto.DecodeDel(decodeSingleFrame(t, useOut[1]))
+	delPacket, err := itemproto.DecodeDel(decodeSingleFrame(t, useOut[2]))
 	if err != nil {
 		t.Fatalf("decode last-stack item-use delete: %v", err)
 	}
 	if delPacket.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected last-stack item-use delete packet: %+v", delPacket)
 	}
-	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[2]))
+	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[3]))
 	if err != nil {
 		t.Fatalf("decode first last-stack quickslot delete: %v", err)
 	}
 	if firstQuickslotDel.Position != 2 {
 		t.Fatalf("expected first item quickslot position 2 to be deleted, got %+v", firstQuickslotDel)
 	}
-	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[3]))
+	secondQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[4]))
 	if err != nil {
 		t.Fatalf("decode second last-stack quickslot delete: %v", err)
 	}
 	if secondQuickslotDel.Position != 4 {
 		t.Fatalf("expected second item quickslot position 4 to be deleted, got %+v", secondQuickslotDel)
 	}
-	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[4]))
+	infoPacket, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, useOut[5]))
 	if err != nil {
 		t.Fatalf("decode last-stack item-use info: %v", err)
 	}

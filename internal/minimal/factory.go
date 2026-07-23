@@ -1567,7 +1567,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			return commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 		}
-		executeSelectedItemUse := func(position itemproto.Position) gameflow.ItemUseResult {
+		executeSelectedItemUse := func(position itemproto.Position, emitUseEcho bool) gameflow.ItemUseResult {
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 				return gameflow.ItemUseResult{Accepted: false}
@@ -1585,7 +1585,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return gameflow.ItemUseResult{Accepted: false}
 			}
-			frames, err := itemUseResultFrames(selectedPlayer.LiveCharacter(), useResult, runtime.itemTemplates)
+			frames, err := itemUseResultFrames(selectedPlayer.LiveCharacter(), useResult, runtime.itemTemplates, emitUseEcho)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -1599,7 +1599,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					return gameflow.ItemUseResult{Accepted: false}
 				}
 				if len(quickslotFrames) > 0 {
-					frames = append(frames[:2], append(quickslotFrames, frames[2:]...)...)
+					insertAt := 2
+					if emitUseEcho {
+						insertAt = 3
+					}
+					frames = append(frames[:insertAt], append(quickslotFrames, frames[insertAt:]...)...)
 				}
 			}
 			if !ownsLiveSharedWorldSession() {
@@ -2355,7 +2359,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						if slot, ok := slashUseItemCommand(packet.Message); ok {
-							result := executeSelectedItemUse(itemproto.Position{WindowType: itemproto.WindowInventory, Cell: uint16(slot)})
+							result := executeSelectedItemUse(itemproto.Position{WindowType: itemproto.WindowInventory, Cell: uint16(slot)}, false)
 							if !result.Accepted {
 								return gameflow.ChatResult{Accepted: false}
 							}
@@ -2534,7 +2538,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					return executeSelectedItemUse(packet.Position)
+					return executeSelectedItemUse(packet.Position, true)
 				},
 				HandleItemUseToItem: func(packet itemproto.ClientUseToItemPacket) gameflow.ItemUseToItemResult {
 					stateMu.Lock()
@@ -3867,12 +3871,15 @@ func unequipResultFrames(character loginticket.Character, from inventory.Equipme
 	return frames, nil
 }
 
-func itemUseResultFrames(character loginticket.Character, result player.ItemUseResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
+func itemUseResultFrames(character loginticket.Character, result player.ItemUseResult, templates map[uint32]itemcatalog.Template, emitUseEcho bool) ([][]byte, error) {
 	position, err := itemproto.CarriedInventoryPosition(uint16(result.Slot))
 	if err != nil {
 		return nil, err
 	}
-	frames := make([][]byte, 0, 3)
+	frames := make([][]byte, 0, 4)
+	if emitUseEcho {
+		frames = append(frames, itemproto.EncodeUse(itemproto.UsePacket{Position: position, CharacterVID: character.VID, VictimVID: character.VID, Vnum: result.Vnum}))
+	}
 	frames = append(frames, encodePlayerPointChangeFrame(character.VID, player.PointChangeResult{
 		PointType:   result.PointType,
 		PointAmount: result.PointAmount,
