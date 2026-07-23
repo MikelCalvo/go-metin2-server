@@ -267,6 +267,7 @@ Expected result:
 Expected result:
 - the older same-type quickslot tuple is cleared before the new binding is added
 - the new item/skill/command quickslot binding persists after reconnect
+- account/login-ticket snapshots that somehow contain the same non-item skill/command `{type, slot}` tuple at two different bar positions are now invalid and fail closed on save/load instead of replaying duplicate skill/command bindings; duplicate item-cell quickslot fixtures remain loadable for current item-removal cleanup tests
 - unrelated quickslots of a different type with the same byte slot value remain unchanged
 - if stale/reclaimed-socket QA tooling is available, a reclaimed old socket may still see its own quickslot refresh frames, but reconnecting / inspecting the fresh authoritative session shows no persisted quickslot change from that stale socket
 

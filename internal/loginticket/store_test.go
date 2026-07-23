@@ -149,6 +149,103 @@ func TestFileStoreLoadRejectsDuplicateQuickslotPositions(t *testing.T) {
 	}
 }
 
+func TestFileStoreIssueRejectsDuplicateNonItemQuickslotTuples(t *testing.T) {
+	cases := []struct {
+		name       string
+		quickslots []Quickslot
+	}{
+		{
+			name: "duplicate skill tuple",
+			quickslots: []Quickslot{
+				{Position: 2, Type: 2, Slot: 10},
+				{Position: 3, Type: 2, Slot: 10},
+			},
+		},
+		{
+			name: "duplicate command tuple",
+			quickslots: []Quickslot{
+				{Position: 2, Type: 3, Slot: 7},
+				{Position: 3, Type: 3, Slot: 7},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewFileStore(t.TempDir())
+			ticket := Ticket{
+				Login:    "mkmk",
+				LoginKey: 0x01020304,
+				Characters: []Character{{
+					ID:         1,
+					Name:       "MkmkWar",
+					Quickslots: tc.quickslots,
+				}},
+			}
+
+			if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+				t.Fatalf("expected ErrInvalidTicket for duplicate quickslot tuple, got %v", err)
+			}
+		})
+	}
+}
+
+func TestFileStoreIssueAllowsDuplicateItemQuickslotTuples(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	ticket := Ticket{
+		Login:    "mkmk",
+		LoginKey: 0x01020304,
+		Characters: []Character{{
+			ID:   1,
+			Name: "MkmkWar",
+			Quickslots: []Quickslot{
+				{Position: 2, Type: 1, Slot: 8},
+				{Position: 3, Type: 1, Slot: 8},
+			},
+		}},
+	}
+
+	if err := store.Issue(ticket); err != nil {
+		t.Fatalf("expected duplicate item quickslot tuples to stay loadable for cleanup/recovery, got %v", err)
+	}
+	if _, err := store.Load("mkmk", 0x01020304); err != nil {
+		t.Fatalf("expected issued duplicate item quickslot tuples to stay loadable, got %v", err)
+	}
+}
+
+func TestFileStoreIssueAllowsSameQuickslotSlotForDifferentTypes(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	ticket := Ticket{
+		Login:    "mkmk",
+		LoginKey: 0x01020304,
+		Characters: []Character{{
+			ID:   1,
+			Name: "MkmkWar",
+			Quickslots: []Quickslot{
+				{Position: 2, Type: 1, Slot: 8},
+				{Position: 3, Type: 2, Slot: 8},
+				{Position: 4, Type: 3, Slot: 8},
+			},
+		}},
+	}
+
+	if err := store.Issue(ticket); err != nil {
+		t.Fatalf("expected different quickslot types to share the same slot byte, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsDuplicateNonItemQuickslotTuples(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[{"position":2,"type":2,"slot":8},{"position":3,"type":2,"slot":8}]}]}`)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-quickslot-tuple ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for duplicate quickslot tuple, got %v", err)
+	}
+}
+
 func TestFileStoreConsumeRejectsInvalidCharacterPayloadWithoutDeletingTicket(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	path := store.ticketPath(0x01020304)

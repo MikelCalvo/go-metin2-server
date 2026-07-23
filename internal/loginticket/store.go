@@ -322,6 +322,7 @@ func validateCharacterUniqueEquipmentSlots(character Character) error {
 
 func validateCharacterQuickslots(character Character) error {
 	quickslotPositions := make(map[uint8]Quickslot, len(character.Quickslots))
+	quickslotTuples := make(map[quickslotTuple]uint8, len(character.Quickslots))
 	for _, quickslot := range character.Quickslots {
 		if !validQuickslotTuple(quickslot) {
 			return fmt.Errorf("%w: quickslot position %d has invalid type %d slot %d", ErrInvalidTicket, quickslot.Position, quickslot.Type, quickslot.Slot)
@@ -329,9 +330,21 @@ func validateCharacterQuickslots(character Character) error {
 		if previous, ok := quickslotPositions[quickslot.Position]; ok {
 			return fmt.Errorf("%w: quickslot position %d contains type %d slot %d and type %d slot %d", ErrInvalidTicket, quickslot.Position, previous.Type, previous.Slot, quickslot.Type, quickslot.Slot)
 		}
+		if quickslot.Type == quickslotproto.TypeSkill || quickslot.Type == quickslotproto.TypeCommand {
+			tuple := quickslotTuple{Type: quickslot.Type, Slot: quickslot.Slot}
+			if previousPosition, ok := quickslotTuples[tuple]; ok {
+				return fmt.Errorf("%w: quickslot type %d slot %d is bound at positions %d and %d", ErrInvalidTicket, quickslot.Type, quickslot.Slot, previousPosition, quickslot.Position)
+			}
+			quickslotTuples[tuple] = quickslot.Position
+		}
 		quickslotPositions[quickslot.Position] = quickslot
 	}
 	return nil
+}
+
+type quickslotTuple struct {
+	Type uint8
+	Slot uint8
 }
 
 func validQuickslotTuple(quickslot Quickslot) bool {

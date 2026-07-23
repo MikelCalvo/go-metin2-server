@@ -157,7 +157,7 @@ Already present:
 - template-backed equip/unequip point-effect application and removal guards, including signed equip-effect penalties and authored `irremovable` equipment unequip rejection,
 - consumable item use, including template-authored signed `use_effect.point_delta` values so authored negative consumables can emit self-only point decreases, with signed point overflow/underflow plus `confirm_when_use`, `quest_use`, `quest_use_multiple`, and `applicable` consumables failing closed until their dedicated flows are owned,
 - `ITEM_USE_TO_ITEM` stack merge behavior,
-- quickslot add/delete/swap persistence, including type-scoped retarget cleanup when an item/skill/command tuple is rebound to a new bar position,
+- quickslot add/delete/swap persistence, including type-scoped retarget cleanup when an item/skill/command tuple is rebound to a new bar position and fail-closed file-backed snapshot validation for duplicate non-item skill/command tuple bindings,
 - quickslot cleanup when item mutations remove or fully merge a source slot,
 - basic persisted account/character snapshots.
 
