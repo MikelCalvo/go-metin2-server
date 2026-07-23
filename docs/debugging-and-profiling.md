@@ -70,7 +70,7 @@ Crash leftovers such as hidden `.account-*.json` temp files are ignored, matchin
 
 ### `POST /local/account-store/backup`
 
-Copies the durable bootstrap account snapshot store into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, and returns `409` if the source store is invalid, the destination is non-empty, or the backup cannot be completed.
+Copies the durable bootstrap account snapshot store into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source store is invalid, the destination is non-empty, or the backup cannot be completed.
 
 Request body JSON fields:
 
@@ -80,7 +80,7 @@ The backup path uses the same committed-snapshot list/validate contract as `/loc
 
 ### `POST /local/account-store/backup/validate`
 
-Dry-runs an operator-supplied account backup source through the same strict restore-source loader and backup-manifest checks used by `/local/account-store/restore`, but does not create or mutate the active account-store directory. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, and returns `409` if the source backup is missing, lacks the required manifest, is corrupt, or has an invalid manifest.
+Dry-runs an operator-supplied account backup source through the same strict restore-source loader and backup-manifest checks used by `/local/account-store/restore`, but does not create or mutate the active account-store directory. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source backup is missing, lacks the required manifest, is corrupt, or has an invalid manifest.
 
 Request body JSON fields:
 
@@ -90,7 +90,7 @@ Successful responses are the deterministic backup summary (`account_count`, `cha
 
 ### `POST /local/account-store/restore`
 
-Restores the durable bootstrap account snapshot store from an operator-supplied source backup directory into the active store directory and returns the validation summary of the restored snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, and returns `409` if the source backup is missing or invalid, the active account-store directory is non-empty, or the restore cannot be completed.
+Restores the durable bootstrap account snapshot store from an operator-supplied source backup directory into the active store directory and returns the validation summary of the restored snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source backup is missing or invalid, the active account-store directory is non-empty, or the restore cannot be completed.
 
 Request body JSON fields:
 

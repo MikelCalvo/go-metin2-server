@@ -90,7 +90,10 @@ type localInteractionDefinitionRequest struct {
 	Y        int32                                   `json:"y"`
 }
 
-const maxLocalInteractionDefinitionBodyBytes = 4096
+const (
+	maxLocalAccountStoreMutationBodyBytes  = 4096
+	maxLocalInteractionDefinitionBodyBytes = 4096
+)
 
 func NewPprofMux(serviceName string) *http.ServeMux {
 	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, nil, nil, nil, nil, nil, nil, nil)
@@ -147,9 +150,9 @@ func RegisterLocalAccountStoreBackupEndpoint(mux *http.ServeMux, backup func(str
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		request, ok := decodeLocalAccountStoreBackupRequest(r)
+		request, status, ok := decodeLocalAccountStoreBackupRequest(r)
 		if !ok {
-			w.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(status)
 			return
 		}
 		summary, err := backup(request.DstDir)
@@ -177,9 +180,9 @@ func RegisterLocalAccountStoreBackupValidateEndpoint(mux *http.ServeMux, validat
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		request, ok := decodeLocalAccountStoreRestoreRequest(r)
+		request, status, ok := decodeLocalAccountStoreRestoreRequest(r)
 		if !ok {
-			w.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(status)
 			return
 		}
 		summary, err := validate(request.SrcDir)
@@ -207,9 +210,9 @@ func RegisterLocalAccountStoreRestoreEndpoint(mux *http.ServeMux, restore func(s
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		request, ok := decodeLocalAccountStoreRestoreRequest(r)
+		request, status, ok := decodeLocalAccountStoreRestoreRequest(r)
 		if !ok {
-			w.WriteHeader(http.StatusBadRequest)
+			w.WriteHeader(status)
 			return
 		}
 		summary, err := restore(request.SrcDir)
@@ -988,44 +991,50 @@ func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldr
 	return profile, defaults, true
 }
 
-func decodeLocalAccountStoreBackupRequest(r *http.Request) (localAccountStoreBackupRequest, bool) {
-	raw, err := readNonEmptyLocalAccountStoreMutationBody(r)
-	if err != nil {
-		return localAccountStoreBackupRequest{}, false
+func decodeLocalAccountStoreBackupRequest(r *http.Request) (localAccountStoreBackupRequest, int, bool) {
+	raw, status, ok := readNonEmptyLocalAccountStoreMutationBody(r)
+	if !ok {
+		return localAccountStoreBackupRequest{}, status, false
 	}
 	var request localAccountStoreBackupRequest
 	if !decodeStrictLocalAccountStoreMutationRequest(raw, &request) {
-		return localAccountStoreBackupRequest{}, false
+		return localAccountStoreBackupRequest{}, http.StatusBadRequest, false
 	}
 	request.DstDir = strings.TrimSpace(request.DstDir)
 	if request.DstDir == "" {
-		return localAccountStoreBackupRequest{}, false
+		return localAccountStoreBackupRequest{}, http.StatusBadRequest, false
 	}
-	return request, true
+	return request, http.StatusOK, true
 }
 
-func decodeLocalAccountStoreRestoreRequest(r *http.Request) (localAccountStoreRestoreRequest, bool) {
-	raw, err := readNonEmptyLocalAccountStoreMutationBody(r)
-	if err != nil {
-		return localAccountStoreRestoreRequest{}, false
+func decodeLocalAccountStoreRestoreRequest(r *http.Request) (localAccountStoreRestoreRequest, int, bool) {
+	raw, status, ok := readNonEmptyLocalAccountStoreMutationBody(r)
+	if !ok {
+		return localAccountStoreRestoreRequest{}, status, false
 	}
 	var request localAccountStoreRestoreRequest
 	if !decodeStrictLocalAccountStoreMutationRequest(raw, &request) {
-		return localAccountStoreRestoreRequest{}, false
+		return localAccountStoreRestoreRequest{}, http.StatusBadRequest, false
 	}
 	request.SrcDir = strings.TrimSpace(request.SrcDir)
 	if request.SrcDir == "" {
-		return localAccountStoreRestoreRequest{}, false
+		return localAccountStoreRestoreRequest{}, http.StatusBadRequest, false
 	}
-	return request, true
+	return request, http.StatusOK, true
 }
 
-func readNonEmptyLocalAccountStoreMutationBody(r *http.Request) ([]byte, error) {
-	raw, err := io.ReadAll(io.LimitReader(r.Body, 4096))
-	if err != nil || len(bytes.TrimSpace(raw)) == 0 {
-		return nil, fmt.Errorf("invalid account store mutation body")
+func readNonEmptyLocalAccountStoreMutationBody(r *http.Request) ([]byte, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalAccountStoreMutationBodyBytes+1))
+	if err != nil {
+		return nil, http.StatusBadRequest, false
 	}
-	return raw, nil
+	if len(raw) > maxLocalAccountStoreMutationBodyBytes {
+		return nil, http.StatusRequestEntityTooLarge, false
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil, http.StatusBadRequest, false
+	}
+	return raw, http.StatusOK, true
 }
 
 func decodeStrictLocalAccountStoreMutationRequest(raw []byte, request any) bool {

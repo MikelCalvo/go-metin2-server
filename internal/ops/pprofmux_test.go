@@ -194,6 +194,25 @@ func TestLocalAccountStoreBackupEndpointRejectsInvalidBody(t *testing.T) {
 	}
 }
 
+func TestLocalAccountStoreBackupEndpointRejectsOversizedBody(t *testing.T) {
+	backer := &stubAccountStoreBacker{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+	body := `{"dst_dir":"` + strings.Repeat("a", 4097) + `"}`
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/backup", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
 func TestLocalAccountStoreBackupEndpointReportsBackupFailure(t *testing.T) {
 	backer := &stubAccountStoreBacker{err: errStubAccountStoreInvalid}
 	mux := RegisterLocalAccountStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
@@ -288,6 +307,25 @@ func TestLocalAccountStoreBackupValidateEndpointRejectsInvalidBody(t *testing.T)
 				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 			}
 		})
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validate callback not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalAccountStoreBackupValidateEndpointRejectsOversizedBody(t *testing.T) {
+	validator := &stubAccountStoreBackupValidator{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+	body := `{"src_dir":"` + strings.Repeat("a", 4097) + `"}`
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/backup/validate", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
 	}
 	if validator.calls != 0 {
 		t.Fatalf("expected validate callback not to be called, got %d", validator.calls)
@@ -391,6 +429,25 @@ func TestLocalAccountStoreRestoreEndpointRejectsInvalidBody(t *testing.T) {
 				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 			}
 		})
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
+func TestLocalAccountStoreRestoreEndpointRejectsOversizedBody(t *testing.T) {
+	restorer := &stubAccountStoreRestorer{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+	body := `{"src_dir":"` + strings.Repeat("a", 4097) + `"}`
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/restore", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
 	}
 	if restorer.calls != 0 {
 		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
