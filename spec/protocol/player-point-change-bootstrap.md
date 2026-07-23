@@ -71,9 +71,10 @@ The same packet is now also reused by the first owned `/use_item <slot>` vertica
 The same packet is now also reused by the first narrow template-backed equip/unequip point slice:
 - successful `/equip_item <from> <equip_slot>` and `/unequip_item <equip_slot> <to>` can append one self-only `PLAYER_POINT_CHANGE` when the matched item template carries `equip_effect` on that same authored `equip_slot`
 - runtime `type` comes from `item_template.equip_effect.point_type`
-- runtime `amount` comes from `+item_template.equip_effect.point_delta` on equip and `-item_template.equip_effect.point_delta` on unequip
+- runtime `amount` comes from the authored signed `item_template.equip_effect.point_delta` on equip and its inverse on unequip; positive deltas act as bonuses and negative deltas act as penalties
 - runtime `value` mirrors the updated selected-character point at `item_template.equip_effect.point_index`
 - the current seeded bootstrap practice blade template still resolves to `vnum = 12200`, `type = 1`, `delta = +/-10`, and `value = updated Points[1]`
+- the current seeded cursed practice blade template resolves to `vnum = 12201`, `type = 1`, `amount = -10` on equip and `+10` on unequip, and `value = updated Points[1]`
 
 The same packet is now also reused by the first non-player reward seam:
 - accepted killing hits against authored `spawn_groups` practice mobs can append self-only EXP and/or gold point changes after `DEAD` plus `TARGET(0, 0)`

@@ -850,13 +850,7 @@ func (r *Runtime) ApplyEquipTemplateEffect(template itemcatalog.Template, equipS
 		return PointChangeResult{}, false
 	}
 	effect := *template.EquipEffect
-	currentPointValue := r.livePoints[effect.PointIndex]
-	if currentPointValue > (1<<31-1)-effect.PointDelta {
-		return PointChangeResult{}, false
-	}
-	updatedPointValue := currentPointValue + effect.PointDelta
-	r.livePoints[effect.PointIndex] = updatedPointValue
-	return PointChangeResult{PointType: effect.PointType, PointAmount: effect.PointDelta, PointValue: updatedPointValue}, true
+	return r.ApplyPointDelta(effect.PointType, effect.PointIndex, effect.PointDelta)
 }
 
 func (r *Runtime) RemoveEquipTemplateEffect(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) (PointChangeResult, bool) {
@@ -892,13 +886,10 @@ func (r *Runtime) RemoveEquipTemplateEffectFromItem(template itemcatalog.Templat
 
 func (r *Runtime) removeEquipTemplateEffectDelta(template itemcatalog.Template) (PointChangeResult, bool) {
 	effect := *template.EquipEffect
-	currentPointValue := r.livePoints[effect.PointIndex]
-	if currentPointValue < (-1<<31)+effect.PointDelta {
+	if effect.PointDelta == -1<<31 {
 		return PointChangeResult{}, false
 	}
-	updatedPointValue := currentPointValue - effect.PointDelta
-	r.livePoints[effect.PointIndex] = updatedPointValue
-	return PointChangeResult{PointType: effect.PointType, PointAmount: -effect.PointDelta, PointValue: updatedPointValue}, true
+	return r.ApplyPointDelta(effect.PointType, effect.PointIndex, -effect.PointDelta)
 }
 
 func templateAuthoredForEquipSlot(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) bool {

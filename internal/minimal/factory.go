@@ -4982,6 +4982,18 @@ func defaultBootstrapItemTemplateSnapshot() itemcatalog.Snapshot {
 			},
 		},
 		{
+			Vnum:      12201,
+			Name:      "Cursed Practice Blade",
+			Stackable: false,
+			MaxCount:  1,
+			EquipSlot: inventory.EquipmentSlotWeapon.String(),
+			EquipEffect: &itemcatalog.PointEffect{
+				PointType:  bootstrapPlayerPointType,
+				PointIndex: bootstrapPlayerPointValueIndex,
+				PointDelta: -10,
+			},
+		},
+		{
 			Vnum:         27001,
 			Name:         "Small Red Potion",
 			Stackable:    true,

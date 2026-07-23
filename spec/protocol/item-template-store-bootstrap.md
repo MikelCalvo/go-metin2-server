@@ -42,10 +42,10 @@ Each template must pass the current `internal/itemstore` validation before the r
 - `use_effect` is valid only on carried-use templates that do not author an `equip_slot`; equipment templates with `use_effect` are rejected so direct item use and equip side effects cannot both be authored on one bootstrap template
 - `sockets`, when present, must contain exactly three signed 32-bit display values
 - `attributes`, when present, must contain exactly seven `{type, value}` entries; an entry with `type = 0` must also use `value = 0` so malformed placeholder bonus rows fail closed
-- `equip_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, and positive `point_delta`
+- `equip_effect`, when present, must have a non-zero `point_type`, `point_index < 255`, and a non-zero, reversible signed `point_delta` (`-2147483648` is rejected because its inverse cannot be represented as `int32`); positive deltas are bonuses and negative deltas are penalties
 - `equip_effect` is only valid on templates that also author a valid `equip_slot`
-- runtime application of an `equip_effect` is fail-closed unless the selected character currently has a valid equipped item in that authored slot whose live `vnum` matches the same template
-- runtime removal of an `equip_effect` is fail-closed unless either the selected character currently has that matching equipped item or the caller supplies the valid just-removed item instance from that authored slot; this keeps unequip subtraction template-backed without requiring the item to remain in equipment after the unequip mutation
+- runtime application of an `equip_effect` is fail-closed unless the selected character currently has a valid equipped item in that authored slot whose live `vnum` matches the same template; accepted effects apply the authored signed delta exactly as stored
+- runtime removal of an `equip_effect` is fail-closed unless either the selected character currently has that matching equipped item or the caller supplies the valid just-removed item instance from that authored slot; this keeps unequip reversal template-backed without requiring the item to remain in equipment after the unequip mutation
 - `irremovable`, when authored on equipment metadata, is a fail-closed unequip guard for the current template-backed equipment move path: explicitly authored snapshots reject dragging that worn item back into carried inventory before equipment, inventory, point, or persistence mutation
 - duplicate `vnum` entries are rejected
 

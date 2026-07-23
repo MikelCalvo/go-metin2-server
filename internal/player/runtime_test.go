@@ -2724,6 +2724,33 @@ func TestRuntimeApplyEquipTemplateEffectAdjustsLivePointsWithoutMutatingPersiste
 	}
 }
 
+func TestRuntimeApplyNegativeEquipTemplateEffectAdjustsLivePointsWithoutMutatingPersistedSnapshot(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+		Equipment: []inventory.ItemInstance{{ID: 101, Vnum: 12201, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	result, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12201, inventory.EquipmentSlotWeapon, 1, 1, -10), inventory.EquipmentSlotWeapon)
+	if !ok {
+		t.Fatal("expected negative equip template effect to succeed")
+	}
+	if result.PointType != 1 || result.PointAmount != -10 || result.PointValue != 690 {
+		t.Fatalf("unexpected negative equip point change result: %+v", result)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
+		t.Fatalf("expected persisted points to remain unchanged, got %d", got)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 690 {
+		t.Fatalf("expected live points[1] to be decremented to 690, got %d", got)
+	}
+}
+
 func TestRuntimeEquipTemplateEffectRejectsAuthoredSlotMismatchWithoutMutatingLivePoints(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,
@@ -2758,6 +2785,7 @@ func TestRuntimeApplyEquipTemplateEffectRejectsPointOverflowWithoutMutation(t *t
 		Points: [255]int32{
 			1: 1<<31 - 5,
 		},
+		Equipment: []inventory.ItemInstance{{ID: 101, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 	before := runtime.LiveCharacter()
@@ -2795,6 +2823,7 @@ func TestRuntimeRemoveEquipTemplateEffectRejectsPointUnderflowWithoutMutation(t 
 		Points: [255]int32{
 			1: -1<<31 + 5,
 		},
+		Equipment: []inventory.ItemInstance{{ID: 101, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
 	before := runtime.LiveCharacter()
@@ -2857,6 +2886,36 @@ func TestRuntimeRemoveEquipTemplateEffectRevertsLivePointsWithoutMutatingPersist
 	}
 	if result.PointType != 1 || result.PointAmount != -10 || result.PointValue != 700 {
 		t.Fatalf("unexpected equip-derived point removal result: %+v", result)
+	}
+	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
+		t.Fatalf("expected persisted points to remain unchanged, got %d", got)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 700 {
+		t.Fatalf("expected live points[1] to be restored to 700, got %d", got)
+	}
+}
+
+func TestRuntimeRemoveNegativeEquipTemplateEffectRevertsLivePointsWithoutMutatingPersistedSnapshot(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:   0x01030102,
+		VID:  0x02040102,
+		Name: "PeerTwo",
+		Points: [255]int32{
+			1: 700,
+		},
+		Equipment: []inventory.ItemInstance{{ID: 101, Vnum: 12201, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+	if _, ok := runtime.ApplyEquipTemplateEffect(bootstrapEquipmentPointTemplate(12201, inventory.EquipmentSlotWeapon, 1, 1, -10), inventory.EquipmentSlotWeapon); !ok {
+		t.Fatal("expected negative template-backed equip effect application to succeed before removal")
+	}
+	result, ok := runtime.RemoveEquipTemplateEffect(bootstrapEquipmentPointTemplate(12201, inventory.EquipmentSlotWeapon, 1, 1, -10), inventory.EquipmentSlotWeapon)
+	if !ok {
+		t.Fatal("expected negative template-backed equip effect removal to succeed")
+	}
+	if result.PointType != 1 || result.PointAmount != 10 || result.PointValue != 700 {
+		t.Fatalf("unexpected negative equip-derived point removal result: %+v", result)
 	}
 	if got := runtime.PersistedSnapshot().Points[1]; got != 700 {
 		t.Fatalf("expected persisted points to remain unchanged, got %d", got)

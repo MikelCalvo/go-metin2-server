@@ -332,6 +332,7 @@ Expected result:
 
 Expected result:
 - allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, deletes item quickslots bound to the cleared carried source cell, leaves unrelated skill/command quickslots with the same byte slot value unchanged, and applies the template-authored `equip_effect` point change only after the matching item is actually equipped in that authored cell
+- equipment templates may now author negative `equip_effect.point_delta` penalties; on equip the visible `PLAYER_POINT_CHANGE.amount` should be the negative authored value, and on unequip the inverse positive amount should restore the point value
 - selected-character anti-flagged, mismatched-`vnum`, mismatched-slot, or transfer-guarded equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
 - corrupt/disposable fixtures that try to apply an equipment point effect without a matching valid equipped item in the authored equipment cell fail closed with no point mutation
 - equipment whose template-authored `equip_effect` point delta would overflow the bootstrap signed 32-bit point value also fails closed before item, quickslot, point, or persistence mutation
