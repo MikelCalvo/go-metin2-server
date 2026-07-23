@@ -2970,7 +2970,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							item inventory.ItemInstance
 						}
 						rewardDrops := make([]rewardDrop, 0, len(resolution.DeathReward.DropVnums))
-						if len(resolution.DeathReward.DropVnums) != 0 {
+						dropOwnerMetadataValid := validRewardOwnerMetadata(sessionTicket.Login) && validRewardOwnerMetadata(previousSelected.Name)
+						if len(resolution.DeathReward.DropVnums) != 0 && dropOwnerMetadataValid {
 							seenVIDs := make(map[uint32]struct{}, len(resolution.DeathReward.DropVnums))
 							for index, vnum := range resolution.DeathReward.DropVnums {
 								if vnum == 0 {

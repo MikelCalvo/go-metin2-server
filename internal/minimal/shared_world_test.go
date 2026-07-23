@@ -11097,6 +11097,89 @@ func TestGameRuntimeDropRewardTemplateRestrictionsSkipOnlyInvalidDrop(t *testing
 	}
 }
 
+func TestGameRuntimeDropRewardInvalidOwnerNameSkipsGroundFrames(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105022D, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105022D, Name: "InvalidOwnerRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1150, 2150),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.invalid_owner_reward_mob",
+	}
+	killer := peerVisibilityCharacter("Invalid Owner", 0x0103012D, 0x0204012D, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 25
+	killer.Gold = 40
+	issuePeerTicket(t, store, "invalid-owner-reward-killer", 0x2D2D2D2D, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "invalid-owner-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed invalid-owner reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_425, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected invalid-owner reward mob registration to succeed")
+	}
+	const rewardVnum uint32 = 27001
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{rewardVnum}}) {
+		t.Fatal("expected invalid-owner reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "invalid-owner-reward-killer", 0x2D2D2D2D)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before invalid-owner reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on invalid-owner reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected invalid owner metadata to keep death/clear plus scalar reward frames, got %d", len(killOut))
+	}
+	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
+		t.Fatalf("decode invalid-owner reward dead frame: %v", err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, killOut[1]))
+	if err != nil {
+		t.Fatalf("decode invalid-owner reward clear-target frame: %v", err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("unexpected invalid-owner reward clear target: %+v", clearTarget)
+	}
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode invalid-owner reward exp point-change: %v", err)
+	}
+	if expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
+		t.Fatalf("unexpected invalid-owner reward exp point-change: %+v", expChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode invalid-owner reward gold point-change: %v", err)
+	}
+	if goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 60 || goldChange.Value != 100 {
+		t.Fatalf("unexpected invalid-owner reward gold point-change: %+v", goldChange)
+	}
+	groundVID := bootstrapRewardGroundItemVID(killer, rewardVnum, 0)
+	if runtime.sharedWorld.GroundItemExists(groundVID) {
+		t.Fatalf("expected invalid owner metadata to suppress reward ground item %d", groundVID)
+	}
+}
+
 func TestGameRuntimeDropRewardCollisionSkipsOnlyCollidingDrop(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{

@@ -60,8 +60,8 @@ Reward descriptors fail closed when:
 - any `reward_drop_vnums` entry is `0`
 - any `reward_drop_vnums` entry is duplicated in the same descriptor
 - a runtime-generated ground-entry VID for a configured item-shaped or gold-shaped drop would be `0`
-- the reward owner login is empty, blank after trimming Unicode whitespace, padded with leading/trailing whitespace, or contains embedded whitespace when registering a configured item-shaped or gold-shaped drop
-- the reward owner character name is empty, blank after trimming Unicode whitespace, padded with leading/trailing whitespace, or contains embedded whitespace when registering a configured item-shaped or gold-shaped drop
+- the reward owner login is empty, blank after trimming Unicode whitespace, padded with leading/trailing whitespace, or contains embedded whitespace when preparing or registering a configured item-shaped or gold-shaped drop
+- the reward owner character name is empty, blank after trimming Unicode whitespace, padded with leading/trailing whitespace, or contains embedded whitespace when preparing or registering a configured item-shaped or gold-shaped drop
 - a runtime-generated ground-item instance for a configured item-shaped drop would have `vnum = 0`
 - a runtime-generated ground-item instance for a configured item-shaped drop would have zero count
 - a runtime-generated ground-item instance for a configured item-shaped drop would exceed the current `GC ITEM_GET` count carrier (`255`)
@@ -73,7 +73,8 @@ Reward descriptors fail closed when:
 
 A live ground-item VID collision is intentionally treated as a per-drop failure, not as a combat rollback: the accepted killing hit still emits `DEAD(target_vid)` and the killer's `TARGET(0, 0)` clear, the pre-existing ground item remains registered, and the colliding reward drop emits no `ITEM_GROUND_ADD` / `ITEM_OWNERSHIP` frames.
 Kill-time item-template restrictions use the same per-drop failure model: a currently restricted or malformed drop-vnum suppresses only that item-shaped ground reward, while the accepted death edge and any independent scalar rewards or other valid drop-vnum entries still apply normally.
-If the same descriptor also carries valid EXP, gold, or other non-colliding/non-restricted drops, those independent reward families still apply and emit their ordinary frames; one colliding or template-restricted drop does not suppress independent scalar rewards or later valid drop entries.
+Invalid owner login/name metadata is stricter: because every fixed drop in the current descriptor would share the same invalid ownership label, the killing hit skips preparing all item-shaped drop frames and live ground handles before emitting them instead of briefly showing unclaimable owner metadata to the client.
+If the same descriptor also carries valid EXP or gold, those independent scalar rewards still apply and emit their ordinary frames; one colliding or template-restricted drop does not suppress independent scalar rewards or later valid drop entries.
 
 The descriptor validator itself owns the static authoring checks before runtime kill handling begins:
 - signed 32-bit scalar carrier maximums are accepted
@@ -154,7 +155,7 @@ Current rules:
 - the killer receives the drop's `ITEM_GROUND_ADD` / `ITEM_OWNERSHIP` pair inline after the killing-hit death and scalar-reward frames
 - currently visible, live peers receive the same ground-add / ownership pair through the queued server-frame path after the already-owned `DEAD(target_vid)` visibility notification
 - currently visible peers that are already at the bootstrap `0`-HP floor receive neither the non-player `DEAD(target_vid)` fanout nor the reward ground-add / ownership pair for that kill; the killer still receives the ordinary self-visible reward frames
-- item-shaped reward drops are checked against the currently loaded item-template metadata before frames are appended or ground entries are registered; restricted or malformed template state suppresses that drop only
+- item-shaped reward drops are checked against valid owner login/name metadata and the currently loaded item-template metadata before frames are appended or ground entries are registered; invalid owner metadata suppresses all item-shaped drop frames for that kill, while restricted or malformed template state suppresses only that drop
 - replayed pickup of the same ground VID fails closed after the first successful pickup removes it
 - ground pickup removal now uses the same bootstrap reachability gate as pickup lookup: a collector who can see the ground reward but is outside the current pickup radius cannot remove it, and the ground entry remains available to reachable living sessions
 - a successful collector pickup now queues the `ITEM_GROUND_DEL` cleanup to the collector's own socket as well as to other living visible peers, so loopback/runtime visibility and client-visible self state agree immediately after pickup
