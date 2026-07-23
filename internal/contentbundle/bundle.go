@@ -59,6 +59,7 @@ type Summary struct {
 	InteractionKinds                       []InteractionKindSummary                `json:"interaction_kinds,omitempty"`
 	ReferencedInteractionDefinitions       []InteractionDefinitionReferenceSummary `json:"referenced_interaction_definitions,omitempty"`
 	UnreferencedInteractionDefinitions     []InteractionDefinitionReferenceSummary `json:"unreferenced_interaction_definitions,omitempty"`
+	SpawnGroups                            []SpawnGroupReferenceSummary            `json:"spawn_groups,omitempty"`
 	Maps                                   []MapContentSummary                     `json:"maps,omitempty"`
 }
 
@@ -72,6 +73,16 @@ type InteractionKindSummary struct {
 type InteractionDefinitionReferenceSummary struct {
 	Kind string `json:"kind"`
 	Ref  string `json:"ref"`
+}
+
+type SpawnGroupReferenceSummary struct {
+	Ref              string   `json:"ref"`
+	Name             string   `json:"name"`
+	MapIndex         uint32   `json:"map_index"`
+	CombatProfile    string   `json:"combat_profile"`
+	RewardExperience uint64   `json:"reward_experience,omitempty"`
+	RewardGold       uint64   `json:"reward_gold,omitempty"`
+	RewardDropVnums  []uint32 `json:"reward_drop_vnums,omitempty"`
 }
 
 type MapContentSummary struct {
@@ -271,6 +282,15 @@ func Summarize(bundle Bundle) (Summary, error) {
 	for _, spawnGroup := range normalized.SpawnGroups {
 		entry := mapContentSummaryForIndex(mapCounts, spawnGroup.MapIndex)
 		entry.SpawnGroupCount++
+		summary.SpawnGroups = append(summary.SpawnGroups, SpawnGroupReferenceSummary{
+			Ref:              spawnGroup.Ref,
+			Name:             spawnGroup.Name,
+			MapIndex:         spawnGroup.MapIndex,
+			CombatProfile:    spawnGroup.CombatProfile,
+			RewardExperience: spawnGroup.RewardExperience,
+			RewardGold:       spawnGroup.RewardGold,
+			RewardDropVnums:  cloneUint32s(spawnGroup.RewardDropVnums),
+		})
 	}
 	if len(mapCounts) > 0 {
 		mapIndexes := make([]uint32, 0, len(mapCounts))

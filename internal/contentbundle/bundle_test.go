@@ -85,6 +85,9 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 		UnreferencedInteractionDefinitions: []InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
+		SpawnGroups: []SpawnGroupReferenceSummary{
+			{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 2, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardDropVnums: []uint32{27001}},
+		},
 		Maps: []MapContentSummary{
 			{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 0},
 			{MapIndex: 2, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 1},
@@ -92,6 +95,29 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected content bundle summary:\n got: %#v\nwant: %#v", summary, want)
+	}
+}
+
+func TestSummarizeReturnsDeterministicSpawnGroupReferences(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		SpawnGroups: []SpawnGroup{
+			{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 5, RewardDropVnums: []uint32{27002, 27001}},
+			{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 3, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
+		},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize spawn-group references: %v", err)
+	}
+	want := []SpawnGroupReferenceSummary{
+		{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 3, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
+		{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 5, RewardDropVnums: []uint32{27001, 27002}},
+	}
+	if !reflect.DeepEqual(summary.SpawnGroups, want) {
+		t.Fatalf("unexpected spawn-group summaries:\n got: %#v\nwant: %#v", summary.SpawnGroups, want)
 	}
 }
 

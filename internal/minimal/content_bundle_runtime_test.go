@@ -97,6 +97,38 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 	}
 }
 
+func TestGameRuntimeExportContentBundleSummaryIncludesSpawnGroupDetails(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.summary_mob",
+		Name:          "SummaryMob",
+		MapIndex:      42,
+		X:             1800,
+		Y:             2900,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}})
+	if err != nil {
+		t.Fatalf("import spawn-group content bundle: %v", err)
+	}
+
+	summary, err := runtime.ExportContentBundleSummary()
+	if err != nil {
+		t.Fatalf("export content bundle summary: %v", err)
+	}
+	want := []contentbundle.SpawnGroupReferenceSummary{
+		{Ref: "practice.summary_mob", Name: "SummaryMob", MapIndex: 42, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy)},
+	}
+	if !reflect.DeepEqual(summary.SpawnGroups, want) {
+		t.Fatalf("unexpected runtime summary spawn groups:\n got: %#v\nwant: %#v", summary.SpawnGroups, want)
+	}
+}
+
 func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *testing.T) {
 	staticPath := t.TempDir() + "/static-actors.json"
 	staticActorStore := staticstore.NewFileStore(staticPath)
