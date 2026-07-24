@@ -160,7 +160,7 @@ func TestFileStoreValidateTreatsMissingStoreAsEmpty(t *testing.T) {
 	}
 }
 
-func TestFileStoreValidateIgnoresCrashTempTickets(t *testing.T) {
+func TestFileStoreValidateDoesNotTreatCrashTempTicketsAsCommitted(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
 	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: issuedAt}); err != nil {
@@ -174,9 +174,34 @@ func TestFileStoreValidateIgnoresCrashTempTickets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("validate ticket store with crash temp file: %v", err)
 	}
-	want := SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}}
+	want := SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}, CrashTempCount: 1, CrashTempFiles: []string{".ticket-crashed.json"}}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected ticket summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateReportsCrashTempTickets(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: issuedAt}); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+	for _, filename := range []string{".ticket-zeta.json", ".ticket-alpha.json", ".ignored-hidden.json"} {
+		if err := os.WriteFile(filepath.Join(store.dir, filename), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write temp ticket %s: %v", filename, err)
+		}
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate ticket store: %v", err)
+	}
+	if summary.CrashTempCount != 2 {
+		t.Fatalf("expected two login ticket crash temp files, got %d", summary.CrashTempCount)
+	}
+	wantFiles := []string{".ticket-alpha.json", ".ticket-zeta.json"}
+	if !reflect.DeepEqual(summary.CrashTempFiles, wantFiles) {
+		t.Fatalf("unexpected login ticket crash temp files: got %#v want %#v", summary.CrashTempFiles, wantFiles)
 	}
 }
 

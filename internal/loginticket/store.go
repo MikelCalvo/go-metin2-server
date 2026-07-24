@@ -103,9 +103,11 @@ type Ticket struct {
 }
 
 type SnapshotSummary struct {
-	TicketCount int      `json:"ticket_count"`
-	Logins      []string `json:"logins"`
-	LoginKeys   []uint32 `json:"login_keys"`
+	TicketCount    int      `json:"ticket_count"`
+	Logins         []string `json:"logins"`
+	LoginKeys      []uint32 `json:"login_keys"`
+	CrashTempCount int      `json:"crash_temp_count,omitempty"`
+	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
 }
 
 func normalizeCharactersItemState(characters []Character) {
@@ -180,16 +182,47 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	if err != nil {
 		return SnapshotSummary{}, err
 	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
 	summary := SnapshotSummary{
-		TicketCount: len(tickets),
-		Logins:      make([]string, 0, len(tickets)),
-		LoginKeys:   make([]uint32, 0, len(tickets)),
+		TicketCount:    len(tickets),
+		Logins:         make([]string, 0, len(tickets)),
+		LoginKeys:      make([]uint32, 0, len(tickets)),
+		CrashTempCount: len(crashTempFiles),
+		CrashTempFiles: crashTempFiles,
 	}
 	for _, ticket := range tickets {
 		summary.Logins = append(summary.Logins, ticket.Login)
 		summary.LoginKeys = append(summary.LoginKeys, ticket.LoginKey)
 	}
 	return summary, nil
+}
+
+func (s *FileStore) crashTempFiles() ([]string, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read login ticket store crash temp files: %w", err)
+	}
+	files := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".ticket-") && strings.HasSuffix(name, ".json") {
+			files = append(files, name)
+		}
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		return nil, nil
+	}
+	return files, nil
 }
 
 func (s *FileStore) Issue(ticket Ticket) error {

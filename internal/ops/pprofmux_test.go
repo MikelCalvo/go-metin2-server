@@ -47,7 +47,7 @@ func TestPprofIndexIsReachable(t *testing.T) {
 }
 
 func TestLocalAccountStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
-	validator := &stubAccountStoreValidator{summary: map[string]any{"account_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}}}
+	validator := &stubAccountStoreValidator{summary: map[string]any{"account_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}, "crash_temp_count": 1, "crash_temp_files": []string{".account-crashed.json"}}}
 	mux := RegisterLocalAccountStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/account-store/validate", nil)
@@ -63,7 +63,7 @@ func TestLocalAccountStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testi
 		t.Fatalf("expected validator to be called once, got %d", validator.calls)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"account_count":2`, `"character_count":3`, `"logins":["alpha","zeta"]`} {
+	for _, want := range []string{`"account_count":2`, `"character_count":3`, `"logins":["alpha","zeta"]`, `"crash_temp_count":1`, `"crash_temp_files":[".account-crashed.json"]`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected response body to contain %s, got %s", want, body)
 		}
@@ -491,7 +491,7 @@ func TestLocalAccountStoreRestoreEndpointRejectsWrongMethod(t *testing.T) {
 }
 
 func TestLocalLoginTicketStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
-	validator := &stubLoginTicketStoreValidator{summary: map[string]any{"ticket_count": 2, "logins": []string{"alpha", "zeta"}, "login_keys": []uint32{0x01000000, 0x02000000}}}
+	validator := &stubLoginTicketStoreValidator{summary: map[string]any{"ticket_count": 2, "logins": []string{"alpha", "zeta"}, "login_keys": []uint32{0x01000000, 0x02000000}, "crash_temp_count": 1, "crash_temp_files": []string{".ticket-crashed.json"}}}
 	mux := RegisterLocalLoginTicketStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/validate", nil)
@@ -507,7 +507,7 @@ func TestLocalLoginTicketStoreValidateEndpointReturnsSummaryForLoopbackPost(t *t
 		t.Fatalf("expected validator to be called once, got %d", validator.calls)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"ticket_count":2`, `"logins":["alpha","zeta"]`, `"login_keys":[16777216,33554432]`} {
+	for _, want := range []string{`"ticket_count":2`, `"logins":["alpha","zeta"]`, `"login_keys":[16777216,33554432]`, `"crash_temp_count":1`, `"crash_temp_files":[".ticket-crashed.json"]`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected response body to contain %s, got %s", want, body)
 		}

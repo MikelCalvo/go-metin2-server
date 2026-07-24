@@ -537,6 +537,30 @@ func TestFileStoreValidateFailsClosedOnCorruptSnapshot(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateReportsCrashTempFiles(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	for _, filename := range []string{".account-zeta.json", ".account-alpha.json", ".ignored-hidden.json"} {
+		if err := os.WriteFile(filepath.Join(store.dir, filename), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write temp file %s: %v", filename, err)
+		}
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate account store: %v", err)
+	}
+	if summary.CrashTempCount != 2 {
+		t.Fatalf("expected two account crash temp files, got %d", summary.CrashTempCount)
+	}
+	wantFiles := []string{".account-alpha.json", ".account-zeta.json"}
+	if !reflect.DeepEqual(summary.CrashTempFiles, wantFiles) {
+		t.Fatalf("unexpected account crash temp files: got %#v want %#v", summary.CrashTempFiles, wantFiles)
+	}
+}
+
 func TestFileStoreBackupToCopiesCommittedSnapshots(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	accounts := []Account{

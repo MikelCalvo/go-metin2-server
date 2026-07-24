@@ -49,6 +49,8 @@ type SnapshotSummary struct {
 	AccountCount   int      `json:"account_count"`
 	CharacterCount int      `json:"character_count"`
 	Logins         []string `json:"logins"`
+	CrashTempCount int      `json:"crash_temp_count,omitempty"`
+	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
 }
 
 type BackupManifest struct {
@@ -127,15 +129,46 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	if err != nil {
 		return SnapshotSummary{}, err
 	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
 	summary := SnapshotSummary{
-		AccountCount: len(accounts),
-		Logins:       make([]string, 0, len(accounts)),
+		AccountCount:   len(accounts),
+		Logins:         make([]string, 0, len(accounts)),
+		CrashTempCount: len(crashTempFiles),
+		CrashTempFiles: crashTempFiles,
 	}
 	for _, account := range accounts {
 		summary.Logins = append(summary.Logins, account.Login)
 		summary.CharacterCount += len(account.Characters)
 	}
 	return summary, nil
+}
+
+func (s *FileStore) crashTempFiles() ([]string, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read account store crash temp files: %w", err)
+	}
+	files := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".account-") && strings.HasSuffix(name, ".json") {
+			files = append(files, name)
+		}
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		return nil, nil
+	}
+	return files, nil
 }
 
 type FileStore struct {
@@ -651,11 +684,16 @@ func decodeBackupManifestStrict(raw []byte, manifest *BackupManifest) error {
 }
 
 func snapshotSummariesEqual(a, b SnapshotSummary) bool {
-	if a.AccountCount != b.AccountCount || a.CharacterCount != b.CharacterCount || len(a.Logins) != len(b.Logins) {
+	if a.AccountCount != b.AccountCount || a.CharacterCount != b.CharacterCount || a.CrashTempCount != b.CrashTempCount || len(a.Logins) != len(b.Logins) || len(a.CrashTempFiles) != len(b.CrashTempFiles) {
 		return false
 	}
 	for i := range a.Logins {
 		if a.Logins[i] != b.Logins[i] {
+			return false
+		}
+	}
+	for i := range a.CrashTempFiles {
+		if a.CrashTempFiles[i] != b.CrashTempFiles[i] {
 			return false
 		}
 	}

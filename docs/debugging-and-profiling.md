@@ -65,8 +65,9 @@ Successful responses are JSON summaries with:
 - `account_count`
 - `character_count`
 - `logins` sorted in deterministic account-list order
+- optional `crash_temp_count` and `crash_temp_files` when same-directory `.account-*.json` temp files are present
 
-Crash leftovers such as hidden `.account-*.json` temp files are ignored, matching the committed-snapshot list/backup contract.
+Crash leftovers such as hidden `.account-*.json` temp files are not treated as committed snapshots, matching the committed-snapshot list/backup contract, but validation reports them as deterministic residue so an operator can see interrupted account writes before cleanup or recovery work.
 
 ### `POST /local/login-tickets/validate`
 
@@ -77,8 +78,9 @@ Successful responses are JSON summaries with:
 - `ticket_count`
 - `logins` sorted in deterministic ticket-list order
 - `login_keys` in the same order as `logins`
+- optional `crash_temp_count` and `crash_temp_files` when same-directory `.ticket-*.json` temp files are present
 
-Crash leftovers such as hidden `.ticket-*.json` temp files are ignored. Use this endpoint to inspect pending handoff state before debugging authd/gamed login-key issues; it is not a replay, consume, restore, or remote admin API.
+Crash leftovers such as hidden `.ticket-*.json` temp files are not treated as pending handoff tickets, but validation reports them as deterministic residue. Use this endpoint to inspect both pending committed handoff state and interrupted ticket writes before debugging authd/gamed login-key issues; it is not a replay, consume, restore, or remote admin API.
 
 ### `POST /local/account-store/backup`
 

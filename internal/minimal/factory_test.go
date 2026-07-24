@@ -138,6 +138,29 @@ func TestGameRuntimeValidateAccountStoreBackupFailsClosedForInvalidManifest(t *t
 	}
 }
 
+func TestGameRuntimeValidateAccountStoreReportsCrashTempFiles(t *testing.T) {
+	accountDir := t.TempDir()
+	accounts := accountstore.NewFileStore(accountDir)
+	if err := accounts.Save(accountstore.Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(accountDir, ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write account temp file: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, nil, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateAccountStore()
+	if err != nil {
+		t.Fatalf("validate account store: %v", err)
+	}
+	if summary.CrashTempCount != 1 || !reflect.DeepEqual(summary.CrashTempFiles, []string{".account-crashed.json"}) {
+		t.Fatalf("unexpected crash temp summary: %#v", summary)
+	}
+}
+
 func TestGameRuntimeValidateLoginTicketStoreDryRunsTicketHandoffState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	if err := store.Issue(loginticket.Ticket{Login: "zeta", LoginKey: 0x02000000}); err != nil {
@@ -161,6 +184,29 @@ func TestGameRuntimeValidateLoginTicketStoreDryRunsTicketHandoffState(t *testing
 	}
 	if _, err := store.Load("alpha", 0x01000000); err != nil {
 		t.Fatalf("expected dry-run validation not to consume alpha ticket: %v", err)
+	}
+}
+
+func TestGameRuntimeValidateLoginTicketStoreReportsCrashTempFiles(t *testing.T) {
+	ticketDir := t.TempDir()
+	store := loginticket.NewFileStore(ticketDir)
+	if err := store.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ticketDir, ".ticket-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write ticket temp file: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateLoginTicketStore()
+	if err != nil {
+		t.Fatalf("validate login ticket store: %v", err)
+	}
+	if summary.CrashTempCount != 1 || !reflect.DeepEqual(summary.CrashTempFiles, []string{".ticket-crashed.json"}) {
+		t.Fatalf("unexpected crash temp summary: %#v", summary)
 	}
 }
 
