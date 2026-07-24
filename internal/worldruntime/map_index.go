@@ -269,6 +269,13 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	for _, player := range m.byEntityID {
+		m.repairPlayerMapPresenceLocked(player)
+	}
+	for _, actor := range m.staticByEntityID {
+		m.repairStaticMapPresenceLocked(actor)
+	}
+
 	mapIndices := make(map[uint32]struct{}, len(m.byMapIndex)+len(m.staticByMapIndex))
 	for mapIndex := range m.byMapIndex {
 		mapIndices[mapIndex] = struct{}{}

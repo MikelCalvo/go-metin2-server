@@ -370,6 +370,53 @@ func TestMapIndexRegisterRejectsStaticEntityIndexCollisionWhenStaticMapBucketMis
 	}
 }
 
+func TestMapIndexSnapshotPrunesDuplicatePlayerMapBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(14, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	index.byEntityID[stale.Entity.ID] = current
+	index.effectiveMapByEntityID[stale.Entity.ID] = 77
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || snapshots[0].MapIndex != 77 || len(snapshots[0].Characters) != 1 || snapshots[0].Characters[0].Name != "Alpha" {
+		t.Fatalf("expected map snapshot to prune stale player bucket and keep only current map 77, got %+v", snapshots)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected snapshot to prune stale player bucket from map 42, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].MapIndex != 77 {
+		t.Fatalf("expected current player bucket to remain after snapshot repair, got %+v", characters)
+	}
+}
+
+func TestMapIndexSnapshotPrunesDuplicateStaticActorMapBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	current := stale
+	current.Entity.Name = "VillageGuard"
+	current.Position = NewPosition(77, 900, 1200)
+	index.staticByEntityID[stale.Entity.ID] = current
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{stale.Entity.ID: stale}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{stale.Entity.ID: current}
+
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || snapshots[0].MapIndex != 77 || len(snapshots[0].StaticActors) != 1 || snapshots[0].StaticActors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected map snapshot to prune stale static actor bucket and keep only current map 77, got %+v", snapshots)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected snapshot to prune stale static actor bucket from map 42, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" || actors[0].Position.MapIndex != 77 {
+		t.Fatalf("expected current static actor bucket to remain after snapshot repair, got %+v", actors)
+	}
+}
+
 func TestMapIndexSnapshotReturnsStableSortedCharactersPerMap(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	if !index.Register(newPlayerEntity(3, entityRegistryCharacter("Zulu", 0x02040103, 42, 1900, 3000))) {
