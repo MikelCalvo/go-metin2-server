@@ -457,6 +457,109 @@ func TestGameRuntimeRestoreItemTemplateStoreRestoresManifestedBackup(t *testing.
 	}
 }
 
+func TestGameRuntimeRestoreItemTemplateStoreReloadsTemplatesForFutureSessions(t *testing.T) {
+	source := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	backupSnapshot := itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Restored Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 7, Message: "restored consume"},
+	}}}
+	if err := source.Save(backupSnapshot); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item templates: %v", err)
+	}
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	target := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "restore-target", "item-templates.json"))
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, target, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	if _, err := runtime.RestoreItemTemplateStore(backupDir); err != nil {
+		t.Fatalf("restore item template store: %v", err)
+	}
+
+	owner := peerVisibilityCharacter("UseRestoredTemplate", 0x01030701, 0x02040701, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 7001, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-template-restore-use", 0x70707001, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-template-restore-use", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed restored-template account: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-template-restore-use", 0x70707001)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected restored-template item-use packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected restored-template item use to emit use echo, point change, item update, and info chat, got %d", len(out))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode restored-template point change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 7 || pointChange.Value != 32 {
+		t.Fatalf("expected restored template point delta to drive item use, got %+v", pointChange)
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode restored-template info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != "restored consume" {
+		t.Fatalf("expected restored template message to drive item use, got %+v", infoChat)
+	}
+}
+
+func TestGameRuntimeRestoreItemTemplateStoreRejectsLiveSessionsWithoutMutation(t *testing.T) {
+	source := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	backupSnapshot := itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Live Restore Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 7, Message: "must not live restore"},
+	}}}
+	if err := source.Save(backupSnapshot); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item templates: %v", err)
+	}
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	target := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "restore-target", "item-templates.json"))
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, target, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	owner := peerVisibilityCharacter("LiveRestoreGuard", 0x01030702, 0x02040702, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 7002, Vnum: 27001, Count: 2, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-template-live-restore", 0x70707002, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-template-live-restore", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed live-restore account: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-template-live-restore", 0x70707002)
+	defer closeSessionFlow(t, flow)
+
+	_, err = runtime.RestoreItemTemplateStore(backupDir)
+	if !errors.Is(err, ErrItemTemplateStoreRestoreLiveSessions) {
+		t.Fatalf("expected live-session restore guard, got %v", err)
+	}
+	if _, err := target.Load(); !errors.Is(err, itemcatalog.ErrSnapshotNotFound) {
+		t.Fatalf("expected live-session restore guard to leave target store untouched, got %v", err)
+	}
+}
+
 func TestGameRuntimeQuickslotsSnapshotReportsLiveSelectedQuickslots(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

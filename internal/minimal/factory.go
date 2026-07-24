@@ -71,16 +71,17 @@ const legacyFakeStubMkmkWarX int32 = 1000
 const legacyFakeStubMkmkWarY int32 = 2000
 
 var (
-	ErrInvalidLegacyAddr                 = errors.New("invalid legacy addr")
-	ErrInvalidPublicAddr                 = errors.New("invalid public addr")
-	ErrInvalidVisibilityMode             = errors.New("invalid visibility mode")
-	ErrInvalidVisibilityRadius           = errors.New("invalid visibility radius")
-	ErrInvalidVisibilitySectorSize       = errors.New("invalid visibility sector size")
-	ErrInteractionDefinitionsUnavailable = errors.New("interaction definitions unavailable")
-	ErrInteractionDefinitionExists       = errors.New("interaction definition already exists")
-	ErrInteractionDefinitionNotFound     = errors.New("interaction definition not found")
-	ErrInteractionDefinitionReferenced   = errors.New("interaction definition referenced by static actor")
-	ErrContentBundleUnavailable          = errors.New("content bundle unavailable")
+	ErrInvalidLegacyAddr                    = errors.New("invalid legacy addr")
+	ErrInvalidPublicAddr                    = errors.New("invalid public addr")
+	ErrInvalidVisibilityMode                = errors.New("invalid visibility mode")
+	ErrInvalidVisibilityRadius              = errors.New("invalid visibility radius")
+	ErrInvalidVisibilitySectorSize          = errors.New("invalid visibility sector size")
+	ErrInteractionDefinitionsUnavailable    = errors.New("interaction definitions unavailable")
+	ErrInteractionDefinitionExists          = errors.New("interaction definition already exists")
+	ErrInteractionDefinitionNotFound        = errors.New("interaction definition not found")
+	ErrInteractionDefinitionReferenced      = errors.New("interaction definition referenced by static actor")
+	ErrContentBundleUnavailable             = errors.New("content bundle unavailable")
+	ErrItemTemplateStoreRestoreLiveSessions = errors.New("item template store restore requires no live sessions")
 )
 
 type loginKeyGenerator func() (uint32, error)
@@ -402,7 +403,15 @@ func (r *gameRuntime) RestoreItemTemplateStore(srcDir string) (itemcatalog.Snaps
 	if !ok {
 		return itemcatalog.SnapshotSummary{}, fmt.Errorf("item template store restore is not supported")
 	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if len(r.liveCharactersByName) != 0 {
+		return itemcatalog.SnapshotSummary{}, ErrItemTemplateStoreRestoreLiveSessions
+	}
 	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return itemcatalog.SnapshotSummary{}, err
+	}
+	if err := r.loadItemTemplates(); err != nil {
 		return itemcatalog.SnapshotSummary{}, err
 	}
 	return restorer.Validate()

@@ -13,7 +13,7 @@ This repository is a public rewrite built around owned protocol documentation, s
 - a shared in-process world runtime,
 - protocol codecs and fixtures for the owned packet families,
 - real-client-oriented integration tests around movement, visibility, chat, items, shops, combat, death, restart, and respawn slices,
-- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, and manifest-backed item-template/account-store backup preflights.
+- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, and manifest-backed item-template/account-store backup/restore preflights.
 
 Current repository shape from the latest scan:
 
@@ -300,7 +300,7 @@ Already present:
 - pprof/debug mux,
 - `/healthz`,
 - local runtime config endpoint,
-- local account/login-ticket/item-template validation endpoints and local crash-temp cleanup endpoints for account and item-template stores,
+- local account/login-ticket/item-template validation endpoints, account/item-template backup/restore endpoints, and local crash-temp cleanup endpoints for account and item-template stores,
 - local inventory/equipment/currency snapshots,
 - local static actor and interaction authoring endpoints,
 - local content bundle import/export,
