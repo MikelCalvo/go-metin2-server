@@ -2368,6 +2368,7 @@ func TestNewGameSessionFactoryProjectsPeerEquipmentAppearanceDuringBootstrap(t *
 		{ID: 81, Vnum: 11500, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
 		{ID: 82, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
 		{ID: 83, Vnum: 50053, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+		{ID: 84, Vnum: 45001, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHair},
 	}
 	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
@@ -2379,8 +2380,8 @@ func TestNewGameSessionFactoryProjectsPeerEquipmentAppearanceDuringBootstrap(t *
 	}
 
 	_, firstEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
-	if len(firstEnter) != 8 {
-		t.Fatalf("expected 8 bootstrap frames for first player with equipped items, got %d", len(firstEnter))
+	if len(firstEnter) != 9 {
+		t.Fatalf("expected 9 bootstrap frames for first player with equipped items, got %d", len(firstEnter))
 	}
 
 	_, secondEnter := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
@@ -2392,7 +2393,7 @@ func TestNewGameSessionFactoryProjectsPeerEquipmentAppearanceDuringBootstrap(t *
 	if err != nil {
 		t.Fatalf("decode peer character additional info: %v", err)
 	}
-	if peerInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 201} {
+	if peerInfo.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 45001} {
 		t.Fatalf("unexpected projected peer additional-info parts: %+v", peerInfo.Parts)
 	}
 
@@ -2400,9 +2401,135 @@ func TestNewGameSessionFactoryProjectsPeerEquipmentAppearanceDuringBootstrap(t *
 	if err != nil {
 		t.Fatalf("decode peer character update: %v", err)
 	}
-	if peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 201} {
+	if peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 45001} {
 		t.Fatalf("unexpected projected peer update parts: %+v", peerUpdate.Parts)
 	}
+}
+
+func TestGameRuntimeEquipHairQueuesPeerAppearanceUpdateForVisibleWatcher(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1003, Vnum: 45001, Count: 1, Slot: 8}}
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	for _, account := range []accountstore.Account{
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 45001, Name: "Practice Hair Costume", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotHair.String()}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher, got %d", len(watcherEnter))
+	}
+	flowOwner, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after owner join, got %d", len(queued))
+	}
+
+	equipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 hair"})))
+	if err != nil {
+		t.Fatalf("unexpected hair equip error: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected 3 self equip frames for hair equip, got %d", len(equipOut))
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[2]))
+	if err != nil {
+		t.Fatalf("decode self hair equip update: %v", err)
+	}
+	if selfUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 45001} {
+		t.Fatalf("unexpected self hair equip update parts: %+v", selfUpdate.Parts)
+	}
+
+	peerFrames := flushServerFrames(t, flowWatcher)
+	if len(peerFrames) != 1 {
+		t.Fatalf("expected 1 queued peer appearance update after hair equip, got %d", len(peerFrames))
+	}
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, peerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer hair equip update: %v", err)
+	}
+	if peerUpdate.VID != owner.VID || peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, 45001} {
+		t.Fatalf("unexpected queued peer hair equip update: %+v", peerUpdate)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwner)
+}
+
+func TestGameRuntimeUnequipHairQueuesPeerAppearanceUpdateForVisibleWatcher(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Equipment = []inventory.ItemInstance{{ID: 1004, Vnum: 45001, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHair}}
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	for _, account := range []accountstore.Account{
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 45001, Name: "Practice Hair Costume", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotHair.String()}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for watcher, got %d", len(watcherEnter))
+	}
+	flowOwner, _ := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-entry frames for watcher after owner join, got %d", len(queued))
+	}
+
+	unequipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item hair 4"})))
+	if err != nil {
+		t.Fatalf("unexpected hair unequip error: %v", err)
+	}
+	if len(unequipOut) != 3 {
+		t.Fatalf("expected 3 self unequip frames for hair unequip, got %d", len(unequipOut))
+	}
+	selfUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, unequipOut[2]))
+	if err != nil {
+		t.Fatalf("decode self hair unequip update: %v", err)
+	}
+	if selfUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, owner.HairPart} {
+		t.Fatalf("unexpected self hair unequip update parts: %+v", selfUpdate.Parts)
+	}
+
+	peerFrames := flushServerFrames(t, flowWatcher)
+	if len(peerFrames) != 1 {
+		t.Fatalf("expected 1 queued peer appearance update after hair unequip, got %d", len(peerFrames))
+	}
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, peerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer hair unequip update: %v", err)
+	}
+	if peerUpdate.VID != owner.VID || peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{101, 0, 0, owner.HairPart} {
+		t.Fatalf("unexpected queued peer hair unequip update: %+v", peerUpdate)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwner)
 }
 
 func TestGameRuntimeEquipQueuesPeerAppearanceUpdateForVisibleWatcher(t *testing.T) {

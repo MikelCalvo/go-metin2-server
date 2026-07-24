@@ -2328,7 +2328,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: false}
 						}
 						var pointChange *player.PointChangeResult
-						if hasUnequipTemplate {
+						if hasUnequipTemplate && template.EquipEffect != nil {
 							result, ok := selectedPlayer.RemoveEquipTemplateEffectFromItem(template, equipSlot, inventoryItem)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -2615,7 +2615,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						var pointChange *player.PointChangeResult
-						if hasUnequipTemplate {
+						if hasUnequipTemplate && template.EquipEffect != nil {
 							result, ok := selectedPlayer.RemoveEquipTemplateEffectFromItem(template, equipSlot, inventoryItem)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -3664,6 +3664,8 @@ func ticketCharacterAppearanceParts(character loginticket.Character) [worldproto
 			parts[1] = uint16(instance.Vnum)
 		case inventory.EquipmentSlotHead:
 			parts[2] = uint16(instance.Vnum)
+		case inventory.EquipmentSlotHair:
+			parts[3] = uint16(instance.Vnum)
 		}
 	}
 	return parts
@@ -3678,7 +3680,7 @@ func projectedAppearanceStablePeerFrames(character loginticket.Character, slot i
 
 func projectedAppearanceEquipmentSlot(slot inventory.EquipmentSlot) bool {
 	switch slot {
-	case inventory.EquipmentSlotBody, inventory.EquipmentSlotWeapon, inventory.EquipmentSlotHead:
+	case inventory.EquipmentSlotBody, inventory.EquipmentSlotWeapon, inventory.EquipmentSlotHead, inventory.EquipmentSlotHair:
 		return true
 	default:
 		return false

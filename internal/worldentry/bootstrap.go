@@ -104,6 +104,8 @@ func bootstrapCharacterAppearanceParts(character loginticket.Character) [worldpr
 			parts[1] = uint16(instance.Vnum)
 		case inventory.EquipmentSlotHead:
 			parts[2] = uint16(instance.Vnum)
+		case inventory.EquipmentSlotHair:
+			parts[3] = uint16(instance.Vnum)
 		}
 	}
 	return parts

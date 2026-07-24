@@ -330,14 +330,14 @@ Expected result:
 ### 4.5.8 Equip a carried item (`ITEM_MOVE` to equipment cell)
 
 - [ ] Put a known template-backed equipment item in a carried inventory cell
-- [ ] Confirm the template's authored `equip_slot` matches the destination equipment cell, has no selected-character job/sex anti-flag, and is not guarded with `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`
+- [ ] Confirm the template's authored `equip_slot` matches the destination equipment cell, has no selected-character job/sex anti-flag, and is not guarded with `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`; include one `hair` item when validating appearance projection
 - [ ] Drag the carried item into its matching equipment cell
 - [ ] Repeat with the same item shape but a selected-character job/sex anti-flag that should reject the character
 - [ ] Repeat with authored metadata whose `equip_slot` or `vnum` does not match the carried item/destination cell
 - [ ] Repeat with otherwise matching equipment metadata guarded by one of `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`
 
 Expected result:
-- allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, deletes item quickslots bound to the cleared carried source cell, leaves unrelated skill/command quickslots with the same byte slot value unchanged, and applies the template-authored `equip_effect` point change only after the matching item is actually equipped in that authored cell
+- allowed equipment moves from carried inventory to the authored equipment cell, emits the self-only item refresh burst, deletes item quickslots bound to the cleared carried source cell, leaves unrelated skill/command quickslots with the same byte slot value unchanged, applies any template-authored `equip_effect` point change only after the matching item is actually equipped in that authored cell, and refreshes visible `CHARACTER_UPDATE.parts` for projected `body` / `weapon` / `head` / `hair` equipment
 - equipment templates may now author negative `equip_effect.point_delta` penalties; on equip the visible `PLAYER_POINT_CHANGE.amount` should be the negative authored value, and on unequip the inverse positive amount should restore the point value
 - selected-character anti-flagged, mismatched-`vnum`, mismatched-slot, or transfer-guarded equipment fails closed: no item refresh, no quickslot change, no point change, no carried/equipment mutation, and no persistence change
 - corrupt/disposable fixtures that try to apply an equipment point effect without a matching valid equipped item in the authored equipment cell fail closed with no point mutation
@@ -353,7 +353,7 @@ Expected result:
 - [ ] Repeat with a corrupt/disposable fixture where the removal metadata does not match the just-removed item `vnum`
 
 Expected result:
-- allowed unequip emits the self-only equipment clear, carried-cell set, template-authored negative `PLAYER_POINT_CHANGE`, and appearance update
+- allowed unequip emits the self-only equipment clear, carried-cell set, any template-authored inverse `PLAYER_POINT_CHANGE` when the item has `equip_effect`, and appearance update; unequipping projected `hair` equipment restores `parts[3]` to the character's base `HairPart`
 - the point-effect removal is backed by the just-removed item instance, so it still subtracts the authored delta after the item has moved out of the equipment slice
 - `irremovable`, mismatched, or malformed removal metadata fails closed with no point change and no committed inventory/equipment/persistence mutation
 - corrupt/disposable equipped-source fixtures whose live count exceeds the authored template `max_count` fail closed the same way: no item refresh, no point change, no appearance update, and no committed inventory/equipment/persistence mutation

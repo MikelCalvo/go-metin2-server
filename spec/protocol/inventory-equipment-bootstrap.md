@@ -87,7 +87,7 @@ The first bootstrap equipment surface freezes a small named worn-slot set that i
 Rules for this first stage:
 - each equipment slot may contain at most one item instance
 - equipped items remain part of the same owned character item state as carried inventory
-- peer-visible appearance for equipped `body`, `weapon`, and `head` items is now frozen separately in `spec/protocol/equipment-appearance-bootstrap.md` for bootstrap/peer-visibility packet builders
+- peer-visible appearance for equipped `body`, `weapon`, `head`, and `hair` items is now frozen separately in `spec/protocol/equipment-appearance-bootstrap.md` for bootstrap/peer-visibility packet builders
 - live equip/unequip appearance fanout still remains out of scope here
 
 ## Persisted snapshot boundary

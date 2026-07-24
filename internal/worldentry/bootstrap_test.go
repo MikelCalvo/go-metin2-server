@@ -28,6 +28,7 @@ func TestBuildBootstrapFramesReturnsSelectedCharacterBurst(t *testing.T) {
 			{ID: 71, Vnum: 11500, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
 			{ID: 72, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
 			{ID: 73, Vnum: 50053, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+			{ID: 74, Vnum: 45001, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHair},
 		},
 	}
 	character.Points[1] = 750
@@ -52,7 +53,7 @@ func TestBuildBootstrapFramesReturnsSelectedCharacterBurst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode bootstrap additional info: %v", err)
 	}
-	if info.VID != character.VID || info.Name != character.Name || info.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, character.HairPart} {
+	if info.VID != character.VID || info.Name != character.Name || info.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 45001} {
 		t.Fatalf("unexpected bootstrap additional info packet: %+v", info)
 	}
 
@@ -60,7 +61,7 @@ func TestBuildBootstrapFramesReturnsSelectedCharacterBurst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode bootstrap update: %v", err)
 	}
-	if update.VID != character.VID || update.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, character.HairPart} {
+	if update.VID != character.VID || update.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 45001} {
 		t.Fatalf("unexpected bootstrap update packet: %+v", update)
 	}
 
