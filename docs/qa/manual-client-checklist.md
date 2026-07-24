@@ -374,6 +374,7 @@ Expected result:
 Expected result:
 - restricted packet paths fail with the current merchant invalid-position companion and no inventory, item quickslot, gold, or persisted account mutation is visible
 - adjacent allowed merchant buy/sell cases still use the template-authored price/sell-credit behavior
+- carried sell-back stacks whose live count already exceeds the resolved template-authored `max_count` fail with the same invalid-position companion before inventory, item quickslot, gold, or persisted account mutation
 - partial-stack `SHOP SELL2` success refreshes the remaining stack with `ITEM_UPDATE`, preserves the authored display socket/attribute arrays while changing only the count, credits gold, and keeps item quickslots for the still-occupied cell unchanged
 
 ---

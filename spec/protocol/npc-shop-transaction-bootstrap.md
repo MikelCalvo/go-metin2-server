@@ -203,6 +203,7 @@ The first sell/sell2 path must fail closed when any of these are true:
 - the carried item is marked runtime-locked
 - the template is marked with a transfer/sell restriction (`anti_get`, `anti_drop`, `anti_give`, or `anti_sell`)
 - the resolved template carries a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
+- the live carried stack already exceeds the resolved template-authored `max_count`
 - the template has no sell price
 - persistence/writeback fails
 
@@ -352,7 +353,7 @@ The first live sell-back contract remains intentionally narrow:
 - ordinary sell credit derives from loaded item-template `shop_buy_price` as `floor((shop_buy_price * sold_count) / 5)` minus `floor(3% tax)`
 - templates flagged `sell_count_per_gold` follow the legacy count-per-gold branch first: use `floor(sold_count / shop_buy_price)` when `shop_buy_price > 0`, or `sold_count` when it is zero, then apply the same `/5` and 3% tax floor; if the resulting credit is zero, the bootstrap runtime fails closed
 - templates flagged `anti_sell` or `anti_stack` fail closed before credit calculation, return bare self-only `GC::SHOP INVALID_POS` on the packet sell path while a merchant window is active, and leave live plus persisted inventory/currency unchanged
-- the player mutation boundary also exposes a template-backed sell helper that rejects `anti_sell` / `anti_stack` templates, template/item-`vnum` mismatches, invalid template metadata, invalid counts, locked carried items, equipped carried items, selected-character job/sex/level restrictions, and zero-credit pricing before mutating live inventory or gold
+- the player mutation boundary also exposes a template-backed sell helper that rejects `anti_sell` / `anti_stack` templates, template/item-`vnum` mismatches, invalid template metadata, invalid counts, live carried stacks above the template-authored `max_count`, locked carried items, equipped carried items, selected-character job/sex/level restrictions, and zero-credit pricing before mutating live inventory or gold
 - successful template-backed sell uses the same template-derived `MerchantSellCredit` calculation as the packet/runtime sell path, then delegates to the existing credit mutation so whole-stack and partial-stack state results stay aligned
 - selected-character `min_level` restrictions are checked through the same template-use guard as job/sex anti-flags; packet `SHOP BUY`, packet `SHOP SELL` / `SELL2`, and the template-backed player-runtime sell helper all fail closed before inventory, quickslot, gold, or persistence mutation when the selected character is below the authored minimum level
 - the updated selected-character snapshot is persisted before the live shared-world registration is refreshed
@@ -360,7 +361,7 @@ The first live sell-back contract remains intentionally narrow:
 - whole-stack success emits self-only `ITEM_DEL(slot)`, then zero or more self-only `QUICKSLOT_DEL(position)` frames for item quickslots that referenced the removed carried slot, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`
 - partial-stack success emits self-only `ITEM_UPDATE(slot, remaining_count)`, preserving the loaded template-authored display sockets/attributes for that carried item, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`; it does not delete quickslots because the item remains at the source cell
 - packet `SHOP SELL` / `SHOP SELL2` success does not append an extra bare self-only `GC::SHOP OK`; the owned visible success companion is the item refresh plus gold `POINT_CHANGE`
-- invalid slots, locked carried items, equipped items, explicit `SELL2` count `0`, over-count `SELL2`, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
+- invalid slots, locked carried items, equipped items, explicit `SELL2` count `0`, over-count `SELL2`, live carried stacks above the template-authored `max_count`, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
 - an invalid packet/runtime sell while an active merchant window exists returns bare self-only `GC::SHOP INVALID_POS`
 - stale active merchant context still returns `GC::SHOP END`, clears the active context, and leaves inventory/currency unchanged
 - if a socket already lost live shared-world ownership because another session reclaimed the same selected character, packet `SHOP SELL` / `SHOP SELL2` may still return the same self-local sell success burst (`ITEM_DEL` or `ITEM_UPDATE` plus gold `PLAYER_POINT_CHANGE`) to that stale socket

@@ -1173,7 +1173,7 @@ func (r *Runtime) SellMerchantItemWithTemplate(slot inventory.SlotIndex, count u
 		return MerchantSellResult{}, false
 	}
 	index := findInventorySlot(r.liveInventory, slot)
-	if index < 0 || r.liveInventory[index].Vnum != template.Vnum {
+	if index < 0 || r.liveInventory[index].Vnum != template.Vnum || r.liveInventory[index].Count > template.MaxCount {
 		return MerchantSellResult{}, false
 	}
 	soldCount, ok := r.MerchantSellCount(slot, count)

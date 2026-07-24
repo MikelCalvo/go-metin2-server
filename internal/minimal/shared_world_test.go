@@ -23850,6 +23850,36 @@ func TestGameSessionFlowShopSell2RejectsOverCountWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowShopSellRejectsOverTemplateMaxStackWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("SellerOverMax", 0x0104012e, 0x0205012e, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 201, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "sell-over-max", 0x2e2e2e2e, buyer)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	cases := []struct {
+		name  string
+		frame []byte
+	}{
+		{name: "sell whole stack", frame: shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 5})},
+		{name: "sell2 partial", frame: shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 1})},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, tc.frame))
+			if err != nil {
+				t.Fatalf("unexpected over-template-max packet shop sell error: %v", err)
+			}
+			if len(sellOut) != 1 {
+				t.Fatalf("expected over-template-max packet shop sell to emit 1 invalid-pos frame, got %d", len(sellOut))
+			}
+			if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+				t.Fatalf("decode over-template-max packet shop sell invalid-pos frame: %v", err)
+			}
+			assertMerchantStateUnchanged(t, runtime, accounts, login, buyer, "over-template-max packet shop sell")
+		})
+	}
+}
+
 func TestGameSessionFlowShopSellRejectsEquippedItemWithoutMutation(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantSellerPacketEquipped", 0x01040124, 0x02050124, 125, nil)
 	buyer.Equipment = []inventory.ItemInstance{{ID: 88, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}}

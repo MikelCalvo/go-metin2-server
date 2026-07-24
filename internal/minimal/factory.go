@@ -4133,7 +4133,7 @@ func merchantSellTemplateForSlot(templates map[uint32]itemcatalog.Template, sele
 			continue
 		}
 		template, ok := templates[item.Vnum]
-		if !ok {
+		if !ok || item.Count > template.MaxCount {
 			return itemcatalog.Template{}, false
 		}
 		return template, true

@@ -3082,6 +3082,25 @@ func TestRuntimeSellMerchantItemWithTemplateUsesTemplateCredit(t *testing.T) {
 	}
 }
 
+func TestRuntimeSellMerchantItemWithTemplateRejectsOverTemplateMaxStackWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory[0].Count = 201
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	beforeInventory := runtime.LiveInventory()
+	beforeGold := runtime.LiveGold()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500}
+
+	if result, ok := runtime.SellMerchantItemWithTemplate(5, 1, template); ok {
+		t.Fatalf("expected over-template-max stack merchant sell to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveGold(); got != beforeGold {
+		t.Fatalf("over-template-max stack merchant sell mutated gold: got %d want %d", got, beforeGold)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+		t.Fatalf("over-template-max stack merchant sell mutated inventory: got %#v want %#v", got, beforeInventory)
+	}
+}
+
 func TestRuntimeSellMerchantItemWithTemplateCountedRejectsZeroCountWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
