@@ -205,6 +205,58 @@ func TestFileStoreValidateReportsCrashTempTickets(t *testing.T) {
 	}
 }
 
+func TestFileStoreCleanupCrashTempFilesRemovesOnlyCrashTemps(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: issuedAt}); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+	for _, filename := range []string{".ticket-zeta.json", ".ticket-alpha.json", ".ignored-hidden.json"} {
+		if err := os.WriteFile(filepath.Join(store.dir, filename), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write temp ticket %s: %v", filename, err)
+		}
+	}
+
+	summary, err := store.CleanupCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup login ticket crash temp files: %v", err)
+	}
+	want := SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected post-cleanup ticket summary: got %#v want %#v", summary, want)
+	}
+	for _, removed := range []string{".ticket-zeta.json", ".ticket-alpha.json"} {
+		if _, err := os.Stat(filepath.Join(store.dir, removed)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected crash temp %s to be removed, stat err=%v", removed, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(store.dir, ".ignored-hidden.json")); err != nil {
+		t.Fatalf("expected unrelated hidden file to be preserved: %v", err)
+	}
+	if _, err := store.Load("mkmk", 0x01020304); err != nil {
+		t.Fatalf("expected committed login ticket to remain loadable: %v", err)
+	}
+}
+
+func TestFileStoreCleanupCrashTempFilesFailsClosedOnCorruptCommittedTicket(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := os.WriteFile(store.ticketPath(0x01020304), []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt ticket: %v", err)
+	}
+	crashTemp := filepath.Join(store.dir, ".ticket-crashed.json")
+	if err := os.WriteFile(crashTemp, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp ticket: %v", err)
+	}
+
+	_, err := store.CleanupCrashTempFiles()
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket before cleanup, got %v", err)
+	}
+	if _, statErr := os.Stat(crashTemp); statErr != nil {
+		t.Fatalf("expected crash temp ticket to remain after failed cleanup: %v", statErr)
+	}
+}
+
 func TestFileStoreValidateFailsClosedOnCorruptTicket(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	if err := os.WriteFile(store.ticketPath(0x01020304), []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[`), 0o644); err != nil {

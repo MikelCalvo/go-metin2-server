@@ -688,6 +688,123 @@ func TestLocalLoginTicketStoreValidateEndpointReportsValidationFailure(t *testin
 	}
 }
 
+func TestLocalLoginTicketStoreCrashTempCleanupEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
+	cleaner := &stubLoginTicketStoreCrashTempCleaner{summary: map[string]any{"ticket_count": 2, "logins": []string{"alpha", "zeta"}, "login_keys": []uint32{0x01000000, 0x02000000}}}
+	mux := RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if cleaner.calls != 1 {
+		t.Fatalf("expected cleaner to be called once, got %d", cleaner.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"ticket_count":2`, `"logins":["alpha","zeta"]`, `"login_keys":[16777216,33554432]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalLoginTicketStoreCrashTempCleanupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	cleaner := &stubLoginTicketStoreCrashTempCleaner{summary: map[string]any{"ticket_count": 1}}
+	mux := RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/crash-temps/cleanup", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreCrashTempCleanupEndpointRejectsWrongMethod(t *testing.T) {
+	cleaner := &stubLoginTicketStoreCrashTempCleaner{summary: map[string]any{"ticket_count": 1}}
+	mux := RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/login-tickets/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreCrashTempCleanupEndpointRejectsUnexpectedBody(t *testing.T) {
+	cleaner := &stubLoginTicketStoreCrashTempCleaner{summary: map[string]any{"ticket_count": 1}}
+	mux := RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/crash-temps/cleanup", strings.NewReader(`{"confirm":true}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreCrashTempCleanupEndpointRejectsOversizedBody(t *testing.T) {
+	cleaner := &stubLoginTicketStoreCrashTempCleaner{summary: map[string]any{"ticket_count": 1}}
+	mux := RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/crash-temps/cleanup", strings.NewReader(strings.Repeat(" ", maxLocalAccountStoreMutationBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreCrashTempCleanupEndpointReportsCleanupFailure(t *testing.T) {
+	cleaner := &stubLoginTicketStoreCrashTempCleaner{err: errStubLoginTicketStoreInvalid}
+	mux := RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if cleaner.calls != 1 {
+		t.Fatalf("expected cleaner to be called once, got %d", cleaner.calls)
+	}
+}
+
 func TestLocalItemTemplateStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
 	validator := &stubItemTemplateStoreValidator{summary: map[string]any{"template_count": 2, "vnums": []uint32{11200, 27001}, "crash_temp_count": 1, "crash_temp_files": []string{".item-templates-crashed.json"}}}
 	mux := RegisterLocalItemTemplateStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
@@ -1234,6 +1351,17 @@ func (s *stubLoginTicketStoreValidator) Validate() (any, error) {
 }
 
 var errStubLoginTicketStoreInvalid = errors.New("login ticket store invalid")
+
+type stubLoginTicketStoreCrashTempCleaner struct {
+	summary any
+	err     error
+	calls   int
+}
+
+func (s *stubLoginTicketStoreCrashTempCleaner) Cleanup() (any, error) {
+	s.calls++
+	return s.summary, s.err
+}
 
 type stubItemTemplateStoreValidator struct {
 	summary any

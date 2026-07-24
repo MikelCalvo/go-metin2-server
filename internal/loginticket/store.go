@@ -200,6 +200,31 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	return summary, nil
 }
 
+func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
+	if s.dir == "" {
+		return SnapshotSummary{}, ErrStoreDirRequired
+	}
+	if _, err := s.Validate(); err != nil {
+		return SnapshotSummary{}, err
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	if len(crashTempFiles) == 0 {
+		return s.Validate()
+	}
+	for _, filename := range crashTempFiles {
+		if err := os.Remove(filepath.Join(s.dir, filename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return SnapshotSummary{}, fmt.Errorf("remove login ticket crash temp file %q: %w", filename, err)
+		}
+	}
+	if err := syncStoreDir(s.dir); err != nil {
+		return SnapshotSummary{}, fmt.Errorf("sync login ticket store dir after crash temp cleanup: %w", err)
+	}
+	return s.Validate()
+}
+
 func (s *FileStore) crashTempFiles() ([]string, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {

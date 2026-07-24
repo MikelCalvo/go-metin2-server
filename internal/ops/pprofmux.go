@@ -191,6 +191,36 @@ func RegisterLocalLoginTicketStoreValidateEndpoint(mux *http.ServeMux, validate 
 	return mux
 }
 
+func RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(mux *http.ServeMux, cleanup func() (any, error)) *http.ServeMux {
+	if mux == nil || cleanup == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/login-tickets/crash-temps/cleanup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := cleanup()
+		if err != nil {
+			slog.Warn("local login ticket store crash temp cleanup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalItemTemplateStoreValidateEndpoint(mux *http.ServeMux, validate func() (any, error)) *http.ServeMux {
 	if mux == nil || validate == nil {
 		return mux

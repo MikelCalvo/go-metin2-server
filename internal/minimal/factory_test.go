@@ -237,6 +237,60 @@ func TestGameRuntimeValidateLoginTicketStoreReportsCrashTempFiles(t *testing.T) 
 	}
 }
 
+func TestGameRuntimeCleanupLoginTicketStoreCrashTempFilesRemovesResidue(t *testing.T) {
+	ticketDir := t.TempDir()
+	store := loginticket.NewFileStore(ticketDir)
+	if err := store.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ticketDir, ".ticket-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write ticket temp file: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.CleanupLoginTicketStoreCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup login ticket crash temp files: %v", err)
+	}
+	want := loginticket.SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected cleanup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(filepath.Join(ticketDir, ".ticket-crashed.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected login ticket crash temp to be removed, stat err=%v", err)
+	}
+	if _, err := store.Load("mkmk", 0x01020304); err != nil {
+		t.Fatalf("expected cleanup not to consume committed ticket: %v", err)
+	}
+}
+
+func TestGameRuntimeCleanupLoginTicketStoreCrashTempFilesFailsClosedForCorruptTicket(t *testing.T) {
+	ticketDir := t.TempDir()
+	store := loginticket.NewFileStore(ticketDir)
+	if err := os.WriteFile(filepath.Join(ticketDir, "01020304.json"), []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt login ticket: %v", err)
+	}
+	crashTemp := filepath.Join(ticketDir, ".ticket-crashed.json")
+	if err := os.WriteFile(crashTemp, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write ticket temp file: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	_, err = runtime.CleanupLoginTicketStoreCrashTempFiles()
+	if !errors.Is(err, loginticket.ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket, got %v", err)
+	}
+	if _, err := os.Stat(crashTemp); err != nil {
+		t.Fatalf("expected crash temp file to remain after failed cleanup: %v", err)
+	}
+}
+
 func TestGameRuntimeValidateLoginTicketStoreFailsClosedForCorruptTicket(t *testing.T) {
 	dir := t.TempDir()
 	store := loginticket.NewFileStore(dir)

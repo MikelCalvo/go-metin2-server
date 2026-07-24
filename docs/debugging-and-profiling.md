@@ -88,6 +88,12 @@ Successful responses are JSON summaries with:
 
 Crash leftovers such as hidden `.ticket-*.json` temp files are not treated as pending handoff tickets, but validation reports them as deterministic residue. Use this endpoint to inspect both pending committed handoff state and interrupted ticket writes before debugging authd/gamed login-key issues; it is not a replay, consume, restore, or remote admin API.
 
+### `POST /local/login-tickets/crash-temps/cleanup`
+
+Removes same-directory `.ticket-*.json` crash-temp residue from the one-shot login-ticket handoff store after first validating the committed ticket set through the same strict loader used by `/local/login-tickets/validate`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if committed ticket state is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
+
+The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup login-ticket JSON summary (`ticket_count`, deterministic `logins`, and matching `login_keys`). Because cleanup validates before removing anything, corrupt committed tickets leave crash-temp files in place for manual recovery. Only hidden `.ticket-*.json` temp files are removed; committed handoff tickets and unrelated hidden files are preserved. Use `/local/login-tickets/validate` first when you want a read-only residue report, then this endpoint when the operator has decided interrupted temp ticket writes are disposable.
+
 ### `POST /local/item-templates/validate`
 
 Validates the authored bootstrap item-template snapshot store without mutating item-template state. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed item-template snapshot is malformed, has unknown/trailing JSON, duplicates a vnum, or violates template policy such as invalid max counts, equipment slots, display metadata, use effects, or equip effects.

@@ -322,6 +322,19 @@ func (r *gameRuntime) ValidateLoginTicketStore() (loginticket.SnapshotSummary, e
 	return validator.Validate()
 }
 
+func (r *gameRuntime) CleanupLoginTicketStoreCrashTempFiles() (loginticket.SnapshotSummary, error) {
+	if r == nil || r.loginTicketStore == nil {
+		return loginticket.SnapshotSummary{Logins: []string{}, LoginKeys: []uint32{}}, nil
+	}
+	cleaner, ok := r.loginTicketStore.(interface {
+		CleanupCrashTempFiles() (loginticket.SnapshotSummary, error)
+	})
+	if !ok {
+		return loginticket.SnapshotSummary{}, fmt.Errorf("login ticket store crash temp cleanup is not supported")
+	}
+	return cleaner.CleanupCrashTempFiles()
+}
+
 func (r *gameRuntime) ValidateItemTemplateStore() (itemcatalog.SnapshotSummary, error) {
 	if r == nil || r.itemStore == nil {
 		return itemcatalog.SnapshotSummary{Vnums: []uint32{}}, nil

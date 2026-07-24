@@ -72,6 +72,10 @@ func main() {
 		opsHandler,
 		func() (any, error) { return gameRuntime.ValidateLoginTicketStore() },
 	)
+	opsHandler = ops.RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(
+		opsHandler,
+		func() (any, error) { return gameRuntime.CleanupLoginTicketStoreCrashTempFiles() },
+	)
 	opsHandler = ops.RegisterLocalItemTemplateStoreValidateEndpoint(
 		opsHandler,
 		func() (any, error) { return gameRuntime.ValidateItemTemplateStore() },
