@@ -336,6 +336,36 @@ func RegisterLocalItemTemplateStoreBackupValidateEndpoint(mux *http.ServeMux, va
 	return mux
 }
 
+func RegisterLocalItemTemplateStoreRestoreEndpoint(mux *http.ServeMux, restore func(string) (any, error)) *http.ServeMux {
+	if mux == nil || restore == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/item-templates/restore", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		request, status, ok := decodeLocalAccountStoreRestoreRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := restore(request.SrcDir)
+		if err != nil {
+			slog.Warn("local item template store restore failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalAccountStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
 	if mux == nil || backup == nil {
 		return mux

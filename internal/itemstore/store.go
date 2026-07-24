@@ -19,6 +19,8 @@ var (
 	ErrBackupDirInsideStore   = errors.New("item template backup dir is inside item template store")
 	ErrRestoreSourceRequired  = errors.New("item template restore source dir is required")
 	ErrRestoreSourceNotFound  = errors.New("item template restore source dir not found")
+	ErrRestoreDirNotEmpty     = errors.New("item template restore dir is not empty")
+	ErrRestoreDirInsideSource = errors.New("item template restore dir is inside item template backup source")
 	ErrBackupManifestRequired = errors.New("item template backup manifest is required")
 	ErrInvalidBackupManifest  = errors.New("invalid item template backup manifest")
 )

@@ -391,6 +391,23 @@ func (r *gameRuntime) ValidateItemTemplateStoreBackup(srcDir string) (itemcatalo
 	return validator.ValidateBackupFrom(srcDir)
 }
 
+func (r *gameRuntime) RestoreItemTemplateStore(srcDir string) (itemcatalog.SnapshotSummary, error) {
+	if r == nil || r.itemStore == nil {
+		return itemcatalog.SnapshotSummary{Vnums: []uint32{}}, nil
+	}
+	restorer, ok := r.itemStore.(interface {
+		RestoreFrom(string) error
+		Validate() (itemcatalog.SnapshotSummary, error)
+	})
+	if !ok {
+		return itemcatalog.SnapshotSummary{}, fmt.Errorf("item template store restore is not supported")
+	}
+	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return itemcatalog.SnapshotSummary{}, err
+	}
+	return restorer.Validate()
+}
+
 func (r *gameRuntime) BackupAccountStore(dstDir string) (accountstore.SnapshotSummary, error) {
 	if r == nil || r.accountStore == nil {
 		return accountstore.SnapshotSummary{Logins: []string{}}, nil

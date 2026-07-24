@@ -419,6 +419,44 @@ func TestGameRuntimeValidateItemTemplateStoreBackupDryRunsManifestedBackup(t *te
 	}
 }
 
+func TestGameRuntimeRestoreItemTemplateStoreRestoresManifestedBackup(t *testing.T) {
+	source := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	backupSnapshot := itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
+	}}
+	if err := source.Save(backupSnapshot); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item templates: %v", err)
+	}
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "item-templates.json")
+	target := itemcatalog.NewFileStore(targetPath)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, target, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.RestoreItemTemplateStore(backupDir)
+	if err != nil {
+		t.Fatalf("restore item template store: %v", err)
+	}
+	wantSummary := itemcatalog.SnapshotSummary{TemplateCount: 2, Vnums: []uint32{11200, 27001}}
+	if !reflect.DeepEqual(summary, wantSummary) {
+		t.Fatalf("unexpected item template restore summary: got %#v want %#v", summary, wantSummary)
+	}
+	restored, err := target.Load()
+	if err != nil {
+		t.Fatalf("load restored item templates: %v", err)
+	}
+	wantSnapshot := itemcatalog.NormalizeSnapshot(backupSnapshot)
+	if !reflect.DeepEqual(restored, wantSnapshot) {
+		t.Fatalf("unexpected restored item templates:\n got: %#v\nwant: %#v", restored, wantSnapshot)
+	}
+}
+
 func TestGameRuntimeQuickslotsSnapshotReportsLiveSelectedQuickslots(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

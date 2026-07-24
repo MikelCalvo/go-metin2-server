@@ -225,6 +225,153 @@ func TestFileStoreValidateBackupFromRejectsUntrackedBackupEntries(t *testing.T) 
 	}
 }
 
+func TestFileStoreRestoreFromRestoresManifestedBackupIntoEmptyStore(t *testing.T) {
+	source := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	snapshot := Snapshot{Templates: []Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
+	}}
+	if err := source.Save(snapshot); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item templates: %v", err)
+	}
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "item-templates.json")
+	target := NewFileStore(targetPath)
+
+	if err := target.RestoreFrom(backupDir); err != nil {
+		t.Fatalf("restore item template backup: %v", err)
+	}
+	restored, err := target.Load()
+	if err != nil {
+		t.Fatalf("load restored item template snapshot: %v", err)
+	}
+	wantSnapshot := NormalizeSnapshot(snapshot)
+	if !reflect.DeepEqual(restored, wantSnapshot) {
+		t.Fatalf("unexpected restored item template snapshot:\n got: %#v\nwant: %#v", restored, wantSnapshot)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(targetPath), BackupManifestFilename)); err != nil {
+		t.Fatalf("expected restored item template manifest: %v", err)
+	}
+	summary, err := target.ValidateBackupFrom(filepath.Dir(targetPath))
+	if err != nil {
+		t.Fatalf("validate restored item template manifest: %v", err)
+	}
+	wantSummary := SnapshotSummary{TemplateCount: 2, Vnums: []uint32{11200, 27001}}
+	if !reflect.DeepEqual(summary, wantSummary) {
+		t.Fatalf("unexpected restored manifest summary: got %#v want %#v", summary, wantSummary)
+	}
+}
+
+func TestFileStoreRestoreFromRestoresMissingSnapshotBackupAsEmptyStore(t *testing.T) {
+	source := NewFileStore(filepath.Join(t.TempDir(), "missing", "item-templates.json"))
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup missing item template snapshot: %v", err)
+	}
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "item-templates.json")
+	target := NewFileStore(targetPath)
+
+	if err := target.RestoreFrom(backupDir); err != nil {
+		t.Fatalf("restore empty item template backup: %v", err)
+	}
+	if _, err := target.Load(); !errors.Is(err, ErrSnapshotNotFound) {
+		t.Fatalf("expected restored empty item template store to omit snapshot, got %v", err)
+	}
+	summary, err := target.ValidateBackupFrom(filepath.Dir(targetPath))
+	if err != nil {
+		t.Fatalf("validate restored empty item template manifest: %v", err)
+	}
+	want := SnapshotSummary{Vnums: []uint32{}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected restored empty backup summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreRestoreFromPreservesCommittedZeroTemplateSnapshot(t *testing.T) {
+	source := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := source.Save(Snapshot{Templates: []Template{}}); err != nil {
+		t.Fatalf("save zero-template source snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup zero-template item templates: %v", err)
+	}
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "item-templates.json")
+	target := NewFileStore(targetPath)
+
+	if err := target.RestoreFrom(backupDir); err != nil {
+		t.Fatalf("restore zero-template item template backup: %v", err)
+	}
+	restored, err := target.Load()
+	if err != nil {
+		t.Fatalf("expected restored zero-template snapshot to remain committed: %v", err)
+	}
+	if !reflect.DeepEqual(restored, Snapshot{}) {
+		t.Fatalf("unexpected restored zero-template snapshot: got %#v want %#v", restored, Snapshot{})
+	}
+	manifestRaw, err := os.ReadFile(filepath.Join(filepath.Dir(targetPath), BackupManifestFilename))
+	if err != nil {
+		t.Fatalf("read restored manifest: %v", err)
+	}
+	var manifest BackupManifest
+	if err := json.Unmarshal(manifestRaw, &manifest); err != nil {
+		t.Fatalf("decode restored manifest: %v", err)
+	}
+	if len(manifest.Files) != 1 || manifest.Files[0].Filename != "item-templates.json" {
+		t.Fatalf("expected restored manifest to preserve committed empty snapshot file, got %#v", manifest.Files)
+	}
+}
+
+func TestFileStoreRestoreFromRejectsNonEmptyTargetStore(t *testing.T) {
+	source := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := source.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item templates: %v", err)
+	}
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "item-templates.json")
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		t.Fatalf("create restore target dir: %v", err)
+	}
+	stale := filepath.Join(filepath.Dir(targetPath), "stale.json")
+	if err := os.WriteFile(stale, []byte(`{"stale":true}`), 0o644); err != nil {
+		t.Fatalf("write stale restore target file: %v", err)
+	}
+
+	err := NewFileStore(targetPath).RestoreFrom(backupDir)
+	if !errors.Is(err, ErrRestoreDirNotEmpty) {
+		t.Fatalf("expected ErrRestoreDirNotEmpty for non-empty target, got %v", err)
+	}
+	if raw, readErr := os.ReadFile(stale); readErr != nil || string(raw) != `{"stale":true}` {
+		t.Fatalf("expected stale target file to remain untouched, readErr=%v raw=%q", readErr, string(raw))
+	}
+}
+
+func TestFileStoreRestoreFromRejectsTargetInsideBackupSource(t *testing.T) {
+	source := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := source.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item templates: %v", err)
+	}
+	targetPath := filepath.Join(backupDir, "nested-restore", "item-templates.json")
+
+	err := NewFileStore(targetPath).RestoreFrom(backupDir)
+	if !errors.Is(err, ErrRestoreDirInsideSource) {
+		t.Fatalf("expected ErrRestoreDirInsideSource for nested restore target, got %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Dir(targetPath)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected nested restore target not to be created, stat err=%v", statErr)
+	}
+}
+
 func TestFileStoreCleanupCrashTempFilesRemovesOnlyCrashTemps(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

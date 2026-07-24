@@ -132,6 +132,16 @@ Request body JSON fields:
 
 Successful responses are the deterministic item-template backup summary (`template_count`, sorted `vnums`) that was validated. Backup directories are required to be manifest-closed: every non-temp entry must be either `item-template-backup-manifest.json` or a snapshot file named in that manifest, while hidden `.item-templates-*.json` crash leftovers remain visible to operators but are not backup payload. This is a local recovery/audit primitive, not an online restore or live template reload API.
 
+### `POST /local/item-templates/restore`
+
+Restores the authored bootstrap item-template snapshot store from an operator-supplied source backup directory into the active item-template store directory and returns the validation summary of the restored snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source backup is missing or invalid, the active item-template store directory is non-empty, or the restore cannot be completed.
+
+Request body JSON fields:
+
+- `src_dir` — source backup directory; it must be non-empty after trimming and contain `item-template-backup-manifest.json` plus `item-templates.json` when the manifest lists a committed snapshot
+
+The restore path is intentionally a replacement primitive, not an online merge or live reload API. It refuses to write into a non-empty active item-template directory, refuses destinations that are equal to or nested under the backup source (including symlink-resolved paths), validates the backup manifest before creating target files, preserves committed zero-template snapshots as real `item-templates.json` files, and writes a fresh `item-template-backup-manifest.json` alongside the restored snapshot so the replacement store can be preflighted or backed up again. Missing committed snapshots restore as an empty authored-template store, preserving the built-in runtime fallback.
+
 ### `POST /local/account-store/backup`
 
 Copies the durable bootstrap account snapshot store into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source store is invalid, the destination is non-empty, or the backup cannot be completed.
