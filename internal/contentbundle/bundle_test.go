@@ -70,7 +70,17 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 		CombatProfileCount:           0,
 		ItemTemplateCount:            2,
 		ShopCatalogEntryCount:        2,
-		InteractionDefinitionCount:   3,
+		ShopCatalogs: []ShopCatalogSummary{{
+			Kind:       interactionstore.KindShopPreview,
+			Ref:        "npc:merchant",
+			Title:      "Village Merchant",
+			EntryCount: 2,
+			Entries: []ShopCatalogEntrySummary{
+				{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+				{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1},
+			},
+		}},
+		InteractionDefinitionCount: 3,
 		ItemTemplates: []ItemTemplateReferenceSummary{
 			{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
 			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
@@ -99,6 +109,62 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected content bundle summary:\n got: %#v\nwant: %#v", summary, want)
+	}
+}
+
+func TestSummarizeReturnsDeterministicShopCatalogDetails(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: " Small Blue Potion ", Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+			{Vnum: 11200, Name: " Wooden Sword ", Stackable: false, MaxCount: 1},
+			{Vnum: 27001, Name: " Small Red Potion ", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			{
+				Kind:  interactionstore.KindShopPreview,
+				Ref:   "npc:potion_merchant",
+				Title: "Potion Merchant",
+				Catalog: []interactionstore.MerchantCatalogEntry{
+					{Slot: 1, ItemVnum: 27002, Price: 80, Count: 2},
+					{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+				},
+			},
+			{
+				Kind:  interactionstore.KindShopPreview,
+				Ref:   "npc:arms_merchant",
+				Title: "Arms Merchant",
+				Catalog: []interactionstore.MerchantCatalogEntry{
+					{Slot: 0, ItemVnum: 11200, Price: 500, Count: 1},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize shop catalog details: %v", err)
+	}
+	want := []ShopCatalogSummary{
+		{
+			Kind:       interactionstore.KindShopPreview,
+			Ref:        "npc:arms_merchant",
+			Title:      "Arms Merchant",
+			EntryCount: 1,
+			Entries: []ShopCatalogEntrySummary{
+				{Slot: 0, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1},
+			},
+		},
+		{
+			Kind:       interactionstore.KindShopPreview,
+			Ref:        "npc:potion_merchant",
+			Title:      "Potion Merchant",
+			EntryCount: 2,
+			Entries: []ShopCatalogEntrySummary{
+				{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+				{Slot: 1, ItemVnum: 27002, ItemName: "Small Blue Potion", Count: 2, Price: 80, Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+			},
+		},
+	}
+	if !reflect.DeepEqual(summary.ShopCatalogs, want) {
+		t.Fatalf("unexpected shop catalog summaries:\n got: %#v\nwant: %#v", summary.ShopCatalogs, want)
 	}
 }
 

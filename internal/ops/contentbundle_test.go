@@ -365,12 +365,22 @@ func TestLocalContentBundleValidateEndpointRejectsWrongMethod(t *testing.T) {
 
 func TestLocalContentBundleSummaryEndpointReturnsSummaryJSONForLoopbackGet(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK, summary: contentbundle.Summary{
-		StaticActorCount:                       2,
-		InteractableStaticActorCount:           2,
-		SpawnGroupCount:                        1,
-		CombatProfileCount:                     1,
-		ItemTemplateCount:                      2,
-		ShopCatalogEntryCount:                  2,
+		StaticActorCount:             2,
+		InteractableStaticActorCount: 2,
+		SpawnGroupCount:              1,
+		CombatProfileCount:           1,
+		ItemTemplateCount:            2,
+		ShopCatalogEntryCount:        2,
+		ShopCatalogs: []contentbundle.ShopCatalogSummary{{
+			Kind:       interactionstore.KindShopPreview,
+			Ref:        "npc:merchant",
+			Title:      "Village Merchant",
+			EntryCount: 2,
+			Entries: []contentbundle.ShopCatalogEntrySummary{
+				{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+				{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1},
+			},
+		}},
 		InteractionDefinitionCount:             3,
 		ReferencedInteractionDefinitionCount:   2,
 		UnreferencedInteractionDefinitionCount: 1,
@@ -439,12 +449,21 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 		t.Fatalf("decode dry-run summary response body: %v", err)
 	}
 	want := contentbundle.Summary{
-		StaticActorCount:                       2,
-		InteractableStaticActorCount:           2,
-		SpawnGroupCount:                        1,
-		CombatProfileCount:                     1,
-		ItemTemplateCount:                      1,
-		ShopCatalogEntryCount:                  1,
+		StaticActorCount:             2,
+		InteractableStaticActorCount: 2,
+		SpawnGroupCount:              1,
+		CombatProfileCount:           1,
+		ItemTemplateCount:            1,
+		ShopCatalogEntryCount:        1,
+		ShopCatalogs: []contentbundle.ShopCatalogSummary{{
+			Kind:       interactionstore.KindShopPreview,
+			Ref:        "npc:qa_merchant",
+			Title:      "QA Merchant",
+			EntryCount: 1,
+			Entries: []contentbundle.ShopCatalogEntrySummary{
+				{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+			},
+		}},
 		InteractionDefinitionCount:             3,
 		ReferencedInteractionDefinitionCount:   2,
 		UnreferencedInteractionDefinitionCount: 1,

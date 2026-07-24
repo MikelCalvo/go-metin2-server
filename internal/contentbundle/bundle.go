@@ -53,6 +53,7 @@ type Summary struct {
 	CombatProfileCount                     int                                             `json:"combat_profile_count"`
 	ItemTemplateCount                      int                                             `json:"item_template_count"`
 	ShopCatalogEntryCount                  int                                             `json:"shop_catalog_entry_count"`
+	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
 	InteractionDefinitionCount             int                                             `json:"interaction_definition_count"`
 	ReferencedInteractionDefinitionCount   int                                             `json:"referenced_interaction_definition_count"`
 	UnreferencedInteractionDefinitionCount int                                             `json:"unreferenced_interaction_definition_count"`
@@ -90,6 +91,25 @@ type SpawnGroupReferenceSummary struct {
 type ItemTemplateReferenceSummary struct {
 	Vnum         uint32 `json:"vnum"`
 	Name         string `json:"name"`
+	Stackable    bool   `json:"stackable"`
+	MaxCount     uint16 `json:"max_count"`
+	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
+}
+
+type ShopCatalogSummary struct {
+	Kind       string                    `json:"kind"`
+	Ref        string                    `json:"ref"`
+	Title      string                    `json:"title"`
+	EntryCount int                       `json:"entry_count"`
+	Entries    []ShopCatalogEntrySummary `json:"entries,omitempty"`
+}
+
+type ShopCatalogEntrySummary struct {
+	Slot         uint16 `json:"slot"`
+	ItemVnum     uint32 `json:"item_vnum"`
+	ItemName     string `json:"item_name"`
+	Count        uint16 `json:"count"`
+	Price        uint64 `json:"price"`
 	Stackable    bool   `json:"stackable"`
 	MaxCount     uint16 `json:"max_count"`
 	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
@@ -237,6 +257,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 		ItemTemplateCount:          len(normalized.ItemTemplates),
 		InteractionDefinitionCount: len(normalized.InteractionDefinitions),
 	}
+	itemTemplatesByVnum := itemTemplateMapByVnum(normalized.ItemTemplates)
 
 	referencedDefinitions := make(map[string]struct{})
 	for _, actor := range normalized.StaticActors {
@@ -254,6 +275,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 		interactionKindCounts[definition.Kind]++
 		if definition.Kind == interactionstore.KindShopPreview {
 			summary.ShopCatalogEntryCount += len(definition.Catalog)
+			summary.ShopCatalogs = append(summary.ShopCatalogs, shopCatalogSummary(definition, itemTemplatesByVnum))
 		}
 		reference := InteractionDefinitionReferenceSummary{Kind: definition.Kind, Ref: definition.Ref}
 		if _, ok := referencedDefinitions[interactionDefinitionKey(definition.Kind, definition.Ref)]; ok {
@@ -317,6 +339,43 @@ func Summarize(bundle Bundle) (Summary, error) {
 	}
 
 	return summary, nil
+}
+
+func itemTemplateMapByVnum(templates []itemcatalog.Template) map[uint32]itemcatalog.Template {
+	byVnum := make(map[uint32]itemcatalog.Template, len(templates))
+	for _, template := range templates {
+		template = itemcatalog.NormalizeTemplate(template)
+		byVnum[template.Vnum] = template
+	}
+	return byVnum
+}
+
+func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) ShopCatalogSummary {
+	definition = interactionstore.NormalizeDefinition(definition)
+	summary := ShopCatalogSummary{
+		Kind:       definition.Kind,
+		Ref:        definition.Ref,
+		Title:      definition.Title,
+		EntryCount: len(definition.Catalog),
+	}
+	if len(definition.Catalog) == 0 {
+		return summary
+	}
+	summary.Entries = make([]ShopCatalogEntrySummary, 0, len(definition.Catalog))
+	for _, entry := range definition.Catalog {
+		template := itemcatalog.NormalizeTemplate(itemTemplatesByVnum[entry.ItemVnum])
+		summary.Entries = append(summary.Entries, ShopCatalogEntrySummary{
+			Slot:         entry.Slot,
+			ItemVnum:     entry.ItemVnum,
+			ItemName:     template.Name,
+			Count:        entry.Count,
+			Price:        entry.Price,
+			Stackable:    template.Stackable,
+			MaxCount:     template.MaxCount,
+			ShopBuyPrice: template.ShopBuyPrice,
+		})
+	}
+	return summary
 }
 
 func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemplateReferenceSummary {
