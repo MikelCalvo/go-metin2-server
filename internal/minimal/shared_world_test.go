@@ -33287,6 +33287,102 @@ func TestGameSessionFlowPracticeMobFormulaProfileRewardDeliveryOverPlainTCP(t *t
 	}
 }
 
+func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationOverPlainTCP(t *testing.T) {
+	h := newPracticeMobTCPHarness(t, "tcp-delayed-retaliation", 0x73737373, "practice.mob_tcp_delayed_retaliation", 50)
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp delayed-retaliation pre-attack select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+	frames := h.attack(t)
+	refresh, err := combatproto.DecodeServerTarget(frames[0])
+	if err != nil {
+		t.Fatalf("decode tcp delayed-retaliation immediate target refresh: %v", err)
+	}
+	if refresh.TargetVID != h.targetID || refresh.HPPercent != 90 {
+		t.Fatalf("expected tcp delayed-retaliation immediate attack to refresh target %d at 90%% HP, got %+v", h.targetID, refresh)
+	}
+	immediate, err := worldproto.DecodePlayerPointChange(frames[1])
+	if err != nil {
+		t.Fatalf("decode tcp delayed-retaliation immediate point-change: %v", err)
+	}
+	if immediate.Type != bootstrapPlayerPointValueIndex || immediate.Amount != -1 || immediate.Value != 49 {
+		t.Fatalf("expected tcp immediate retaliation to reduce player HP to 49, got %+v", immediate)
+	}
+
+	h.advance(bootstrapPracticeMobServerOriginRetaliationDelay - time.Millisecond)
+	h.client.expectNoFrame(t, "delayed retaliation before owned delay")
+	h.advance(time.Millisecond)
+	firstDelayed := h.drainDelayedRetaliation(t, "first delayed tcp server-origin retaliation")
+	if firstDelayed.Value != 48 {
+		t.Fatalf("expected first tcp delayed retaliation to reduce player HP to 48, got %+v", firstDelayed)
+	}
+
+	h.advance(bootstrapPracticeMobServerOriginRetaliationDelay - time.Millisecond)
+	h.client.expectNoFrame(t, "second delayed retaliation before re-armed delay")
+	h.advance(time.Millisecond)
+	secondDelayed := h.drainDelayedRetaliation(t, "second delayed tcp server-origin retaliation")
+	if secondDelayed.Value != 47 {
+		t.Fatalf("expected second tcp delayed retaliation cadence beat to reduce player HP to 47, got %+v", secondDelayed)
+	}
+}
+
+func TestGameSessionFlowPracticeMobDelayedRetaliationOwnerDeathOverPlainTCP(t *testing.T) {
+	h := newPracticeMobTCPHarness(t, "tcp-delayed-retaliation-death", 0x74747474, "practice.mob_tcp_delayed_retaliation_death", 2)
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp delayed-retaliation death pre-attack select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+	frames := h.attack(t)
+	refresh, err := combatproto.DecodeServerTarget(frames[0])
+	if err != nil {
+		t.Fatalf("decode tcp delayed-retaliation death immediate target refresh: %v", err)
+	}
+	if refresh.TargetVID != h.targetID || refresh.HPPercent != 90 {
+		t.Fatalf("expected tcp delayed-retaliation death immediate attack to refresh target %d at 90%% HP, got %+v", h.targetID, refresh)
+	}
+	immediate, err := worldproto.DecodePlayerPointChange(frames[1])
+	if err != nil {
+		t.Fatalf("decode tcp delayed-retaliation death immediate point-change: %v", err)
+	}
+	if immediate.Type != bootstrapPlayerPointValueIndex || immediate.Amount != -1 || immediate.Value != 1 {
+		t.Fatalf("expected tcp immediate retaliation to reduce player HP to 1 before delayed death, got %+v", immediate)
+	}
+
+	h.advance(bootstrapPracticeMobServerOriginRetaliationDelay - time.Millisecond)
+	h.client.expectNoFrame(t, "delayed owner death before owned delay")
+	h.advance(time.Millisecond)
+	floor, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp delayed-retaliation owner-death point-change: %v", err)
+	}
+	if floor.VID != 0x02040131 || floor.Type != bootstrapPlayerPointValueIndex || floor.Amount != -1 || floor.Value != 0 {
+		t.Fatalf("expected tcp delayed retaliation to clamp player HP at 0, got %+v", floor)
+	}
+	dead, err := worldproto.DecodeDead(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp delayed-retaliation owner dead: %v", err)
+	}
+	if dead.VID != 0x02040131 {
+		t.Fatalf("expected tcp delayed retaliation owner death for selected character VID 0x02040131, got %+v", dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp delayed-retaliation owner target clear: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected tcp delayed retaliation owner death to clear target, got %+v", clear)
+	}
+
+	h.advance(bootstrapPracticeMobServerOriginRetaliationDelay)
+	h.client.expectNoFrame(t, "stale delayed retaliation after owner death")
+	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
+	h.client.expectNoFrame(t, "stale owner attack after delayed retaliation death")
+}
+
 func TestGameSessionFlowPracticeMobRespawnRebuildOverPlainTCP(t *testing.T) {
 	h := newPracticeMobTCPHarness(t, "tcp-mob-respawn", 0x61616161, "practice.mob_tcp_mob_respawn", 500)
 	defer h.close(t)
