@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,6 +100,10 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 		UnreferencedInteractionDefinitions: []InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
+		InteractableStaticActors: []InteractableStaticActorSummary{
+			{Name: "Merchant", MapIndex: 2, X: 1200, Y: 2200, RaceNum: 20300, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant", Preview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"},
+			{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "VillageGuide:\nWelcome."},
+		},
 		SpawnGroups: []SpawnGroupReferenceSummary{
 			{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 2, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardDropVnums: []uint32{27001}},
 		},
@@ -188,6 +193,55 @@ func TestSummarizeReturnsDeterministicWarpDestinationDetails(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary.WarpDestinations, want) {
 		t.Fatalf("unexpected warp destination summaries:\n got: %#v\nwant: %#v", summary.WarpDestinations, want)
+	}
+}
+
+func TestSummarizeReturnsDeterministicInteractableStaticActorDetails(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+			{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{Name: "Blacksmith", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20300},
+			{Name: "Teleporter", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
+			{Name: "Alchemist", MapIndex: 1, X: 900, Y: 1900, RaceNum: 20304, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:alchemist"},
+		},
+		ItemTemplates: testMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+			testMerchantCatalogDefinition(),
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize interactable static actors: %v", err)
+	}
+	want := []InteractableStaticActorSummary{
+		{Name: "Alchemist", MapIndex: 1, X: 900, Y: 1900, RaceNum: 20304, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:alchemist", Preview: "The alchemist studies forgotten herbs."},
+		{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant", Preview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"},
+		{Name: "Teleporter", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter", Preview: "Step through the gate. [warp -> map 7 @ 1300,2300]"},
+		{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "VillageGuide:\nWelcome."},
+	}
+	if !reflect.DeepEqual(summary.InteractableStaticActors, want) {
+		t.Fatalf("unexpected interactable static actor summaries:\n got: %#v\nwant: %#v", summary.InteractableStaticActors, want)
+	}
+}
+
+func TestSummarizeCompactsLongInteractableStaticActorPreviews(t *testing.T) {
+	longText := strings.Repeat("A", 200)
+	summary, err := Summarize(Bundle{
+		StaticActors:           []StaticActor{{Name: "NoticeBoard", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:notice_board"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:notice_board", Text: longText}},
+	})
+	if err != nil {
+		t.Fatalf("summarize long-preview interactable static actor: %v", err)
+	}
+	if len(summary.InteractableStaticActors) != 1 {
+		t.Fatalf("expected one interactable static actor summary, got %+v", summary.InteractableStaticActors)
+	}
+	want := strings.Repeat("A", 157) + "..."
+	if summary.InteractableStaticActors[0].Preview != want {
+		t.Fatalf("unexpected compact preview length=%d preview=%q", len(summary.InteractableStaticActors[0].Preview), summary.InteractableStaticActors[0].Preview)
 	}
 }
 

@@ -90,6 +90,9 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 		UnreferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
+		InteractableStaticActors: []contentbundle.InteractableStaticActorSummary{
+			{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard", Preview: "VillageGuard:\nKeep your blade sharp."},
+		},
 		Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 2, InteractableStaticActorCount: 1}},
 	}
 	if !reflect.DeepEqual(summary, want) {

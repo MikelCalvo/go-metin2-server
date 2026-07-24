@@ -62,6 +62,7 @@ type Summary struct {
 	InteractionKinds                       []InteractionKindSummary                        `json:"interaction_kinds,omitempty"`
 	ReferencedInteractionDefinitions       []InteractionDefinitionReferenceSummary         `json:"referenced_interaction_definitions,omitempty"`
 	UnreferencedInteractionDefinitions     []InteractionDefinitionReferenceSummary         `json:"unreferenced_interaction_definitions,omitempty"`
+	InteractableStaticActors               []InteractableStaticActorSummary                `json:"interactable_static_actors,omitempty"`
 	SpawnGroups                            []SpawnGroupReferenceSummary                    `json:"spawn_groups,omitempty"`
 	CombatProfiles                         []worldruntime.StaticActorCombatProfileSnapshot `json:"combat_profiles,omitempty"`
 	ItemTemplates                          []ItemTemplateReferenceSummary                  `json:"item_templates,omitempty"`
@@ -78,6 +79,17 @@ type InteractionKindSummary struct {
 type InteractionDefinitionReferenceSummary struct {
 	Kind string `json:"kind"`
 	Ref  string `json:"ref"`
+}
+
+type InteractableStaticActorSummary struct {
+	Name            string `json:"name"`
+	MapIndex        uint32 `json:"map_index"`
+	X               int32  `json:"x"`
+	Y               int32  `json:"y"`
+	RaceNum         uint32 `json:"race_num"`
+	InteractionKind string `json:"interaction_kind"`
+	InteractionRef  string `json:"interaction_ref"`
+	Preview         string `json:"preview,omitempty"`
 }
 
 type SpawnGroupReferenceSummary struct {
@@ -269,6 +281,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 		InteractionDefinitionCount: len(normalized.InteractionDefinitions),
 	}
 	itemTemplatesByVnum := itemTemplateMapByVnum(normalized.ItemTemplates)
+	definitionsByKey := interactionDefinitionMapByKey(normalized.InteractionDefinitions)
 
 	referencedDefinitions := make(map[string]struct{})
 	for _, actor := range normalized.StaticActors {
@@ -326,6 +339,8 @@ func Summarize(bundle Bundle) (Summary, error) {
 		if actor.InteractionKind != "" && actor.InteractionRef != "" {
 			summary.InteractableStaticActorCount++
 			entry.InteractableStaticActorCount++
+			definition := definitionsByKey[interactionDefinitionKey(actor.InteractionKind, actor.InteractionRef)]
+			summary.InteractableStaticActors = append(summary.InteractableStaticActors, interactableStaticActorSummary(actor, definition, itemTemplatesByVnum))
 		}
 	}
 	for _, spawnGroup := range normalized.SpawnGroups {
@@ -363,6 +378,78 @@ func itemTemplateMapByVnum(templates []itemcatalog.Template) map[uint32]itemcata
 		byVnum[template.Vnum] = template
 	}
 	return byVnum
+}
+
+func interactionDefinitionMapByKey(definitions []interactionstore.Definition) map[string]interactionstore.Definition {
+	byKey := make(map[string]interactionstore.Definition, len(definitions))
+	for _, definition := range definitions {
+		definition = interactionstore.NormalizeDefinition(definition)
+		byKey[interactionDefinitionKey(definition.Kind, definition.Ref)] = definition
+	}
+	return byKey
+}
+
+func interactableStaticActorSummary(actor StaticActor, definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) InteractableStaticActorSummary {
+	actor = normalizeStaticActors([]StaticActor{actor})[0]
+	definition = interactionstore.NormalizeDefinition(definition)
+	return InteractableStaticActorSummary{
+		Name:            actor.Name,
+		MapIndex:        actor.MapIndex,
+		X:               actor.X,
+		Y:               actor.Y,
+		RaceNum:         actor.RaceNum,
+		InteractionKind: actor.InteractionKind,
+		InteractionRef:  actor.InteractionRef,
+		Preview:         compactInteractionPreview(interactionDefinitionPreview(actor.Name, definition, itemTemplatesByVnum)),
+	}
+}
+
+func interactionDefinitionPreview(actorName string, definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) string {
+	switch definition.Kind {
+	case interactionstore.KindInfo:
+		return definition.Text
+	case interactionstore.KindTalk:
+		return fmt.Sprintf("%s:\n%s", actorName, definition.Text)
+	case interactionstore.KindShopPreview:
+		return shopCatalogPreview(definition, itemTemplatesByVnum)
+	case interactionstore.KindWarp:
+		return warpDestinationPreview(definition)
+	default:
+		return ""
+	}
+}
+
+func shopCatalogPreview(definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) string {
+	if definition.Kind != interactionstore.KindShopPreview || len(definition.Catalog) == 0 {
+		return ""
+	}
+	entries := make([]string, 0, len(definition.Catalog))
+	for _, entry := range definition.Catalog {
+		template := itemcatalog.NormalizeTemplate(itemTemplatesByVnum[entry.ItemVnum])
+		if template.Name == "" {
+			return ""
+		}
+		entries = append(entries, fmt.Sprintf("[%d] %s x%d @ %dg", entry.Slot, template.Name, entry.Count, entry.Price))
+	}
+	return fmt.Sprintf("%s: %s", definition.Title, strings.Join(entries, "; "))
+}
+
+func warpDestinationPreview(definition interactionstore.Definition) string {
+	summary := fmt.Sprintf("warp -> map %d @ %d,%d", definition.MapIndex, definition.X, definition.Y)
+	message := strings.TrimSpace(definition.Text)
+	if message == "" {
+		return summary
+	}
+	return fmt.Sprintf("%s [%s]", message, summary)
+}
+
+func compactInteractionPreview(preview string) string {
+	preview = strings.TrimSpace(preview)
+	const maxPreviewLength = 160
+	if len(preview) <= maxPreviewLength {
+		return preview
+	}
+	return preview[:maxPreviewLength-3] + "..."
 }
 
 func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) ShopCatalogSummary {

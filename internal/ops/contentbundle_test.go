@@ -483,6 +483,11 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 		UnreferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
 		},
+		InteractableStaticActors: []contentbundle.InteractableStaticActorSummary{
+			{Name: "Merchant", MapIndex: 1, X: 469500, Y: 964200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:qa_merchant", Preview: "QA Merchant: [0] Small Red Potion x1 @ 50g"},
+			{Name: "Teleporter", MapIndex: 1, X: 469650, Y: 964200, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:qa_teleporter", Preview: "Step through the gate. [warp -> map 7 @ 1300,2300]"},
+			{Name: "VillageGuide", MapIndex: 1, X: 469350, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:qa_guide", Preview: "VillageGuide:\nWelcome."},
+		},
 		SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{
 			{Ref: "practice.qa_reward_mob", Name: "QARewardMob", MapIndex: 1, CombatProfile: "practice_qa_profile", RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001}},
 		},
