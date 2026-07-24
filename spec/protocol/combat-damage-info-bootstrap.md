@@ -9,7 +9,7 @@ It sits next to, but does not replace:
 
 ## Scope
 
-This slice owns only the packet codec and the minimum rendering-facing contract needed before a later attack-flow slice can emit the packet.
+This slice owns the packet codec, plus the internal damage descriptor needed before a later attack-flow slice can emit the packet without recomputing damage outside the authoritative shared-world attack attempt.
 
 The packet is:
 - name: `DAMAGE_INFO`
@@ -30,7 +30,9 @@ The current client-side rendering surface treats `vid` as the actor receiving th
 
 The current accepted normal-attack runtime still uses `GC TARGET(target_vid, hp_percent)` as the authoritative HP refresh and switches to `GC DEAD(vid)` plus `GC TARGET(0, 0)` at the zero-HP edge.
 
-`DAMAGE_INFO` is now codec-owned so the next combat slice can add a visible hit-effect companion without guessing the wire layout, but this codec slice does not yet change accepted attack responses. In particular:
+`DAMAGE_INFO` is now codec-owned so a later combat slice can add a visible hit-effect companion without guessing the wire layout, but the current runtime still does not emit it. The normal-attack shared-world attempt now carries the owned non-negative damage descriptor derived from the same combat-profile formula that mutates HP, so packet emission can later reuse that value without recomputing combat state outside the authoritative attack seam.
+
+The current client-visible response contract is still unchanged. In particular:
 - non-lethal hits are still authoritative through the selected-target HP refresh,
 - killing hits still use the existing death + clear-target choreography,
 - no peer fanout, damage-number policy, or hit-result gameplay semantics are owned here.
@@ -52,4 +54,5 @@ After this slice:
 - `DAMAGE_INFO` is listed in the packet matrix as a codec-owned server combat packet,
 - `internal/proto/combat` can encode and decode the exact fixed-width payload,
 - malformed or wrong-header frames fail closed at the codec layer,
-- later runtime slices can add packet emission with focused attack-flow tests instead of re-discovering the packet layout.
+- the shared-world normal-attack attempt exposes the applied bootstrap damage amount as an internal descriptor,
+- later runtime slices can add packet emission with focused attack-flow tests instead of re-discovering the packet layout or recomputing damage outside the authoritative attack seam.

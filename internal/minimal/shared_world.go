@@ -144,6 +144,7 @@ type StaticActorCombatAttackAttempt struct {
 	ActiveTargetSnapshotVersion uint64
 	RequestedTargetVID          uint32
 	HPPercent                   uint8
+	Damage                      uint8
 	Died                        bool
 	DeathReward                 worldruntime.StaticActorDeathReward
 	Actor                       StaticActorSnapshot
@@ -1960,6 +1961,12 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 		attempt.Failure = StaticActorCombatAttackFailureTargetDead
 		return attempt
 	}
+	damage, ok := worldruntime.BootstrapStaticActorNormalAttackDamage(actor.CombatKind)
+	if !ok {
+		attempt.Accepted = false
+		attempt.Failure = StaticActorCombatAttackFailureTargetNotTargetable
+		return attempt
+	}
 	nextHP, hpPercent, ok := worldruntime.ApplyBootstrapStaticActorNormalAttack(actor.CombatKind, currentHP)
 	if !ok {
 		attempt.Accepted = false
@@ -1973,6 +1980,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 	}
 	attempt.Accepted = true
 	attempt.HPPercent = hpPercent
+	attempt.Damage = damage
 	if nextHP == 0 {
 		attempt.Died = true
 		attempt.DeathReward = r.staticActorDeathRewardLocked(actor)

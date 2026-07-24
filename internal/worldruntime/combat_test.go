@@ -79,6 +79,27 @@ func TestApplyBootstrapStaticActorNormalAttackUsesRegisteredAttackDefenseFormula
 	}
 }
 
+func TestBootstrapStaticActorNormalAttackDamageReportsFormulaDamage(t *testing.T) {
+	const profile = "practice_damage_descriptor_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:        20,
+		AttackValue:  9,
+		DefenseValue: 4,
+		RespawnDelay: PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with formula stats to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	damage, ok := BootstrapStaticActorNormalAttackDamage(profile)
+	if !ok {
+		t.Fatalf("expected %q normal-attack damage descriptor to be supported", profile)
+	}
+	if damage != 5 {
+		t.Fatalf("expected attack 9 minus defense 4 to report 5 damage, got %d", damage)
+	}
+}
+
 func TestApplyBootstrapStaticActorNormalAttackClampsFormulaDamageToMinimumOne(t *testing.T) {
 	const profile = "practice_armored_wolf"
 	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{

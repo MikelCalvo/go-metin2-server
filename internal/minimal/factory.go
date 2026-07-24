@@ -201,6 +201,7 @@ type staticActorCombatAttackResolution struct {
 	RequestedTargetVID          uint32
 	Actor                       StaticActorSnapshot
 	DeathReward                 worldruntime.StaticActorDeathReward
+	Damage                      uint8
 	Packet                      *combatproto.ServerTargetPacket
 	Frames                      [][]byte
 	ClearActiveTarget           bool
@@ -5811,6 +5812,7 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 		return resolution
 	}
 	resolution.Accepted = true
+	resolution.Damage = attempt.Damage
 	if attempt.Died {
 		resolution.ClearActiveTarget = true
 		resolution.DeathReward = attempt.DeathReward

@@ -20556,6 +20556,9 @@ func TestSharedWorldRegistryRegisteredProfileStaticActorUsesCustomDamageDefaults
 	if firstHit.HPPercent != 75 {
 		t.Fatalf("expected 12 HP / 3 damage registered-profile hit to report 75%% HP, got %+v", firstHit)
 	}
+	if firstHit.Damage != 3 {
+		t.Fatalf("expected registered-profile hit to expose applied damage descriptor 3, got %+v", firstHit)
+	}
 
 	refresh := registry.AttemptStaticActorCombatTarget(subjectID, uint32(actor.EntityID))
 	if !refresh.Accepted {

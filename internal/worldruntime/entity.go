@@ -354,6 +354,14 @@ func BootstrapStaticActorHPPercent(combatKind string, currentHP uint8) (uint8, b
 	return bootstrapStaticActorHPPercent(currentHP, defaults.MaxHP), true
 }
 
+func BootstrapStaticActorNormalAttackDamage(combatKind string) (uint8, bool) {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatKind)
+	if !ok {
+		return 0, false
+	}
+	return bootstrapStaticActorNormalAttackDamage(defaults), true
+}
+
 func ApplyBootstrapStaticActorNormalAttack(combatKind string, currentHP uint8) (uint8, uint8, bool) {
 	defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatKind)
 	if !ok || currentHP == 0 {
