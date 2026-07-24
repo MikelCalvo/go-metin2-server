@@ -3929,7 +3929,8 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 }
 
 func contentPracticeMobRetaliationProfile(profile string) bool {
-	return profile == worldruntime.StaticActorCombatProfileTrainingDummy || profile == worldruntime.StaticActorCombatProfilePracticeMob
+	_, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+	return ok
 }
 
 func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlayer *player.Runtime, actor StaticActorSnapshot, targetDied bool) (player.PointChangeResult, bool, bool) {

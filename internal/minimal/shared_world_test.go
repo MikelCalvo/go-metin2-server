@@ -17242,8 +17242,8 @@ func TestGameRuntimeRegisteredProfileRespawnUsesRegisteredDelayAndFullHP(t *test
 	if err != nil {
 		t.Fatalf("unexpected registered-profile first attack error: %v", err)
 	}
-	if len(firstHit) != 1 {
-		t.Fatalf("expected first registered-profile hit to return one HP refresh, got %d frames", len(firstHit))
+	if len(firstHit) != 2 {
+		t.Fatalf("expected first registered-profile hit to return HP refresh plus self-only retaliation point-loss, got %d frames", len(firstHit))
 	}
 	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHit[0]))
 	if err != nil {
@@ -17251,6 +17251,13 @@ func TestGameRuntimeRegisteredProfileRespawnUsesRegisteredDelayAndFullHP(t *test
 	}
 	if firstRefresh.TargetVID != targetVID || firstRefresh.HPPercent != 50 {
 		t.Fatalf("expected registered profile 4 HP / 2 damage hit to report 50%% HP, got %+v", firstRefresh)
+	}
+	firstRetaliation, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, firstHit[1]))
+	if err != nil {
+		t.Fatalf("decode first registered-profile retaliation point-change: %v", err)
+	}
+	if firstRetaliation.VID != nearPlayer.VID || firstRetaliation.Type != bootstrapPlayerPointType || firstRetaliation.Amount != -1 || firstRetaliation.Value != nearPlayer.Points[bootstrapPlayerPointValueIndex]-1 {
+		t.Fatalf("unexpected first registered-profile retaliation point-change: %+v", firstRetaliation)
 	}
 
 	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -18786,8 +18793,8 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileCombinedDeathRe
 	if err != nil {
 		t.Fatalf("unexpected formula reward first attack error: %v", err)
 	}
-	if len(firstHit) != 1 {
-		t.Fatalf("expected first formula reward hit to return one HP refresh, got %d frames", len(firstHit))
+	if len(firstHit) != 2 {
+		t.Fatalf("expected first formula reward hit to return HP refresh plus self-only retaliation point-loss, got %d frames", len(firstHit))
 	}
 	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHit[0]))
 	if err != nil {
@@ -18795,6 +18802,13 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileCombinedDeathRe
 	}
 	if firstRefresh.TargetVID != targetVID || firstRefresh.HPPercent != 50 {
 		t.Fatalf("expected formula-only attack/defense profile to report 50%% HP after first hit, got %+v", firstRefresh)
+	}
+	firstRetaliation, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, firstHit[1]))
+	if err != nil {
+		t.Fatalf("decode first formula reward retaliation point-change: %v", err)
+	}
+	if firstRetaliation.VID != killer.VID || firstRetaliation.Type != bootstrapPlayerPointType || firstRetaliation.Amount != -1 || firstRetaliation.Value != killer.Points[bootstrapPlayerPointValueIndex]-1 {
+		t.Fatalf("unexpected first formula reward retaliation point-change: %+v", firstRetaliation)
 	}
 
 	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -19000,8 +19014,8 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileDeathReward(t *
 	if err != nil {
 		t.Fatalf("unexpected formula reward first hit error: %v", err)
 	}
-	if len(firstHitOut) != 1 {
-		t.Fatalf("expected non-lethal formula hit to return one target refresh frame, got %d frames", len(firstHitOut))
+	if len(firstHitOut) != 2 {
+		t.Fatalf("expected non-lethal formula hit to return target refresh plus self-only retaliation point-loss, got %d frames", len(firstHitOut))
 	}
 	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHitOut[0]))
 	if err != nil {
@@ -19009,6 +19023,13 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileDeathReward(t *
 	}
 	if refresh.TargetVID != targetVID || refresh.HPPercent != 50 {
 		t.Fatalf("expected formula damage 3 to leave profile mob at 50 percent HP, got %+v", refresh)
+	}
+	firstRetaliation, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, firstHitOut[1]))
+	if err != nil {
+		t.Fatalf("decode formula reward first-hit retaliation point-change: %v", err)
+	}
+	if firstRetaliation.VID != killer.VID || firstRetaliation.Type != bootstrapPlayerPointType || firstRetaliation.Amount != -1 || firstRetaliation.Value != killer.Points[bootstrapPlayerPointValueIndex]-1 {
+		t.Fatalf("unexpected formula reward first-hit retaliation point-change: %+v", firstRetaliation)
 	}
 
 	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -25956,6 +25977,8 @@ func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTa
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	currentTime := time.Unix(1700000455, 0)
+	runtime.now = func() time.Time { return currentTime }
 	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
 		Ref:           "practice.mob_custom_aggro_gate",
 		Name:          "PracticeCustomAggroGate",
@@ -26003,8 +26026,8 @@ func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTa
 	if err != nil {
 		t.Fatalf("unexpected first accepted custom-profile aggro-lite attack error: %v", err)
 	}
-	if len(attackOut) != 1 {
-		t.Fatalf("expected one target-refresh frame on first accepted custom-profile aggro-lite hit, got %d", len(attackOut))
+	if len(attackOut) != 2 {
+		t.Fatalf("expected target-refresh plus self-only retaliation point-loss frames on first accepted custom-profile hit, got %d", len(attackOut))
 	}
 	refreshed, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
 	if err != nil {
@@ -26013,6 +26036,13 @@ func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTa
 	if refreshed.TargetVID != targetVID || refreshed.HPPercent != 75 {
 		t.Fatalf("unexpected custom-profile aggro-lite target-refresh packet: %+v", refreshed)
 	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode first custom-profile retaliation point-change frame: %v", err)
+	}
+	if pointChange.VID != peerOne.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != -1 || pointChange.Value != peerOne.Points[bootstrapPlayerPointValueIndex]-1 {
+		t.Fatalf("unexpected first custom-profile retaliation point-change packet: %+v", pointChange)
+	}
 
 	thirdPartyTarget, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -26020,6 +26050,21 @@ func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTa
 	}
 	if len(thirdPartyTarget) != 0 {
 		t.Fatalf("expected fresh third-party target selection to fail closed once the custom-profile mob is engaged, got %d frames", len(thirdPartyTarget))
+	}
+	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
+		t.Fatalf("expected no custom-profile delayed retaliation before the owned delay expires, got %d frames", len(queued))
+	}
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	queued := flushServerFrames(t, flowOne)
+	if len(queued) != 1 {
+		t.Fatalf("expected exactly 1 queued custom-profile delayed retaliation beat after the owned delay, got %d frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode queued custom-profile delayed retaliation beat: %v", err)
+	}
+	if delayedPointChange.VID != peerOne.VID || delayedPointChange.Type != bootstrapPlayerPointType || delayedPointChange.Amount != -1 || delayedPointChange.Value != peerOne.Points[bootstrapPlayerPointValueIndex]-2 {
+		t.Fatalf("unexpected queued custom-profile delayed retaliation point-change packet: %+v", delayedPointChange)
 	}
 }
 

@@ -230,7 +230,7 @@ Already present:
 - dead-state rejection and target clear,
 - delayed respawn rebuild path,
 - engagement ownership to prevent noisy multi-owner combat loops,
-- retaliation ticks against the engaged player for built-in `training_dummy` and `practice_mob` spawn-group profiles,
+- retaliation ticks against the engaged player for built-in and registered spawn-group combat profiles,
 - player death floor with denial gates for several live actions, including self `DEAD` replay when entering `GAME` from an already-`0`-HP selected-character snapshot,
 - restart-here and restart-town slash-command recovery seams,
 - deterministic EXP/gold/fixed-drop reward descriptors for accepted non-player deaths,

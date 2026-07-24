@@ -699,6 +699,7 @@ Important note:
 ### 5.12 Practice-mob retaliation death and restart-here smoke
 
 Run this when the target build has authored QA `spawn_groups` practice-mob content loaded with the current bootstrap retaliation behavior.
+If the QA bundle uses a custom registered or bundled combat profile instead of the built-in `training_dummy` / `practice_mob` profiles, expect the same immediate and delayed self-only `PLAYER_POINT_CHANGE` retaliation cadence while the engaged owner remains live.
 
 - [ ] Approach and select the visible practice mob
 - [ ] Land accepted normal attacks and wait through delayed retaliation beats until the player reaches the owned zero-HP floor
