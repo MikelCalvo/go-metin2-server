@@ -5830,7 +5830,17 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 	}
 	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: attempt.HPPercent}
 	resolution.Packet = &packet
+	if staticActorDamageInfoRuntimeEmissionOwned(attempt.Actor) {
+		resolution.Frames = [][]byte{
+			combatproto.EncodeServerTarget(packet),
+			combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{VID: activeTargetVID, Flag: 0, Damage: int32(attempt.Damage)}),
+		}
+	}
 	return resolution
+}
+
+func staticActorDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
+	return actor.SpawnGroupRef == "" && actor.CombatProfile == worldruntime.StaticActorCombatKindTrainingDummy
 }
 
 func staticActorInteractionFailureDelivery(failure string) *chatproto.ChatDeliveryPacket {

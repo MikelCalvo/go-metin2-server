@@ -179,7 +179,7 @@ This document does not open any global broadcast rule for combat lifecycle.
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- damage numbers or `DAMAGE_INFO`
+- killing-hit damage numbers or `DAMAGE_INFO` on the zero-HP death edge
 - reward behavior beyond the narrow deterministic EXP/gold/drop descriptor contract in `non-player-reward-bootstrap.md`
 - randomized loot, party distribution, quest credit, level-up choreography, public loot release, or broader reward fanout
 - corpse interaction or corpse pickup

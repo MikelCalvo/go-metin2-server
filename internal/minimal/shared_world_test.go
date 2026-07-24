@@ -3326,8 +3326,8 @@ func TestNewGameSessionFactoryNormalAttackCadenceRejectsImmediateRepeatWithoutMu
 	if err != nil {
 		t.Fatalf("unexpected first attack error in cadence test: %v", err)
 	}
-	if len(firstAttack) != 1 {
-		t.Fatalf("expected first accepted attack to return 1 target refresh, got %d", len(firstAttack))
+	if len(firstAttack) != 2 {
+		t.Fatalf("expected first accepted attack to return target refresh plus damage-info, got %d", len(firstAttack))
 	}
 	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstAttack[0]))
 	if err != nil {
@@ -3350,8 +3350,8 @@ func TestNewGameSessionFactoryNormalAttackCadenceRejectsImmediateRepeatWithoutMu
 	if err != nil {
 		t.Fatalf("unexpected second accepted attack error after cadence window: %v", err)
 	}
-	if len(secondAccepted) != 1 {
-		t.Fatalf("expected second accepted attack after cadence window to return 1 target refresh, got %d", len(secondAccepted))
+	if len(secondAccepted) != 2 {
+		t.Fatalf("expected second accepted attack after cadence window to return target refresh plus damage-info, got %d", len(secondAccepted))
 	}
 	secondRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, secondAccepted[0]))
 	if err != nil {
@@ -3632,7 +3632,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeReplaysDeadTrainingDummyVisi
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on dummy death hit %d: %v", attackIndex+1, err)
 		}
-		wantFrames := 1
+		wantFrames := 2
 		if attackIndex == 9 {
 			wantFrames = 2
 		}
@@ -4569,7 +4569,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStill
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on target-map dummy death hit %d: %v", attackIndex+1, err)
 		}
-		wantFrames := 1
+		wantFrames := 2
 		if attackIndex == 9 {
 			wantFrames = 2
 		}
@@ -9924,7 +9924,7 @@ func TestGameRuntimeStaticActorSnapshotsMarkDeadTrainingDummy(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on snapshot death hit %d: %v", attackIndex+1, err)
 		}
-		wantFrames := 1
+		wantFrames := 2
 		if attackIndex == 9 {
 			wantFrames = 2
 		}
@@ -10133,7 +10133,7 @@ func TestGameRuntimeTransferCharacterStructuredSnapshotsMarkDeadTrainingDummy(t 
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on structured-result death hit %d: %v", attackIndex+1, err)
 		}
-		wantFrames := 1
+		wantFrames := 2
 		if attackIndex == 9 {
 			wantFrames = 2
 		}
@@ -15213,8 +15213,8 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleCombatAttackNonAuthoritative(t *te
 	if err != nil {
 		t.Fatalf("unexpected replacement owner attack error after stale combat attack: %v", err)
 	}
-	if len(liveAttackOut) != 1 {
-		t.Fatalf("expected replacement owner live attack to emit 1 frame, got %d", len(liveAttackOut))
+	if len(liveAttackOut) != 2 {
+		t.Fatalf("expected replacement owner live attack to emit target refresh plus damage-info, got %d", len(liveAttackOut))
 	}
 	attackPacket, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, liveAttackOut[0]))
 	if err != nil {
@@ -15302,8 +15302,8 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleCombatTargetSelectionNonAuthoritat
 	if err != nil {
 		t.Fatalf("unexpected replacement owner attack error after stale target attempt: %v", err)
 	}
-	if len(liveAttackOut) != 1 {
-		t.Fatalf("expected replacement owner attack after stale target attempt to emit 1 frame, got %d", len(liveAttackOut))
+	if len(liveAttackOut) != 2 {
+		t.Fatalf("expected replacement owner attack after stale target attempt to emit target refresh plus damage-info, got %d", len(liveAttackOut))
 	}
 	attackPacket, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, liveAttackOut[0]))
 	if err != nil {
@@ -16504,7 +16504,7 @@ func TestGameRuntimeRemoveStaticActorReturnsDeadTrainingDummySnapshot(t *testing
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on delete snapshot death hit %d: %v", attackIndex+1, err)
 		}
-		wantFrames := 1
+		wantFrames := 2
 		if attackIndex == 9 {
 			wantFrames = 2
 		}
@@ -17018,7 +17018,7 @@ func TestGameRuntimeUpdateStaticActorRefreshReplaysDeadTrainingDummyForVisiblePl
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on dead refresh hit %d: %v", attackIndex+1, err)
 		}
-		wantFrames := 1
+		wantFrames := 2
 		if attackIndex == 9 {
 			wantFrames = 2
 		}
@@ -17137,7 +17137,7 @@ func TestGameRuntimeFlushReadyStaticActorRespawnsRebuildsVisibleDeadTrainingDumm
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on respawn hit %d: %v", attackIndex+1, err)
 		}
-		wantFrames := 1
+		wantFrames := 2
 		if attackIndex == 9 {
 			wantFrames = 2
 		}
@@ -25221,7 +25221,7 @@ func TestGameSessionFlowStaticActorCombatTargetRejectsVisibleNonTargetableActorW
 	}
 }
 
-func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelectedDummy(t *testing.T) {
+func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshAndDamageInfoForSelectedDummy(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
 	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
@@ -25264,8 +25264,8 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 	if err != nil {
 		t.Fatalf("unexpected combat attack error: %v", err)
 	}
-	if len(firstAttack) != 1 {
-		t.Fatalf("expected 1 self-only target-refresh frame for accepted dummy attack, got %d", len(firstAttack))
+	if len(firstAttack) != 2 {
+		t.Fatalf("expected target-refresh plus self-only damage-info frame for accepted dummy attack, got %d", len(firstAttack))
 	}
 	firstTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstAttack[0]))
 	if err != nil {
@@ -25273,6 +25273,13 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 	}
 	if firstTarget.TargetVID != uint32(actor.EntityID) || firstTarget.HPPercent != 90 {
 		t.Fatalf("unexpected first accepted dummy attack target-refresh packet: %+v", firstTarget)
+	}
+	firstDamage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, firstAttack[1]))
+	if err != nil {
+		t.Fatalf("decode accepted dummy attack damage-info frame: %v", err)
+	}
+	if firstDamage.VID != uint32(actor.EntityID) || firstDamage.Flag != 0 || firstDamage.Damage != int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack) {
+		t.Fatalf("unexpected first accepted dummy attack damage-info packet: %+v", firstDamage)
 	}
 
 	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -25283,8 +25290,8 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 	if err != nil {
 		t.Fatalf("unexpected second combat attack error: %v", err)
 	}
-	if len(secondAttack) != 1 {
-		t.Fatalf("expected 1 self-only target-refresh frame for second accepted dummy attack, got %d", len(secondAttack))
+	if len(secondAttack) != 2 {
+		t.Fatalf("expected target-refresh plus self-only damage-info frame for second accepted dummy attack, got %d", len(secondAttack))
 	}
 	secondTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, secondAttack[0]))
 	if err != nil {
@@ -25292,6 +25299,13 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshForSelected
 	}
 	if secondTarget.TargetVID != uint32(actor.EntityID) || secondTarget.HPPercent != 80 {
 		t.Fatalf("unexpected second accepted dummy attack target-refresh packet: %+v", secondTarget)
+	}
+	secondDamage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, secondAttack[1]))
+	if err != nil {
+		t.Fatalf("decode second accepted dummy attack damage-info frame: %v", err)
+	}
+	if secondDamage.VID != uint32(actor.EntityID) || secondDamage.Flag != 0 || secondDamage.Damage != int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack) {
+		t.Fatalf("unexpected second accepted dummy attack damage-info packet: %+v", secondDamage)
 	}
 
 	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(actor.EntityID)})))
@@ -25354,8 +25368,8 @@ func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndR
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on pre-death hit %d: %v", attackIndex+1, err)
 		}
-		if len(attackOut) != 1 {
-			t.Fatalf("expected 1 self-only target-refresh frame on pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		if len(attackOut) != 2 {
+			t.Fatalf("expected target-refresh plus damage-info frames on pre-death hit %d, got %d", attackIndex+1, len(attackOut))
 		}
 		refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
 		if err != nil {
@@ -25457,7 +25471,7 @@ func TestNewGameSessionFactoryBootstrapsStillDeadTrainingDummyWithTrailingDeadRe
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on death hit %d: %v", attackIndex+1, err)
 		}
-		wantFrames := 1
+		wantFrames := 2
 		if attackIndex == 9 {
 			wantFrames = 2
 		}
@@ -25555,8 +25569,8 @@ func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on visible-session pre-death hit %d: %v", attackIndex+1, err)
 		}
-		if len(attackOut) != 1 {
-			t.Fatalf("expected 1 self-only target-refresh frame on visible-session pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		if len(attackOut) != 2 {
+			t.Fatalf("expected target-refresh plus damage-info frames on visible-session pre-death hit %d, got %d", attackIndex+1, len(attackOut))
 		}
 	}
 
@@ -25654,8 +25668,8 @@ func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequire
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on respawn pre-death hit %d: %v", attackIndex+1, err)
 		}
-		if len(attackOut) != 1 {
-			t.Fatalf("expected 1 self-only target-refresh frame on respawn pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		if len(attackOut) != 2 {
+			t.Fatalf("expected target-refresh plus damage-info frames on respawn pre-death hit %d, got %d", attackIndex+1, len(attackOut))
 		}
 	}
 
@@ -25743,8 +25757,8 @@ func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequire
 	if err != nil {
 		t.Fatalf("unexpected post-respawn combat attack error: %v", err)
 	}
-	if len(postRespawnAttackOut) != 1 {
-		t.Fatalf("expected 1 self-only target-refresh frame after respawn reselection, got %d", len(postRespawnAttackOut))
+	if len(postRespawnAttackOut) != 2 {
+		t.Fatalf("expected target-refresh plus damage-info frames after respawn reselection, got %d", len(postRespawnAttackOut))
 	}
 	postRespawnTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, postRespawnAttackOut[0]))
 	if err != nil {
@@ -35841,8 +35855,8 @@ func TestGameSessionFlowStaticActorDummyRespawnRebuildsForOtherVisibleSessionsAn
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on respawn-visible pre-death hit %d: %v", attackIndex+1, err)
 		}
-		if len(attackOut) != 1 {
-			t.Fatalf("expected 1 self-only target-refresh frame on respawn-visible pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		if len(attackOut) != 2 {
+			t.Fatalf("expected target-refresh plus damage-info frames on respawn-visible pre-death hit %d, got %d", attackIndex+1, len(attackOut))
 		}
 	}
 
@@ -35993,8 +36007,8 @@ func TestGameSessionFlowStaticActorAttackRejectsSelectedDummyAfterSnapshotReplac
 	if err != nil {
 		t.Fatalf("unexpected combat attack error after snapshot reselect: %v", err)
 	}
-	if len(freshAttackOut) != 1 {
-		t.Fatalf("expected 1 self-only target-refresh frame after snapshot reselect, got %d", len(freshAttackOut))
+	if len(freshAttackOut) != 2 {
+		t.Fatalf("expected target-refresh plus damage-info frames after snapshot reselect, got %d", len(freshAttackOut))
 	}
 	freshTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, freshAttackOut[0]))
 	if err != nil {
@@ -36402,8 +36416,8 @@ func TestGameSessionFlowStaticActorCombatTargetClearsAcrossTransferRebootstrap(t
 	if err != nil {
 		t.Fatalf("unexpected attack error after transfer rebootstrap reselect: %v", err)
 	}
-	if len(attackAfterReselect) != 1 {
-		t.Fatalf("expected 1 self-only attack refresh after transfer rebootstrap reselect, got %d", len(attackAfterReselect))
+	if len(attackAfterReselect) != 2 {
+		t.Fatalf("expected target-refresh plus damage-info frames after transfer rebootstrap reselect, got %d", len(attackAfterReselect))
 	}
 }
 
@@ -36656,8 +36670,8 @@ func TestGameSessionFlowStaticActorAttackSuppressesRepeatedSameTargetHitUntilCad
 	if err != nil {
 		t.Fatalf("unexpected first combat attack error before cadence-window test: %v", err)
 	}
-	if len(firstAttack) != 1 {
-		t.Fatalf("expected 1 self-only target-refresh frame on first accepted dummy hit before cadence-window test, got %d", len(firstAttack))
+	if len(firstAttack) != 2 {
+		t.Fatalf("expected target-refresh plus damage-info frames on first accepted dummy hit before cadence-window test, got %d", len(firstAttack))
 	}
 
 	repeatedAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
@@ -36682,8 +36696,8 @@ func TestGameSessionFlowStaticActorAttackSuppressesRepeatedSameTargetHitUntilCad
 	if err != nil {
 		t.Fatalf("unexpected combat attack error after cadence window expired: %v", err)
 	}
-	if len(afterCooldown) != 1 {
-		t.Fatalf("expected same-target attack after cadence window expiry to be accepted, got %d frames", len(afterCooldown))
+	if len(afterCooldown) != 2 {
+		t.Fatalf("expected same-target attack after cadence window expiry to return target refresh plus damage-info, got %d frames", len(afterCooldown))
 	}
 	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, afterCooldown[0]))
 	if err != nil {
@@ -36731,8 +36745,8 @@ func TestGameSessionFlowStaticActorAttackReselectingSameTargetDoesNotBypassCaden
 	if err != nil {
 		t.Fatalf("unexpected first combat attack error before cadence-window reselect test: %v", err)
 	}
-	if len(firstAttack) != 1 {
-		t.Fatalf("expected 1 self-only target-refresh frame on first accepted dummy hit before cadence-window reselect test, got %d", len(firstAttack))
+	if len(firstAttack) != 2 {
+		t.Fatalf("expected target-refresh plus damage-info frames on first accepted dummy hit before cadence-window reselect test, got %d", len(firstAttack))
 	}
 
 	reselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -36795,8 +36809,8 @@ func TestGameSessionFlowStaticActorAttackRetargetDoesNotBypassCadenceWindow(t *t
 	if err != nil {
 		t.Fatalf("unexpected first combat attack error before retarget cadence test: %v", err)
 	}
-	if len(firstAttack) != 1 {
-		t.Fatalf("expected 1 self-only target-refresh frame on first accepted dummy hit before retarget cadence test, got %d", len(firstAttack))
+	if len(firstAttack) != 2 {
+		t.Fatalf("expected target-refresh plus damage-info frames on first accepted dummy hit before retarget cadence test, got %d", len(firstAttack))
 	}
 
 	if retargetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: secondVID}))); err != nil || len(retargetOut) != 1 {
@@ -36824,8 +36838,8 @@ func TestGameSessionFlowStaticActorAttackRetargetDoesNotBypassCadenceWindow(t *t
 	if err != nil {
 		t.Fatalf("unexpected retargeted combat attack error after cadence window expired: %v", err)
 	}
-	if len(afterCooldown) != 1 {
-		t.Fatalf("expected retargeted attack after cadence window expiry to be accepted, got %d frames", len(afterCooldown))
+	if len(afterCooldown) != 2 {
+		t.Fatalf("expected retargeted attack after cadence window expiry to return target refresh plus damage-info, got %d frames", len(afterCooldown))
 	}
 	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, afterCooldown[0]))
 	if err != nil {
