@@ -144,7 +144,7 @@ This keeps bootstrap quickslots self-only and snapshot-derived. Runtime `ADD` / 
 
 ## Item synchronization ownership
 
-When an accepted carried-inventory `ITEM_MOVE` leaves the source cell empty and moves the item to another carried inventory cell, the minimal runtime now scans the selected character's live quickslots for item tuples matching the old cell or the destination cell. Destination-cell item quickslots are deleted first with `GC::QUICKSLOT_DEL(position)` so stale quickslot ownership does not survive a merge or swap into that cell. Each matching source-cell item quickslot is then updated to the new cell, persisted with the same selected-character snapshot mutation as the item move, and appended to the self response as `GC::QUICKSLOT_ADD(position, {item, new_cell})` after the item delete/set refresh frames.
+When an accepted carried-inventory `ITEM_MOVE` leaves the source cell empty and moves the item to another carried inventory cell, including incompatible occupied-destination full-stack swaps, the minimal runtime now scans the selected character's live quickslots for item tuples matching the old cell or the destination cell. Destination-cell item quickslots are deleted first with `GC::QUICKSLOT_DEL(position)` so stale quickslot ownership does not survive a merge or swap into that cell. Each matching source-cell item quickslot is then updated to the new cell, persisted with the same selected-character snapshot mutation as the item move, and appended to the self response as `GC::QUICKSLOT_ADD(position, {item, new_cell})` after the item delete/set refresh frames.
 
 When an accepted carried-to-equipment `ITEM_MOVE` equips a carried item and clears the source carried cell, the minimal runtime now applies the same item-removal quickslot synchronization. Each matching item quickslot is deleted, persisted with the same selected-character point-bearing item mutation as the equip, and appended to the self response as `GC::QUICKSLOT_DEL(position)` after the item/equipment/appearance refresh frames.
 
@@ -156,7 +156,7 @@ When an accepted merchant `SHOP SELL` / `SELL2` removes a whole carried-inventor
 
 The current owned synchronization is intentionally narrow:
 
-- move synchronization applies to accepted carried-inventory mutations where the source cell becomes empty and the moved item now lives at a different carried cell, including exact counted full-stack compatible merges;
+- move synchronization applies to accepted carried-inventory mutations where the source cell becomes empty and the moved item now lives at a different carried cell, including exact counted full-stack compatible merges and incompatible occupied-destination full-stack swaps;
 - when that destination carried cell already has matching item quickslots, only those destination quickslots are deleted before the moved source quickslot is retargeted so one carried cell does not retain multiple stale item quickslot bindings; unrelated item quickslots for other carried cells stay unchanged;
 - removal synchronization applies to accepted carried-to-equipment `ITEM_MOVE` equips, the bootstrap `/equip_item` command seam, accepted last-stack carried-inventory `ITEM_USE` paths, full-source `ITEM_USE_TO_ITEM` merges, and accepted whole-stack merchant sell paths where the carried item slot becomes empty;
 - removal synchronization rejects non-carried source cells fail-closed before live or persisted quickslot mutation;
@@ -179,7 +179,7 @@ Implemented now:
 - accepted runtime updates to persisted quickslot state.
 - player-death/floor gating for quickslot edits: once bootstrap combat retaliation has driven the selected live character to the zero-HP floor, client-originated quickslot add/delete/swap edits fail closed with no frames and no persisted quickslot or inventory mutation until restart recovery.
 - stale reclaimed quickslot edit sockets remain self-local: they can receive deterministic quickslot refresh frames for their own socket, but they do not replace the authoritative persisted account snapshot or fresh live session state.
-- automatic item quickslot update synchronization after accepted carried-inventory `ITEM_MOVE` packets that empty the source cell, including destination-cell stale quickslot deletion when needed.
+- automatic item quickslot update synchronization after accepted carried-inventory `ITEM_MOVE` packets that empty the source cell, including compatible full-stack merges, incompatible occupied-destination swaps, and destination-cell stale quickslot deletion when needed.
 - automatic item quickslot deletion synchronization after accepted carried-to-equipment `ITEM_MOVE` equips and the bootstrap `/equip_item` command seam.
 - automatic item quickslot deletion synchronization after accepted last-stack carried-inventory `ITEM_USE` packets.
 - automatic item quickslot deletion synchronization after full-source `ITEM_USE_TO_ITEM` stack consolidations, while partial consolidations keep source-slot item quickslots unchanged.

@@ -2852,14 +2852,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					maxCount := ^uint16(0)
 					forceSameVnumSwap := false
 					liveInventory := selectedPlayer.LiveInventory()
+					fromSlot := inventory.SlotIndex(packet.Source.Cell)
+					toSlot := inventory.SlotIndex(packet.Destination.Cell)
+					if !runtime.authoredIncompatibleInventorySwapTemplatesResolve(liveInventory, fromSlot, toSlot) {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
 					for _, sourceItem := range liveInventory {
-						if sourceItem.Slot != inventory.SlotIndex(packet.Source.Cell) {
+						if sourceItem.Slot != fromSlot {
 							continue
 						}
 						if template, ok := runtime.itemTemplates[sourceItem.Vnum]; ok {
 							if !itemcatalog.ValidTemplate(template) {
 								for _, targetItem := range liveInventory {
-									if targetItem.Slot == inventory.SlotIndex(packet.Destination.Cell) && targetItem.Vnum == sourceItem.Vnum {
+									if targetItem.Slot == toSlot && targetItem.Vnum == sourceItem.Vnum {
 										maxCount = 0
 										break
 									}
@@ -2877,7 +2882,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							}
 						} else if runtime.itemTemplatesAuthored {
 							for _, targetItem := range liveInventory {
-								if targetItem.Slot == inventory.SlotIndex(packet.Destination.Cell) && targetItem.Vnum == sourceItem.Vnum {
+								if targetItem.Slot == toSlot && targetItem.Vnum == sourceItem.Vnum {
 									maxCount = 0
 									break
 								}
@@ -2889,10 +2894,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					if packet.Count == 0 {
-						moveResult, ok = selectedPlayer.MoveInventoryItemBounded(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), maxCount)
+						moveResult, ok = selectedPlayer.MoveInventoryItemBounded(fromSlot, toSlot, maxCount)
 					} else {
 						moveCount := uint16(packet.Count)
-						moveResult, ok = selectedPlayer.MoveInventoryItemCountBounded(inventory.SlotIndex(packet.Source.Cell), inventory.SlotIndex(packet.Destination.Cell), moveCount, maxCount)
+						moveResult, ok = selectedPlayer.MoveInventoryItemCountBounded(fromSlot, toSlot, moveCount, maxCount)
 					}
 					if !ok {
 						return gameflow.ItemMoveResult{Accepted: false}
@@ -5227,6 +5232,47 @@ func (r *gameRuntime) resolveRuntimeItemTemplate(selectedPlayer *player.Runtime,
 		return template, true
 	}
 	return itemcatalog.Template{}, false
+}
+
+func (r *gameRuntime) authoredIncompatibleInventorySwapTemplatesResolve(items []inventory.ItemInstance, from inventory.SlotIndex, to inventory.SlotIndex) bool {
+	if r == nil || !r.itemTemplatesAuthored || from == to || from >= inventory.CarriedInventorySlotCount || to >= inventory.CarriedInventorySlotCount {
+		return true
+	}
+	var sourceItem inventory.ItemInstance
+	sourceFound := false
+	var targetItem inventory.ItemInstance
+	targetFound := false
+	for _, item := range items {
+		if item.Equipped {
+			continue
+		}
+		switch item.Slot {
+		case from:
+			if sourceFound {
+				return true
+			}
+			sourceItem = item
+			sourceFound = true
+		case to:
+			if targetFound {
+				return true
+			}
+			targetItem = item
+			targetFound = true
+		}
+	}
+	if !sourceFound || !targetFound || sourceItem.Vnum == targetItem.Vnum {
+		return true
+	}
+	sourceTemplate, sourceOK := r.itemTemplates[sourceItem.Vnum]
+	if !sourceOK || !itemcatalog.ValidTemplate(sourceTemplate) || sourceTemplate.Vnum != sourceItem.Vnum {
+		return false
+	}
+	targetTemplate, targetOK := r.itemTemplates[targetItem.Vnum]
+	if !targetOK || !itemcatalog.ValidTemplate(targetTemplate) || targetTemplate.Vnum != targetItem.Vnum {
+		return false
+	}
+	return true
 }
 
 func (r *gameRuntime) resolveRuntimeEquipTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex, equipSlot inventory.EquipmentSlot) (itemcatalog.Template, bool, bool) {

@@ -282,6 +282,170 @@ func TestGameRuntimeItemMoveRejectsDuplicateSourceOrTargetOccupancyWithoutMutati
 	}
 }
 
+func TestGameRuntimeItemMoveRejectsMissingAuthoredTemplateForIncompatibleSwapWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		login     string
+		templates []itemcatalog.Template
+	}{
+		{
+			name:  "missing source template",
+			login: "swap-miss-src",
+			templates: []itemcatalog.Template{
+				{Vnum: 11200, Name: "Authored Sword", Stackable: false, MaxCount: 1},
+			},
+		},
+		{
+			name:  "missing target template",
+			login: "swap-miss-dst",
+			templates: []itemcatalog.Template{
+				{Vnum: 27001, Name: "Authored Potion", Stackable: true, MaxCount: 200},
+			},
+		},
+	}
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("MoveSwapMissingTemplate", 0x0103066a+uint32(index), 0x0204066a+uint32(index), 1300, 2300, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{
+				{ID: 6351, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 6352, Vnum: 11200, Count: 1, Slot: 6},
+			}
+			owner.Quickslots = []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+			}
+			issuePeerTicket(t, ticketStore, tc.login, 0x6060606a+uint32(index), owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed missing-template incompatible item-move swap account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, tc.templates)
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected missing-template incompatible item-move swap runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, 0x6060606a+uint32(index))
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+				Source:      itemproto.InventoryPosition(5),
+				Destination: itemproto.InventoryPosition(6),
+				Count:       0,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected missing-template incompatible item-move swap packet error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s incompatible item-move swap to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s incompatible item-move swap rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load missing-template incompatible item-move swap account: %v", err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s incompatible item-move swap mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s incompatible item-move swap mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
+func TestGameRuntimeItemMoveIncompatibleSwapCarriesBothTemplateMetadata(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MoveSwapTemplateMetadata", 0x0103066c, 0x0204066c, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 6361, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 6362, Vnum: 11200, Count: 1, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "swap-metadata", 0x6060606c, owner)
+	if err := accounts.Save(accountstore.Account{Login: "swap-metadata", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed incompatible item-move swap metadata account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 27001, Name: "Metadata Potion", Stackable: true, MaxCount: 200, Rare: true, Sockets: itemcatalog.SocketValues{11, 22, 33}, Attributes: itemcatalog.AttributeValues{{Type: 1, Value: 25}}},
+		{Vnum: 11200, Name: "Metadata Sword", Stackable: false, MaxCount: 1, Save: true, EquipSlot: inventory.EquipmentSlotWeapon.String(), Sockets: itemcatalog.SocketValues{-1, -2, -3}, Attributes: itemcatalog.AttributeValues{{Type: 7, Value: -9}}},
+	})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected incompatible item-move swap metadata runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "swap-metadata", 0x6060606c)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(5),
+		Destination: itemproto.InventoryPosition(6),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected incompatible item-move swap metadata packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected incompatible swap to emit two item sets, quickslot delete, and quickslot add; got %d frames", len(out))
+	}
+	sourceSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode incompatible-swap source item set: %v", err)
+	}
+	if sourceSet.Position != itemproto.InventoryPosition(5) || sourceSet.Vnum != 11200 || sourceSet.Count != 1 {
+		t.Fatalf("unexpected incompatible-swap source item set: %+v", sourceSet)
+	}
+	if sourceSet.Flags&itemproto.ItemFlagSave == 0 || sourceSet.Sockets != [itemproto.ItemSocketCount]int32{-1, -2, -3} || sourceSet.Attributes[0] != (itemproto.Attribute{Type: 7, Value: -9}) {
+		t.Fatalf("expected target item's authored metadata on source refresh, got %+v", sourceSet)
+	}
+	destinationSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode incompatible-swap destination item set: %v", err)
+	}
+	if destinationSet.Position != itemproto.InventoryPosition(6) || destinationSet.Vnum != 27001 || destinationSet.Count != 3 {
+		t.Fatalf("unexpected incompatible-swap destination item set: %+v", destinationSet)
+	}
+	if destinationSet.Flags&itemproto.ItemFlagRare == 0 || destinationSet.Sockets != [itemproto.ItemSocketCount]int32{11, 22, 33} || destinationSet.Attributes[0] != (itemproto.Attribute{Type: 1, Value: 25}) {
+		t.Fatalf("expected source item's authored metadata on destination refresh, got %+v", destinationSet)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode incompatible-swap stale quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 3 {
+		t.Fatalf("expected stale destination item quickslot position 3 to be deleted, got %+v", quickslotDel)
+	}
+	quickslotAdd, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode incompatible-swap source quickslot retarget: %v", err)
+	}
+	if quickslotAdd.Position != 2 || quickslotAdd.Slot.Type != quickslotproto.TypeItem || quickslotAdd.Slot.Position != 6 {
+		t.Fatalf("expected source item quickslot position 2 to retarget to carried slot 6, got %+v", quickslotAdd)
+	}
+
+	persisted, err := accounts.Load("swap-metadata")
+	if err != nil {
+		t.Fatalf("load incompatible item-move swap metadata account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 6362, Vnum: 11200, Count: 1, Slot: 5},
+		{ID: 6361, Vnum: 27001, Count: 3, Slot: 6},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted inventory after incompatible item-move swap: got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 6}}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted quickslots after incompatible item-move swap: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
 func TestGameRuntimeItemMoveNonStackableSameVnumFullStackSwapsWithoutMerging(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
