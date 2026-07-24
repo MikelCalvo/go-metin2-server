@@ -420,7 +420,7 @@ If the lab currently has no such content, either:
 - record this subsection as **N/A** instead of treating the absence of authored NPCs as a gameplay regression.
 
 Optional operator preflight before importing a candidate bundle:
-- [ ] `POST /local/content-bundle/summary` with the candidate JSON and confirm the compact counts, per-kind referenced/unreferenced interaction breakdown, exact referenced/unreferenced interaction identities, exact spawn-group identities, exact portable combat-profile snapshots, exact item-template identities, and per-map occupancy look plausible before applying it
+- [ ] `POST /local/content-bundle/summary` with the candidate JSON and confirm the compact counts, per-kind referenced/unreferenced interaction breakdown, exact referenced/unreferenced interaction identities, compact interaction-definition previews, exact spawn-group identities, exact portable combat-profile snapshots, exact item-template identities, and per-map occupancy look plausible before applying it
 - [ ] `POST /local/content-bundle/validate` with the same JSON and confirm the canonical bundle response matches the intended authored content
 
 #### 5.4.1 Talk / info / merchant interactions

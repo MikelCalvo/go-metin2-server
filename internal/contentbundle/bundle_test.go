@@ -97,6 +97,11 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 			{Kind: interactionstore.KindShopPreview, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
 			{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
 		},
+		InteractionDefinitionPreviews: []InteractionDefinitionPreviewSummary{
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused", Preview: "Unused lore kept for a later authored actor."},
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Preview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"},
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Preview: "Welcome."},
+		},
 		ReferencedInteractionDefinitions: []InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant"},
 			{Kind: interactionstore.KindTalk, Ref: "npc:guide"},
@@ -223,6 +228,47 @@ func TestSummarizeReturnsDeterministicWarpDestinationDetails(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary.WarpDestinations, want) {
 		t.Fatalf("unexpected warp destination summaries:\n got: %#v\nwant: %#v", summary.WarpDestinations, want)
+	}
+}
+
+func TestSummarizeReturnsDeterministicInteractionDefinitionPreviews(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		ItemTemplates: testMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Keep your blade sharp."},
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300},
+			testMerchantCatalogDefinition(),
+			{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize interaction definition previews: %v", err)
+	}
+	want := []InteractionDefinitionPreviewSummary{
+		{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Preview: "The alchemist studies forgotten herbs."},
+		{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Preview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"},
+		{Kind: interactionstore.KindTalk, Ref: "npc:guide", Preview: "Keep your blade sharp."},
+		{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Preview: "Step through the gate. [warp -> map 7 @ 1300,2300]"},
+	}
+	if !reflect.DeepEqual(summary.InteractionDefinitionPreviews, want) {
+		t.Fatalf("unexpected interaction definition previews:\n got: %#v\nwant: %#v", summary.InteractionDefinitionPreviews, want)
+	}
+}
+
+func TestSummarizeCompactsLongInteractionDefinitionPreviews(t *testing.T) {
+	longText := strings.Repeat("B", 200)
+	summary, err := Summarize(Bundle{
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:notice_board", Text: longText}},
+	})
+	if err != nil {
+		t.Fatalf("summarize long interaction definition preview: %v", err)
+	}
+	if len(summary.InteractionDefinitionPreviews) != 1 {
+		t.Fatalf("expected one interaction definition preview, got %+v", summary.InteractionDefinitionPreviews)
+	}
+	want := strings.Repeat("B", 157) + "..."
+	if summary.InteractionDefinitionPreviews[0].Preview != want {
+		t.Fatalf("unexpected compact interaction preview length=%d preview=%q", len(summary.InteractionDefinitionPreviews[0].Preview), summary.InteractionDefinitionPreviews[0].Preview)
 	}
 }
 

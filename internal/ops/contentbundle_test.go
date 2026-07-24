@@ -389,6 +389,11 @@ func TestLocalContentBundleSummaryEndpointReturnsSummaryJSONForLoopbackGet(t *te
 			{Kind: interactionstore.KindShopPreview, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
 			{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
 		},
+		InteractionDefinitionPreviews: []contentbundle.InteractionDefinitionPreviewSummary{
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused", Preview: "Unused lore."},
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Preview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"},
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Preview: "Keep your blade sharp."},
+		},
 		ReferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant"},
 			{Kind: interactionstore.KindTalk, Ref: "npc:guide"},
@@ -479,6 +484,12 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 			{Kind: interactionstore.KindShopPreview, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
 			{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
 			{Kind: interactionstore.KindWarp, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
+		},
+		InteractionDefinitionPreviews: []contentbundle.InteractionDefinitionPreviewSummary{
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused", Preview: "Unused lore."},
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:qa_merchant", Preview: "QA Merchant: [0] Small Red Potion x1 @ 50g"},
+			{Kind: interactionstore.KindTalk, Ref: "npc:qa_guide", Preview: "Welcome."},
+			{Kind: interactionstore.KindWarp, Ref: "npc:qa_teleporter", Preview: "Step through the gate. [warp -> map 7 @ 1300,2300]"},
 		},
 		ReferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindShopPreview, Ref: "npc:qa_merchant"},

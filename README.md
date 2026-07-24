@@ -206,7 +206,7 @@ Already present:
 - fail-closed static-actor visibility identity validation: `entity_id` must fit the current `uint32` client-visible `VID` carrier and `race_num` must fit the current `uint16` `CHARACTER_ADD` projection,
 - structured merchant catalogs,
 - content bundle import/export with commit-only live visibility replay for static-actor replacement,
-- loopback-only local endpoints for static actors, interactions, visibility, and content bundles, including compact summaries with shop catalog and warp destination details,
+- loopback-only local endpoints for static actors, interactions, visibility, and content bundles, including compact summaries with interaction-definition previews, shop catalog details, and warp destination details,
 - example bootstrap NPC service bundle.
 
 Still missing:

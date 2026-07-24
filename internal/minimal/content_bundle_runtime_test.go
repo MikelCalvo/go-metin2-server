@@ -88,6 +88,10 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 			{Kind: interactionstore.KindInfo, Count: 1, ReferencedCount: 0, UnreferencedCount: 1},
 			{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
 		},
+		InteractionDefinitionPreviews: []contentbundle.InteractionDefinitionPreviewSummary{
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused", Preview: "Unused lore kept for later QA."},
+			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Preview: "Keep your blade sharp."},
+		},
 		ReferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindTalk, Ref: "npc:village_guard"},
 		},

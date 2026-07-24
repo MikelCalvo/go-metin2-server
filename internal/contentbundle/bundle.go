@@ -61,6 +61,7 @@ type Summary struct {
 	ReferencedInteractionDefinitionCount   int                                             `json:"referenced_interaction_definition_count"`
 	UnreferencedInteractionDefinitionCount int                                             `json:"unreferenced_interaction_definition_count"`
 	InteractionKinds                       []InteractionKindSummary                        `json:"interaction_kinds,omitempty"`
+	InteractionDefinitionPreviews          []InteractionDefinitionPreviewSummary           `json:"interaction_definition_previews,omitempty"`
 	ReferencedInteractionDefinitions       []InteractionDefinitionReferenceSummary         `json:"referenced_interaction_definitions,omitempty"`
 	UnreferencedInteractionDefinitions     []InteractionDefinitionReferenceSummary         `json:"unreferenced_interaction_definitions,omitempty"`
 	InteractableStaticActors               []InteractableStaticActorSummary                `json:"interactable_static_actors,omitempty"`
@@ -80,6 +81,12 @@ type InteractionKindSummary struct {
 type InteractionDefinitionReferenceSummary struct {
 	Kind string `json:"kind"`
 	Ref  string `json:"ref"`
+}
+
+type InteractionDefinitionPreviewSummary struct {
+	Kind    string `json:"kind"`
+	Ref     string `json:"ref"`
+	Preview string `json:"preview"`
 }
 
 type InteractableStaticActorSummary struct {
@@ -308,6 +315,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 	interactionKindUnreferencedCounts := make(map[string]int)
 	for _, definition := range normalized.InteractionDefinitions {
 		interactionKindCounts[definition.Kind]++
+		summary.InteractionDefinitionPreviews = append(summary.InteractionDefinitionPreviews, interactionDefinitionPreviewSummary(definition, itemTemplatesByVnum))
 		if definition.Kind == interactionstore.KindShopPreview {
 			summary.ShopCatalogEntryCount += len(definition.Catalog)
 			summary.ShopCatalogs = append(summary.ShopCatalogs, shopCatalogSummary(definition, itemTemplatesByVnum))
@@ -422,6 +430,28 @@ func interactionDefinitionPreview(actorName string, definition interactionstore.
 		return definition.Text
 	case interactionstore.KindTalk:
 		return fmt.Sprintf("%s:\n%s", actorName, definition.Text)
+	case interactionstore.KindShopPreview:
+		return shopCatalogPreview(definition, itemTemplatesByVnum)
+	case interactionstore.KindWarp:
+		return warpDestinationPreview(definition)
+	default:
+		return ""
+	}
+}
+
+func interactionDefinitionPreviewSummary(definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) InteractionDefinitionPreviewSummary {
+	definition = interactionstore.NormalizeDefinition(definition)
+	return InteractionDefinitionPreviewSummary{
+		Kind:    definition.Kind,
+		Ref:     definition.Ref,
+		Preview: compactInteractionPreview(interactionDefinitionCatalogPreview(definition, itemTemplatesByVnum)),
+	}
+}
+
+func interactionDefinitionCatalogPreview(definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) string {
+	switch definition.Kind {
+	case interactionstore.KindInfo, interactionstore.KindTalk:
+		return definition.Text
 	case interactionstore.KindShopPreview:
 		return shopCatalogPreview(definition, itemTemplatesByVnum)
 	case interactionstore.KindWarp:
