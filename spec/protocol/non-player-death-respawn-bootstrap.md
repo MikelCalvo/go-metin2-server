@@ -142,6 +142,7 @@ What is frozen now:
 - the first built-in bootstrap profiles use one deterministic fixed-delay rule, not per-player custom timing
 - the built-in bootstrap delay constant is `2s`
 - registered bootstrap combat profiles use the `respawn_delay` accepted by `RegisterStaticActorCombatProfile(...)`; the pending respawn still uses the same runtime-owned shared-world state and `FlushServerFrames()` server-push seam between legacy-client reads
+- if an operator/static-actor update changes the actor's combat profile while the old runtime instance is already dead and has a pending respawn timer, the update cancels the stale pending respawn state and starts the updated actor as a fresh live snapshot using the new profile's full HP instead of letting the old profile's timer rebuild the new actor later
 
 For future content-loaded attackable actors, the authored identity that tells the runtime what to recreate and where to recreate it is now documented separately in `content-spawn-groups-bootstrap.md`.
 

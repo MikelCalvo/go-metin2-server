@@ -16821,6 +16821,83 @@ func TestSharedWorldRegistryUpdateStaticActorReleasesPracticeMobEngagement(t *te
 	}
 }
 
+func TestSharedWorldRegistryUpdateStaticActorCombatProfileClearsPendingRespawnState(t *testing.T) {
+	const (
+		fastProfile = "practice_fast_respawn_swap"
+		slowProfile = "practice_slow_respawn_swap"
+	)
+	worldruntime.UnregisterStaticActorCombatProfileForTest(fastProfile)
+	worldruntime.UnregisterStaticActorCombatProfileForTest(slowProfile)
+	t.Cleanup(func() {
+		worldruntime.UnregisterStaticActorCombatProfileForTest(fastProfile)
+		worldruntime.UnregisterStaticActorCombatProfileForTest(slowProfile)
+	})
+	if !worldruntime.RegisterStaticActorCombatProfile(fastProfile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 2,
+		DamagePerNormalAttack: 2,
+		RespawnDelay:          2 * time.Second,
+	}) {
+		t.Fatalf("expected %q profile registration to succeed", fastProfile)
+	}
+	if !worldruntime.RegisterStaticActorCombatProfile(slowProfile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 6,
+		DamagePerNormalAttack: 1,
+		RespawnDelay:          10 * time.Second,
+	}) {
+		t.Fatalf("expected %q profile registration to succeed", slowProfile)
+	}
+
+	currentTime := time.Unix(1700000900, 0)
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	registry.now = func() time.Time { return currentTime }
+	subject := peerVisibilityCharacter("Owner", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
+	pending := newPendingServerFrames()
+	subjectID, _ := registry.Join(subject, pending, nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "PracticeFastRespawn", bootstrapMapIndex, 1200, 2200, 20350, "", "", fastProfile, "practice.respawn_profile_swap", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected fast-profile practice mob registration to succeed")
+	}
+	pending.flush()
+	targetVID := uint32(actor.EntityID)
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, targetVID)
+	if !targetAttempt.Accepted {
+		t.Fatalf("expected fast-profile practice mob target selection before death, got %+v", targetAttempt)
+	}
+	if !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatal("expected fast-profile practice mob target ownership to be recorded")
+	}
+
+	killingHit := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetVID)
+	if !killingHit.Accepted || !killingHit.Died {
+		t.Fatalf("expected one fast-profile hit to kill the practice mob, got %+v", killingHit)
+	}
+	pending.flush()
+
+	updated, ok := registry.UpdateStaticActorWithCombatKind(actor.EntityID, "PracticeSlowRespawn", bootstrapMapIndex, 1200, 2200, 20351, slowProfile)
+	if !ok || updated.EntityID != actor.EntityID || updated.CombatProfile != slowProfile || updated.Dead {
+		t.Fatalf("expected combat-profile update to return a live slow-profile actor snapshot, got actor=%+v ok=%v", updated, ok)
+	}
+	pending.flush()
+
+	freshTarget := registry.AttemptStaticActorCombatTarget(subjectID, targetVID)
+	if !freshTarget.Accepted {
+		t.Fatalf("expected combat-profile update to clear old dead state for fresh target selection, got %+v", freshTarget)
+	}
+	if freshTarget.HPPercent != 100 {
+		t.Fatalf("expected slow-profile fresh target to report full HP after dead-state reset, got %+v", freshTarget)
+	}
+
+	currentTime = currentTime.Add(3 * time.Second)
+	registry.FlushReadyStaticActorRespawns()
+	if queued := pending.flush(); len(queued) != 0 {
+		t.Fatalf("expected old fast-profile respawn timer to be cancelled by combat-profile update, got %d queued frames", len(queued))
+	}
+}
+
 func TestGameRuntimeUpdateStaticActorRefreshesVisibleActorForOnlinePlayers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("NearPlayer", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

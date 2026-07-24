@@ -1681,6 +1681,9 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 	if !ok {
 		return StaticActorSnapshot{}, false
 	}
+	if previous.CombatKind != actor.CombatKind {
+		r.clearStaticActorCombatStateLocked(actor.Entity.ID)
+	}
 	r.syncStaticActorCombatStateLocked(actor)
 
 	refreshFrames := r.buildStaticActorRefreshFramesLocked(previous, actor)

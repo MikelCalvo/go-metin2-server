@@ -1139,6 +1139,7 @@ Expected result:
 Expected result:
 - accepted combat ownership is bound to the selected dummy snapshot, not only the visible `VID`
 - if that snapshot is replaced before reselection, the runtime now also tears down the stale selected combat-target ownership immediately: after the ordinary actor refresh / visibility-transition frames, the client receives one self-only `GC TARGET(0, 0)`, the old practice-mob engagement is released, and stale `ATTACK` intent fails closed until the client reacquires target ownership with a new accepted `TARGET`
+- if a dead combat actor is explicitly updated to a different combat profile through an operator/debug seam, the stale death timer is cancelled and the updated actor becomes a fresh live snapshot at the new profile's full HP instead of replaying the old profile's pending respawn rebuild later
 - outright runtime removal of a still-selected dummy tears down both the visible actor and the selected combat-target ownership immediately: the client sees the ordinary `CHARACTER_DEL` plus one self-only `GC TARGET(0, 0)` companion before later stale attacks stay denied
 - a dead (`0` HP) dummy is no longer eligible for accepted bootstrap target selection or attack refreshes
 - these rejections stay silent in the current slice: no peer fanout, no compensating chat spam, and no accidental HP mutation
