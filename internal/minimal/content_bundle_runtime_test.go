@@ -116,14 +116,20 @@ func TestGameRuntimeExportContentBundleSummaryIncludesSpawnGroupDetails(t *testi
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
 	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
-		Ref:           "practice.summary_mob",
-		Name:          "SummaryMob",
-		MapIndex:      42,
-		X:             1800,
-		Y:             2900,
-		RaceNum:       101,
-		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
-	}}})
+		Ref:              "practice.summary_mob",
+		Name:             "SummaryMob",
+		MapIndex:         42,
+		X:                1800,
+		Y:                2900,
+		RaceNum:          101,
+		CombatProfile:    string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		RewardExperience: 75,
+		RewardGold:       60,
+		RewardDropVnums:  []uint32{27002, 27001},
+	}}, ItemTemplates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+	}})
 	if err != nil {
 		t.Fatalf("import spawn-group content bundle: %v", err)
 	}
@@ -133,10 +139,29 @@ func TestGameRuntimeExportContentBundleSummaryIncludesSpawnGroupDetails(t *testi
 		t.Fatalf("export content bundle summary: %v", err)
 	}
 	want := []contentbundle.SpawnGroupReferenceSummary{
-		{Ref: "practice.summary_mob", Name: "SummaryMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy)},
+		{Ref: "practice.summary_mob", Name: "SummaryMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy), RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001, 27002}, RewardDropItems: []contentbundle.RewardDropItemSummary{
+			{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+			{ItemVnum: 27002, ItemName: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+		}},
 	}
 	if !reflect.DeepEqual(summary.SpawnGroups, want) {
 		t.Fatalf("unexpected runtime summary spawn groups:\n got: %#v\nwant: %#v", summary.SpawnGroups, want)
+	}
+	if summary.RewardExperienceTotal != 75 {
+		t.Fatalf("expected reward experience total 75, got %d", summary.RewardExperienceTotal)
+	}
+	if summary.RewardGoldTotal != 60 {
+		t.Fatalf("expected reward gold total 60, got %d", summary.RewardGoldTotal)
+	}
+	if summary.RewardDropItemCount != 2 {
+		t.Fatalf("expected reward drop item count 2, got %d", summary.RewardDropItemCount)
+	}
+	wantDrops := []contentbundle.RewardDropAggregateSummary{
+		{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{ItemVnum: 27002, ItemName: "Small Blue Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+	}
+	if !reflect.DeepEqual(summary.RewardDrops, wantDrops) {
+		t.Fatalf("unexpected runtime summary reward drops:\n got: %#v\nwant: %#v", summary.RewardDrops, wantDrops)
 	}
 }
 

@@ -461,6 +461,12 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 		ItemTemplateCount:            1,
 		ShopCatalogEntryCount:        1,
 		WarpDestinationCount:         1,
+		RewardExperienceTotal:        75,
+		RewardGoldTotal:              60,
+		RewardDropItemCount:          1,
+		RewardDrops: []contentbundle.RewardDropAggregateSummary{
+			{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
 		StaticActors: []contentbundle.StaticActor{
 			{Name: "Merchant", MapIndex: 1, X: 469500, Y: 964200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:qa_merchant"},
 			{Name: "Teleporter", MapIndex: 1, X: 469650, Y: 964200, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:qa_teleporter"},

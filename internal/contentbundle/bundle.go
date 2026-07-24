@@ -57,6 +57,10 @@ type Summary struct {
 	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
 	WarpDestinationCount                   int                                             `json:"warp_destination_count"`
 	WarpDestinations                       []WarpDestinationSummary                        `json:"warp_destinations,omitempty"`
+	RewardExperienceTotal                  uint64                                          `json:"reward_experience_total,omitempty"`
+	RewardGoldTotal                        uint64                                          `json:"reward_gold_total,omitempty"`
+	RewardDropItemCount                    int                                             `json:"reward_drop_item_count,omitempty"`
+	RewardDrops                            []RewardDropAggregateSummary                    `json:"reward_drops,omitempty"`
 	InteractionDefinitionCount             int                                             `json:"interaction_definition_count"`
 	ReferencedInteractionDefinitionCount   int                                             `json:"referenced_interaction_definition_count"`
 	UnreferencedInteractionDefinitionCount int                                             `json:"unreferenced_interaction_definition_count"`
@@ -117,6 +121,15 @@ type SpawnGroupReferenceSummary struct {
 type RewardDropItemSummary struct {
 	ItemVnum     uint32 `json:"item_vnum"`
 	ItemName     string `json:"item_name"`
+	Stackable    bool   `json:"stackable"`
+	MaxCount     uint16 `json:"max_count"`
+	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
+}
+
+type RewardDropAggregateSummary struct {
+	ItemVnum     uint32 `json:"item_vnum"`
+	ItemName     string `json:"item_name"`
+	SourceCount  int    `json:"source_count"`
 	Stackable    bool   `json:"stackable"`
 	MaxCount     uint16 `json:"max_count"`
 	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
@@ -365,9 +378,16 @@ func Summarize(bundle Bundle) (Summary, error) {
 			summary.InteractableStaticActors = append(summary.InteractableStaticActors, interactableStaticActorSummary(actor, definition, itemTemplatesByVnum))
 		}
 	}
+	rewardDropCountsByVnum := make(map[uint32]int)
 	for _, spawnGroup := range normalized.SpawnGroups {
 		entry := mapContentSummaryForIndex(mapCounts, spawnGroup.MapIndex)
 		entry.SpawnGroupCount++
+		summary.RewardExperienceTotal += spawnGroup.RewardExperience
+		summary.RewardGoldTotal += spawnGroup.RewardGold
+		summary.RewardDropItemCount += len(spawnGroup.RewardDropVnums)
+		for _, vnum := range spawnGroup.RewardDropVnums {
+			rewardDropCountsByVnum[vnum]++
+		}
 		summary.SpawnGroups = append(summary.SpawnGroups, SpawnGroupReferenceSummary{
 			Ref:              spawnGroup.Ref,
 			Name:             spawnGroup.Name,
@@ -382,6 +402,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 			RewardDropItems:  rewardDropItemSummaries(spawnGroup.RewardDropVnums, itemTemplatesByVnum),
 		})
 	}
+	summary.RewardDrops = rewardDropAggregateSummaries(rewardDropCountsByVnum, itemTemplatesByVnum)
 	if len(mapCounts) > 0 {
 		mapIndexes := make([]uint32, 0, len(mapCounts))
 		for mapIndex := range mapCounts {
@@ -575,6 +596,36 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 		summaries = append(summaries, RewardDropItemSummary{
 			ItemVnum:     template.Vnum,
 			ItemName:     template.Name,
+			Stackable:    template.Stackable,
+			MaxCount:     template.MaxCount,
+			ShopBuyPrice: template.ShopBuyPrice,
+		})
+	}
+	if len(summaries) == 0 {
+		return nil
+	}
+	return summaries
+}
+
+func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVnum map[uint32]itemcatalog.Template) []RewardDropAggregateSummary {
+	if len(countsByVnum) == 0 {
+		return nil
+	}
+	vnums := make([]uint32, 0, len(countsByVnum))
+	for vnum := range countsByVnum {
+		vnums = append(vnums, vnum)
+	}
+	sort.Slice(vnums, func(i int, j int) bool { return vnums[i] < vnums[j] })
+	summaries := make([]RewardDropAggregateSummary, 0, len(vnums))
+	for _, vnum := range vnums {
+		template := itemcatalog.NormalizeTemplate(itemTemplatesByVnum[vnum])
+		if template.Vnum == 0 || template.Name == "" {
+			continue
+		}
+		summaries = append(summaries, RewardDropAggregateSummary{
+			ItemVnum:     template.Vnum,
+			ItemName:     template.Name,
+			SourceCount:  countsByVnum[vnum],
 			Stackable:    template.Stackable,
 			MaxCount:     template.MaxCount,
 			ShopBuyPrice: template.ShopBuyPrice,

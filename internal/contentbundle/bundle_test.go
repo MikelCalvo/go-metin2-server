@@ -71,6 +71,10 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 		CombatProfileCount:           0,
 		ItemTemplateCount:            2,
 		ShopCatalogEntryCount:        2,
+		RewardDropItemCount:          1,
+		RewardDrops: []RewardDropAggregateSummary{
+			{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
 		StaticActors: []StaticActor{
 			{Name: "Merchant", MapIndex: 2, X: 1200, Y: 2200, RaceNum: 20300, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
 			{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
@@ -376,6 +380,60 @@ func TestSummarizeReturnsDeterministicSpawnRewardDropItemDetails(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary.SpawnGroups[0].RewardDropItems, want) {
 		t.Fatalf("unexpected reward drop item summaries:\n got: %#v\nwant: %#v", summary.SpawnGroups[0].RewardDropItems, want)
+	}
+}
+
+func TestSummarizeReturnsDeterministicRewardTotalsAndDropAggregates(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: " Small Blue Potion ", Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+			{Vnum: 27001, Name: " Small Red Potion ", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
+		SpawnGroups: []SpawnGroup{
+			{
+				Ref:              "practice.reward_alpha",
+				Name:             "Reward Alpha",
+				MapIndex:         42,
+				X:                1785,
+				Y:                2885,
+				RaceNum:          101,
+				CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+				RewardExperience: 25,
+				RewardGold:       5,
+				RewardDropVnums:  []uint32{27002, 27001},
+			},
+			{
+				Ref:              "practice.reward_beta",
+				Name:             "Reward Beta",
+				MapIndex:         42,
+				X:                1885,
+				Y:                2985,
+				RaceNum:          102,
+				CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+				RewardExperience: 75,
+				RewardGold:       60,
+				RewardDropVnums:  []uint32{27001},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize reward totals and drop aggregates: %v", err)
+	}
+	if summary.RewardExperienceTotal != 100 {
+		t.Fatalf("expected reward experience total 100, got %d", summary.RewardExperienceTotal)
+	}
+	if summary.RewardGoldTotal != 65 {
+		t.Fatalf("expected reward gold total 65, got %d", summary.RewardGoldTotal)
+	}
+	if summary.RewardDropItemCount != 3 {
+		t.Fatalf("expected reward drop item count 3, got %d", summary.RewardDropItemCount)
+	}
+	want := []RewardDropAggregateSummary{
+		{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 2, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{ItemVnum: 27002, ItemName: "Small Blue Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+	}
+	if !reflect.DeepEqual(summary.RewardDrops, want) {
+		t.Fatalf("unexpected reward drop aggregates:\n got: %#v\nwant: %#v", summary.RewardDrops, want)
 	}
 }
 
