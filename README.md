@@ -228,6 +228,7 @@ Already present:
 - static/non-player combat profiles,
 - target selection and normal attack packet ingress,
 - selected-target snapshot/version checks,
+- loopback combat-target introspection for selected-target ownership and HP debugging,
 - HP mutation and HP percent refreshes,
 - dead-state rejection and target clear,
 - delayed respawn rebuild path,

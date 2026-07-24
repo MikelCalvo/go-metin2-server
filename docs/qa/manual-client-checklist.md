@@ -659,8 +659,10 @@ Run this only when the target build has a visible authored `training_dummy` near
 
 - [ ] Approach the dummy until it is clearly within the current bootstrap target/attack band
 - [ ] Select the dummy once and confirm the client shows it as the active target
+- [ ] If loopback ops access is available, query `GET /local/combat-target/{character_name}` or `GET /local/combat-targets` after selection and confirm the selected `target_vid`, `snapshot_version`, and `hp_percent` match the visible dummy
 - [ ] Perform one accepted normal attack
 - [ ] Confirm the selected target remains stable and the dummy HP display moves down from full by one deterministic bootstrap step
+- [ ] If loopback ops access is available, query the same combat-target endpoint again and confirm `hp_percent` reflects the damaged runtime-owned dummy instead of resetting to `100`
 - [ ] Perform at least one more accepted normal attack
 - [ ] Confirm the selected target HP display steps down again instead of bouncing back to full on every hit
 - [ ] If practical, re-select the same still-visible dummy and confirm the current HP display stays at the already-mutated runtime value instead of silently resetting because of the re-selection itself
@@ -670,6 +672,7 @@ Expected result:
 - repeated accepted hits against the same selected dummy decrement HP in deterministic bootstrap-sized steps
 - the client-visible feedback is still the narrow self-only selected-target refresh surface, not a broader peer/combat fanout contract yet
 - dummy hits do not spend items, grant items, mutate equipment, or alter saved player progression/state by themselves
+- optional loopback combat-target snapshots are read-only debugging aids; they must reflect the same selected-target runtime state that the client sees, not introduce another authoritative combat path
 
 Important note:
 - the current contract says dummy HP is shared-world runtime state only
@@ -710,6 +713,7 @@ If the QA bundle uses a custom registered or bundled combat profile instead of t
 - [ ] Approach and select the visible practice mob
 - [ ] Land accepted normal attacks and wait through delayed retaliation beats until the player reaches the owned zero-HP floor
 - [ ] Confirm the owner receives the final `PLAYER_POINT_CHANGE` to `0`, then `DEAD(owner_vid)`, then `TARGET(0, 0)`
+- [ ] If loopback ops access is available, query `GET /local/combat-target/{character_name}` or `GET /local/combat-targets` after the floor and confirm the dead owner's stale selected target is absent from the read-only snapshot output
 - [ ] If a merchant window is open when the immediate or delayed retaliation beat reaches `0` HP, confirm one self-only `GC::SHOP END` follows the death/clear sequence and later `SHOP END` / `SHOP BUY` attempts fail closed until a fresh merchant interaction opens a new window
 - [ ] Try a fresh target or attack while still at `0` HP
 - [ ] Confirm the attempt fails closed with no new combat-visible frames
@@ -718,6 +722,7 @@ If the QA bundle uses a custom registered or bundled combat profile instead of t
 - [ ] Issue `/restart_here` on the same socket
 - [ ] Confirm the character rebuilds in place with the ordinary self bootstrap burst and restored persisted HP
 - [ ] Confirm a stale attack still fails until the practice mob is selected again
+- [ ] If loopback ops access is available, confirm the combat-target snapshot remains absent after `/restart_here` until the practice mob is freshly selected again
 - [ ] With a second living visible client, confirm that a practice mob left alive by the owner's zero-HP floor can be freshly targeted by that second client without waiting for mob death / respawn or owner disconnect
 - [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
 - [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_here` and confirm it fails closed with no recovery burst
