@@ -230,6 +230,7 @@ Already present:
 - selected-target snapshot/version checks,
 - loopback combat-target introspection for selected-target ownership and HP debugging,
 - HP mutation and HP percent refreshes,
+- codec ownership for the fixed-width `DAMAGE_INFO` hit-effect carrier before runtime emission policy broadens,
 - dead-state rejection and target clear,
 - delayed respawn rebuild path,
 - engagement ownership to prevent noisy multi-owner combat loops,

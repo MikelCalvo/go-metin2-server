@@ -8,15 +8,17 @@ import (
 )
 
 const (
-	HeaderClientAttack uint16 = 0x0401
-	HeaderClientTarget uint16 = 0x0A01
-	HeaderServerTarget uint16 = 0x0A10
+	HeaderClientAttack     uint16 = 0x0401
+	HeaderServerDamageInfo uint16 = 0x0410
+	HeaderClientTarget     uint16 = 0x0A01
+	HeaderServerTarget     uint16 = 0x0A10
 
 	ClientAttackTypeNormal uint8 = 0
 
-	clientAttackPayloadSize = 7
-	clientTargetPayloadSize = 4
-	serverTargetPayloadSize = 5
+	clientAttackPayloadSize     = 7
+	clientTargetPayloadSize     = 4
+	serverDamageInfoPayloadSize = 9
+	serverTargetPayloadSize     = 5
 )
 
 var (
@@ -38,6 +40,12 @@ type ClientTargetPacket struct {
 type ServerTargetPacket struct {
 	TargetVID uint32
 	HPPercent uint8
+}
+
+type ServerDamageInfoPacket struct {
+	VID    uint32
+	Flag   uint8
+	Damage int32
 }
 
 func EncodeClientAttack(packet ClientAttackPacket) []byte {
@@ -99,4 +107,26 @@ func DecodeServerTarget(f frame.Frame) (ServerTargetPacket, error) {
 		return ServerTargetPacket{}, ErrInvalidPayload
 	}
 	return ServerTargetPacket{TargetVID: binary.LittleEndian.Uint32(f.Payload), HPPercent: f.Payload[4]}, nil
+}
+
+func EncodeServerDamageInfo(packet ServerDamageInfoPacket) []byte {
+	payload := make([]byte, serverDamageInfoPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], packet.VID)
+	payload[4] = packet.Flag
+	binary.LittleEndian.PutUint32(payload[5:9], uint32(packet.Damage))
+	return frame.Encode(HeaderServerDamageInfo, payload)
+}
+
+func DecodeServerDamageInfo(f frame.Frame) (ServerDamageInfoPacket, error) {
+	if f.Header != HeaderServerDamageInfo {
+		return ServerDamageInfoPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != serverDamageInfoPayloadSize {
+		return ServerDamageInfoPacket{}, ErrInvalidPayload
+	}
+	return ServerDamageInfoPacket{
+		VID:    binary.LittleEndian.Uint32(f.Payload[0:4]),
+		Flag:   f.Payload[4],
+		Damage: int32(binary.LittleEndian.Uint32(f.Payload[5:9])),
+	}, nil
 }

@@ -662,6 +662,7 @@ Run this only when the target build has a visible authored `training_dummy` near
 - [ ] If loopback ops access is available, query `GET /local/combat-target/{character_name}` or `GET /local/combat-targets` after selection and confirm the selected `target_vid`, `snapshot_version`, and `hp_percent` match the visible dummy
 - [ ] Perform one accepted normal attack
 - [ ] Confirm the selected target remains stable and the dummy HP display moves down from full by one deterministic bootstrap step
+- [ ] Note whether the client shows a damage-number / hit-effect companion for the accepted hit; the fixed-width `DAMAGE_INFO` packet is now codec-owned, but runtime emission policy is still a separate follow-up from this repeated-hit smoke
 - [ ] If loopback ops access is available, query the same combat-target endpoint again and confirm `hp_percent` reflects the damaged runtime-owned dummy instead of resetting to `100`
 - [ ] Perform at least one more accepted normal attack
 - [ ] Confirm the selected target HP display steps down again instead of bouncing back to full on every hit

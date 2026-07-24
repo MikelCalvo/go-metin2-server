@@ -142,6 +142,16 @@ The loopback `/local/combat-target/{name}` operator/debug endpoint exposes that 
 The aggregate runtime snapshot skips invalid/stale entries, including selected targets whose owning session hook has already disappeared, and returns active selections in deterministic `subject_entity_id` order; the loopback `/local/combat-targets` endpoint exposes that list for local debugging.
 This gives local operator surfaces a stable read-only seam without granting stale sockets or global actor lookups a new authoritative combat path.
 
+## First damage-info hit-effect codec
+
+The repository now owns the fixed-width server `DAMAGE_INFO` (`0x0410`) codec as a later hit-effect companion for accepted attacks.
+Its focused protocol note is `combat-damage-info-bootstrap.md`.
+
+That codec is intentionally separate from the authoritative combat-state carrier in this document:
+- `TARGET(target_vid, hp_percent)` still owns the selected-target HP refresh for non-lethal bootstrap hits.
+- `DEAD(vid)` plus `TARGET(0, 0)` still owns the zero-HP edge.
+- The current damage-info slice freezes only the packet shape (`vid`, raw `flag`, signed `damage`) so later runtime emission can be tested without rediscovering the wire layout.
+
 ## Relationship to later HP / death work
 
 This document freezes the first deterministic bootstrap HP mutation and the preferred visible HP-refresh carrier.
