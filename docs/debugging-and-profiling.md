@@ -82,6 +82,18 @@ Successful responses are JSON summaries with:
 
 Crash leftovers such as hidden `.ticket-*.json` temp files are not treated as pending handoff tickets, but validation reports them as deterministic residue. Use this endpoint to inspect both pending committed handoff state and interrupted ticket writes before debugging authd/gamed login-key issues; it is not a replay, consume, restore, or remote admin API.
 
+### `POST /local/item-templates/validate`
+
+Validates the authored bootstrap item-template snapshot store without mutating item-template state. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed item-template snapshot is malformed, has unknown/trailing JSON, duplicates a vnum, or violates template policy such as invalid max counts, equipment slots, display metadata, use effects, or equip effects.
+
+Successful responses are JSON summaries with:
+
+- `template_count`
+- `vnums` sorted in deterministic template order
+- optional `crash_temp_count` and `crash_temp_files` when same-directory `.item-templates-*.json` temp files are present
+
+A missing committed `item-templates.json` is reported as an empty authored-template store, matching the runtime fallback to built-in bootstrap item templates. Crash leftovers are reported for operator visibility but are not treated as committed templates. Use this endpoint before importing content bundles, debugging merchant catalog/template mismatches, or planning item-template migration work; it is not a gameplay API or a remote admin API.
+
 ### `POST /local/account-store/backup`
 
 Copies the durable bootstrap account snapshot store into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source store is invalid, the destination is non-empty, or the backup cannot be completed.

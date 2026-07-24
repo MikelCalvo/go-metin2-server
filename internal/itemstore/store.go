@@ -251,6 +251,13 @@ type Snapshot struct {
 	Templates []Template `json:"templates"`
 }
 
+type SnapshotSummary struct {
+	TemplateCount  int      `json:"template_count"`
+	Vnums          []uint32 `json:"vnums"`
+	CrashTempCount int      `json:"crash_temp_count,omitempty"`
+	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
+}
+
 type Store interface {
 	Load() (Snapshot, error)
 	Save(Snapshot) error

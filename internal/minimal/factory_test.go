@@ -227,6 +227,46 @@ func TestGameRuntimeValidateLoginTicketStoreFailsClosedForCorruptTicket(t *testi
 	}
 }
 
+func TestGameRuntimeValidateItemTemplateStoreDryRunsAuthoredTemplateState(t *testing.T) {
+	itemDir := t.TempDir()
+	itemPath := filepath.Join(itemDir, "item-templates.json")
+	items := itemcatalog.NewFileStore(itemPath)
+	if err := items.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
+	}}); err != nil {
+		t.Fatalf("save item templates: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(itemDir, ".item-templates-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write item template temp file: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, items, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateItemTemplateStore()
+	if err != nil {
+		t.Fatalf("validate item template store: %v", err)
+	}
+	want := itemcatalog.SnapshotSummary{TemplateCount: 2, Vnums: []uint32{11200, 27001}, CrashTempCount: 1, CrashTempFiles: []string{".item-templates-crashed.json"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected item template validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestGameRuntimeFailsClosedForCorruptItemTemplateStoreAtStartup(t *testing.T) {
+	itemPath := filepath.Join(t.TempDir(), "item-templates.json")
+	if err := os.WriteFile(itemPath, []byte(`{"templates":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt item template snapshot: %v", err)
+	}
+
+	_, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, itemcatalog.NewFileStore(itemPath), nil)
+	if !errors.Is(err, itemcatalog.ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for corrupt item template store, got %v", err)
+	}
+}
+
 func (s staticItemTemplateStore) Load() (itemcatalog.Snapshot, error) {
 	return s.snapshot, nil
 }

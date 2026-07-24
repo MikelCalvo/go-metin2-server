@@ -68,6 +68,10 @@ func main() {
 		opsHandler,
 		func() (any, error) { return gameRuntime.ValidateLoginTicketStore() },
 	)
+	opsHandler = ops.RegisterLocalItemTemplateStoreValidateEndpoint(
+		opsHandler,
+		func() (any, error) { return gameRuntime.ValidateItemTemplateStore() },
+	)
 	opsHandler = ops.RegisterLocalAccountStoreBackupEndpoint(
 		opsHandler,
 		func(dstDir string) (any, error) { return gameRuntime.BackupAccountStore(dstDir) },

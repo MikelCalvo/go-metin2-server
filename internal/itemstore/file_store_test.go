@@ -30,6 +30,59 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateReturnsDeterministicSummaryAndCrashTempFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
+	}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	for _, name := range []string{".item-templates-zeta.json", ".item-templates-alpha.json", ".other-temp.json"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write temp file %s: %v", name, err)
+		}
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate item template store: %v", err)
+	}
+	want := SnapshotSummary{TemplateCount: 2, Vnums: []uint32{11200, 27001}, CrashTempCount: 2, CrashTempFiles: []string{".item-templates-alpha.json", ".item-templates-zeta.json"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected item template validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateTreatsMissingSnapshotAsEmptyStore(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing", "item-templates.json"))
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate missing item template store: %v", err)
+	}
+	want := SnapshotSummary{Vnums: []uint32{}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected missing-store summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateFailsClosedForCorruptCommittedSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create state dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt item template snapshot: %v", err)
+	}
+
+	_, err := NewFileStore(path).Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot from validation, got %v", err)
+	}
+}
+
 func TestFileStoreSaveWritesDeterministicSortedSnapshotAndReplacesPreviousContent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

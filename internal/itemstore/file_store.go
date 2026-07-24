@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
 type FileStore struct {
@@ -40,6 +42,60 @@ func (s *FileStore) Load() (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("%w: validate item template snapshot", err)
 	}
 	return normalized, nil
+}
+
+func (s *FileStore) Validate() (SnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return SnapshotSummary{}, ErrStorePathRequired
+	}
+	summary := SnapshotSummary{Vnums: []uint32{}}
+	snapshot, err := s.Load()
+	if err != nil {
+		if !errors.Is(err, ErrSnapshotNotFound) {
+			return SnapshotSummary{}, err
+		}
+	} else {
+		summary.TemplateCount = len(snapshot.Templates)
+		summary.Vnums = make([]uint32, 0, len(snapshot.Templates))
+		for _, template := range snapshot.Templates {
+			summary.Vnums = append(summary.Vnums, template.Vnum)
+		}
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	summary.CrashTempCount = len(crashTempFiles)
+	summary.CrashTempFiles = crashTempFiles
+	return summary, nil
+}
+
+func (s *FileStore) crashTempFiles() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Dir(s.path))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read item template store crash temp files: %w", err)
+	}
+	files := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if name == filepath.Base(s.path) {
+			continue
+		}
+		if strings.HasPrefix(name, ".item-templates-") && strings.HasSuffix(name, ".json") {
+			files = append(files, name)
+		}
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		return nil, nil
+	}
+	return files, nil
 }
 
 func (s *FileStore) Save(snapshot Snapshot) error {

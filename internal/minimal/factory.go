@@ -295,6 +295,19 @@ func (r *gameRuntime) ValidateLoginTicketStore() (loginticket.SnapshotSummary, e
 	return validator.Validate()
 }
 
+func (r *gameRuntime) ValidateItemTemplateStore() (itemcatalog.SnapshotSummary, error) {
+	if r == nil || r.itemStore == nil {
+		return itemcatalog.SnapshotSummary{Vnums: []uint32{}}, nil
+	}
+	validator, ok := r.itemStore.(interface {
+		Validate() (itemcatalog.SnapshotSummary, error)
+	})
+	if !ok {
+		return itemcatalog.SnapshotSummary{}, fmt.Errorf("item template store validation is not supported")
+	}
+	return validator.Validate()
+}
+
 func (r *gameRuntime) BackupAccountStore(dstDir string) (accountstore.SnapshotSummary, error) {
 	if r == nil || r.accountStore == nil {
 		return accountstore.SnapshotSummary{Logins: []string{}}, nil

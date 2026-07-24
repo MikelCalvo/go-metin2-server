@@ -571,6 +571,87 @@ func TestLocalLoginTicketStoreValidateEndpointReportsValidationFailure(t *testin
 	}
 }
 
+func TestLocalItemTemplateStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
+	validator := &stubItemTemplateStoreValidator{summary: map[string]any{"template_count": 2, "vnums": []uint32{11200, 27001}, "crash_temp_count": 1, "crash_temp_files": []string{".item-templates-crashed.json"}}}
+	mux := RegisterLocalItemTemplateStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validator to be called once, got %d", validator.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"template_count":2`, `"vnums":[11200,27001]`, `"crash_temp_count":1`, `"crash_temp_files":[".item-templates-crashed.json"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalItemTemplateStoreValidateEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	validator := &stubItemTemplateStoreValidator{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/validate", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreValidateEndpointRejectsWrongMethod(t *testing.T) {
+	validator := &stubItemTemplateStoreValidator{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/item-templates/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreValidateEndpointReportsValidationFailure(t *testing.T) {
+	validator := &stubItemTemplateStoreValidator{err: errStubItemTemplateStoreInvalid}
+	mux := RegisterLocalItemTemplateStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validator to be called once, got %d", validator.calls)
+	}
+}
+
 type stubAccountStoreValidator struct {
 	summary any
 	err     error
@@ -635,6 +716,19 @@ func (s *stubLoginTicketStoreValidator) Validate() (any, error) {
 }
 
 var errStubLoginTicketStoreInvalid = errors.New("login ticket store invalid")
+
+type stubItemTemplateStoreValidator struct {
+	summary any
+	err     error
+	calls   int
+}
+
+func (s *stubItemTemplateStoreValidator) Validate() (any, error) {
+	s.calls++
+	return s.summary, s.err
+}
+
+var errStubItemTemplateStoreInvalid = errors.New("item template store invalid")
 
 func TestLocalNoticeEndpointQueuesBroadcastForLoopbackPost(t *testing.T) {
 	broadcaster := &stubNoticeBroadcaster{delivered: 2}
