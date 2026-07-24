@@ -121,6 +121,29 @@ func TestSummarizeReturnsDeterministicSpawnGroupReferences(t *testing.T) {
 	}
 }
 
+func TestSummarizeReturnsDeterministicCombatProfileDetails(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		SpawnGroups: []SpawnGroup{
+			{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 102, CombatProfile: "practice_beta_profile"},
+			{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 3, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: "practice_alpha_profile"},
+		},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{
+			{Profile: "practice_beta_profile", MaxHP: 30, DamagePerNormalAttack: 5, AttackValue: 8, DefenseValue: 3, Level: 6, Rank: 2, RespawnDelayMs: 2500, DeathReward: worldruntime.StaticActorDeathReward{Experience: 7, Gold: 3}},
+			{Profile: "practice_alpha_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize combat-profile details: %v", err)
+	}
+	want := []worldruntime.StaticActorCombatProfileSnapshot{
+		{Profile: "practice_alpha_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500},
+		{Profile: "practice_beta_profile", MaxHP: 30, DamagePerNormalAttack: 5, AttackValue: 8, DefenseValue: 3, Level: 6, Rank: 2, RespawnDelayMs: 2500, DeathReward: worldruntime.StaticActorDeathReward{Experience: 7, Gold: 3}},
+	}
+	if !reflect.DeepEqual(summary.CombatProfiles, want) {
+		t.Fatalf("unexpected combat-profile summaries:\n got: %#v\nwant: %#v", summary.CombatProfiles, want)
+	}
+}
+
 func TestSummarizeRejectsInvalidBundle(t *testing.T) {
 	_, err := Summarize(Bundle{StaticActors: []StaticActor{{Name: "BrokenActor", RaceNum: 20300}}})
 	if !errors.Is(err, ErrInvalidBundle) {

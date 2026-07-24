@@ -47,20 +47,21 @@ type Bundle struct {
 }
 
 type Summary struct {
-	StaticActorCount                       int                                     `json:"static_actor_count"`
-	InteractableStaticActorCount           int                                     `json:"interactable_static_actor_count"`
-	SpawnGroupCount                        int                                     `json:"spawn_group_count"`
-	CombatProfileCount                     int                                     `json:"combat_profile_count"`
-	ItemTemplateCount                      int                                     `json:"item_template_count"`
-	ShopCatalogEntryCount                  int                                     `json:"shop_catalog_entry_count"`
-	InteractionDefinitionCount             int                                     `json:"interaction_definition_count"`
-	ReferencedInteractionDefinitionCount   int                                     `json:"referenced_interaction_definition_count"`
-	UnreferencedInteractionDefinitionCount int                                     `json:"unreferenced_interaction_definition_count"`
-	InteractionKinds                       []InteractionKindSummary                `json:"interaction_kinds,omitempty"`
-	ReferencedInteractionDefinitions       []InteractionDefinitionReferenceSummary `json:"referenced_interaction_definitions,omitempty"`
-	UnreferencedInteractionDefinitions     []InteractionDefinitionReferenceSummary `json:"unreferenced_interaction_definitions,omitempty"`
-	SpawnGroups                            []SpawnGroupReferenceSummary            `json:"spawn_groups,omitempty"`
-	Maps                                   []MapContentSummary                     `json:"maps,omitempty"`
+	StaticActorCount                       int                                             `json:"static_actor_count"`
+	InteractableStaticActorCount           int                                             `json:"interactable_static_actor_count"`
+	SpawnGroupCount                        int                                             `json:"spawn_group_count"`
+	CombatProfileCount                     int                                             `json:"combat_profile_count"`
+	ItemTemplateCount                      int                                             `json:"item_template_count"`
+	ShopCatalogEntryCount                  int                                             `json:"shop_catalog_entry_count"`
+	InteractionDefinitionCount             int                                             `json:"interaction_definition_count"`
+	ReferencedInteractionDefinitionCount   int                                             `json:"referenced_interaction_definition_count"`
+	UnreferencedInteractionDefinitionCount int                                             `json:"unreferenced_interaction_definition_count"`
+	InteractionKinds                       []InteractionKindSummary                        `json:"interaction_kinds,omitempty"`
+	ReferencedInteractionDefinitions       []InteractionDefinitionReferenceSummary         `json:"referenced_interaction_definitions,omitempty"`
+	UnreferencedInteractionDefinitions     []InteractionDefinitionReferenceSummary         `json:"unreferenced_interaction_definitions,omitempty"`
+	SpawnGroups                            []SpawnGroupReferenceSummary                    `json:"spawn_groups,omitempty"`
+	CombatProfiles                         []worldruntime.StaticActorCombatProfileSnapshot `json:"combat_profiles,omitempty"`
+	Maps                                   []MapContentSummary                             `json:"maps,omitempty"`
 }
 
 type InteractionKindSummary struct {
@@ -223,6 +224,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 		StaticActorCount:           len(normalized.StaticActors),
 		SpawnGroupCount:            len(normalized.SpawnGroups),
 		CombatProfileCount:         len(normalized.CombatProfiles),
+		CombatProfiles:             cloneCombatProfileSnapshots(normalized.CombatProfiles),
 		ItemTemplateCount:          len(normalized.ItemTemplates),
 		InteractionDefinitionCount: len(normalized.InteractionDefinitions),
 	}
@@ -576,19 +578,27 @@ func combatProfilesForAuthoredActors(staticActors []StaticActor, spawnGroups []S
 }
 
 func normalizeCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {
-	if len(profiles) == 0 {
+	normalized := cloneCombatProfileSnapshots(profiles)
+	if len(normalized) == 0 {
 		return nil
-	}
-	normalized := make([]worldruntime.StaticActorCombatProfileSnapshot, len(profiles))
-	copy(normalized, profiles)
-	for i := range normalized {
-		normalized[i].Profile = strings.TrimSpace(normalized[i].Profile)
-		normalized[i].DeathReward = normalized[i].DeathReward.Clone()
 	}
 	sort.Slice(normalized, func(i int, j int) bool {
 		return normalized[i].Profile < normalized[j].Profile
 	})
 	return normalized
+}
+
+func cloneCombatProfileSnapshots(profiles []worldruntime.StaticActorCombatProfileSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {
+	if len(profiles) == 0 {
+		return nil
+	}
+	cloned := make([]worldruntime.StaticActorCombatProfileSnapshot, len(profiles))
+	copy(cloned, profiles)
+	for i := range cloned {
+		cloned[i].Profile = strings.TrimSpace(cloned[i].Profile)
+		cloned[i].DeathReward = cloned[i].DeathReward.Clone()
+	}
+	return cloned
 }
 
 func referencedCombatProfileNames(staticActors []StaticActor, spawnGroups []SpawnGroup) map[string]struct{} {

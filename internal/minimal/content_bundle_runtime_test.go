@@ -129,6 +129,61 @@ func TestGameRuntimeExportContentBundleSummaryIncludesSpawnGroupDetails(t *testi
 	}
 }
 
+func TestGameRuntimeExportContentBundleSummaryIncludesPortableCombatProfiles(t *testing.T) {
+	const profile = "practice_summary_profile"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.summary_profile_mob",
+			Name:          "SummaryProfileMob",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 3,
+			AttackValue:           7,
+			DefenseValue:          4,
+			Level:                 4,
+			Rank:                  1,
+			RespawnDelayMs:        1500,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import spawn-group content bundle with combat profile: %v", err)
+	}
+
+	summary, err := runtime.ExportContentBundleSummary()
+	if err != nil {
+		t.Fatalf("export content bundle summary with combat profile: %v", err)
+	}
+	want := []worldruntime.StaticActorCombatProfileSnapshot{{
+		Profile:               profile,
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		AttackValue:           7,
+		DefenseValue:          4,
+		Level:                 4,
+		Rank:                  1,
+		RespawnDelayMs:        1500,
+	}}
+	if !reflect.DeepEqual(summary.CombatProfiles, want) {
+		t.Fatalf("unexpected runtime summary combat profiles:\n got: %#v\nwant: %#v", summary.CombatProfiles, want)
+	}
+}
+
 func TestGameRuntimeImportContentBundleReplacesRuntimeStateAndPersistsStores(t *testing.T) {
 	staticPath := t.TempDir() + "/static-actors.json"
 	staticActorStore := staticstore.NewFileStore(staticPath)
