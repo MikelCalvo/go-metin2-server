@@ -176,6 +176,9 @@ type MapContentSummary struct {
 	StaticActorCount             int    `json:"static_actor_count"`
 	InteractableStaticActorCount int    `json:"interactable_static_actor_count"`
 	SpawnGroupCount              int    `json:"spawn_group_count"`
+	RewardExperienceTotal        uint64 `json:"reward_experience_total,omitempty"`
+	RewardGoldTotal              uint64 `json:"reward_gold_total,omitempty"`
+	RewardDropItemCount          int    `json:"reward_drop_item_count,omitempty"`
 }
 
 func FromSnapshots(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot) (Bundle, error) {
@@ -382,6 +385,9 @@ func Summarize(bundle Bundle) (Summary, error) {
 	for _, spawnGroup := range normalized.SpawnGroups {
 		entry := mapContentSummaryForIndex(mapCounts, spawnGroup.MapIndex)
 		entry.SpawnGroupCount++
+		entry.RewardExperienceTotal += spawnGroup.RewardExperience
+		entry.RewardGoldTotal += spawnGroup.RewardGold
+		entry.RewardDropItemCount += len(spawnGroup.RewardDropVnums)
 		summary.RewardExperienceTotal += spawnGroup.RewardExperience
 		summary.RewardGoldTotal += spawnGroup.RewardGold
 		summary.RewardDropItemCount += len(spawnGroup.RewardDropVnums)

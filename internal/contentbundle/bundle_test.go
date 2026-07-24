@@ -124,7 +124,7 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 		},
 		Maps: []MapContentSummary{
 			{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 0},
-			{MapIndex: 2, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 1},
+			{MapIndex: 2, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 1, RewardDropItemCount: 1},
 		},
 	}
 	if !reflect.DeepEqual(summary, want) {
@@ -434,6 +434,10 @@ func TestSummarizeReturnsDeterministicRewardTotalsAndDropAggregates(t *testing.T
 	}
 	if !reflect.DeepEqual(summary.RewardDrops, want) {
 		t.Fatalf("unexpected reward drop aggregates:\n got: %#v\nwant: %#v", summary.RewardDrops, want)
+	}
+	wantMaps := []MapContentSummary{{MapIndex: 42, SpawnGroupCount: 2, RewardExperienceTotal: 100, RewardGoldTotal: 65, RewardDropItemCount: 3}}
+	if !reflect.DeepEqual(summary.Maps, wantMaps) {
+		t.Fatalf("unexpected per-map reward audit:\n got: %#v\nwant: %#v", summary.Maps, wantMaps)
 	}
 }
 
