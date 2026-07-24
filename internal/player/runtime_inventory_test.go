@@ -1782,6 +1782,26 @@ func TestRuntimeMoveInventoryItemSwapsIncompatibleOccupiedDestinationWithoutCoun
 	}
 }
 
+func TestRuntimeMoveInventoryItemBoundedRejectsOverMaxSourceIncompatibleSwapWithoutMutatingState(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 201, Slot: 5},
+		{ID: 12, Vnum: 1120, Count: 1, Slot: 8},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	before := runtime.LiveCharacter()
+
+	if result, ok := runtime.MoveInventoryItemBounded(5, 8, 200); ok {
+		t.Fatalf("expected over-max source incompatible occupied-destination swap to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("expected rejected over-max source incompatible swap to leave live state unchanged, got %#v want %#v", got, before)
+	}
+	if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+		t.Fatalf("expected rejected over-max source incompatible swap to leave persisted inventory unchanged, got %#v want %#v", got.Inventory, persisted.Inventory)
+	}
+}
+
 func TestRuntimeMoveInventoryItemBoundedZeroCountMergesCompatibleOccupiedDestination(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{

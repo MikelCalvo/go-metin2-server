@@ -356,6 +356,96 @@ func TestGameRuntimeItemMoveRejectsMissingAuthoredTemplateForIncompatibleSwapWit
 	}
 }
 
+func TestGameRuntimeItemMoveRejectsOverTemplateMaxIncompatibleSwapWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		login     string
+		key       uint32
+		inventory []inventory.ItemInstance
+		count     uint8
+	}{
+		{
+			name:  "source stack above template max",
+			login: "swap-overmax-source",
+			key:   0x6060606d,
+			inventory: []inventory.ItemInstance{
+				{ID: 6371, Vnum: 27001, Count: 201, Slot: 5},
+				{ID: 6372, Vnum: 11200, Count: 1, Slot: 6},
+			},
+		},
+		{
+			name:  "target stack above template max",
+			login: "swap-overmax-target",
+			key:   0x6060606e,
+			inventory: []inventory.ItemInstance{
+				{ID: 6373, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 6374, Vnum: 11200, Count: 2, Slot: 6},
+			},
+		},
+		{
+			name:  "counted full-stack target above template max",
+			login: "swap-overmax-target-counted",
+			key:   0x60606071,
+			inventory: []inventory.ItemInstance{
+				{ID: 6375, Vnum: 27001, Count: 3, Slot: 5},
+				{ID: 6376, Vnum: 11200, Count: 2, Slot: 6},
+			},
+			count: 3,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("MoveSwapOverMax", 0x0103066d, 0x0204066d, 1300, 2300, 0, 101, 201)
+			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			owner.Quickslots = []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+			}
+			issuePeerTicket(t, ticketStore, tc.login, tc.key, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed over-template-max incompatible item-move swap account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+				{Vnum: 27001, Name: "Counted Potion", Stackable: true, MaxCount: 200},
+				{Vnum: 11200, Name: "Single Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()},
+			})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected over-template-max incompatible item-move swap runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.key)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+				Source:      itemproto.InventoryPosition(5),
+				Destination: itemproto.InventoryPosition(6),
+				Count:       tc.count,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected over-template-max incompatible item-move swap packet error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s incompatible item-move swap to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s incompatible item-move swap rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load over-template-max incompatible item-move swap account: %v", err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s incompatible item-move swap mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s incompatible item-move swap mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemMoveIncompatibleSwapCarriesBothTemplateMetadata(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -528,6 +618,82 @@ func TestGameRuntimeItemMoveNonStackableSameVnumFullStackSwapsWithoutMerging(t *
 	}
 	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
 		t.Fatalf("unexpected persisted quickslots after non-stackable same-vnum swap: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
+func TestGameRuntimeItemMoveRejectsOverTemplateMaxSameVnumForcedSwapWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name      string
+		login     string
+		key       uint32
+		inventory []inventory.ItemInstance
+	}{
+		{
+			name:  "source stack above template max",
+			login: "same-vnum-swap-overmax-source",
+			key:   0x60606072,
+			inventory: []inventory.ItemInstance{
+				{ID: 6411, Vnum: 50001, Count: 2, Slot: 5},
+				{ID: 6412, Vnum: 50001, Count: 1, Slot: 6},
+			},
+		},
+		{
+			name:  "target stack above template max",
+			login: "same-vnum-swap-overmax-target",
+			key:   0x60606073,
+			inventory: []inventory.ItemInstance{
+				{ID: 6413, Vnum: 50001, Count: 1, Slot: 5},
+				{ID: 6414, Vnum: 50001, Count: 2, Slot: 6},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("MoveSameVnumOverMax", 0x01030672, 0x02040672, 1300, 2300, 0, 101, 201)
+			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
+			owner.Quickslots = []loginticket.Quickslot{
+				{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+				{Position: 3, Type: quickslotproto.TypeItem, Slot: 6},
+			}
+			issuePeerTicket(t, ticketStore, tc.login, tc.key, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed over-template-max same-vnum item-move swap account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 50001, Name: "Non-Stackable Badge", Stackable: false, MaxCount: 1}})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected over-template-max same-vnum item-move swap runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.key)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+				Source:      itemproto.InventoryPosition(5),
+				Destination: itemproto.InventoryPosition(6),
+				Count:       0,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected over-template-max same-vnum item-move swap packet error: %v", err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s same-vnum item-move swap to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s same-vnum item-move swap rejection, got %d", tc.name, len(queued))
+			}
+			persisted, err := accounts.Load(tc.login)
+			if err != nil {
+				t.Fatalf("load over-template-max same-vnum item-move swap account: %v", err)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s same-vnum item-move swap mutated inventory: got %+v want %+v", tc.name, persisted.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s same-vnum item-move swap mutated quickslots: got %+v want %+v", tc.name, persisted.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
 	}
 }
 
