@@ -68,6 +68,44 @@ func TestGameRuntimeRestoreAccountStoreRestoresValidatedBackup(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeRestoreAccountStoreRejectsLiveSessionsWithoutMutation(t *testing.T) {
+	source := accountstore.NewFileStore(t.TempDir())
+	if err := source.Save(accountstore.Account{Login: "restored", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "RestoredWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	active := accountstore.NewFileStore(filepath.Join(t.TempDir(), "active"))
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, active)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	owner := peerVisibilityCharacter("LiveAccountGuard", 0x01030703, 0x02040703, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "account-live-restore", 0x70707003, owner)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "account-live-restore", 0x70707003)
+	defer closeSessionFlow(t, flow)
+
+	_, err = runtime.RestoreAccountStore(backupDir)
+	if !errors.Is(err, ErrAccountStoreRestoreLiveSessions) {
+		t.Fatalf("expected live-session account restore guard, got %v", err)
+	}
+	summary, err := active.Validate()
+	if err != nil {
+		t.Fatalf("validate active account store after rejected live restore: %v", err)
+	}
+	want := accountstore.SnapshotSummary{AccountCount: 1, CharacterCount: 2, Logins: []string{"account-live-restore"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("expected live-session restore guard to leave active account store unchanged, got %#v want %#v", summary, want)
+	}
+	if _, err := active.Load("restored"); !errors.Is(err, accountstore.ErrAccountNotFound) {
+		t.Fatalf("expected backup account not to be restored over active live state, got %v", err)
+	}
+}
+
 func TestGameRuntimeRestoreAccountStoreFailsClosedForInvalidBackup(t *testing.T) {
 	backupDir := t.TempDir()
 	path := filepath.Join(backupDir, "6d6b6d6b.json")

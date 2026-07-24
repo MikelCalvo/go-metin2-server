@@ -82,6 +82,7 @@ var (
 	ErrInteractionDefinitionReferenced      = errors.New("interaction definition referenced by static actor")
 	ErrContentBundleUnavailable             = errors.New("content bundle unavailable")
 	ErrItemTemplateStoreRestoreLiveSessions = errors.New("item template store restore requires no live sessions")
+	ErrAccountStoreRestoreLiveSessions      = errors.New("account store restore requires no live sessions")
 )
 
 type loginKeyGenerator func() (uint32, error)
@@ -457,6 +458,11 @@ func (r *gameRuntime) RestoreAccountStore(srcDir string) (accountstore.SnapshotS
 	})
 	if !ok {
 		return accountstore.SnapshotSummary{}, fmt.Errorf("account store restore is not supported")
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if len(r.liveCharactersByName) != 0 {
+		return accountstore.SnapshotSummary{}, ErrAccountStoreRestoreLiveSessions
 	}
 	if err := restorer.RestoreFrom(srcDir); err != nil {
 		return accountstore.SnapshotSummary{}, err
