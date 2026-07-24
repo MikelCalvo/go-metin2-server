@@ -8,6 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -100,6 +102,12 @@ type Ticket struct {
 	Characters []Character `json:"characters"`
 }
 
+type SnapshotSummary struct {
+	TicketCount int      `json:"ticket_count"`
+	Logins      []string `json:"logins"`
+	LoginKeys   []uint32 `json:"login_keys"`
+}
+
 func normalizeCharactersItemState(characters []Character) {
 	for i := range characters {
 		characters[i].NormalizeItemState()
@@ -118,6 +126,70 @@ type FileStore struct {
 
 func NewFileStore(dir string) *FileStore {
 	return &FileStore{dir: dir}
+}
+
+func (s *FileStore) List() ([]Ticket, error) {
+	if s.dir == "" {
+		return nil, ErrStoreDirRequired
+	}
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return []Ticket{}, nil
+		}
+		return nil, fmt.Errorf("read login ticket store dir: %w", err)
+	}
+
+	tickets := make([]Ticket, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		loginKey, err := decodeTicketFilenameLoginKey(entry.Name())
+		if err != nil {
+			return nil, err
+		}
+		if canonicalFilename := filepath.Base(s.ticketPath(loginKey)); entry.Name() != canonicalFilename {
+			return nil, fmt.Errorf("%w: login ticket filename %q is not canonical for login key %08x", ErrInvalidTicket, entry.Name(), loginKey)
+		}
+		ticket, err := s.readTicketFile(loginKey)
+		if err != nil {
+			return nil, err
+		}
+		if ticket.LoginKey != loginKey {
+			return nil, fmt.Errorf("%w: login ticket filename key %08x does not match snapshot key %08x", ErrInvalidTicket, loginKey, ticket.LoginKey)
+		}
+		tickets = append(tickets, ticket)
+	}
+	sort.Slice(tickets, func(i, j int) bool {
+		leftLogin := strings.ToLower(tickets[i].Login)
+		rightLogin := strings.ToLower(tickets[j].Login)
+		if leftLogin != rightLogin {
+			return leftLogin < rightLogin
+		}
+		if tickets[i].Login != tickets[j].Login {
+			return tickets[i].Login < tickets[j].Login
+		}
+		return tickets[i].LoginKey < tickets[j].LoginKey
+	})
+	return tickets, nil
+}
+
+func (s *FileStore) Validate() (SnapshotSummary, error) {
+	tickets, err := s.List()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	summary := SnapshotSummary{
+		TicketCount: len(tickets),
+		Logins:      make([]string, 0, len(tickets)),
+		LoginKeys:   make([]uint32, 0, len(tickets)),
+	}
+	for _, ticket := range tickets {
+		summary.Logins = append(summary.Logins, ticket.Login)
+		summary.LoginKeys = append(summary.LoginKeys, ticket.LoginKey)
+	}
+	return summary, nil
 }
 
 func (s *FileStore) Issue(ticket Ticket) error {
@@ -201,8 +273,31 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 		return Ticket{}, ErrStoreDirRequired
 	}
 
-	path := s.ticketPath(loginKey)
-	raw, err := os.ReadFile(path)
+	ticket, err := s.readTicketFile(loginKey)
+	if err != nil {
+		return Ticket{}, err
+	}
+	if ticket.Login != login || ticket.LoginKey != loginKey {
+		return Ticket{}, ErrTicketLoginMismatch
+	}
+	if !consume {
+		return ticket, nil
+	}
+	if err := os.Remove(s.ticketPath(loginKey)); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Ticket{}, ErrTicketNotFound
+		}
+		return Ticket{}, fmt.Errorf("delete consumed login ticket: %w", err)
+	}
+	if err := syncStoreDir(s.dir); err != nil {
+		return Ticket{}, fmt.Errorf("sync consumed login ticket store dir: %w", err)
+	}
+
+	return ticket, nil
+}
+
+func (s *FileStore) readTicketFile(loginKey uint32) (Ticket, error) {
+	raw, err := os.ReadFile(s.ticketPath(loginKey))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Ticket{}, ErrTicketNotFound
@@ -218,27 +313,23 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 	if err := validateTicket(ticket); err != nil {
 		return Ticket{}, err
 	}
-	if ticket.Login != login || ticket.LoginKey != loginKey {
-		return Ticket{}, ErrTicketLoginMismatch
-	}
-	if !consume {
-		return ticket, nil
-	}
-	if err := os.Remove(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return Ticket{}, ErrTicketNotFound
-		}
-		return Ticket{}, fmt.Errorf("delete consumed login ticket: %w", err)
-	}
-	if err := syncStoreDir(s.dir); err != nil {
-		return Ticket{}, fmt.Errorf("sync consumed login ticket store dir: %w", err)
-	}
-
 	return ticket, nil
 }
 
 func (s *FileStore) ticketPath(loginKey uint32) string {
 	return filepath.Join(s.dir, fmt.Sprintf("%08x.json", loginKey))
+}
+
+func decodeTicketFilenameLoginKey(filename string) (uint32, error) {
+	encoded := strings.TrimSuffix(filename, ".json")
+	if len(encoded) != 8 {
+		return 0, fmt.Errorf("%w: login ticket filename %q is not 8-digit hex JSON", ErrInvalidTicket, filename)
+	}
+	loginKey, err := strconv.ParseUint(encoded, 16, 32)
+	if err != nil {
+		return 0, fmt.Errorf("%w: login ticket filename %q is not 8-digit hex JSON", ErrInvalidTicket, filename)
+	}
+	return uint32(loginKey), nil
 }
 
 func decodeTicketStrict(raw []byte, ticket *Ticket) error {
@@ -257,6 +348,12 @@ func decodeTicketStrict(raw []byte, ticket *Ticket) error {
 }
 
 func validateTicket(ticket Ticket) error {
+	if ticket.Login == "" {
+		return fmt.Errorf("%w: login is required", ErrInvalidTicket)
+	}
+	if ticket.LoginKey == 0 {
+		return fmt.Errorf("%w: login key is required", ErrInvalidTicket)
+	}
 	if err := validateUniqueCharacterIdentity(ticket.Characters); err != nil {
 		return err
 	}

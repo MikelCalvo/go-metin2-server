@@ -212,6 +212,7 @@ type gameRuntime struct {
 	sessionFactory          service.SessionFactory
 	sharedWorld             *sharedWorldRegistry
 	staticStore             staticstore.Store
+	loginTicketStore        loginticket.Store
 	accountStore            accountstore.Store
 	itemStore               itemcatalog.Store
 	interactionStore        interactionstore.Store
@@ -277,6 +278,19 @@ func (r *gameRuntime) ValidateAccountStore() (accountstore.SnapshotSummary, erro
 	})
 	if !ok {
 		return accountstore.SnapshotSummary{}, fmt.Errorf("account store validation is not supported")
+	}
+	return validator.Validate()
+}
+
+func (r *gameRuntime) ValidateLoginTicketStore() (loginticket.SnapshotSummary, error) {
+	if r == nil || r.loginTicketStore == nil {
+		return loginticket.SnapshotSummary{Logins: []string{}, LoginKeys: []uint32{}}, nil
+	}
+	validator, ok := r.loginTicketStore.(interface {
+		Validate() (loginticket.SnapshotSummary, error)
+	})
+	if !ok {
+		return loginticket.SnapshotSummary{}, fmt.Errorf("login ticket store validation is not supported")
 	}
 	return validator.Validate()
 }
@@ -892,6 +906,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 	runtime := &gameRuntime{
 		sharedWorld:          sharedWorld,
 		staticStore:          staticActors,
+		loginTicketStore:     store,
 		accountStore:         accounts,
 		itemStore:            items,
 		interactionStore:     interactions,

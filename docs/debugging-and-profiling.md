@@ -68,6 +68,18 @@ Successful responses are JSON summaries with:
 
 Crash leftovers such as hidden `.account-*.json` temp files are ignored, matching the committed-snapshot list/backup contract.
 
+### `POST /local/login-tickets/validate`
+
+Validates the one-shot authd-to-gamed login-ticket handoff store without consuming or deleting any tickets. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed ticket is corrupt, has unknown/trailing JSON, has an invalid or mismatched filename/login-key pairing, has an empty login, has a zero login key, or violates the character/item/equipment/quickslot invariants shared with ticket load/consume.
+
+Successful responses are JSON summaries with:
+
+- `ticket_count`
+- `logins` sorted in deterministic ticket-list order
+- `login_keys` in the same order as `logins`
+
+Crash leftovers such as hidden `.ticket-*.json` temp files are ignored. Use this endpoint to inspect pending handoff state before debugging authd/gamed login-key issues; it is not a replay, consume, restore, or remote admin API.
+
 ### `POST /local/account-store/backup`
 
 Copies the durable bootstrap account snapshot store into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source store is invalid, the destination is non-empty, or the backup cannot be completed.

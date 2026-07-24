@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -115,6 +116,105 @@ func TestFileStoreIssueDoesNotOverwriteTicketCommittedAfterPreflight(t *testing.
 	}
 	if !reflect.DeepEqual(got, existing) {
 		t.Fatalf("existing ticket was overwritten:\n got: %#v\nwant: %#v", got, existing)
+	}
+}
+
+func TestFileStoreValidateReportsDeterministicTicketSummary(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	tickets := []Ticket{
+		{Login: "zeta", LoginKey: 0x02000000, IssuedAt: issuedAt},
+		{Login: "Alpha", LoginKey: 0x01000000, IssuedAt: issuedAt},
+		{Login: "alpha", LoginKey: 0x01000001, IssuedAt: issuedAt},
+	}
+	for _, ticket := range tickets {
+		if err := store.Issue(ticket); err != nil {
+			t.Fatalf("issue ticket %s/%08x: %v", ticket.Login, ticket.LoginKey, err)
+		}
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate ticket store: %v", err)
+	}
+	want := SnapshotSummary{
+		TicketCount: 3,
+		Logins:      []string{"Alpha", "alpha", "zeta"},
+		LoginKeys:   []uint32{0x01000000, 0x01000001, 0x02000000},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected ticket validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateTreatsMissingStoreAsEmpty(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing"))
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate missing ticket store: %v", err)
+	}
+	want := SnapshotSummary{TicketCount: 0, Logins: []string{}, LoginKeys: []uint32{}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected empty ticket summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateIgnoresCrashTempTickets(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: issuedAt}); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(store.dir, ".ticket-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp ticket: %v", err)
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate ticket store with crash temp file: %v", err)
+	}
+	want := SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected ticket summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateFailsClosedOnCorruptTicket(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := os.WriteFile(store.ticketPath(0x01020304), []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt ticket: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for corrupt committed ticket, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsFilenameLoginKeyMismatch(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := mustJSON(t, Ticket{Login: "mkmk", LoginKey: 0x01020305, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)})
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write mismatched-key ticket: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for mismatched ticket filename key, got %v", err)
+	}
+}
+
+func TestFileStoreIssueRejectsEmptyLoginAndZeroLoginKey(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	cases := []Ticket{
+		{Login: "", LoginKey: 0x01020304},
+		{Login: "mkmk", LoginKey: 0},
+	}
+	for _, ticket := range cases {
+		if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+			t.Fatalf("expected ErrInvalidTicket for ticket %#v, got %v", ticket, err)
+		}
 	}
 }
 

@@ -138,6 +138,49 @@ func TestGameRuntimeValidateAccountStoreBackupFailsClosedForInvalidManifest(t *t
 	}
 }
 
+func TestGameRuntimeValidateLoginTicketStoreDryRunsTicketHandoffState(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	if err := store.Issue(loginticket.Ticket{Login: "zeta", LoginKey: 0x02000000}); err != nil {
+		t.Fatalf("issue zeta ticket: %v", err)
+	}
+	if err := store.Issue(loginticket.Ticket{Login: "alpha", LoginKey: 0x01000000}); err != nil {
+		t.Fatalf("issue alpha ticket: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateLoginTicketStore()
+	if err != nil {
+		t.Fatalf("validate login ticket store: %v", err)
+	}
+	want := loginticket.SnapshotSummary{TicketCount: 2, Logins: []string{"alpha", "zeta"}, LoginKeys: []uint32{0x01000000, 0x02000000}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected login ticket validation summary: got %#v want %#v", summary, want)
+	}
+	if _, err := store.Load("alpha", 0x01000000); err != nil {
+		t.Fatalf("expected dry-run validation not to consume alpha ticket: %v", err)
+	}
+}
+
+func TestGameRuntimeValidateLoginTicketStoreFailsClosedForCorruptTicket(t *testing.T) {
+	dir := t.TempDir()
+	store := loginticket.NewFileStore(dir)
+	if err := os.WriteFile(filepath.Join(dir, "01020304.json"), []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt login ticket: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	_, err = runtime.ValidateLoginTicketStore()
+	if !errors.Is(err, loginticket.ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket, got %v", err)
+	}
+}
+
 func (s staticItemTemplateStore) Load() (itemcatalog.Snapshot, error) {
 	return s.snapshot, nil
 }
