@@ -32809,6 +32809,70 @@ func newPracticeMobTCPRewardHarness(t *testing.T, login string, loginKey uint32,
 	return newPracticeMobTCPAccountRewardHarness(t, login, loginKey, spawnRef, hp, 0, reward)
 }
 
+func newPracticeMobTCPCustomProfileRewardHarness(t *testing.T, login string, loginKey uint32, spawnRef string, hp int32, profile worldruntime.StaticActorCombatProfileSnapshot) *practiceMobTCPHarness {
+	t.Helper()
+
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile.Profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile.Profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerTCP", 0x01030131, 0x02040131, 1100, 2100, 0, 101, 201)
+	if hp > 0 {
+		owner.Points[bootstrapPlayerPointValueIndex] = hp
+	}
+	issuePeerTicket(t, store, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed tcp custom-profile practice-mob account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore, itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"), nil)
+	if err != nil {
+		t.Fatalf("unexpected tcp custom-profile practice-mob runtime error: %v", err)
+	}
+	h := &practiceMobTCPHarness{runtime: runtime, now: time.Unix(1700000750, 0), accountStore: accounts}
+	runtime.now = func() time.Time {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return h.now
+	}
+	bundle := contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           spawnRef,
+			Name:          "PracticeMobTCP",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       101,
+			CombatProfile: profile.Profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{profile},
+		ItemTemplates:  rewardDropItemTemplates(profile.DeathReward.DropVnums...),
+	}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import tcp custom-profile practice-mob content bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 tcp custom-profile practice mob, got %#v", actors)
+	}
+	if actors[0].CombatProfile != profile.Profile || actors[0].RewardExperience != profile.DeathReward.Experience || actors[0].RewardGold != profile.DeathReward.Gold || !reflect.DeepEqual(actors[0].RewardDropVnums, profile.DeathReward.Clone().DropVnums) {
+		t.Fatalf("expected tcp custom-profile actor to inherit profile defaults, got %+v", actors[0])
+	}
+	h.targetID = uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames before tcp custom-profile practice-mob test, got %d", len(enterOut))
+	}
+	h.flow = flow
+	h.conn, h.cancel, h.errCh = serveStartedFlowOverPlainTCP(t, flow)
+	h.client = newPlainTCPTestClient(h.conn)
+	return h
+}
+
 func newPracticeMobTCPAccountHarness(t *testing.T, login string, loginKey uint32, spawnRef string, hp int32, empire uint8) *practiceMobTCPHarness {
 	t.Helper()
 
@@ -33106,6 +33170,120 @@ func TestGameSessionFlowPracticeMobRewardDeliveryOverPlainTCP(t *testing.T) {
 	}
 	if ownership.VID != groundAdd.VID || ownership.OwnerName != "PeerTCP" {
 		t.Fatalf("expected tcp reward ownership for ground VID %d to PeerTCP, got %+v", groundAdd.VID, ownership)
+	}
+}
+
+func TestGameSessionFlowPracticeMobFormulaProfileRewardDeliveryOverPlainTCP(t *testing.T) {
+	const rewardExperience uint64 = 19
+	const rewardGold uint64 = 29
+	const rewardDropVnum uint32 = 27002
+	profile := worldruntime.StaticActorCombatProfileSnapshot{
+		Profile:        "tcp_formula_reward_mob",
+		MaxHP:          6,
+		AttackValue:    4,
+		DefenseValue:   2,
+		RespawnDelayMs: worldruntime.TrainingDummyBootstrapRespawnDelay.Milliseconds(),
+		DeathReward: worldruntime.StaticActorDeathReward{
+			Experience: rewardExperience,
+			Gold:       rewardGold,
+			DropVnums:  []uint32{rewardDropVnum},
+		},
+	}
+	h := newPracticeMobTCPCustomProfileRewardHarness(t, "tcp-formula-reward", 0x72727272, "practice.mob_tcp_formula_reward", 500, profile)
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp custom-profile pre-reward select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+
+	firstFrames := h.attack(t)
+	firstRefresh, err := combatproto.DecodeServerTarget(firstFrames[0])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile first formula hit target refresh: %v", err)
+	}
+	if firstRefresh.TargetVID != h.targetID || firstRefresh.HPPercent != 66 {
+		t.Fatalf("expected tcp custom-profile formula hit to apply 2 damage from 6 HP to 66%%, got %+v", firstRefresh)
+	}
+	firstRetaliation, err := worldproto.DecodePlayerPointChange(firstFrames[1])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile first immediate retaliation: %v", err)
+	}
+	if firstRetaliation.Type != bootstrapPlayerPointValueIndex || firstRetaliation.Amount != -1 || firstRetaliation.Value != 499 {
+		t.Fatalf("expected tcp custom-profile first hit retaliation to reduce player HP to 499, got %+v", firstRetaliation)
+	}
+
+	h.advance(bootstrapNormalAttackCadenceWindow)
+	secondFrames := h.attack(t)
+	secondRefresh, err := combatproto.DecodeServerTarget(secondFrames[0])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile second formula hit target refresh: %v", err)
+	}
+	if secondRefresh.TargetVID != h.targetID || secondRefresh.HPPercent != 33 {
+		t.Fatalf("expected tcp custom-profile formula hit to apply 2 damage from 4 HP to 33%%, got %+v", secondRefresh)
+	}
+	secondRetaliation, err := worldproto.DecodePlayerPointChange(secondFrames[1])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile second immediate retaliation: %v", err)
+	}
+	if secondRetaliation.Type != bootstrapPlayerPointValueIndex || secondRetaliation.Amount != -1 || secondRetaliation.Value != 498 {
+		t.Fatalf("expected tcp custom-profile second hit retaliation to reduce player HP to 498, got %+v", secondRetaliation)
+	}
+
+	h.advance(bootstrapNormalAttackCadenceWindow)
+	killingFrames := h.attack(t)
+	for len(killingFrames) < 6 {
+		killingFrames = append(killingFrames, h.client.readFrame(t))
+	}
+	dead, err := worldproto.DecodeDead(killingFrames[0])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile reward killing hit dead frame: %v", err)
+	}
+	if dead.VID != h.targetID {
+		t.Fatalf("expected tcp custom-profile reward killing hit to emit dead for target %d, got %+v", h.targetID, dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(killingFrames[1])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile reward killing hit target clear: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected tcp custom-profile reward killing hit to clear target, got %+v", clear)
+	}
+	expChange, err := worldproto.DecodePlayerPointChange(killingFrames[2])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile reward EXP point-change: %v", err)
+	}
+	if expChange.VID != 0x02040131 || expChange.Type != bootstrapExperiencePointType || expChange.Amount != int32(rewardExperience) || expChange.Value != 919 {
+		t.Fatalf("expected tcp custom-profile reward EXP point-change +%d to reach 919, got %+v", rewardExperience, expChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(killingFrames[3])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile reward gold point-change: %v", err)
+	}
+	if goldChange.VID != 0x02040131 || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != int32(rewardGold) || goldChange.Value != int32(rewardGold) {
+		t.Fatalf("expected tcp custom-profile reward gold point-change +%d, got %+v", rewardGold, goldChange)
+	}
+	groundAdd, err := itemproto.DecodeGroundAdd(killingFrames[4])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile reward ground add: %v", err)
+	}
+	if groundAdd.VID == 0 || groundAdd.Vnum != rewardDropVnum || groundAdd.X != 1100 || groundAdd.Y != 2100 {
+		t.Fatalf("expected tcp custom-profile reward ground drop vnum %d at player position, got %+v", rewardDropVnum, groundAdd)
+	}
+	ownership, err := itemproto.DecodeOwnership(killingFrames[5])
+	if err != nil {
+		t.Fatalf("decode tcp custom-profile reward ownership: %v", err)
+	}
+	if ownership.VID != groundAdd.VID || ownership.OwnerName != "PeerTCP" {
+		t.Fatalf("expected tcp custom-profile reward ownership for ground VID %d to PeerTCP, got %+v", groundAdd.VID, ownership)
+	}
+
+	persisted, err := h.accountStore.Load("tcp-formula-reward")
+	if err != nil {
+		t.Fatalf("load tcp custom-profile reward account: %v", err)
+	}
+	if len(persisted.Characters) != 1 || persisted.Characters[0].Points[bootstrapExperiencePointType] != 919 || persisted.Characters[0].Gold != rewardGold {
+		t.Fatalf("expected tcp custom-profile scalar reward to persist, got %+v", persisted.Characters)
 	}
 }
 
