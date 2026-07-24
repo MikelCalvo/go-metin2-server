@@ -1616,7 +1616,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok {
 				return nil, false
 			}
-			frames, err := merchantBuyResultFrames(buyResult, packetShopFrames, runtime.itemTemplates)
+			frames, err := merchantBuyResultFrames(buyResult, runtime.itemTemplates)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -4090,7 +4090,7 @@ func encodePlayerPointChangeFrame(vid uint32, result player.PointChangeResult) [
 	})
 }
 
-func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames bool, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
+func merchantBuyResultFrames(result player.MerchantBuyResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
 	changes := result.ItemChanges
 	if len(changes) == 0 && len(result.Items) != 0 {
 		changes = make([]player.MerchantBuyItemChange, 0, len(result.Items))
@@ -4117,9 +4117,6 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, packetShopFrames b
 			return nil, err
 		}
 		frames = append(frames, updateFrame)
-	}
-	if !packetShopFrames {
-		frames = append(frames, shopproto.EncodeServerOK())
 	}
 	return frames, nil
 }

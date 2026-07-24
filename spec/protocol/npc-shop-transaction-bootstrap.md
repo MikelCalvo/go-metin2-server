@@ -157,24 +157,25 @@ When validation succeeds:
 This slice freezes the success path primarily at the **state** level.
 It does **not** yet claim the final client-visible merchant-window choreography.
 
-### Packet-path success companion
+### Merchant-buy success companion
 
-The live merchant-window success step is now owned explicitly:
+The live merchant-window success step is now owned explicitly for both the real packet path and the local debug harness:
 - successful packet `SHOP BUY` emits one self-only inventory refresh for every changed carried slot in carried-slot order
+- successful local `/shop_buy <slot>` uses that same refresh-only success burst while it remains available as a bootstrap QA/debug ingress
 - newly occupied carried slots use `ITEM_SET`; existing compatible stack merges use the count-only `ITEM_UPDATE` carrier
-- that packet-path success does **not** append an extra bare self-only `GC::SHOP OK`; the changed carried-slot refreshes are the complete visible success companion for this packet path
-- the packet-path success no longer ends on the older placeholder `CHAT_TYPE_INFO("Merchant purchase complete.")`
+- neither successful `SHOP BUY` nor successful `/shop_buy <slot>` appends an extra bare self-only `GC::SHOP OK`; the changed carried-slot refreshes are the complete visible success companion for the current buy path
+- the buy success path no longer ends on the older placeholder `CHAT_TYPE_INFO("Merchant purchase complete.")`
 
 That owned seam remains intentionally small:
-- it applies to successful packet `SHOP BUY` while the merchant session is still active
-- the temporary local `/shop_buy <slot>` debug harness remains a local QA/debug ingress; it now uses the same `ITEM_SET` versus `ITEM_UPDATE` refresh split and still appends the older bare `GC::SHOP OK` until a later slice removes or replaces that debug surface
+- it applies to successful merchant buys while the merchant session is still active
+- `/shop_buy <slot>` remains a local QA/debug ingress, not the primary client-facing merchant path
 - it does not yet emit any extra merchant-family `UPDATE_ITEM` / `UPDATE_PRICE` choreography
 
 ### Stale post-reclaim isolation
 
 If a socket already lost live shared-world ownership because another session reclaimed the same selected character:
 - packet `SHOP BUY` may still return the same self-local packet success burst (`ITEM_SET` for newly occupied slots and `ITEM_UPDATE` for existing-stack count refreshes, with no extra `GC::SHOP OK`) to that stale socket
-- the local `/shop_buy <slot>` debug harness may still return its local debug success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes plus the older bare `GC::SHOP OK`) to that stale socket until that debug surface is tightened separately
+- the local `/shop_buy <slot>` debug harness now returns that same refresh-only self-local success burst to that stale socket, without an extra `GC::SHOP OK`
 - that stale buy mutation must not persist updated `gold` or `inventory`
 - that stale buy mutation must not replace the replacement live owner's exact-name loopback inventory/currency snapshots
 - if that stale socket later closes, a fresh reconnect/bootstrap must still reload the authoritative persisted `gold`/inventory state rather than the stale socket's local divergence
@@ -329,7 +330,7 @@ The first repository-owned carried placement contract now lives beside this docu
 The following are still intentionally unknown and must be captured or pinned by RED tests before broader implementation claims:
 - the final semantic meaning of the first trailing byte in client `SHOP BUY`
 - whether later compatibility work must switch from the currently planned `GC::SHOP START` path to `GC::SHOP START_EX`
-- whether later compatibility work must widen the current owned packet-path success burst (`ITEM_SET` refreshes only, with no extra bare `GC::SHOP OK`) by emitting the now-owned `UPDATE_ITEM` codec, `UPDATE_PRICE`, or both to keep the client UI fully stable
+- whether later compatibility work must widen the current owned buy success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes only, with no extra bare `GC::SHOP OK`) by emitting the now-owned `UPDATE_ITEM` codec, `UPDATE_PRICE`, or both to keep the client UI fully stable
 - whether explicit `GC::SHOP END` is mandatory on every close path while the socket remains alive in `GAME`
 - whether multi-tab addressing changes the future meaning of `catalog_slot`
 

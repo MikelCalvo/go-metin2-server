@@ -75,7 +75,6 @@ These shapes are intentionally small and buy-only:
 - client `SHOP BUY`
 - server `GC::SHOP START`
 - server `GC::SHOP END`
-- server `GC::SHOP OK`
 - server `GC::SHOP NOT_ENOUGH_MONEY`
 - server `GC::SHOP INVENTORY_FULL`
 
@@ -141,8 +140,8 @@ Current exact shapes:
 Runtime semantics are now intentionally small and still merchant-window gated:
 - `SELL` requests a whole-stack sell for the selected carried slot
 - `SELL2` requests a counted sell for the selected carried slot
-- successful whole-stack sell emits self-only `ITEM_DEL(slot)` followed by bare self-only `GC::SHOP OK`
-- successful partial-stack sell emits self-only `ITEM_SET(slot, remaining_count)` followed by bare self-only `GC::SHOP OK`
+- successful whole-stack sell emits self-only `ITEM_DEL(slot)` followed by self-only `PLAYER_POINT_CHANGE(POINT_GOLD)`
+- successful partial-stack sell emits self-only `ITEM_UPDATE(slot, remaining_count)` followed by self-only `PLAYER_POINT_CHANGE(POINT_GOLD)`
 - invalid slot, equipped item, `anti_sell`, zero-price, arithmetic overflow, or stale merchant context fail closed through the merchant error/close companions documented in `npc-shop-transaction-bootstrap.md`
 
 This remains narrower than full compatibility-grade sell policy; locked/bound item semantics, locale-specific taxes, personal shops, and richer sell-result choreography stay outside this open/close contract.
@@ -210,25 +209,25 @@ The bootstrap wire shape for those three error companions is intentionally tiny:
 No trailing payload bytes are owned for those three error frames in the current slice.
 
 This freeze is intentionally narrower than full merchant-window choreography:
-- it applies only to packet `SHOP BUY` on a still-open merchant session
+- it applies to packet `SHOP BUY` and the local `/shop_buy <catalog_slot>` debug harness on a still-open merchant session
 - it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `SOLDOUT`, or `START_EX`
-- the local `/shop_buy <catalog_slot>` debug harness still continues to use the current placeholder info-chat failure surface for insufficient-gold / no-valid-placement and keeps silent unknown-slot failure until a later cleanup slice says otherwise
+- `/shop_buy <catalog_slot>` remains a local QA/debug ingress, but it mirrors these same merchant-family visible failure companions instead of keeping a placeholder or silent failure surface
 
-### Packet-path success companion
+### Merchant-buy success companion
 
-The live merchant-window runtime now owns the narrowest honest packet-path success companion without claiming broader update choreography yet.
+The live merchant-window runtime now owns the narrowest honest buy success companion for both packet `SHOP BUY` and the temporary local `/shop_buy <catalog_slot>` debug harness, without claiming broader update choreography yet.
 
-When a live packet `SHOP BUY` request succeeds on a still-open merchant session, the packet-path response now:
-- keeps the existing self-only authoritative carried-slot refreshes (`ITEM_SET` per changed carried slot in carried-slot order)
-- stops using the older placeholder packet-path success chat as the terminal success signal for that packet flow
-- does **not** append an extra bare merchant-family `GC::SHOP OK`; the carried-slot refreshes are the complete visible success companion for the current packet-buy path
+When a live buy request succeeds on a still-open merchant session, the response now:
+- keeps the existing self-only authoritative carried-slot refreshes (`ITEM_SET` or `ITEM_UPDATE` per changed carried slot in carried-slot order)
+- stops using the older placeholder packet-path success chat as the terminal success signal for that buy flow
+- does **not** append an extra bare merchant-family `GC::SHOP OK`; the carried-slot refreshes are the complete visible success companion for the current buy path
 
-The bootstrap wire shape for bare `GC::SHOP OK` remains owned by the codec and by the current sell/debug success companions, but packet `SHOP BUY` no longer uses it as an additional terminal success frame.
+The bootstrap wire shape for bare `GC::SHOP OK` remains owned by the codec, but current runtime merchant buy/sell success paths do not use it as an additional terminal success frame.
 
 This success freeze is still narrower than full merchant-window choreography:
-- it applies only to successful packet `SHOP BUY` while an active merchant session still exists
+- it applies only to successful merchant buys while an active merchant session still exists
 - it does not yet freeze `UPDATE_ITEM`, `UPDATE_PRICE`, `SOLDOUT`, or `START_EX`
-- the temporary local `/shop_buy <catalog_slot>` debug harness may still append the older bare merchant-family `GC::SHOP OK` after its local debug item refreshes until a later cleanup slice tightens that surface
+- `/shop_buy <catalog_slot>` remains only a local QA/debug harness for the same state contract, not a separate success-response contract
 
 ## Open rule
 
@@ -336,7 +335,7 @@ The repository can now say this much honestly:
 - if that same still-live selected owner sends `/phase_select` while a merchant window is open, the runtime now prepends one self-only `GC::SHOP END` before the outgoing select-phase transition frame and clears the active merchant context immediately
 - if that same selected live owner reaches the current practice-mob retaliation floor at `0` HP while a merchant window is open, the runtime now also tears that merchant window down with one self-only `GC::SHOP END` after the owned death + target-clear transition
 - the owned `SHOP BUY` packet shape is now also the primary live bootstrap merchant-buy ingress, while `/shop_buy <catalog_slot>` remains only a local debug harness for the same state contract
-- successful packet buys now return the already-owned self-only `ITEM_SET` refreshes for changed carried slots without appending an extra bare merchant-family `GC::SHOP OK`; sell-back and the local debug buy harness keep their separately documented success companions
+- successful merchant buys now return the already-owned self-only carried-slot refreshes for changed slots without appending an extra bare merchant-family `GC::SHOP OK`, whether invoked through packet `SHOP BUY` or the local `/shop_buy` harness
 
 The exact mandatory role of:
 - `INVALID_POS`

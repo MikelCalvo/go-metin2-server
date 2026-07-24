@@ -33,7 +33,7 @@ func TestMerchantBuyCountOnlyUpdateCarriesTemplateDisplayMetadata(t *testing.T) 
 		Created: false,
 	}}}
 
-	frames, err := merchantBuyResultFrames(result, true, map[uint32]itemcatalog.Template{27001: template})
+	frames, err := merchantBuyResultFrames(result, map[uint32]itemcatalog.Template{27001: template})
 	if err != nil {
 		t.Fatalf("build merchant buy update frames: %v", err)
 	}

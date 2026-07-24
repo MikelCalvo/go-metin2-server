@@ -470,7 +470,7 @@ Expected result:
 Important note:
 - this smoke step validates only the current bootstrap open / buy / sell / close merchant slice
 - broader merchant update choreography, stock semantics, and richer NPC UI are still ahead
-- local fallback QA through `/shop_buy <slot>` now mirrors the same merchant-family `GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL` / `GC::SHOP INVALID_POS` failure surfaces as the owned packet path for those same authoritative results instead of keeping a silent unknown-slot branch; its local debug success surface may still append the older bare `GC::SHOP OK` after item refreshes until that harness is tightened separately
+- local fallback QA through `/shop_buy <slot>` now mirrors the same merchant-family `GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL` / `GC::SHOP INVALID_POS` failure surfaces as the owned packet path for those same authoritative results instead of keeping a silent unknown-slot branch; its success surface also matches packet `SHOP BUY` now: item refreshes only, with no extra bare `GC::SHOP OK`
 
 #### 5.4.2 Warp interaction
 
@@ -933,7 +933,7 @@ Expected result:
 
 - [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
 - [ ] On the stale old socket, keep a merchant window/context open and send one real `SHOP BUY` for slot `0` (or the local `/shop_buy 0` harness where appropriate)
-- [ ] Confirm the stale socket may still receive only its self-local merchant success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes without `GC::SHOP OK` on packet `SHOP BUY`, or those refreshes plus the debug-harness companion on `/shop_buy` where that local harness is used)
+- [ ] Confirm the stale socket may still receive only its self-local merchant success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes without `GC::SHOP OK`) on either packet `SHOP BUY` or the local `/shop_buy` harness
 - [ ] Confirm the authoritative live replacement session and any visible watcher do **not** gain gold/items or otherwise change because of that stale mutation
 - [ ] Confirm loopback-only `/local/inventory/{name}` (and currency introspection if available) still report the replacement live owner's authoritative state, not the stale socket's local divergence
 
@@ -959,7 +959,7 @@ Expected result:
 ### 6.17 Reconnect after stale merchant-buy close rebuilds authoritative state (debug-harness optional)
 
 - [ ] Using a debug harness or controlled same-character duplicate-session setup, let a replacement session reclaim live ownership while the old socket remains open but stale
-- [ ] On the stale old socket, keep the merchant gate active and issue `SHOP BUY` (or `/shop_buy <slot>` in the local harness) so only the stale socket sees the local success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes without `GC::SHOP OK` on packet `SHOP BUY`, or those refreshes plus the debug-harness companion where that local harness is used)
+- [ ] On the stale old socket, keep the merchant gate active and issue `SHOP BUY` (or `/shop_buy <slot>` in the local harness) so only the stale socket sees the local success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes without `GC::SHOP OK`)
 - [ ] Close the authoritative replacement session first, then close the stale old socket
 - [ ] Reconnect fresh on the same character
 - [ ] Confirm the new bootstrap/reconnect state keeps the authoritative persisted `gold` and empty/unchanged carried inventory from before the stale local-only buy, not the stale socket's local grant
@@ -973,7 +973,7 @@ Expected result:
 
 - [ ] Using the local merchant debug harness, prepare a buyer with several compatible partial `27001` carried stacks plus at least one free carried slot
 - [ ] Open the merchant context and run `/shop_buy <slot>` for an authored entry whose `count` requires filling those compatible carried stacks and placing the final remainder into the lowest free carried slot
-- [ ] Confirm the harness returns one inventory refresh per changed carried slot in carried-slot order (`ITEM_SET` for fresh slots, `ITEM_UPDATE` for existing stack fills) plus the current merchant success companion
+- [ ] Confirm the harness returns one inventory refresh per changed carried slot in carried-slot order (`ITEM_SET` for fresh slots, `ITEM_UPDATE` for existing stack fills) and no extra merchant success companion
 - [ ] If the QA template authors visible sockets/attributes for that stackable item, confirm each existing-stack `ITEM_UPDATE` preserves those display arrays instead of zeroing them while only the count changes
 - [ ] Repeat with the merchant entry's template temporarily authored with `anti_get`
 - [ ] Confirm persisted `gold` and inventory match the same final state already frozen for the packet `SHOP BUY` path

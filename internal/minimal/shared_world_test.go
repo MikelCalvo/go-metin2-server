@@ -24468,8 +24468,8 @@ func TestGameSessionFlowShopBuyInteractionDebitsCurrencyAndAddsItem(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected shop buy attempt error: %v", err)
 	}
-	if len(buyOut) != 2 {
-		t.Fatalf("expected slash merchant buy success to emit 2 frames (1 item refresh + SHOP OK), got %d", len(buyOut))
+	if len(buyOut) != 1 {
+		t.Fatalf("expected slash merchant buy success to emit only 1 item refresh frame, got %d", len(buyOut))
 	}
 	itemUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
@@ -24477,9 +24477,6 @@ func TestGameSessionFlowShopBuyInteractionDebitsCurrencyAndAddsItem(t *testing.T
 	}
 	if itemUpdate.Position != itemproto.InventoryPosition(0) || itemUpdate.Vnum != 27001 || itemUpdate.Count != 1 {
 		t.Fatalf("unexpected slash merchant buy success item refresh: %+v", itemUpdate)
-	}
-	if err := shopproto.DecodeServerOK(decodeSingleFrame(t, buyOut[1])); err != nil {
-		t.Fatalf("decode slash merchant buy success SHOP OK: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
@@ -24521,8 +24518,8 @@ func TestGameSessionFlowShopBuyInteractionFansOutAcrossSeveralExistingCompatible
 	if err != nil {
 		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy error: %v", err)
 	}
-	if len(buyOut) != 4 {
-		t.Fatalf("expected 4 frames for slash distributed-merge-plus-slot merchant buy, got %d", len(buyOut))
+	if len(buyOut) != 3 {
+		t.Fatalf("expected 3 item-refresh frames for slash distributed-merge-plus-slot merchant buy, got %d", len(buyOut))
 	}
 	firstUpdate, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
 	if err != nil {
@@ -24544,10 +24541,6 @@ func TestGameSessionFlowShopBuyInteractionFansOutAcrossSeveralExistingCompatible
 	}
 	if thirdUpdate.Position != itemproto.InventoryPosition(7) || thirdUpdate.Count != 200 {
 		t.Fatalf("unexpected slash distributed-merge-plus-slot merchant buy third item update: %+v", thirdUpdate)
-	}
-	deliveryFrame := decodeSingleFrame(t, buyOut[3])
-	if err := shopproto.DecodeServerOK(deliveryFrame); err != nil {
-		t.Fatalf("decode slash distributed-merge-plus-slot merchant buy SHOP OK: %v", err)
 	}
 	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
 	if !ok {
