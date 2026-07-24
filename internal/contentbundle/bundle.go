@@ -61,6 +61,7 @@ type Summary struct {
 	UnreferencedInteractionDefinitions     []InteractionDefinitionReferenceSummary         `json:"unreferenced_interaction_definitions,omitempty"`
 	SpawnGroups                            []SpawnGroupReferenceSummary                    `json:"spawn_groups,omitempty"`
 	CombatProfiles                         []worldruntime.StaticActorCombatProfileSnapshot `json:"combat_profiles,omitempty"`
+	ItemTemplates                          []ItemTemplateReferenceSummary                  `json:"item_templates,omitempty"`
 	Maps                                   []MapContentSummary                             `json:"maps,omitempty"`
 }
 
@@ -84,6 +85,14 @@ type SpawnGroupReferenceSummary struct {
 	RewardExperience uint64   `json:"reward_experience,omitempty"`
 	RewardGold       uint64   `json:"reward_gold,omitempty"`
 	RewardDropVnums  []uint32 `json:"reward_drop_vnums,omitempty"`
+}
+
+type ItemTemplateReferenceSummary struct {
+	Vnum         uint32 `json:"vnum"`
+	Name         string `json:"name"`
+	Stackable    bool   `json:"stackable"`
+	MaxCount     uint16 `json:"max_count"`
+	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
 }
 
 type MapContentSummary struct {
@@ -255,6 +264,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 		interactionKindUnreferencedCounts[definition.Kind]++
 		summary.UnreferencedInteractionDefinitions = append(summary.UnreferencedInteractionDefinitions, reference)
 	}
+	summary.ItemTemplates = itemTemplateReferenceSummaries(normalized.ItemTemplates)
 	if len(interactionKindCounts) > 0 {
 		kinds := make([]string, 0, len(interactionKindCounts))
 		for kind := range interactionKindCounts {
@@ -307,6 +317,27 @@ func Summarize(bundle Bundle) (Summary, error) {
 	}
 
 	return summary, nil
+}
+
+func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemplateReferenceSummary {
+	if len(templates) == 0 {
+		return nil
+	}
+	summaries := make([]ItemTemplateReferenceSummary, 0, len(templates))
+	for _, template := range templates {
+		template = itemcatalog.NormalizeTemplate(template)
+		summaries = append(summaries, ItemTemplateReferenceSummary{
+			Vnum:         template.Vnum,
+			Name:         template.Name,
+			Stackable:    template.Stackable,
+			MaxCount:     template.MaxCount,
+			ShopBuyPrice: template.ShopBuyPrice,
+		})
+	}
+	sort.Slice(summaries, func(i int, j int) bool {
+		return summaries[i].Vnum < summaries[j].Vnum
+	})
+	return summaries
 }
 
 func mapContentSummaryForIndex(counts map[uint32]*MapContentSummary, mapIndex uint32) *MapContentSummary {

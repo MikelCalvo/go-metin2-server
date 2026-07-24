@@ -64,13 +64,17 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 		t.Fatalf("summarize content bundle: %v", err)
 	}
 	want := Summary{
-		StaticActorCount:                       2,
-		InteractableStaticActorCount:           2,
-		SpawnGroupCount:                        1,
-		CombatProfileCount:                     0,
-		ItemTemplateCount:                      2,
-		ShopCatalogEntryCount:                  2,
-		InteractionDefinitionCount:             3,
+		StaticActorCount:             2,
+		InteractableStaticActorCount: 2,
+		SpawnGroupCount:              1,
+		CombatProfileCount:           0,
+		ItemTemplateCount:            2,
+		ShopCatalogEntryCount:        2,
+		InteractionDefinitionCount:   3,
+		ItemTemplates: []ItemTemplateReferenceSummary{
+			{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
 		ReferencedInteractionDefinitionCount:   2,
 		UnreferencedInteractionDefinitionCount: 1,
 		InteractionKinds: []InteractionKindSummary{

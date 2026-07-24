@@ -275,6 +275,36 @@ func TestGameRuntimeImportContentBundlePersistsBundledItemTemplates(t *testing.T
 	}
 }
 
+func TestGameRuntimeExportContentBundleSummaryIncludesItemTemplateDetails(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+	})
+	if err != nil {
+		t.Fatalf("import merchant content bundle: %v", err)
+	}
+
+	summary, err := runtime.ExportContentBundleSummary()
+	if err != nil {
+		t.Fatalf("export content bundle summary with item templates: %v", err)
+	}
+	want := []contentbundle.ItemTemplateReferenceSummary{
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+	}
+	if !reflect.DeepEqual(summary.ItemTemplates, want) {
+		t.Fatalf("unexpected runtime summary item templates:\n got: %#v\nwant: %#v", summary.ItemTemplates, want)
+	}
+}
+
 func TestGameRuntimeImportContentBundleRejectsDanglingInteractionReference(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
