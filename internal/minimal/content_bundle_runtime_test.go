@@ -163,6 +163,10 @@ func TestGameRuntimeExportContentBundleSummaryIncludesSpawnGroupDetails(t *testi
 	if !reflect.DeepEqual(summary.RewardDrops, wantDrops) {
 		t.Fatalf("unexpected runtime summary reward drops:\n got: %#v\nwant: %#v", summary.RewardDrops, wantDrops)
 	}
+	wantMaps := []contentbundle.MapContentSummary{{MapIndex: 42, SpawnGroupCount: 1, RewardExperienceTotal: 75, RewardGoldTotal: 60, RewardDropItemCount: 2}}
+	if !reflect.DeepEqual(summary.Maps, wantMaps) {
+		t.Fatalf("unexpected runtime summary per-map reward audit:\n got: %#v\nwant: %#v", summary.Maps, wantMaps)
+	}
 }
 
 func TestGameRuntimeExportContentBundleSummaryIncludesPortableCombatProfiles(t *testing.T) {
