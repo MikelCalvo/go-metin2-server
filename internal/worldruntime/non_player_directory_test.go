@@ -26,6 +26,23 @@ func TestNonPlayerDirectoryRegistersLooksUpAndRemovesStaticActors(t *testing.T) 
 	}
 }
 
+func TestNonPlayerDirectoryRejectsStaticActorsWithUnencodableVisibilityID(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	overflowID := uint64(^uint32(0)) + 1
+	actor := StaticEntity{
+		Entity:   Entity{ID: overflowID, Kind: EntityKindStaticActor, Name: "OverflowGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+
+	if directory.Register(actor) {
+		t.Fatal("expected static actor registration with unencodable visibility ID to fail closed")
+	}
+	if _, ok := directory.ByEntityID(overflowID); ok {
+		t.Fatal("expected rejected static actor not to be indexed by entity ID")
+	}
+}
+
 func TestNonPlayerDirectoryRejectsPathAmbiguousInteractionRef(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{

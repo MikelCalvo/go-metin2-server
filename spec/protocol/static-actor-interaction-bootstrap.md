@@ -61,6 +61,7 @@ This rule applies consistently in:
 At this stage, the repository owns metadata plus the first narrow interaction-ready behavior:
 - static actors can preserve `interaction_kind` / `interaction_ref` in runtime state
 - runtime static-actor registration/update now rejects unsupported interaction kinds before they can reach visibility, interaction, or persistence paths
+- runtime static-actor registration/update and file-backed restore now also reject static actors whose `entity_id` cannot fit the current `uint32` client-visible static-actor `VID`, because that same `VID` is the interaction target identity
 - `/local/static-actors` create/update responses can surface that metadata
 - runtime snapshot/introspection surfaces can report that metadata
 - file-backed static-actor snapshots can persist and restore that metadata across boot

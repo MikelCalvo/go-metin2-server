@@ -144,6 +144,10 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(invalidRaceNum); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for unencodable actor race number, got %v", err)
 	}
+	invalidEntityID := Snapshot{StaticActors: []StaticActor{{EntityID: uint64(^uint32(0)) + 1, Name: "WideIDGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355}}}
+	if err := store.Save(invalidEntityID); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for unencodable actor entity ID, got %v", err)
+	}
 	invalidInteraction := Snapshot{StaticActors: []StaticActor{{EntityID: 8, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk"}}}
 	if err := store.Save(invalidInteraction); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for partial interaction metadata, got %v", err)

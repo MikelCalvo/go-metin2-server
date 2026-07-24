@@ -366,6 +366,28 @@ func TestStaticActorVisibilityVIDRejectsUnencodableRaceNum(t *testing.T) {
 	if vid, ok := StaticActorVisibilityVID(StaticEntity{Entity: Entity{ID: 99}, RaceNum: uint32(^uint16(0)) + 1}); ok {
 		t.Fatalf("expected overflowing race_num to be rejected for static actor visibility VID, got vid=%d", vid)
 	}
+	if vid, ok := StaticActorVisibilityVID(StaticEntity{Entity: Entity{ID: uint64(^uint32(0)) + 1}, RaceNum: 20300}); ok {
+		t.Fatalf("expected overflowing entity ID to be rejected for static actor visibility VID, got vid=%d", vid)
+	}
+}
+
+func TestEntityRegistryRejectsStaticActorEntityIDAboveVisibilityVIDRange(t *testing.T) {
+	registry := NewEntityRegistry()
+	overflowID := uint64(^uint32(0)) + 1
+
+	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: overflowID, Name: "OverflowGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if ok {
+		t.Fatalf("expected static actor with unencodable visibility VID to fail closed, got %+v", actor)
+	}
+	if next := registry.NextEntityID(); next != 1 {
+		t.Fatalf("expected rejected static actor not to consume entity ID, got next=%d", next)
+	}
+	if actors := registry.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor not to enter runtime snapshots, got %+v", actors)
+	}
+	if actors := registry.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor not to enter map presence, got %+v", actors)
+	}
 }
 
 func TestEntityRegistryRegistersAndLooksUpStaticActors(t *testing.T) {

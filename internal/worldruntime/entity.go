@@ -277,10 +277,14 @@ func normalizeStaticEntityCombat(actor StaticEntity) StaticEntity {
 }
 
 func StaticActorVisibilityVID(actor StaticEntity) (uint32, bool) {
-	if actor.Entity.ID == 0 || actor.Entity.ID > uint64(^uint32(0)) || actor.RaceNum == 0 || actor.RaceNum > uint32(^uint16(0)) {
+	if !ValidStaticActorVisibilityEntityID(actor.Entity.ID) || !ValidStaticActorVisibilityRaceNum(actor.RaceNum) {
 		return 0, false
 	}
 	return uint32(actor.Entity.ID), true
+}
+
+func ValidStaticActorVisibilityEntityID(entityID uint64) bool {
+	return entityID != 0 && entityID <= uint64(^uint32(0))
 }
 
 func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCombatProfileDefaults, bool) {

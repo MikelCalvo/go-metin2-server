@@ -40,7 +40,7 @@ Legend used below:
   - Multiple players can exist in the same in-process world, see each other, move, sync position, talk locally, receive notices, route whispers by exact name, transfer through bootstrap map seams, reconnect/cleanup, and rebuild visibility. It is still a single-process bootstrap runtime, not a production channel/shard architecture.
 
 - `[~]` **M2 — World/entity runtime foundation**
-  - The repo has topology, map indexing, AOI/radius-style visibility, player/session directories, entity registries, non-player directories, static actors, spawn groups, runtime scopes, and operator snapshots. Player-directory secondary identity indexes, map-index player/static lookup and occupancy snapshot repair, and static-actor visibility-`VID` indexes now prune orphaned and non-canonical stale aliases instead of letting ghost lookup entries survive partial teardown or repair; entity-registry player and static-actor lookups also rebuild missing directory entries from surviving map-index presence. The next work is depth: richer lifecycle, better spawn policy, stronger transfer/reconnect edges, and long-running production behavior.
+  - The repo has topology, map indexing, AOI/radius-style visibility, player/session directories, entity registries, non-player directories, static actors, spawn groups, runtime scopes, and operator snapshots. Player-directory secondary identity indexes, map-index player/static lookup and occupancy snapshot repair, and static-actor visibility-`VID` indexes now prune orphaned and non-canonical stale aliases instead of letting ghost lookup entries survive partial teardown or repair; entity-registry player and static-actor lookups also rebuild missing directory entries from surviving map-index presence. Static-actor entity IDs are now validated against the same `uint32` visibility-`VID` carrier used by client-visible actor packets, so unencodable IDs fail closed before runtime registration or snapshot restore. The next work is depth: richer lifecycle, better spawn policy, stronger transfer/reconnect edges, and long-running production behavior.
 
 - `[~]` **M3 — Character, inventory, and item systems**
   - Inventory/equipment bootstrap, carried item movement, counted split/merge, quickslot edits, consumable use, `ITEM_USE_TO_ITEM` stack merging, item dropping, ground visibility, pickup, merchant buy/sell, gold mutation, and item/quickslot persistence slices exist. Full legacy item semantics are still not done: sockets, attributes, refine, anti-flag breadth, storage, trade, ownership timers, and compatibility-grade DB persistence remain future work.
@@ -203,6 +203,7 @@ Already present:
 - static actor store,
 - interaction definition store,
 - `info`, `talk`, `warp`, and `shop_preview` interaction kinds, with static-actor runtime validation now rejecting unsupported interaction kinds before they can be registered or updated,
+- fail-closed static-actor visibility identity validation: `entity_id` must fit the current `uint32` client-visible `VID` carrier and `race_num` must fit the current `uint16` `CHARACTER_ADD` projection,
 - structured merchant catalogs,
 - content bundle import/export with commit-only live visibility replay for static-actor replacement,
 - loopback-only local endpoints for static actors, interactions, visibility, and content bundles,

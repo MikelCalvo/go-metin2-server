@@ -524,6 +524,22 @@ func TestMapIndexTracksStaticActorsByEffectiveMap(t *testing.T) {
 	}
 }
 
+func TestMapIndexRejectsStaticActorsWithUnencodableVisibilityID(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	overflowID := uint64(^uint32(0)) + 1
+	actor := StaticEntity{Entity: Entity{ID: overflowID, Kind: EntityKindStaticActor, Name: "OverflowGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+
+	if index.RegisterStatic(actor) {
+		t.Fatal("expected static actor map registration with unencodable visibility ID to fail closed")
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor not to enter map bucket, got %+v", actors)
+	}
+	if snapshots := index.Snapshot(); len(snapshots) != 0 {
+		t.Fatalf("expected rejected static actor not to enter map occupancy, got %+v", snapshots)
+	}
+}
+
 func TestMapIndexRemoveStaticClearsMapBucketWhenEntityIndexAlreadyMissing(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	guard := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}

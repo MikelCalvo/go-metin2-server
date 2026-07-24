@@ -54,7 +54,7 @@ A bootstrap non-player actor is only required to own:
 - map coordinates
 - one minimal class/template identifier suitable for future packet/content work
 - optional display/name identifier for deterministic lookup, debugging, or tooling
-- a non-zero class/template/race identifier that fits the current bootstrap `CHARACTER_ADD` wire projection (`uint16`); runtime registration/update, file-backed restore, and content-bundle import all fail closed instead of accepting unencodable static actors that later visibility paths would have to skip
+- a non-zero entity identity that fits the current client-visible static-actor `VID` projection (`uint32`) plus a non-zero class/template/race identifier that fits the current bootstrap `CHARACTER_ADD` wire projection (`uint16`); runtime registration/update and file-backed restore fail closed instead of accepting unencodable static actors that later visibility or interaction paths would have to skip, and content-bundle import remains indirectly guarded by the runtime allocation/registration path plus the same race-number projection
 - optional interaction-ready metadata (`interaction_kind` / `interaction_ref`) limited to the currently owned interaction-definition kinds, so unsupported actor behaviors fail closed at runtime registration/update instead of becoming visible dangling content
 
 In other words, the runtime is about to own the fact that a non-player actor exists in the world, where it is, and what kind of actor it is.
@@ -110,6 +110,7 @@ This slice does not yet freeze:
   - if that orphaned or non-canonical visibility-VID entry would otherwise conflict with later registration or in-place update of the real actor for that VID, the non-player directory must prune it and allow the current actor to claim the VID; only live conflicting actor ownership should fail closed
   - if map-index presence survives after a non-player-directory entry was cleared first, runtime lookup by static-actor entity ID, static-actor visibility `VID`, and all-static/scope snapshot composition must repair the missing directory entry from that map-index presence instead of hiding the actor from visibility, interaction, or target readers until a later edit
   - file-backed static actor snapshots must also fail closed when `race_num` is zero or does not fit the current bootstrap `CHARACTER_ADD` projection (`uint16`), so boot-time/operator restore cannot persist actors that the visible static-actor path would later have to skip as unencodable
+- file-backed static actor snapshots must also fail closed when `entity_id` is zero or does not fit the current static-actor visibility `VID` projection (`uint32`), because the bootstrap runtime derives the visible actor `VID` directly from that runtime entity ID
   - explicit static-actor entity-ID restore paths must fail closed when the requested ID is already owned by a live player entity; player and non-player runtime identities share one registry-owned entity namespace and must not overlap even if a static snapshot or operator repair path supplies an explicit ID
   - player `VID` values and encodable static-actor visibility `VID` values must share the same live visibility namespace; registering or updating either side must fail closed when the other side already owns that visible ID so later target/interaction lookups cannot resolve one on top of the other
   - rejected player/static-actor registrations must not consume the shared entity-ID allocator; only successful registrations advance `NextEntityID()` so failed collision, duplicate, validation, or index-repair attempts do not create avoidable gaps before later snapshot persistence/restore work
@@ -131,6 +132,7 @@ The next runtime checkpoint after this document should be able to say:
 - relocate-preview and transfer results can now also expose explicit added/removed visible static actors beside the before/after occupancy snapshots
 - runtime/operator static-actor, visibility, map-occupancy, relocate-preview, and transfer snapshots can now expose resolved `combat_rank` for combat-profile actors without changing current packet output or combat math
 - runtime static-actor registration/update now rejects unsupported `interaction_kind` values instead of relying only on later store/bundle validation
+- runtime static-actor registration/update and file-backed static-actor restore now reject entity IDs that cannot be projected into the current `uint32` client-visible static-actor `VID`
 - `gamed` can seed, inspect, update, and remove those bootstrap static actors through loopback-only operator paths
 - entering players can now receive a first deterministic bootstrap burst for static actors that already share their visible world, reusing `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`
 - newly seeded static actors can now also enqueue that same deterministic visibility burst to already-visible online players without requiring those players to relog or move first

@@ -103,6 +103,7 @@ The request target is the static actor's current client-visible `VID`.
 
 For bootstrap static actors, that `VID` is currently derived from the runtime `entity_id` when it fits `uint32`.
 That keeps the request aligned with the already-owned static-actor visibility bootstrap contract and avoids introducing a second target-identity scheme before real interaction behavior exists.
+Because interaction targets use that visible `VID`, runtime registration/update and file-backed restore now fail closed for static actors whose `entity_id` cannot fit the current `uint32` visible-actor carrier instead of admitting an actor that could be present in operator state but unreachable by client-visible `INTERACT` targeting.
 
 ## Failure semantics
 
