@@ -456,6 +456,11 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 		ItemTemplateCount:            1,
 		ShopCatalogEntryCount:        1,
 		WarpDestinationCount:         1,
+		StaticActors: []contentbundle.StaticActor{
+			{Name: "Merchant", MapIndex: 1, X: 469500, Y: 964200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:qa_merchant"},
+			{Name: "Teleporter", MapIndex: 1, X: 469650, Y: 964200, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:qa_teleporter"},
+			{Name: "VillageGuide", MapIndex: 1, X: 469350, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:qa_guide"},
+		},
 		ShopCatalogs: []contentbundle.ShopCatalogSummary{{
 			Kind:       interactionstore.KindShopPreview,
 			Ref:        "npc:qa_merchant",

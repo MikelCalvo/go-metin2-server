@@ -71,6 +71,10 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 		CombatProfileCount:           0,
 		ItemTemplateCount:            2,
 		ShopCatalogEntryCount:        2,
+		StaticActors: []StaticActor{
+			{Name: "Merchant", MapIndex: 2, X: 1200, Y: 2200, RaceNum: 20300, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+		},
 		ShopCatalogs: []ShopCatalogSummary{{
 			Kind:       interactionstore.KindShopPreview,
 			Ref:        "npc:merchant",
@@ -116,6 +120,30 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected content bundle summary:\n got: %#v\nwant: %#v", summary, want)
+	}
+}
+
+func TestSummarizeReturnsDeterministicStaticActorDetails(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "TrainingDummy", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20350, CombatProfile: " training_dummy "},
+			{Name: "  VillageGuide  ", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: " talk ", InteractionRef: " npc:guide "},
+			{Name: "Blacksmith", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20300},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize static actor details: %v", err)
+	}
+	want := []StaticActor{
+		{Name: "Blacksmith", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20300},
+		{Name: "TrainingDummy", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
+		{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+	}
+	if !reflect.DeepEqual(summary.StaticActors, want) {
+		t.Fatalf("unexpected static actor summaries:\n got: %#v\nwant: %#v", summary.StaticActors, want)
 	}
 }
 

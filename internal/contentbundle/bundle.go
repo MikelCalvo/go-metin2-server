@@ -52,6 +52,7 @@ type Summary struct {
 	SpawnGroupCount                        int                                             `json:"spawn_group_count"`
 	CombatProfileCount                     int                                             `json:"combat_profile_count"`
 	ItemTemplateCount                      int                                             `json:"item_template_count"`
+	StaticActors                           []StaticActor                                   `json:"static_actors,omitempty"`
 	ShopCatalogEntryCount                  int                                             `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
 	WarpDestinationCount                   int                                             `json:"warp_destination_count"`
@@ -287,6 +288,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 		CombatProfileCount:         len(normalized.CombatProfiles),
 		CombatProfiles:             cloneCombatProfileSnapshots(normalized.CombatProfiles),
 		ItemTemplateCount:          len(normalized.ItemTemplates),
+		StaticActors:               cloneStaticActors(normalized.StaticActors),
 		InteractionDefinitionCount: len(normalized.InteractionDefinitions),
 	}
 	itemTemplatesByVnum := itemTemplateMapByVnum(normalized.ItemTemplates)
@@ -940,6 +942,15 @@ func normalizeStaticActors(actors []StaticActor) []StaticActor {
 		normalized[i].InteractionRef = strings.TrimSpace(normalized[i].InteractionRef)
 	}
 	return normalized
+}
+
+func cloneStaticActors(actors []StaticActor) []StaticActor {
+	if len(actors) == 0 {
+		return nil
+	}
+	cloned := make([]StaticActor, len(actors))
+	copy(cloned, actors)
+	return cloned
 }
 
 func cloneDefinitions(definitions []interactionstore.Definition) []interactionstore.Definition {
