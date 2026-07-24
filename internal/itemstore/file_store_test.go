@@ -1,6 +1,9 @@
 package itemstore
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -65,6 +68,160 @@ func TestFileStoreValidateTreatsMissingSnapshotAsEmptyStore(t *testing.T) {
 	want := SnapshotSummary{Vnums: []uint32{}}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected missing-store summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreBackupToWritesCommittedSnapshotAndDeterministicManifest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	snapshot := Snapshot{Templates: []Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
+	}}
+	if err := store.Save(snapshot); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), ".item-templates-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp file: %v", err)
+	}
+
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+
+	backup := NewFileStore(filepath.Join(backupDir, "item-templates.json"))
+	got, err := backup.Load()
+	if err != nil {
+		t.Fatalf("load backup snapshot: %v", err)
+	}
+	wantSnapshot := NormalizeSnapshot(snapshot)
+	if !reflect.DeepEqual(got, wantSnapshot) {
+		t.Fatalf("unexpected backup snapshot: got %#v want %#v", got, wantSnapshot)
+	}
+	if _, err := os.Stat(filepath.Join(backupDir, ".item-templates-crashed.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected source crash temp file to be omitted from backup, stat err=%v", err)
+	}
+
+	rawManifest, err := os.ReadFile(filepath.Join(backupDir, BackupManifestFilename))
+	if err != nil {
+		t.Fatalf("read backup manifest: %v", err)
+	}
+	var manifest BackupManifest
+	if err := json.Unmarshal(rawManifest, &manifest); err != nil {
+		t.Fatalf("decode backup manifest: %v", err)
+	}
+	if manifest.Format != BackupManifestFormat {
+		t.Fatalf("unexpected manifest format: got %q want %q", manifest.Format, BackupManifestFormat)
+	}
+	wantSummary := SnapshotSummary{TemplateCount: 2, Vnums: []uint32{11200, 27001}}
+	if !reflect.DeepEqual(manifest.Summary, wantSummary) {
+		t.Fatalf("unexpected manifest summary: got %#v want %#v", manifest.Summary, wantSummary)
+	}
+	if len(manifest.Files) != 1 || manifest.Files[0].Filename != "item-templates.json" {
+		t.Fatalf("unexpected manifest files: %#v", manifest.Files)
+	}
+	rawSnapshot, err := os.ReadFile(filepath.Join(backupDir, manifest.Files[0].Filename))
+	if err != nil {
+		t.Fatalf("read manifest snapshot: %v", err)
+	}
+	checksum := sha256.Sum256(rawSnapshot)
+	if gotChecksum := hex.EncodeToString(checksum[:]); gotChecksum != manifest.Files[0].SHA256 {
+		t.Fatalf("unexpected manifest checksum: got %s want %s", manifest.Files[0].SHA256, gotChecksum)
+	}
+	if int64(len(rawSnapshot)) != manifest.Files[0].SizeBytes {
+		t.Fatalf("unexpected manifest size: got %d want %d", manifest.Files[0].SizeBytes, len(rawSnapshot))
+	}
+}
+
+func TestFileStoreBackupToTreatsMissingSnapshotAsEmptyAuthoredStore(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing", "item-templates.json"))
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup missing item template store: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(backupDir, "item-templates.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected missing snapshot backup to omit committed template file, stat err=%v", err)
+	}
+	rawManifest, err := os.ReadFile(filepath.Join(backupDir, BackupManifestFilename))
+	if err != nil {
+		t.Fatalf("read missing-store backup manifest: %v", err)
+	}
+	var manifest BackupManifest
+	if err := json.Unmarshal(rawManifest, &manifest); err != nil {
+		t.Fatalf("decode missing-store backup manifest: %v", err)
+	}
+	want := BackupManifest{Format: BackupManifestFormat, Summary: SnapshotSummary{Vnums: []uint32{}}, Files: []BackupManifestFile{}}
+	if !reflect.DeepEqual(manifest, want) {
+		t.Fatalf("unexpected missing-store backup manifest: got %#v want %#v", manifest, want)
+	}
+}
+
+func TestFileStoreValidateBackupFromValidatesManifestWithoutMutatingTarget(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := store.Save(Snapshot{Templates: []Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
+	}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "item-templates.json")
+	target := NewFileStore(targetPath)
+
+	summary, err := target.ValidateBackupFrom(backupDir)
+	if err != nil {
+		t.Fatalf("validate item template backup: %v", err)
+	}
+	want := SnapshotSummary{TemplateCount: 2, Vnums: []uint32{11200, 27001}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected backup validation summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(filepath.Dir(targetPath)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected dry-run validation not to create target dir, stat err=%v", err)
+	}
+}
+
+func TestFileStoreValidateBackupFromRejectsChecksumMismatch(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "item-templates.json"), []byte(`{"templates":[{"vnum":27001,"name":"Tampered Potion","stackable":true,"max_count":200}]}`), 0o644); err != nil {
+		t.Fatalf("tamper backup snapshot: %v", err)
+	}
+
+	_, err := NewFileStore(filepath.Join(t.TempDir(), "target", "item-templates.json")).ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for checksum mismatch, got %v", err)
+	}
+}
+
+func TestFileStoreValidateBackupFromRejectsUntrackedBackupEntries(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(backupDir, "nested"), 0o755); err != nil {
+		t.Fatalf("create untracked backup dir: %v", err)
+	}
+
+	_, err := NewFileStore(filepath.Join(t.TempDir(), "target", "item-templates.json")).ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for untracked backup entry, got %v", err)
 	}
 }
 

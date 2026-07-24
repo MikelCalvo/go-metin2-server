@@ -348,6 +348,36 @@ func (r *gameRuntime) CleanupItemTemplateStoreCrashTempFiles() (itemcatalog.Snap
 	return cleaner.CleanupCrashTempFiles()
 }
 
+func (r *gameRuntime) BackupItemTemplateStore(dstDir string) (itemcatalog.SnapshotSummary, error) {
+	if r == nil || r.itemStore == nil {
+		return itemcatalog.SnapshotSummary{Vnums: []uint32{}}, nil
+	}
+	backer, ok := r.itemStore.(interface {
+		BackupTo(string) error
+		ValidateBackupFrom(string) (itemcatalog.SnapshotSummary, error)
+	})
+	if !ok {
+		return itemcatalog.SnapshotSummary{}, fmt.Errorf("item template store backup is not supported")
+	}
+	if err := backer.BackupTo(dstDir); err != nil {
+		return itemcatalog.SnapshotSummary{}, err
+	}
+	return backer.ValidateBackupFrom(dstDir)
+}
+
+func (r *gameRuntime) ValidateItemTemplateStoreBackup(srcDir string) (itemcatalog.SnapshotSummary, error) {
+	if r == nil || r.itemStore == nil {
+		return itemcatalog.SnapshotSummary{Vnums: []uint32{}}, nil
+	}
+	validator, ok := r.itemStore.(interface {
+		ValidateBackupFrom(string) (itemcatalog.SnapshotSummary, error)
+	})
+	if !ok {
+		return itemcatalog.SnapshotSummary{}, fmt.Errorf("item template store backup validation is not supported")
+	}
+	return validator.ValidateBackupFrom(srcDir)
+}
+
 func (r *gameRuntime) BackupAccountStore(dstDir string) (accountstore.SnapshotSummary, error) {
 	if r == nil || r.accountStore == nil {
 		return accountstore.SnapshotSummary{Logins: []string{}}, nil

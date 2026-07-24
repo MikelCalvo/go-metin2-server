@@ -2,6 +2,8 @@ package itemstore
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -169,6 +171,205 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	return nil
 }
 
+func (s *FileStore) BackupTo(dstDir string) error {
+	if s == nil || s.path == "" {
+		return ErrStorePathRequired
+	}
+	if strings.TrimSpace(dstDir) == "" {
+		return ErrBackupDirRequired
+	}
+	if err := rejectBackupDestinationInsideStore(filepath.Dir(s.path), dstDir); err != nil {
+		return err
+	}
+	if err := ensureEmptyDir(dstDir, ErrBackupDirNotEmpty, "read item template backup dir"); err != nil {
+		return err
+	}
+
+	summary, snapshot, hasSnapshot, err := s.backupSourceSnapshot()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dstDir, 0o755); err != nil {
+		return fmt.Errorf("create item template backup dir: %w", err)
+	}
+	committedSnapshot := false
+	backupPath := filepath.Join(dstDir, filepath.Base(s.path))
+	if hasSnapshot {
+		backup := NewFileStore(backupPath)
+		if err := backup.Save(snapshot); err != nil {
+			return s.rollbackBackupFailure(dstDir, committedSnapshot, fmt.Errorf("backup item template snapshot: %w", err))
+		}
+		committedSnapshot = true
+	}
+	if err := writeBackupManifest(dstDir, filepath.Base(s.path), summary, hasSnapshot); err != nil {
+		return s.rollbackBackupFailure(dstDir, committedSnapshot, err)
+	}
+	if err := syncDir(dstDir); err != nil {
+		return s.rollbackBackupFailure(dstDir, committedSnapshot, fmt.Errorf("sync item template backup dir: %w", err))
+	}
+	return nil
+}
+
+func (s *FileStore) backupSourceSnapshot() (SnapshotSummary, Snapshot, bool, error) {
+	summary := SnapshotSummary{Vnums: []uint32{}}
+	snapshot, err := s.Load()
+	if err != nil {
+		if errors.Is(err, ErrSnapshotNotFound) {
+			return summary, Snapshot{}, false, nil
+		}
+		return SnapshotSummary{}, Snapshot{}, false, err
+	}
+	summary.TemplateCount = len(snapshot.Templates)
+	summary.Vnums = make([]uint32, 0, len(snapshot.Templates))
+	for _, template := range snapshot.Templates {
+		summary.Vnums = append(summary.Vnums, template.Vnum)
+	}
+	return summary, snapshot, true, nil
+}
+
+func (s *FileStore) rollbackBackupFailure(dstDir string, snapshotCommitted bool, backupErr error) error {
+	var rollbackErrs []error
+	if snapshotCommitted {
+		if err := os.Remove(filepath.Join(dstDir, filepath.Base(s.path))); err != nil && !errors.Is(err, os.ErrNotExist) {
+			rollbackErrs = append(rollbackErrs, fmt.Errorf("remove backup item template snapshot: %w", err))
+		}
+	}
+	if err := os.Remove(filepath.Join(dstDir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove item template backup manifest: %w", err))
+	}
+	if err := syncDir(dstDir); err != nil {
+		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync item template backup rollback dir: %w", err))
+	}
+	if len(rollbackErrs) == 0 {
+		return backupErr
+	}
+	return errors.Join(append([]error{backupErr}, rollbackErrs...)...)
+}
+
+func writeBackupManifest(dir string, snapshotFilename string, summary SnapshotSummary, hasSnapshot bool) error {
+	manifest := BackupManifest{
+		Format:  BackupManifestFormat,
+		Summary: summary,
+		Files:   []BackupManifestFile{},
+	}
+	if hasSnapshot {
+		raw, err := os.ReadFile(filepath.Join(dir, snapshotFilename))
+		if err != nil {
+			return fmt.Errorf("read item template backup snapshot for manifest: %w", err)
+		}
+		checksum := sha256.Sum256(raw)
+		manifest.Files = append(manifest.Files, BackupManifestFile{
+			Filename:  snapshotFilename,
+			SizeBytes: int64(len(raw)),
+			SHA256:    hex.EncodeToString(checksum[:]),
+		})
+	}
+	return writeJSONFileAtomically(dir, BackupManifestFilename, manifest, "item template backup manifest")
+}
+
+func (s *FileStore) ValidateBackupFrom(srcDir string) (SnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return SnapshotSummary{}, ErrStorePathRequired
+	}
+	if strings.TrimSpace(srcDir) == "" {
+		return SnapshotSummary{}, ErrRestoreSourceRequired
+	}
+	if _, err := os.Stat(srcDir); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return SnapshotSummary{}, ErrRestoreSourceNotFound
+		}
+		return SnapshotSummary{}, fmt.Errorf("stat item template restore source dir: %w", err)
+	}
+	return s.validateBackupManifest(srcDir)
+}
+
+func (s *FileStore) validateBackupManifest(srcDir string) (SnapshotSummary, error) {
+	manifestPath := filepath.Join(srcDir, BackupManifestFilename)
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return SnapshotSummary{}, ErrBackupManifestRequired
+		}
+		return SnapshotSummary{}, fmt.Errorf("read item template backup manifest: %w", err)
+	}
+	var manifest BackupManifest
+	if err := decodeBackupManifestStrict(raw, &manifest); err != nil {
+		return SnapshotSummary{}, fmt.Errorf("%w: decode manifest: %v", ErrInvalidBackupManifest, err)
+	}
+	if manifest.Format != BackupManifestFormat {
+		return SnapshotSummary{}, fmt.Errorf("%w: format %q", ErrInvalidBackupManifest, manifest.Format)
+	}
+	if len(manifest.Files) > 1 {
+		return SnapshotSummary{}, fmt.Errorf("%w: manifest lists %d snapshot files", ErrInvalidBackupManifest, len(manifest.Files))
+	}
+
+	committedFiles := make(map[string]struct{}, len(manifest.Files))
+	var summary SnapshotSummary
+	if len(manifest.Files) == 0 {
+		summary = SnapshotSummary{Vnums: []uint32{}}
+	} else {
+		file := manifest.Files[0]
+		if file.Filename == "" || filepath.Base(file.Filename) != file.Filename {
+			return SnapshotSummary{}, fmt.Errorf("%w: manifest filename %q is not a base name", ErrInvalidBackupManifest, file.Filename)
+		}
+		if file.Filename != filepath.Base(s.path) {
+			return SnapshotSummary{}, fmt.Errorf("%w: manifest filename %q does not match item template snapshot filename", ErrInvalidBackupManifest, file.Filename)
+		}
+		committedFiles[file.Filename] = struct{}{}
+		snapshotPath := filepath.Join(srcDir, file.Filename)
+		rawSnapshot, err := os.ReadFile(snapshotPath)
+		if err != nil {
+			return SnapshotSummary{}, fmt.Errorf("%w: read manifest item template snapshot: %v", ErrInvalidBackupManifest, err)
+		}
+		if int64(len(rawSnapshot)) != file.SizeBytes {
+			return SnapshotSummary{}, fmt.Errorf("%w: item template snapshot size mismatch", ErrInvalidBackupManifest)
+		}
+		checksum := sha256.Sum256(rawSnapshot)
+		if got := hex.EncodeToString(checksum[:]); got != file.SHA256 {
+			return SnapshotSummary{}, fmt.Errorf("%w: item template snapshot checksum mismatch", ErrInvalidBackupManifest)
+		}
+		snapshot, err := NewFileStore(snapshotPath).Load()
+		if err != nil {
+			return SnapshotSummary{}, err
+		}
+		summary = SnapshotSummary{TemplateCount: len(snapshot.Templates), Vnums: make([]uint32, 0, len(snapshot.Templates))}
+		for _, template := range snapshot.Templates {
+			summary.Vnums = append(summary.Vnums, template.Vnum)
+		}
+	}
+	if !snapshotSummariesEqual(manifest.Summary, summary) {
+		return SnapshotSummary{}, fmt.Errorf("%w: summary does not match committed snapshot", ErrInvalidBackupManifest)
+	}
+	if err := validateBackupDirectoryEntries(srcDir, committedFiles); err != nil {
+		return SnapshotSummary{}, err
+	}
+	return summary, nil
+}
+
+func validateBackupDirectoryEntries(srcDir string, manifestFiles map[string]struct{}) error {
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return fmt.Errorf("read item template backup dir for manifest coverage: %w", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == BackupManifestFilename {
+			continue
+		}
+		if _, ok := manifestFiles[name]; ok {
+			continue
+		}
+		if entry.IsDir() {
+			return fmt.Errorf("%w: backup contains untracked directory %q", ErrInvalidBackupManifest, name)
+		}
+		if strings.HasPrefix(name, ".item-templates-") && strings.HasSuffix(name, ".json") {
+			continue
+		}
+		return fmt.Errorf("%w: backup contains untracked entry %q", ErrInvalidBackupManifest, name)
+	}
+	return nil
+}
+
 func decodeSnapshotStrict(raw []byte, snapshot *Snapshot) error {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -182,6 +383,166 @@ func decodeSnapshotStrict(raw []byte, snapshot *Snapshot) error {
 		return err
 	}
 	return nil
+}
+
+func decodeBackupManifestStrict(raw []byte, manifest *BackupManifest) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(manifest); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+func snapshotSummariesEqual(a, b SnapshotSummary) bool {
+	if a.TemplateCount != b.TemplateCount || a.CrashTempCount != b.CrashTempCount || len(a.Vnums) != len(b.Vnums) || len(a.CrashTempFiles) != len(b.CrashTempFiles) {
+		return false
+	}
+	for i := range a.Vnums {
+		if a.Vnums[i] != b.Vnums[i] {
+			return false
+		}
+	}
+	for i := range a.CrashTempFiles {
+		if a.CrashTempFiles[i] != b.CrashTempFiles[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func writeJSONFileAtomically(dir, filename string, value any, context string) error {
+	temp, err := os.CreateTemp(dir, ".item-templates-*.json")
+	if err != nil {
+		return fmt.Errorf("create %s temp file: %w", context, err)
+	}
+	defer func() {
+		_ = temp.Close()
+		_ = os.Remove(temp.Name())
+	}()
+	encoder := json.NewEncoder(temp)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(value); err != nil {
+		return fmt.Errorf("encode %s: %w", context, err)
+	}
+	if err := temp.Sync(); err != nil {
+		return fmt.Errorf("sync %s temp file: %w", context, err)
+	}
+	if err := temp.Close(); err != nil {
+		return fmt.Errorf("close %s temp file: %w", context, err)
+	}
+	if err := os.Rename(temp.Name(), filepath.Join(dir, filename)); err != nil {
+		return fmt.Errorf("commit %s file: %w", context, err)
+	}
+	return nil
+}
+
+func ensureEmptyDir(path string, nonEmptyErr error, readContext string) error {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("%s: %w", readContext, err)
+	}
+	if len(entries) != 0 {
+		return nonEmptyErr
+	}
+	return nil
+}
+
+func rejectBackupDestinationInsideStore(storeDir string, dstDir string) error {
+	return rejectPathInsideOrEqual(storeDir, dstDir, ErrBackupDirInsideStore, "item template store", "item template backup")
+}
+
+func rejectPathInsideOrEqual(root string, candidate string, rejectedErr error, rootContext string, candidateContext string) error {
+	rootPath, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return fmt.Errorf("resolve %s dir: %w", rootContext, err)
+	}
+	candidatePath, err := filepath.Abs(filepath.Clean(candidate))
+	if err != nil {
+		return fmt.Errorf("resolve %s dir: %w", candidateContext, err)
+	}
+	inside, err := pathInsideOrEqual(rootPath, candidatePath)
+	if err != nil {
+		return fmt.Errorf("compare %s dir: %w", candidateContext, err)
+	}
+	if inside {
+		return rejectedErr
+	}
+
+	resolvedRootPath, err := resolveExistingPath(rootPath)
+	if err != nil {
+		return fmt.Errorf("resolve %s symlinks: %w", rootContext, err)
+	}
+	resolvedCandidatePath, err := resolveExistingPath(candidatePath)
+	if err != nil {
+		return fmt.Errorf("resolve %s symlinks: %w", candidateContext, err)
+	}
+	inside, err = pathInsideOrEqual(resolvedRootPath, resolvedCandidatePath)
+	if err != nil {
+		return fmt.Errorf("compare resolved %s dir: %w", candidateContext, err)
+	}
+	if inside {
+		return rejectedErr
+	}
+	return nil
+}
+
+func pathInsideOrEqual(root string, candidate string) (bool, error) {
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil {
+		return false, err
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))), nil
+}
+
+func resolveExistingPath(path string) (string, error) {
+	path, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	for range 255 {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			return filepath.Abs(filepath.Clean(resolved))
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		info, lstatErr := os.Lstat(path)
+		if lstatErr == nil && info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return "", err
+			}
+			if !filepath.IsAbs(target) {
+				target = filepath.Join(filepath.Dir(path), target)
+			}
+			path = filepath.Clean(target)
+			continue
+		}
+		if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
+			return "", lstatErr
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return filepath.Abs(filepath.Clean(path))
+		}
+		parentResolved, err := resolveExistingPath(parent)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Abs(filepath.Clean(filepath.Join(parentResolved, filepath.Base(path))))
+	}
+	return "", errors.New("too many symlinks while resolving path")
 }
 
 func syncDir(path string) error {

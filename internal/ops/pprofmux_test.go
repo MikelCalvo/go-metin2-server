@@ -886,6 +886,209 @@ func TestLocalItemTemplateStoreCrashTempCleanupEndpointReportsCleanupFailure(t *
 	}
 }
 
+func TestLocalItemTemplateStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
+	backer := &stubItemTemplateStoreBacker{summary: map[string]any{"template_count": 2, "vnums": []uint32{11200, 27001}}}
+	mux := RegisterLocalItemTemplateStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/backup", strings.NewReader(`{"dst_dir":"/tmp/item-template-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if backer.calls != 1 || backer.dstDir != "/tmp/item-template-backup" {
+		t.Fatalf("expected backup callback once with requested dst dir, calls=%d dst=%q", backer.calls, backer.dstDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"template_count":2`, `"vnums":[11200,27001]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalItemTemplateStoreBackupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	backer := &stubItemTemplateStoreBacker{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/backup", strings.NewReader(`{"dst_dir":"/tmp/item-template-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreBackupEndpointRejectsInvalidBody(t *testing.T) {
+	backer := &stubItemTemplateStoreBacker{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	for _, body := range []string{``, `{"dst_dir":"   "}`, `{"dst_dir":"/tmp/item-template-backup","extra":true}`, `{"dst_dir":"/tmp/item-template-backup"} {}`} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/local/item-templates/backup", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+			}
+		})
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreBackupEndpointReportsBackupFailure(t *testing.T) {
+	backer := &stubItemTemplateStoreBacker{err: errStubItemTemplateStoreInvalid}
+	mux := RegisterLocalItemTemplateStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/backup", strings.NewReader(`{"dst_dir":"/tmp/item-template-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if backer.calls != 1 {
+		t.Fatalf("expected backup callback to be called once, got %d", backer.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreBackupEndpointRejectsWrongMethod(t *testing.T) {
+	backer := &stubItemTemplateStoreBacker{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/item-templates/backup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreBackupValidateEndpointDryRunsLoopbackRequestedSource(t *testing.T) {
+	validator := &stubItemTemplateStoreBackupValidator{summary: map[string]any{"template_count": 2, "vnums": []uint32{11200, 27001}}}
+	mux := RegisterLocalItemTemplateStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/backup/validate", strings.NewReader(`{"src_dir":"/tmp/item-template-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 || validator.srcDir != "/tmp/item-template-backup" {
+		t.Fatalf("expected validate callback once with requested src dir, calls=%d src=%q", validator.calls, validator.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"template_count":2`, `"vnums":[11200,27001]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestLocalItemTemplateStoreBackupValidateEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	validator := &stubItemTemplateStoreBackupValidator{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/backup/validate", strings.NewReader(`{"src_dir":"/tmp/item-template-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validate callback not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreBackupValidateEndpointRejectsInvalidBody(t *testing.T) {
+	validator := &stubItemTemplateStoreBackupValidator{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	for _, body := range []string{``, `{"src_dir":"   "}`, `{"src_dir":"/tmp/item-template-backup","extra":true}`, `{"src_dir":"/tmp/item-template-backup"} {}`} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/local/item-templates/backup/validate", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+			}
+		})
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validate callback not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreBackupValidateEndpointReportsValidationFailure(t *testing.T) {
+	validator := &stubItemTemplateStoreBackupValidator{err: errStubItemTemplateStoreInvalid}
+	mux := RegisterLocalItemTemplateStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/backup/validate", strings.NewReader(`{"src_dir":"/tmp/item-template-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validate callback to be called once, got %d", validator.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreBackupValidateEndpointRejectsWrongMethod(t *testing.T) {
+	validator := &stubItemTemplateStoreBackupValidator{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/item-templates/backup/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validate callback not to be called, got %d", validator.calls)
+	}
+}
+
 func TestLocalQuickslotsEndpointReturnsNamedSnapshotForLoopbackGet(t *testing.T) {
 	calledName := ""
 	mux := RegisterLocalQuickslotsEndpoint(NewPprofMux("gamed"), func(name string) (any, bool) {
@@ -1053,6 +1256,32 @@ type stubItemTemplateStoreCrashTempCleaner struct {
 
 func (s *stubItemTemplateStoreCrashTempCleaner) Cleanup() (any, error) {
 	s.calls++
+	return s.summary, s.err
+}
+
+type stubItemTemplateStoreBacker struct {
+	summary any
+	err     error
+	calls   int
+	dstDir  string
+}
+
+func (s *stubItemTemplateStoreBacker) Backup(dstDir string) (any, error) {
+	s.calls++
+	s.dstDir = dstDir
+	return s.summary, s.err
+}
+
+type stubItemTemplateStoreBackupValidator struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubItemTemplateStoreBackupValidator) ValidateBackup(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
 	return s.summary, s.err
 }
 

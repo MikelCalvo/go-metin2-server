@@ -74,6 +74,7 @@ Fill this before starting:
 - [ ] Both expected listen ports are open
 - [ ] Recent logs show no fresh fatal startup failure
 - [ ] If QA depends on authored item templates, `POST /local/item-templates/validate` returns the expected template summary; if it reports only disposable `.item-templates-*.json` crash-temp residue, clean it with `POST /local/item-templates/crash-temps/cleanup` before the run
+- [ ] Before destructive item-template migration/import experiments, create a loopback-only manifested backup with `POST /local/item-templates/backup` and dry-run it with `POST /local/item-templates/backup/validate`
 
 Expected result:
 - the server is stably up before opening the client

@@ -11,14 +11,23 @@ import (
 )
 
 var (
-	ErrStorePathRequired = errors.New("item template store path is required")
-	ErrSnapshotNotFound  = errors.New("item template snapshot not found")
-	ErrInvalidSnapshot   = errors.New("invalid item template snapshot")
+	ErrStorePathRequired      = errors.New("item template store path is required")
+	ErrSnapshotNotFound       = errors.New("item template snapshot not found")
+	ErrInvalidSnapshot        = errors.New("invalid item template snapshot")
+	ErrBackupDirRequired      = errors.New("item template backup dir is required")
+	ErrBackupDirNotEmpty      = errors.New("item template backup dir is not empty")
+	ErrBackupDirInsideStore   = errors.New("item template backup dir is inside item template store")
+	ErrRestoreSourceRequired  = errors.New("item template restore source dir is required")
+	ErrRestoreSourceNotFound  = errors.New("item template restore source dir not found")
+	ErrBackupManifestRequired = errors.New("item template backup manifest is required")
+	ErrInvalidBackupManifest  = errors.New("invalid item template backup manifest")
 )
 
 const (
-	ItemSocketCount    = 3
-	ItemAttributeCount = 7
+	ItemSocketCount        = 3
+	ItemAttributeCount     = 7
+	BackupManifestFilename = "item-template-backup-manifest.json"
+	BackupManifestFormat   = "go-metin2-item-template-backup-v1"
 )
 
 type Template struct {
@@ -256,6 +265,18 @@ type SnapshotSummary struct {
 	Vnums          []uint32 `json:"vnums"`
 	CrashTempCount int      `json:"crash_temp_count,omitempty"`
 	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
+}
+
+type BackupManifest struct {
+	Format  string               `json:"format"`
+	Summary SnapshotSummary      `json:"summary"`
+	Files   []BackupManifestFile `json:"files"`
+}
+
+type BackupManifestFile struct {
+	Filename  string `json:"filename"`
+	SizeBytes int64  `json:"size_bytes"`
+	SHA256    string `json:"sha256"`
 }
 
 type Store interface {

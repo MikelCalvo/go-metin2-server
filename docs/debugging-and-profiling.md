@@ -106,6 +106,26 @@ Removes same-directory `.item-templates-*.json` crash-temp residue from the auth
 
 The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup item-template JSON summary (`template_count` and deterministic `vnums`). Because cleanup validates before removing anything, corrupt committed item-template snapshots leave crash-temp files in place for manual recovery. Only hidden `.item-templates-*.json` temp files are removed; committed snapshots and unrelated hidden files are preserved. Use `/local/item-templates/validate` first when you want a read-only residue report, then this endpoint when the operator has decided interrupted item-template temp writes are disposable.
 
+### `POST /local/item-templates/backup`
+
+Copies the authored bootstrap item-template snapshot into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source snapshot is invalid, the destination is non-empty, the destination is equal to or nested under the active item-template store directory, or the backup cannot be completed.
+
+Request body JSON fields:
+
+- `dst_dir` — destination directory for the backup; it must be non-empty after trimming and should point to a local path prepared by the operator
+
+A successful backup writes `item-template-backup-manifest.json` with the backup format marker, deterministic item-template summary, copied snapshot filename, byte size, and SHA-256 checksum. Missing committed `item-templates.json` snapshots are backed up as an empty authored-template store with no synthetic snapshot file, preserving the runtime fallback to built-in bootstrap templates. Hidden `.item-templates-*.json` crash leftovers are ignored as backup payload. If snapshot copying, manifest writing, or final directory sync fails after files were committed, backup removes the snapshot file and manifest it already wrote and syncs the destination again so operators are not left with a partial backup that looks usable.
+
+### `POST /local/item-templates/backup/validate`
+
+Dry-runs an operator-supplied item-template backup source through the same strict manifest and snapshot checks used by backup, but does not create or mutate the active item-template store. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source backup is missing, lacks the required manifest, is corrupt, or has an invalid manifest.
+
+Request body JSON fields:
+
+- `src_dir` — source backup directory; it must be non-empty after trimming and contain `item-template-backup-manifest.json` plus the committed item-template snapshot when the manifest lists one
+
+Successful responses are the deterministic item-template backup summary (`template_count`, sorted `vnums`) that was validated. Backup directories are required to be manifest-closed: every non-temp entry must be either `item-template-backup-manifest.json` or a snapshot file named in that manifest, while hidden `.item-templates-*.json` crash leftovers remain visible to operators but are not backup payload. This is a local recovery/audit primitive, not an online restore or live template reload API.
+
 ### `POST /local/account-store/backup`
 
 Copies the durable bootstrap account snapshot store into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source store is invalid, the destination is non-empty, or the backup cannot be completed.

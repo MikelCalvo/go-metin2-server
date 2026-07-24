@@ -83,13 +83,33 @@ The file-backed item-template store now exposes a narrow crash-temp cleanup prim
 
 `gamed` exposes this as loopback-only operator tooling at `POST /local/item-templates/crash-temps/cleanup`. The endpoint accepts only an empty or whitespace-only body, rejects unexpected bodies and non-loopback callers, and is not a gameplay API.
 
+## Manifested backup and dry-run validation
+
+The file-backed item-template store now exposes a read/copy backup primitive for authored template snapshots:
+
+- backup writes to an operator-supplied empty destination directory
+- the destination must not be the active item-template store directory or nested under it, including through resolvable symlinks
+- the committed `item-templates.json` snapshot is copied only after it passes the same strict load/validation contract used by runtime boot and `/local/item-templates/validate`
+- same-directory `.item-templates-*.json` crash-temp residue is omitted from the backup payload
+- a missing committed `item-templates.json` is backed up as an empty authored-template store, preserving the current deterministic runtime fallback rule without creating a synthetic committed snapshot
+- successful backups write `item-template-backup-manifest.json` with a format marker, deterministic snapshot summary, copied filename, byte size, and SHA-256 checksum
+- backup validation dry-runs that manifest and copied snapshot without mutating the active item-template store
+- manifest validation rejects missing manifests, malformed/unknown/trailing manifest JSON, checksum or size drift, wrong snapshot filenames, untracked non-temp entries, and committed snapshots that fail the strict item-template loader
+
+`gamed` exposes this as loopback-only operator tooling:
+
+- `POST /local/item-templates/backup` with `{"dst_dir":"/path/to/empty/backup"}`
+- `POST /local/item-templates/backup/validate` with `{"src_dir":"/path/to/backup"}`
+
+These endpoints are local bootstrap recovery tooling, not gameplay protocol and not a live content import/restore path. Online restore remains out of scope for item-template snapshots because the current runtime resolves authored templates during boot and keeps them in memory.
+
 The durable account snapshot store and one-shot login-ticket store apply the same fail-closed item-instance validation on both save/load and issue/load. Persisted carried-inventory or equipment entries with malformed item instances, including zero-count item stacks, duplicate per-character item instance IDs across carried inventory/equipment, or duplicate equipped-slot occupancy, are rejected as invalid snapshots instead of being normalized into live bootstrap state.
 
 ## Tests
 
 Current coverage:
 
-- `internal/itemstore` freezes deterministic save/load behavior, validation failures, validation-time crash-temp reporting, fail-closed crash-temp cleanup, anti-flag metadata round trips including storage/shop anti-flag metadata, highlight metadata, refineable/save/slow-query/rare/unique/make-count/irremovable/confirm/quest-use/quest-use-multiple/log/applicable item-flag metadata, signed use/equip effect metadata including negative deltas, and strict load rejection for unknown fields or trailing JSON values.
-- `internal/minimal` and `internal/ops` freeze the `gamed` runtime cleanup hook and loopback-only `/local/item-templates/crash-temps/cleanup` operator endpoint.
+- `internal/itemstore` freezes deterministic save/load behavior, validation failures, validation-time crash-temp reporting, fail-closed crash-temp cleanup, manifested backup creation, dry-run backup validation, anti-flag metadata round trips including storage/shop anti-flag metadata, highlight metadata, refineable/save/slow-query/rare/unique/make-count/irremovable/confirm/quest-use/quest-use-multiple/log/applicable item-flag metadata, signed use/equip effect metadata including negative deltas, and strict load rejection for unknown fields or trailing JSON values.
+- `internal/minimal` and `internal/ops` freeze the `gamed` runtime cleanup/backup/backup-validation hooks and loopback-only `/local/item-templates/crash-temps/cleanup`, `/local/item-templates/backup`, and `/local/item-templates/backup/validate` operator endpoints.
 - Runtime item-use, equip, merchant, drop/pickup, and drag-to-item stack slices resolve only through loaded template metadata or the deterministic missing-file fallback described above. Direct consumable use now also treats template-authored `confirm_when_use`, `quest_use`, `quest_use_multiple`, and `applicable` as no-frame/no-mutation guards rather than silently consuming items whose confirmation, quest, or applicable-item flows are not owned yet. Template-backed equip and unequip paths now also reject live carried/equipped items whose counts exceed the authored template `max_count` before emitting frames, changing points, or persisting inventory/equipment state.
 - Selected-character `ITEM_SET` bootstrap frames and template-backed full item refreshes project the owned authored template metadata into the packet fields for both carried inventory and equipment snapshots: `refineable` maps to `ITEM_FLAG_REFINEABLE`, `save` maps to `ITEM_FLAG_SAVE`, `stackable` maps to `ITEM_FLAG_STACKABLE`, `sell_count_per_gold` maps to `ITEM_FLAG_COUNT_PER_1GOLD`, `slow_query` maps to `ITEM_FLAG_SLOW_QUERY`, `rare` maps to `ITEM_FLAG_RARE`, `unique` maps to `ITEM_FLAG_UNIQUE`, `make_count` maps to `ITEM_FLAG_MAKECOUNT`, `irremovable` maps to `ITEM_FLAG_IRREMOVABLE`, `confirm_when_use` maps to `ITEM_FLAG_CONFIRM_WHEN_USE`, `quest_use` maps to `ITEM_FLAG_QUEST_USE`, `quest_use_multiple` maps to `ITEM_FLAG_QUEST_USE_MULTIPLE`, `log` maps to `ITEM_FLAG_LOG`, `applicable` maps to `ITEM_FLAG_APPLICABLE`, owned anti-flag metadata maps into the packet `anti_flags` field (`anti_get`, the trade/drop/sell/give/stack guards, job/sex restrictions, empire restrictions, and the storage/shop metadata bits `anti_save`, `anti_pk_drop`, `anti_myshop`, and `anti_safebox`), `highlight` maps to the packet `highlight` byte as `0` or `1`, and authored `sockets` / `attributes` flow into the packet's display socket/attribute arrays. Partial-stack consumable `ITEM_USE`, drag-to-item stack consolidation, merchant, counted-drop, compatible carried `ITEM_MOVE` merge, and pickup merge refreshes keep the same authored `sockets` / `attributes` in the resulting `ITEM_UPDATE` frame rather than zeroing those display arrays while only the count changes. Merchant-window `GC::SHOP START` catalog entries also copy the resolved template's authored `sockets` / `attributes` into the rendered shop item entry while keeping price/count/display position catalog-authored. Unowned flag and anti-flag bits remain zero until a later slice owns them.

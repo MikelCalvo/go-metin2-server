@@ -80,6 +80,14 @@ func main() {
 		opsHandler,
 		func() (any, error) { return gameRuntime.CleanupItemTemplateStoreCrashTempFiles() },
 	)
+	opsHandler = ops.RegisterLocalItemTemplateStoreBackupEndpoint(
+		opsHandler,
+		func(dstDir string) (any, error) { return gameRuntime.BackupItemTemplateStore(dstDir) },
+	)
+	opsHandler = ops.RegisterLocalItemTemplateStoreBackupValidateEndpoint(
+		opsHandler,
+		func(srcDir string) (any, error) { return gameRuntime.ValidateItemTemplateStoreBackup(srcDir) },
+	)
 	opsHandler = ops.RegisterLocalAccountStoreBackupEndpoint(
 		opsHandler,
 		func(dstDir string) (any, error) { return gameRuntime.BackupAccountStore(dstDir) },

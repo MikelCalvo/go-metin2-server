@@ -310,6 +310,61 @@ func TestGameRuntimeCleanupItemTemplateStoreCrashTempFilesRemovesResidueAfterVal
 	}
 }
 
+func TestGameRuntimeBackupItemTemplateStoreWritesManifestedBackup(t *testing.T) {
+	itemDir := t.TempDir()
+	itemPath := filepath.Join(itemDir, "item-templates.json")
+	items := itemcatalog.NewFileStore(itemPath)
+	if err := items.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
+	}}); err != nil {
+		t.Fatalf("save item templates: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, items, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+
+	summary, err := runtime.BackupItemTemplateStore(backupDir)
+	if err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+	want := itemcatalog.SnapshotSummary{TemplateCount: 2, Vnums: []uint32{11200, 27001}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected item template backup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(filepath.Join(backupDir, itemcatalog.BackupManifestFilename)); err != nil {
+		t.Fatalf("expected item template backup manifest: %v", err)
+	}
+}
+
+func TestGameRuntimeValidateItemTemplateStoreBackupDryRunsManifestedBackup(t *testing.T) {
+	itemDir := t.TempDir()
+	itemPath := filepath.Join(itemDir, "item-templates.json")
+	items := itemcatalog.NewFileStore(itemPath)
+	if err := items.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := items.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item templates: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, items, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateItemTemplateStoreBackup(backupDir)
+	if err != nil {
+		t.Fatalf("validate item template store backup: %v", err)
+	}
+	want := itemcatalog.SnapshotSummary{TemplateCount: 1, Vnums: []uint32{27001}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected item template backup validation summary: got %#v want %#v", summary, want)
+	}
+}
+
 func TestGameRuntimeQuickslotsSnapshotReportsLiveSelectedQuickslots(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
