@@ -353,6 +353,42 @@ func TestMapIndexPlayerCharactersPrunesDuplicateStaleMapBuckets(t *testing.T) {
 	}
 }
 
+func TestMapIndexPlayerCharactersRepairsMisplacedMapBucketPresence(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := newPlayerEntity(19, entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800))
+	index.effectiveMapByEntityID[alpha.Entity.ID] = 42
+	index.byMapIndex[42] = map[uint64]PlayerEntity{alpha.Entity.ID: alpha}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected misplaced player bucket on map 42 to be pruned, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].MapIndex != 77 || characters[0].X != 1700 || characters[0].Y != 2800 {
+		t.Fatalf("expected misplaced player bucket to be repaired into map 77, got %+v", characters)
+	}
+	if effective := index.effectiveMapByEntityID[alpha.Entity.ID]; effective != 77 {
+		t.Fatalf("expected effective map index to be repaired to 77, got %d", effective)
+	}
+}
+
+func TestMapIndexPlayerLookupRepairsMisplacedMapBucketPresence(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := newPlayerEntity(21, entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800))
+	index.byMapIndex[42] = map[uint64]PlayerEntity{alpha.Entity.ID: alpha}
+
+	lookup, ok := index.PlayerByVID(alpha.Entity.VID)
+	if !ok || lookup.Entity.ID != alpha.Entity.ID || lookup.Character.MapIndex != 77 {
+		t.Fatalf("expected player VID lookup through misplaced bucket to succeed, got player=%+v ok=%v", lookup, ok)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected player VID lookup to prune stale source bucket, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" {
+		t.Fatalf("expected player VID lookup to repair destination bucket, got %+v", characters)
+	}
+}
+
 func TestMapIndexRegisterRejectsStaticBucketCollisionWhenStaticEntityIndexMissing(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	actor := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
@@ -434,6 +470,31 @@ func TestMapIndexSnapshotPrunesDuplicateStaticActorMapBuckets(t *testing.T) {
 	actors := index.StaticActors(77)
 	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" || actors[0].Position.MapIndex != 77 {
 		t.Fatalf("expected current static actor bucket to remain after snapshot repair, got %+v", actors)
+	}
+}
+
+func TestMapIndexSnapshotRepairsMisplacedMapBucketPresence(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := newPlayerEntity(20, entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800))
+	guard := StaticEntity{Entity: Entity{ID: 21, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(99, 900, 1200), RaceNum: 20300}
+	index.byMapIndex[42] = map[uint64]PlayerEntity{alpha.Entity.ID: alpha}
+	index.staticByMapIndex[43] = map[uint64]StaticEntity{guard.Entity.ID: guard}
+
+	snapshots := index.Snapshot()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected repaired player and static-actor occupancy snapshots, got %+v", snapshots)
+	}
+	if snapshots[0].MapIndex != 77 || len(snapshots[0].Characters) != 1 || snapshots[0].Characters[0].Name != "Alpha" || len(snapshots[0].StaticActors) != 0 {
+		t.Fatalf("expected player occupancy to move from stale map 42 to map 77, got %+v", snapshots[0])
+	}
+	if snapshots[1].MapIndex != 99 || len(snapshots[1].Characters) != 0 || len(snapshots[1].StaticActors) != 1 || snapshots[1].StaticActors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected static actor occupancy to move from stale map 43 to map 99, got %+v", snapshots[1])
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale player bucket to be pruned after snapshot repair, got %+v", characters)
+	}
+	if actors := index.StaticActors(43); len(actors) != 0 {
+		t.Fatalf("expected stale static actor bucket to be pruned after snapshot repair, got %+v", actors)
 	}
 }
 
@@ -858,6 +919,38 @@ func TestMapIndexStaticActorsPrunesDuplicateStaleMapBuckets(t *testing.T) {
 	actors := index.StaticActors(77)
 	if len(actors) != 1 || actors[0].Entity.ID != stale.Entity.ID || actors[0].Entity.Name != "VillageGuard" || actors[0].Position.MapIndex != 77 {
 		t.Fatalf("expected direct static map reader to keep current bucket, got %+v", actors)
+	}
+}
+
+func TestMapIndexStaticActorsRepairsMisplacedMapBucketPresence(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 19, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(77, 900, 1200), RaceNum: 20300}
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{guard.Entity.ID: guard}
+
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected misplaced static actor bucket on map 42 to be pruned, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != "VillageGuard" || actors[0].Position != NewPosition(77, 900, 1200) {
+		t.Fatalf("expected misplaced static actor bucket to be repaired into map 77, got %+v", actors)
+	}
+}
+
+func TestMapIndexStaticActorLookupRepairsMisplacedMapBucketPresence(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	guard := StaticEntity{Entity: Entity{ID: 20, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(77, 900, 1200), RaceNum: 20300}
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{guard.Entity.ID: guard}
+
+	lookup, ok := index.StaticActorByVID(uint32(guard.Entity.ID))
+	if !ok || lookup.Entity.ID != guard.Entity.ID || lookup.Position.MapIndex != 77 {
+		t.Fatalf("expected static actor VID lookup through misplaced bucket to succeed, got actor=%+v ok=%v", lookup, ok)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected static actor VID lookup to prune stale source bucket, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected static actor VID lookup to repair destination bucket, got %+v", actors)
 	}
 }
 

@@ -117,9 +117,10 @@ The current owned responsibilities are:
 - expose static-actor lookup by client-visible `VID` directly from surviving map-index presence, and expose all static actors from map-index state, so entity-registry repair and scope visibility readers can recover non-player directory presence after partial teardown
 - repair duplicate same-kind player/static map-bucket ownership from surviving primary map-index entries before returning map-occupancy snapshots, so `/local/maps` and scope readers do not surface one actor on stale older maps after a partial repair
 - repair that same duplicate same-kind map-bucket ownership before direct per-map player/static readers return, so lower-level runtime callers of `MapCharacters(...)` and `StaticActors(...)` share the same ghost-pruning behavior as full occupancy snapshots
+- repair same-kind player/static map-bucket entries whose stored snapshot already carries a different effective `MapIndex`, even when no primary entity entry survived; direct per-map readers, lookup paths, and map-occupancy snapshots move that presence to the snapshot's canonical effective map instead of continuing to report the actor on the stale bucket
 
 This keeps map occupancy as an owned runtime primitive, and the current connected-player / visibility / map-occupancy / static-actor introspection snapshots can now be composed through `internal/worldruntime/scopes.go` instead of bootstrap-local shared-world conversion code.
-The tolerant cleanup rules are deliberately narrow: they make reconnect/close/register repair idempotent across owned runtime indexes without treating stale map/index remnants as a live session. Cross-kind primary-index and bucket remnants are still authoritative enough to block conflicting registration because player and static-actor entity IDs share one runtime identity space.
+The tolerant cleanup rules are deliberately narrow: they make reconnect/close/register/read repair idempotent across owned runtime indexes without treating stale map/index remnants as a live session. Same-kind map-bucket repair only follows the actor snapshot's own effective map; cross-kind primary-index and bucket remnants are still authoritative enough to block conflicting registration because player and static-actor entity IDs share one runtime identity space.
 
 ### Session directory
 
