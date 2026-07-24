@@ -296,6 +296,19 @@ func (r *gameRuntime) ValidateAccountStore() (accountstore.SnapshotSummary, erro
 	return validator.Validate()
 }
 
+func (r *gameRuntime) CleanupAccountStoreCrashTempFiles() (accountstore.SnapshotSummary, error) {
+	if r == nil || r.accountStore == nil {
+		return accountstore.SnapshotSummary{Logins: []string{}}, nil
+	}
+	cleaner, ok := r.accountStore.(interface {
+		CleanupCrashTempFiles() (accountstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return accountstore.SnapshotSummary{}, fmt.Errorf("account store crash temp cleanup is not supported")
+	}
+	return cleaner.CleanupCrashTempFiles()
+}
+
 func (r *gameRuntime) ValidateLoginTicketStore() (loginticket.SnapshotSummary, error) {
 	if r == nil || r.loginTicketStore == nil {
 		return loginticket.SnapshotSummary{Logins: []string{}, LoginKeys: []uint32{}}, nil

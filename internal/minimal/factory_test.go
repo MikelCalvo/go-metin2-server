@@ -161,6 +161,33 @@ func TestGameRuntimeValidateAccountStoreReportsCrashTempFiles(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeCleanupAccountStoreCrashTempFilesRemovesResidue(t *testing.T) {
+	accountDir := t.TempDir()
+	accounts := accountstore.NewFileStore(accountDir)
+	if err := accounts.Save(accountstore.Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(accountDir, ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write account temp file: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, nil, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.CleanupAccountStoreCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup account crash temp files: %v", err)
+	}
+	want := accountstore.SnapshotSummary{AccountCount: 1, Logins: []string{"mkmk"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected cleanup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(filepath.Join(accountDir, ".account-crashed.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected account crash temp to be removed, stat err=%v", err)
+	}
+}
+
 func TestGameRuntimeValidateLoginTicketStoreDryRunsTicketHandoffState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	if err := store.Issue(loginticket.Ticket{Login: "zeta", LoginKey: 0x02000000}); err != nil {

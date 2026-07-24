@@ -127,6 +127,123 @@ func TestLocalAccountStoreValidateEndpointReportsValidationFailure(t *testing.T)
 	}
 }
 
+func TestLocalAccountStoreCrashTempCleanupEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
+	cleaner := &stubAccountStoreCrashTempCleaner{summary: map[string]any{"account_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}}}
+	mux := RegisterLocalAccountStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if cleaner.calls != 1 {
+		t.Fatalf("expected cleaner to be called once, got %d", cleaner.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"account_count":2`, `"character_count":3`, `"logins":["alpha","zeta"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalAccountStoreCrashTempCleanupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	cleaner := &stubAccountStoreCrashTempCleaner{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalAccountStoreCrashTempCleanupEndpointRejectsWrongMethod(t *testing.T) {
+	cleaner := &stubAccountStoreCrashTempCleaner{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/account-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalAccountStoreCrashTempCleanupEndpointRejectsUnexpectedBody(t *testing.T) {
+	cleaner := &stubAccountStoreCrashTempCleaner{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/crash-temps/cleanup", strings.NewReader(`{"confirm":true}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalAccountStoreCrashTempCleanupEndpointRejectsOversizedBody(t *testing.T) {
+	cleaner := &stubAccountStoreCrashTempCleaner{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/crash-temps/cleanup", strings.NewReader(strings.Repeat(" ", maxLocalAccountStoreMutationBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalAccountStoreCrashTempCleanupEndpointReportsCleanupFailure(t *testing.T) {
+	cleaner := &stubAccountStoreCrashTempCleaner{err: errStubAccountStoreInvalid}
+	mux := RegisterLocalAccountStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if cleaner.calls != 1 {
+		t.Fatalf("expected cleaner to be called once, got %d", cleaner.calls)
+	}
+}
+
 func TestLocalAccountStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
 	backer := &stubAccountStoreBacker{summary: map[string]any{"account_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}}}
 	mux := RegisterLocalAccountStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
@@ -734,6 +851,17 @@ func (s *stubAccountStoreValidator) Validate() (any, error) {
 }
 
 var errStubAccountStoreInvalid = errors.New("account store invalid")
+
+type stubAccountStoreCrashTempCleaner struct {
+	summary any
+	err     error
+	calls   int
+}
+
+func (s *stubAccountStoreCrashTempCleaner) Cleanup() (any, error) {
+	s.calls++
+	return s.summary, s.err
+}
 
 type stubAccountStoreBacker struct {
 	summary any

@@ -69,6 +69,12 @@ Successful responses are JSON summaries with:
 
 Crash leftovers such as hidden `.account-*.json` temp files are not treated as committed snapshots, matching the committed-snapshot list/backup contract, but validation reports them as deterministic residue so an operator can see interrupted account writes before cleanup or recovery work.
 
+### `POST /local/account-store/crash-temps/cleanup`
+
+Removes same-directory `.account-*.json` crash-temp residue from the durable bootstrap account snapshot store after first validating the committed snapshot set through the same strict loader used by `/local/account-store/validate`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if committed account state is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
+
+The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup account-store JSON summary (`account_count`, `character_count`, and deterministic `logins`). Because cleanup validates before removing anything, corrupt committed account snapshots leave crash-temp files in place for manual recovery. Only hidden `.account-*.json` temp files are removed; committed account snapshots, backup manifests, and unrelated hidden files are preserved. Use `/local/account-store/validate` first when you want a read-only residue report, then this endpoint when the operator has decided the interrupted temp writes are disposable.
+
 ### `POST /local/login-tickets/validate`
 
 Validates the one-shot authd-to-gamed login-ticket handoff store without consuming or deleting any tickets. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed ticket is corrupt, has unknown/trailing JSON, has an invalid or mismatched filename/login-key pairing, has an empty login, has a zero login key, or violates the character/item/equipment/quickslot invariants shared with ticket load/consume.

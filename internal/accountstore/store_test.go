@@ -561,6 +561,85 @@ func TestFileStoreValidateReportsCrashTempFiles(t *testing.T) {
 	}
 }
 
+func TestFileStoreCleanupCrashTempFilesRemovesOnlyCrashTemps(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	for _, filename := range []string{".account-zeta.json", ".account-alpha.json", ".ignored-hidden.json", BackupManifestFilename} {
+		if err := os.WriteFile(filepath.Join(store.dir, filename), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write file %s: %v", filename, err)
+		}
+	}
+
+	summary, err := store.CleanupCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup account crash temp files: %v", err)
+	}
+	want := SnapshotSummary{AccountCount: 1, Logins: []string{"mkmk"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected cleanup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := store.Load("mkmk"); err != nil {
+		t.Fatalf("expected committed account to remain loadable: %v", err)
+	}
+	for _, filename := range []string{".account-alpha.json", ".account-zeta.json"} {
+		if _, err := os.Stat(filepath.Join(store.dir, filename)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected crash temp %s to be removed, stat err=%v", filename, err)
+		}
+	}
+	for _, filename := range []string{".ignored-hidden.json", BackupManifestFilename} {
+		if _, err := os.Stat(filepath.Join(store.dir, filename)); err != nil {
+			t.Fatalf("expected non-crash-temp file %s to remain, stat err=%v", filename, err)
+		}
+	}
+}
+
+func TestFileStoreCleanupCrashTempFilesFailsClosedOnCorruptSnapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	path := store.accountPath("mkmk")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create store dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"login":"mkmk","empire":2,"characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt account: %v", err)
+	}
+	tempPath := filepath.Join(store.dir, ".account-crashed.json")
+	if err := os.WriteFile(tempPath, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp file: %v", err)
+	}
+
+	_, err := store.CleanupCrashTempFiles()
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount before cleanup, got %v", err)
+	}
+	if _, statErr := os.Stat(tempPath); statErr != nil {
+		t.Fatalf("expected crash temp file to remain after failed validation, stat err=%v", statErr)
+	}
+}
+
+func TestFileStoreCleanupCrashTempFilesSyncsStoreDirectoryAfterRemoval(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+	if err := os.WriteFile(filepath.Join(dir, ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp file: %v", err)
+	}
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	var synced []string
+	syncStoreDir = func(path string) error {
+		synced = append(synced, path)
+		return nil
+	}
+
+	if _, err := store.CleanupCrashTempFiles(); err != nil {
+		t.Fatalf("cleanup account crash temp files: %v", err)
+	}
+	if !reflect.DeepEqual(synced, []string{dir}) {
+		t.Fatalf("expected account store directory sync after crash-temp cleanup, got %#v", synced)
+	}
+}
+
 func TestFileStoreBackupToCopiesCommittedSnapshots(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	accounts := []Account{

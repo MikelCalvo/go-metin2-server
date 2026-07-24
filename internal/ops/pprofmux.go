@@ -136,6 +136,36 @@ func RegisterLocalAccountStoreValidateEndpoint(mux *http.ServeMux, validate func
 	return mux
 }
 
+func RegisterLocalAccountStoreCrashTempCleanupEndpoint(mux *http.ServeMux, cleanup func() (any, error)) *http.ServeMux {
+	if mux == nil || cleanup == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/account-store/crash-temps/cleanup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := cleanup()
+		if err != nil {
+			slog.Warn("local account store crash temp cleanup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalLoginTicketStoreValidateEndpoint(mux *http.ServeMux, validate func() (any, error)) *http.ServeMux {
 	if mux == nil || validate == nil {
 		return mux
@@ -1109,6 +1139,20 @@ func readNonEmptyLocalAccountStoreMutationBody(r *http.Request) ([]byte, int, bo
 		return nil, http.StatusBadRequest, false
 	}
 	return raw, http.StatusOK, true
+}
+
+func requireEmptyLocalAccountStoreMutationBody(r *http.Request) (int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalAccountStoreMutationBodyBytes+1))
+	if err != nil {
+		return http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalAccountStoreMutationBodyBytes {
+		return http.StatusRequestEntityTooLarge, false
+	}
+	if len(bytes.TrimSpace(raw)) != 0 {
+		return http.StatusBadRequest, false
+	}
+	return http.StatusOK, true
 }
 
 func decodeStrictLocalAccountStoreMutationRequest(raw []byte, request any) bool {
