@@ -474,6 +474,72 @@ func TestEntityRegistryRejectsPlayerUpdateWithMapOnlyPlayerNameCollision(t *test
 	}
 }
 
+func TestEntityRegistryPlayerRegistrationReclaimsNonCanonicalPlayerDirectoryAliases(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("AlphaPrime", 0x02040111, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	registry.players.entityIDByVID[0x02040101] = alpha.Entity.ID
+	registry.players.entityIDByName["Alpha"] = alpha.Entity.ID
+
+	bravo := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 99, 1900, 3000))
+	if bravo.Entity.ID == 0 {
+		t.Fatal("expected player registration to reclaim stale non-canonical directory aliases")
+	}
+	byOldVID, ok := registry.PlayerByVID(0x02040101)
+	if !ok || byOldVID.Entity.ID != bravo.Entity.ID || byOldVID.Entity.Name != "Alpha" {
+		t.Fatalf("expected old VID to resolve to new Alpha player, got player=%+v ok=%v", byOldVID, ok)
+	}
+	byOldName, ok := registry.PlayerByName("Alpha")
+	if !ok || byOldName.Entity.ID != bravo.Entity.ID || byOldName.Entity.VID != 0x02040101 {
+		t.Fatalf("expected old exact name to resolve to new Alpha player, got player=%+v ok=%v", byOldName, ok)
+	}
+	alphaLookup, ok := registry.Player(alpha.Entity.ID)
+	if !ok || alphaLookup.Entity.Name != "AlphaPrime" || alphaLookup.Entity.VID != 0x02040111 {
+		t.Fatalf("expected AlphaPrime canonical identity to stay intact, got player=%+v ok=%v", alphaLookup, ok)
+	}
+	if next := registry.NextEntityID(); next != 3 {
+		t.Fatalf("expected reclaimed registration to consume only one new entity ID, got next=%d", next)
+	}
+}
+
+func TestEntityRegistryPlayerUpdateReclaimsNonCanonicalPlayerDirectoryAliases(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("AlphaPrime", 0x02040111, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected first player registration to succeed")
+	}
+	bravo := registry.RegisterPlayer(entityRegistryCharacter("Bravo", 0x02040102, 99, 1900, 3000))
+	if bravo.Entity.ID == 0 {
+		t.Fatal("expected second player registration to succeed")
+	}
+	registry.players.entityIDByVID[0x02040101] = alpha.Entity.ID
+	registry.players.entityIDByName["Alpha"] = alpha.Entity.ID
+
+	updated := bravo.Character
+	updated.VID = 0x02040101
+	updated.ID = 0x02040101
+	updated.Name = "Alpha"
+	updated.X = 2100
+	updated.Y = 3200
+	if !registry.UpdatePlayer(bravo.Entity.ID, updated) {
+		t.Fatal("expected player update to reclaim stale non-canonical directory aliases")
+	}
+	byOldVID, ok := registry.PlayerByVID(0x02040101)
+	if !ok || byOldVID.Entity.ID != bravo.Entity.ID || byOldVID.Entity.Name != "Alpha" || byOldVID.Character.X != 2100 {
+		t.Fatalf("expected old VID to resolve to updated Alpha player, got player=%+v ok=%v", byOldVID, ok)
+	}
+	byOldName, ok := registry.PlayerByName("Alpha")
+	if !ok || byOldName.Entity.ID != bravo.Entity.ID || byOldName.Entity.VID != 0x02040101 {
+		t.Fatalf("expected old exact name to resolve to updated Alpha player, got player=%+v ok=%v", byOldName, ok)
+	}
+	alphaLookup, ok := registry.Player(alpha.Entity.ID)
+	if !ok || alphaLookup.Entity.Name != "AlphaPrime" || alphaLookup.Entity.VID != 0x02040111 {
+		t.Fatalf("expected AlphaPrime canonical identity to stay intact, got player=%+v ok=%v", alphaLookup, ok)
+	}
+}
+
 func TestStaticActorVisibilityVIDRejectsUnencodableRaceNum(t *testing.T) {
 	if vid, ok := StaticActorVisibilityVID(StaticEntity{Entity: Entity{ID: 99}, RaceNum: 0}); ok {
 		t.Fatalf("expected zero race_num to be rejected for static actor visibility VID, got vid=%d", vid)

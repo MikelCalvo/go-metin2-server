@@ -197,6 +197,37 @@ func TestPlayerDirectoryRegisterPrunesStaleAliasesForSameEntityID(t *testing.T) 
 	}
 }
 
+func TestPlayerDirectoryRegisterPrunesNonCanonicalAliasesForSurvivingPlayer(t *testing.T) {
+	directory := NewPlayerDirectory()
+	alpha := newPlayerEntity(17, entityRegistryCharacter("AlphaPrime", 0x02040111, 1, 1100, 2100))
+	if !directory.Register(alpha) {
+		t.Fatal("expected current AlphaPrime registration to succeed")
+	}
+	directory.entityIDByVID[0x02040101] = alpha.Entity.ID
+	directory.entityIDByName["Alpha"] = alpha.Entity.ID
+
+	bravo := newPlayerEntity(18, entityRegistryCharacter("Alpha", 0x02040101, 42, 1300, 2300))
+	if !directory.Register(bravo) {
+		t.Fatal("expected player registration to reclaim stale non-canonical aliases from surviving player")
+	}
+	byOldVID, ok := directory.ByVID(bravo.Entity.VID)
+	if !ok || byOldVID.Entity.ID != bravo.Entity.ID || byOldVID.Entity.Name != "Alpha" {
+		t.Fatalf("expected old VID to resolve to new Alpha owner, got player=%+v ok=%v", byOldVID, ok)
+	}
+	byOldName, ok := directory.ByName(bravo.Entity.Name)
+	if !ok || byOldName.Entity.ID != bravo.Entity.ID || byOldName.Entity.VID != bravo.Entity.VID {
+		t.Fatalf("expected old exact name to resolve to new Alpha owner, got player=%+v ok=%v", byOldName, ok)
+	}
+	byCurrentVID, ok := directory.ByVID(alpha.Entity.VID)
+	if !ok || byCurrentVID.Entity.ID != alpha.Entity.ID || byCurrentVID.Entity.Name != "AlphaPrime" {
+		t.Fatalf("expected AlphaPrime canonical VID to remain intact, got player=%+v ok=%v", byCurrentVID, ok)
+	}
+	byCurrentName, ok := directory.ByName(alpha.Entity.Name)
+	if !ok || byCurrentName.Entity.ID != alpha.Entity.ID || byCurrentName.Entity.VID != alpha.Entity.VID {
+		t.Fatalf("expected AlphaPrime canonical name to remain intact, got player=%+v ok=%v", byCurrentName, ok)
+	}
+}
+
 func TestPlayerDirectoryUpdatePrunesStaleAliasesForSameEntityID(t *testing.T) {
 	registry := NewEntityRegistry()
 	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
@@ -232,6 +263,42 @@ func TestPlayerDirectoryUpdatePrunesStaleAliasesForSameEntityID(t *testing.T) {
 	}
 	if lookup, ok := directory.ByName(updated.Entity.Name); !ok || lookup.Entity.ID != updated.Entity.ID || lookup.Entity.VID != updated.Entity.VID {
 		t.Fatalf("expected current exact-name lookup after update, got player=%+v ok=%v", lookup, ok)
+	}
+}
+
+func TestPlayerDirectoryUpdatePrunesNonCanonicalAliasesForSurvivingPlayer(t *testing.T) {
+	directory := NewPlayerDirectory()
+	alpha := newPlayerEntity(17, entityRegistryCharacter("AlphaPrime", 0x02040111, 1, 1100, 2100))
+	bravo := newPlayerEntity(18, entityRegistryCharacter("Bravo", 0x02040102, 42, 1300, 2300))
+	if !directory.Register(alpha) || !directory.Register(bravo) {
+		t.Fatal("expected initial player registrations to succeed")
+	}
+	directory.entityIDByVID[0x02040101] = alpha.Entity.ID
+	directory.entityIDByName["Alpha"] = alpha.Entity.ID
+
+	updatedBravo := bravo
+	updatedBravo.Entity.VID = 0x02040101
+	updatedBravo.Entity.Name = "Alpha"
+	updatedBravo.Character.VID = updatedBravo.Entity.VID
+	updatedBravo.Character.Name = updatedBravo.Entity.Name
+	if !directory.Update(updatedBravo) {
+		t.Fatal("expected player update to reclaim stale non-canonical aliases from surviving player")
+	}
+	byOldVID, ok := directory.ByVID(updatedBravo.Entity.VID)
+	if !ok || byOldVID.Entity.ID != updatedBravo.Entity.ID || byOldVID.Entity.Name != "Alpha" {
+		t.Fatalf("expected old VID to resolve to updated Bravo/Alpha owner, got player=%+v ok=%v", byOldVID, ok)
+	}
+	byOldName, ok := directory.ByName(updatedBravo.Entity.Name)
+	if !ok || byOldName.Entity.ID != updatedBravo.Entity.ID || byOldName.Entity.VID != updatedBravo.Entity.VID {
+		t.Fatalf("expected old exact name to resolve to updated Bravo/Alpha owner, got player=%+v ok=%v", byOldName, ok)
+	}
+	byCurrentVID, ok := directory.ByVID(alpha.Entity.VID)
+	if !ok || byCurrentVID.Entity.ID != alpha.Entity.ID || byCurrentVID.Entity.Name != "AlphaPrime" {
+		t.Fatalf("expected AlphaPrime canonical VID to remain intact, got player=%+v ok=%v", byCurrentVID, ok)
+	}
+	byCurrentName, ok := directory.ByName(alpha.Entity.Name)
+	if !ok || byCurrentName.Entity.ID != alpha.Entity.ID || byCurrentName.Entity.VID != alpha.Entity.VID {
+		t.Fatalf("expected AlphaPrime canonical name to remain intact, got player=%+v ok=%v", byCurrentName, ok)
 	}
 }
 

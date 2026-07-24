@@ -192,7 +192,8 @@ func (d *PlayerDirectory) conflictingEntityIDByVIDLocked(vid uint32, entityID ui
 	if !ok || indexedEntityID == entityID {
 		return false
 	}
-	if _, exists := d.byEntityID[indexedEntityID]; !exists {
+	indexedPlayer, exists := d.byEntityID[indexedEntityID]
+	if !exists || indexedPlayer.Entity.VID != vid {
 		delete(d.entityIDByVID, vid)
 		return false
 	}
@@ -204,7 +205,8 @@ func (d *PlayerDirectory) conflictingEntityIDByNameLocked(name string, entityID 
 	if !ok || indexedEntityID == entityID {
 		return false
 	}
-	if _, exists := d.byEntityID[indexedEntityID]; !exists {
+	indexedPlayer, exists := d.byEntityID[indexedEntityID]
+	if !exists || indexedPlayer.Entity.Name != name {
 		delete(d.entityIDByName, name)
 		return false
 	}
