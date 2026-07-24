@@ -153,6 +153,103 @@ func TestEntityRegistryRejectsStaticActorIDCollisionWithRegisteredPlayer(t *test
 	}
 }
 
+func TestEntityRegistryRejectsPlayerRegistrationWithDirectoryOnlyStaticActorEntityIDCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor := StaticEntity{Entity: Entity{ID: 1, Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !registry.staticActors.Register(actor) {
+		t.Fatal("expected direct static actor directory registration to simulate partial map-index loss")
+	}
+
+	player := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1800, 2900))
+	if player.Entity.ID != 0 {
+		t.Fatalf("expected player registration with directory-only static entity ID collision to fail closed, got %+v", player)
+	}
+	lookup, ok := registry.StaticActor(actor.Entity.ID)
+	if !ok || lookup.Entity.Name != "DirectoryOnlyGuard" {
+		t.Fatalf("expected directory-only static actor to remain authoritative, got actor=%+v ok=%v", lookup, ok)
+	}
+	if players := registry.PlayerCharacters(); len(players) != 0 {
+		t.Fatalf("expected rejected player to stay out of player snapshots, got %+v", players)
+	}
+	if next := registry.NextEntityID(); next != 1 {
+		t.Fatalf("expected rejected collision not to consume entity ID, got next=%d", next)
+	}
+}
+
+func TestEntityRegistryRejectsPlayerUpdateWithDirectoryOnlyStaticActorEntityIDCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	actor := StaticEntity{Entity: Entity{ID: alpha.Entity.ID, Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(99, 900, 1200), RaceNum: 20300}
+	registry.staticActors.byEntityID[actor.Entity.ID] = actor
+	registry.staticActors.entityIDByVID[uint32(actor.Entity.ID)] = actor.Entity.ID
+
+	updated := alpha.Character
+	updated.MapIndex = 77
+	updated.X = 1900
+	updated.Y = 3000
+	if registry.UpdatePlayer(alpha.Entity.ID, updated) {
+		t.Fatal("expected player update with directory-only static entity ID collision to fail closed")
+	}
+	lookup, ok := registry.Player(alpha.Entity.ID)
+	if !ok || lookup.Character.MapIndex != alpha.Character.MapIndex || lookup.Character.X != alpha.Character.X || lookup.Character.Y != alpha.Character.Y {
+		t.Fatalf("expected player to remain unchanged after rejected entity-ID collision, got player=%+v ok=%v", lookup, ok)
+	}
+	actorLookup, ok := registry.staticActors.ByEntityID(actor.Entity.ID)
+	if !ok || actorLookup.Entity.Name != actor.Entity.Name {
+		t.Fatalf("expected directory-only static actor to remain intact, got actor=%+v ok=%v", actorLookup, ok)
+	}
+}
+
+func TestEntityRegistryRejectsStaticActorRegistrationWithDirectoryOnlyPlayerEntityIDCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	player := newPlayerEntity(1, entityRegistryCharacter("DirectoryOnlyAlpha", 0x02040101, 99, 900, 1200))
+	if !registry.players.Register(player) {
+		t.Fatal("expected direct player directory registration to simulate partial map-index loss")
+	}
+
+	actor, ok := registry.RegisterStaticActorWithID(StaticEntity{Entity: Entity{ID: player.Entity.ID, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if ok {
+		t.Fatalf("expected static actor registration with directory-only player entity ID collision to fail closed, got %+v", actor)
+	}
+	playerLookup, ok := registry.players.ByEntityID(player.Entity.ID)
+	if !ok || playerLookup.Entity.Name != player.Entity.Name {
+		t.Fatalf("expected directory-only player to remain intact, got player=%+v ok=%v", playerLookup, ok)
+	}
+	if actors := registry.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor to stay out of static actor snapshots, got %+v", actors)
+	}
+}
+
+func TestEntityRegistryRejectsStaticActorUpdateWithDirectoryOnlyPlayerEntityIDCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	player := newPlayerEntity(actor.Entity.ID, entityRegistryCharacter("DirectoryOnlyAlpha", 0x02040101, 99, 900, 1200))
+	if !registry.players.Register(player) {
+		t.Fatal("expected direct player directory registration to simulate partial map-index loss")
+	}
+
+	updated := actor
+	updated.Entity.Name = "VillageGuardMoved"
+	updated.Position = NewPosition(77, 1900, 3000)
+	if result, ok := registry.UpdateStaticActor(updated); ok {
+		t.Fatalf("expected static actor update with directory-only player entity ID collision to fail closed, got %+v", result)
+	}
+	lookup, ok := registry.StaticActor(actor.Entity.ID)
+	if !ok || lookup.Entity.Name != actor.Entity.Name || lookup.Position != actor.Position {
+		t.Fatalf("expected static actor to remain unchanged after rejected collision, got actor=%+v ok=%v", lookup, ok)
+	}
+	playerLookup, ok := registry.players.ByEntityID(player.Entity.ID)
+	if !ok || playerLookup.Entity.Name != player.Entity.Name {
+		t.Fatalf("expected directory-only player to remain intact, got player=%+v ok=%v", playerLookup, ok)
+	}
+}
+
 func TestEntityRegistryReturnsDeterministicSortedPlayerCharacters(t *testing.T) {
 	registry := NewEntityRegistry()
 	registry.RegisterPlayer(entityRegistryCharacter("Zulu", 0x02040103, 42, 1900, 3000))

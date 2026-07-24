@@ -30,7 +30,7 @@ func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerE
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	registered := newPlayerEntity(r.nextID+1, character)
-	if r.playerIdentityConflictsLocked(registered) {
+	if r.entityIDOwnedByStaticActorLocked(registered.Entity.ID) || r.playerIdentityConflictsLocked(registered) {
 		return PlayerEntity{}
 	}
 	if r.staticActors != nil {
@@ -76,13 +76,9 @@ func (r *EntityRegistry) registerStaticActor(actor StaticEntity) (StaticEntity, 
 	id := actor.Entity.ID
 	if id == 0 {
 		id = r.nextID + 1
-	} else if _, exists := r.players.ByEntityID(id); exists {
-		return StaticEntity{}, false
-	} else if _, exists := r.maps.Player(id); exists {
-		return StaticEntity{}, false
 	}
 	registered := newStaticEntity(id, actor)
-	if r.staticActorVisibilityVIDConflictsWithPlayerLocked(registered) {
+	if r.entityIDOwnedByPlayerLocked(registered.Entity.ID) || r.staticActorVisibilityVIDConflictsWithPlayerLocked(registered) {
 		return StaticEntity{}, false
 	}
 	if !r.staticActors.Register(registered) {
@@ -254,7 +250,7 @@ func (r *EntityRegistry) UpdateStaticActor(actor StaticEntity) (StaticEntity, bo
 		actor.DeathReward = previous.DeathReward.Clone()
 	}
 	updated := newStaticEntity(actor.Entity.ID, actor)
-	if r.staticActorVisibilityVIDConflictsWithPlayerLocked(updated) {
+	if r.entityIDOwnedByPlayerLocked(updated.Entity.ID) || r.staticActorVisibilityVIDConflictsWithPlayerLocked(updated) {
 		return StaticEntity{}, false
 	}
 	if hadDirectoryEntry {
@@ -292,7 +288,7 @@ func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character
 		}
 	}
 	updated := newPlayerEntity(id, character)
-	if r.playerIdentityConflictsLocked(updated) {
+	if r.entityIDOwnedByStaticActorLocked(updated.Entity.ID) || r.playerIdentityConflictsLocked(updated) {
 		return false
 	}
 	if r.staticActors != nil {
@@ -439,6 +435,40 @@ func (r *EntityRegistry) playerIdentityConflictsLocked(player PlayerEntity) bool
 			return true
 		}
 		if current, exists := r.maps.PlayerByName(player.Entity.Name); exists && current.Entity.ID != player.Entity.ID {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *EntityRegistry) entityIDOwnedByStaticActorLocked(entityID uint64) bool {
+	if r == nil || entityID == 0 {
+		return true
+	}
+	if r.staticActors != nil {
+		if _, exists := r.staticActors.ByEntityID(entityID); exists {
+			return true
+		}
+	}
+	if r.maps != nil {
+		if _, exists := r.maps.StaticActor(entityID); exists {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *EntityRegistry) entityIDOwnedByPlayerLocked(entityID uint64) bool {
+	if r == nil || entityID == 0 {
+		return true
+	}
+	if r.players != nil {
+		if _, exists := r.players.ByEntityID(entityID); exists {
+			return true
+		}
+	}
+	if r.maps != nil {
+		if _, exists := r.maps.Player(entityID); exists {
 			return true
 		}
 	}
