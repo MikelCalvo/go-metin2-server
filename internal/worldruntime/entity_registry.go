@@ -134,7 +134,7 @@ func (r *EntityRegistry) Player(id uint64) (PlayerEntity, bool) {
 	if !ok {
 		return PlayerEntity{}, false
 	}
-	if !r.players.Register(player) {
+	if !r.repairPlayerDirectoryFromMapLocked(player) {
 		return PlayerEntity{}, false
 	}
 	return player, true
@@ -157,7 +157,7 @@ func (r *EntityRegistry) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 	if !ok {
 		return PlayerEntity{}, false
 	}
-	if !r.players.Register(player) {
+	if !r.repairPlayerDirectoryFromMapLocked(player) {
 		return PlayerEntity{}, false
 	}
 	return player, true
@@ -180,7 +180,7 @@ func (r *EntityRegistry) PlayerByName(name string) (PlayerEntity, bool) {
 	if !ok {
 		return PlayerEntity{}, false
 	}
-	if !r.players.Register(player) {
+	if !r.repairPlayerDirectoryFromMapLocked(player) {
 		return PlayerEntity{}, false
 	}
 	return player, true
@@ -203,7 +203,7 @@ func (r *EntityRegistry) StaticActor(id uint64) (StaticEntity, bool) {
 	if !ok {
 		return StaticEntity{}, false
 	}
-	if !r.staticActors.Register(actor) {
+	if !r.repairStaticActorDirectoryFromMapLocked(actor) {
 		return StaticEntity{}, false
 	}
 	return actor, true
@@ -226,7 +226,7 @@ func (r *EntityRegistry) StaticActorByVID(vid uint32) (StaticEntity, bool) {
 	if !ok {
 		return StaticEntity{}, false
 	}
-	if !r.staticActors.Register(actor) {
+	if !r.repairStaticActorDirectoryFromMapLocked(actor) {
 		return StaticEntity{}, false
 	}
 	return actor, true
@@ -390,7 +390,7 @@ func (r *EntityRegistry) AllStaticActors() []StaticEntity {
 		if _, exists := known[actor.Entity.ID]; exists {
 			continue
 		}
-		if !r.staticActors.Register(actor) {
+		if !r.repairStaticActorDirectoryFromMapLocked(actor) {
 			continue
 		}
 		actors = append(actors, actor)
@@ -416,6 +416,26 @@ func (r *EntityRegistry) NextEntityID() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.nextID + 1
+}
+
+func (r *EntityRegistry) repairPlayerDirectoryFromMapLocked(player PlayerEntity) bool {
+	if r == nil || r.players == nil {
+		return false
+	}
+	if r.entityIDOwnedByStaticActorLocked(player.Entity.ID) || r.playerVisibilityVIDConflictsWithStaticActorLocked(player) || r.playerIdentityConflictsLocked(player) {
+		return false
+	}
+	return r.players.Register(player)
+}
+
+func (r *EntityRegistry) repairStaticActorDirectoryFromMapLocked(actor StaticEntity) bool {
+	if r == nil || r.staticActors == nil {
+		return false
+	}
+	if r.entityIDOwnedByPlayerLocked(actor.Entity.ID) || r.staticActorVisibilityVIDConflictsWithPlayerLocked(actor) {
+		return false
+	}
+	return r.staticActors.Register(actor)
 }
 
 func (r *EntityRegistry) playerIdentityConflictsLocked(player PlayerEntity) bool {
@@ -469,6 +489,23 @@ func (r *EntityRegistry) entityIDOwnedByPlayerLocked(entityID uint64) bool {
 	}
 	if r.maps != nil {
 		if _, exists := r.maps.Player(entityID); exists {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *EntityRegistry) playerVisibilityVIDConflictsWithStaticActorLocked(player PlayerEntity) bool {
+	if r == nil || player.Entity.VID == 0 {
+		return false
+	}
+	if r.staticActors != nil {
+		if actor, exists := r.staticActors.ByVID(player.Entity.VID); exists && actor.Entity.ID != player.Entity.ID {
+			return true
+		}
+	}
+	if r.maps != nil {
+		if actor, exists := r.maps.StaticActorByVID(player.Entity.VID); exists && actor.Entity.ID != player.Entity.ID {
 			return true
 		}
 	}
