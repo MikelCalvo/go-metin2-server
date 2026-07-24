@@ -305,6 +305,37 @@ func TestGameRuntimeExportContentBundleSummaryIncludesItemTemplateDetails(t *tes
 	}
 }
 
+func TestGameRuntimeExportContentBundleSummaryIncludesWarpDestinationDetails(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{Name: "Teleporter", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"}},
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300},
+			{Kind: interactionstore.KindInfo, Ref: "lore:unused", Text: "Unused lore kept for later QA."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("import warp content bundle: %v", err)
+	}
+
+	summary, err := runtime.ExportContentBundleSummary()
+	if err != nil {
+		t.Fatalf("export content bundle summary with warp destination: %v", err)
+	}
+	want := []contentbundle.WarpDestinationSummary{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300}}
+	if summary.WarpDestinationCount != len(want) {
+		t.Fatalf("expected %d warp destinations, got %d", len(want), summary.WarpDestinationCount)
+	}
+	if !reflect.DeepEqual(summary.WarpDestinations, want) {
+		t.Fatalf("unexpected runtime summary warp destinations:\n got: %#v\nwant: %#v", summary.WarpDestinations, want)
+	}
+}
+
 func TestGameRuntimeImportContentBundleRejectsDanglingInteractionReference(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")

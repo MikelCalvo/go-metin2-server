@@ -168,6 +168,29 @@ func TestSummarizeReturnsDeterministicShopCatalogDetails(t *testing.T) {
 	}
 }
 
+func TestSummarizeReturnsDeterministicWarpDestinationDetails(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindWarp, Ref: "npc:west_gate", Text: "Return to the west gate.", MapIndex: 7, X: 1300, Y: 2300},
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+			{Kind: interactionstore.KindWarp, Ref: "npc:east_gate", MapIndex: 3, X: 1200, Y: 2200},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize warp destinations: %v", err)
+	}
+	want := []WarpDestinationSummary{
+		{Kind: interactionstore.KindWarp, Ref: "npc:east_gate", MapIndex: 3, X: 1200, Y: 2200},
+		{Kind: interactionstore.KindWarp, Ref: "npc:west_gate", MapIndex: 7, X: 1300, Y: 2300, Text: "Return to the west gate."},
+	}
+	if summary.WarpDestinationCount != len(want) {
+		t.Fatalf("expected %d warp destinations, got %d", len(want), summary.WarpDestinationCount)
+	}
+	if !reflect.DeepEqual(summary.WarpDestinations, want) {
+		t.Fatalf("unexpected warp destination summaries:\n got: %#v\nwant: %#v", summary.WarpDestinations, want)
+	}
+}
+
 func TestSummarizeReturnsDeterministicSpawnGroupReferences(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		SpawnGroups: []SpawnGroup{

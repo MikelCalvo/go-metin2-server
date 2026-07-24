@@ -54,6 +54,8 @@ type Summary struct {
 	ItemTemplateCount                      int                                             `json:"item_template_count"`
 	ShopCatalogEntryCount                  int                                             `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
+	WarpDestinationCount                   int                                             `json:"warp_destination_count"`
+	WarpDestinations                       []WarpDestinationSummary                        `json:"warp_destinations,omitempty"`
 	InteractionDefinitionCount             int                                             `json:"interaction_definition_count"`
 	ReferencedInteractionDefinitionCount   int                                             `json:"referenced_interaction_definition_count"`
 	UnreferencedInteractionDefinitionCount int                                             `json:"unreferenced_interaction_definition_count"`
@@ -113,6 +115,15 @@ type ShopCatalogEntrySummary struct {
 	Stackable    bool   `json:"stackable"`
 	MaxCount     uint16 `json:"max_count"`
 	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
+}
+
+type WarpDestinationSummary struct {
+	Kind     string `json:"kind"`
+	Ref      string `json:"ref"`
+	Text     string `json:"text,omitempty"`
+	MapIndex uint32 `json:"map_index"`
+	X        int32  `json:"x"`
+	Y        int32  `json:"y"`
 }
 
 type MapContentSummary struct {
@@ -277,6 +288,10 @@ func Summarize(bundle Bundle) (Summary, error) {
 			summary.ShopCatalogEntryCount += len(definition.Catalog)
 			summary.ShopCatalogs = append(summary.ShopCatalogs, shopCatalogSummary(definition, itemTemplatesByVnum))
 		}
+		if definition.Kind == interactionstore.KindWarp {
+			summary.WarpDestinationCount++
+			summary.WarpDestinations = append(summary.WarpDestinations, warpDestinationSummary(definition))
+		}
 		reference := InteractionDefinitionReferenceSummary{Kind: definition.Kind, Ref: definition.Ref}
 		if _, ok := referencedDefinitions[interactionDefinitionKey(definition.Kind, definition.Ref)]; ok {
 			interactionKindReferencedCounts[definition.Kind]++
@@ -376,6 +391,18 @@ func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByV
 		})
 	}
 	return summary
+}
+
+func warpDestinationSummary(definition interactionstore.Definition) WarpDestinationSummary {
+	definition = interactionstore.NormalizeDefinition(definition)
+	return WarpDestinationSummary{
+		Kind:     definition.Kind,
+		Ref:      definition.Ref,
+		Text:     definition.Text,
+		MapIndex: definition.MapIndex,
+		X:        definition.X,
+		Y:        definition.Y,
+	}
 }
 
 func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemplateReferenceSummary {

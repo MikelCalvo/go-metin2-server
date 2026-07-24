@@ -431,7 +431,7 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
 
-	body := `{"static_actors":[{"name":"VillageGuide","map_index":1,"x":469350,"y":964200,"race_num":20302,"interaction_kind":"talk","interaction_ref":"npc:qa_guide"},{"name":"Merchant","map_index":1,"x":469500,"y":964200,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:qa_merchant"}],"spawn_groups":[{"ref":"practice.qa_reward_mob","name":"QARewardMob","map_index":1,"x":469800,"y":964200,"race_num":20350,"combat_profile":"practice_qa_profile"}],"combat_profiles":[{"profile":"practice_qa_profile","max_hp":24,"damage_per_normal_attack":3,"attack_value":7,"defense_value":4,"level":4,"rank":1,"respawn_delay_ms":1500,"death_reward":{"experience":75,"gold":60,"drop_vnums":[27001]}}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5}],"interaction_definitions":[{"kind":"talk","ref":"npc:qa_guide","text":"Welcome."},{"kind":"shop_preview","ref":"npc:qa_merchant","title":"QA Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1}]},{"kind":"info","ref":"lore:unused","text":"Unused lore."}]}`
+	body := `{"static_actors":[{"name":"VillageGuide","map_index":1,"x":469350,"y":964200,"race_num":20302,"interaction_kind":"talk","interaction_ref":"npc:qa_guide"},{"name":"Merchant","map_index":1,"x":469500,"y":964200,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:qa_merchant"},{"name":"Teleporter","map_index":1,"x":469650,"y":964200,"race_num":20300,"interaction_kind":"warp","interaction_ref":"npc:qa_teleporter"}],"spawn_groups":[{"ref":"practice.qa_reward_mob","name":"QARewardMob","map_index":1,"x":469800,"y":964200,"race_num":20350,"combat_profile":"practice_qa_profile"}],"combat_profiles":[{"profile":"practice_qa_profile","max_hp":24,"damage_per_normal_attack":3,"attack_value":7,"defense_value":4,"level":4,"rank":1,"respawn_delay_ms":1500,"death_reward":{"experience":75,"gold":60,"drop_vnums":[27001]}}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5}],"interaction_definitions":[{"kind":"talk","ref":"npc:qa_guide","text":"Welcome."},{"kind":"shop_preview","ref":"npc:qa_merchant","title":"QA Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1}]},{"kind":"info","ref":"lore:unused","text":"Unused lore."},{"kind":"warp","ref":"npc:qa_teleporter","text":"Step through the gate.","map_index":7,"x":1300,"y":2300}]}`
 	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
@@ -449,12 +449,13 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 		t.Fatalf("decode dry-run summary response body: %v", err)
 	}
 	want := contentbundle.Summary{
-		StaticActorCount:             2,
-		InteractableStaticActorCount: 2,
+		StaticActorCount:             3,
+		InteractableStaticActorCount: 3,
 		SpawnGroupCount:              1,
 		CombatProfileCount:           1,
 		ItemTemplateCount:            1,
 		ShopCatalogEntryCount:        1,
+		WarpDestinationCount:         1,
 		ShopCatalogs: []contentbundle.ShopCatalogSummary{{
 			Kind:       interactionstore.KindShopPreview,
 			Ref:        "npc:qa_merchant",
@@ -464,17 +465,20 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 				{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 			},
 		}},
-		InteractionDefinitionCount:             3,
-		ReferencedInteractionDefinitionCount:   2,
+		WarpDestinations:                       []contentbundle.WarpDestinationSummary{{Kind: interactionstore.KindWarp, Ref: "npc:qa_teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300}},
+		InteractionDefinitionCount:             4,
+		ReferencedInteractionDefinitionCount:   3,
 		UnreferencedInteractionDefinitionCount: 1,
 		InteractionKinds: []contentbundle.InteractionKindSummary{
 			{Kind: interactionstore.KindInfo, Count: 1, ReferencedCount: 0, UnreferencedCount: 1},
 			{Kind: interactionstore.KindShopPreview, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
 			{Kind: interactionstore.KindTalk, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
+			{Kind: interactionstore.KindWarp, Count: 1, ReferencedCount: 1, UnreferencedCount: 0},
 		},
 		ReferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindShopPreview, Ref: "npc:qa_merchant"},
 			{Kind: interactionstore.KindTalk, Ref: "npc:qa_guide"},
+			{Kind: interactionstore.KindWarp, Ref: "npc:qa_teleporter"},
 		},
 		UnreferencedInteractionDefinitions: []contentbundle.InteractionDefinitionReferenceSummary{
 			{Kind: interactionstore.KindInfo, Ref: "lore:unused"},
@@ -484,7 +488,7 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 		},
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: "practice_qa_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500, DeathReward: worldruntime.StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001}}}},
 		ItemTemplates:  []contentbundle.ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
-		Maps:           []contentbundle.MapContentSummary{{MapIndex: 1, StaticActorCount: 2, InteractableStaticActorCount: 2, SpawnGroupCount: 1}},
+		Maps:           []contentbundle.MapContentSummary{{MapIndex: 1, StaticActorCount: 3, InteractableStaticActorCount: 3, SpawnGroupCount: 1}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected dry-run summary response:\n got: %#v\nwant: %#v", got, want)

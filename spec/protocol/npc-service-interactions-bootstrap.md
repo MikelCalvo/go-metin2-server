@@ -66,6 +66,11 @@ Current owned warp failure semantics:
 - if the resolved warp definition is malformed inside live runtime state, the player receives one self-only `CHAT_TYPE_INFO` message: `Warp destination is invalid.`
 - if the runtime cannot apply the transfer after resolution, the player receives one self-only `CHAT_TYPE_INFO` message: `Warp unavailable right now.`
 
+Current owned warp operator-summary semantics:
+- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` now report deterministic `warp_destinations` entries for every authored `warp` definition
+- each summary entry carries `kind`, `ref`, optional `text`, `map_index`, `x`, and `y`
+- this makes teleporter targets inspectable without fetching the full authored bundle or applying a candidate import
+
 Current owned interaction cooldown semantics:
 - a fixed `1s` runtime cooldown now applies per live session and per target static-actor `VID`
 - the cooldown currently applies across all owned interaction kinds, including `info`, `talk`, `shop_preview`, and `warp`
