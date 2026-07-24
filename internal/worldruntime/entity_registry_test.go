@@ -359,6 +359,121 @@ func TestEntityRegistryPlayerByNameRepairsPlayerDirectoryWhenMapIndexEntrySurviv
 	}
 }
 
+func TestEntityRegistryRejectsPlayerRegistrationWithMapOnlyPlayerVIDCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	candidate := registry.RegisterPlayer(entityRegistryCharacter("Bravo", alpha.Entity.VID, 99, 1900, 3000))
+	if candidate.Entity.ID != 0 {
+		t.Fatalf("expected player registration with map-only VID collision to fail closed, got %+v", candidate)
+	}
+	lookup, ok := registry.maps.PlayerByVID(alpha.Entity.VID)
+	if !ok || lookup.Entity.ID != alpha.Entity.ID || lookup.Entity.Name != alpha.Entity.Name {
+		t.Fatalf("expected original map-only player presence to remain authoritative, got player=%+v ok=%v", lookup, ok)
+	}
+	if characters := registry.MapCharacters(99); len(characters) != 0 {
+		t.Fatalf("expected rejected player not to enter destination map, got %+v", characters)
+	}
+	if next := registry.NextEntityID(); next != 2 {
+		t.Fatalf("expected rejected map-only VID collision not to consume an entity ID, got next=%d", next)
+	}
+}
+
+func TestEntityRegistryRejectsPlayerRegistrationWithMapOnlyPlayerNameCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	candidate := registry.RegisterPlayer(entityRegistryCharacter(alpha.Entity.Name, 0x02040102, 99, 1900, 3000))
+	if candidate.Entity.ID != 0 {
+		t.Fatalf("expected player registration with map-only exact-name collision to fail closed, got %+v", candidate)
+	}
+	lookup, ok := registry.maps.PlayerByName(alpha.Entity.Name)
+	if !ok || lookup.Entity.ID != alpha.Entity.ID || lookup.Entity.VID != alpha.Entity.VID {
+		t.Fatalf("expected original map-only player name to remain authoritative, got player=%+v ok=%v", lookup, ok)
+	}
+	if characters := registry.MapCharacters(99); len(characters) != 0 {
+		t.Fatalf("expected rejected player not to enter destination map, got %+v", characters)
+	}
+	if next := registry.NextEntityID(); next != 2 {
+		t.Fatalf("expected rejected map-only exact-name collision not to consume an entity ID, got next=%d", next)
+	}
+}
+
+func TestEntityRegistryRejectsPlayerUpdateWithMapOnlyPlayerVIDCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	bravo := registry.RegisterPlayer(entityRegistryCharacter("Bravo", 0x02040102, 99, 1900, 3000))
+	if bravo.Entity.ID == 0 {
+		t.Fatal("expected second player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	updated := bravo.Character
+	updated.VID = alpha.Entity.VID
+	updated.ID = alpha.Entity.VID
+	updated.X = 2100
+	updated.Y = 3200
+	if registry.UpdatePlayer(bravo.Entity.ID, updated) {
+		t.Fatal("expected player update with map-only VID collision to fail closed")
+	}
+	bravoLookup, ok := registry.Player(bravo.Entity.ID)
+	if !ok || bravoLookup.Entity.VID != bravo.Entity.VID || bravoLookup.Character.VID != bravo.Character.VID || bravoLookup.Character.X != bravo.Character.X {
+		t.Fatalf("expected updated player to remain unchanged after rejected VID collision, got player=%+v ok=%v", bravoLookup, ok)
+	}
+	alphaLookup, ok := registry.maps.PlayerByVID(alpha.Entity.VID)
+	if !ok || alphaLookup.Entity.ID != alpha.Entity.ID || alphaLookup.Entity.Name != alpha.Entity.Name {
+		t.Fatalf("expected map-only player VID owner to remain intact, got player=%+v ok=%v", alphaLookup, ok)
+	}
+}
+
+func TestEntityRegistryRejectsPlayerUpdateWithMapOnlyPlayerNameCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	bravo := registry.RegisterPlayer(entityRegistryCharacter("Bravo", 0x02040102, 99, 1900, 3000))
+	if bravo.Entity.ID == 0 {
+		t.Fatal("expected second player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	updated := bravo.Character
+	updated.Name = alpha.Entity.Name
+	updated.X = 2100
+	updated.Y = 3200
+	if registry.UpdatePlayer(bravo.Entity.ID, updated) {
+		t.Fatal("expected player update with map-only exact-name collision to fail closed")
+	}
+	bravoLookup, ok := registry.Player(bravo.Entity.ID)
+	if !ok || bravoLookup.Entity.Name != bravo.Entity.Name || bravoLookup.Character.Name != bravo.Character.Name || bravoLookup.Character.X != bravo.Character.X {
+		t.Fatalf("expected updated player to remain unchanged after rejected name collision, got player=%+v ok=%v", bravoLookup, ok)
+	}
+	alphaLookup, ok := registry.maps.PlayerByName(alpha.Entity.Name)
+	if !ok || alphaLookup.Entity.ID != alpha.Entity.ID || alphaLookup.Entity.VID != alpha.Entity.VID {
+		t.Fatalf("expected map-only player name owner to remain intact, got player=%+v ok=%v", alphaLookup, ok)
+	}
+}
+
 func TestStaticActorVisibilityVIDRejectsUnencodableRaceNum(t *testing.T) {
 	if vid, ok := StaticActorVisibilityVID(StaticEntity{Entity: Entity{ID: 99}, RaceNum: 0}); ok {
 		t.Fatalf("expected zero race_num to be rejected for static actor visibility VID, got vid=%d", vid)

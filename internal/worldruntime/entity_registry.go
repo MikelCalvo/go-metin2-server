@@ -30,6 +30,9 @@ func (r *EntityRegistry) RegisterPlayer(character loginticket.Character) PlayerE
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	registered := newPlayerEntity(r.nextID+1, character)
+	if r.playerIdentityConflictsLocked(registered) {
+		return PlayerEntity{}
+	}
 	if r.staticActors != nil {
 		if _, exists := r.staticActors.ByVID(registered.Entity.VID); exists {
 			return PlayerEntity{}
@@ -289,6 +292,9 @@ func (r *EntityRegistry) UpdatePlayer(id uint64, character loginticket.Character
 		}
 	}
 	updated := newPlayerEntity(id, character)
+	if r.playerIdentityConflictsLocked(updated) {
+		return false
+	}
 	if r.staticActors != nil {
 		if actor, exists := r.staticActors.ByVID(updated.Entity.VID); exists && actor.Entity.ID != updated.Entity.ID {
 			return false
@@ -414,6 +420,29 @@ func (r *EntityRegistry) NextEntityID() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.nextID + 1
+}
+
+func (r *EntityRegistry) playerIdentityConflictsLocked(player PlayerEntity) bool {
+	if r == nil || player.Entity.ID == 0 {
+		return true
+	}
+	if r.players != nil {
+		if current, exists := r.players.ByVID(player.Entity.VID); exists && current.Entity.ID != player.Entity.ID {
+			return true
+		}
+		if current, exists := r.players.ByName(player.Entity.Name); exists && current.Entity.ID != player.Entity.ID {
+			return true
+		}
+	}
+	if r.maps != nil {
+		if current, exists := r.maps.PlayerByVID(player.Entity.VID); exists && current.Entity.ID != player.Entity.ID {
+			return true
+		}
+		if current, exists := r.maps.PlayerByName(player.Entity.Name); exists && current.Entity.ID != player.Entity.ID {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *EntityRegistry) staticActorVisibilityVIDConflictsWithPlayerLocked(actor StaticEntity) bool {
