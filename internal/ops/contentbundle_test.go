@@ -505,7 +505,7 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 			{Name: "VillageGuide", MapIndex: 1, X: 469350, Y: 964200, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:qa_guide", Preview: "VillageGuide:\nWelcome."},
 		},
 		SpawnGroups: []contentbundle.SpawnGroupReferenceSummary{
-			{Ref: "practice.qa_reward_mob", Name: "QARewardMob", MapIndex: 1, CombatProfile: "practice_qa_profile", RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001}, RewardDropItems: []contentbundle.RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}},
+			{Ref: "practice.qa_reward_mob", Name: "QARewardMob", MapIndex: 1, X: 469800, Y: 964200, RaceNum: 20350, CombatProfile: "practice_qa_profile", RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001}, RewardDropItems: []contentbundle.RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}},
 		},
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: "practice_qa_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500, DeathReward: worldruntime.StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001}}}},
 		ItemTemplates:  []contentbundle.ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},

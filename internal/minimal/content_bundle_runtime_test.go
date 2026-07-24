@@ -133,7 +133,7 @@ func TestGameRuntimeExportContentBundleSummaryIncludesSpawnGroupDetails(t *testi
 		t.Fatalf("export content bundle summary: %v", err)
 	}
 	want := []contentbundle.SpawnGroupReferenceSummary{
-		{Ref: "practice.summary_mob", Name: "SummaryMob", MapIndex: 42, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy)},
+		{Ref: "practice.summary_mob", Name: "SummaryMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy)},
 	}
 	if !reflect.DeepEqual(summary.SpawnGroups, want) {
 		t.Fatalf("unexpected runtime summary spawn groups:\n got: %#v\nwant: %#v", summary.SpawnGroups, want)

@@ -104,6 +104,9 @@ type SpawnGroupReferenceSummary struct {
 	Ref              string                  `json:"ref"`
 	Name             string                  `json:"name"`
 	MapIndex         uint32                  `json:"map_index"`
+	X                int32                   `json:"x"`
+	Y                int32                   `json:"y"`
+	RaceNum          uint32                  `json:"race_num"`
 	CombatProfile    string                  `json:"combat_profile"`
 	RewardExperience uint64                  `json:"reward_experience,omitempty"`
 	RewardGold       uint64                  `json:"reward_gold,omitempty"`
@@ -369,6 +372,9 @@ func Summarize(bundle Bundle) (Summary, error) {
 			Ref:              spawnGroup.Ref,
 			Name:             spawnGroup.Name,
 			MapIndex:         spawnGroup.MapIndex,
+			X:                spawnGroup.X,
+			Y:                spawnGroup.Y,
+			RaceNum:          spawnGroup.RaceNum,
 			CombatProfile:    spawnGroup.CombatProfile,
 			RewardExperience: spawnGroup.RewardExperience,
 			RewardGold:       spawnGroup.RewardGold,

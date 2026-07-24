@@ -114,7 +114,7 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 			{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "VillageGuide:\nWelcome."},
 		},
 		SpawnGroups: []SpawnGroupReferenceSummary{
-			{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 2, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardDropVnums: []uint32{27001}, RewardDropItems: []RewardDropItemSummary{
+			{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 2, X: 1300, Y: 2300, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardDropVnums: []uint32{27001}, RewardDropItems: []RewardDropItemSummary{
 				{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 			}},
 		},
@@ -336,8 +336,8 @@ func TestSummarizeReturnsDeterministicSpawnGroupReferences(t *testing.T) {
 		t.Fatalf("summarize spawn-group references: %v", err)
 	}
 	want := []SpawnGroupReferenceSummary{
-		{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 3, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
-		{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 5, RewardDropVnums: []uint32{27001, 27002}, RewardDropItems: []RewardDropItemSummary{
+		{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 3, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
+		{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 5, RewardDropVnums: []uint32{27001, 27002}, RewardDropItems: []RewardDropItemSummary{
 			{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200},
 			{ItemVnum: 27002, ItemName: "Small Blue Potion", Stackable: true, MaxCount: 200},
 		}},
