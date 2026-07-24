@@ -133,6 +133,12 @@ type EquipmentItemSnapshot struct {
 	EquipSlot string `json:"equip_slot"`
 }
 
+type QuickslotSnapshot struct {
+	Position uint8 `json:"position"`
+	Type     uint8 `json:"type"`
+	Slot     uint8 `json:"slot"`
+}
+
 type CharacterInventorySnapshot struct {
 	Name      string                  `json:"name"`
 	Inventory []InventoryItemSnapshot `json:"inventory"`
@@ -141,6 +147,11 @@ type CharacterInventorySnapshot struct {
 type CharacterEquipmentSnapshot struct {
 	Name      string                  `json:"name"`
 	Equipment []EquipmentItemSnapshot `json:"equipment"`
+}
+
+type CharacterQuickslotsSnapshot struct {
+	Name       string              `json:"name"`
+	Quickslots []QuickslotSnapshot `json:"quickslots"`
 }
 
 type CharacterCurrencySnapshot struct {
@@ -228,11 +239,12 @@ type gameRuntime struct {
 }
 
 type liveCharacterStateSnapshot struct {
-	Name      string
-	Gold      uint64
-	Points    [255]int32
-	Inventory []InventoryItemSnapshot
-	Equipment []EquipmentItemSnapshot
+	Name       string
+	Gold       uint64
+	Points     [255]int32
+	Inventory  []InventoryItemSnapshot
+	Equipment  []EquipmentItemSnapshot
+	Quickslots []QuickslotSnapshot
 }
 
 type liveCharacterStateSnapshotter func() (liveCharacterStateSnapshot, bool)
@@ -503,6 +515,17 @@ func (r *gameRuntime) EquipmentSnapshot(name string) (CharacterEquipmentSnapshot
 	}, true
 }
 
+func (r *gameRuntime) QuickslotsSnapshot(name string) (CharacterQuickslotsSnapshot, bool) {
+	state, ok := r.liveCharacterState(name)
+	if !ok {
+		return CharacterQuickslotsSnapshot{}, false
+	}
+	return CharacterQuickslotsSnapshot{
+		Name:       state.Name,
+		Quickslots: append([]QuickslotSnapshot(nil), state.Quickslots...),
+	}, true
+}
+
 func (r *gameRuntime) CurrencySnapshot(name string) (CharacterCurrencySnapshot, bool) {
 	state, ok := r.liveCharacterState(name)
 	if !ok {
@@ -598,11 +621,12 @@ func normalizeLiveCharacterName(name string) string {
 
 func buildLiveCharacterStateSnapshot(character loginticket.Character) liveCharacterStateSnapshot {
 	state := liveCharacterStateSnapshot{
-		Name:      character.Name,
-		Gold:      character.Gold,
-		Points:    character.Points,
-		Inventory: make([]InventoryItemSnapshot, 0, len(character.Inventory)),
-		Equipment: make([]EquipmentItemSnapshot, 0, len(character.Equipment)),
+		Name:       character.Name,
+		Gold:       character.Gold,
+		Points:     character.Points,
+		Inventory:  make([]InventoryItemSnapshot, 0, len(character.Inventory)),
+		Equipment:  make([]EquipmentItemSnapshot, 0, len(character.Equipment)),
+		Quickslots: make([]QuickslotSnapshot, 0, len(character.Quickslots)),
 	}
 	for _, item := range character.Inventory {
 		state.Inventory = append(state.Inventory, InventoryItemSnapshot{
@@ -618,6 +642,13 @@ func buildLiveCharacterStateSnapshot(character loginticket.Character) liveCharac
 			Vnum:      item.Vnum,
 			Count:     item.Count,
 			EquipSlot: item.EquipSlot.String(),
+		})
+	}
+	for _, quickslot := range character.Quickslots {
+		state.Quickslots = append(state.Quickslots, QuickslotSnapshot{
+			Position: quickslot.Position,
+			Type:     quickslot.Type,
+			Slot:     quickslot.Slot,
 		})
 	}
 	return state

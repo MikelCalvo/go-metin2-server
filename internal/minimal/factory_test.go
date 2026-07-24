@@ -255,6 +255,56 @@ func TestGameRuntimeValidateItemTemplateStoreDryRunsAuthoredTemplateState(t *tes
 	}
 }
 
+func TestGameRuntimeQuickslotsSnapshotReportsLiveSelectedQuickslots(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	selected := peerVisibilityCharacter("QuickslotProbe", 0x01030173, 0x02040173, 1100, 2100, 0, 101, 201)
+	selected.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 2, Slot: 5}}
+	selected.Quickslots = []loginticket.Quickslot{
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 9},
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeCommand, Slot: 1},
+	}
+	issuePeerTicket(t, store, "quickslot-probe", 0x73737373, selected)
+	if err := accounts.Save(accountstore.Account{Login: "quickslot-probe", Empire: selected.Empire, Characters: cloneCharacters([]loginticket.Character{selected})}); err != nil {
+		t.Fatalf("seed quickslot probe account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected quickslot snapshot runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quickslot-probe", 0x73737373)
+	defer closeSessionFlow(t, flow)
+
+	snapshot, ok := runtime.QuickslotsSnapshot("QuickslotProbe")
+	if !ok {
+		t.Fatal("expected quickslot snapshot for connected character")
+	}
+	want := CharacterQuickslotsSnapshot{
+		Name: "QuickslotProbe",
+		Quickslots: []QuickslotSnapshot{
+			{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+			{Position: 3, Type: quickslotproto.TypeCommand, Slot: 1},
+			{Position: 4, Type: quickslotproto.TypeSkill, Slot: 9},
+		},
+	}
+	if !reflect.DeepEqual(snapshot, want) {
+		t.Fatalf("unexpected quickslot snapshot: got %#v want %#v", snapshot, want)
+	}
+
+	snapshot.Quickslots[0].Slot = 99
+	refreshed, ok := runtime.QuickslotsSnapshot("QuickslotProbe")
+	if !ok {
+		t.Fatal("expected refreshed quickslot snapshot for connected character")
+	}
+	if !reflect.DeepEqual(refreshed, want) {
+		t.Fatalf("expected returned quickslot snapshot to be cloned, got %#v want %#v", refreshed, want)
+	}
+	if _, ok := runtime.QuickslotsSnapshot("MissingQuickslotProbe"); ok {
+		t.Fatal("expected unknown character quickslot snapshot lookup to fail")
+	}
+}
+
 func TestGameRuntimeFailsClosedForCorruptItemTemplateStoreAtStartup(t *testing.T) {
 	itemPath := filepath.Join(t.TempDir(), "item-templates.json")
 	if err := os.WriteFile(itemPath, []byte(`{"templates":[`), 0o644); err != nil {

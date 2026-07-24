@@ -652,6 +652,76 @@ func TestLocalItemTemplateStoreValidateEndpointReportsValidationFailure(t *testi
 	}
 }
 
+func TestLocalQuickslotsEndpointReturnsNamedSnapshotForLoopbackGet(t *testing.T) {
+	calledName := ""
+	mux := RegisterLocalQuickslotsEndpoint(NewPprofMux("gamed"), func(name string) (any, bool) {
+		calledName = name
+		if name != "MkmkWar" {
+			return nil, false
+		}
+		return map[string]any{
+			"name": "MkmkWar",
+			"quickslots": []map[string]any{{
+				"position": 2,
+				"type":     1,
+				"slot":     5,
+			}},
+		}, true
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/local/quickslots/MkmkWar", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if calledName != "MkmkWar" {
+		t.Fatalf("expected snapshot callback for MkmkWar, got %q", calledName)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"name":"MkmkWar"`, `"quickslots":[{"position":2,"slot":5,"type":1}]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalQuickslotsEndpointRejectsNonLoopbackAndUnknownNames(t *testing.T) {
+	calls := 0
+	mux := RegisterLocalQuickslotsEndpoint(NewPprofMux("gamed"), func(name string) (any, bool) {
+		calls++
+		return nil, false
+	})
+
+	nonLoopback := httptest.NewRequest(http.MethodGet, "/local/quickslots/MkmkWar", nil)
+	nonLoopback.RemoteAddr = "203.0.113.10:12345"
+	nonLoopbackRec := httptest.NewRecorder()
+	mux.ServeHTTP(nonLoopbackRec, nonLoopback)
+	if nonLoopbackRec.Code != http.StatusForbidden {
+		t.Fatalf("expected non-loopback status %d, got %d", http.StatusForbidden, nonLoopbackRec.Code)
+	}
+	if calls != 0 {
+		t.Fatalf("expected callback not to be called for non-loopback request, got %d calls", calls)
+	}
+
+	missing := httptest.NewRequest(http.MethodGet, "/local/quickslots/MissingWar", nil)
+	missing.RemoteAddr = "127.0.0.1:12345"
+	missingRec := httptest.NewRecorder()
+	mux.ServeHTTP(missingRec, missing)
+	if missingRec.Code != http.StatusNotFound {
+		t.Fatalf("expected missing quickslot snapshot status %d, got %d", http.StatusNotFound, missingRec.Code)
+	}
+	if calls != 1 {
+		t.Fatalf("expected callback to be called once for missing loopback request, got %d", calls)
+	}
+}
+
 type stubAccountStoreValidator struct {
 	summary any
 	err     error

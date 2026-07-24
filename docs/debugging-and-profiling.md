@@ -345,10 +345,18 @@ Each visible interactable entry includes:
 Current previews cover self-only `info` / `talk`, structured merchant `shop_preview` catalog summaries, and compact `warp` destination summaries.
 The per-character subject snapshot in this endpoint also reuses the same player `dead: true` flag exposed by `/local/players` while a still-connected owner remains at the retaliation-owned `0`-HP floor.
 
-### `GET /local/inventory/{name}`, `GET /local/equipment/{name}`, `GET /local/currency/{name}`
+### `GET /local/inventory/{name}`, `GET /local/equipment/{name}`, `GET /local/quickslots/{name}`, `GET /local/currency/{name}`
 
 Returns the exact-name live M3 runtime state for the selected character.
 These endpoints are intended for loopback-only debugging and QA while the gameplay-facing surfaces are still bootstrap.
+
+`/local/quickslots/{name}` returns the selected character's live quickslot bindings as sorted byte-sized tuples:
+
+- `position`
+- `type`
+- `slot`
+
+This lets operator QA compare visible quickslot edits, automatic item quickslot cleanup, and reconnect persistence without treating the endpoint as a gameplay API.
 
 ### `GET /local/combat-target/{name}` and `GET /local/combat-targets`
 

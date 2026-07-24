@@ -356,6 +356,10 @@ func RegisterLocalCurrencyEndpoint(mux *http.ServeMux, currencySnapshot func(str
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/currency/", "/local/currency/", currencySnapshot)
 }
 
+func RegisterLocalQuickslotsEndpoint(mux *http.ServeMux, quickslotsSnapshot func(string) (any, bool)) *http.ServeMux {
+	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/quickslots/", "/local/quickslots/", quickslotsSnapshot)
+}
+
 func RegisterLocalCombatTargetEndpoint(mux *http.ServeMux, combatTargetSnapshot func(string) (any, bool)) *http.ServeMux {
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/combat-target/", "/local/combat-target/", combatTargetSnapshot)
 }
