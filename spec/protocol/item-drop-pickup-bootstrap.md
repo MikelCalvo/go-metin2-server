@@ -64,13 +64,15 @@ Payload size is 20 bytes:
 
 | Offset | Field | Type | Notes |
 | --- | --- | --- | --- |
-| 0 | `vid` | `uint32 LE` | visible ground-item runtime identifier |
-| 4 | `vnum` | `uint32 LE` | item template id |
-| 8 | `x` | `int32 LE` | world x coordinate |
-| 12 | `y` | `int32 LE` | world y coordinate |
-| 16 | `z` | `int32 LE` | world z coordinate |
+| 0 | `x` | `int32 LE` | world x coordinate |
+| 4 | `y` | `int32 LE` | world y coordinate |
+| 8 | `z` | `int32 LE` | world z coordinate |
+| 12 | `vid` | `uint32 LE` | visible ground-item runtime identifier |
+| 16 | `vnum` | `uint32 LE` | item template id |
 
 The client receive path converts the global coordinates to local item-rendering coordinates before creating the client-side item actor.
+
+This field order is intentionally frozen from the current TMP4-compatible client-facing struct shape: coordinates precede the visible item handle and template id. Earlier bootstrap tests had used the server-internal semantic order (`vid`, `vnum`, `x`, `y`, `z`); that ordering is now rejected by the project-owned golden codec fixture so ground actors decode at the intended coordinates and item identity on the real client.
 
 ### `GC::ITEM_GROUND_DEL` (`0x0516`)
 

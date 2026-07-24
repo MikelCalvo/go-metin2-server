@@ -305,7 +305,7 @@ func TestDecodeClientPickupReturnsExpectedFields(t *testing.T) {
 }
 
 func TestEncodeGroundAddBuildsAFrame(t *testing.T) {
-	want := frame.Encode(HeaderGroundAdd, []byte{0x78, 0x56, 0x34, 0x12, 0x44, 0x33, 0x22, 0x11, 0x10, 0x27, 0, 0, 0x30, 0xf8, 0xff, 0xff, 0x40, 0x1f, 0, 0})
+	want := frame.Encode(HeaderGroundAdd, []byte{0x10, 0x27, 0, 0, 0x30, 0xf8, 0xff, 0xff, 0x40, 0x1f, 0, 0, 0x78, 0x56, 0x34, 0x12, 0x44, 0x33, 0x22, 0x11})
 	got := EncodeGroundAdd(GroundAddPacket{VID: 0x12345678, Vnum: 0x11223344, X: 10000, Y: -2000, Z: 8000})
 	if !bytes.Equal(got, want) {
 		t.Fatalf("unexpected item ground add frame bytes: got %x want %x", got, want)
@@ -313,7 +313,7 @@ func TestEncodeGroundAddBuildsAFrame(t *testing.T) {
 }
 
 func TestDecodeGroundAddReturnsExpectedFields(t *testing.T) {
-	packet, err := DecodeGroundAdd(decodeSingleFrame(t, EncodeGroundAdd(GroundAddPacket{VID: 0x12345678, Vnum: 0x11223344, X: 10000, Y: -2000, Z: 8000})))
+	packet, err := DecodeGroundAdd(decodeSingleFrame(t, frame.Encode(HeaderGroundAdd, []byte{0x10, 0x27, 0, 0, 0x30, 0xf8, 0xff, 0xff, 0x40, 0x1f, 0, 0, 0x78, 0x56, 0x34, 0x12, 0x44, 0x33, 0x22, 0x11})))
 	if err != nil {
 		t.Fatalf("unexpected decode error: %v", err)
 	}

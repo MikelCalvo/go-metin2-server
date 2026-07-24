@@ -483,11 +483,11 @@ func DecodeUpdate(f frame.Frame) (UpdatePacket, error) {
 
 func EncodeGroundAdd(packet GroundAddPacket) []byte {
 	payload := make([]byte, groundAddPayloadSize)
-	binary.LittleEndian.PutUint32(payload[0:], packet.VID)
-	binary.LittleEndian.PutUint32(payload[4:], packet.Vnum)
-	binary.LittleEndian.PutUint32(payload[8:], uint32(packet.X))
-	binary.LittleEndian.PutUint32(payload[12:], uint32(packet.Y))
-	binary.LittleEndian.PutUint32(payload[16:], uint32(packet.Z))
+	binary.LittleEndian.PutUint32(payload[0:], uint32(packet.X))
+	binary.LittleEndian.PutUint32(payload[4:], uint32(packet.Y))
+	binary.LittleEndian.PutUint32(payload[8:], uint32(packet.Z))
+	binary.LittleEndian.PutUint32(payload[12:], packet.VID)
+	binary.LittleEndian.PutUint32(payload[16:], packet.Vnum)
 	return frame.Encode(HeaderGroundAdd, payload)
 }
 
@@ -499,11 +499,11 @@ func DecodeGroundAdd(f frame.Frame) (GroundAddPacket, error) {
 		return GroundAddPacket{}, ErrInvalidPayload
 	}
 	return GroundAddPacket{
-		VID:  binary.LittleEndian.Uint32(f.Payload[0:]),
-		Vnum: binary.LittleEndian.Uint32(f.Payload[4:]),
-		X:    int32(binary.LittleEndian.Uint32(f.Payload[8:])),
-		Y:    int32(binary.LittleEndian.Uint32(f.Payload[12:])),
-		Z:    int32(binary.LittleEndian.Uint32(f.Payload[16:])),
+		X:    int32(binary.LittleEndian.Uint32(f.Payload[0:])),
+		Y:    int32(binary.LittleEndian.Uint32(f.Payload[4:])),
+		Z:    int32(binary.LittleEndian.Uint32(f.Payload[8:])),
+		VID:  binary.LittleEndian.Uint32(f.Payload[12:]),
+		Vnum: binary.LittleEndian.Uint32(f.Payload[16:]),
 	}, nil
 }
 

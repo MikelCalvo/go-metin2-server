@@ -179,6 +179,7 @@ Already present:
 - carried item drop and counted drop with template-authored transfer guards, including `anti_stack`,
 - temporary ground handles,
 - ground-item visibility to peers in scope,
+- `ITEM_GROUND_ADD` encoding now uses the TMP4-compatible client-facing payload order `x/y/z/vid/vnum`,
 - pickup into inventory with stack-merge behavior,
 - first owner-delivery/notice shape for pickups,
 - merchant preview/catalog/open/close/buy/sell slices, including `GC::SHOP START` catalog entries backed by template-authored display sockets/attributes, template-authored `anti_stack` fail-closed sell-back rejection, and partial-stack sell `ITEM_UPDATE` refreshes that preserve authored display sockets/attributes,
