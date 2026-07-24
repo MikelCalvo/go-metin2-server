@@ -3913,6 +3913,10 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 	return frames, nil
 }
 
+func contentPracticeMobRetaliationProfile(profile string) bool {
+	return profile == worldruntime.StaticActorCombatProfileTrainingDummy || profile == worldruntime.StaticActorCombatProfilePracticeMob
+}
+
 func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlayer *player.Runtime, actor StaticActorSnapshot, targetDied bool) (player.PointChangeResult, bool, bool) {
 	if selectedPlayer == nil || targetDied {
 		return player.PointChangeResult{}, false, false
@@ -3923,7 +3927,7 @@ func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlay
 			actor = currentActors[idx]
 		}
 	}
-	if actor.SpawnGroupRef == "" || actor.CombatProfile != worldruntime.StaticActorCombatProfileTrainingDummy {
+	if actor.SpawnGroupRef == "" || !contentPracticeMobRetaliationProfile(actor.CombatProfile) {
 		return player.PointChangeResult{}, false, false
 	}
 	currentPointValue := selectedPlayer.LiveCharacter().Points[bootstrapPlayerPointValueIndex]

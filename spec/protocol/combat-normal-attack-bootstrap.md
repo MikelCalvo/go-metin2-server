@@ -236,7 +236,7 @@ This document now freezes movement/sync invalidation plus fresh bootstrap/reboot
 ## First sustained delayed server-origin retaliation cadence for engaged content practice mobs
 
 The first owned delayed server-origin retaliation cadence is still narrow, but it is now autonomous once engagement has started:
-- it currently applies only to content-loaded practice mobs imported from `spawn_groups` with `combat_profile = training_dummy`
+- it currently applies only to content-loaded practice mobs imported from `spawn_groups` with one of the built-in bootstrap practice profiles: `combat_profile = training_dummy` or `combat_profile = practice_mob`
 - the first accepted owner-side normal hit that leaves that engaged mob alive arms one additional self-only `GC POINT_CHANGE` HP decrement after a fixed `1s` delay
 - once that delayed beat fires while the same engaged mob still owns the same live owner, it automatically arms the next delayed beat after the same fixed `1s` delay even if the player sends no later `ATTACK`
 - each queued beat is server-origin only: it arrives through the pending server-frame path instead of piggybacking only on a fresh client attack frame
