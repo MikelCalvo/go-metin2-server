@@ -105,7 +105,9 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 			{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide", Preview: "VillageGuide:\nWelcome."},
 		},
 		SpawnGroups: []SpawnGroupReferenceSummary{
-			{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 2, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardDropVnums: []uint32{27001}},
+			{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 2, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, RewardDropVnums: []uint32{27001}, RewardDropItems: []RewardDropItemSummary{
+				{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+			}},
 		},
 		Maps: []MapContentSummary{
 			{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 0},
@@ -261,10 +263,45 @@ func TestSummarizeReturnsDeterministicSpawnGroupReferences(t *testing.T) {
 	}
 	want := []SpawnGroupReferenceSummary{
 		{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 3, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
-		{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 5, RewardDropVnums: []uint32{27001, 27002}},
+		{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 7, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 25, RewardGold: 5, RewardDropVnums: []uint32{27001, 27002}, RewardDropItems: []RewardDropItemSummary{
+			{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{ItemVnum: 27002, ItemName: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		}},
 	}
 	if !reflect.DeepEqual(summary.SpawnGroups, want) {
 		t.Fatalf("unexpected spawn-group summaries:\n got: %#v\nwant: %#v", summary.SpawnGroups, want)
+	}
+}
+
+func TestSummarizeReturnsDeterministicSpawnRewardDropItemDetails(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: " Small Blue Potion ", Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+			{Vnum: 27001, Name: " Small Red Potion ", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.reward_mob",
+			Name:            "Reward Mob",
+			MapIndex:        42,
+			X:               1785,
+			Y:               2885,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27002, 27001},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("summarize spawn reward drop item details: %v", err)
+	}
+	want := []RewardDropItemSummary{
+		{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{ItemVnum: 27002, ItemName: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+	}
+	if len(summary.SpawnGroups) != 1 {
+		t.Fatalf("expected one spawn-group summary, got %+v", summary.SpawnGroups)
+	}
+	if !reflect.DeepEqual(summary.SpawnGroups[0].RewardDropItems, want) {
+		t.Fatalf("unexpected reward drop item summaries:\n got: %#v\nwant: %#v", summary.SpawnGroups[0].RewardDropItems, want)
 	}
 }
 

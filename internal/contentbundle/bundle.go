@@ -93,13 +93,22 @@ type InteractableStaticActorSummary struct {
 }
 
 type SpawnGroupReferenceSummary struct {
-	Ref              string   `json:"ref"`
-	Name             string   `json:"name"`
-	MapIndex         uint32   `json:"map_index"`
-	CombatProfile    string   `json:"combat_profile"`
-	RewardExperience uint64   `json:"reward_experience,omitempty"`
-	RewardGold       uint64   `json:"reward_gold,omitempty"`
-	RewardDropVnums  []uint32 `json:"reward_drop_vnums,omitempty"`
+	Ref              string                  `json:"ref"`
+	Name             string                  `json:"name"`
+	MapIndex         uint32                  `json:"map_index"`
+	CombatProfile    string                  `json:"combat_profile"`
+	RewardExperience uint64                  `json:"reward_experience,omitempty"`
+	RewardGold       uint64                  `json:"reward_gold,omitempty"`
+	RewardDropVnums  []uint32                `json:"reward_drop_vnums,omitempty"`
+	RewardDropItems  []RewardDropItemSummary `json:"reward_drop_items,omitempty"`
+}
+
+type RewardDropItemSummary struct {
+	ItemVnum     uint32 `json:"item_vnum"`
+	ItemName     string `json:"item_name"`
+	Stackable    bool   `json:"stackable"`
+	MaxCount     uint16 `json:"max_count"`
+	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
 }
 
 type ItemTemplateReferenceSummary struct {
@@ -354,6 +363,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 			RewardExperience: spawnGroup.RewardExperience,
 			RewardGold:       spawnGroup.RewardGold,
 			RewardDropVnums:  cloneUint32s(spawnGroup.RewardDropVnums),
+			RewardDropItems:  rewardDropItemSummaries(spawnGroup.RewardDropVnums, itemTemplatesByVnum),
 		})
 	}
 	if len(mapCounts) > 0 {
@@ -510,6 +520,31 @@ func itemTemplateReferenceSummaries(templates []itemcatalog.Template) []ItemTemp
 	sort.Slice(summaries, func(i int, j int) bool {
 		return summaries[i].Vnum < summaries[j].Vnum
 	})
+	return summaries
+}
+
+func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]itemcatalog.Template) []RewardDropItemSummary {
+	if len(dropVnums) == 0 {
+		return nil
+	}
+	sortedVnums := cloneUint32s(dropVnums)
+	summaries := make([]RewardDropItemSummary, 0, len(sortedVnums))
+	for _, vnum := range sortedVnums {
+		template := itemcatalog.NormalizeTemplate(itemTemplatesByVnum[vnum])
+		if template.Vnum == 0 || template.Name == "" {
+			continue
+		}
+		summaries = append(summaries, RewardDropItemSummary{
+			ItemVnum:     template.Vnum,
+			ItemName:     template.Name,
+			Stackable:    template.Stackable,
+			MaxCount:     template.MaxCount,
+			ShopBuyPrice: template.ShopBuyPrice,
+		})
+	}
+	if len(summaries) == 0 {
+		return nil
+	}
 	return summaries
 }
 

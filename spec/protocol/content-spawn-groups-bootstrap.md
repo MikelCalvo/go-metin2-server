@@ -134,6 +134,7 @@ The first bootstrap spawn-group contract freezes these fields:
   - non-empty drop-vnum lists canonicalize into ascending deterministic order across content bundles and file-backed static-actor snapshots
   - every authored reward drop vnum from either `spawn_groups` or bundled custom `combat_profiles` must resolve to one top-level bundled `item_templates` entry; item-shaped reward bundles that omit `item_templates` fail closed before loopback import/runtime mutation instead of relying on an ambient runtime catalog
   - EXP/gold-only reward descriptors may still omit `item_templates`, but any non-empty `reward_drop_vnums` list makes the portable bundle self-contained with item templates
+  - bundle summaries now expose the `reward_drop_vnums` list and a deterministic `reward_drop_items` list for each spawn group so operators can inspect resolved item names, stackability, max counts, and optional shop buy prices without cross-reading the full `item_templates` section
   - non-zero values use the narrow reward contract in `non-player-reward-bootstrap.md` on the accepted killing hit
   - reward data belongs to the authored spawn group and round-trips through content bundles, static-actor snapshots, and runtime import/export; it is not live character persistence by itself
 - operator/runtime edits that preserve the same `spawn_group_ref` must preserve the authored `combat_profile` and reward descriptor while changing mutable actor presentation/placement fields; delete/recreate or bundle replacement remains the explicit way to replace reward metadata
