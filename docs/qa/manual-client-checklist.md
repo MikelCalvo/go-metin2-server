@@ -714,6 +714,7 @@ If the QA bundle uses a custom registered or bundled combat profile instead of t
 - [ ] Issue `/restart_here` on the same socket
 - [ ] Confirm the character rebuilds in place with the ordinary self bootstrap burst and restored persisted HP
 - [ ] Confirm a stale attack still fails until the practice mob is selected again
+- [ ] With a second living visible client, confirm that a practice mob left alive by the owner's zero-HP floor can be freshly targeted by that second client without waiting for mob death / respawn or owner disconnect
 - [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
 - [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_here` and confirm it fails closed with no recovery burst
 
@@ -731,7 +732,7 @@ Run this when the target build has authored QA `spawn_groups` practice-mob conte
 Expected result:
 - owner-side retaliation death uses `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`
 - `/restart_here` is accepted only after the zero-HP floor and keeps the session in `GAME`
-- player HP is rebuilt from persisted state, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition
+- player HP is rebuilt from persisted state, while a still-live practice mob keeps its runtime-owned HP and requires fresh target acquisition; a zero-HP owner does not keep that mob orphan-locked against fresh targeting from another living visible client
 - if persisted player HP is already `0`, `/restart_here` is not treated as a revival source and emits no recovery frames
 - post-floor `ITEM_MOVE` is silent and non-mutating until a restart/recovery seam is used
 - mob death cancels pending delayed retaliation and respawn does not resurrect stale retaliation work without fresh target acquisition

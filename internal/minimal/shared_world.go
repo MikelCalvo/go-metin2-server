@@ -666,7 +666,8 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjec
 		r.clearSessionCombatTargetLocked(engagedBy)
 		return false
 	}
-	if _, ok := r.playerCharacter(engagedBy); !ok {
+	engagedOwner, ok := r.playerCharacter(engagedBy)
+	if !ok || characterAtBootstrapHPFloor(engagedOwner) {
 		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
 		r.clearSessionCombatTargetLocked(engagedBy)
 		return false

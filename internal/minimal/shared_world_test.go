@@ -20796,6 +20796,58 @@ func assertFirstSpawnHitClearsOtherPreselectedTargetOwnership(t *testing.T, comb
 	}
 }
 
+func TestSharedWorldRegistryAttemptStaticActorCombatTargetReleasesAggroForZeroHPOwnerSnapshot(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	thirdParty := peerVisibilityCharacter("ThirdParty", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	thirdPartyID, _ := registry.Join(thirdParty, newPendingServerFrames(), nil)
+	if thirdPartyID == 0 {
+		t.Fatal("expected third-party join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatProfilePracticeMob, "practice.zero_hp_owner_release", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected visible spawn-group practice mob registration to succeed")
+	}
+	ownerTarget := registry.AttemptStaticActorCombatTarget(ownerID, uint32(actor.EntityID))
+	if !ownerTarget.Accepted {
+		t.Fatalf("expected owner target selection before engagement to succeed, got %+v", ownerTarget)
+	}
+	if !registry.SetSessionCombatTarget(ownerID, ownerTarget.TargetVID) {
+		t.Fatal("expected owner shared-world target ownership to be recorded")
+	}
+	ownerAttack := registry.AttemptSelectedStaticActorAttack(ownerID, ownerTarget.TargetVID, ownerTarget.SnapshotVersion, uint32(actor.EntityID))
+	if !ownerAttack.Accepted || ownerAttack.Died {
+		t.Fatalf("expected first owner attack to establish a live engagement, got %+v", ownerAttack)
+	}
+	blockedTarget := registry.AttemptStaticActorCombatTarget(thirdPartyID, uint32(actor.EntityID))
+	if blockedTarget.Accepted || blockedTarget.Failure != StaticActorCombatTargetFailureTargetNotTargetable {
+		t.Fatalf("expected live owner engagement to block fresh third-party target first, got %+v", blockedTarget)
+	}
+
+	deadOwner := owner
+	deadOwner.Points[bootstrapPlayerPointValueIndex] = 0
+	registry.UpdateCharacter(ownerID, deadOwner)
+
+	thirdPartyTarget := registry.AttemptStaticActorCombatTarget(thirdPartyID, uint32(actor.EntityID))
+	if !thirdPartyTarget.Accepted {
+		t.Fatalf("expected fresh third-party target to release stale zero-HP owner engagement, got %+v", thirdPartyTarget)
+	}
+	if thirdPartyTarget.HPPercent != 90 {
+		t.Fatalf("expected third-party target to observe runtime-owned damaged mob HP percent 90, got %+v", thirdPartyTarget)
+	}
+	if registry.StaticActorCombatEngagedBySubject(actor.EntityID, ownerID) {
+		t.Fatal("expected zero-HP owner engagement to be released after third-party target")
+	}
+	if snapshot, ok := registry.CombatTargetSnapshot(ownerID); ok {
+		t.Fatalf("expected zero-HP owner combat target snapshot to be absent after release, got %+v", snapshot)
+	}
+}
+
 func TestSharedWorldRegistryAttemptSelectedStaticActorAttackRejectsWithoutActiveTarget(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
