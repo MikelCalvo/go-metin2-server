@@ -248,6 +248,10 @@ func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	for _, player := range m.byEntityID {
+		m.repairPlayerMapPresenceLocked(player)
+	}
+
 	effectiveMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: mapIndex})
 	bucket := m.byMapIndex[effectiveMapIndex]
 	if len(bucket) == 0 {
@@ -526,6 +530,9 @@ func (m *MapIndex) StaticActors(mapIndex uint32) []StaticEntity {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	for _, actor := range m.staticByEntityID {
+		m.repairStaticMapPresenceLocked(actor)
+	}
 	effectiveMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: mapIndex})
 	bucket := m.staticByMapIndex[effectiveMapIndex]
 	if len(bucket) == 0 {

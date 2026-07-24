@@ -333,6 +333,26 @@ func TestMapIndexPlayerByNamePrunesStaleAliasForSurvivingPlayer(t *testing.T) {
 	}
 }
 
+func TestMapIndexPlayerCharactersPrunesDuplicateStaleMapBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(18, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	index.byEntityID[stale.Entity.ID] = current
+	index.effectiveMapByEntityID[stale.Entity.ID] = 77
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected direct player map reader to prune stale bucket, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].MapIndex != 77 {
+		t.Fatalf("expected direct player map reader to keep current bucket, got %+v", characters)
+	}
+}
+
 func TestMapIndexRegisterRejectsStaticBucketCollisionWhenStaticEntityIndexMissing(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	actor := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
@@ -803,6 +823,25 @@ func TestMapIndexStaticActorLookupPrunesDuplicateStaleMapBuckets(t *testing.T) {
 	actors := index.StaticActors(77)
 	if len(actors) != 1 || actors[0].Entity.ID != stale.Entity.ID || actors[0].Entity.Name != "VillageGuard" {
 		t.Fatalf("expected current map bucket to remain after lookup prune, got %+v", actors)
+	}
+}
+
+func TestMapIndexStaticActorsPrunesDuplicateStaleMapBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := StaticEntity{Entity: Entity{ID: 18, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	current := stale
+	current.Entity.Name = "VillageGuard"
+	current.Position = NewPosition(77, 900, 1200)
+	index.staticByEntityID[stale.Entity.ID] = current
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{stale.Entity.ID: stale}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{stale.Entity.ID: current}
+
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected direct static map reader to prune stale bucket, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.ID != stale.Entity.ID || actors[0].Entity.Name != "VillageGuard" || actors[0].Position.MapIndex != 77 {
+		t.Fatalf("expected direct static map reader to keep current bucket, got %+v", actors)
 	}
 }
 
