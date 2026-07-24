@@ -298,7 +298,12 @@ For this slice:
 This is still a bootstrap runtime guard, not a full legacy item-lock system:
 - the current runtime does not yet own lock acquisition/release packets or timers
 - equipment, trade, storage, drop, and personal-shop lock semantics remain later slices
-- no new client-visible lock state packet is introduced in this slice
+- no new gameplay client-visible lock state packet is introduced in this slice
+
+The loopback-only runtime snapshots now expose that authored/loaded lock state for QA and operator debugging:
+- `/local/inventory/{name}` includes optional `locked: true` on carried item rows whose live runtime item is locked
+- `/local/equipment/{name}` includes optional `locked: true` on equipped item rows whose live runtime item is locked
+- unlocked rows omit the field to preserve the compact existing snapshot shape
 
 ### Frozen `GC::SHOP UPDATE_PRICE` codec seam
 

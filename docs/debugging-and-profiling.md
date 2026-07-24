@@ -350,6 +350,10 @@ The per-character subject snapshot in this endpoint also reuses the same player 
 Returns the exact-name live M3 runtime state for the selected character.
 These endpoints are intended for loopback-only debugging and QA while the gameplay-facing surfaces are still bootstrap.
 
+`/local/inventory/{name}` returns carried items with `id`, `vnum`, `count`, `slot`, and optional `locked: true` for runtime-locked carried items.
+`/local/equipment/{name}` returns equipped items with `id`, `vnum`, `count`, `equip_slot`, and optional `locked: true` for runtime-locked equipped items.
+False lock state is omitted so existing unlocked snapshots keep their compact shape.
+
 `/local/quickslots/{name}` returns the selected character's live quickslot bindings as sorted byte-sized tuples:
 
 - `position`

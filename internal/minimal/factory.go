@@ -120,10 +120,11 @@ type CharacterInteractionVisibilitySnapshot struct {
 }
 
 type InventoryItemSnapshot struct {
-	ID    uint64 `json:"id"`
-	Vnum  uint32 `json:"vnum"`
-	Count uint16 `json:"count"`
-	Slot  uint16 `json:"slot"`
+	ID     uint64 `json:"id"`
+	Vnum   uint32 `json:"vnum"`
+	Count  uint16 `json:"count"`
+	Slot   uint16 `json:"slot"`
+	Locked bool   `json:"locked,omitempty"`
 }
 
 type EquipmentItemSnapshot struct {
@@ -131,6 +132,7 @@ type EquipmentItemSnapshot struct {
 	Vnum      uint32 `json:"vnum"`
 	Count     uint16 `json:"count"`
 	EquipSlot string `json:"equip_slot"`
+	Locked    bool   `json:"locked,omitempty"`
 }
 
 type QuickslotSnapshot struct {
@@ -630,10 +632,11 @@ func buildLiveCharacterStateSnapshot(character loginticket.Character) liveCharac
 	}
 	for _, item := range character.Inventory {
 		state.Inventory = append(state.Inventory, InventoryItemSnapshot{
-			ID:    item.ID,
-			Vnum:  item.Vnum,
-			Count: item.Count,
-			Slot:  uint16(item.Slot),
+			ID:     item.ID,
+			Vnum:   item.Vnum,
+			Count:  item.Count,
+			Slot:   uint16(item.Slot),
+			Locked: item.Locked,
 		})
 	}
 	for _, item := range character.Equipment {
@@ -642,6 +645,7 @@ func buildLiveCharacterStateSnapshot(character loginticket.Character) liveCharac
 			Vnum:      item.Vnum,
 			Count:     item.Count,
 			EquipSlot: item.EquipSlot.String(),
+			Locked:    item.Locked,
 		})
 	}
 	for _, quickslot := range character.Quickslots {

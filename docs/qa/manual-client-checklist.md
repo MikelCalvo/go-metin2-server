@@ -1071,10 +1071,12 @@ Expected result:
 - [ ] If the QA setup can mark a carried item as runtime-locked, attempt one `SHOP SELL` or `SHOP SELL2` for that slot from an open merchant window
 - [ ] Confirm the locked sell attempt returns the merchant invalid-position path and does not change gold, carried inventory, or persisted account state
 - [ ] Confirm loopback inventory/currency snapshots or reconnect state show the credited bootstrap gold and updated carried inventory
+- [ ] If a runtime-locked carried or equipped fixture is present, inspect `/local/inventory/{name}` or `/local/equipment/{name}` and confirm that only the locked rows include `locked: true`
 
 Expected result:
 - packet `SELL` / `SELL2` mutate the selected character's carried inventory and gold while the merchant context is active
 - the current bootstrap sell price uses the loaded item template's ordinary shop-buy price and count-per-gold flag through the owned legacy count/price branch, then applies the shared `/5` and `3%` tax floors; anti-sell and runtime-locked item guards fail closed without mutation, while richer sell UI choreography remains later slices
+- loopback inventory/equipment snapshots expose runtime lock state for QA/debugging while unlocked rows keep the compact existing shape
 - no peer-facing packet fanout is emitted from sell-back alone
 
 ### 6.20 Training-dummy combat target selection (packet-harness optional)

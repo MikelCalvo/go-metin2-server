@@ -305,6 +305,72 @@ func TestGameRuntimeQuickslotsSnapshotReportsLiveSelectedQuickslots(t *testing.T
 	}
 }
 
+func TestGameRuntimeInventoryAndEquipmentSnapshotsReportLockedItems(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	selected := peerVisibilityCharacter("LockProbe", 0x01030174, 0x02040174, 1100, 2100, 0, 101, 201)
+	selected.Inventory = []inventory.ItemInstance{
+		{ID: 1001, Vnum: 27001, Count: 2, Slot: 5, Locked: true},
+		{ID: 1002, Vnum: 27001, Count: 1, Slot: 6},
+	}
+	selected.Equipment = []inventory.ItemInstance{
+		{ID: 2001, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon, Locked: true},
+	}
+	issuePeerTicket(t, store, "lock-probe", 0x74747474, selected)
+	if err := accounts.Save(accountstore.Account{Login: "lock-probe", Empire: selected.Empire, Characters: cloneCharacters([]loginticket.Character{selected})}); err != nil {
+		t.Fatalf("seed lock probe account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected locked snapshot runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "lock-probe", 0x74747474)
+	defer closeSessionFlow(t, flow)
+
+	inventorySnapshot, ok := runtime.InventorySnapshot("LockProbe")
+	if !ok {
+		t.Fatal("expected inventory snapshot for connected character")
+	}
+	wantInventory := CharacterInventorySnapshot{
+		Name: "LockProbe",
+		Inventory: []InventoryItemSnapshot{
+			{ID: 1001, Vnum: 27001, Count: 2, Slot: 5, Locked: true},
+			{ID: 1002, Vnum: 27001, Count: 1, Slot: 6},
+		},
+	}
+	if !reflect.DeepEqual(inventorySnapshot, wantInventory) {
+		t.Fatalf("unexpected locked inventory snapshot: got %#v want %#v", inventorySnapshot, wantInventory)
+	}
+	inventorySnapshot.Inventory[0].Locked = false
+	refreshedInventory, ok := runtime.InventorySnapshot("LockProbe")
+	if !ok {
+		t.Fatal("expected refreshed inventory snapshot for connected character")
+	}
+	if !reflect.DeepEqual(refreshedInventory, wantInventory) {
+		t.Fatalf("expected returned inventory snapshot to be cloned, got %#v want %#v", refreshedInventory, wantInventory)
+	}
+
+	equipmentSnapshot, ok := runtime.EquipmentSnapshot("LockProbe")
+	if !ok {
+		t.Fatal("expected equipment snapshot for connected character")
+	}
+	wantEquipment := CharacterEquipmentSnapshot{
+		Name:      "LockProbe",
+		Equipment: []EquipmentItemSnapshot{{ID: 2001, Vnum: 11200, Count: 1, EquipSlot: "weapon", Locked: true}},
+	}
+	if !reflect.DeepEqual(equipmentSnapshot, wantEquipment) {
+		t.Fatalf("unexpected locked equipment snapshot: got %#v want %#v", equipmentSnapshot, wantEquipment)
+	}
+	equipmentSnapshot.Equipment[0].Locked = false
+	refreshedEquipment, ok := runtime.EquipmentSnapshot("LockProbe")
+	if !ok {
+		t.Fatal("expected refreshed equipment snapshot for connected character")
+	}
+	if !reflect.DeepEqual(refreshedEquipment, wantEquipment) {
+		t.Fatalf("expected returned equipment snapshot to be cloned, got %#v want %#v", refreshedEquipment, wantEquipment)
+	}
+}
+
 func TestGameRuntimeFailsClosedForCorruptItemTemplateStoreAtStartup(t *testing.T) {
 	itemPath := filepath.Join(t.TempDir(), "item-templates.json")
 	if err := os.WriteFile(itemPath, []byte(`{"templates":[`), 0o644); err != nil {
