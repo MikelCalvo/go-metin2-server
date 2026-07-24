@@ -267,8 +267,18 @@ func (s *FileStore) Save(account Account) error {
 	if err := os.Rename(temp.Name(), s.accountPath(account.Login)); err != nil {
 		return fmt.Errorf("commit account file: %w", err)
 	}
+	if err := removeBackupManifest(s.dir); err != nil {
+		return fmt.Errorf("remove stale account backup manifest: %w", err)
+	}
 	if err := syncStoreDir(s.dir); err != nil {
 		return fmt.Errorf("sync account store dir: %w", err)
+	}
+	return nil
+}
+
+func removeBackupManifest(dir string) error {
+	if err := os.Remove(filepath.Join(dir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }

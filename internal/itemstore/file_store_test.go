@@ -265,6 +265,42 @@ func TestFileStoreRestoreFromRestoresManifestedBackupIntoEmptyStore(t *testing.T
 	}
 }
 
+func TestFileStoreSaveRemovesStaleBackupManifestAfterMutation(t *testing.T) {
+	source := NewFileStore(filepath.Join(t.TempDir(), "source", "item-templates.json"))
+	if err := source.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item templates: %v", err)
+	}
+
+	targetPath := filepath.Join(t.TempDir(), "restore-target", "item-templates.json")
+	restored := NewFileStore(targetPath)
+	if err := restored.RestoreFrom(backupDir); err != nil {
+		t.Fatalf("restore item templates: %v", err)
+	}
+	manifestPath := filepath.Join(filepath.Dir(targetPath), BackupManifestFilename)
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("expected restored manifest before mutation: %v", err)
+	}
+
+	mutated := Snapshot{Templates: []Template{{Vnum: 27002, Name: "Medium Red Potion", Stackable: true, MaxCount: 200}}}
+	if err := restored.Save(mutated); err != nil {
+		t.Fatalf("save mutated restored item templates: %v", err)
+	}
+	if _, err := os.Stat(manifestPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected stale restored backup manifest to be removed after item-template mutation, stat err=%v", err)
+	}
+	got, err := restored.Load()
+	if err != nil {
+		t.Fatalf("load mutated restored item templates: %v", err)
+	}
+	if !reflect.DeepEqual(got, NormalizeSnapshot(mutated)) {
+		t.Fatalf("unexpected mutated item template snapshot: got %#v want %#v", got, NormalizeSnapshot(mutated))
+	}
+}
+
 func TestFileStoreRestoreFromRestoresMissingSnapshotBackupAsEmptyStore(t *testing.T) {
 	source := NewFileStore(filepath.Join(t.TempDir(), "missing", "item-templates.json"))
 	backupDir := filepath.Join(t.TempDir(), "item-template-backup")

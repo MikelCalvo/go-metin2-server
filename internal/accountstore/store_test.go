@@ -1219,6 +1219,40 @@ func TestFileStoreRestoreFromCopiesValidatedBackupIntoEmptyStore(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveRemovesStaleBackupManifestAfterMutation(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+
+	restored := NewFileStore(filepath.Join(t.TempDir(), "restored"))
+	if err := restored.RestoreFrom(backupDir); err != nil {
+		t.Fatalf("restore account backup: %v", err)
+	}
+	manifestPath := filepath.Join(restored.dir, BackupManifestFilename)
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("expected restored manifest before mutation: %v", err)
+	}
+
+	if err := restored.Save(Account{Login: "mkmk", Empire: 3, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save mutated restored account: %v", err)
+	}
+	if _, err := os.Stat(manifestPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected stale restored backup manifest to be removed after account mutation, stat err=%v", err)
+	}
+	got, err := restored.Load("mkmk")
+	if err != nil {
+		t.Fatalf("load mutated restored account: %v", err)
+	}
+	if got.Empire != 3 {
+		t.Fatalf("expected account mutation to remain committed after manifest invalidation, got empire %d", got.Empire)
+	}
+}
+
 func TestFileStoreRestoreFromRejectsNonEmptyDestination(t *testing.T) {
 	backup := NewFileStore(t.TempDir())
 	if err := backup.Save(Account{Login: "mkmk", Empire: 2}); err != nil {

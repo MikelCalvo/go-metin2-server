@@ -162,11 +162,22 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close item template temp file: %w", err)
 	}
+	storeDir := filepath.Dir(s.path)
 	if err := os.Rename(temp.Name(), s.path); err != nil {
 		return fmt.Errorf("commit item template snapshot: %w", err)
 	}
-	if err := syncDir(filepath.Dir(s.path)); err != nil {
+	if err := removeBackupManifest(storeDir); err != nil {
+		return fmt.Errorf("remove stale item template backup manifest: %w", err)
+	}
+	if err := syncDir(storeDir); err != nil {
 		return fmt.Errorf("sync item template store dir: %w", err)
+	}
+	return nil
+}
+
+func removeBackupManifest(dir string) error {
+	if err := os.Remove(filepath.Join(dir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	return nil
 }
