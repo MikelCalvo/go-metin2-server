@@ -361,6 +361,9 @@ func validateTicket(ticket Ticket) error {
 		if err := validateCharacterItemPayloads(character); err != nil {
 			return err
 		}
+		if err := validateCharacterUniqueItemInstanceIDs(character); err != nil {
+			return err
+		}
 		if err := validateCharacterUniqueEquipmentSlots(character); err != nil {
 			return err
 		}
@@ -416,6 +419,23 @@ func validateCharacterUniqueEquipmentSlots(character Character) error {
 			return fmt.Errorf("%w: equipment slot %s contains item %d and item %d", ErrInvalidTicket, item.EquipSlot.String(), previousID, item.ID)
 		}
 		equipmentSlots[uint8(item.EquipSlot)] = item.ID
+	}
+	return nil
+}
+
+func validateCharacterUniqueItemInstanceIDs(character Character) error {
+	itemIDs := make(map[uint64]string, len(character.Inventory)+len(character.Equipment))
+	for _, item := range character.Inventory {
+		if previous, ok := itemIDs[item.ID]; ok {
+			return fmt.Errorf("%w: item instance id %d appears in %s and inventory slot %d", ErrInvalidTicket, item.ID, previous, item.Slot)
+		}
+		itemIDs[item.ID] = fmt.Sprintf("inventory slot %d", item.Slot)
+	}
+	for _, item := range character.Equipment {
+		if previous, ok := itemIDs[item.ID]; ok {
+			return fmt.Errorf("%w: item instance id %d appears in %s and equipment slot %s", ErrInvalidTicket, item.ID, previous, item.EquipSlot.String())
+		}
+		itemIDs[item.ID] = fmt.Sprintf("equipment slot %s", item.EquipSlot.String())
 	}
 	return nil
 }

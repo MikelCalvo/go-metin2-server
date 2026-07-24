@@ -670,6 +670,9 @@ func validateAccount(account Account) error {
 		if err := validateCharacterItemPayloads(character); err != nil {
 			return err
 		}
+		if err := validateCharacterUniqueItemInstanceIDs(character); err != nil {
+			return err
+		}
 		if err := validateCharacterUniqueEquipmentSlots(character); err != nil {
 			return err
 		}
@@ -724,6 +727,23 @@ func validateCharacterItemPayloads(character loginticket.Character) error {
 		if err := item.Validate(); err != nil {
 			return fmt.Errorf("%w: equipment item %d: %v", ErrInvalidAccount, item.ID, err)
 		}
+	}
+	return nil
+}
+
+func validateCharacterUniqueItemInstanceIDs(character loginticket.Character) error {
+	itemIDs := make(map[uint64]string, len(character.Inventory)+len(character.Equipment))
+	for _, item := range character.Inventory {
+		if previous, ok := itemIDs[item.ID]; ok {
+			return fmt.Errorf("%w: item instance id %d appears in %s and inventory slot %d", ErrInvalidAccount, item.ID, previous, item.Slot)
+		}
+		itemIDs[item.ID] = fmt.Sprintf("inventory slot %d", item.Slot)
+	}
+	for _, item := range character.Equipment {
+		if previous, ok := itemIDs[item.ID]; ok {
+			return fmt.Errorf("%w: item instance id %d appears in %s and equipment slot %s", ErrInvalidAccount, item.ID, previous, item.EquipSlot.String())
+		}
+		itemIDs[item.ID] = fmt.Sprintf("equipment slot %s", item.EquipSlot.String())
 	}
 	return nil
 }

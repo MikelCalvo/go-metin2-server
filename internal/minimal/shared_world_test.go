@@ -21724,62 +21724,6 @@ func TestGameSessionFlowItemUseToItemRejectsSameCellRequestWithoutMutation(t *te
 	}
 }
 
-func TestGameSessionFlowItemUseToItemRejectsDuplicateItemIDsWithoutMutation(t *testing.T) {
-	store := loginticket.NewFileStore(t.TempDir())
-	accounts := accountstore.NewFileStore(t.TempDir())
-	owner := peerVisibilityCharacter("UseToItemDuplicateIDs", 0x0103051d, 0x0204051d, 1100, 2100, 0, 101, 201)
-	owner.Inventory = []inventory.ItemInstance{
-		{ID: 103, Vnum: 27001, Count: 2, Slot: 5},
-		{ID: 103, Vnum: 27001, Count: 6, Slot: 8},
-	}
-	owner.Quickslots = []loginticket.Quickslot{
-		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
-		{Position: 4, Type: quickslotproto.TypeItem, Slot: 8},
-	}
-	issuePeerTicket(t, store, "use-to-item-duplicate-ids", 0x50505064, owner)
-	if err := accounts.Save(accountstore.Account{Login: "use-to-item-duplicate-ids", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-		t.Fatalf("seed duplicate-ID use-to-item owner account: %v", err)
-	}
-	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
-	if err != nil {
-		t.Fatalf("unexpected duplicate-ID use-to-item runtime error: %v", err)
-	}
-	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "use-to-item-duplicate-ids", 0x50505064)
-	defer closeSessionFlow(t, flow)
-
-	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{
-		Source: itemproto.InventoryPosition(5),
-		Target: itemproto.InventoryPosition(8),
-	})))
-	if err != nil {
-		t.Fatalf("unexpected duplicate-ID use-to-item error: %v", err)
-	}
-	if len(out) != 0 {
-		t.Fatalf("expected duplicate-ID use-to-item to fail closed with no frames, got %d", len(out))
-	}
-
-	snapshot, ok := runtime.InventorySnapshot(owner.Name)
-	if !ok {
-		t.Fatal("expected inventory snapshot after rejected duplicate-ID use-to-item")
-	}
-	if !reflect.DeepEqual(snapshot.Inventory, []InventoryItemSnapshot{
-		{ID: 103, Vnum: 27001, Count: 2, Slot: 5},
-		{ID: 103, Vnum: 27001, Count: 6, Slot: 8},
-	}) {
-		t.Fatalf("expected runtime inventory to stay unchanged after duplicate-ID rejection, got %+v", snapshot.Inventory)
-	}
-	persisted, err := accounts.Load("use-to-item-duplicate-ids")
-	if err != nil {
-		t.Fatalf("load persisted duplicate-ID use-to-item owner account: %v", err)
-	}
-	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
-		t.Fatalf("expected duplicate-ID rejection to leave persisted inventory unchanged, got %+v", persisted.Characters[0].Inventory)
-	}
-	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
-		t.Fatalf("expected duplicate-ID rejection to leave persisted quickslots unchanged, got %+v", persisted.Characters[0].Quickslots)
-	}
-}
-
 func TestGameSessionFlowItemUseToItemRejectsEmptySourceOrTargetWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string

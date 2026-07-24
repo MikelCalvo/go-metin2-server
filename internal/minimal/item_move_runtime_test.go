@@ -236,13 +236,6 @@ func TestGameRuntimeItemMoveRejectsDuplicateSourceOrTargetOccupancyWithoutMutati
 				{ID: 6003, Vnum: 27001, Count: 3, Slot: 6},
 			},
 		},
-		{
-			name: "duplicate source and target item ids",
-			inventory: []inventory.ItemInstance{
-				{ID: 6001, Vnum: 27001, Count: 2, Slot: 5},
-				{ID: 6001, Vnum: 27001, Count: 3, Slot: 6},
-			},
-		},
 	}
 	for index, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2168,14 +2161,6 @@ func TestGameRuntimeItemUseToItemRejectsTargetGuardEdgesWithoutMutation(t *testi
 			inventory: []inventory.ItemInstance{
 				{ID: 1501, Vnum: 27001, Count: 2, Slot: 5},
 				{ID: 1502, Vnum: 27001, Count: 201, Slot: 6},
-			},
-		},
-		{
-			name:     "duplicate source and target item id",
-			template: itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
-			inventory: []inventory.ItemInstance{
-				{ID: 1501, Vnum: 27001, Count: 2, Slot: 5},
-				{ID: 1501, Vnum: 27001, Count: 3, Slot: 6},
 			},
 		},
 	}

@@ -45,7 +45,7 @@ Each occupied carried or equipped slot is expected to map to one owned item snap
 - `slot` — stable inventory slot index for carried items
 - `vnum` — item template identifier referencing the deterministic file-backed template catalog seam under `internal/itemstore`
 - `count` — stack count
-- `id` — stable instance identity for persistence/runtime ownership, even if the first client-visible packet family does not expose it directly
+- `id` — stable instance identity for persistence/runtime ownership, even if the first client-visible packet family does not expose it directly; within one selected-character snapshot, item instance IDs must be unique across carried inventory and equipment
 - `equipped` — whether the item is currently worn
 - `equipment_slot` — the named worn slot when `equipped = true`
 
@@ -101,6 +101,9 @@ Backwards-compatibility rules for this persistence boundary:
 - older JSON snapshots that lack these fields must still load successfully
 - missing `inventory` / `equipment` arrays normalize to empty slices rather than malformed or ambiguous state
 - zero `gold` remains explicit state instead of being hidden behind undocumented point indices
+- carried and equipped item instances must validate before account snapshots or login tickets can be saved or loaded
+- duplicate item instance IDs within one character fail closed across both carried inventory and equipment, so one logical item identity cannot be authoritative in two slots/windows at once
+- duplicate equipped-slot occupancy also fails closed at the file-backed account and login-ticket boundaries
 
 ## First packet-family boundary
 

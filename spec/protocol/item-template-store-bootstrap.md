@@ -72,7 +72,7 @@ Missing-file fallback is a bootstrap compatibility aid, not the final production
 
 Malformed snapshots, invalid templates, duplicate `vnum` entries, snapshots with unknown JSON fields, and snapshots with trailing JSON values are fatal for runtime construction.
 
-The durable account snapshot store applies the same fail-closed item-instance validation on both save and load. Persisted carried-inventory or equipment entries with malformed item instances, including zero-count item stacks, are rejected as invalid account snapshots instead of being normalized into live bootstrap state.
+The durable account snapshot store and one-shot login-ticket store apply the same fail-closed item-instance validation on both save/load and issue/load. Persisted carried-inventory or equipment entries with malformed item instances, including zero-count item stacks, duplicate per-character item instance IDs across carried inventory/equipment, or duplicate equipped-slot occupancy, are rejected as invalid snapshots instead of being normalized into live bootstrap state.
 
 ## Tests
 

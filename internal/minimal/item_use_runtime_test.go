@@ -610,14 +610,6 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			target:    5,
 		},
 		{
-			name: "duplicate source and target item ids",
-			inventory: []inventory.ItemInstance{
-				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
-				{ID: 201, Vnum: 27001, Count: 3, Slot: 6},
-			},
-			template: itemcatalog.Template{Vnum: 27001, Name: "Duplicate ID Potion", Stackable: true, MaxCount: 200},
-		},
-		{
 			name: "duplicate source slot occupancy",
 			inventory: []inventory.ItemInstance{
 				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},

@@ -159,7 +159,7 @@ Already present:
 - `ITEM_USE_TO_ITEM` stack merge behavior,
 - quickslot add/delete/swap persistence, including type-scoped retarget cleanup when an item/skill/command tuple is rebound to a new bar position and fail-closed file-backed snapshot validation for duplicate non-item skill/command tuple bindings,
 - quickslot cleanup when item mutations remove or fully merge a source slot,
-- basic persisted account/character snapshots.
+- basic persisted account/character snapshots, including fail-closed validation for malformed carried/equipped item instances and duplicate per-character item instance IDs before snapshots or login tickets become authoritative.
 
 Still missing:
 

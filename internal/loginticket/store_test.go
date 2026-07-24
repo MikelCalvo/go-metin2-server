@@ -248,6 +248,67 @@ func TestFileStoreLoadRejectsZeroCountInventoryItem(t *testing.T) {
 	}
 }
 
+func TestFileStoreIssueRejectsDuplicateItemInstanceIDs(t *testing.T) {
+	cases := []struct {
+		name      string
+		character Character
+	}{
+		{
+			name: "duplicate carried item id",
+			character: Character{
+				ID:   1,
+				Name: "MkmkWar",
+				Inventory: []inventory.ItemInstance{
+					{ID: 1001, Vnum: 27001, Count: 3, Slot: 8},
+					{ID: 1001, Vnum: 27002, Count: 1, Slot: 9},
+				},
+			},
+		},
+		{
+			name: "duplicate equipped item id",
+			character: Character{
+				ID:   1,
+				Name: "MkmkWar",
+				Equipment: []inventory.ItemInstance{
+					{ID: 2001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+					{ID: 2001, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+				},
+			},
+		},
+		{
+			name: "duplicate carried and equipped item id",
+			character: Character{
+				ID:        1,
+				Name:      "MkmkWar",
+				Inventory: []inventory.ItemInstance{{ID: 3001, Vnum: 27001, Count: 3, Slot: 8}},
+				Equipment: []inventory.ItemInstance{{ID: 3001, Vnum: 19, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewFileStore(t.TempDir())
+			ticket := Ticket{Login: "mkmk", LoginKey: 0x01020304, Characters: []Character{tc.character}}
+			if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+				t.Fatalf("expected ErrInvalidTicket for %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreLoadRejectsDuplicateItemInstanceIDs(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":27001,"count":3,"slot":8}],"equipment":[{"id":1001,"vnum":19,"count":1,"equipped":true,"equip_slot":2}],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-item-id ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for loaded duplicate item instance id, got %v", err)
+	}
+}
+
 func TestFileStoreIssueRejectsDuplicateEquipmentSlots(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	ticket := Ticket{
