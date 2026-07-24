@@ -216,6 +216,36 @@ func RegisterLocalItemTemplateStoreValidateEndpoint(mux *http.ServeMux, validate
 	return mux
 }
 
+func RegisterLocalItemTemplateStoreCrashTempCleanupEndpoint(mux *http.ServeMux, cleanup func() (any, error)) *http.ServeMux {
+	if mux == nil || cleanup == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/item-templates/crash-temps/cleanup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := cleanup()
+		if err != nil {
+			slog.Warn("local item template store crash temp cleanup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalAccountStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
 	if mux == nil || backup == nil {
 		return mux

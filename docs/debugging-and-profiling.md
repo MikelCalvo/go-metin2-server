@@ -100,6 +100,12 @@ Successful responses are JSON summaries with:
 
 A missing committed `item-templates.json` is reported as an empty authored-template store, matching the runtime fallback to built-in bootstrap item templates. Crash leftovers are reported for operator visibility but are not treated as committed templates. Use this endpoint before importing content bundles, debugging merchant catalog/template mismatches, or planning item-template migration work; it is not a gameplay API or a remote admin API.
 
+### `POST /local/item-templates/crash-temps/cleanup`
+
+Removes same-directory `.item-templates-*.json` crash-temp residue from the authored bootstrap item-template snapshot store after first validating the committed `item-templates.json` snapshot through the same strict loader used by `/local/item-templates/validate`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed snapshot is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
+
+The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup item-template JSON summary (`template_count` and deterministic `vnums`). Because cleanup validates before removing anything, corrupt committed item-template snapshots leave crash-temp files in place for manual recovery. Only hidden `.item-templates-*.json` temp files are removed; committed snapshots and unrelated hidden files are preserved. Use `/local/item-templates/validate` first when you want a read-only residue report, then this endpoint when the operator has decided interrupted item-template temp writes are disposable.
+
 ### `POST /local/account-store/backup`
 
 Copies the durable bootstrap account snapshot store into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source store is invalid, the destination is non-empty, or the backup cannot be completed.

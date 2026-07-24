@@ -68,6 +68,61 @@ func TestFileStoreValidateTreatsMissingSnapshotAsEmptyStore(t *testing.T) {
 	}
 }
 
+func TestFileStoreCleanupCrashTempFilesRemovesOnlyCrashTemps(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	for _, name := range []string{".item-templates-zeta.json", ".item-templates-alpha.json", ".other-temp.json"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write temp file %s: %v", name, err)
+		}
+	}
+
+	summary, err := store.CleanupCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup item template crash temp files: %v", err)
+	}
+	want := SnapshotSummary{TemplateCount: 1, Vnums: []uint32{27001}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected post-cleanup item template summary: got %#v want %#v", summary, want)
+	}
+	for _, removed := range []string{".item-templates-zeta.json", ".item-templates-alpha.json"} {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(path), removed)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected crash temp %s to be removed, stat err=%v", removed, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), ".other-temp.json")); err != nil {
+		t.Fatalf("expected unrelated hidden file to be preserved: %v", err)
+	}
+	if _, err := store.Load(); err != nil {
+		t.Fatalf("expected committed item template snapshot to remain loadable: %v", err)
+	}
+}
+
+func TestFileStoreCleanupCrashTempFilesFailsClosedOnCorruptCommittedSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create state dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt item template snapshot: %v", err)
+	}
+	crashTemp := filepath.Join(filepath.Dir(path), ".item-templates-crashed.json")
+	if err := os.WriteFile(crashTemp, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp file: %v", err)
+	}
+
+	_, err := NewFileStore(path).CleanupCrashTempFiles()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot before cleanup, got %v", err)
+	}
+	if _, statErr := os.Stat(crashTemp); statErr != nil {
+		t.Fatalf("expected crash temp file to remain after failed cleanup: %v", statErr)
+	}
+}
+
 func TestFileStoreValidateFailsClosedForCorruptCommittedSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -70,6 +70,32 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	return summary, nil
 }
 
+func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return SnapshotSummary{}, ErrStorePathRequired
+	}
+	if _, err := s.Validate(); err != nil {
+		return SnapshotSummary{}, err
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	if len(crashTempFiles) == 0 {
+		return s.Validate()
+	}
+	storeDir := filepath.Dir(s.path)
+	for _, filename := range crashTempFiles {
+		if err := os.Remove(filepath.Join(storeDir, filename)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return SnapshotSummary{}, fmt.Errorf("remove item template crash temp file %q: %w", filename, err)
+		}
+	}
+	if err := syncDir(storeDir); err != nil {
+		return SnapshotSummary{}, fmt.Errorf("sync item template store dir after crash temp cleanup: %w", err)
+	}
+	return s.Validate()
+}
+
 func (s *FileStore) crashTempFiles() ([]string, error) {
 	entries, err := os.ReadDir(filepath.Dir(s.path))
 	if err != nil {

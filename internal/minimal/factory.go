@@ -335,6 +335,19 @@ func (r *gameRuntime) ValidateItemTemplateStore() (itemcatalog.SnapshotSummary, 
 	return validator.Validate()
 }
 
+func (r *gameRuntime) CleanupItemTemplateStoreCrashTempFiles() (itemcatalog.SnapshotSummary, error) {
+	if r == nil || r.itemStore == nil {
+		return itemcatalog.SnapshotSummary{Vnums: []uint32{}}, nil
+	}
+	cleaner, ok := r.itemStore.(interface {
+		CleanupCrashTempFiles() (itemcatalog.SnapshotSummary, error)
+	})
+	if !ok {
+		return itemcatalog.SnapshotSummary{}, fmt.Errorf("item template store crash temp cleanup is not supported")
+	}
+	return cleaner.CleanupCrashTempFiles()
+}
+
 func (r *gameRuntime) BackupAccountStore(dstDir string) (accountstore.SnapshotSummary, error) {
 	if r == nil || r.accountStore == nil {
 		return accountstore.SnapshotSummary{Logins: []string{}}, nil

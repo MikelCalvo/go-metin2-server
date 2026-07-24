@@ -73,9 +73,11 @@ Fill this before starting:
 - [ ] `gamed` is running
 - [ ] Both expected listen ports are open
 - [ ] Recent logs show no fresh fatal startup failure
+- [ ] If QA depends on authored item templates, `POST /local/item-templates/validate` returns the expected template summary; if it reports only disposable `.item-templates-*.json` crash-temp residue, clean it with `POST /local/item-templates/crash-temps/cleanup` before the run
 
 Expected result:
 - the server is stably up before opening the client
+- authored item-template state is either clean or has only intentionally cleaned crash-temp residue before item/economy checks
 
 ### 1.2 Target sanity
 

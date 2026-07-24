@@ -282,6 +282,34 @@ func TestGameRuntimeValidateItemTemplateStoreDryRunsAuthoredTemplateState(t *tes
 	}
 }
 
+func TestGameRuntimeCleanupItemTemplateStoreCrashTempFilesRemovesResidueAfterValidation(t *testing.T) {
+	itemDir := t.TempDir()
+	itemPath := filepath.Join(itemDir, "item-templates.json")
+	items := itemcatalog.NewFileStore(itemPath)
+	if err := items.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item templates: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(itemDir, ".item-templates-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write item template temp file: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, items, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.CleanupItemTemplateStoreCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup item template store crash temp files: %v", err)
+	}
+	want := itemcatalog.SnapshotSummary{TemplateCount: 1, Vnums: []uint32{27001}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected item template post-cleanup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(filepath.Join(itemDir, ".item-templates-crashed.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected item template crash temp to be removed, stat err=%v", err)
+	}
+}
+
 func TestGameRuntimeQuickslotsSnapshotReportsLiveSelectedQuickslots(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

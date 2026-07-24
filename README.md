@@ -299,6 +299,7 @@ Already present:
 - pprof/debug mux,
 - `/healthz`,
 - local runtime config endpoint,
+- local account/login-ticket/item-template validation endpoints and local crash-temp cleanup endpoints for account and item-template stores,
 - local inventory/equipment/currency snapshots,
 - local static actor and interaction authoring endpoints,
 - local content bundle import/export,
