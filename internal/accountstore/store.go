@@ -160,7 +160,7 @@ func (s *FileStore) crashTempFiles() ([]string, error) {
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, ".account-") && strings.HasSuffix(name, ".json") {
+		if isAccountCrashTempFilename(name) {
 			files = append(files, name)
 		}
 	}
@@ -488,7 +488,35 @@ func (s *FileStore) validateBackupManifest(accounts []Account) error {
 			return fmt.Errorf("%w: account %q checksum mismatch", ErrInvalidBackupManifest, file.Login)
 		}
 	}
+	if err := s.validateBackupDirectoryEntries(seenFiles); err != nil {
+		return err
+	}
 	return nil
+}
+
+func (s *FileStore) validateBackupDirectoryEntries(manifestFiles map[string]struct{}) error {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return fmt.Errorf("read account backup dir for manifest coverage: %w", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if name == BackupManifestFilename {
+			continue
+		}
+		if _, ok := manifestFiles[name]; ok {
+			continue
+		}
+		if isAccountCrashTempFilename(name) {
+			continue
+		}
+		return fmt.Errorf("%w: backup contains untracked entry %q", ErrInvalidBackupManifest, name)
+	}
+	return nil
+}
+
+func isAccountCrashTempFilename(name string) bool {
+	return strings.HasPrefix(name, ".account-") && strings.HasSuffix(name, ".json")
 }
 
 func ensureEmptyDir(path string, nonEmptyErr error, readContext string) error {

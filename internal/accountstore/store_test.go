@@ -838,6 +838,57 @@ func TestFileStoreValidateBackupFromRejectsMissingBackupManifest(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateBackupFromRejectsUntrackedVisibleBackupEntry(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "operator-note.txt"), []byte("not part of the manifest"), 0o644); err != nil {
+		t.Fatalf("write untracked backup entry: %v", err)
+	}
+	restoreTarget := NewFileStore(filepath.Join(t.TempDir(), "restore-target"))
+
+	_, err := restoreTarget.ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for untracked visible backup entry, got %v", err)
+	}
+	if _, statErr := os.Stat(restoreTarget.dir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected dry-run validation not to create restore target dir, stat err=%v", statErr)
+	}
+}
+
+func TestFileStoreRestoreFromRejectsUntrackedVisibleBackupEntry(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, "operator-note.txt"), []byte("not part of the manifest"), 0o644); err != nil {
+		t.Fatalf("write untracked backup entry: %v", err)
+	}
+	restoreDir := filepath.Join(t.TempDir(), "restored")
+	restored := NewFileStore(restoreDir)
+
+	err := restored.RestoreFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for untracked visible backup entry, got %v", err)
+	}
+	entries, readErr := os.ReadDir(restoreDir)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		t.Fatalf("read restore dir after rejected untracked backup entry: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected rejected untracked backup entry to leave destination empty, got %#v", entries)
+	}
+}
+
 func TestFileStoreRestoreFromRejectsMissingBackupManifest(t *testing.T) {
 	backup := NewFileStore(t.TempDir())
 	if err := backup.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
