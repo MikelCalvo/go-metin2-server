@@ -28,6 +28,25 @@ func TestScopesVisibleTargetsFollowConfiguredVisibilityPolicy(t *testing.T) {
 	}
 }
 
+func TestScopesVisibleTargetsRepairMapOnlyPlayerPresence(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+
+	subject := registry.RegisterPlayer(entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800))
+	peer := registry.RegisterPlayer(entityRegistryCharacter("Peer", 0x02040102, 42, 1900, 2900))
+	if _, ok := registry.players.Remove(peer.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	targets := NewScopes(topology, registry).VisibleTargets(subject.Entity.ID, subject.Character)
+	if len(targets) != 1 || targets[0].Entity.ID != peer.Entity.ID || targets[0].Entity.Name != "Peer" {
+		t.Fatalf("expected visible targets to repair and include map-only peer, got %+v", targets)
+	}
+	if _, ok := registry.PlayerByVID(peer.Entity.VID); !ok {
+		t.Fatal("expected visible-target scope repair to restore peer VID lookup")
+	}
+}
+
 func TestScopesLocalTalkTargetsRequireSameEmpireAndConfiguredVisibleWorld(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)

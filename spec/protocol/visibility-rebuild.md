@@ -52,6 +52,7 @@ This covers the same-map visibility behavior used by:
 - the loopback-only runtime visibility endpoint, which now consumes `internal/worldruntime` scope-owned visibility snapshots instead of recomputing peer sets in `internal/minimal`
 
 The visible-peer helper still owns who is visible to whom.
+Runtime scope readers now obtain connected player snapshots through `EntityRegistry.PlayerCharacters()`, which repairs missing player-directory entries from surviving map-index presence before computing `VisibleTargets(...)` and related scope queries. This keeps a partial teardown or repair that dropped only the player directory from making map-index-live peers disappear from visibility, chat-scope, or introspection calculations.
 Map-occupancy snapshots used by relocate preview, transfer preview, and runtime map-inspection now come from the dedicated `internal/worldruntime` map index via `internal/worldruntime/scopes.go` instead of being rebuilt from whole-world character scans or bootstrap-local preview helpers.
 
 ### `VisibleStaticActors(...)`

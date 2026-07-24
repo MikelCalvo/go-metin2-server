@@ -389,6 +389,26 @@ func TestMapIndexPlayerLookupRepairsMisplacedMapBucketPresence(t *testing.T) {
 	}
 }
 
+func TestMapIndexAllPlayersIncludesMapOnlyPresence(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	alpha := newPlayerEntity(22, entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if !index.Register(alpha) {
+		t.Fatal("expected player registration to succeed")
+	}
+	delete(index.byEntityID, alpha.Entity.ID)
+	delete(index.effectiveMapByEntityID, alpha.Entity.ID)
+
+	players := index.AllPlayers()
+	if len(players) != 1 || players[0].Entity.ID != alpha.Entity.ID || players[0].Entity.Name != "Alpha" || players[0].Character.MapIndex != 42 {
+		t.Fatalf("expected all-player snapshot to include surviving map-only player, got %+v", players)
+	}
+	players[0].Character.Name = "Mutated"
+	lookup, ok := index.Player(alpha.Entity.ID)
+	if !ok || lookup.Entity.Name != "Alpha" || lookup.Character.Name != "Alpha" {
+		t.Fatalf("expected all-player snapshot to be cloned from map-index state, got player=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestMapIndexRegisterRejectsStaticBucketCollisionWhenStaticEntityIndexMissing(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	actor := StaticEntity{Entity: Entity{ID: 14, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}

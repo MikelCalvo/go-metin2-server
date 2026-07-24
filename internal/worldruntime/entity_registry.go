@@ -351,7 +351,31 @@ func (r *EntityRegistry) PlayerCharacters() []loginticket.Character {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.players.PlayerCharacters()
+	characters := r.players.PlayerCharacters()
+	if r.maps == nil {
+		return characters
+	}
+	known := make(map[uint64]struct{}, len(characters))
+	for _, character := range characters {
+		if character.VID == 0 {
+			continue
+		}
+		if player, ok := r.players.ByVID(character.VID); ok {
+			known[player.Entity.ID] = struct{}{}
+		}
+	}
+	for _, player := range r.maps.AllPlayers() {
+		if _, exists := known[player.Entity.ID]; exists {
+			continue
+		}
+		if !r.repairPlayerDirectoryFromMapLocked(player) {
+			continue
+		}
+		characters = append(characters, cloneCharacterSnapshot(player.Character))
+		known[player.Entity.ID] = struct{}{}
+	}
+	sortCharacters(characters)
+	return characters
 }
 
 func (r *EntityRegistry) MapCharacters(mapIndex uint32) []loginticket.Character {

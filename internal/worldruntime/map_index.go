@@ -314,6 +314,58 @@ func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
 	return characters
 }
 
+func (m *MapIndex) AllPlayers() []PlayerEntity {
+	if m == nil {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.byEntityID) == 0 && len(m.byMapIndex) == 0 {
+		return nil
+	}
+
+	for _, player := range m.byEntityID {
+		m.repairPlayerMapPresenceLocked(player)
+	}
+	m.repairMisplacedPlayerMapPresenceLocked()
+
+	playersByID := make(map[uint64]PlayerEntity, len(m.byEntityID))
+	for _, player := range m.byEntityID {
+		playersByID[player.Entity.ID] = clonePlayerEntity(player)
+	}
+
+	mapIndices := make([]uint32, 0, len(m.byMapIndex))
+	for mapIndex := range m.byMapIndex {
+		mapIndices = append(mapIndices, mapIndex)
+	}
+	sort.Slice(mapIndices, func(i int, j int) bool {
+		return mapIndices[i] < mapIndices[j]
+	})
+	for _, mapIndex := range mapIndices {
+		bucket := m.byMapIndex[mapIndex]
+		entityIDs := make([]uint64, 0, len(bucket))
+		for entityID := range bucket {
+			entityIDs = append(entityIDs, entityID)
+		}
+		sort.Slice(entityIDs, func(i int, j int) bool {
+			return entityIDs[i] < entityIDs[j]
+		})
+		for _, entityID := range entityIDs {
+			if _, exists := playersByID[entityID]; exists {
+				continue
+			}
+			playersByID[entityID] = clonePlayerEntity(bucket[entityID])
+		}
+	}
+
+	players := make([]PlayerEntity, 0, len(playersByID))
+	for _, player := range playersByID {
+		players = append(players, player)
+	}
+	sortPlayerEntities(players)
+	return players
+}
+
 func (m *MapIndex) Snapshot() []MapOccupancy {
 	if m == nil {
 		return nil

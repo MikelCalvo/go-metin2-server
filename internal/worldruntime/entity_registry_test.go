@@ -560,6 +560,30 @@ func TestEntityRegistryPlayerByNameRepairsPlayerDirectoryWhenMapIndexEntrySurviv
 	}
 }
 
+func TestEntityRegistryPlayerCharactersRepairsPlayerDirectoryWhenMapIndexEntrySurvives(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+
+	characters := registry.PlayerCharacters()
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].VID != alpha.Entity.VID || characters[0].MapIndex != 42 {
+		t.Fatalf("expected player snapshot reader to repair from map-index presence, got %+v", characters)
+	}
+	byVID, ok := registry.PlayerByVID(alpha.Entity.VID)
+	if !ok || byVID.Entity.ID != alpha.Entity.ID || byVID.Entity.Name != "Alpha" {
+		t.Fatalf("expected repaired player directory to restore VID lookup, got entity=%+v ok=%v", byVID, ok)
+	}
+	byName, ok := registry.PlayerByName(alpha.Entity.Name)
+	if !ok || byName.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected repaired player directory to restore exact-name lookup, got entity=%+v ok=%v", byName, ok)
+	}
+}
+
 func TestEntityRegistryRejectsPlayerRegistrationWithMapOnlyPlayerVIDCollision(t *testing.T) {
 	registry := NewEntityRegistry()
 	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
