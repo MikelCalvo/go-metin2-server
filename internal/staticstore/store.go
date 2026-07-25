@@ -35,6 +35,16 @@ type Snapshot struct {
 	StaticActors []StaticActor `json:"static_actors"`
 }
 
+type SnapshotSummary struct {
+	ActorCount             int      `json:"actor_count"`
+	InteractableActorCount int      `json:"interactable_actor_count,omitempty"`
+	SpawnGroupCount        int      `json:"spawn_group_count,omitempty"`
+	ActorIDs               []uint64 `json:"actor_ids"`
+	ActorNames             []string `json:"actor_names"`
+	CrashTempCount         int      `json:"crash_temp_count,omitempty"`
+	CrashTempFiles         []string `json:"crash_temp_files,omitempty"`
+}
+
 type Store interface {
 	Load() (Snapshot, error)
 	Save(Snapshot) error

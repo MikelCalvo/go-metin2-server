@@ -134,6 +134,65 @@ func TestFileStoreLoadReturnsNotFoundForMissingSnapshot(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateReportsDeterministicInteractionSummary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Definitions: []Definition{
+		{Kind: KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
+		{Kind: KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+		testMerchantCatalogDefinition(),
+		{Kind: KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800},
+	}}); err != nil {
+		t.Fatalf("save interaction snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), ".interaction-definitions-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write interaction crash temp: %v", err)
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate interaction store: %v", err)
+	}
+	want := SnapshotSummary{
+		DefinitionCount: 4,
+		DefinitionKeys:  []string{"info:lore:alchemist", "shop_preview:npc:merchant", "talk:npc:village_guard", "warp:npc:teleporter"},
+		CrashTempCount:  1,
+		CrashTempFiles:  []string{".interaction-definitions-crashed.json"},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected interaction validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateTreatsMissingInteractionSnapshotAsEmpty(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing", "interaction-definitions.json"))
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate missing interaction store: %v", err)
+	}
+	want := SnapshotSummary{DefinitionKeys: []string{}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected empty interaction summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateFailsClosedOnCorruptInteractionSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"definitions":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt interaction snapshot: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for corrupt interaction snapshot, got %v", err)
+	}
+}
+
 func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)

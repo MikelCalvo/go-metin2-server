@@ -586,7 +586,17 @@ func TestGameRuntimePersistenceStatusReportsAllStoreSummaries(t *testing.T) {
 	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
 		t.Fatalf("save item template snapshot: %v", err)
 	}
-	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountStore, nil, nil, itemStore, nil)
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	staticStore := staticstore.NewFileStore(staticPath)
+	if err := staticStore.Save(staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: 7, Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy}}}); err != nil {
+		t.Fatalf("save static actor snapshot: %v", err)
+	}
+	interactionPath := filepath.Join(t.TempDir(), "interaction-definitions.json")
+	interactionStore := interactionstore.NewFileStore(interactionPath)
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}}}); err != nil {
+		t.Fatalf("save interaction snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountStore, staticStore, interactionStore, itemStore, nil)
 	if err != nil {
 		t.Fatalf("new game runtime: %v", err)
 	}
@@ -615,6 +625,60 @@ func TestGameRuntimePersistenceStatusReportsAllStoreSummaries(t *testing.T) {
 	wantItems := itemcatalog.SnapshotSummary{TemplateCount: 1, Vnums: []uint32{27001}}
 	if !reflect.DeepEqual(status.ItemTemplateStore.Summary, wantItems) {
 		t.Fatalf("unexpected item template store summary: got %#v want %#v", status.ItemTemplateStore.Summary, wantItems)
+	}
+	if !status.StaticActorStore.Valid || status.StaticActorStore.Path != staticStore.Path() {
+		t.Fatalf("unexpected static actor store status: %#v", status.StaticActorStore)
+	}
+	wantStaticActors := staticstore.SnapshotSummary{ActorCount: 1, ActorIDs: []uint64{7}, ActorNames: []string{"TrainingDummy"}}
+	if !reflect.DeepEqual(status.StaticActorStore.Summary, wantStaticActors) {
+		t.Fatalf("unexpected static actor store summary: got %#v want %#v", status.StaticActorStore.Summary, wantStaticActors)
+	}
+	if !status.InteractionStore.Valid || status.InteractionStore.Path != interactionStore.Path() {
+		t.Fatalf("unexpected interaction store status: %#v", status.InteractionStore)
+	}
+	wantInteractions := interactionstore.SnapshotSummary{DefinitionCount: 1, DefinitionKeys: []string{"info:lore:alchemist"}}
+	if !reflect.DeepEqual(status.InteractionStore.Summary, wantInteractions) {
+		t.Fatalf("unexpected interaction store summary: got %#v want %#v", status.InteractionStore.Summary, wantInteractions)
+	}
+}
+
+func TestGameRuntimePersistenceStatusReportsContentStoreFailureWithoutMaskingOtherStores(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	if err := ticketStore.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	if err := accountStore.Save(accountstore.Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	staticPath := filepath.Join(t.TempDir(), "static-actors.json")
+	staticStore := staticstore.NewFileStore(staticPath)
+	if err := staticStore.Save(staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: 7, Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy}}}); err != nil {
+		t.Fatalf("save static actor snapshot: %v", err)
+	}
+	interactionPath := filepath.Join(t.TempDir(), "interaction-definitions.json")
+	interactionStore := interactionstore.NewFileStore(interactionPath)
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}}}); err != nil {
+		t.Fatalf("save interaction snapshot: %v", err)
+	}
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountStore, staticStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	if err := os.WriteFile(staticPath, []byte(`{"static_actors":[`), 0o644); err != nil {
+		t.Fatalf("corrupt static actor store after boot: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if status.OK {
+		t.Fatalf("expected aggregate persistence status to report static actor failure: %#v", status)
+	}
+	if status.StaticActorStore.Valid || status.StaticActorStore.Error == "" {
+		t.Fatalf("expected static actor store status to carry validation error: %#v", status.StaticActorStore)
+	}
+	if !status.AccountStore.Valid || !status.LoginTicketStore.Valid || !status.ItemTemplateStore.Valid || !status.InteractionStore.Valid {
+		t.Fatalf("expected other persistence stores to remain valid after static actor failure: %#v", status)
 	}
 }
 

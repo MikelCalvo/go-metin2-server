@@ -241,6 +241,8 @@ type PersistenceStatusSnapshot struct {
 	AccountStore      AccountStoreStatus      `json:"account_store"`
 	LoginTicketStore  LoginTicketStoreStatus  `json:"login_ticket_store"`
 	ItemTemplateStore ItemTemplateStoreStatus `json:"item_template_store"`
+	StaticActorStore  StaticActorStoreStatus  `json:"static_actor_store"`
+	InteractionStore  InteractionStoreStatus  `json:"interaction_store"`
 }
 
 type AccountStoreStatus struct {
@@ -262,6 +264,20 @@ type ItemTemplateStoreStatus struct {
 	Valid   bool                        `json:"valid"`
 	Summary itemcatalog.SnapshotSummary `json:"summary"`
 	Error   string                      `json:"error,omitempty"`
+}
+
+type StaticActorStoreStatus struct {
+	Path    string                      `json:"path"`
+	Valid   bool                        `json:"valid"`
+	Summary staticstore.SnapshotSummary `json:"summary"`
+	Error   string                      `json:"error,omitempty"`
+}
+
+type InteractionStoreStatus struct {
+	Path    string                           `json:"path"`
+	Valid   bool                             `json:"valid"`
+	Summary interactionstore.SnapshotSummary `json:"summary"`
+	Error   string                           `json:"error,omitempty"`
 }
 
 type MapOccupancyChange = worldruntime.MapOccupancyChange
@@ -337,11 +353,15 @@ func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
 	accountStatus := r.accountStoreStatus()
 	loginTicketStatus := r.loginTicketStoreStatus()
 	itemTemplateStatus := r.itemTemplateStoreStatus()
+	staticActorStatus := r.staticActorStoreStatus()
+	interactionStatus := r.interactionStoreStatus()
 	return PersistenceStatusSnapshot{
-		OK:                accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid,
+		OK:                accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid && staticActorStatus.Valid && interactionStatus.Valid,
 		AccountStore:      accountStatus,
 		LoginTicketStore:  loginTicketStatus,
 		ItemTemplateStore: itemTemplateStatus,
+		StaticActorStore:  staticActorStatus,
+		InteractionStore:  interactionStatus,
 	}
 }
 
@@ -381,6 +401,36 @@ func (r *gameRuntime) itemTemplateStoreStatus() ItemTemplateStoreStatus {
 		status.Path = itemTemplateStorePath(r.itemStore)
 	}
 	summary, err := r.ValidateItemTemplateStore()
+	if err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Valid = true
+	status.Summary = summary
+	return status
+}
+
+func (r *gameRuntime) staticActorStoreStatus() StaticActorStoreStatus {
+	status := StaticActorStoreStatus{Path: staticActorStorePath(nil)}
+	if r != nil {
+		status.Path = staticActorStorePath(r.staticStore)
+	}
+	summary, err := r.ValidateStaticActorStore()
+	if err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Valid = true
+	status.Summary = summary
+	return status
+}
+
+func (r *gameRuntime) interactionStoreStatus() InteractionStoreStatus {
+	status := InteractionStoreStatus{Path: interactionStorePath(nil)}
+	if r != nil {
+		status.Path = interactionStorePath(r.interactionStore)
+	}
+	summary, err := r.ValidateInteractionStore()
 	if err != nil {
 		status.Error = err.Error()
 		return status
@@ -502,6 +552,32 @@ func (r *gameRuntime) CleanupItemTemplateStoreCrashTempFiles() (itemcatalog.Snap
 		return itemcatalog.SnapshotSummary{}, fmt.Errorf("item template store crash temp cleanup is not supported")
 	}
 	return cleaner.CleanupCrashTempFiles()
+}
+
+func (r *gameRuntime) ValidateStaticActorStore() (staticstore.SnapshotSummary, error) {
+	if r == nil || r.staticStore == nil {
+		return staticstore.SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}, nil
+	}
+	validator, ok := r.staticStore.(interface {
+		Validate() (staticstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return staticstore.SnapshotSummary{}, fmt.Errorf("static actor store validation is not supported")
+	}
+	return validator.Validate()
+}
+
+func (r *gameRuntime) ValidateInteractionStore() (interactionstore.SnapshotSummary, error) {
+	if r == nil || r.interactionStore == nil {
+		return interactionstore.SnapshotSummary{DefinitionKeys: []string{}}, nil
+	}
+	validator, ok := r.interactionStore.(interface {
+		Validate() (interactionstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return interactionstore.SnapshotSummary{}, fmt.Errorf("interaction store validation is not supported")
+	}
+	return validator.Validate()
 }
 
 func (r *gameRuntime) BackupItemTemplateStore(dstDir string) (itemcatalog.SnapshotSummary, error) {

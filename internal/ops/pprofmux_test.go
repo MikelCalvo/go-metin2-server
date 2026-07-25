@@ -2415,6 +2415,16 @@ func TestLocalPersistenceStatusEndpointReturnsJSONSnapshotForLoopbackGet(t *test
 			"valid":   true,
 			"summary": map[string]any{"template_count": 1, "vnums": []uint32{27001}},
 		},
+		"static_actor_store": map[string]any{
+			"path":    "/state/static-actors.json",
+			"valid":   true,
+			"summary": map[string]any{"actor_count": 1, "actor_ids": []uint64{7}, "actor_names": []string{"TrainingDummy"}},
+		},
+		"interaction_store": map[string]any{
+			"path":    "/state/interaction-definitions.json",
+			"valid":   true,
+			"summary": map[string]any{"definition_count": 1, "definition_keys": []string{"info:lore:alchemist"}},
+		},
 	}}
 	mux := RegisterLocalPersistenceStatusEndpoint(NewPprofMux("gamed"), snapshotter.PersistenceStatus)
 
@@ -2434,7 +2444,7 @@ func TestLocalPersistenceStatusEndpointReturnsJSONSnapshotForLoopbackGet(t *test
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"ok":true`, `"account_store"`, `"path":"/state/accounts"`, `"valid":true`, `"account_count":1`, `"login_ticket_store"`, `"ticket_count":1`, `"login_keys":[16909060]`, `"item_template_store"`, `"template_count":1`, `"vnums":[27001]`} {
+	for _, want := range []string{`"ok":true`, `"account_store"`, `"path":"/state/accounts"`, `"valid":true`, `"account_count":1`, `"login_ticket_store"`, `"ticket_count":1`, `"login_keys":[16909060]`, `"item_template_store"`, `"template_count":1`, `"vnums":[27001]`, `"static_actor_store"`, `"actor_count":1`, `"actor_ids":[7]`, `"interaction_store"`, `"definition_count":1`, `"definition_keys":["info:lore:alchemist"]`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected response body to contain %s, got %s", want, body)
 		}

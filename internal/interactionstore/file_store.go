@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -52,6 +53,67 @@ func (s *FileStore) Load() (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("%w: validate interaction snapshot", err)
 	}
 	return normalized, nil
+}
+
+func (s *FileStore) Validate() (SnapshotSummary, error) {
+	if s == nil || s.path == "" {
+		return SnapshotSummary{}, ErrStorePathRequired
+	}
+	summary := SnapshotSummary{DefinitionKeys: []string{}}
+	snapshot, err := s.Load()
+	if err != nil {
+		if !errors.Is(err, ErrSnapshotNotFound) {
+			return SnapshotSummary{}, err
+		}
+	} else {
+		summary = summarizeSnapshot(snapshot)
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	summary.CrashTempCount = len(crashTempFiles)
+	summary.CrashTempFiles = crashTempFiles
+	return summary, nil
+}
+
+func summarizeSnapshot(snapshot Snapshot) SnapshotSummary {
+	summary := SnapshotSummary{
+		DefinitionCount: len(snapshot.Definitions),
+		DefinitionKeys:  make([]string, 0, len(snapshot.Definitions)),
+	}
+	for _, definition := range snapshot.Definitions {
+		summary.DefinitionKeys = append(summary.DefinitionKeys, definition.Kind+":"+definition.Ref)
+	}
+	return summary
+}
+
+func (s *FileStore) crashTempFiles() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Dir(s.path))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read interaction store crash temp files: %w", err)
+	}
+	files := make([]string, 0)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if name == filepath.Base(s.path) {
+			continue
+		}
+		if strings.HasPrefix(name, ".interaction-definitions-") && strings.HasSuffix(name, ".json") {
+			files = append(files, name)
+		}
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		return nil, nil
+	}
+	return files, nil
 }
 
 func (s *FileStore) Save(snapshot Snapshot) error {

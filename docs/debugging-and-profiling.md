@@ -232,8 +232,18 @@ Current response fields:
   - `valid`
   - `summary` with the same `template_count`, `vnums`, and optional crash-temp fields returned by `/local/item-templates/validate`
   - optional `error` when validation fails
+- `static_actor_store`
+  - `path`
+  - `valid`
+  - `summary` with `actor_count`, deterministic `actor_ids` / `actor_names`, optional `interactable_actor_count`, optional `spawn_group_count`, and optional static-actor crash-temp fields
+  - optional `error` when validation fails
+- `interaction_store`
+  - `path`
+  - `valid`
+  - `summary` with `definition_count`, deterministic `definition_keys` (`kind:ref`), and optional interaction crash-temp fields
+  - optional `error` when validation fails
 
-Use this endpoint as the first read-only persistence triage check before choosing a narrower validate, crash-temp cleanup, stale-ticket cleanup, backup, or restore endpoint. It deliberately keeps checking the remaining stores after one store fails, so a corrupt account snapshot does not hide a healthy login-ticket or item-template store. It is an operator/debugging surface, not a gameplay API and not a remote admin API.
+Use this endpoint as the first read-only persistence triage check before choosing a narrower validate, crash-temp cleanup, stale-ticket cleanup, backup, or restore endpoint. It deliberately keeps checking the remaining stores after one store fails, so a corrupt account snapshot does not hide healthy login-ticket, item-template, static-actor, or interaction-definition stores. Authored content stores that have no committed snapshot are reported as valid empty stores, while corrupt committed snapshots fail closed and still let operators inspect the other persistence surfaces in the same response. It is an operator/debugging surface, not a gameplay API and not a remote admin API.
 
 ### `GET` / `POST /local/static-actor-combat-profiles`
 

@@ -44,6 +44,13 @@ type Snapshot struct {
 	Definitions []Definition `json:"definitions"`
 }
 
+type SnapshotSummary struct {
+	DefinitionCount int      `json:"definition_count"`
+	DefinitionKeys  []string `json:"definition_keys"`
+	CrashTempCount  int      `json:"crash_temp_count,omitempty"`
+	CrashTempFiles  []string `json:"crash_temp_files,omitempty"`
+}
+
 type Store interface {
 	Load() (Snapshot, error)
 	Save(Snapshot) error

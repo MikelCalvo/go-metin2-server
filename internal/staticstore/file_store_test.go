@@ -93,6 +93,67 @@ func TestFileStoreLoadReturnsNotFoundForMissingSnapshot(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateReportsDeterministicStaticActorSummary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{StaticActors: []StaticActor{
+		{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk", InteractionRef: "npc:village_guard"},
+		{EntityID: 7, Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
+		{EntityID: 22, Name: "RewardMob", MapIndex: 42, X: 1850, Y: 2950, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.reward_mob", RewardDropVnums: []uint32{27001}},
+	}}); err != nil {
+		t.Fatalf("save static actor snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), ".static-actors-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write static actor crash temp: %v", err)
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate static actor store: %v", err)
+	}
+	want := SnapshotSummary{
+		ActorCount:             3,
+		InteractableActorCount: 1,
+		SpawnGroupCount:        1,
+		ActorIDs:               []uint64{22, 7, 9},
+		ActorNames:             []string{"RewardMob", "TrainingDummy", "VillageGuard"},
+		CrashTempCount:         1,
+		CrashTempFiles:         []string{".static-actors-crashed.json"},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected static actor validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateTreatsMissingStaticActorSnapshotAsEmpty(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "missing", "static-actors.json"))
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate missing static actor store: %v", err)
+	}
+	want := SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected empty static actor summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateFailsClosedOnCorruptStaticActorSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"static_actors":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt static actor snapshot: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for corrupt static actor snapshot, got %v", err)
+	}
+}
+
 func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)
