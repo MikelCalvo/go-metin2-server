@@ -5905,15 +5905,53 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 }
 
 func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot, defaults worldruntime.StaticActorCombatProfileDefaults) bool {
-	return strings.TrimSpace(snapshot.Profile) != "" &&
-		snapshot.MaxHP == defaults.MaxHP &&
-		snapshot.DamagePerNormalAttack == defaults.DamagePerNormalAttack &&
-		snapshot.AttackValue == defaults.AttackValue &&
-		snapshot.DefenseValue == defaults.DefenseValue &&
-		snapshot.Level == defaults.Level &&
-		snapshot.Rank == defaults.Rank &&
-		time.Duration(snapshot.RespawnDelayMs)*time.Millisecond == defaults.RespawnDelay &&
-		reflect.DeepEqual(snapshot.DeathReward.Clone(), defaults.DeathReward.Clone())
+	normalized, ok := contentBundleCombatProfileSnapshotDefaults(snapshot)
+	return ok &&
+		normalized.MaxHP == defaults.MaxHP &&
+		normalized.DamagePerNormalAttack == defaults.DamagePerNormalAttack &&
+		normalized.AttackValue == defaults.AttackValue &&
+		normalized.DefenseValue == defaults.DefenseValue &&
+		normalized.Level == defaults.Level &&
+		normalized.Rank == defaults.Rank &&
+		normalized.RespawnDelay == defaults.RespawnDelay &&
+		reflect.DeepEqual(normalized.DeathReward.Clone(), defaults.DeathReward.Clone())
+}
+
+func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot) (worldruntime.StaticActorCombatProfileDefaults, bool) {
+	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || snapshot.RespawnDelayMs <= 0 {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	defaults := worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 snapshot.MaxHP,
+		DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
+		AttackValue:           snapshot.AttackValue,
+		DefenseValue:          snapshot.DefenseValue,
+		Level:                 snapshot.Level,
+		Rank:                  snapshot.Rank,
+		RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
+		DeathReward:           snapshot.DeathReward.Clone(),
+	}
+	if defaults.DamagePerNormalAttack == 0 {
+		defaults.DamagePerNormalAttack = contentBundleCombatProfileSnapshotFormulaDamage(snapshot)
+	}
+	if defaults.Level == 0 {
+		defaults.Level = worldruntime.TrainingDummyBootstrapLevel
+	}
+	return defaults, true
+}
+
+func contentBundleCombatProfileSnapshotFormulaDamage(snapshot worldruntime.StaticActorCombatProfileSnapshot) uint8 {
+	if snapshot.AttackValue <= snapshot.DefenseValue {
+		return 1
+	}
+	damage := snapshot.AttackValue - snapshot.DefenseValue
+	if damage == 0 {
+		return 1
+	}
+	if damage > uint16(snapshot.MaxHP) {
+		return snapshot.MaxHP
+	}
+	return uint8(damage)
 }
 
 func contentBundleReferencedCombatProfiles(bundle contentbundle.Bundle) map[string]struct{} {

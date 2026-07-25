@@ -465,6 +465,65 @@ func TestGameRuntimeImportsContentBundleCombatProfilesBeforeSpawnGroups(t *testi
 	}
 }
 
+func TestGameRuntimeReimportsFormulaOnlyCombatProfileBundleIdempotently(t *testing.T) {
+	const profile = "practice_reimport_formula_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.reimport_formula",
+			Name:          "Practice Reimport Formula Wolf",
+			MapIndex:      42,
+			X:             1775,
+			Y:             2875,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          20,
+			AttackValue:    9,
+			DefenseValue:   4,
+			RespawnDelayMs: 1500,
+		}},
+	}
+
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("first import of formula-only combat profile bundle: %v", err)
+	}
+	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok || defaults.DamagePerNormalAttack != 5 || defaults.Level != worldruntime.TrainingDummyBootstrapLevel {
+		t.Fatalf("expected first import to register computed damage/default level, defaults=%+v ok=%v", defaults, ok)
+	}
+
+	imported, err := runtime.ImportContentBundle(bundle)
+	if err != nil {
+		t.Fatalf("second import of same formula-only combat profile bundle should be idempotent: %v", err)
+	}
+	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != profile {
+		t.Fatalf("expected reimported bundle to retain formula-only combat profile snapshot, got %#v", imported.CombatProfiles)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one actor after idempotent combat-profile reimport, got %#v", actors)
+	}
+	if actors[0].CombatProfile != profile || actors[0].CombatLevel != worldruntime.TrainingDummyBootstrapLevel {
+		t.Fatalf("expected formula-profile actor to keep computed profile defaults after reimport, got %+v", actors[0])
+	}
+}
+
 func TestGameRuntimeRejectsDuplicateImportedCombatProfileSnapshotsWithoutMutatingRuntime(t *testing.T) {
 	const profile = "practice_duplicate_import_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
