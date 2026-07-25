@@ -77,6 +77,12 @@ func main() {
 		opsHandler,
 		func() (any, error) { return gameRuntime.CleanupLoginTicketStoreCrashTempFiles() },
 	)
+	opsHandler = ops.RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(
+		opsHandler,
+		func(issuedBefore time.Time) (any, error) {
+			return gameRuntime.PreviewLoginTicketStoreIssuedBefore(issuedBefore)
+		},
+	)
 	opsHandler = ops.RegisterLocalLoginTicketStoreIssuedBeforeCleanupEndpoint(
 		opsHandler,
 		func(issuedBefore time.Time) (any, error) {

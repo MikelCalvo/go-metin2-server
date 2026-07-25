@@ -338,6 +338,24 @@ func (r *gameRuntime) CleanupLoginTicketStoreCrashTempFiles() (loginticket.Snaps
 	return cleaner.CleanupCrashTempFiles()
 }
 
+func (r *gameRuntime) PreviewLoginTicketStoreIssuedBefore(issuedBefore time.Time) (loginticket.IssuedBeforePreviewSummary, error) {
+	if r == nil || r.loginTicketStore == nil {
+		return loginticket.IssuedBeforePreviewSummary{
+			IssuedBefore:   issuedBefore,
+			StaleLogins:    []string{},
+			StaleLoginKeys: []uint32{},
+			Current:        loginticket.SnapshotSummary{Logins: []string{}, LoginKeys: []uint32{}},
+		}, nil
+	}
+	previewer, ok := r.loginTicketStore.(interface {
+		PreviewIssuedBefore(time.Time) (loginticket.IssuedBeforePreviewSummary, error)
+	})
+	if !ok {
+		return loginticket.IssuedBeforePreviewSummary{}, fmt.Errorf("login ticket issued-before preview is not supported")
+	}
+	return previewer.PreviewIssuedBefore(issuedBefore)
+}
+
 func (r *gameRuntime) CleanupLoginTicketStoreIssuedBefore(issuedBefore time.Time) (loginticket.IssuedBeforeCleanupSummary, error) {
 	if r == nil || r.loginTicketStore == nil {
 		return loginticket.IssuedBeforeCleanupSummary{

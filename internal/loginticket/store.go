@@ -111,6 +111,14 @@ type SnapshotSummary struct {
 	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
 }
 
+type IssuedBeforePreviewSummary struct {
+	IssuedBefore   time.Time       `json:"issued_before"`
+	StaleCount     int             `json:"stale_count"`
+	StaleLogins    []string        `json:"stale_logins"`
+	StaleLoginKeys []uint32        `json:"stale_login_keys"`
+	Current        SnapshotSummary `json:"current"`
+}
+
 type IssuedBeforeCleanupSummary struct {
 	IssuedBefore     time.Time       `json:"issued_before"`
 	RemovedCount     int             `json:"removed_count"`
@@ -195,6 +203,10 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	if err != nil {
 		return SnapshotSummary{}, err
 	}
+	return summarizeTickets(tickets, crashTempFiles), nil
+}
+
+func summarizeTickets(tickets []Ticket, crashTempFiles []string) SnapshotSummary {
 	summary := SnapshotSummary{
 		TicketCount:    len(tickets),
 		Logins:         make([]string, 0, len(tickets)),
@@ -206,7 +218,7 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 		summary.Logins = append(summary.Logins, ticket.Login)
 		summary.LoginKeys = append(summary.LoginKeys, ticket.LoginKey)
 	}
-	return summary, nil
+	return summary
 }
 
 func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
@@ -232,6 +244,38 @@ func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
 		return SnapshotSummary{}, fmt.Errorf("sync login ticket store dir after crash temp cleanup: %w", err)
 	}
 	return s.Validate()
+}
+
+func (s *FileStore) PreviewIssuedBefore(issuedBefore time.Time) (IssuedBeforePreviewSummary, error) {
+	if s.dir == "" {
+		return IssuedBeforePreviewSummary{}, ErrStoreDirRequired
+	}
+	if issuedBefore.IsZero() {
+		return IssuedBeforePreviewSummary{}, ErrIssuedBeforeRequired
+	}
+	tickets, err := s.List()
+	if err != nil {
+		return IssuedBeforePreviewSummary{}, err
+	}
+	crashTempFiles, err := s.crashTempFiles()
+	if err != nil {
+		return IssuedBeforePreviewSummary{}, err
+	}
+	summary := IssuedBeforePreviewSummary{
+		IssuedBefore:   issuedBefore,
+		StaleLogins:    []string{},
+		StaleLoginKeys: []uint32{},
+		Current:        summarizeTickets(tickets, crashTempFiles),
+	}
+	for _, ticket := range tickets {
+		if !ticket.IssuedAt.Before(issuedBefore) {
+			continue
+		}
+		summary.StaleLogins = append(summary.StaleLogins, ticket.Login)
+		summary.StaleLoginKeys = append(summary.StaleLoginKeys, ticket.LoginKey)
+	}
+	summary.StaleCount = len(summary.StaleLoginKeys)
+	return summary, nil
 }
 
 func (s *FileStore) CleanupIssuedBefore(issuedBefore time.Time) (IssuedBeforeCleanupSummary, error) {

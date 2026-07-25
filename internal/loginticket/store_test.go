@@ -367,6 +367,87 @@ func TestFileStoreCleanupIssuedBeforeSyncsStoreDirectoryAfterDelete(t *testing.T
 	}
 }
 
+func TestFileStorePreviewIssuedBeforeReportsStaleTicketsWithoutDeleting(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	oldIssuedAt := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	cutoff := time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC)
+	newIssuedAt := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
+	tickets := []Ticket{
+		{Login: "old", LoginKey: 0x01000000, IssuedAt: oldIssuedAt},
+		{Login: "at-cutoff", LoginKey: 0x02000000, IssuedAt: cutoff},
+		{Login: "new", LoginKey: 0x03000000, IssuedAt: newIssuedAt},
+	}
+	for _, ticket := range tickets {
+		if err := store.Issue(ticket); err != nil {
+			t.Fatalf("issue ticket %s: %v", ticket.Login, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(store.dir, ".ticket-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp ticket: %v", err)
+	}
+
+	summary, err := store.PreviewIssuedBefore(cutoff)
+	if err != nil {
+		t.Fatalf("preview issued-before tickets: %v", err)
+	}
+	want := IssuedBeforePreviewSummary{
+		IssuedBefore:   cutoff,
+		StaleCount:     1,
+		StaleLogins:    []string{"old"},
+		StaleLoginKeys: []uint32{0x01000000},
+		Current: SnapshotSummary{
+			TicketCount:    3,
+			Logins:         []string{"at-cutoff", "new", "old"},
+			LoginKeys:      []uint32{0x02000000, 0x03000000, 0x01000000},
+			CrashTempCount: 1,
+			CrashTempFiles: []string{".ticket-crashed.json"},
+		},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected issued-before preview summary: got %#v want %#v", summary, want)
+	}
+	if _, err := store.Load("old", 0x01000000); err != nil {
+		t.Fatalf("expected old ticket to remain after preview: %v", err)
+	}
+	if _, err := store.Load("new", 0x03000000); err != nil {
+		t.Fatalf("expected new ticket to remain after preview: %v", err)
+	}
+}
+
+func TestFileStorePreviewIssuedBeforeFailsClosedOnCorruptCommittedTicket(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	oldIssuedAt := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	if err := store.Issue(Ticket{Login: "old", LoginKey: 0x01000000, IssuedAt: oldIssuedAt}); err != nil {
+		t.Fatalf("issue old ticket: %v", err)
+	}
+	if err := os.WriteFile(store.ticketPath(0x02000000), []byte(`{"login":"bad","login_key":33554432,"issued_at":"2026-04-17T10:00:00Z","characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt ticket: %v", err)
+	}
+
+	_, err := store.PreviewIssuedBefore(time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC))
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket before stale preview, got %v", err)
+	}
+	if _, err := store.Load("old", 0x01000000); err != nil {
+		t.Fatalf("expected old ticket to remain when preview fails closed: %v", err)
+	}
+}
+
+func TestFileStorePreviewIssuedBeforeRejectsZeroCutoff(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+
+	_, err := store.PreviewIssuedBefore(time.Time{})
+	if !errors.Is(err, ErrIssuedBeforeRequired) {
+		t.Fatalf("expected ErrIssuedBeforeRequired for zero cutoff, got %v", err)
+	}
+	if _, err := store.Load("mkmk", 0x01020304); err != nil {
+		t.Fatalf("expected ticket to remain after rejected preview: %v", err)
+	}
+}
+
 func TestFileStoreValidateFailsClosedOnCorruptTicket(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	if err := os.WriteFile(store.ticketPath(0x01020304), []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[`), 0o644); err != nil {

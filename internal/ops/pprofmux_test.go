@@ -805,6 +805,132 @@ func TestLocalLoginTicketStoreCrashTempCleanupEndpointReportsCleanupFailure(t *t
 	}
 }
 
+func TestLocalLoginTicketStoreIssuedBeforePreviewEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
+	previewer := &stubLoginTicketStoreIssuedBeforePreviewer{summary: map[string]any{"stale_count": 1, "stale_logins": []string{"old"}, "stale_login_keys": []uint32{0x01000000}, "current": map[string]any{"ticket_count": 2, "logins": []string{"new", "old"}, "login_keys": []uint32{0x02000000, 0x01000000}}}}
+	mux := RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewIssuedBefore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/issued-before/preview", strings.NewReader(`{"issued_before":"2026-04-17T11:00:00Z"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected previewer to be called once, got %d", previewer.calls)
+	}
+	wantCutoff := time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC)
+	if !previewer.issuedBefore.Equal(wantCutoff) {
+		t.Fatalf("unexpected issued-before cutoff: got %s want %s", previewer.issuedBefore, wantCutoff)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"stale_count":1`, `"stale_logins":["old"]`, `"stale_login_keys":[16777216]`, `"ticket_count":2`, `"logins":["new","old"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalLoginTicketStoreIssuedBeforePreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubLoginTicketStoreIssuedBeforePreviewer{summary: map[string]any{"stale_count": 1}}
+	mux := RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewIssuedBefore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/issued-before/preview", strings.NewReader(`{"issued_before":"2026-04-17T11:00:00Z"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected previewer not to be called, got %d", previewer.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreIssuedBeforePreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubLoginTicketStoreIssuedBeforePreviewer{summary: map[string]any{"stale_count": 1}}
+	mux := RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewIssuedBefore)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/login-tickets/issued-before/preview", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected previewer not to be called, got %d", previewer.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreIssuedBeforePreviewEndpointRejectsInvalidBody(t *testing.T) {
+	previewer := &stubLoginTicketStoreIssuedBeforePreviewer{summary: map[string]any{"stale_count": 1}}
+	mux := RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewIssuedBefore)
+
+	for _, body := range []string{``, `{"issued_before":""}`, `{"issued_before":"not-time"}`, `{"issued_before":"2026-04-17T11:00:00Z","extra":true}`, `{"issued_before":"2026-04-17T11:00:00Z"} {}`} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/issued-before/preview", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+			}
+		})
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected previewer not to be called, got %d", previewer.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreIssuedBeforePreviewEndpointRejectsOversizedBody(t *testing.T) {
+	previewer := &stubLoginTicketStoreIssuedBeforePreviewer{summary: map[string]any{"stale_count": 1}}
+	mux := RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewIssuedBefore)
+	body := `{"issued_before":"` + strings.Repeat("a", 4097) + `"}`
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/issued-before/preview", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected previewer not to be called, got %d", previewer.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreIssuedBeforePreviewEndpointReportsPreviewFailure(t *testing.T) {
+	previewer := &stubLoginTicketStoreIssuedBeforePreviewer{err: errStubLoginTicketStoreInvalid}
+	mux := RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewIssuedBefore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/issued-before/preview", strings.NewReader(`{"issued_before":"2026-04-17T11:00:00Z"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected previewer to be called once, got %d", previewer.calls)
+	}
+}
+
 func TestLocalLoginTicketStoreIssuedBeforeCleanupEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
 	cleaner := &stubLoginTicketStoreIssuedBeforeCleaner{summary: map[string]any{"removed_count": 1, "removed_logins": []string{"old"}, "removed_login_keys": []uint32{0x01000000}, "remaining": map[string]any{"ticket_count": 1, "logins": []string{"new"}, "login_keys": []uint32{0x02000000}}}}
 	mux := RegisterLocalLoginTicketStoreIssuedBeforeCleanupEndpoint(NewPprofMux("gamed"), cleaner.CleanupIssuedBefore)
@@ -1608,6 +1734,19 @@ type stubLoginTicketStoreCrashTempCleaner struct {
 
 func (s *stubLoginTicketStoreCrashTempCleaner) Cleanup() (any, error) {
 	s.calls++
+	return s.summary, s.err
+}
+
+type stubLoginTicketStoreIssuedBeforePreviewer struct {
+	summary      any
+	err          error
+	calls        int
+	issuedBefore time.Time
+}
+
+func (s *stubLoginTicketStoreIssuedBeforePreviewer) PreviewIssuedBefore(issuedBefore time.Time) (any, error) {
+	s.calls++
+	s.issuedBefore = issuedBefore
 	return s.summary, s.err
 }
 

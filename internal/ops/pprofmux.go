@@ -225,6 +225,36 @@ func RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(mux *http.ServeMux, c
 	return mux
 }
 
+func RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(mux *http.ServeMux, preview func(time.Time) (any, error)) *http.ServeMux {
+	if mux == nil || preview == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/login-tickets/issued-before/preview", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		issuedBefore, status, ok := decodeLocalLoginTicketStoreIssuedBeforeCleanupRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := preview(issuedBefore)
+		if err != nil {
+			slog.Warn("local login ticket store issued-before preview failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalLoginTicketStoreIssuedBeforeCleanupEndpoint(mux *http.ServeMux, cleanup func(time.Time) (any, error)) *http.ServeMux {
 	if mux == nil || cleanup == nil {
 		return mux
