@@ -201,12 +201,13 @@ The ownership rule is equally important:
 ## First target-relative normal-attack cadence window
 
 The next owned timing rule is still intentionally tiny:
-- the bootstrap runtime now owns one fixed `250ms` cadence window for repeated normal `ATTACK` attempts against the same active selected target snapshot
-- the first accepted normal hit on that live selected snapshot starts the server-owned window
+- the bootstrap runtime now owns one fixed `250ms` cadence window after each accepted normal `ATTACK`
+- the first accepted normal hit on a live selected snapshot starts the server-owned window
 - another same-target normal `ATTACK` that arrives before the `250ms` window expires fails closed with no combat-visible frames, no extra HP mutation, no extra immediate retaliation, and no extra delayed retaliation scheduling side effect
 - once the `250ms` window expires, the next same-target normal `ATTACK` can be accepted again if the rest of the current target/visibility/range/dead-state checks still pass
 - the window is measured from server-owned runtime time (`runtime.now` in tests, wall-clock time otherwise), not from client animation or any client-supplied timestamp
 - clearing the active selected target resets this first owned cadence window, but replacing it through an accepted retarget does **not** reset the timer: an accepted hit against one target still suppresses immediate normal attacks against a newly selected second target until the same `250ms` window expires
+- this retarget-preserved window is covered directly in the minimal runtime regression suite so future target-selection changes cannot accidentally turn accepted retargets into an attack-speed bypass
 
 ## Failure semantics
 

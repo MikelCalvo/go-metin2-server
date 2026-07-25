@@ -3555,6 +3555,100 @@ func TestNewGameSessionFactoryNormalAttackCadenceRejectsImmediateRepeatWithoutMu
 	}
 }
 
+func TestNewGameSessionFactoryNormalAttackCadenceSurvivesAcceptedRetarget(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("RetargetCadence", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "retarget-cadence", 0x11111111, attacker)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000503, 0)
+	runtime.now = func() time.Time { return currentTime }
+	firstActor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "FirstCadenceDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected first cadence dummy registration to succeed")
+	}
+	secondActor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "SecondCadenceDummy", bootstrapMapIndex, 1250, 2250, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected second cadence dummy registration to succeed")
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "retarget-cadence", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for attacker with two visible training dummies, got %d", len(enterOut))
+	}
+	firstVID := uint32(firstActor.EntityID)
+	secondVID := uint32(secondActor.EntityID)
+	if firstVID == secondVID {
+		t.Fatalf("expected distinct cadence dummy VIDs, got %d", firstVID)
+	}
+
+	firstSelect, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstVID})))
+	if err != nil {
+		t.Fatalf("unexpected first target-selection error before retarget cadence test: %v", err)
+	}
+	if len(firstSelect) != 1 {
+		t.Fatalf("expected first target selection to return one frame before retarget cadence test, got %d", len(firstSelect))
+	}
+
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: firstVID})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before retarget cadence test: %v", err)
+	}
+	if len(firstAttack) != 2 {
+		t.Fatalf("expected first accepted attack to return target refresh plus damage-info, got %d", len(firstAttack))
+	}
+	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstAttack[0]))
+	if err != nil {
+		t.Fatalf("decode first retarget-cadence refresh: %v", err)
+	}
+	if firstRefresh.TargetVID != firstVID || firstRefresh.HPPercent != 90 {
+		t.Fatalf("expected first cadence hit to move first target to 90%% HP, got %+v", firstRefresh)
+	}
+
+	secondSelect, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: secondVID})))
+	if err != nil {
+		t.Fatalf("unexpected second target-selection error during retarget cadence window: %v", err)
+	}
+	if len(secondSelect) != 1 {
+		t.Fatalf("expected accepted retarget during cadence window to return one target frame, got %d", len(secondSelect))
+	}
+	secondTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, secondSelect[0]))
+	if err != nil {
+		t.Fatalf("decode second retarget-cadence target frame: %v", err)
+	}
+	if secondTarget.TargetVID != secondVID || secondTarget.HPPercent != 100 {
+		t.Fatalf("expected accepted retarget to bind the second full-HP dummy, got %+v", secondTarget)
+	}
+
+	immediateSecondAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: secondVID})))
+	if err != nil {
+		t.Fatalf("unexpected immediate second-target attack dispatch error inside cadence window: %v", err)
+	}
+	if len(immediateSecondAttack) != 0 {
+		t.Fatalf("expected accepted retarget not to reset normal-attack cadence; got %d immediate second-target frames", len(immediateSecondAttack))
+	}
+
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	acceptedSecondAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: secondVID})))
+	if err != nil {
+		t.Fatalf("unexpected second-target attack error after cadence window: %v", err)
+	}
+	if len(acceptedSecondAttack) != 2 {
+		t.Fatalf("expected second-target attack after cadence window to return target refresh plus damage-info, got %d", len(acceptedSecondAttack))
+	}
+	acceptedSecondRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, acceptedSecondAttack[0]))
+	if err != nil {
+		t.Fatalf("decode accepted second-target cadence refresh: %v", err)
+	}
+	if acceptedSecondRefresh.TargetVID != secondVID || acceptedSecondRefresh.HPPercent != 90 {
+		t.Fatalf("expected second target to move to 90%% HP after cadence window, got %+v", acceptedSecondRefresh)
+	}
+}
+
 func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliationUntilRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	attacker := peerVisibilityCharacter("Attacker", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
