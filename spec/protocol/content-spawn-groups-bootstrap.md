@@ -242,6 +242,7 @@ Current runtime rules:
 - when a successful import replaces a previously visible static actor, the runtime first enqueues the old actor's `CHARACTER_DEL` and then enqueues newly imported actor bootstrap bursts to sessions that currently share those actors' visible world/AOI
 - sessions outside the configured visibility policy do not receive the imported spawn actor until a later enter-game or AOI/transfer visibility rebuild makes it visible
 - before mutating the runtime replacement set, import must be able to export the current canonical content bundle used for rollback; if that preflight export fails after a bundle temporarily registered process-local combat profiles, those imported profiles are rolled back before the error is reported
+- bundle canonicalization now rejects a portable `combat_profiles` snapshot when its `profile` name already resolves to a registered process-local profile with different canonical defaults; matching snapshots remain idempotent, but conflicting snapshots fail closed before runtime import can mutate content or profile state
 - if static-actor persistence fails after interaction definitions have already been replaced, import fails closed and restores the previously exported content bundle before reporting failure; online sessions do not receive staged delete/add visibility frames for content that failed to commit
 - the operator endpoint remains loopback-only bootstrap tooling; it is not a gameplay packet or public API
 

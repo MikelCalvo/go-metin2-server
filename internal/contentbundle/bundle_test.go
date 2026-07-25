@@ -1312,6 +1312,92 @@ func TestCanonicalizeRejectsDuplicateCombatProfileSnapshots(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsConflictingRegisteredCombatProfileSnapshot(t *testing.T) {
+	const profile = "practice_content_conflict_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		AttackValue:           7,
+		DefenseValue:          4,
+		RespawnDelay:          1500 * time.Millisecond,
+	}) {
+		t.Fatalf("expected local combat profile %q to register", profile)
+	}
+
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.content_conflict_wolf",
+			Name:          "Content Conflict Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 30,
+			DamagePerNormalAttack: 3,
+			AttackValue:           7,
+			DefenseValue:          4,
+			RespawnDelayMs:        1500,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for conflicting registered combat profile snapshot, got %v", err)
+	}
+	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok || defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 3 {
+		t.Fatalf("expected existing registered profile defaults to remain unchanged, got defaults=%+v ok=%v", defaults, ok)
+	}
+}
+
+func TestCanonicalizeAcceptsMatchingRegisteredCombatProfileSnapshot(t *testing.T) {
+	const profile = "practice_content_matching_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		AttackValue:           7,
+		DefenseValue:          4,
+		Level:                 9,
+		Rank:                  2,
+		RespawnDelay:          1500 * time.Millisecond,
+		DeathReward:           worldruntime.StaticActorDeathReward{Experience: 25, Gold: 11},
+	}) {
+		t.Fatalf("expected local combat profile %q to register", profile)
+	}
+
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.content_matching_wolf",
+			Name:          "Content Matching Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 3,
+			AttackValue:           7,
+			DefenseValue:          4,
+			Level:                 9,
+			Rank:                  2,
+			RespawnDelayMs:        1500,
+			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 25, Gold: 11},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("expected matching registered combat profile snapshot to canonicalize, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsInvalidCombatProfileSnapshot(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		SpawnGroups:    []SpawnGroup{{Ref: "practice.imported_wolf", Name: "Imported Wolf", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 101, CombatProfile: "practice_imported_wolf"}},

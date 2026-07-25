@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
@@ -332,6 +333,33 @@ func TestLocalContentBundleValidateEndpointRejectsInvalidBundle(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d for invalid bundle, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestLocalContentBundleValidateEndpointRejectsConflictingRegisteredCombatProfileSnapshot(t *testing.T) {
+	const profile = "practice_ops_conflict_wolf"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		AttackValue:           7,
+		DefenseValue:          4,
+		RespawnDelay:          1500 * time.Millisecond,
+	}) {
+		t.Fatalf("expected local combat profile %q to register", profile)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	body := `{"spawn_groups":[{"ref":"practice.ops_conflict_wolf","name":"Ops Conflict Wolf","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_ops_conflict_wolf"}],"combat_profiles":[{"profile":"practice_ops_conflict_wolf","max_hp":30,"damage_per_normal_attack":3,"attack_value":7,"defense_value":4,"respawn_delay_ms":1500}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for conflicting registered combat profile snapshot, got %d", http.StatusBadRequest, rec.Code)
 	}
 }
 

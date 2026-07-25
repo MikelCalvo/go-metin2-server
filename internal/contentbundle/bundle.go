@@ -3,8 +3,10 @@ package contentbundle
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
@@ -724,6 +726,9 @@ func validateBundle(bundle Bundle) error {
 			return ErrInvalidBundle
 		}
 		name := strings.TrimSpace(profile.Profile)
+		if existing, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(name); ok && !combatProfileSnapshotMatchesDefaults(profile, existing) {
+			return ErrInvalidBundle
+		}
 		if _, referenced := referencedProfiles[name]; !referenced {
 			return ErrInvalidBundle
 		}
@@ -859,6 +864,42 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 		}
 	}
 	return worldruntime.ValidStaticActorDeathReward(profile.DeathReward)
+}
+
+func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot, defaults worldruntime.StaticActorCombatProfileDefaults) bool {
+	candidateDefaults, ok := combatProfileSnapshotDefaults(snapshot)
+	return ok &&
+		candidateDefaults.MaxHP == defaults.MaxHP &&
+		candidateDefaults.DamagePerNormalAttack == defaults.DamagePerNormalAttack &&
+		candidateDefaults.AttackValue == defaults.AttackValue &&
+		candidateDefaults.DefenseValue == defaults.DefenseValue &&
+		candidateDefaults.Level == defaults.Level &&
+		candidateDefaults.Rank == defaults.Rank &&
+		candidateDefaults.RespawnDelay == defaults.RespawnDelay &&
+		reflect.DeepEqual(candidateDefaults.DeathReward.Clone(), defaults.DeathReward.Clone())
+}
+
+func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot) (worldruntime.StaticActorCombatProfileDefaults, bool) {
+	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || snapshot.RespawnDelayMs <= 0 {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	defaults := worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 snapshot.MaxHP,
+		DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
+		AttackValue:           snapshot.AttackValue,
+		DefenseValue:          snapshot.DefenseValue,
+		Level:                 snapshot.Level,
+		Rank:                  snapshot.Rank,
+		RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
+		DeathReward:           snapshot.DeathReward.Clone(),
+	}
+	if defaults.DamagePerNormalAttack == 0 {
+		defaults.DamagePerNormalAttack = combatProfileSnapshotFormulaDamage(snapshot)
+	}
+	if defaults.Level == 0 {
+		defaults.Level = worldruntime.TrainingDummyBootstrapLevel
+	}
+	return defaults, true
 }
 
 func combatProfileSnapshotFormulaDamage(profile worldruntime.StaticActorCombatProfileSnapshot) uint8 {
