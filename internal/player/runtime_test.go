@@ -1081,7 +1081,7 @@ func TestRuntimeUseItemOnItemRejectsTemplateTransferGuardsWithoutMutation(t *tes
 		},
 		{
 			name:     "equippable template",
-			template: itemcatalog.Template{Vnum: 27001, Name: "Equippable Stack", Stackable: true, MaxCount: 200, EquipSlot: inventory.EquipmentSlotBody.String()},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Equippable Stack", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()},
 		},
 		{
 			name:     "anti-stack template",

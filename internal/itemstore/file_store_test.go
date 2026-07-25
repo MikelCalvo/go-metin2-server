@@ -763,6 +763,16 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(equipWithUseEffect); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for equipment template with use_effect, got %v", err)
 	}
+	stackableEquipment := Snapshot{Templates: []Template{{
+		Vnum:      11201,
+		Name:      "Stackable Weapon Token",
+		Stackable: true,
+		MaxCount:  200,
+		EquipSlot: inventory.EquipmentSlotWeapon.String(),
+	}}}
+	if err := store.Save(stackableEquipment); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for stackable equipment template, got %v", err)
+	}
 	duplicate := Snapshot{Templates: []Template{
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
 		{Vnum: 27001, Name: "Duplicate Potion", Stackable: true, MaxCount: 200},

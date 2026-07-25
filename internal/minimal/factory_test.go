@@ -463,6 +463,31 @@ func TestGameRuntimeValidateItemTemplateStoreDryRunsAuthoredTemplateState(t *tes
 	}
 }
 
+func TestGameRuntimeRejectsStackableEquipmentItemTemplateSnapshot(t *testing.T) {
+	itemDir := t.TempDir()
+	itemPath := filepath.Join(itemDir, "item-templates.json")
+	if err := os.WriteFile(itemPath, []byte(`{
+  "templates": [
+    {
+      "vnum": 11201,
+      "name": "Stackable Weapon Token",
+      "stackable": true,
+      "max_count": 200,
+      "equip_slot": "weapon"
+    }
+  ]
+}
+`), 0o644); err != nil {
+		t.Fatalf("write stackable equipment item-template snapshot: %v", err)
+	}
+	items := itemcatalog.NewFileStore(itemPath)
+
+	_, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, items, nil)
+	if !errors.Is(err, itemcatalog.ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for stackable equipment item-template runtime boot, got %v", err)
+	}
+}
+
 func TestGameRuntimeCleanupItemTemplateStoreCrashTempFilesRemovesResidueAfterValidation(t *testing.T) {
 	itemDir := t.TempDir()
 	itemPath := filepath.Join(itemDir, "item-templates.json")

@@ -338,6 +338,7 @@ Expected result:
 
 - [ ] Put a known template-backed equipment item in a carried inventory cell
 - [ ] Confirm the template's authored `equip_slot` matches the destination equipment cell, has no selected-character job/sex anti-flag, and is not guarded with `anti_stack`, `anti_drop`, `anti_give`, or `anti_sell`; include one `hair` item when validating appearance projection
+- [ ] Confirm authored equipment templates used for QA are non-stackable (`stackable = false`, `max_count = 1`); a fixture that combines `stackable = true` with `equip_slot` should fail item-template validation/runtime boot before gameplay testing starts
 - [ ] Drag the carried item into its matching equipment cell
 - [ ] Repeat with the same item shape but a selected-character job/sex anti-flag that should reject the character
 - [ ] Repeat with authored metadata whose `equip_slot` or `vnum` does not match the carried item/destination cell

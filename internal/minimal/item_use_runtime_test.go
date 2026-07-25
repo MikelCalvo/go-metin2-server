@@ -557,10 +557,10 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 		{
 			name: "equippable template",
 			inventory: []inventory.ItemInstance{
-				{ID: 201, Vnum: 27001, Count: 2, Slot: 5},
-				{ID: 202, Vnum: 27001, Count: 3, Slot: 6},
+				{ID: 201, Vnum: 27001, Count: 1, Slot: 5},
+				{ID: 202, Vnum: 27001, Count: 1, Slot: 6},
 			},
-			template: itemcatalog.Template{Vnum: 27001, Name: "Equippable Stack", Stackable: true, MaxCount: 200, EquipSlot: inventory.EquipmentSlotBody.String()},
+			template: itemcatalog.Template{Vnum: 27001, Name: "Equippable Stack", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()},
 		},
 		{
 			name: "anti-stack template",

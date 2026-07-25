@@ -354,6 +354,9 @@ func validTemplate(template Template) bool {
 	if template.EquipSlot == "" {
 		return template.EquipEffect == nil && validUseEffect(template.UseEffect, template)
 	}
+	if template.Stackable {
+		return false
+	}
 	_, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
 	return ok && template.UseEffect == nil && validPointEffect(template.EquipEffect)
 }
