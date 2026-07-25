@@ -1,6 +1,11 @@
 package config
 
-import "testing"
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestLoadServiceUsesDefaultsWhenEnvIsMissing(t *testing.T) {
 	t.Setenv("METIN2_PPROF_ADDR", "")
@@ -112,6 +117,148 @@ func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testi
 	}
 	if cfg.ItemTemplateStorePath != "/service/item-templates.json" {
 		t.Fatalf("expected service-specific item template store path, got %q", cfg.ItemTemplateStorePath)
+	}
+}
+
+func TestValidatePersistenceConfigAcceptsDistinctExplicitPaths(t *testing.T) {
+	root := t.TempDir()
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "content", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "content", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "content", "item-templates.json"),
+	}
+
+	if err := ValidatePersistenceConfig(cfg); err != nil {
+		t.Fatalf("expected distinct persistence paths to validate, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsMissingCriticalStorePath(t *testing.T) {
+	root := t.TempDir()
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       "   ",
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathRequired) {
+		t.Fatalf("expected ErrPersistencePathRequired, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsDirectoryStoresThatOverlap(t *testing.T) {
+	root := t.TempDir()
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "state"),
+		AccountStoreDir:       filepath.Join(root, "state"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap for same account/ticket dirs, got %v", err)
+	}
+}
+
+func TestValidateHandoffPersistenceConfigRejectsDirectoryStoresThatOverlap(t *testing.T) {
+	root := t.TempDir()
+	cfg := Service{
+		Name:                "authd",
+		LoginTicketStoreDir: filepath.Join(root, "state"),
+		AccountStoreDir:     filepath.Join(root, "state"),
+	}
+
+	err := ValidateHandoffPersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap for same account/ticket dirs, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsFileStoreInsideDirectoryStore(t *testing.T) {
+	root := t.TempDir()
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "accounts", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap for file store inside account dir, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsFileStoresThatSharePath(t *testing.T) {
+	root := t.TempDir()
+	sharedPath := filepath.Join(root, "content.json")
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  sharedPath,
+		InteractionStorePath:  sharedPath,
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap for shared file paths, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsFileStorePathAtDirectoryStore(t *testing.T) {
+	root := t.TempDir()
+	dirPath := filepath.Join(root, "accounts")
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       dirPath,
+		StaticActorStorePath:  dirPath,
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap for file path equal to account dir, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsSymlinkResolvedFileStoreInsideDirectoryStore(t *testing.T) {
+	root := t.TempDir()
+	accountsDir := filepath.Join(root, "accounts")
+	linkPath := filepath.Join(root, "static-actors-link.json")
+	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
+		t.Fatalf("create accounts dir: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(accountsDir, "static-actors.json"), linkPath); err != nil {
+		t.Fatalf("create static actor symlink: %v", err)
+	}
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       accountsDir,
+		StaticActorStorePath:  linkPath,
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap for symlinked file store inside account dir, got %v", err)
 	}
 }
 

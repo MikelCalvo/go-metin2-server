@@ -1021,6 +1021,18 @@ func NewAuthSessionFactoryWithConfig(cfg config.Service) service.SessionFactory 
 	)
 }
 
+func NewAuthSessionFactoryWithValidatedConfig(cfg config.Service) (service.SessionFactory, error) {
+	cfg = servicePersistenceConfigWithDefaults(cfg)
+	if err := config.ValidateHandoffPersistenceConfig(cfg); err != nil {
+		return nil, err
+	}
+	return newAuthSessionFactoryWithAccountStore(
+		loginticket.NewFileStore(cfg.LoginTicketStoreDir),
+		accountstore.NewFileStore(cfg.AccountStoreDir),
+		randomLoginKey,
+	), nil
+}
+
 func newAuthSessionFactory(store loginticket.Store, generateLoginKey loginKeyGenerator) service.SessionFactory {
 	return newAuthSessionFactoryWithAccountStore(store, nil, generateLoginKey)
 }
@@ -1144,6 +1156,10 @@ func newGameRuntimeWithStoresAndTransferTriggers(cfg config.Service, store login
 }
 
 func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, items itemcatalog.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
+	if err := validateRuntimePersistenceConfig(cfg); err != nil {
+		return nil, err
+	}
+
 	advertisedPort, err := parsePort(cfg.LegacyAddr)
 	if err != nil {
 		return nil, err
@@ -6197,6 +6213,19 @@ func serviceLoginTicketStoreDir(cfg config.Service) string {
 		return dir
 	}
 	return defaultTicketStoreDir()
+}
+
+func servicePersistenceConfigWithDefaults(cfg config.Service) config.Service {
+	cfg.LoginTicketStoreDir = serviceLoginTicketStoreDir(cfg)
+	cfg.AccountStoreDir = serviceAccountStoreDir(cfg)
+	cfg.StaticActorStorePath = serviceStaticActorStorePath(cfg)
+	cfg.InteractionStorePath = serviceInteractionStorePath(cfg)
+	cfg.ItemTemplateStorePath = serviceItemTemplateStorePath(cfg)
+	return cfg
+}
+
+func validateRuntimePersistenceConfig(cfg config.Service) error {
+	return config.ValidatePersistenceConfig(servicePersistenceConfigWithDefaults(cfg))
 }
 
 func defaultAccountStoreDir() string {

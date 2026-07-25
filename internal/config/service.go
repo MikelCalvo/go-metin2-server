@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +22,147 @@ type Service struct {
 	StaticActorStorePath  string
 	InteractionStorePath  string
 	ItemTemplateStorePath string
+}
+
+var (
+	ErrPersistencePathRequired = errors.New("persistence path is required")
+	ErrPersistencePathOverlap  = errors.New("persistence paths overlap")
+)
+
+type persistencePathRole string
+
+const (
+	persistencePathRoleDir  persistencePathRole = "dir"
+	persistencePathRoleFile persistencePathRole = "file"
+)
+
+type persistencePathSelection struct {
+	Name string
+	Role persistencePathRole
+	Path string
+}
+
+// ValidatePersistenceConfig fails closed when bootstrap JSON stores are missing
+// or configured to share the same filesystem boundary. Directory-backed stores
+// own their full subtree, while file-backed stores own only their exact file
+// path; any overlap is rejected before runtime code can validate, back up,
+// restore, or mutate the wrong store.
+func ValidatePersistenceConfig(cfg Service) error {
+	return validatePersistencePathSelections([]persistencePathSelection{
+		{Name: "login_ticket_store_dir", Role: persistencePathRoleDir, Path: cfg.LoginTicketStoreDir},
+		{Name: "account_store_dir", Role: persistencePathRoleDir, Path: cfg.AccountStoreDir},
+		{Name: "static_actor_store_path", Role: persistencePathRoleFile, Path: cfg.StaticActorStorePath},
+		{Name: "interaction_store_path", Role: persistencePathRoleFile, Path: cfg.InteractionStorePath},
+		{Name: "item_template_store_path", Role: persistencePathRoleFile, Path: cfg.ItemTemplateStorePath},
+	})
+}
+
+// ValidateHandoffPersistenceConfig applies the same fail-closed filesystem
+// overlap checks to the auth/login-ticket handoff stores used by authd.
+func ValidateHandoffPersistenceConfig(cfg Service) error {
+	return validatePersistencePathSelections([]persistencePathSelection{
+		{Name: "login_ticket_store_dir", Role: persistencePathRoleDir, Path: cfg.LoginTicketStoreDir},
+		{Name: "account_store_dir", Role: persistencePathRoleDir, Path: cfg.AccountStoreDir},
+	})
+}
+
+func validatePersistencePathSelections(paths []persistencePathSelection) error {
+	for i := range paths {
+		canonical, err := canonicalPersistencePath(paths[i])
+		if err != nil {
+			return err
+		}
+		paths[i].Path = canonical
+	}
+	for i := range paths {
+		for j := i + 1; j < len(paths); j++ {
+			if persistencePathsOverlap(paths[i], paths[j]) {
+				return fmt.Errorf("%w: %s %q overlaps %s %q", ErrPersistencePathOverlap, paths[i].Name, paths[i].Path, paths[j].Name, paths[j].Path)
+			}
+		}
+	}
+	return nil
+}
+
+func canonicalPersistencePath(selection persistencePathSelection) (string, error) {
+	trimmed := strings.TrimSpace(selection.Path)
+	if trimmed == "" {
+		return "", fmt.Errorf("%w: %s", ErrPersistencePathRequired, selection.Name)
+	}
+	abs, err := filepath.Abs(filepath.Clean(trimmed))
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", selection.Name, err)
+	}
+	resolved, err := resolvePersistencePath(abs)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s symlinks: %w", selection.Name, err)
+	}
+	return resolved, nil
+}
+
+func resolvePersistencePath(path string) (string, error) {
+	return resolvePersistencePathAt(path, 0)
+}
+
+func resolvePersistencePathAt(path string, depth int) (string, error) {
+	if depth > 255 {
+		return "", errors.New("too many symlinks while resolving persistence path")
+	}
+	path, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
+		return filepath.Abs(filepath.Clean(resolved))
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	info, lstatErr := os.Lstat(path)
+	if lstatErr == nil && info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(path)
+		if err != nil {
+			return "", err
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(path), target)
+		}
+		return resolvePersistencePathAt(target, depth+1)
+	}
+	if lstatErr != nil && !errors.Is(lstatErr, os.ErrNotExist) {
+		return "", lstatErr
+	}
+	parent := filepath.Dir(path)
+	if parent == path {
+		return path, nil
+	}
+	parentResolved, err := resolvePersistencePathAt(parent, depth+1)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(filepath.Clean(filepath.Join(parentResolved, filepath.Base(path))))
+}
+
+func persistencePathsOverlap(a, b persistencePathSelection) bool {
+	if a.Path == b.Path {
+		return true
+	}
+	if a.Role == persistencePathRoleDir && pathInsideDir(a.Path, b.Path) {
+		return true
+	}
+	if b.Role == persistencePathRoleDir && pathInsideDir(b.Path, a.Path) {
+		return true
+	}
+	return false
+}
+
+func pathInsideDir(root string, candidate string) bool {
+	rel, err := filepath.Rel(root, candidate)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
 
 func LoadService(name string, defaultPprofAddr string, defaultLegacyAddr string, defaultPublicAddr string) Service {

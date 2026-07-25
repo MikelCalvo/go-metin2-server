@@ -908,9 +908,9 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 		PublicAddr:            "127.0.0.1",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
 		AccountStoreDir:       filepath.Join(root, "accounts"),
-		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
-		InteractionStorePath:  filepath.Join(root, "interactions.json"),
-		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+		StaticActorStorePath:  filepath.Join(root, "content", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "content", "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "content", "item-templates.json"),
 	}
 
 	runtime, err := NewGameRuntime(cfg)
@@ -933,6 +933,40 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 	}
 	if snapshot.Persistence.ItemTemplateStorePath != cfg.ItemTemplateStorePath {
 		t.Fatalf("expected item template store path %q, got %q", cfg.ItemTemplateStorePath, snapshot.Persistence.ItemTemplateStorePath)
+	}
+}
+
+func TestNewGameRuntimeRejectsOverlappingPersistencePaths(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Service{
+		LegacyAddr:            ":13000",
+		PublicAddr:            "127.0.0.1",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "accounts", "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	_, err := NewGameRuntime(cfg)
+	if !errors.Is(err, config.ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap, got %v", err)
+	}
+}
+
+func TestNewAuthSessionFactoryWithValidatedConfigRejectsOverlappingPersistencePaths(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Service{
+		LoginTicketStoreDir:   filepath.Join(root, "state"),
+		AccountStoreDir:       filepath.Join(root, "state"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	_, err := NewAuthSessionFactoryWithValidatedConfig(cfg)
+	if !errors.Is(err, config.ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap, got %v", err)
 	}
 }
 
