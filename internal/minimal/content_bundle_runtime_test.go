@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
@@ -592,6 +593,70 @@ func TestGameRuntimeImportContentBundleMaterializesSpawnGroupsAsAttackablePracti
 	}
 	if len(persistedActors.StaticActors) != 1 || persistedActors.StaticActors[0].SpawnGroupRef != "practice.mob_alpha" || persistedActors.StaticActors[0].CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) || persistedActors.StaticActors[0].RewardExperience != 75 || persistedActors.StaticActors[0].RewardGold != 60 || !reflect.DeepEqual(persistedActors.StaticActors[0].RewardDropVnums, []uint32{27001}) {
 		t.Fatalf("unexpected persisted spawn-group actors after import: %#v", persistedActors)
+	}
+}
+
+func TestGameRuntimeExportContentBundleIncludesTemplatesReferencedOnlyByCombatProfileRewardDefaults(t *testing.T) {
+	const profile = "practice_runtime_reward_defaults"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 3,
+		RespawnDelay: 1500 * time.Millisecond,
+		DeathReward:  worldruntime.StaticActorDeathReward{Experience: 12, Gold: 7, DropVnums: []uint32{27001}},
+	}) {
+		t.Fatalf("expected custom reward-default profile %q to register", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save authored item templates: %v", err)
+	}
+	if err := runtime.loadItemTemplates(); err != nil {
+		t.Fatalf("reload authored item templates: %v", err)
+	}
+	if _, ok := runtime.registerStaticActorWithInteractionCombatProfileSpawnGroupRefAndReward("RewardDefaultMob", 42, 1785, 2885, 101, "", "", profile, "practice.reward_default_mob", worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected reward-default spawn actor registration to succeed")
+	}
+
+	bundle, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export content bundle with reward-default profile: %v", err)
+	}
+	want := contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.reward_default_mob",
+			Name:             "RewardDefaultMob",
+			MapIndex:         42,
+			X:                1785,
+			Y:                2885,
+			RaceNum:          101,
+			CombatProfile:    profile,
+			RewardExperience: 12,
+			RewardGold:       7,
+			RewardDropVnums:  []uint32{27001},
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			AttackValue:           8,
+			DefenseValue:          3,
+			Level:                 worldruntime.TrainingDummyBootstrapLevel,
+			RespawnDelayMs:        1500,
+			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 12, Gold: 7, DropVnums: []uint32{27001}},
+		}},
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+	}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected exported bundle with reward-default profile:\n got: %#v\nwant: %#v", bundle, want)
 	}
 }
 

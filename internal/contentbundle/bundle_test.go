@@ -686,6 +686,68 @@ func TestFromSnapshotsBuildsDeterministicPortableBundle(t *testing.T) {
 	}
 }
 
+func TestFromSnapshotsWithItemsKeepsTemplatesReferencedOnlyByCombatProfileRewardDefaults(t *testing.T) {
+	const profile = "practice_snapshot_reward_defaults"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        24,
+		AttackValue:  8,
+		DefenseValue: 3,
+		RespawnDelay: 1500 * time.Millisecond,
+		DeathReward:  worldruntime.StaticActorDeathReward{Experience: 12, Gold: 7, DropVnums: []uint32{27001}},
+	}) {
+		t.Fatalf("expected custom reward-default profile %q to register", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	bundle, err := FromSnapshotsWithItems(
+		staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{
+			EntityID:        5,
+			Name:            "RewardDefaultMob",
+			MapIndex:        42,
+			X:               1785,
+			Y:               2885,
+			RaceNum:         101,
+			CombatProfile:   profile,
+			SpawnGroupRef:   "practice.reward_default_mob",
+			RewardDropVnums: nil,
+		}}},
+		interactionstore.Snapshot{},
+		itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}},
+	)
+	if err != nil {
+		t.Fatalf("from snapshots with combat-profile-default reward drop: %v", err)
+	}
+	want := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.reward_default_mob",
+			Name:             "RewardDefaultMob",
+			MapIndex:         42,
+			X:                1785,
+			Y:                2885,
+			RaceNum:          101,
+			CombatProfile:    profile,
+			RewardExperience: 12,
+			RewardGold:       7,
+			RewardDropVnums:  []uint32{27001},
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 5,
+			AttackValue:           8,
+			DefenseValue:          3,
+			Level:                 worldruntime.TrainingDummyBootstrapLevel,
+			RespawnDelayMs:        1500,
+			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 12, Gold: 7, DropVnums: []uint32{27001}},
+		}},
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+	}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected content bundle with combat-profile-default reward drop:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
 func TestCanonicalizeNormalizesStructuredShopPreviewCatalog(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
 		ItemTemplates: testMerchantItemTemplates(),
