@@ -181,7 +181,7 @@ Already present:
 - temporary ground handles,
 - ground-item visibility to peers in scope,
 - `ITEM_GROUND_ADD` encoding now uses the TMP4-compatible client-facing payload order `x/y/z/vid/vnum`,
-- pickup into inventory with stack-merge behavior,
+- pickup into inventory with stack-merge behavior and template-authored pickup-rejection info text for transfer/selected-character restriction failures,
 - first owner-delivery/notice shape for pickups,
 - merchant preview/catalog/open/close/buy/sell slices, including `GC::SHOP START` catalog entries backed by template-authored display sockets/attributes, refresh-only merchant-buy success bursts shared by packet `SHOP BUY` and the local `/shop_buy` debug harness, template-authored `anti_stack`, malformed carried-item, over-template-max, sell-credit carrier overflow, and resulting-gold carrier overflow fail-closed sell-back rejection, and partial-stack sell `ITEM_UPDATE` refreshes that preserve authored display sockets/attributes,
 - gold mutation for current merchant and reward cases.

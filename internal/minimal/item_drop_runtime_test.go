@@ -3148,6 +3148,141 @@ func TestGameRuntimeItemPickupRejectsTransferGuardSelfPickupWithoutMutation(t *t
 	}
 }
 
+func TestGameRuntimeItemPickupTransferGuardUsesTemplateRejectText(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickupRejectTextOwner", 0x010301ad, 0x020401ad, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1107, Vnum: 27007, Count: 2, Slot: 5}}
+	login := "pickup-reject-text-owner"
+	issuePeerTicket(t, ticketStore, login, 0xadadadad, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed pickup reject-text owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected pickup reject-text runtime error: %v", err)
+	}
+	runtime.itemTemplates[27007] = itemcatalog.Template{Vnum: 27007, Name: "Pickup Text Potion", Stackable: true, MaxCount: 200}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0xadadadad)
+	ground := dropAndDecodeGroundAdd(t, flow, itemproto.InventoryPosition(5))
+	runtime.itemTemplates[27007] = itemcatalog.Template{
+		Vnum:             27007,
+		Name:             "Pickup Text Potion",
+		Stackable:        true,
+		MaxCount:         200,
+		AntiGet:          true,
+		PickupRejectText: "The seal prevents picking up this item.",
+	}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 1 {
+		t.Fatalf("expected pickup reject-text guard to emit one info rejection, got %d frames", len(pickupOut))
+	}
+	rejection, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode pickup reject-text rejection: %v", err)
+	}
+	if rejection.Type != chatproto.ChatTypeInfo || rejection.VID != 0 || rejection.Message != "The seal prevents picking up this item." {
+		t.Fatalf("unexpected pickup reject-text rejection: %+v", rejection)
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected pickup reject-text rejection to leave ground handle %08x pending", ground.VID)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load pickup reject-text owner account: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected rejected pickup item to remain out of owner inventory, got %#v", account.Characters[0].Inventory)
+	}
+}
+
+func TestGameRuntimeItemPickupOwnerDeliveryUsesTemplateRejectText(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PickTextPartyOwner", 0x010301ae, 0x020401ae, 1300, 2300, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1108, Vnum: 27008, Count: 199, Slot: 5}}
+	collector := peerVisibilityCharacter("PickTextPartyColl", 0x010301af, 0x020401af, 1320, 2320, 0, 101, 201)
+	collector.Inventory = []inventory.ItemInstance{{ID: 2108, Vnum: 27008, Count: 1, Slot: 0}}
+	ownerLogin := "pick-text-party-owner"
+	collectorLogin := "pick-text-party-coll"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0xaeaeaeae, owner)
+	issuePeerTicket(t, ticketStore, collectorLogin, 0xafafafaf, collector)
+	for _, account := range []accountstore.Account{
+		{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+		{Login: collectorLogin, Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("seed %s account: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected owner-delivery reject-text runtime error: %v", err)
+	}
+	runtime.itemTemplates[27008] = itemcatalog.Template{Vnum: 27008, Name: "Owner Pickup Text Potion", Stackable: true, MaxCount: 200}
+	factory := runtime.SessionFactory()
+	ownerFlow, _ := enterGameWithLoginTicket(t, factory, ownerLogin, 0xaeaeaeae)
+	collectorFlow, _ := enterGameWithLoginTicket(t, factory, collectorLogin, 0xafafafaf)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, collectorFlow)
+
+	ground := dropAndDecodeGroundAdd(t, ownerFlow, itemproto.InventoryPosition(5))
+	runtime.itemTemplates[27008] = itemcatalog.Template{
+		Vnum:             27008,
+		Name:             "Owner Pickup Text Potion",
+		Stackable:        true,
+		MaxCount:         200,
+		AntiGive:         true,
+		PickupRejectText: "The owner seal rejects party pickup.",
+	}
+	flushServerFrames(t, collectorFlow)
+
+	pickupOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(pickupOut) != 1 {
+		t.Fatalf("expected owner-delivery reject-text pickup to emit one info rejection, got %d frames", len(pickupOut))
+	}
+	rejection, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode owner-delivery reject-text pickup rejection: %v", err)
+	}
+	if rejection.Type != chatproto.ChatTypeInfo || rejection.VID != 0 || rejection.Message != "The owner seal rejects party pickup." {
+		t.Fatalf("unexpected owner-delivery reject-text pickup rejection: %+v", rejection)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected rejected owner-delivery reject-text pickup to avoid owner frames, got %d", len(queued))
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected owner-delivery reject-text pickup to leave ground handle %08x pending", ground.VID)
+	}
+	ownerAccount, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load owner-delivery reject-text owner account: %v", err)
+	}
+	if len(ownerAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected rejected owner-delivery item to remain out of owner inventory, got %#v", ownerAccount.Characters[0].Inventory)
+	}
+	collectorAccount, err := accounts.Load(collectorLogin)
+	if err != nil {
+		t.Fatalf("load owner-delivery reject-text collector account: %v", err)
+	}
+	if !reflect.DeepEqual(collectorAccount.Characters[0].Inventory, collector.Inventory) {
+		t.Fatalf("expected rejected owner-delivery pickup to leave collector inventory unchanged, got %#v want %#v", collectorAccount.Characters[0].Inventory, collector.Inventory)
+	}
+}
+
+func TestItemPickupRejectTextUsesTemplateMetadataWithFallback(t *testing.T) {
+	if got := itemPickupRejectText(itemcatalog.Template{Vnum: 27007, Name: "Bound Pickup Potion", Stackable: true, MaxCount: 200, AntiGet: true}); got != itemPickupInventoryFullInfoMessage {
+		t.Fatalf("expected default pickup rejection message, got %q", got)
+	}
+	template := itemcatalog.Template{Vnum: 27007, Name: "Sealed Pickup Potion", Stackable: true, MaxCount: 200, AntiGet: true, PickupRejectText: "The seal prevents picking up this item."}
+	if got := itemPickupRejectText(template); got != template.PickupRejectText {
+		t.Fatalf("expected template-authored pickup rejection message %q, got %q", template.PickupRejectText, got)
+	}
+}
+
 func TestGameRuntimeItemPickupRejectsAntiGiveOwnerDeliveryWithoutCollectorMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

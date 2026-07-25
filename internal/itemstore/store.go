@@ -77,6 +77,7 @@ type Template struct {
 	UseEffect        *UseEffect      `json:"use_effect,omitempty"`
 	EquipEffect      *PointEffect    `json:"equip_effect,omitempty"`
 	DropRejectText   string          `json:"drop_reject_message,omitempty"`
+	PickupRejectText string          `json:"pickup_reject_message,omitempty"`
 }
 
 type SocketValues [ItemSocketCount]int32
@@ -133,6 +134,7 @@ type templateJSON struct {
 	UseEffect        *UseEffect       `json:"use_effect,omitempty"`
 	EquipEffect      *PointEffect     `json:"equip_effect,omitempty"`
 	DropRejectText   string           `json:"drop_reject_message,omitempty"`
+	PickupRejectText string           `json:"pickup_reject_message,omitempty"`
 }
 
 func (template Template) MarshalJSON() ([]byte, error) {
@@ -179,6 +181,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		UseEffect:        template.UseEffect,
 		EquipEffect:      template.EquipEffect,
 		DropRejectText:   template.DropRejectText,
+		PickupRejectText: template.PickupRejectText,
 	}
 	if template.Sockets != (SocketValues{}) {
 		jsonTemplate.Sockets = &template.Sockets
@@ -239,6 +242,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		UseEffect:        jsonTemplate.UseEffect,
 		EquipEffect:      jsonTemplate.EquipEffect,
 		DropRejectText:   jsonTemplate.DropRejectText,
+		PickupRejectText: jsonTemplate.PickupRejectText,
 	}
 	if jsonTemplate.Sockets != nil {
 		template.Sockets = *jsonTemplate.Sockets
@@ -307,6 +311,7 @@ func normalizeTemplate(template Template) Template {
 	template.Name = strings.TrimSpace(template.Name)
 	template.EquipSlot = normalizeEquipSlot(template.EquipSlot)
 	template.DropRejectText = strings.TrimSpace(template.DropRejectText)
+	template.PickupRejectText = strings.TrimSpace(template.PickupRejectText)
 	if template.UseEffect != nil {
 		effect := *template.UseEffect
 		effect.Message = strings.TrimSpace(effect.Message)
@@ -362,6 +367,9 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if !validTemplateMessage(template.DropRejectText) {
+		return false
+	}
+	if !validTemplateMessage(template.PickupRejectText) {
 		return false
 	}
 	if template.EquipSlot == "" {

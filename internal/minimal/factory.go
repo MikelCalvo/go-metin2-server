@@ -2375,7 +2375,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return nil, false
 						}
 						if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || !ownerRuntime.CanUseTemplate(template) {
-							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
+							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupRejectText(template)})}, true
 						}
 						if pickup.Item.Count > template.MaxCount {
 							return nil, false
@@ -2466,7 +2466,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						return nil, false
 					}
 					if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || !selectedPlayer.CanUseTemplate(template) {
-						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupInventoryFullInfoMessage})}, true
+						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupRejectText(template)})}, true
 					}
 					if pickup.Item.Count > template.MaxCount {
 						return nil, false
@@ -4539,6 +4539,13 @@ func itemDropRejectText(template itemcatalog.Template) string {
 		return template.DropRejectText
 	}
 	return itemDropRejectedInfoMessage
+}
+
+func itemPickupRejectText(template itemcatalog.Template) string {
+	if template.PickupRejectText != "" {
+		return template.PickupRejectText
+	}
+	return itemPickupInventoryFullInfoMessage
 }
 
 func merchantSellTemplateForSlot(templates map[uint32]itemcatalog.Template, selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {

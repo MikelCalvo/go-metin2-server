@@ -1098,6 +1098,65 @@ func TestFileStoreRejectsInvalidDropRejectTextMetadata(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesPickupRejectText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:             27010,
+		Name:             "Sealed Pickup Potion",
+		Stackable:        true,
+		MaxCount:         200,
+		AntiGet:          true,
+		PickupRejectText: "The seal prevents picking up this item.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with pickup reject message: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with pickup reject message: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with pickup reject message:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with pickup reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27010,\n      \"name\": \"Sealed Pickup Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_get\": true,\n      \"pickup_reject_message\": \"The seal prevents picking up this item.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with pickup reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreRejectsInvalidPickupRejectTextMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	invalid := Snapshot{Templates: []Template{{
+		Vnum:             27010,
+		Name:             "Broken Pickup Message Potion",
+		Stackable:        true,
+		MaxCount:         200,
+		AntiGet:          true,
+		PickupRejectText: "bad\x00message",
+	}}}
+
+	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL pickup reject message, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27010,"name":"Broken Pickup Message Potion","stackable":true,"max_count":200,"anti_get":true,"pickup_reject_message":"bad\u0000message"}]}`), 0o644); err != nil {
+		t.Fatalf("write invalid pickup reject message snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading NUL pickup reject message, got %v", err)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesDisplaySocketAndAttributeMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
