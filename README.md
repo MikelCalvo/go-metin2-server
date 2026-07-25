@@ -176,7 +176,7 @@ Status: `[~]` useful first vertical, not a real economy yet.
 
 Already present:
 
-- carried item drop and counted drop with template-authored transfer guards, including `anti_stack`,
+- carried item drop and counted drop with template-authored transfer guards, including `anti_stack`, plus fail-closed deterministic ground-`VID` collision guards before item or persistence mutation,
 - temporary ground handles,
 - ground-item visibility to peers in scope,
 - `ITEM_GROUND_ADD` encoding now uses the TMP4-compatible client-facing payload order `x/y/z/vid/vnum`,

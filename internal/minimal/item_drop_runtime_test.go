@@ -95,6 +95,86 @@ func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemDropGroundVIDCollisionFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	first := peerVisibilityCharacter("DropGroundCollisionOne", 0x010301aa, 0x020401aa, 1100, 2100, 0, 101, 201)
+	first.Inventory = []inventory.ItemInstance{{ID: 2001, Vnum: 27001, Count: 1, Slot: 5}}
+	second := peerVisibilityCharacter("DropGroundCollisionTwo", 0x010301ab, first.VID^uint32(6)^uint32(8), 1100, 2100, 0, 101, 201)
+	second.Inventory = []inventory.ItemInstance{{ID: 2002, Vnum: 27001, Count: 1, Slot: 7}}
+	issuePeerTicket(t, ticketStore, "drop-ground-collision-one", 0xaaaa0001, first)
+	issuePeerTicket(t, ticketStore, "drop-ground-collision-two", 0xaaaa0002, second)
+	if err := accounts.Save(accountstore.Account{Login: "drop-ground-collision-one", Empire: first.Empire, Characters: cloneCharacters([]loginticket.Character{first})}); err != nil {
+		t.Fatalf("seed first ground-collision account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "drop-ground-collision-two", Empire: second.Empire, Characters: cloneCharacters([]loginticket.Character{second})}); err != nil {
+		t.Fatalf("seed second ground-collision account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected ground-collision runtime error: %v", err)
+	}
+	flowFirst, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-ground-collision-one", 0xaaaa0001)
+	defer closeSessionFlow(t, flowFirst)
+	flowSecond, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-ground-collision-two", 0xaaaa0002)
+	defer closeSessionFlow(t, flowSecond)
+	if queued := flushServerFrames(t, flowFirst); len(queued) != 3 {
+		t.Fatalf("expected first collision session to receive second peer entry frames before drop attempts, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, flowSecond); len(queued) != 0 {
+		t.Fatalf("expected second collision session to start with no queued frames, got %d", len(queued))
+	}
+
+	firstOut, err := flowFirst.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected first ground-collision drop error: %v", err)
+	}
+	if len(firstOut) != 3 {
+		t.Fatalf("expected first drop to emit ITEM_DEL, GROUND_ADD, and OWNERSHIP, got %d", len(firstOut))
+	}
+	firstGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, firstOut[1]))
+	if err != nil {
+		t.Fatalf("decode first ground-collision ground add: %v", err)
+	}
+	if firstGround.VID != bootstrapGroundItemVID(first, 5) || firstGround.VID != bootstrapGroundItemVID(second, 7) {
+		t.Fatalf("test setup did not create a deterministic ground vid collision: first=%d second=%d ground=%d", bootstrapGroundItemVID(first, 5), bootstrapGroundItemVID(second, 7), firstGround.VID)
+	}
+	if queued := flushServerFrames(t, flowSecond); len(queued) != 2 {
+		t.Fatalf("expected second collision session to receive first ground visibility before collision attempt, got %d", len(queued))
+	}
+
+	secondOut, err := flowSecond.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(7)})))
+	if err != nil {
+		t.Fatalf("unexpected colliding ground drop error: %v", err)
+	}
+	if len(secondOut) != 0 {
+		t.Fatalf("expected colliding ground drop to fail closed with no frames, got %d", len(secondOut))
+	}
+	if queued := flushServerFrames(t, flowFirst); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames after colliding ground drop rejection, got %d", len(queued))
+	}
+
+	account, err := accounts.Load("drop-ground-collision-two")
+	if err != nil {
+		t.Fatalf("load second ground-collision account: %v", err)
+	}
+	if len(account.Characters) != 1 {
+		t.Fatalf("expected one second ground-collision character, got %+v", account)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, second.Inventory) {
+		t.Fatalf("colliding ground drop mutated persisted inventory: got %#v want %#v", account.Characters[0].Inventory, second.Inventory)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(second.Name)
+	if !ok {
+		t.Fatal("expected second ground-collision live inventory snapshot")
+	}
+	wantLiveInventory := []InventoryItemSnapshot{{ID: 2002, Vnum: 27001, Count: 1, Slot: 7}}
+	if !reflect.DeepEqual(inventorySnapshot.Inventory, wantLiveInventory) {
+		t.Fatalf("colliding ground drop mutated live inventory: got %#v want %#v", inventorySnapshot.Inventory, wantLiveInventory)
+	}
+}
+
 func TestGameRuntimeItemPickupDoesNotQueueDuplicateCollectorGroundDel(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

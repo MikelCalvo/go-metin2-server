@@ -1869,15 +1869,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if previousSelected.ID == 0 || uint64(amount) > selectedPlayer.LiveGold() || selectedPlayer.LiveGold() > uint64(math.MaxInt32) {
 				return nil, false
 			}
+			groundVID := bootstrapGroundItemVID(previousSelected, inventory.SlotIndex(amount%uint32(inventory.CarriedInventorySlotCount)))
+			if groundVID == 0 {
+				return nil, false
+			}
+			if ownsLiveSharedWorldSession() && !sharedWorld.CanRegisterGroundGold(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, amount) {
+				return nil, false
+			}
 			selectedPlayer.SetLiveGold(selectedPlayer.LiveGold() - uint64(amount))
 			updatedSelected := selectedPlayer.LiveCharacter()
 			if updatedSelected.Gold > uint64(math.MaxInt32) {
-				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-				refreshLiveCharacterRegistration()
-				return nil, false
-			}
-			groundVID := bootstrapGroundItemVID(previousSelected, inventory.SlotIndex(amount%uint32(inventory.CarriedInventorySlotCount)))
-			if groundVID == 0 {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
 				return nil, false
@@ -1936,6 +1937,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
+			groundVID := bootstrapGroundItemVID(previousSelected, result.From)
+			if groundVID == 0 || (ownsLiveSharedWorldSession() && !sharedWorld.CanRegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, droppedItem)) {
+				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+				refreshLiveCharacterRegistration()
+				return nil, false
+			}
 			frames, err := itemDropResultFramesWithTemplates(previousSelected, result, droppedItem, runtime.itemTemplates)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -1958,7 +1965,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			if ownsLiveSharedWorldSession() {
-				sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, bootstrapGroundItemVID(previousSelected, result.From), droppedItem)
+				sharedWorld.RegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, droppedItem)
 			}
 			return frames, true
 		}

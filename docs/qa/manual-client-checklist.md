@@ -505,6 +505,7 @@ Expected result:
 - client A can immediately use another normal item action against the delivered/updated carried slot, proving the live owner runtime was refreshed and not only the account file
 - if the dropped item's loaded template becomes `anti_give` or job/sex-restricted for client A before client B picks it up, client B sees the bootstrap inventory-full info rejection, neither inventory mutates, no owner notice is queued, and the ground handle remains available for a later valid retry
 - `anti_drop` / `anti_give` / `anti_sell` template-flagged items fail closed when dropped through the normal client inventory path, show the bootstrap "You cannot drop this item." info rejection, and leave carried inventory plus quickslots unchanged
+- if debug/fixture tooling forces a deterministic ground-`VID` collision with an already-pending bootstrap handle, the colliding drop fails closed with no item refresh, no peer-visible ground add, and no live or persisted carried-inventory mutation
 - this remains a bootstrap party approximation; real party membership, ownership timers, and public ownership release are still not owned
 
 ### 5.6 Bootstrap equip / unequip appearance refresh

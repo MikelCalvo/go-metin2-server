@@ -1058,12 +1058,28 @@ func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visib
 	}
 }
 
+func (r *sharedWorldRegistry) CanRegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance) bool {
+	const maxItemGetCountCarrier = uint16(^uint8(0))
+	if item.ID == 0 || item.Vnum == 0 || item.Count == 0 || item.Count > maxItemGetCountCarrier || item.Locked || item.Equipped || item.EquipSlot != inventory.EquipmentSlotNone {
+		return false
+	}
+	return r.canRegisterGroundItem(ownerID, ownerLogin, character, vid, item, 0)
+}
+
 func (r *sharedWorldRegistry) RegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance) bool {
 	const maxItemGetCountCarrier = uint16(^uint8(0))
 	if item.ID == 0 || item.Vnum == 0 || item.Count == 0 || item.Count > maxItemGetCountCarrier || item.Locked || item.Equipped || item.EquipSlot != inventory.EquipmentSlotNone {
 		return false
 	}
 	return r.registerGroundItem(ownerID, ownerLogin, character, vid, item, 0)
+}
+
+func (r *sharedWorldRegistry) CanRegisterGroundGold(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32) bool {
+	const maxPointChangeCarrier = uint32(1<<31 - 1)
+	if amount == 0 || amount > maxPointChangeCarrier {
+		return false
+	}
+	return r.canRegisterGroundItem(ownerID, ownerLogin, character, vid, inventory.ItemInstance{Vnum: 1, Count: 1}, amount)
 }
 
 func (r *sharedWorldRegistry) RegisterGroundGold(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32) bool {
@@ -1074,6 +1090,27 @@ func (r *sharedWorldRegistry) RegisterGroundGold(ownerID uint64, ownerLogin stri
 	return r.registerGroundItem(ownerID, ownerLogin, character, vid, inventory.ItemInstance{Vnum: 1, Count: 1}, amount)
 }
 
+func (r *sharedWorldRegistry) canRegisterGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32) bool {
+	if r == nil || ownerID == 0 || !validRewardOwnerMetadata(ownerLogin) || !validRewardOwnerMetadata(character.Name) || vid == 0 || item.Vnum == 0 {
+		return false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.canRegisterGroundItemLocked(ownerID, character, vid)
+}
+
+func (r *sharedWorldRegistry) canRegisterGroundItemLocked(ownerID uint64, character loginticket.Character, vid uint32) bool {
+	registeredOwner, ok := r.playerCharacter(ownerID)
+	if !ok || characterAtBootstrapHPFloor(registeredOwner) || characterAtBootstrapHPFloor(character) || !sameGroundRewardOwnerSnapshot(registeredOwner, character) {
+		return false
+	}
+	if _, exists := r.groundItemsByVID[vid]; exists {
+		return false
+	}
+	return true
+}
+
 func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32) bool {
 	if r == nil || ownerID == 0 || !validRewardOwnerMetadata(ownerLogin) || !validRewardOwnerMetadata(character.Name) || vid == 0 || item.Vnum == 0 {
 		return false
@@ -1082,11 +1119,7 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	registeredOwner, ok := r.playerCharacter(ownerID)
-	if !ok || characterAtBootstrapHPFloor(registeredOwner) || characterAtBootstrapHPFloor(character) || !sameGroundRewardOwnerSnapshot(registeredOwner, character) {
-		return false
-	}
-	if _, exists := r.groundItemsByVID[vid]; exists {
+	if !r.canRegisterGroundItemLocked(ownerID, character, vid) {
 		return false
 	}
 	ground := sharedGroundItem{
