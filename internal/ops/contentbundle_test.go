@@ -592,6 +592,13 @@ func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(
 	if got.Deltas.ShopRouteCount != (contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}) {
 		t.Fatalf("unexpected shop route delta: %+v", got.Deltas.ShopRouteCount)
 	}
+	wantKinds := []contentbundle.InteractionKindDelta{
+		{Kind: interactionstore.KindShopPreview, Count: contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, ReferencedCount: contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: contentbundle.SummaryCountDelta{}},
+		{Kind: interactionstore.KindTalk, Count: contentbundle.SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, ReferencedCount: contentbundle.SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, UnreferencedCount: contentbundle.SummaryCountDelta{}},
+	}
+	if !reflect.DeepEqual(got.Deltas.InteractionKinds, wantKinds) {
+		t.Fatalf("unexpected interaction-kind import preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.InteractionKinds, wantKinds)
+	}
 }
 
 func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbackPost(t *testing.T) {

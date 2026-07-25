@@ -174,6 +174,11 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 		InteractionDefinitionCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
 		ReferencedInteractionDefinitionCount:   SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
 		UnreferencedInteractionDefinitionCount: SummaryCountDelta{},
+		InteractionKinds: []InteractionKindDelta{
+			{Kind: interactionstore.KindShopPreview, Count: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, ReferencedCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: SummaryCountDelta{}},
+			{Kind: interactionstore.KindTalk, Count: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, ReferencedCount: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, UnreferencedCount: SummaryCountDelta{}},
+			{Kind: interactionstore.KindWarp, Count: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, ReferencedCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: SummaryCountDelta{}},
+		},
 		Maps: []MapContentDelta{{
 			MapIndex:                     1,
 			StaticActorCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
@@ -186,6 +191,65 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(preview.Deltas, wantDeltas) {
 		t.Fatalf("unexpected import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas, wantDeltas)
+	}
+}
+
+func TestBuildImportPreviewReturnsInteractionKindDeltas(t *testing.T) {
+	preview, err := BuildImportPreview(
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+			},
+			InteractionDefinitions: []interactionstore.Definition{
+				{Kind: interactionstore.KindInfo, Ref: "lore:unused", Text: "Unused lore."},
+				{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+			},
+		},
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "NoticeBoard", MapIndex: 1, X: 900, Y: 1900, RaceNum: 20304, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:notice"},
+				{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			},
+			ItemTemplates: testMerchantItemTemplates(),
+			InteractionDefinitions: []interactionstore.Definition{
+				{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Read the notice board."},
+				testMerchantCatalogDefinition(),
+				{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview interaction-kind deltas: %v", err)
+	}
+
+	want := []InteractionKindDelta{
+		{
+			Kind:              interactionstore.KindInfo,
+			Count:             SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+			ReferencedCount:   SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			UnreferencedCount: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
+		},
+		{
+			Kind:              interactionstore.KindShopPreview,
+			Count:             SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			ReferencedCount:   SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			UnreferencedCount: SummaryCountDelta{Current: 0, Candidate: 0, Delta: 0},
+		},
+		{
+			Kind:              interactionstore.KindTalk,
+			Count:             SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
+			ReferencedCount:   SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
+			UnreferencedCount: SummaryCountDelta{Current: 0, Candidate: 0, Delta: 0},
+		},
+		{
+			Kind:              interactionstore.KindWarp,
+			Count:             SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			ReferencedCount:   SummaryCountDelta{Current: 0, Candidate: 0, Delta: 0},
+			UnreferencedCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+		},
+	}
+	if !reflect.DeepEqual(preview.Deltas.InteractionKinds, want) {
+		t.Fatalf("unexpected interaction-kind import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.InteractionKinds, want)
 	}
 }
 

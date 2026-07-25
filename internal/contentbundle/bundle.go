@@ -88,22 +88,23 @@ type ImportPreview struct {
 }
 
 type SummaryDeltas struct {
-	StaticActorCount                       SummaryCountDelta  `json:"static_actor_count"`
-	InteractableStaticActorCount           SummaryCountDelta  `json:"interactable_static_actor_count"`
-	SpawnGroupCount                        SummaryCountDelta  `json:"spawn_group_count"`
-	CombatProfileCount                     SummaryCountDelta  `json:"combat_profile_count"`
-	ItemTemplateCount                      SummaryCountDelta  `json:"item_template_count"`
-	ShopCatalogEntryCount                  SummaryCountDelta  `json:"shop_catalog_entry_count"`
-	ShopRouteCount                         SummaryCountDelta  `json:"shop_route_count"`
-	WarpDestinationCount                   SummaryCountDelta  `json:"warp_destination_count"`
-	WarpRouteCount                         SummaryCountDelta  `json:"warp_route_count"`
-	RewardExperienceTotal                  SummaryAmountDelta `json:"reward_experience_total"`
-	RewardGoldTotal                        SummaryAmountDelta `json:"reward_gold_total"`
-	RewardDropItemCount                    SummaryCountDelta  `json:"reward_drop_item_count"`
-	InteractionDefinitionCount             SummaryCountDelta  `json:"interaction_definition_count"`
-	ReferencedInteractionDefinitionCount   SummaryCountDelta  `json:"referenced_interaction_definition_count"`
-	UnreferencedInteractionDefinitionCount SummaryCountDelta  `json:"unreferenced_interaction_definition_count"`
-	Maps                                   []MapContentDelta  `json:"maps,omitempty"`
+	StaticActorCount                       SummaryCountDelta      `json:"static_actor_count"`
+	InteractableStaticActorCount           SummaryCountDelta      `json:"interactable_static_actor_count"`
+	SpawnGroupCount                        SummaryCountDelta      `json:"spawn_group_count"`
+	CombatProfileCount                     SummaryCountDelta      `json:"combat_profile_count"`
+	ItemTemplateCount                      SummaryCountDelta      `json:"item_template_count"`
+	ShopCatalogEntryCount                  SummaryCountDelta      `json:"shop_catalog_entry_count"`
+	ShopRouteCount                         SummaryCountDelta      `json:"shop_route_count"`
+	WarpDestinationCount                   SummaryCountDelta      `json:"warp_destination_count"`
+	WarpRouteCount                         SummaryCountDelta      `json:"warp_route_count"`
+	RewardExperienceTotal                  SummaryAmountDelta     `json:"reward_experience_total"`
+	RewardGoldTotal                        SummaryAmountDelta     `json:"reward_gold_total"`
+	RewardDropItemCount                    SummaryCountDelta      `json:"reward_drop_item_count"`
+	InteractionDefinitionCount             SummaryCountDelta      `json:"interaction_definition_count"`
+	ReferencedInteractionDefinitionCount   SummaryCountDelta      `json:"referenced_interaction_definition_count"`
+	UnreferencedInteractionDefinitionCount SummaryCountDelta      `json:"unreferenced_interaction_definition_count"`
+	InteractionKinds                       []InteractionKindDelta `json:"interaction_kinds,omitempty"`
+	Maps                                   []MapContentDelta      `json:"maps,omitempty"`
 }
 
 type SummaryCountDelta struct {
@@ -116,6 +117,13 @@ type SummaryAmountDelta struct {
 	Current   uint64 `json:"current"`
 	Candidate uint64 `json:"candidate"`
 	Delta     int64  `json:"delta"`
+}
+
+type InteractionKindDelta struct {
+	Kind              string            `json:"kind"`
+	Count             SummaryCountDelta `json:"count"`
+	ReferencedCount   SummaryCountDelta `json:"referenced_count"`
+	UnreferencedCount SummaryCountDelta `json:"unreferenced_count"`
 }
 
 type MapContentDelta struct {
@@ -423,6 +431,7 @@ func buildSummaryDeltas(current Summary, candidate Summary) SummaryDeltas {
 		InteractionDefinitionCount:             summaryCountDelta(current.InteractionDefinitionCount, candidate.InteractionDefinitionCount),
 		ReferencedInteractionDefinitionCount:   summaryCountDelta(current.ReferencedInteractionDefinitionCount, candidate.ReferencedInteractionDefinitionCount),
 		UnreferencedInteractionDefinitionCount: summaryCountDelta(current.UnreferencedInteractionDefinitionCount, candidate.UnreferencedInteractionDefinitionCount),
+		InteractionKinds:                       buildInteractionKindDeltas(current.InteractionKinds, candidate.InteractionKinds),
 		Maps:                                   buildMapContentDeltas(current.Maps, candidate.Maps),
 	}
 }
@@ -439,6 +448,52 @@ func summaryAmountDelta(current uint64, candidate uint64) SummaryAmountDelta {
 		delta = -int64(current - candidate)
 	}
 	return SummaryAmountDelta{Current: current, Candidate: candidate, Delta: delta}
+}
+
+func buildInteractionKindDeltas(currentKinds []InteractionKindSummary, candidateKinds []InteractionKindSummary) []InteractionKindDelta {
+	if len(currentKinds) == 0 && len(candidateKinds) == 0 {
+		return nil
+	}
+	currentByKind := make(map[string]InteractionKindSummary, len(currentKinds))
+	candidateByKind := make(map[string]InteractionKindSummary, len(candidateKinds))
+	kindsSeen := make(map[string]struct{}, len(currentKinds)+len(candidateKinds))
+	for _, summary := range currentKinds {
+		currentByKind[summary.Kind] = summary
+		kindsSeen[summary.Kind] = struct{}{}
+	}
+	for _, summary := range candidateKinds {
+		candidateByKind[summary.Kind] = summary
+		kindsSeen[summary.Kind] = struct{}{}
+	}
+	kinds := make([]string, 0, len(kindsSeen))
+	for kind := range kindsSeen {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	deltas := make([]InteractionKindDelta, 0, len(kinds))
+	for _, kind := range kinds {
+		current := currentByKind[kind]
+		candidate := candidateByKind[kind]
+		delta := InteractionKindDelta{
+			Kind:              kind,
+			Count:             summaryCountDelta(current.Count, candidate.Count),
+			ReferencedCount:   summaryCountDelta(current.ReferencedCount, candidate.ReferencedCount),
+			UnreferencedCount: summaryCountDelta(current.UnreferencedCount, candidate.UnreferencedCount),
+		}
+		if !interactionKindDeltaIsZero(delta) {
+			deltas = append(deltas, delta)
+		}
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func interactionKindDeltaIsZero(delta InteractionKindDelta) bool {
+	return delta.Count.Delta == 0 &&
+		delta.ReferencedCount.Delta == 0 &&
+		delta.UnreferencedCount.Delta == 0
 }
 
 func buildMapContentDeltas(currentMaps []MapContentSummary, candidateMaps []MapContentSummary) []MapContentDelta {
