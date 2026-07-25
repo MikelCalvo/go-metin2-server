@@ -7044,6 +7044,27 @@ func TestGameSessionFlowPracticeMobRestartTownTransfersDeadOwnerToEmpireCreatePo
 	if len(staleAttackOut) != 0 {
 		t.Fatalf("expected stale attack without fresh target to fail closed after /restart_town, got %d frames", len(staleAttackOut))
 	}
+	townRetargetOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected source-map target-selection dispatch after /restart_town: %v", err)
+	}
+	if len(townRetargetOut) != 0 {
+		t.Fatalf("expected town-restarted owner to fail closed when retargeting source-map practice mob outside visibility, got %d frames", len(townRetargetOut))
+	}
+	sourceWatcherRetargetOut, err := sourceWatcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected source watcher target-selection dispatch after /restart_town: %v", err)
+	}
+	if len(sourceWatcherRetargetOut) != 1 {
+		t.Fatalf("expected source watcher to retarget still-live source-map practice mob after /restart_town, got %d frames", len(sourceWatcherRetargetOut))
+	}
+	sourceWatcherRetarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, sourceWatcherRetargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode source watcher target-selection after /restart_town: %v", err)
+	}
+	if sourceWatcherRetarget.TargetVID != targetVID || sourceWatcherRetarget.HPPercent != 90 {
+		t.Fatalf("expected source watcher to see source-map practice mob preserved at 90%% HP after /restart_town, got %+v", sourceWatcherRetarget)
+	}
 	persisted, err := accounts.Load("peer-one")
 	if err != nil {
 		t.Fatalf("load persisted owner account after /restart_town: %v", err)

@@ -120,8 +120,10 @@ The narrow bootstrap rule is:
 
 After accepted `/restart_town`:
 - later owner-side `TARGET` may succeed again under the ordinary live combat rules
+- ordinary visibility still applies, so the town-restarted owner cannot immediately retarget the old source-map practice mob while it is outside the owner's new town visibility
 - later owner-side `ATTACK` still requires a fresh accepted `TARGET`
 - the previously engaged practice mob, if still alive, remains at its current runtime-owned HP rather than resetting because of the owner's recovery
+- source-map live sessions that can still see that mob may freshly `TARGET` it and observe the current runtime-owned HP percentage
 
 ## Why this is the next honest slice
 
