@@ -277,6 +277,8 @@ func (m *MapIndex) repairMisplacedPlayerMapPresenceLocked() {
 		player := repairs[entityID].player
 		if current, ok := m.byEntityID[entityID]; ok {
 			player = current
+		} else if canonical, ok := m.canonicalPlayerMapPresenceLocked(entityID); ok {
+			player = canonical
 		}
 		if _, ok := m.staticByEntityID[entityID]; ok {
 			continue
@@ -286,6 +288,32 @@ func (m *MapIndex) repairMisplacedPlayerMapPresenceLocked() {
 		}
 		m.repairPlayerMapPresenceLocked(player)
 	}
+}
+
+func (m *MapIndex) canonicalPlayerMapPresenceLocked(entityID uint64) (PlayerEntity, bool) {
+	if m == nil || entityID == 0 {
+		return PlayerEntity{}, false
+	}
+	var selected PlayerEntity
+	var selectedMap uint32
+	found := false
+	for mapIndex, bucket := range m.byMapIndex {
+		player, ok := bucket[entityID]
+		if !ok {
+			continue
+		}
+		effectiveMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: player.Position().MapIndex})
+		if effectiveMapIndex != mapIndex {
+			continue
+		}
+		if found && selectedMap <= mapIndex {
+			continue
+		}
+		selected = clonePlayerEntity(player)
+		selectedMap = mapIndex
+		found = true
+	}
+	return selected, found
 }
 
 func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
@@ -628,6 +656,8 @@ func (m *MapIndex) repairMisplacedStaticMapPresenceLocked() {
 		actor := repairs[entityID].actor
 		if current, ok := m.staticByEntityID[entityID]; ok {
 			actor = current
+		} else if canonical, ok := m.canonicalStaticMapPresenceLocked(entityID); ok {
+			actor = canonical
 		}
 		if _, ok := m.byEntityID[entityID]; ok {
 			continue
@@ -637,6 +667,32 @@ func (m *MapIndex) repairMisplacedStaticMapPresenceLocked() {
 		}
 		m.repairStaticMapPresenceLocked(actor)
 	}
+}
+
+func (m *MapIndex) canonicalStaticMapPresenceLocked(entityID uint64) (StaticEntity, bool) {
+	if m == nil || entityID == 0 {
+		return StaticEntity{}, false
+	}
+	var selected StaticEntity
+	var selectedMap uint32
+	found := false
+	for mapIndex, bucket := range m.staticByMapIndex {
+		actor, ok := bucket[entityID]
+		if !ok {
+			continue
+		}
+		effectiveMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
+		if effectiveMapIndex != mapIndex {
+			continue
+		}
+		if found && selectedMap <= mapIndex {
+			continue
+		}
+		selected = cloneStaticEntity(actor)
+		selectedMap = mapIndex
+		found = true
+	}
+	return selected, found
 }
 
 func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {

@@ -333,6 +333,79 @@ func TestMapIndexPlayerByNamePrunesStaleAliasForSurvivingPlayer(t *testing.T) {
 	}
 }
 
+func TestMapIndexPlayerLookupUsesSurvivingEffectiveMapForDuplicateMapOnlyBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(23, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	stale.Character.MapIndex = 77
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	current.Entity.VID = current.Character.VID
+	index.effectiveMapByEntityID[stale.Entity.ID] = 77
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	lookup, ok := index.Player(stale.Entity.ID)
+	if !ok || lookup.Entity.ID != stale.Entity.ID || lookup.Character.MapIndex != 77 || lookup.Character.X != 1700 || lookup.Character.Y != 2800 {
+		t.Fatalf("expected entity lookup to use surviving effective-map bucket, got player=%+v ok=%v", lookup, ok)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale map-only player bucket to be pruned after entity lookup, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].MapIndex != 77 || characters[0].X != 1700 || characters[0].Y != 2800 {
+		t.Fatalf("expected current map-only player bucket to remain after entity lookup, got %+v", characters)
+	}
+}
+
+func TestMapIndexPlayerByVIDPrunesDuplicateMapOnlyBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(24, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	stale.Character.MapIndex = 77
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040111, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	current.Entity.VID = current.Character.VID
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	lookup, ok := index.PlayerByVID(current.Entity.VID)
+	if !ok || lookup.Entity.ID != current.Entity.ID || lookup.Entity.Name != "Alpha" || lookup.Character.MapIndex != 77 {
+		t.Fatalf("expected current map-only player VID lookup, got player=%+v ok=%v", lookup, ok)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale map-only player bucket to be pruned after VID lookup, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].VID != current.Entity.VID {
+		t.Fatalf("expected current map-only player bucket to remain after VID lookup, got %+v", characters)
+	}
+}
+
+func TestMapIndexPlayerByNamePrunesDuplicateMapOnlyBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(25, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	stale.Character.MapIndex = 77
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040111, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	current.Entity.VID = current.Character.VID
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	lookup, ok := index.PlayerByName(current.Entity.Name)
+	if !ok || lookup.Entity.ID != current.Entity.ID || lookup.Entity.VID != current.Entity.VID || lookup.Character.MapIndex != 77 {
+		t.Fatalf("expected current map-only player name lookup, got player=%+v ok=%v", lookup, ok)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale map-only player bucket to be pruned after exact-name lookup, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].VID != current.Entity.VID {
+		t.Fatalf("expected current map-only player bucket to remain after exact-name lookup, got %+v", characters)
+	}
+}
+
 func TestMapIndexPlayerCharactersPrunesDuplicateStaleMapBuckets(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	stale := newPlayerEntity(18, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
@@ -920,6 +993,52 @@ func TestMapIndexStaticActorLookupPrunesDuplicateStaleMapBuckets(t *testing.T) {
 	actors := index.StaticActors(77)
 	if len(actors) != 1 || actors[0].Entity.ID != stale.Entity.ID || actors[0].Entity.Name != "VillageGuard" {
 		t.Fatalf("expected current map bucket to remain after lookup prune, got %+v", actors)
+	}
+}
+
+func TestMapIndexStaticActorLookupUsesSurvivingEffectiveMapForDuplicateMapOnlyBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := StaticEntity{Entity: Entity{ID: 22, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	current := stale
+	current.Entity.Name = "VillageGuard"
+	current.Position = NewPosition(77, 900, 1200)
+	current.RaceNum = 20301
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{stale.Entity.ID: stale}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{stale.Entity.ID: current}
+
+	lookup, ok := index.StaticActor(stale.Entity.ID)
+	if !ok || lookup.Entity.ID != stale.Entity.ID || lookup.Entity.Name != "VillageGuard" || lookup.Position.MapIndex != 77 || lookup.RaceNum != 20301 {
+		t.Fatalf("expected static actor lookup to use surviving effective-map bucket, got actor=%+v ok=%v", lookup, ok)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected stale map-only static actor bucket to be pruned after entity lookup, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" || actors[0].RaceNum != 20301 {
+		t.Fatalf("expected current map-only static actor bucket to remain after entity lookup, got %+v", actors)
+	}
+}
+
+func TestMapIndexStaticActorByVIDPrunesDuplicateMapOnlyBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := StaticEntity{Entity: Entity{ID: 23, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	current := stale
+	current.Entity.Name = "VillageGuard"
+	current.Position = NewPosition(77, 900, 1200)
+	current.RaceNum = 20301
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{stale.Entity.ID: stale}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{stale.Entity.ID: current}
+
+	lookup, ok := index.StaticActorByVID(uint32(current.Entity.ID))
+	if !ok || lookup.Entity.ID != current.Entity.ID || lookup.Entity.Name != "VillageGuard" || lookup.Position.MapIndex != 77 || lookup.RaceNum != 20301 {
+		t.Fatalf("expected current map-only static actor VID lookup, got actor=%+v ok=%v", lookup, ok)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected stale map-only static actor bucket to be pruned after VID lookup, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" || actors[0].RaceNum != 20301 {
+		t.Fatalf("expected current map-only static actor bucket to remain after VID lookup, got %+v", actors)
 	}
 }
 
