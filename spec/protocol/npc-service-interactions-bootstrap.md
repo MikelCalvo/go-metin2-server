@@ -69,6 +69,7 @@ Current owned warp failure semantics:
 Current owned warp operator-summary semantics:
 - `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` now report deterministic `warp_destinations` entries for every authored `warp` definition
 - each summary entry carries `kind`, `ref`, optional `text`, `map_index`, `x`, and `y`
+- the same summary `maps[]` audit reports `warp_actor_count` for each authored map, counting visible static actors on that map that resolve to a `warp` definition
 - this makes teleporter targets inspectable without fetching the full authored bundle or applying a candidate import
 
 Current owned interaction cooldown semantics:

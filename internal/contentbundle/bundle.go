@@ -175,6 +175,9 @@ type MapContentSummary struct {
 	MapIndex                     uint32 `json:"map_index"`
 	StaticActorCount             int    `json:"static_actor_count"`
 	InteractableStaticActorCount int    `json:"interactable_static_actor_count"`
+	ShopPreviewActorCount        int    `json:"shop_preview_actor_count,omitempty"`
+	ShopCatalogEntryCount        int    `json:"shop_catalog_entry_count,omitempty"`
+	WarpActorCount               int    `json:"warp_actor_count,omitempty"`
 	SpawnGroupCount              int    `json:"spawn_group_count"`
 	RewardExperienceTotal        uint64 `json:"reward_experience_total,omitempty"`
 	RewardGoldTotal              uint64 `json:"reward_gold_total,omitempty"`
@@ -378,6 +381,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 			summary.InteractableStaticActorCount++
 			entry.InteractableStaticActorCount++
 			definition := definitionsByKey[interactionDefinitionKey(actor.InteractionKind, actor.InteractionRef)]
+			addMapServiceInteractionSummary(entry, definition)
 			summary.InteractableStaticActors = append(summary.InteractableStaticActors, interactableStaticActorSummary(actor, definition, itemTemplatesByVnum))
 		}
 	}
@@ -651,6 +655,17 @@ func mapContentSummaryForIndex(counts map[uint32]*MapContentSummary, mapIndex ui
 	entry = &MapContentSummary{MapIndex: mapIndex}
 	counts[mapIndex] = entry
 	return entry
+}
+
+func addMapServiceInteractionSummary(entry *MapContentSummary, definition interactionstore.Definition) {
+	definition = interactionstore.NormalizeDefinition(definition)
+	switch definition.Kind {
+	case interactionstore.KindShopPreview:
+		entry.ShopPreviewActorCount++
+		entry.ShopCatalogEntryCount += len(definition.Catalog)
+	case interactionstore.KindWarp:
+		entry.WarpActorCount++
+	}
 }
 
 func validateBundle(bundle Bundle) error {

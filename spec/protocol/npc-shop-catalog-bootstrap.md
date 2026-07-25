@@ -123,6 +123,7 @@ The structured merchant catalog now already drives:
 - bundled `item_templates` presence checks, so merchant catalogs cannot be imported as portable content without their referenced item-template definitions
 - bundled `item_templates` count checks, so a merchant entry cannot exceed a stackable template's `max_count` and non-stackable templates can only be sold one at a time
 - content-bundle summaries that expose deterministic `shop_catalogs` entries with the resolved template name, stackability, maximum count, and optional template buy-price metadata next to each authored merchant slot / vnum / count / price
+- content-bundle `maps[]` summaries that expose `shop_preview_actor_count` and `shop_catalog_entry_count` for each authored map, where catalog entries are counted per placed merchant actor so duplicated actors remain visible as duplicated local service capacity
 - interaction-visibility previews
 - the merchant-window `GC::SHOP START` open response, including template-authored display socket/attribute metadata for rendered catalog entries
 - the first buy-only `SHOP BUY` transaction gate

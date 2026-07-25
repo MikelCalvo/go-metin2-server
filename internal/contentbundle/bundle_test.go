@@ -124,7 +124,7 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 		},
 		Maps: []MapContentSummary{
 			{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 0},
-			{MapIndex: 2, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 1, RewardDropItemCount: 1},
+			{MapIndex: 2, StaticActorCount: 1, InteractableStaticActorCount: 1, ShopPreviewActorCount: 1, ShopCatalogEntryCount: 2, SpawnGroupCount: 1, RewardDropItemCount: 1},
 		},
 	}
 	if !reflect.DeepEqual(summary, want) {
@@ -232,6 +232,28 @@ func TestSummarizeReturnsDeterministicWarpDestinationDetails(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary.WarpDestinations, want) {
 		t.Fatalf("unexpected warp destination summaries:\n got: %#v\nwant: %#v", summary.WarpDestinations, want)
+	}
+}
+
+func TestSummarizeAuditsServiceInteractionsPerMap(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{Name: "MerchantAssistant", MapIndex: 1, X: 1250, Y: 2250, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			{Name: "Teleporter", MapIndex: 1, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
+		},
+		ItemTemplates: testMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{
+			testMerchantCatalogDefinition(),
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize per-map service interactions: %v", err)
+	}
+	want := []MapContentSummary{{MapIndex: 1, StaticActorCount: 3, InteractableStaticActorCount: 3, ShopPreviewActorCount: 2, ShopCatalogEntryCount: 4, WarpActorCount: 1}}
+	if !reflect.DeepEqual(summary.Maps, want) {
+		t.Fatalf("unexpected per-map service interaction audit:\n got: %#v\nwant: %#v", summary.Maps, want)
 	}
 }
 
