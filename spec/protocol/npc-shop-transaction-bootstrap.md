@@ -118,6 +118,7 @@ The purchased slot must address the same stable merchant entry identity already 
 - `catalog[].slot`
 - dense zero-based ordering
 - one-page bootstrap catalog size capped at the currently owned `SHOP_HOST_ITEM_MAX = 40` normal shop entries
+- catalog `price` / `count` values already guarded to fit the current `GC::SHOP START` carriers (`price uint32`, `count uint8`) before the catalog is persisted or imported
 - template-backed `item_vnum`
 - authored `price`
 - authored `count`
@@ -130,8 +131,8 @@ When a gated `BUY` request arrives, the runtime must validate all of the followi
 - a current merchant transaction gate exists for the session
 - the requested `catalog_slot` exists in the bound catalog snapshot
 - the resolved catalog entry still refers to a valid owned item template
-- the entry `price` is greater than zero
-- the entry `count` is greater than zero
+- the entry `price` is greater than zero and still fits the owned `GC::SHOP START` `uint32` price carrier
+- the entry `count` is greater than zero and still fits the owned `GC::SHOP START` `uint8` count carrier
 - the selected character has at least that much gold available
 - the selected character has a valid carried-inventory placement for that template/count under `item-stack-bootstrap.md`, including `anti_stack` templates skipping existing-stack merge/fan-out paths
 - the resolved template does not carry a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)

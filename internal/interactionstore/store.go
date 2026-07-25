@@ -11,6 +11,9 @@ const (
 	KindTalk        = "talk"
 	KindWarp        = "warp"
 	KindShopPreview = "shop_preview"
+
+	MerchantCatalogMaxEntryPrice uint64 = 1<<32 - 1
+	MerchantCatalogMaxEntryCount uint16 = 1<<8 - 1
 )
 
 var (
@@ -163,7 +166,7 @@ func validMerchantCatalog(catalog []MerchantCatalogEntry) bool {
 		if entry.Slot != uint16(i) {
 			return false
 		}
-		if entry.ItemVnum == 0 || entry.Price == 0 || entry.Count == 0 {
+		if entry.ItemVnum == 0 || entry.Price == 0 || entry.Price > MerchantCatalogMaxEntryPrice || entry.Count == 0 || entry.Count > MerchantCatalogMaxEntryCount {
 			return false
 		}
 	}

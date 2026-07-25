@@ -236,6 +236,14 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(shopPreviewZeroPrice); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for zero-price shop preview entry, got %v", err)
 	}
+	shopPreviewOversizedPrice := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: MerchantCatalogMaxEntryPrice + 1, Count: 1}}}}}
+	if err := store.Save(shopPreviewOversizedPrice); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for over-uint32 shop preview entry price, got %v", err)
+	}
+	shopPreviewOversizedCount := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: MerchantCatalogMaxEntryCount + 1}}}}}
+	if err := store.Save(shopPreviewOversizedCount); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for over-uint8 shop preview entry count, got %v", err)
+	}
 	warpMissingMap := Snapshot{Definitions: []Definition{{Kind: KindWarp, Ref: "npc:teleporter", X: 1700, Y: 2800}}}
 	if err := store.Save(warpMissingMap); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for warp definition missing map index, got %v", err)

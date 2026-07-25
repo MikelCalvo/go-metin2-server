@@ -4484,7 +4484,7 @@ func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition, 
 		if entry.Slot >= shopproto.ShopHostItemMax {
 			return shopproto.ServerStartPacket{}, false
 		}
-		if entry.Price > uint64(^uint32(0)) || entry.Count > uint16(^uint8(0)) {
+		if entry.Price > interactionstore.MerchantCatalogMaxEntryPrice || entry.Count > interactionstore.MerchantCatalogMaxEntryCount {
 			return shopproto.ServerStartPacket{}, false
 		}
 		template, ok := templates[entry.ItemVnum]

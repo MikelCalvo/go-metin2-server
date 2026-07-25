@@ -59,8 +59,8 @@ Top-level fields:
 Catalog entry fields:
 - `slot` — stable zero-based catalog position used for deterministic preview ordering and later buy-addressing
 - `item_vnum` — stable reference into the deterministic file-backed `internal/itemstore` template catalog
-- `price` — non-zero gold price for the entry
-- `count` — non-zero quantity previewed/sold by one future buy action
+- `price` — non-zero gold price for the entry; it must fit the current `GC::SHOP START` catalog-entry price carrier (`uint32`)
+- `count` — non-zero quantity previewed/sold by one future buy action; it must fit the current `GC::SHOP START` catalog-entry count carrier (`uint8`)
 
 ## Validation rules
 
@@ -75,8 +75,8 @@ The structured merchant contract must validate all of the following:
 - slots must form a dense zero-based sequence after sorting (`0..n-1`) so later transaction addressing stays deterministic
 - each `item_vnum` must be non-zero and must resolve to a valid template in the loaded `internal/itemstore` catalog
 - portable content bundles that include `shop_preview` definitions must also include the referenced `item_templates`; canonicalization rejects merchant bundles that omit the item-template section instead of deferring that failure to runtime import
-- each `price` must be greater than zero
-- each `count` must be greater than zero
+- each `price` must be greater than zero and no larger than `4294967295` (`uint32` max), matching the owned `GC::SHOP START` item-entry price field
+- each `count` must be greater than zero and no larger than `255` (`uint8` max), matching the owned `GC::SHOP START` item-entry count field
 - if the referenced template is non-stackable, `count` must equal `1`
 - if the referenced template is stackable, `count` must not exceed that template's `max_count`
 
@@ -108,7 +108,7 @@ With the structured merchant catalog wired, runtime behavior now stays narrow in
 - the runtime keeps the existing visibility and distance checks
 - the runtime keeps the existing per-session per-target `1s` cooldown
 - live session handling of `INTERACT` now opens the current bootstrap merchant window through `GC::SHOP START`, built from that structured catalog
-- non-empty `GC::SHOP START` entries keep their catalog-authored `vnum`, `price`, `count`, and `display_pos`, and now copy the resolved item template's authored display `sockets` and `attributes` into the shop entry
+- non-empty `GC::SHOP START` entries keep their catalog-authored `vnum`, `price`, `count`, and `display_pos` after the catalog has passed the owned `uint32` price / `uint8` count carrier guards, and now copy the resolved item template's authored display `sockets` and `attributes` into the shop entry
 - the same deterministic preview render remains available for QA/debug and lower-level resolution surfaces without opening the live merchant window
 - later `SHOP BUY` / `SHOP END` handling continues to reuse the same active merchant context and the same authored catalog identity
 - no peer-visible frames are emitted
@@ -121,6 +121,7 @@ The structured merchant catalog now already drives:
 - content-bundle export/import
 - bundled `item_templates` validation and runtime persistence for portable merchant bundles
 - bundled `item_templates` presence checks, so merchant catalogs cannot be imported as portable content without their referenced item-template definitions
+- bundled and file-backed merchant catalog carrier guards, so oversized `price` / `count` values fail closed before the runtime can persist a catalog that cannot be represented in the current `GC::SHOP START` item-entry layout
 - bundled `item_templates` count checks, so a merchant entry cannot exceed a stackable template's `max_count` and non-stackable templates can only be sold one at a time
 - content-bundle summaries that expose deterministic `shop_catalogs` entries with the resolved template name, stackability, maximum count, and optional template buy-price metadata next to each authored merchant slot / vnum / count / price
 - content-bundle `maps[]` summaries that expose `shop_preview_actor_count` and `shop_catalog_entry_count` for each authored map, where catalog entries are counted per placed merchant actor so duplicated actors remain visible as duplicated local service capacity

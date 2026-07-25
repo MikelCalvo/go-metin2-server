@@ -212,6 +212,32 @@ func TestSummarizeReturnsDeterministicShopCatalogDetails(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsShopCatalogEntriesThatDoNotFitShopStartCarriers(t *testing.T) {
+	cases := []struct {
+		name  string
+		entry interactionstore.MerchantCatalogEntry
+	}{
+		{name: "over uint32 price", entry: interactionstore.MerchantCatalogEntry{Slot: 0, ItemVnum: 27001, Price: interactionstore.MerchantCatalogMaxEntryPrice + 1, Count: 1}},
+		{name: "over uint8 count", entry: interactionstore.MerchantCatalogEntry{Slot: 0, ItemVnum: 27001, Price: 50, Count: interactionstore.MerchantCatalogMaxEntryCount + 1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Canonicalize(Bundle{
+				ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 255, ShopBuyPrice: 5}},
+				InteractionDefinitions: []interactionstore.Definition{{
+					Kind:    interactionstore.KindShopPreview,
+					Ref:     "npc:merchant",
+					Title:   "Village Merchant",
+					Catalog: []interactionstore.MerchantCatalogEntry{tc.entry},
+				}},
+			})
+			if !errors.Is(err, ErrInvalidBundle) {
+				t.Fatalf("expected ErrInvalidBundle, got %v", err)
+			}
+		})
+	}
+}
+
 func TestSummarizeReturnsDeterministicWarpDestinationDetails(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		InteractionDefinitions: []interactionstore.Definition{

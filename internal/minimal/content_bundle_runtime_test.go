@@ -315,6 +315,56 @@ func TestGameRuntimeImportContentBundlePersistsBundledItemTemplates(t *testing.T
 	}
 }
 
+func TestGameRuntimeImportContentBundleRejectsShopCatalogEntriesThatDoNotFitShopStartCarriersWithoutMutatingRuntime(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	itemStore := itemcatalog.NewFileStore(t.TempDir() + "/item-templates.json")
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	initial := contentbundle.Bundle{StaticActors: []contentbundle.StaticActor{{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300}}}
+	if _, err := runtime.ImportContentBundle(initial); err != nil {
+		t.Fatalf("import initial content bundle: %v", err)
+	}
+	previous, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export previous content bundle: %v", err)
+	}
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum:         27001,
+			Name:         "Small Red Potion",
+			Stackable:    true,
+			MaxCount:     200,
+			ShopBuyPrice: 5,
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:merchant",
+			Title: "Village Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{{
+				Slot:     0,
+				ItemVnum: 27001,
+				Price:    interactionstore.MerchantCatalogMaxEntryPrice + 1,
+				Count:    1,
+			}},
+		}},
+	})
+	if !errors.Is(err, contentbundle.ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for over-uint32 shop catalog price, got %v", err)
+	}
+	current, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("re-export content bundle after failed shop catalog carrier import: %v", err)
+	}
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatalf("expected runtime content bundle to remain unchanged after failed shop catalog carrier import:\n got: %#v\nwant: %#v", current, previous)
+	}
+}
+
 func TestGameRuntimeExportContentBundleSummaryIncludesItemTemplateDetails(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
