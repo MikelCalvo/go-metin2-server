@@ -615,6 +615,62 @@ func TestMapIndexSnapshotPrunesDuplicateStaticActorMapBuckets(t *testing.T) {
 	}
 }
 
+func TestMapIndexSnapshotUsesEffectiveMapForDuplicateMapOnlyStaticBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := StaticEntity{Entity: Entity{ID: 26, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	current := stale
+	current.Entity.Name = "VillageGuard"
+	current.Position = NewPosition(77, 900, 1200)
+	current.RaceNum = 20301
+	index.effectiveStaticMapByEntityID[stale.Entity.ID] = 77
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{stale.Entity.ID: stale}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{stale.Entity.ID: current}
+
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || snapshots[0].MapIndex != 77 || len(snapshots[0].StaticActors) != 1 {
+		t.Fatalf("expected map snapshot to keep only the remembered effective-map static bucket, got %+v", snapshots)
+	}
+	actor := snapshots[0].StaticActors[0]
+	if actor.Entity.ID != stale.Entity.ID || actor.Entity.Name != "VillageGuard" || actor.Position.MapIndex != 77 || actor.RaceNum != 20301 {
+		t.Fatalf("expected remembered effective-map static actor in snapshot, got %+v", actor)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected stale source static bucket to be pruned after snapshot repair, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" || actors[0].RaceNum != 20301 {
+		t.Fatalf("expected effective-map static bucket to remain after snapshot repair, got %+v", actors)
+	}
+}
+
+func TestMapIndexSnapshotUsesEffectiveMapForDuplicateMapOnlyPlayerBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(28, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040111, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	current.Entity.VID = current.Character.VID
+	index.effectiveMapByEntityID[stale.Entity.ID] = 77
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || snapshots[0].MapIndex != 77 || len(snapshots[0].Characters) != 1 {
+		t.Fatalf("expected map snapshot to keep only the remembered effective-map player bucket, got %+v", snapshots)
+	}
+	character := snapshots[0].Characters[0]
+	if character.Name != "Alpha" || character.VID != current.Entity.VID || character.MapIndex != 77 || character.X != 1700 || character.Y != 2800 {
+		t.Fatalf("expected remembered effective-map player in snapshot, got %+v", character)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale source player bucket to be pruned after snapshot repair, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].VID != current.Entity.VID {
+		t.Fatalf("expected effective-map player bucket to remain after snapshot repair, got %+v", characters)
+	}
+}
+
 func TestMapIndexSnapshotRepairsMisplacedMapBucketPresence(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	alpha := newPlayerEntity(20, entityRegistryCharacter("Alpha", 0x02040101, 77, 1700, 2800))

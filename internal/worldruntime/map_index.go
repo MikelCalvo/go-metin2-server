@@ -451,6 +451,7 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 		m.repairStaticMapPresenceLocked(actor)
 	}
 	m.repairMisplacedStaticMapPresenceLocked()
+	m.repairStaticMapPresenceFromEffectiveIndexLocked()
 
 	mapIndices := make(map[uint32]struct{}, len(m.byMapIndex)+len(m.staticByMapIndex))
 	for mapIndex := range m.byMapIndex {
