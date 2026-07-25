@@ -81,6 +81,34 @@ type Summary struct {
 	Maps                                   []MapContentSummary                             `json:"maps,omitempty"`
 }
 
+type ImportPreview struct {
+	Current   Summary       `json:"current"`
+	Candidate Summary       `json:"candidate"`
+	Deltas    SummaryDeltas `json:"deltas"`
+}
+
+type SummaryDeltas struct {
+	StaticActorCount                       SummaryCountDelta `json:"static_actor_count"`
+	InteractableStaticActorCount           SummaryCountDelta `json:"interactable_static_actor_count"`
+	SpawnGroupCount                        SummaryCountDelta `json:"spawn_group_count"`
+	CombatProfileCount                     SummaryCountDelta `json:"combat_profile_count"`
+	ItemTemplateCount                      SummaryCountDelta `json:"item_template_count"`
+	ShopCatalogEntryCount                  SummaryCountDelta `json:"shop_catalog_entry_count"`
+	ShopRouteCount                         SummaryCountDelta `json:"shop_route_count"`
+	WarpDestinationCount                   SummaryCountDelta `json:"warp_destination_count"`
+	WarpRouteCount                         SummaryCountDelta `json:"warp_route_count"`
+	RewardDropItemCount                    SummaryCountDelta `json:"reward_drop_item_count"`
+	InteractionDefinitionCount             SummaryCountDelta `json:"interaction_definition_count"`
+	ReferencedInteractionDefinitionCount   SummaryCountDelta `json:"referenced_interaction_definition_count"`
+	UnreferencedInteractionDefinitionCount SummaryCountDelta `json:"unreferenced_interaction_definition_count"`
+}
+
+type SummaryCountDelta struct {
+	Current   int `json:"current"`
+	Candidate int `json:"candidate"`
+	Delta     int `json:"delta"`
+}
+
 type InteractionKindSummary struct {
 	Kind              string `json:"kind"`
 	Count             int    `json:"count"`
@@ -336,6 +364,44 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		return Bundle{}, err
 	}
 	return normalized, nil
+}
+
+func BuildImportPreview(current Bundle, candidate Bundle) (ImportPreview, error) {
+	currentSummary, err := Summarize(current)
+	if err != nil {
+		return ImportPreview{}, err
+	}
+	candidateSummary, err := Summarize(candidate)
+	if err != nil {
+		return ImportPreview{}, err
+	}
+	return ImportPreview{
+		Current:   currentSummary,
+		Candidate: candidateSummary,
+		Deltas:    buildSummaryDeltas(currentSummary, candidateSummary),
+	}, nil
+}
+
+func buildSummaryDeltas(current Summary, candidate Summary) SummaryDeltas {
+	return SummaryDeltas{
+		StaticActorCount:                       summaryCountDelta(current.StaticActorCount, candidate.StaticActorCount),
+		InteractableStaticActorCount:           summaryCountDelta(current.InteractableStaticActorCount, candidate.InteractableStaticActorCount),
+		SpawnGroupCount:                        summaryCountDelta(current.SpawnGroupCount, candidate.SpawnGroupCount),
+		CombatProfileCount:                     summaryCountDelta(current.CombatProfileCount, candidate.CombatProfileCount),
+		ItemTemplateCount:                      summaryCountDelta(current.ItemTemplateCount, candidate.ItemTemplateCount),
+		ShopCatalogEntryCount:                  summaryCountDelta(current.ShopCatalogEntryCount, candidate.ShopCatalogEntryCount),
+		ShopRouteCount:                         summaryCountDelta(current.ShopRouteCount, candidate.ShopRouteCount),
+		WarpDestinationCount:                   summaryCountDelta(current.WarpDestinationCount, candidate.WarpDestinationCount),
+		WarpRouteCount:                         summaryCountDelta(current.WarpRouteCount, candidate.WarpRouteCount),
+		RewardDropItemCount:                    summaryCountDelta(current.RewardDropItemCount, candidate.RewardDropItemCount),
+		InteractionDefinitionCount:             summaryCountDelta(current.InteractionDefinitionCount, candidate.InteractionDefinitionCount),
+		ReferencedInteractionDefinitionCount:   summaryCountDelta(current.ReferencedInteractionDefinitionCount, candidate.ReferencedInteractionDefinitionCount),
+		UnreferencedInteractionDefinitionCount: summaryCountDelta(current.UnreferencedInteractionDefinitionCount, candidate.UnreferencedInteractionDefinitionCount),
+	}
+}
+
+func summaryCountDelta(current int, candidate int) SummaryCountDelta {
+	return SummaryCountDelta{Current: current, Candidate: candidate, Delta: candidate - current}
 }
 
 func Summarize(bundle Bundle) (Summary, error) {

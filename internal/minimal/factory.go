@@ -5796,6 +5796,14 @@ func (r *gameRuntime) ExportContentBundleSummary() (contentbundle.Summary, error
 	return contentbundle.Summarize(bundle)
 }
 
+func (r *gameRuntime) PreviewContentBundleImport(candidate contentbundle.Bundle) (contentbundle.ImportPreview, error) {
+	current, err := r.ExportContentBundle()
+	if err != nil {
+		return contentbundle.ImportPreview{}, err
+	}
+	return contentbundle.BuildImportPreview(current, candidate)
+}
+
 func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentbundle.Bundle, error) {
 	if r == nil || r.staticStore == nil || r.interactionStore == nil {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable

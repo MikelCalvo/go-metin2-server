@@ -72,7 +72,8 @@ Current owned warp operator-summary semantics:
 - the same summary now reports deterministic `warp_routes` entries for every interactable static actor that resolves to a `warp` definition
 - each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, optional `text`, and target `map_index`/`x`/`y`
 - the same summary `maps[]` audit reports `warp_actor_count` for each authored map, counting visible static actors on that map that resolve to a `warp` definition
-- this makes both teleporter destinations and exact actor-to-destination routes inspectable without fetching the full authored bundle or applying a candidate import
+- `POST /local/content-bundle/import-preview` compares a candidate replacement bundle against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count `deltas`
+- this makes both teleporter destinations and exact actor-to-destination routes inspectable without fetching the full authored bundle or applying a candidate import, and it makes replacement impact inspectable before committing a candidate import
 
 Current owned interaction cooldown semantics:
 - a fixed `1s` runtime cooldown now applies per live session and per target static-actor `VID`
@@ -97,6 +98,7 @@ Current owned shop operator-summary semantics:
 - the same summary now reports deterministic `shop_routes` entries for every interactable static actor that resolves to a `shop_preview` definition
 - each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, merchant `title`, and catalog `entry_count`
 - per-map `maps[]` entries include `shop_preview_actor_count` and `shop_catalog_entry_count`
+- `POST /local/content-bundle/import-preview` exposes the same current/candidate summary comparison and count deltas for merchant catalog entries and shop routes before a candidate bundle is applied
 - this makes exact actor-to-catalog merchant placement inspectable without fetching the full authored bundle or applying a candidate import
 
 Current owned self-only interaction operator-summary semantics:

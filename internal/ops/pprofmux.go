@@ -1096,6 +1096,36 @@ func RegisterLocalContentBundleSummaryEndpoint(mux *http.ServeMux, exportContent
 	return mux
 }
 
+func RegisterLocalContentBundleImportPreviewEndpoint(mux *http.ServeMux, previewContentBundleImport func(contentbundle.Bundle) (any, int)) *http.ServeMux {
+	if mux == nil || previewContentBundleImport == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/content-bundle/import-preview", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		bundle, status, ok := decodeLocalContentBundleRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		normalized, err := contentbundle.Canonicalize(bundle)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		preview, status := previewContentBundleImport(normalized)
+		writeLocalJSONMutationResponse(w, preview, status)
+	})
+	return mux
+}
+
 func RegisterLocalContentBundleValidateEndpoint(mux *http.ServeMux) *http.ServeMux {
 	if mux == nil {
 		return mux

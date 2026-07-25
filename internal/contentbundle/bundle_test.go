@@ -134,6 +134,52 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 	}
 }
 
+func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
+	preview, err := BuildImportPreview(
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+			},
+			InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."}},
+		},
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+				{Name: "Teleporter", MapIndex: 1, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
+			},
+			ItemTemplates: testMerchantItemTemplates(),
+			InteractionDefinitions: []interactionstore.Definition{
+				testMerchantCatalogDefinition(),
+				{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview: %v", err)
+	}
+	if preview.Current.StaticActorCount != 1 || preview.Candidate.StaticActorCount != 2 {
+		t.Fatalf("unexpected preview summaries: current=%+v candidate=%+v", preview.Current, preview.Candidate)
+	}
+	wantDeltas := SummaryDeltas{
+		StaticActorCount:                       SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+		InteractableStaticActorCount:           SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+		SpawnGroupCount:                        SummaryCountDelta{},
+		CombatProfileCount:                     SummaryCountDelta{},
+		ItemTemplateCount:                      SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+		ShopCatalogEntryCount:                  SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+		ShopRouteCount:                         SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+		WarpDestinationCount:                   SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+		WarpRouteCount:                         SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+		RewardDropItemCount:                    SummaryCountDelta{},
+		InteractionDefinitionCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+		ReferencedInteractionDefinitionCount:   SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+		UnreferencedInteractionDefinitionCount: SummaryCountDelta{},
+	}
+	if !reflect.DeepEqual(preview.Deltas, wantDeltas) {
+		t.Fatalf("unexpected import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas, wantDeltas)
+	}
+}
+
 func TestSummarizeReturnsDeterministicStaticActorDetails(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		StaticActors: []StaticActor{

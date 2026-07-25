@@ -15,6 +15,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -554,6 +555,118 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 	}
 }
 
+func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."}},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"static_actors":[{"name":"  Merchant  ","map_index":42,"x":1800,"y":2900,"race_num":20302,"interaction_kind":" shop_preview ","interaction_ref":" npc:merchant "}],"item_templates":[{"vnum":27001,"name":" Small Red Potion ","stackable":true,"max_count":200,"shop_buy_price":5},{"vnum":11200,"name":" Wooden Sword ","stackable":false,"max_count":1}],"interaction_definitions":[{"kind":" shop_preview ","ref":" npc:merchant ","title":" Village Merchant ","catalog":[{"slot":1,"item_vnum":11200,"price":500,"count":1},{"slot":0,"item_vnum":27001,"price":50,"count":1}]}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	wantCandidate := contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates:          testOpsMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{testOpsMerchantCatalogDefinition()},
+	}
+	if !reflect.DeepEqual(previewer.lastBundle, wantCandidate) {
+		t.Fatalf("expected canonical candidate bundle passed to previewer:\n got: %#v\nwant: %#v", previewer.lastBundle, wantCandidate)
+	}
+	var got contentbundle.ImportPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode import preview response: %v", err)
+	}
+	if got.Deltas.ShopCatalogEntryCount != (contentbundle.SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2}) {
+		t.Fatalf("unexpected shop catalog entry delta: %+v", got.Deltas.ShopCatalogEntryCount)
+	}
+	if got.Deltas.ShopRouteCount != (contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}) {
+		t.Fatalf("unexpected shop route delta: %+v", got.Deltas.ShopRouteCount)
+	}
+}
+
+func TestLocalContentBundleImportPreviewEndpointRejectsInvalidCandidateBeforeCallback(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"static_actors":[{"name":"BrokenActor","race_num":20300}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for invalid candidate import preview, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected invalid candidate import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleImportPreviewEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"interaction_definitions":[]}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d for non-loopback import preview, got %d", http.StatusForbidden, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected non-loopback import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func TestLocalContentBundleImportPreviewEndpointRejectsWrongMethod(t *testing.T) {
+	previewer := &stubContentBundleImportPreviewer{}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/content-bundle/import-preview", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d for wrong method import preview, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if previewer.calls != 0 {
+		t.Fatalf("expected wrong-method import preview not to call previewer, got %d calls", previewer.calls)
+	}
+}
+
+func testOpsMerchantCatalogDefinition() interactionstore.Definition {
+	return interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Village Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+		},
+	}
+}
+
+func testOpsMerchantItemTemplates() []itemcatalog.Template {
+	return []itemcatalog.Template{
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointReturnsPerMapInfoTalkActorCountsForLoopbackPost(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
@@ -705,4 +818,24 @@ type stubContentBundleSummaryExporter struct {
 func (s *stubContentBundleSummaryExporter) ExportContentBundleSummary() (any, int) {
 	s.calls++
 	return s.summary, s.status
+}
+
+type stubContentBundleImportPreviewer struct {
+	current    contentbundle.Bundle
+	status     int
+	calls      int
+	lastBundle contentbundle.Bundle
+}
+
+func (s *stubContentBundleImportPreviewer) PreviewContentBundleImport(bundle contentbundle.Bundle) (any, int) {
+	s.calls++
+	s.lastBundle = bundle
+	preview, err := contentbundle.BuildImportPreview(s.current, bundle)
+	if err != nil {
+		return nil, http.StatusBadRequest
+	}
+	if s.status != 0 {
+		return preview, s.status
+	}
+	return preview, http.StatusOK
 }

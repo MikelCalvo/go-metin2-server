@@ -109,6 +109,56 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 	}
 }
 
+func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntime(t *testing.T) {
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."}})
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("VillageGuide", 42, 1700, 2800, 20300, interactionstore.KindTalk, "npc:guide"); !ok {
+		t.Fatal("expected current guide static actor registration to succeed")
+	}
+	before, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export content bundle before preview: %v", err)
+	}
+
+	preview, err := runtime.PreviewContentBundleImport(contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+	})
+	if err != nil {
+		t.Fatalf("preview content bundle import: %v", err)
+	}
+	wantDeltas := contentbundle.SummaryDeltas{
+		StaticActorCount:                       contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		InteractableStaticActorCount:           contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		SpawnGroupCount:                        contentbundle.SummaryCountDelta{},
+		CombatProfileCount:                     contentbundle.SummaryCountDelta{},
+		ItemTemplateCount:                      contentbundle.SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+		ShopCatalogEntryCount:                  contentbundle.SummaryCountDelta{Current: 0, Candidate: 3, Delta: 3},
+		ShopRouteCount:                         contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+		WarpDestinationCount:                   contentbundle.SummaryCountDelta{},
+		WarpRouteCount:                         contentbundle.SummaryCountDelta{},
+		RewardDropItemCount:                    contentbundle.SummaryCountDelta{},
+		InteractionDefinitionCount:             contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		ReferencedInteractionDefinitionCount:   contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		UnreferencedInteractionDefinitionCount: contentbundle.SummaryCountDelta{},
+	}
+	if !reflect.DeepEqual(preview.Deltas, wantDeltas) {
+		t.Fatalf("unexpected runtime import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas, wantDeltas)
+	}
+	after, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export content bundle after preview: %v", err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("expected preview not to mutate authored content:\n got: %#v\nwant: %#v", after, before)
+	}
+}
+
 func TestGameRuntimeExportContentBundleSummaryIncludesSpawnGroupDetails(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")

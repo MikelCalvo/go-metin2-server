@@ -331,6 +331,16 @@ func main() {
 			return summary, http.StatusOK
 		},
 	)
+	opsHandler = ops.RegisterLocalContentBundleImportPreviewEndpoint(
+		opsHandler,
+		func(bundle contentbundle.Bundle) (any, int) {
+			preview, err := gameRuntime.PreviewContentBundleImport(bundle)
+			if err != nil {
+				return nil, http.StatusInternalServerError
+			}
+			return preview, http.StatusOK
+		},
+	)
 	opsHandler = ops.RegisterLocalContentBundleValidateEndpoint(opsHandler)
 	if err := service.RunWithOpsHandler(ctx, cfg, logger, gameRuntime.SessionFactory(), opsHandler); err != nil {
 		logger.Error("service stopped with error", "err", err)

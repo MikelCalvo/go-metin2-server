@@ -281,6 +281,18 @@ Returns a loopback-only JSON summary of authored content bundles without returni
 
 The summary includes deterministic counts for static actors, interactable static actors, spawn groups, portable combat profiles, item templates, structured shop catalog entries, interaction definitions, per-kind referenced/unreferenced interaction definitions, exact referenced/unreferenced interaction definition identities, compact `interaction_definition_previews` for every authored definition, exact portable `static_actors` identities (`name`, `map_index`, `x`, `y`, `race_num`, optional `combat_profile`, optional `interaction_kind`, optional `interaction_ref`) for both plain and interactable actors, exact `interactable_static_actors` identities with the same compact `preview` strings used by `/local/interaction-visibility`, exact spawn-group identities (`ref`, `name`, `map_index`, `combat_profile`, and reward descriptor) plus resolved `reward_drop_items` metadata for every authored drop vnum, aggregate reward totals (`reward_experience_total`, `reward_gold_total`, `reward_drop_item_count`) plus deterministic `reward_drops` grouped by item vnum with `source_count` and resolved item metadata, exact portable `combat_profiles` snapshots, exact item-template identities (`vnum`, `name`, `stackable`, `max_count`, optional `shop_buy_price`), exact structured `shop_catalogs` with per-entry slot / item vnum / resolved item name / count / price / stack metadata, exact `warp_destinations`, and per-map static actor / interactable static actor / spawn-group occupancy with per-map `info_actor_count`, `talk_actor_count`, `shop_preview_actor_count`, `shop_catalog_entry_count`, `warp_actor_count`, spawn reward totals, and drop item counts. Invalid candidate bundles return `400`, non-loopback callers return `403`, and methods other than `GET` / `POST` return `405`.
 
+### `POST /local/content-bundle/import-preview`
+
+Previews the impact of importing a candidate authored bootstrap content bundle without mutating runtime state. This loopback-only endpoint uses the same 1 MiB request bound, strict JSON decoding, and `contentbundle.Canonicalize(...)` rules as `POST /local/content-bundle` / `POST /local/content-bundle/validate`, then compares the candidate against the currently exported canonical live bundle.
+
+Successful responses are JSON with:
+
+- `current` — the current live content-bundle summary
+- `candidate` — the candidate bundle summary after canonicalization
+- `deltas` — compact count deltas where each count has `current`, `candidate`, and signed `delta`
+
+The current delta set covers static actors, interactable actors, spawn groups, portable combat profiles, item templates, shop catalog entries, shop routes, warp destinations, warp routes, reward drop items, interaction definitions, referenced interaction definitions, and unreferenced interaction definitions. Invalid JSON, unknown fields, dangling refs, invalid static actors/spawn groups/combat profiles, missing merchant or reward-drop item templates, and other candidate bundle validation failures return `400`; non-loopback callers return `403`; methods other than `POST` return `405`. Use this endpoint when an operator wants a no-mutation before/after audit before applying a replacement bundle through `POST /local/content-bundle`.
+
 ### `POST /local/content-bundle/validate`
 
 Validates and canonicalizes an authored bootstrap content bundle without importing or mutating runtime state. This loopback-only endpoint uses the same 1 MiB request bound, strict JSON decoding, and `contentbundle.Canonicalize(...)` rules as `POST /local/content-bundle`.
@@ -577,6 +589,7 @@ Exports or imports one deterministic authored-content artifact spanning both boo
 - `POST` imports a full replacement bundle
 - imports reject dangling interaction references before mutating runtime state
 - `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` include compact `shop_routes` entries for each placed merchant actor, so local QA can inspect exact actor-to-catalog placement without fetching or applying the full bundle
+- `POST /local/content-bundle/import-preview` compares a candidate replacement against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count `deltas`
 
 A small reference artifact lives at `docs/examples/bootstrap-npc-service-bundle.json`.
 
