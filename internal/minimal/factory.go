@@ -166,6 +166,13 @@ type CharacterPointsSnapshot struct {
 	Points [255]int32 `json:"points"`
 }
 
+type StaticActorRespawnSnapshot struct {
+	EntityID    uint64              `json:"entity_id"`
+	ReadyAt     time.Time           `json:"ready_at"`
+	RemainingMs int64               `json:"remaining_ms"`
+	Actor       StaticActorSnapshot `json:"actor"`
+}
+
 const (
 	staticActorInteractionFailureDefinitionNotFound     = "interaction_definition_not_found"
 	staticActorInteractionFailureUnsupportedKind        = "unsupported_interaction_kind"
@@ -560,6 +567,13 @@ func (r *gameRuntime) CombatTargetSnapshots() []CombatTargetSnapshot {
 		return nil
 	}
 	return r.sharedWorld.CombatTargetSnapshots()
+}
+
+func (r *gameRuntime) StaticActorRespawns() []StaticActorRespawnSnapshot {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	return r.sharedWorld.StaticActorRespawns()
 }
 
 func (r *gameRuntime) InteractionVisibility() []CharacterInteractionVisibilitySnapshot {

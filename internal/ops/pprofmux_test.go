@@ -2397,6 +2397,70 @@ func TestLocalRuntimeConfigEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalStaticActorRespawnsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing.T) {
+	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"entity_id": uint64(33), "ready_at": "2026-07-25T12:00:00Z", "remaining_ms": int64(1200), "actor": map[string]any{"entity_id": uint64(33), "name": "RespawnMob", "dead": true}}}}
+	mux := RegisterLocalStaticActorRespawnsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-respawns", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected static-actor respawns snapshotter call, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":33`) || !strings.Contains(string(body), `"remaining_ms":1200`) || !strings.Contains(string(body), `"actor"`) || !strings.Contains(string(body), `"dead":true`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorRespawnsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubListSnapshotter{}
+	mux := RegisterLocalStaticActorRespawnsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-respawns", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected static-actor respawns snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalStaticActorRespawnsEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubListSnapshotter{}
+	mux := RegisterLocalStaticActorRespawnsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-respawns", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected static-actor respawns snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
 func TestLocalStaticActorCombatProfileEndpointRegistersProfileForLoopbackPost(t *testing.T) {
 	const profile = "ops_profile_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

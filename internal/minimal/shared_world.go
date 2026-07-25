@@ -750,6 +750,48 @@ func (r *sharedWorldRegistry) CombatTargetSnapshots() []CombatTargetSnapshot {
 	return snapshots
 }
 
+func (r *sharedWorldRegistry) StaticActorRespawns() []StaticActorRespawnSnapshot {
+	if r == nil || r.entities == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.staticActorCombatRespawnAt) == 0 {
+		return nil
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	entityIDs := make([]uint64, 0, len(r.staticActorCombatRespawnAt))
+	for entityID := range r.staticActorCombatRespawnAt {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i, j int) bool { return entityIDs[i] < entityIDs[j] })
+
+	respawns := make([]StaticActorRespawnSnapshot, 0, len(entityIDs))
+	for _, entityID := range entityIDs {
+		actor, ok := r.entities.StaticActor(entityID)
+		if !ok {
+			continue
+		}
+		readyAt := r.staticActorCombatRespawnAt[entityID]
+		remaining := readyAt.Sub(now).Milliseconds()
+		if remaining < 0 {
+			remaining = 0
+		}
+		respawns = append(respawns, StaticActorRespawnSnapshot{
+			EntityID:    entityID,
+			ReadyAt:     readyAt,
+			RemainingMs: remaining,
+			Actor:       r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)),
+		})
+	}
+	return respawns
+}
+
 func (r *sharedWorldRegistry) combatTargetSnapshotLocked(entityID uint64) (CombatTargetSnapshot, bool) {
 	if _, ok := r.sessionEntryLocked(entityID); !ok {
 		return CombatTargetSnapshot{}, false

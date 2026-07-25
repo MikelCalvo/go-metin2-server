@@ -542,6 +542,28 @@ func RegisterLocalRuntimeConfigEndpoint(mux *http.ServeMux, runtimeConfig func()
 	return mux
 }
 
+func RegisterLocalStaticActorRespawnsEndpoint(mux *http.ServeMux, staticActorRespawns func() any) *http.ServeMux {
+	if mux == nil || staticActorRespawns == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/static-actor-respawns", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(staticActorRespawns()); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	return mux
+}
+
 func RegisterLocalGroundItemsEndpoint(mux *http.ServeMux, groundItems func() any) *http.ServeMux {
 	if mux == nil || groundItems == nil {
 		return mux

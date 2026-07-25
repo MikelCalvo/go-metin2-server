@@ -17202,6 +17202,58 @@ func TestGameRuntimeFlushReadyStaticActorRespawnsRebuildsVisibleDeadTrainingDumm
 	}
 }
 
+func TestSharedWorldRegistryStaticActorRespawnsReportsPendingDeadActors(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	currentTime := time.Unix(1700000901, 0)
+	registry.now = func() time.Time { return currentTime }
+	subject := peerVisibilityCharacter("RespawnSnapshotOwner", 0x01030121, 0x02040121, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "RespawnSnapshotMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.respawn_snapshot", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected respawn snapshot practice mob registration to succeed")
+	}
+	targetVID := uint32(actor.EntityID)
+	targetAttempt := registry.AttemptStaticActorCombatTarget(subjectID, targetVID)
+	if !targetAttempt.Accepted || !registry.SetSessionCombatTarget(subjectID, targetAttempt.TargetVID) {
+		t.Fatalf("expected respawn snapshot mob target selection to be recorded, got %+v", targetAttempt)
+	}
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		attack := registry.AttemptSelectedStaticActorAttack(subjectID, targetAttempt.TargetVID, targetAttempt.SnapshotVersion, targetVID)
+		if !attack.Accepted {
+			t.Fatalf("expected hit %d to be accepted before pending respawn snapshot, got %+v", hit, attack)
+		}
+		if hit == int(worldruntime.TrainingDummyBootstrapMaxHP) && !attack.Died {
+			t.Fatalf("expected final hit to schedule dead-state respawn, got %+v", attack)
+		}
+	}
+
+	respawns := registry.StaticActorRespawns()
+	if len(respawns) != 1 {
+		t.Fatalf("expected one pending respawn snapshot, got %d: %+v", len(respawns), respawns)
+	}
+	respawn := respawns[0]
+	if respawn.EntityID != actor.EntityID || respawn.Actor.EntityID != actor.EntityID || respawn.Actor.Name != "RespawnSnapshotMob" || !respawn.Actor.Dead {
+		t.Fatalf("unexpected pending respawn actor snapshot: %+v", respawn)
+	}
+	readyAt := currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
+	if !respawn.ReadyAt.Equal(readyAt) || respawn.RemainingMs != worldruntime.TrainingDummyBootstrapRespawnDelay.Milliseconds() {
+		t.Fatalf("unexpected pending respawn timing: got ready_at=%s remaining_ms=%d want ready_at=%s remaining_ms=%d", respawn.ReadyAt, respawn.RemainingMs, readyAt, worldruntime.TrainingDummyBootstrapRespawnDelay.Milliseconds())
+	}
+
+	currentTime = readyAt.Add(50 * time.Millisecond)
+	respawns = registry.StaticActorRespawns()
+	if len(respawns) != 1 || respawns[0].RemainingMs != 0 {
+		t.Fatalf("expected expired but unflushed respawn to remain visible with remaining_ms=0, got %+v", respawns)
+	}
+	registry.FlushReadyStaticActorRespawns()
+	if respawns := registry.StaticActorRespawns(); len(respawns) != 0 {
+		t.Fatalf("expected flushed respawn to disappear from pending snapshot, got %+v", respawns)
+	}
+}
+
 func TestGameRuntimePracticeMobRespawnPreservesAuthoredSpawnRewardSnapshot(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	nearPlayer := peerVisibilityCharacter("RewardRespawnNear", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)

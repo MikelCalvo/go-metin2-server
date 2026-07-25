@@ -453,6 +453,21 @@ Both responses reuse the runtime debug snapshot shape documented in `spec/protoc
 The embedded `subject` field uses the same effective connected-character snapshot shape exposed by `/local/players`, so combat-target debugging can verify the current owner location/dead-state without a second lookup.
 Both endpoints are loopback-only and read-only. The exact-name endpoint returns `404` when the character is not connected, no longer has a live session hook, has no active target, or the target no longer resolves through the current visibility/runtime combat rules; the list endpoint omits unresolved/stale selections instead of leaking hidden or invalid target data.
 
+### `GET /local/static-actor-respawns`
+
+Returns the deterministic list of pending server-driven static-actor respawn timers for runtime-owned dead practice mobs.
+This endpoint is loopback-only, read-only, rejects non-`GET` methods with `405`, and is intended for QA/debugging of the dead interval frozen in `spec/protocol/non-player-death-respawn-bootstrap.md`.
+
+Each row exposes:
+
+- `entity_id` — runtime static-actor entity / client-visible static-actor `VID`
+- `ready_at` — the server-owned timestamp when the next flush can rebuild the actor
+- `remaining_ms` — milliseconds until `ready_at`, clamped to `0` when the timer is already due but has not yet been flushed through the pending server-frame path
+- `actor` — the same static-actor snapshot shape used by `/local/static-actors`, with `dead: true` while the respawn remains pending
+
+Rows are sorted by `entity_id`.
+Once `FlushServerFrames()` runs after a due timer and the respawn rebuild is emitted, that actor disappears from this snapshot.
+
 ### `GET` / `POST /local/static-actors` and `PATCH` / `PUT` / `DELETE /local/static-actors/{entity_id}`
 
 Use these endpoints to inspect and author bootstrap static actors.
