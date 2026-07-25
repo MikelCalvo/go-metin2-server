@@ -204,6 +204,7 @@ type staticActorCombatAttackResolution struct {
 	Packet                      *combatproto.ServerTargetPacket
 	Frames                      [][]byte
 	SelfPostMutationFrames      [][]byte
+	PeerPostMutationFrames      [][]byte
 	ClearActiveTarget           bool
 }
 
@@ -3402,6 +3403,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					if !clearTarget && len(resolution.SelfPostMutationFrames) != 0 {
 						persistedFrames = append(persistedFrames, resolution.SelfPostMutationFrames...)
+						if ownsLiveSharedWorldSession() && len(resolution.PeerPostMutationFrames) != 0 {
+							sharedWorld.EnqueueStaticActorFramesToVisiblePeers(resolution.Actor.EntityID, sharedWorldID, resolution.PeerPostMutationFrames)
+						}
 					}
 					persistedFrames = appendPostFloorMerchantCloseFrame(persistedFrames, clearTarget)
 					if !resolution.ClearActiveTarget && !clearTarget {
@@ -6017,6 +6021,7 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 			combatproto.EncodeServerTarget(packet),
 		}
 		resolution.SelfPostMutationFrames = [][]byte{damageInfoFrame}
+		resolution.PeerPostMutationFrames = [][]byte{damageInfoFrame}
 		return resolution
 	}
 	if staticActorDamageInfoRuntimeEmissionOwned(attempt.Actor) {

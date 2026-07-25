@@ -5661,6 +5661,7 @@ func TestGameRuntimeBroadcastNoticeSkipsZeroHPOwnerAfterDelayedRetaliationReache
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner server-notice skip after delayed retaliation, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP owner server-notice skip after delayed retaliation to watcher")
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -5851,6 +5852,8 @@ func TestGameRuntimePeerAppearanceUpdateSkipsZeroHPOwnerRecipientAfterDelayedRet
 	if len(attackOut) != 3 {
 		t.Fatalf("expected owner target refresh, first point-loss retaliation, and self damage-info before zero-HP peer-appearance recipient skip test, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, observerFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP peer-appearance recipient skip test to observer")
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP peer-appearance recipient skip test to watcher")
 
 	currentTime = currentTime.Add(time.Second)
 	ownerQueued := flushServerFrames(t, ownerFlow)
@@ -5955,6 +5958,7 @@ func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterD
 	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher target refresh, first point-loss retaliation, and self damage-info before zero-HP peer-DEAD recipient skip test, got %d frames", len(watcherAttackOut))
 	}
+	flushSingleDamageInfoFrame(t, ownerFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP peer-DEAD recipient skip test")
 
 	currentTime = currentTime.Add(time.Second)
 	watcherQueued := flushServerFrames(t, watcherFlow)
@@ -6351,6 +6355,7 @@ func drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t *testing.T, ownerFlo
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP static-actor visibility recipient test, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP static-actor visibility recipient test")
 
 	advance(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -8040,6 +8045,7 @@ func TestGameSessionFlowPracticeMobPeerJoinSkipsZeroHPOwnerRecipientAfterDelayed
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner peer-join skip test, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP owner peer-join skip test")
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -8154,6 +8160,7 @@ func TestGameSessionFlowPracticeMobFreshPeerBootstrapAppendsDeadForAlreadyDeadVi
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before fresh-peer dead bootstrap test, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before fresh-peer dead bootstrap test")
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -11865,7 +11872,7 @@ func TestGameRuntimeDropRewardQueuesGroundVisibilityForLivePeers(t *testing.T) {
 		t.Fatalf("unexpected killer reward ground add: %+v", killerGround)
 	}
 
-	peerFrames := flushServerFrames(t, watcherFlow)
+	peerFrames := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before peer-visible drop reward fanout")
 	if len(peerFrames) != 3 {
 		t.Fatalf("expected watcher to receive mob dead, ground-add, and ownership frames, got %d", len(peerFrames))
 	}
@@ -12026,7 +12033,7 @@ func TestGameRuntimeDropRewardOwnerCloseRemovesPendingGroundHandleForVisiblePeer
 	if err != nil {
 		t.Fatalf("decode reward owner close ground add: %v", err)
 	}
-	peerFrames := flushServerFrames(t, watcherFlow)
+	peerFrames := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before reward owner close drop fanout")
 	if len(peerFrames) != 3 {
 		t.Fatalf("expected watcher to receive mob dead, ground-add, and ownership before owner close, got %d", len(peerFrames))
 	}
@@ -19661,7 +19668,7 @@ func TestNewGameSessionFactoryQueuesPracticeMobDeathDropRewardToVisiblePeer(t *t
 		t.Fatalf("unexpected killer peer drop reward ownership: got %+v want vid %d owner %q", ownership, ground.VID, killer.Name)
 	}
 
-	watcherQueued := flushServerFrames(t, watcherFlow)
+	watcherQueued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before peer drop reward death fanout")
 	if len(watcherQueued) != 3 {
 		t.Fatalf("expected watcher to receive DEAD plus ground-add/ownership reward frames, got %d", len(watcherQueued))
 	}
@@ -20270,7 +20277,7 @@ func TestGameRuntimeDropRewardQueuesVisibilityForLivePeer(t *testing.T) {
 		t.Fatalf("unexpected self visible drop reward ground add: %+v", selfGround)
 	}
 
-	watcherQueued := flushServerFrames(t, watcherFlow)
+	watcherQueued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before visible drop reward fanout")
 	if len(watcherQueued) != 3 {
 		t.Fatalf("expected watcher to receive dead plus ground-add and ownership frames for visible drop reward, got %d", len(watcherQueued))
 	}
@@ -25611,6 +25618,94 @@ func TestGameSessionFlowContentSpawnBackedPracticeMobAttackAppendsSelfDamageInfo
 	}
 }
 
+func TestGameSessionFlowContentSpawnBackedPracticeMobAttackDamageInfoQueuesVisiblePeer(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000206, 0)
+	runtime.now = func() time.Time { return currentTime }
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.damage_info_peer_spawn",
+		Name:          "PracticeDamageInfoPeerSpawn",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import spawn-backed damage-info peer practice mob: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].SpawnGroupRef != "practice.damage_info_peer_spawn" {
+		t.Fatalf("expected one spawn-backed practice mob after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible spawn-backed practice mob for owner, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames with visible owner and spawn-backed practice mob for watcher, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected owner to receive watcher peer-entry frames before spawn-backed damage-info fanout, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected spawn-backed combat target error before damage-info fanout: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only spawn-backed target frame before damage-info fanout, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected spawn-backed attack error before damage-info fanout: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected owner target-refresh, self retaliation point-loss, and self damage-info frame, got %d", len(attackOut))
+	}
+	selfDamage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, attackOut[2]))
+	if err != nil {
+		t.Fatalf("decode owner self spawn-backed damage-info frame: %v", err)
+	}
+	if selfDamage.VID != targetVID || selfDamage.Flag != 0 || selfDamage.Damage != int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack) {
+		t.Fatalf("unexpected owner self spawn-backed damage-info packet: %+v", selfDamage)
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected visible watcher to receive 1 queued spawn-backed damage-info frame, got %d", len(watcherQueued))
+	}
+	peerDamage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued spawn-backed peer damage-info frame: %v", err)
+	}
+	if peerDamage != selfDamage {
+		t.Fatalf("expected queued spawn-backed peer damage-info to match owner self packet, got peer=%+v self=%+v", peerDamage, selfDamage)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected spawn-backed damage-info fanout not to queue duplicate frames to owner, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndRejectsPostDeathRequests(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -26160,7 +26255,7 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
 		t.Fatalf("unexpected content practice-mob clear-target packet on death hit: %+v", cleared)
 	}
-	observerDeathFrames := flushServerFrames(t, observerFlow)
+	observerDeathFrames := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, observerFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before content practice-mob respawn death fanout")
 	if len(observerDeathFrames) != 1 {
 		t.Fatalf("expected observer death fanout before content practice-mob respawn, got %d frames", len(observerDeathFrames))
 	}
@@ -27950,6 +28045,7 @@ func TestGameSessionFlowPracticeMobTransferRebootstrapStopsPendingRetaliationAnd
 	if len(attackOut) != 3 {
 		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before transfer, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before owner transfer mid-engagement")
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -28491,6 +28587,7 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterDelayedRetaliationK
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before delayed-retaliation aggro release, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before delayed-retaliation aggro release")
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -28714,6 +28811,7 @@ func TestGameSessionFlowPracticeMobSyncPositionFailsClosedAfterDelayedRetaliatio
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner sync-position denial after delayed retaliation, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP owner sync-position denial after delayed retaliation")
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -31415,6 +31513,7 @@ func TestGameSessionFlowPracticeMobWhisperFailsClosedAfterDelayedRetaliationReac
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner whisper denial after delayed retaliation, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP owner whisper denial after delayed retaliation")
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -31526,6 +31625,7 @@ func TestGameSessionFlowPracticeMobWhisperToZeroHPOwnerFailsClosedAfterDelayedRe
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner recipient whisper denial after delayed retaliation, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP owner recipient whisper denial after delayed retaliation")
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -31629,6 +31729,7 @@ func TestGameSessionFlowPracticeMobLocalChatSkipsZeroHPOwnerRecipientAfterDelaye
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner recipient local-chat skip after delayed retaliation, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP owner recipient local-chat skip after delayed retaliation")
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -31743,6 +31844,7 @@ func TestGameSessionFlowPracticeMobPeerChatRecipientSkipsZeroHPOwnerAfterDelayed
 	if len(attackOut) != 3 {
 		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before zero-HP owner recipient broadcast-chat skip after delayed retaliation")
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
@@ -32256,9 +32358,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationQueuesVisiblePeerDeadAtOwne
 	if len(attackOut) != 3 {
 		t.Fatalf("expected immediate target refresh, first point-loss retaliation, and self damage-info before delayed peer-dead retaliation check, got %d frames", len(attackOut))
 	}
-	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
-		t.Fatalf("expected no visible-peer death frame before delayed retaliation actually reaches owner HP floor, got %d", len(queued))
-	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before delayed retaliation reaches owner HP floor")
 
 	currentTime = currentTime.Add(time.Second)
 	ownerQueued := flushServerFrames(t, ownerFlow)
@@ -33986,7 +34086,7 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before respawn reselect test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, watcherFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before respawn reselect mob-death fanout"); len(queued) != 1 {
 		t.Fatalf("expected watcher to see exactly 1 mob-death frame before respawn reselect, got %d", len(queued))
 	}
 	preRespawnSelectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -34054,9 +34154,7 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 	if watcherRefresh.TargetVID != targetVID || watcherRefresh.HPPercent != 90 {
 		t.Fatalf("expected watcher attack after respawn reselect to damage target to 90%% HP, got %+v", watcherRefresh)
 	}
-	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
-		t.Fatalf("expected owner to receive no stale frames after watcher restarts combat post-respawn, got %d", len(queued))
-	}
+	flushSingleDamageInfoFrame(t, ownerFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "after watcher restarts combat post-respawn")
 }
 
 func TestGameSessionFlowPracticeMobRespawnWatcherCombatBlocksSecondWatcher(t *testing.T) {
@@ -34135,10 +34233,10 @@ func TestGameSessionFlowPracticeMobRespawnWatcherCombatBlocksSecondWatcher(t *te
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before respawn second-watcher block test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, watcherFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before respawn second-watcher block mob-death fanout to watcher"); len(queued) != 1 {
 		t.Fatalf("expected watcher to see exactly 1 mob-death frame before respawn second-watcher block test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, blockerFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before respawn second-watcher block mob-death fanout to blocker"); len(queued) != 1 {
 		t.Fatalf("expected blocker to see exactly 1 mob-death frame before respawn second-watcher block test, got %d", len(queued))
 	}
 
@@ -34263,10 +34361,10 @@ func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatc
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn movement release test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, watcherFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn movement release mob-death fanout to watcher"); len(queued) != 1 {
 		t.Fatalf("expected watcher to see exactly 1 mob-death frame before post-respawn movement release test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, blockerFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn movement release mob-death fanout to blocker"); len(queued) != 1 {
 		t.Fatalf("expected blocker to see exactly 1 mob-death frame before post-respawn movement release test, got %d", len(queued))
 	}
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
@@ -34405,10 +34503,10 @@ func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn logout release test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, watcherFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn logout release mob-death fanout to watcher"); len(queued) != 1 {
 		t.Fatalf("expected watcher to see exactly 1 mob-death frame before post-respawn logout release test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, blockerFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn logout release mob-death fanout to blocker"); len(queued) != 1 {
 		t.Fatalf("expected blocker to see exactly 1 mob-death frame before post-respawn logout release test, got %d", len(queued))
 	}
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
@@ -34463,7 +34561,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *
 	if phaseAware.CurrentPhase() != session.PhaseClose {
 		t.Fatalf("expected watcher /logout to keep watcher flow in close phase after post-respawn combat, got %q", phaseAware.CurrentPhase())
 	}
-	blockerQueued := flushServerFrames(t, blockerFlow)
+	blockerQueued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, 1, "before watcher post-respawn logout peer-delete")
 	if len(blockerQueued) != 1 {
 		t.Fatalf("expected blocker to receive exactly 1 queued peer-delete frame when watcher logs out post-respawn, got %d", len(blockerQueued))
 	}
@@ -34561,10 +34659,10 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn quit release test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, watcherFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn quit release mob-death fanout to watcher"); len(queued) != 1 {
 		t.Fatalf("expected watcher to see exactly 1 mob-death frame before post-respawn quit release test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, blockerFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn quit release mob-death fanout to blocker"); len(queued) != 1 {
 		t.Fatalf("expected blocker to see exactly 1 mob-death frame before post-respawn quit release test, got %d", len(queued))
 	}
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
@@ -34619,7 +34717,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 	if phaseAware.CurrentPhase() != session.PhaseGame {
 		t.Fatalf("expected watcher /quit to keep watcher flow in game phase after post-respawn combat, got %q", phaseAware.CurrentPhase())
 	}
-	blockerQueued := flushServerFrames(t, blockerFlow)
+	blockerQueued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, 1, "before watcher post-respawn quit peer-delete")
 	if len(blockerQueued) != 1 {
 		t.Fatalf("expected blocker to receive exactly 1 queued peer-delete frame when watcher quits post-respawn, got %d", len(blockerQueued))
 	}
@@ -34731,10 +34829,10 @@ func TestGameSessionFlowPracticeMobRespawnWatcherSyncClearReleasesSecondWatcher(
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn sync-position release test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, watcherFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn sync-position release mob-death fanout to watcher"); len(queued) != 1 {
 		t.Fatalf("expected watcher to see exactly 1 mob-death frame before post-respawn sync-position release test, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, blockerFlow); len(queued) != 1 {
+	if queued := stripTrainingDummyDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn sync-position release mob-death fanout to blocker"); len(queued) != 1 {
 		t.Fatalf("expected blocker to see exactly 1 mob-death frame before post-respawn sync-position release test, got %d", len(queued))
 	}
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
@@ -35252,8 +35350,8 @@ func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *
 		t.Fatalf("expected owner attack to return target-refresh, self-only retaliation, and self damage-info, got %d frames", len(ownerAttackOut))
 	}
 	queuedClear := flushServerFrames(t, watcherFlow)
-	if len(queuedClear) != 1 {
-		t.Fatalf("expected 1 queued self-only stale-target clear for watcher when owner first engages mob, got %d queued frames", len(queuedClear))
+	if len(queuedClear) != 2 {
+		t.Fatalf("expected queued self-only stale-target clear plus damage-info for watcher when owner first engages mob, got %d queued frames", len(queuedClear))
 	}
 	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queuedClear[0]))
 	if err != nil {
@@ -35262,6 +35360,7 @@ func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected queued watcher stale-target clear after owner engagement to be TARGET(0, 0), got %+v", clearTarget)
 	}
+	assertDamageInfoFrame(t, queuedClear[1], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "after stale-target clear on owner engagement")
 
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
@@ -35469,6 +35568,7 @@ func TestGameSessionFlowPracticeMobSlashLogoutStopsPendingRetaliationAndReleases
 	if len(attackOut) != 3 {
 		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before slash logout, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before owner slash logout mid-engagement")
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -35605,6 +35705,7 @@ func TestGameSessionFlowPracticeMobSlashQuitStopsPendingRetaliationAndReleasesAg
 	if len(attackOut) != 3 {
 		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before slash quit, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before owner slash quit mid-engagement")
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -35766,6 +35867,7 @@ func TestGameSessionFlowPracticeMobPhaseSelectStopsPendingRetaliationAndReleases
 	if len(attackOut) != 3 {
 		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before /phase_select, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before owner phase-select mid-engagement")
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -35901,6 +36003,7 @@ func TestGameSessionFlowPracticeMobCloseStopsPendingRetaliationAndReleasesAggro(
 	if len(attackOut) != 3 {
 		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before close, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before owner close mid-engagement")
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -36018,6 +36121,7 @@ func setupPracticeMobPendingRetaliationWithBlockedWatcher(t *testing.T) (*gameRu
 	if len(attackOut) != 3 {
 		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before partial ownership loss, got %d frames", len(attackOut))
 	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before partial ownership loss")
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -37203,6 +37307,50 @@ func flushServerFrames(t *testing.T, flow service.SessionFlow) [][]byte {
 		t.Fatalf("flush server frames: %v", err)
 	}
 	return out
+}
+
+func flushSingleDamageInfoFrame(t *testing.T, flow service.SessionFlow, targetVID uint32, wantDamage int32, context string) combatproto.ServerDamageInfoPacket {
+	t.Helper()
+	frames := flushServerFrames(t, flow)
+	if len(frames) != 1 {
+		t.Fatalf("expected 1 queued damage-info frame %s, got %d", context, len(frames))
+	}
+	return assertDamageInfoFrame(t, frames[0], targetVID, wantDamage, context)
+}
+
+func assertDamageInfoFrames(t *testing.T, raws [][]byte, targetVID uint32, wantDamage int32, context string) []combatproto.ServerDamageInfoPacket {
+	t.Helper()
+	damages := make([]combatproto.ServerDamageInfoPacket, 0, len(raws))
+	for i, raw := range raws {
+		damages = append(damages, assertDamageInfoFrame(t, raw, targetVID, wantDamage, fmt.Sprintf("%s #%d", context, i+1)))
+	}
+	return damages
+}
+
+func stripDamageInfoPrefix(t *testing.T, frames [][]byte, targetVID uint32, wantDamage int32, count int, context string) [][]byte {
+	t.Helper()
+	if len(frames) < count {
+		t.Fatalf("expected at least %d queued damage-info frames %s, got %d", count, context, len(frames))
+	}
+	assertDamageInfoFrames(t, frames[:count], targetVID, wantDamage, context)
+	return frames[count:]
+}
+
+func stripTrainingDummyDamageInfoPrefix(t *testing.T, frames [][]byte, targetVID uint32, count int, context string) [][]byte {
+	t.Helper()
+	return stripDamageInfoPrefix(t, frames, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), count, context)
+}
+
+func assertDamageInfoFrame(t *testing.T, raw []byte, targetVID uint32, wantDamage int32, context string) combatproto.ServerDamageInfoPacket {
+	t.Helper()
+	damage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode queued damage-info frame %s: %v", context, err)
+	}
+	if damage.VID != targetVID || damage.Flag != 0 || damage.Damage != wantDamage {
+		t.Fatalf("unexpected queued damage-info frame %s: %+v", context, damage)
+	}
+	return damage
 }
 
 func closeSessionFlow(t *testing.T, flow service.SessionFlow) {

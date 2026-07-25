@@ -144,15 +144,15 @@ This gives local operator surfaces a stable read-only seam without granting stal
 
 ## First damage-info hit-effect codec
 
-The repository now owns the fixed-width server `DAMAGE_INFO` (`0x0410`) codec, self and visible-peer runtime emission for standalone bootstrap combat-profile hits, and the first owner self-only emission for content-loaded spawn-backed practice-mob hits.
+The repository now owns the fixed-width server `DAMAGE_INFO` (`0x0410`) codec, self and visible-peer runtime emission for standalone bootstrap combat-profile hits, and the first self plus visible-peer emission for content-loaded spawn-backed practice-mob hits.
 Its focused protocol note is `combat-damage-info-bootstrap.md`.
 
 That hit-effect companion is intentionally separate from the authoritative combat-state carrier in this document:
 - `TARGET(target_vid, hp_percent)` still owns the selected-target HP refresh for non-lethal bootstrap hits and is still sent first.
 - Standalone bootstrap combat-profile non-lethal normal hits append one self `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` after that target refresh and queue the same hit-effect companion to currently visible live peers.
-- Spawn-backed practice-mob non-lethal normal hits now append one owner self-only `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` after the existing immediate retaliation `PLAYER_POINT_CHANGE` when the owner remains alive; spawn-backed peer hit-effect fanout is still deferred.
+- Spawn-backed practice-mob non-lethal normal hits now append one owner self `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` after the existing immediate retaliation `PLAYER_POINT_CHANGE` when the owner remains alive and queue the same hit-effect frame to currently visible live peers; peers do not receive the owner's self `TARGET` refresh or retaliation point-change.
 - `DEAD(vid)` plus `TARGET(0, 0)` still owns the zero-HP edge, and the current damage-info slice deliberately does not append a synthetic final damage-info frame on killing hits.
-- Richer flag meanings, spawn-backed peer fanout, and broader hit-result policy remain later runtime emission policy.
+- Richer flag meanings, killing-hit damage-info, and broader hit-result policy remain later runtime emission policy.
 
 ## Relationship to later HP / death work
 
