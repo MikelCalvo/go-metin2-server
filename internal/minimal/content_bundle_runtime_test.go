@@ -11,6 +11,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -1112,6 +1113,91 @@ func TestGameRuntimeImportContentBundleFlushesStaticActorReplacementFanoutAfterS
 	}
 	if newUpdate.VID != newAdd.VID {
 		t.Fatalf("unexpected new actor update after successful replacement import: %+v add=%+v", newUpdate, newAdd)
+	}
+}
+
+func TestGameRuntimeImportIdenticalContentBundlePreservesLivePracticeMobCombatState(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	player := peerVisibilityCharacter("BundleCombat", 0x01036003, 0x02046003, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "bundle-combat", 0x60600303, player)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000206, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.noop_reimport",
+		Name:          "NoopReimportPracticeMob",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import initial no-op reimport practice mob bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected one imported practice mob before no-op reimport, got %+v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "bundle-combat", 0x60600303)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected self bootstrap plus imported practice mob visibility before no-op reimport, got %d frames", len(enterOut))
+	}
+	targetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before no-op reimport: %v", err)
+	}
+	if len(targetOut) != 1 {
+		t.Fatalf("expected one target ack before no-op reimport, got %d frames", len(targetOut))
+	}
+
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before no-op reimport: %v", err)
+	}
+	if len(firstAttack) != 3 {
+		t.Fatalf("expected target refresh, retaliation point change, and damage-info before no-op reimport, got %d frames", len(firstAttack))
+	}
+	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstAttack[0]))
+	if err != nil {
+		t.Fatalf("decode first target refresh before no-op reimport: %v", err)
+	}
+	if firstRefresh.TargetVID != targetVID || firstRefresh.HPPercent != 90 {
+		t.Fatalf("expected first attack to leave practice mob at 90%% HP before no-op reimport, got %+v", firstRefresh)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames before no-op reimport, got %d", len(queued))
+	}
+
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("reimport identical practice mob bundle: %v", err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected identical content-bundle reimport to queue no replacement frames, got %d", len(queued))
+	}
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	secondAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected second attack error after no-op reimport: %v", err)
+	}
+	if len(secondAttack) != 3 {
+		t.Fatalf("expected no-op reimport to preserve selected combat target for the next accepted hit, got %d frames", len(secondAttack))
+	}
+	secondRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, secondAttack[0]))
+	if err != nil {
+		t.Fatalf("decode second target refresh after no-op reimport: %v", err)
+	}
+	if secondRefresh.TargetVID != targetVID || secondRefresh.HPPercent != 80 {
+		t.Fatalf("expected no-op reimport to preserve damaged HP and continue to 80%%, got %+v", secondRefresh)
 	}
 }
 

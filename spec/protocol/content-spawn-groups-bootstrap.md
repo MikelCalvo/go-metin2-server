@@ -29,6 +29,7 @@ This contract currently applies only to:
 - one authored spawn position on one map per spawn group
 - one server-owned respawn lifecycle that recreates the combatant from authored content after death
 - deterministic content import/export and validation before runtime mutation
+- idempotent no-op content imports: importing the same canonical bundle already live in the runtime must not tear down/recreate attackable actors, replay replacement fanout, clear selected combat targets, reset runtime-owned HP, or discard pending combat timers
 - atomic bootstrap visibility for content-bundle replacement: live sessions receive static-actor replacement visibility only after the full replacement succeeds; successful replacements replay deletes for removed actors before newly imported actor bootstrap bursts, and failed replacement/rollback paths discard all staged delete/add visibility frames instead of leaking partial content to online sessions
 
 This contract does **not** yet claim:
@@ -195,6 +196,7 @@ This slice freezes a narrow ownership model:
 - live entity IDs / VIDs
 - current HP, dead/live state, and pending respawn bookkeeping
 - the act of removing and recreating the visible runtime actor after death
+- detecting no-op content-bundle imports before replacement, so live combat snapshots keep their current runtime-owned state when authored content has not changed
 
 This means respawn remains **server-driven runtime behavior**, but the runtime now knows *what to recreate and where* because the authored spawn group owns that identity and placement.
 
@@ -240,6 +242,7 @@ Current runtime rules:
 - spawn-backed live actors export as `spawn_groups`, not as ordinary `static_actors`
 - importing a bundle with `spawn_groups` materializes one runtime static actor per group with the authored `spawn_group_ref`
 - the imported actor uses the authored placement, `race_num`, and normalized `combat_profile`
+- if the candidate bundle canonicalizes to the exact same content bundle currently exported by the runtime, import is treated as a no-op: the runtime returns the canonical bundle without rewriting item templates, interaction definitions, static actors, live combat HP, selected-target ownership, pending respawn/retaliation state, or queued visibility fanout
 - when a successful import materializes a spawn-backed actor while players are already online, the runtime enqueues the normal static-actor visibility bootstrap burst (`CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`) only to sessions that currently share the actor's visible world/AOI
 - when a successful import replaces a previously visible static actor, the runtime first enqueues the old actor's `CHARACTER_DEL` and then enqueues newly imported actor bootstrap bursts to sessions that currently share those actors' visible world/AOI
 - sessions outside the configured visibility policy do not receive the imported spawn actor until a later enter-game or AOI/transfer visibility rebuild makes it visible

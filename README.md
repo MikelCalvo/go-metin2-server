@@ -230,6 +230,7 @@ Already present:
 - target selection and normal attack packet ingress,
 - selected-target snapshot/version checks,
 - loopback combat-target introspection for selected-target ownership and HP debugging,
+- no-op content-bundle reimports that preserve live practice-mob HP, selected-target ownership, and visibility state when authored content has not changed,
 - HP mutation and HP percent refreshes,
 - self and visible-peer `DAMAGE_INFO` hit-effect emission for standalone bootstrap combat-profile and spawn-backed practice-mob non-lethal hits, while broader hit-result policy remains narrow,
 - dead-state rejection and target clear,

@@ -5853,6 +5853,9 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		rollbackProfiles()
 		return contentbundle.Bundle{}, err
 	}
+	if reflect.DeepEqual(previousBundle, normalized) {
+		return normalized, nil
+	}
 	previousActors := r.StaticActors()
 	if err := r.replaceItemTemplates(itemcatalog.Snapshot{Templates: normalized.ItemTemplates}); err != nil {
 		rollbackProfiles()
