@@ -460,6 +460,32 @@ func TestFileStoreValidateFailsClosedOnCorruptTicket(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsZeroIssuedAtTicket(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := mustJSON(t, Ticket{Login: "mkmk", LoginKey: 0x01020304})
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write zero-issued-at ticket: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for zero issued_at, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsZeroIssuedAtTicket(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := mustJSON(t, Ticket{Login: "mkmk", LoginKey: 0x01020304})
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write zero-issued-at ticket: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for zero issued_at validation, got %v", err)
+	}
+}
+
 func TestFileStoreValidateRejectsFilenameLoginKeyMismatch(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	raw := mustJSON(t, Ticket{Login: "mkmk", LoginKey: 0x01020305, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)})

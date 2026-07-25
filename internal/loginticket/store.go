@@ -512,6 +512,9 @@ func validateTicket(ticket Ticket) error {
 	if ticket.LoginKey == 0 {
 		return fmt.Errorf("%w: login key is required", ErrInvalidTicket)
 	}
+	if ticket.IssuedAt.IsZero() {
+		return fmt.Errorf("%w: issued_at is required", ErrInvalidTicket)
+	}
 	if err := validateUniqueCharacterIdentity(ticket.Characters); err != nil {
 		return err
 	}

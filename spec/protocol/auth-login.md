@@ -43,6 +43,10 @@ This slice intentionally keeps the auth key contract simple:
 - no external DB is required
 - duplicate-login policy can stay minimal until later
 
+## File-backed ticket integrity
+
+When `authd` issues a one-shot login ticket for `gamed`, the durable JSON ticket must contain a non-zero `issued_at` timestamp. The store fills that field at issue time if the caller omits it, but already-committed ticket files with a missing or zero `issued_at` are invalid and fail closed during load, validation, stale-ticket preview, stale-ticket cleanup, and consume paths. That makes `/local/login-tickets/issued-before/preview` and `/local/login-tickets/issued-before/cleanup` safe to use as age-based recovery primitives: manually assembled or partially migrated ticket snapshots cannot avoid stale-ticket policy by silently decoding to Go's zero time.
+
 ## Packet layouts
 
 ### `LOGIN3`

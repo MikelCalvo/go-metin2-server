@@ -2,6 +2,7 @@ package minimal
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"net"
 	"os"
@@ -710,6 +711,37 @@ func TestGameRuntimePersistenceStatusKeepsCheckingAfterStoreFailure(t *testing.T
 	}
 	if !status.ItemTemplateStore.Valid || status.ItemTemplateStore.Error != "" {
 		t.Fatalf("expected missing item-template snapshot to remain valid empty state: %#v", status.ItemTemplateStore)
+	}
+}
+
+func TestGameRuntimePersistenceStatusRejectsZeroIssuedAtLoginTicket(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	raw, err := json.Marshal(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304})
+	if err != nil {
+		t.Fatalf("marshal zero-issued-at login ticket: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(ticketStore.Dir(), "01020304.json"), raw, 0o644); err != nil {
+		t.Fatalf("write zero-issued-at login ticket: %v", err)
+	}
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	if err := accountStore.Save(accountstore.Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountStore, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if status.OK {
+		t.Fatalf("expected aggregate persistence status to report login-ticket failure: %#v", status)
+	}
+	if status.LoginTicketStore.Valid || !strings.Contains(status.LoginTicketStore.Error, loginticket.ErrInvalidTicket.Error()) {
+		t.Fatalf("expected login-ticket status to reject zero issued_at, got %#v", status.LoginTicketStore)
+	}
+	if !status.AccountStore.Valid || !status.ItemTemplateStore.Valid || !status.StaticActorStore.Valid || !status.InteractionStore.Valid {
+		t.Fatalf("expected zero issued_at to affect only login-ticket status, got %#v", status)
 	}
 }
 
