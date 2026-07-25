@@ -1161,6 +1161,28 @@ func TestUseItemConsumesTemplateAuthoredCount(t *testing.T) {
 	}
 }
 
+func TestUseItemUsesTemplateAuthoredInfoMessageWhenPresent(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 43, Vnum: 27008, Count: 2, Slot: 5}},
+		Points:    [255]int32{1: 25},
+	}, SessionLink{})
+	template := itemcatalog.Template{Vnum: 27008, Name: "Message Potion", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 25, Message: "effect:27008", InfoMessage: "You feel steadier."}}
+
+	result, ok := runtime.UseItem(5, template)
+	if !ok {
+		t.Fatal("expected template-authored info-message item use to succeed")
+	}
+	if result.EffectMessage != "You feel steadier." {
+		t.Fatalf("expected authored info_message to drive ITEM_USE info chat, got %q", result.EffectMessage)
+	}
+	if result.PointType != 1 || result.PointAmount != 25 || result.PointValue != 50 {
+		t.Fatalf("unexpected info-message ITEM_USE point result: %+v", result)
+	}
+	if result.ItemRemoved || result.Item.Count != 1 || result.Item.Slot != 5 || result.Item.Vnum != 27008 {
+		t.Fatalf("unexpected info-message ITEM_USE item result: %+v", result)
+	}
+}
+
 func TestUseItemConsumeCountRemovesExactStackAndRejectsOverdrawWithoutMutation(t *testing.T) {
 	exact := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27007, Count: 3, Slot: 5}},

@@ -973,7 +973,7 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 		PointType:     effect.PointType,
 		PointAmount:   effect.PointDelta,
 		PointValue:    updatedPointValue,
-		EffectMessage: effect.Message,
+		EffectMessage: useEffectInfoMessage(&effect),
 	}
 	r.livePoints[effect.PointIndex] = updatedPointValue
 	if item.Count == consumeCount {
@@ -991,6 +991,16 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	sortInventoryItems(r.liveInventory)
 	result.Item = item
 	return result, true
+}
+
+func useEffectInfoMessage(effect *itemcatalog.UseEffect) string {
+	if effect == nil {
+		return ""
+	}
+	if effect.InfoMessage != "" {
+		return effect.InfoMessage
+	}
+	return effect.Message
 }
 
 func (r *Runtime) UseItemOnItem(source inventory.SlotIndex, target inventory.SlotIndex, template itemcatalog.Template) (inventory.MoveResult, bool) {

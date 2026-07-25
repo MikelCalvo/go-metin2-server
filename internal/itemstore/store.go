@@ -257,6 +257,7 @@ type UseEffect struct {
 	PointDelta   int32  `json:"point_delta"`
 	ConsumeCount uint16 `json:"consume_count,omitempty"`
 	Message      string `json:"message"`
+	InfoMessage  string `json:"info_message,omitempty"`
 }
 
 type Snapshot struct {
@@ -304,6 +305,7 @@ func normalizeTemplate(template Template) Template {
 	if template.UseEffect != nil {
 		effect := *template.UseEffect
 		effect.Message = strings.TrimSpace(effect.Message)
+		effect.InfoMessage = strings.TrimSpace(effect.InfoMessage)
 		template.UseEffect = &effect
 	}
 	if template.EquipEffect != nil {

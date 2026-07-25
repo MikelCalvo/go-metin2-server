@@ -97,8 +97,8 @@ Exactly one consumable shape is frozen here:
   - the point-change packet `type` (`point_type`)
   - the per-consume signed delta (`point_delta`)
   - the stack units consumed per accepted use (`consume_count`, default `1` when omitted)
-  - the temporary self-only placeholder text (`message`)
-- the current seeded bootstrap consumable template still uses `vnum = 27001`, `point_index = 1`, `point_type = 1`, default `consume_count = 1`, `point_delta = 50`, and `message = consume:27001:+50`
+  - the temporary self-only placeholder text (`info_message` when authored, otherwise the older `message` fallback)
+- the current seeded bootstrap consumable template still uses `vnum = 27001`, `point_index = 1`, `point_type = 1`, default `consume_count = 1`, `point_delta = 50`, and `message = consume:27001:+50`; it omits `info_message`, so the runtime preserves the older fallback placeholder text for the built-in snapshot
 
 `use_effect.point_delta` is now signed for the runtime contract: positive values increase the selected point, and negative values decrease it. The first negative-delta slice remains self-only and template-backed; it does not introduce buffs, poison, cooldowns, or peer-visible effects.
 
@@ -147,9 +147,10 @@ If the consumed stack reaches zero, any selected-character item quickslots refer
 The temporary self-facing effect placeholder is intentionally text-backed in this slice:
 - one self-only `CHAT_TYPE_INFO`
 - `vid = 0`
-- deterministic message text from `template.use_effect.message`
+- deterministic message text from `template.use_effect.info_message` when it is non-empty
+- if `info_message` is omitted, deterministic fallback text from `template.use_effect.message`
 
-For the current seeded bootstrap consumable template this still means `consume:27001:+50`.
+For the current seeded bootstrap consumable template this still means `consume:27001:+50` because the built-in fallback snapshot does not author `info_message`. Authored template snapshots can now keep the internal effect/debug token in `message` while exposing a different player-facing placeholder through `info_message`.
 
 This effect placeholder exists only because there is not yet an owned visual-effect packet family wired through the runtime.
 

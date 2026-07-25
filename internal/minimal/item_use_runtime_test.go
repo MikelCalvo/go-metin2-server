@@ -1293,6 +1293,60 @@ func TestGameSessionFlowItemUseConsumesTemplateAuthoredCount(t *testing.T) {
 	}
 }
 
+func TestGameSessionFlowItemUseInfoChatUsesTemplateInfoMessage(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseInfoMessage", 0x01030584, 0x02040584, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 458, Vnum: 27008, Count: 2, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-info-message", 0x50505084, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-info-message", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed info-message item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27008,
+		Name:      "Message Template Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 25, Message: "effect:27008", InfoMessage: "You feel steadier."},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected info-message item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-info-message", 0x50505084)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected info-message item-use packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected info-message item-use to emit use echo, point, item update, info chat; got %d", len(out))
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode info-message item-use chat: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != "You feel steadier." {
+		t.Fatalf("unexpected info-message item-use chat: %+v", info)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode info-message item-use point-change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 25 || pointChange.Value != 50 {
+		t.Fatalf("unexpected info-message item-use point-change: %+v", pointChange)
+	}
+	persisted, err := accounts.Load("item-use-info-message")
+	if err != nil {
+		t.Fatalf("load persisted info-message item-use account: %v", err)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 50 {
+		t.Fatalf("info-message item-use persisted point value: got %d want 50", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameSessionFlowItemUseConsumeCountRemovesExactStackAndQuickslot(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
