@@ -1,6 +1,7 @@
 package minimal
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
@@ -11,6 +12,65 @@ import (
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 )
+
+func TestPublicAuthAndGameFactoriesShareConfiguredTicketAndAccountStores(t *testing.T) {
+	root := t.TempDir()
+	ticketDir := filepath.Join(root, "tickets")
+	accountDir := filepath.Join(root, "accounts")
+	t.Setenv("METIN2_LOGIN_TICKET_STORE_DIR", ticketDir)
+	t.Setenv("METIN2_ACCOUNT_STORE_DIR", accountDir)
+	t.Setenv("METIN2_AUTHD_LOGIN_TICKET_STORE_DIR", "")
+	t.Setenv("METIN2_AUTHD_ACCOUNT_STORE_DIR", "")
+	t.Setenv("METIN2_GAMED_LOGIN_TICKET_STORE_DIR", "")
+	t.Setenv("METIN2_GAMED_ACCOUNT_STORE_DIR", "")
+
+	authCfg := config.LoadService("authd", ":6061", ":11002", "127.0.0.1")
+	if authCfg.LoginTicketStoreDir != ticketDir || authCfg.AccountStoreDir != accountDir {
+		t.Fatalf("expected authd config to use shared persistence dirs, got tickets=%q accounts=%q", authCfg.LoginTicketStoreDir, authCfg.AccountStoreDir)
+	}
+	authFactory := NewAuthSessionFactoryWithConfig(authCfg)
+	gameCfg := config.LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	if gameCfg.LoginTicketStoreDir != ticketDir || gameCfg.AccountStoreDir != accountDir {
+		t.Fatalf("expected gamed config to use shared persistence dirs, got tickets=%q accounts=%q", gameCfg.LoginTicketStoreDir, gameCfg.AccountStoreDir)
+	}
+	gameFactory, err := NewGameSessionFactory(gameCfg)
+	if err != nil {
+		t.Fatalf("unexpected game session factory error: %v", err)
+	}
+
+	authFlow := authFactory()
+	_ = mustCompleteSecureHandshake(t, authFlow)
+	login3Raw, err := authproto.EncodeLogin3(authproto.Login3Packet{Login: StubLogin, Password: StubPassword})
+	if err != nil {
+		t.Fatalf("encode login3: %v", err)
+	}
+	authOut, err := authFlow.HandleClientFrame(decodeSingleFrame(t, login3Raw))
+	if err != nil {
+		t.Fatalf("unexpected auth error: %v", err)
+	}
+	authSuccess, err := authproto.DecodeAuthSuccess(decodeSingleFrame(t, authOut[0]))
+	if err != nil {
+		t.Fatalf("decode auth success: %v", err)
+	}
+
+	gameFlow := gameFactory()
+	_ = mustCompleteSecureHandshake(t, gameFlow)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: StubLogin, LoginKey: authSuccess.LoginKey})
+	if err != nil {
+		t.Fatalf("encode login2: %v", err)
+	}
+	loginOut, err := gameFlow.HandleClientFrame(decodeSingleFrame(t, login2Raw))
+	if err != nil {
+		t.Fatalf("unexpected game login error with configured stores: %v", err)
+	}
+	loginSuccess, err := loginproto.DecodeLoginSuccess4(decodeSingleFrame(t, loginOut[0]))
+	if err != nil {
+		t.Fatalf("decode login success: %v", err)
+	}
+	if loginSuccess.Players[0].Name != "MkmkWar" {
+		t.Fatalf("expected configured store login to expose MkmkWar, got %q", loginSuccess.Players[0].Name)
+	}
+}
 
 func TestAuthAndGameSessionFactoriesShareIssuedLoginTicket(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())

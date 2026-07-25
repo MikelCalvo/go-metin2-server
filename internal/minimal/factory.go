@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -214,10 +212,19 @@ type merchantBuyContext struct {
 }
 
 type RuntimeConfigSnapshot struct {
-	LocalChannelID       uint8  `json:"local_channel_id"`
-	VisibilityMode       string `json:"visibility_mode"`
-	VisibilityRadius     int32  `json:"visibility_radius"`
-	VisibilitySectorSize int32  `json:"visibility_sector_size"`
+	LocalChannelID       uint8                     `json:"local_channel_id"`
+	VisibilityMode       string                    `json:"visibility_mode"`
+	VisibilityRadius     int32                     `json:"visibility_radius"`
+	VisibilitySectorSize int32                     `json:"visibility_sector_size"`
+	Persistence          PersistenceConfigSnapshot `json:"persistence"`
+}
+
+type PersistenceConfigSnapshot struct {
+	LoginTicketStoreDir   string `json:"login_ticket_store_dir"`
+	AccountStoreDir       string `json:"account_store_dir"`
+	StaticActorStorePath  string `json:"static_actor_store_path"`
+	InteractionStorePath  string `json:"interaction_store_path"`
+	ItemTemplateStorePath string `json:"item_template_store_path"`
 }
 
 type MapOccupancyChange = worldruntime.MapOccupancyChange
@@ -264,10 +271,10 @@ type liveCharacterRegistration struct {
 func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
 	return newGameRuntimeWithStoresAndTransferTriggers(
 		cfg,
-		loginticket.NewFileStore(defaultTicketStoreDir()),
-		accountstore.NewFileStore(defaultAccountStoreDir()),
-		staticstore.NewFileStore(defaultStaticActorStorePath()),
-		interactionstore.NewFileStore(defaultInteractionStorePath()),
+		loginticket.NewFileStore(serviceLoginTicketStoreDir(cfg)),
+		accountstore.NewFileStore(serviceAccountStoreDir(cfg)),
+		staticstore.NewFileStore(serviceStaticActorStorePath(cfg)),
+		interactionstore.NewFileStore(serviceInteractionStorePath(cfg)),
 		nil,
 	)
 }
@@ -623,7 +630,71 @@ func (r *gameRuntime) RuntimeConfigSnapshot() RuntimeConfigSnapshot {
 	default:
 		snapshot.VisibilityMode = "custom"
 	}
+	snapshot.Persistence = runtimePersistenceConfigSnapshot(r)
 	return snapshot
+}
+
+func runtimePersistenceConfigSnapshot(r *gameRuntime) PersistenceConfigSnapshot {
+	if r == nil {
+		return PersistenceConfigSnapshot{}
+	}
+	return PersistenceConfigSnapshot{
+		LoginTicketStoreDir:   loginTicketStoreDir(r.loginTicketStore),
+		AccountStoreDir:       accountStoreDir(r.accountStore),
+		StaticActorStorePath:  staticActorStorePath(r.staticStore),
+		InteractionStorePath:  interactionStorePath(r.interactionStore),
+		ItemTemplateStorePath: itemTemplateStorePath(r.itemStore),
+	}
+}
+
+func loginTicketStoreDir(store loginticket.Store) string {
+	if store == nil {
+		return ""
+	}
+	if locator, ok := store.(interface{ Dir() string }); ok {
+		return locator.Dir()
+	}
+	return ""
+}
+
+func accountStoreDir(store accountstore.Store) string {
+	if store == nil {
+		return ""
+	}
+	if locator, ok := store.(interface{ Dir() string }); ok {
+		return locator.Dir()
+	}
+	return ""
+}
+
+func staticActorStorePath(store staticstore.Store) string {
+	if store == nil {
+		return ""
+	}
+	if locator, ok := store.(interface{ Path() string }); ok {
+		return locator.Path()
+	}
+	return ""
+}
+
+func interactionStorePath(store interactionstore.Store) string {
+	if store == nil {
+		return ""
+	}
+	if locator, ok := store.(interface{ Path() string }); ok {
+		return locator.Path()
+	}
+	return ""
+}
+
+func itemTemplateStorePath(store itemcatalog.Store) string {
+	if store == nil {
+		return ""
+	}
+	if locator, ok := store.(interface{ Path() string }); ok {
+		return locator.Path()
+	}
+	return ""
 }
 
 func (r *gameRuntime) CombatTargetSnapshot(name string) (CombatTargetSnapshot, bool) {
@@ -937,9 +1008,14 @@ func (r *gameRuntime) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, b
 }
 
 func NewAuthSessionFactory() service.SessionFactory {
+	cfg := config.LoadService("authd", ":6061", ":11002", "127.0.0.1")
+	return NewAuthSessionFactoryWithConfig(cfg)
+}
+
+func NewAuthSessionFactoryWithConfig(cfg config.Service) service.SessionFactory {
 	return newAuthSessionFactoryWithAccountStore(
-		loginticket.NewFileStore(defaultTicketStoreDir()),
-		accountstore.NewFileStore(defaultAccountStoreDir()),
+		loginticket.NewFileStore(serviceLoginTicketStoreDir(cfg)),
+		accountstore.NewFileStore(serviceAccountStoreDir(cfg)),
 		randomLoginKey,
 	)
 }
@@ -989,8 +1065,8 @@ func newAuthSessionFactoryWithAccountStore(store loginticket.Store, accounts acc
 func NewGameSessionFactory(cfg config.Service) (service.SessionFactory, error) {
 	runtime, err := newGameRuntimeWithAccountStore(
 		cfg,
-		loginticket.NewFileStore(defaultTicketStoreDir()),
-		accountstore.NewFileStore(defaultAccountStoreDir()),
+		loginticket.NewFileStore(serviceLoginTicketStoreDir(cfg)),
+		accountstore.NewFileStore(serviceAccountStoreDir(cfg)),
 	)
 	if err != nil {
 		return nil, err
@@ -1083,10 +1159,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 	}
 
 	if store == nil {
-		store = loginticket.NewFileStore(defaultTicketStoreDir())
+		store = loginticket.NewFileStore(serviceLoginTicketStoreDir(cfg))
 	}
 	if items == nil {
-		items = itemcatalog.NewFileStore(defaultItemTemplateStorePath())
+		items = itemcatalog.NewFileStore(serviceItemTemplateStorePath(cfg))
 	}
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
@@ -6094,23 +6170,58 @@ func currentServerTimeMillis() uint32 {
 }
 
 func defaultTicketStoreDir() string {
-	return filepath.Join(os.TempDir(), "go-metin2-server-login-tickets")
+	return config.DefaultLoginTicketStoreDir()
+}
+
+func serviceLoginTicketStoreDir(cfg config.Service) string {
+	if dir := strings.TrimSpace(cfg.LoginTicketStoreDir); dir != "" {
+		return dir
+	}
+	return defaultTicketStoreDir()
 }
 
 func defaultAccountStoreDir() string {
-	return filepath.Join(os.TempDir(), "go-metin2-server-accounts")
+	return config.DefaultAccountStoreDir()
+}
+
+func serviceAccountStoreDir(cfg config.Service) string {
+	if dir := strings.TrimSpace(cfg.AccountStoreDir); dir != "" {
+		return dir
+	}
+	return defaultAccountStoreDir()
 }
 
 func defaultStaticActorStorePath() string {
-	return filepath.Join(os.TempDir(), "go-metin2-server-static-actors.json")
+	return config.DefaultStaticActorStorePath()
+}
+
+func serviceStaticActorStorePath(cfg config.Service) string {
+	if path := strings.TrimSpace(cfg.StaticActorStorePath); path != "" {
+		return path
+	}
+	return defaultStaticActorStorePath()
 }
 
 func defaultInteractionStorePath() string {
-	return filepath.Join(os.TempDir(), "go-metin2-server-interaction-definitions.json")
+	return config.DefaultInteractionStorePath()
+}
+
+func serviceInteractionStorePath(cfg config.Service) string {
+	if path := strings.TrimSpace(cfg.InteractionStorePath); path != "" {
+		return path
+	}
+	return defaultInteractionStorePath()
 }
 
 func defaultItemTemplateStorePath() string {
-	return filepath.Join(os.TempDir(), "go-metin2-server-item-templates.json")
+	return config.DefaultItemTemplateStorePath()
+}
+
+func serviceItemTemplateStorePath(cfg config.Service) string {
+	if path := strings.TrimSpace(cfg.ItemTemplateStorePath); path != "" {
+		return path
+	}
+	return defaultItemTemplateStorePath()
 }
 
 func sequentialBytes32(start byte) [32]byte {

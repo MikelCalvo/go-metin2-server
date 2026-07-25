@@ -200,8 +200,15 @@ Returns JSON describing the active bootstrap runtime selection. This endpoint is
 - `visibility_mode` (`whole_map`, `radius`, or `custom` for future non-standard policies)
 - `visibility_radius`
 - `visibility_sector_size`
+- `persistence.login_ticket_store_dir`
+- `persistence.account_store_dir`
+- `persistence.static_actor_store_path`
+- `persistence.interaction_store_path`
+- `persistence.item_template_store_path`
 
 The default bootstrap runtime reports local channel `1` and whole-map visibility. When `gamed` is configured for radius AOI, this snapshot reports the active radius and sector-size values selected from the `METIN2_VISIBILITY_*` / `METIN2_GAMED_VISIBILITY_*` environment overrides.
+
+The `persistence` block reports the active bootstrap JSON store locations selected from `METIN2_*_STORE_*` / service-specific environment overrides. Use it before running local backup, restore, validation, or stale-ticket cleanup endpoints so the operator confirms the daemon is pointing at the intended account, login-ticket, static-actor, interaction, and item-template stores.
 
 ### `GET` / `POST /local/static-actor-combat-profiles`
 

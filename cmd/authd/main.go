@@ -26,7 +26,7 @@ func main() {
 	defer stop()
 
 	cfg := config.LoadService("authd", ":6061", ":11002", "127.0.0.1")
-	if err := service.Run(ctx, cfg, logger, minimal.NewAuthSessionFactory()); err != nil {
+	if err := service.Run(ctx, cfg, logger, minimal.NewAuthSessionFactoryWithConfig(cfg)); err != nil {
 		logger.Error("service stopped with error", "err", err)
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

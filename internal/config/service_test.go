@@ -22,6 +22,114 @@ func TestLoadServiceUsesDefaultsWhenEnvIsMissing(t *testing.T) {
 	}
 }
 
+func TestLoadServiceUsesBootstrapPersistenceDefaultsWhenEnvIsMissing(t *testing.T) {
+	clearPersistenceEnv(t)
+
+	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	if cfg.LoginTicketStoreDir != defaultLoginTicketStoreDir() {
+		t.Fatalf("expected default login ticket store dir, got %q", cfg.LoginTicketStoreDir)
+	}
+	if cfg.AccountStoreDir != defaultAccountStoreDir() {
+		t.Fatalf("expected default account store dir, got %q", cfg.AccountStoreDir)
+	}
+	if cfg.StaticActorStorePath != defaultStaticActorStorePath() {
+		t.Fatalf("expected default static actor store path, got %q", cfg.StaticActorStorePath)
+	}
+	if cfg.InteractionStorePath != defaultInteractionStorePath() {
+		t.Fatalf("expected default interaction store path, got %q", cfg.InteractionStorePath)
+	}
+	if cfg.ItemTemplateStorePath != defaultItemTemplateStorePath() {
+		t.Fatalf("expected default item template store path, got %q", cfg.ItemTemplateStorePath)
+	}
+}
+
+func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
+	clearPersistenceEnv(t)
+	t.Setenv("METIN2_LOGIN_TICKET_STORE_DIR", " /global/tickets ")
+	t.Setenv("METIN2_ACCOUNT_STORE_DIR", "/global/accounts")
+	t.Setenv("METIN2_STATIC_ACTOR_STORE_PATH", "/global/static-actors.json")
+	t.Setenv("METIN2_INTERACTION_STORE_PATH", "/global/interactions.json")
+	t.Setenv("METIN2_ITEM_TEMPLATE_STORE_PATH", "/global/item-templates.json")
+
+	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	if cfg.LoginTicketStoreDir != "/global/tickets" {
+		t.Fatalf("expected global login ticket store dir, got %q", cfg.LoginTicketStoreDir)
+	}
+	if cfg.AccountStoreDir != "/global/accounts" {
+		t.Fatalf("expected global account store dir, got %q", cfg.AccountStoreDir)
+	}
+	if cfg.StaticActorStorePath != "/global/static-actors.json" {
+		t.Fatalf("expected global static actor store path, got %q", cfg.StaticActorStorePath)
+	}
+	if cfg.InteractionStorePath != "/global/interactions.json" {
+		t.Fatalf("expected global interaction store path, got %q", cfg.InteractionStorePath)
+	}
+	if cfg.ItemTemplateStorePath != "/global/item-templates.json" {
+		t.Fatalf("expected global item template store path, got %q", cfg.ItemTemplateStorePath)
+	}
+}
+
+func TestLoadServiceFallsBackForWhitespaceBootstrapPersistenceOverrides(t *testing.T) {
+	clearPersistenceEnv(t)
+	t.Setenv("METIN2_LOGIN_TICKET_STORE_DIR", "   ")
+	t.Setenv("METIN2_ACCOUNT_STORE_DIR", "/global/accounts")
+	t.Setenv("METIN2_GAMED_ACCOUNT_STORE_DIR", "   ")
+
+	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	if cfg.LoginTicketStoreDir != defaultLoginTicketStoreDir() {
+		t.Fatalf("expected whitespace login ticket store override to fall back, got %q", cfg.LoginTicketStoreDir)
+	}
+	if cfg.AccountStoreDir != "/global/accounts" {
+		t.Fatalf("expected whitespace service account store override to fall back to global override, got %q", cfg.AccountStoreDir)
+	}
+}
+
+func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testing.T) {
+	clearPersistenceEnv(t)
+	t.Setenv("METIN2_LOGIN_TICKET_STORE_DIR", "/global/tickets")
+	t.Setenv("METIN2_ACCOUNT_STORE_DIR", "/global/accounts")
+	t.Setenv("METIN2_STATIC_ACTOR_STORE_PATH", "/global/static-actors.json")
+	t.Setenv("METIN2_INTERACTION_STORE_PATH", "/global/interactions.json")
+	t.Setenv("METIN2_ITEM_TEMPLATE_STORE_PATH", "/global/item-templates.json")
+	t.Setenv("METIN2_GAMED_LOGIN_TICKET_STORE_DIR", "/service/tickets")
+	t.Setenv("METIN2_GAMED_ACCOUNT_STORE_DIR", "/service/accounts")
+	t.Setenv("METIN2_GAMED_STATIC_ACTOR_STORE_PATH", "/service/static-actors.json")
+	t.Setenv("METIN2_GAMED_INTERACTION_STORE_PATH", "/service/interactions.json")
+	t.Setenv("METIN2_GAMED_ITEM_TEMPLATE_STORE_PATH", "/service/item-templates.json")
+
+	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	if cfg.LoginTicketStoreDir != "/service/tickets" {
+		t.Fatalf("expected service-specific login ticket store dir, got %q", cfg.LoginTicketStoreDir)
+	}
+	if cfg.AccountStoreDir != "/service/accounts" {
+		t.Fatalf("expected service-specific account store dir, got %q", cfg.AccountStoreDir)
+	}
+	if cfg.StaticActorStorePath != "/service/static-actors.json" {
+		t.Fatalf("expected service-specific static actor store path, got %q", cfg.StaticActorStorePath)
+	}
+	if cfg.InteractionStorePath != "/service/interactions.json" {
+		t.Fatalf("expected service-specific interaction store path, got %q", cfg.InteractionStorePath)
+	}
+	if cfg.ItemTemplateStorePath != "/service/item-templates.json" {
+		t.Fatalf("expected service-specific item template store path, got %q", cfg.ItemTemplateStorePath)
+	}
+}
+
+func clearPersistenceEnv(t *testing.T) {
+	t.Helper()
+	for _, suffix := range []string{
+		"LOGIN_TICKET_STORE_DIR",
+		"ACCOUNT_STORE_DIR",
+		"STATIC_ACTOR_STORE_PATH",
+		"INTERACTION_STORE_PATH",
+		"ITEM_TEMPLATE_STORE_PATH",
+	} {
+		t.Setenv("METIN2_"+suffix, "")
+		t.Setenv("METIN2_GAMED_"+suffix, "")
+		t.Setenv("METIN2_AUTHD_"+suffix, "")
+	}
+}
+
 func TestLoadServiceUsesGlobalOverrides(t *testing.T) {
 	t.Setenv("METIN2_PPROF_ADDR", ":9999")
 	t.Setenv("METIN2_GAMED_PPROF_ADDR", "")

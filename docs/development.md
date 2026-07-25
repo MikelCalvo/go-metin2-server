@@ -93,12 +93,40 @@ Service-specific overrides take precedence over global overrides for each field.
 
 Use the loopback-only `GET /local/runtime-config` endpoint to confirm the policy the running `gamed` process actually booted with.
 
+### Bootstrap persistence paths
+
+The file-backed bootstrap stores can now be pointed at explicit paths without changing code. Service-specific overrides take precedence over the global value for each store, matching the existing address and visibility configuration rules:
+
+- login-ticket handoff store directory:
+  - `METIN2_LOGIN_TICKET_STORE_DIR`
+  - `METIN2_AUTHD_LOGIN_TICKET_STORE_DIR`
+  - `METIN2_GAMED_LOGIN_TICKET_STORE_DIR`
+- durable account snapshot store directory:
+  - `METIN2_ACCOUNT_STORE_DIR`
+  - `METIN2_AUTHD_ACCOUNT_STORE_DIR`
+  - `METIN2_GAMED_ACCOUNT_STORE_DIR`
+- authored static-actor snapshot path:
+  - `METIN2_STATIC_ACTOR_STORE_PATH`
+  - `METIN2_GAMED_STATIC_ACTOR_STORE_PATH`
+- authored interaction-definition snapshot path:
+  - `METIN2_INTERACTION_STORE_PATH`
+  - `METIN2_GAMED_INTERACTION_STORE_PATH`
+- authored item-template snapshot path:
+  - `METIN2_ITEM_TEMPLATE_STORE_PATH`
+  - `METIN2_GAMED_ITEM_TEMPLATE_STORE_PATH`
+
+Default paths remain under the process temp directory (`go-metin2-server-login-tickets`, `go-metin2-server-accounts`, `go-metin2-server-static-actors.json`, `go-metin2-server-interaction-definitions.json`, and `go-metin2-server-item-templates.json`) so local bootstrap runs remain zero-config. For persistent QA runs or backup/restore drills, set explicit store directories/paths before starting both daemons; `authd` and `gamed` must share the same login-ticket and account-store locations when exercising the one-shot ticket handoff.
+
+`GET /local/runtime-config` includes the active persistence paths under `persistence`, so local operators can verify which JSON stores a running `gamed` instance will validate, back up, restore, or mutate before invoking the local-only persistence endpoints.
+
 ### Bootstrap file-backed persistence
 
-The current bootstrap runtime uses three small JSON-backed stores before a compatibility-grade database exists:
+The current bootstrap runtime uses several small JSON-backed stores before a compatibility-grade database exists:
 
 - `internal/accountstore` stores durable account snapshots.
 - `internal/loginticket` stores one-shot authd-to-gamed login tickets.
+- `internal/staticstore` stores authored bootstrap static-actor snapshots.
+- `internal/interactionstore` stores authored bootstrap interaction definitions.
 - `internal/itemstore` stores authored bootstrap item-template snapshots used by content bundles, merchant previews, and item/equipment runtime policy.
 
 The bootstrap file stores intentionally fail closed on unknown top-level JSON fields and trailing JSON values. The account store validates the persisted login identity, rejecting empty or mismatched snapshot logins instead of trusting only the filename, and validates persisted character identity plus item/equipment/quickslot payloads before accepting a snapshot. Its deterministic account listing boundary scans only committed canonical lowercase hex-login `.json` snapshots, ignores leftover hidden temp files from interrupted writes, returns missing directories as an empty store, sorts by normalized login, and fails closed on corrupt, filename-mismatched, non-canonical, or case-variant duplicate committed snapshots. The login-ticket store uses the same strict decode and character payload validation boundary for ticket files: empty logins, zero login keys, filename/login-key drift, duplicate character IDs/names, malformed inventory, duplicate equipment slots, and malformed quickslots return `ErrInvalidTicket`, and a failed consume leaves the ticket file in place for inspection instead of deleting possibly corrupted handoff state. Its deterministic ticket validation boundary scans only committed canonical lowercase 8-digit hex login-key `.json` snapshots, ignores leftover hidden `.ticket-*.json` temp files, returns missing directories as an empty store, sorts by normalized login and login key, and never consumes tickets while summarizing pending handoffs. The static-actor store also applies that strict decode boundary to restored world/content snapshots before validating actors, interaction metadata, spawn-group refs, and reward descriptors.

@@ -901,6 +901,41 @@ func TestGameRuntimeConfigSnapshotReportsRadiusPolicy(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Service{
+		LegacyAddr:            ":13000",
+		PublicAddr:            "127.0.0.1",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	runtime, err := NewGameRuntime(cfg)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	snapshot := runtime.RuntimeConfigSnapshot()
+	if snapshot.Persistence.LoginTicketStoreDir != cfg.LoginTicketStoreDir {
+		t.Fatalf("expected login ticket store dir %q, got %q", cfg.LoginTicketStoreDir, snapshot.Persistence.LoginTicketStoreDir)
+	}
+	if snapshot.Persistence.AccountStoreDir != cfg.AccountStoreDir {
+		t.Fatalf("expected account store dir %q, got %q", cfg.AccountStoreDir, snapshot.Persistence.AccountStoreDir)
+	}
+	if snapshot.Persistence.StaticActorStorePath != cfg.StaticActorStorePath {
+		t.Fatalf("expected static actor store path %q, got %q", cfg.StaticActorStorePath, snapshot.Persistence.StaticActorStorePath)
+	}
+	if snapshot.Persistence.InteractionStorePath != cfg.InteractionStorePath {
+		t.Fatalf("expected interaction store path %q, got %q", cfg.InteractionStorePath, snapshot.Persistence.InteractionStorePath)
+	}
+	if snapshot.Persistence.ItemTemplateStorePath != cfg.ItemTemplateStorePath {
+		t.Fatalf("expected item template store path %q, got %q", cfg.ItemTemplateStorePath, snapshot.Persistence.ItemTemplateStorePath)
+	}
+}
+
 func TestGameRuntimeBackupAccountStoreCopiesValidatedSnapshots(t *testing.T) {
 	accounts := accountstore.NewFileStore(t.TempDir())
 	if err := accounts.Save(accountstore.Account{Login: "zeta", Empire: 3, Characters: []loginticket.Character{{ID: 3, Name: "ZetaWar"}}}); err != nil {

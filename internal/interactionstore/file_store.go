@@ -18,6 +18,13 @@ func NewFileStore(path string) *FileStore {
 	return &FileStore{path: path}
 }
 
+func (s *FileStore) Path() string {
+	if s == nil {
+		return ""
+	}
+	return s.path
+}
+
 func (s *FileStore) Load() (Snapshot, error) {
 	if s == nil || s.path == "" {
 		return Snapshot{}, ErrStorePathRequired

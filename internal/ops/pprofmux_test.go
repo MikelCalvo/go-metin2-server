@@ -2334,7 +2334,7 @@ func TestLocalVisibilityEndpointRejectsWrongMethod(t *testing.T) {
 }
 
 func TestLocalRuntimeConfigEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
-	snapshotter := &stubRuntimeConfigSnapshotter{snapshot: map[string]any{"local_channel_id": 1, "visibility_mode": "radius", "visibility_radius": int32(400), "visibility_sector_size": int32(200)}}
+	snapshotter := &stubRuntimeConfigSnapshotter{snapshot: map[string]any{"local_channel_id": 1, "visibility_mode": "radius", "visibility_radius": int32(400), "visibility_sector_size": int32(200), "persistence": map[string]any{"account_store_dir": "/state/accounts", "login_ticket_store_dir": "/state/tickets"}}}
 	mux := RegisterLocalRuntimeConfigEndpoint(NewPprofMux("gamed"), snapshotter.RuntimeConfig)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/runtime-config", nil)
@@ -2356,7 +2356,7 @@ func TestLocalRuntimeConfigEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"local_channel_id":1`) || !strings.Contains(string(body), `"visibility_mode":"radius"`) || !strings.Contains(string(body), `"visibility_radius":400`) || !strings.Contains(string(body), `"visibility_sector_size":200`) {
+	if !strings.Contains(string(body), `"local_channel_id":1`) || !strings.Contains(string(body), `"visibility_mode":"radius"`) || !strings.Contains(string(body), `"visibility_radius":400`) || !strings.Contains(string(body), `"visibility_sector_size":200`) || !strings.Contains(string(body), `"account_store_dir":"/state/accounts"`) || !strings.Contains(string(body), `"login_ticket_store_dir":"/state/tickets"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }

@@ -204,6 +204,13 @@ func NewFileStore(dir string) *FileStore {
 	return &FileStore{dir: dir}
 }
 
+func (s *FileStore) Dir() string {
+	if s == nil {
+		return ""
+	}
+	return s.dir
+}
+
 func (s *FileStore) Load(login string) (Account, error) {
 	if s.dir == "" {
 		return Account{}, ErrStoreDirRequired
