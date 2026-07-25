@@ -232,6 +232,7 @@ Expected result:
 - packet-originated `ITEM_USE` first receives a self-only server `ITEM_USE` echo (`0x0512`) for the consumed cell and item `vnum`; the slash `/use_item <slot>` harness does not emit this packet-only echo
 - the client receives a `PLAYER_POINT_CHANGE` from the template-authored `use_effect`
 - template-authored negative `use_effect.point_delta` consumables are allowed in this bootstrap path: the self-only `PLAYER_POINT_CHANGE.amount` should be negative, `value` should be the decreased signed point value, and the normal item refresh plus placeholder info message still follow
+- template-authored `use_effect.consume_count` values above `1` consume exactly that many stack units on success; if the live stack has fewer units than the authored count, the request fails closed with no point change, item refresh, quickslot change, placeholder chat, or persisted-state mutation
 - if more than one item remains in the stack, the carried cell refreshes with the decremented count, preserves authored socket/attribute display arrays in the `ITEM_UPDATE`, and both item and non-item quickslots for that still-occupied cell remain unchanged
 - if the consumed stack reaches zero, the carried cell disappears and every item quickslot referencing that cell is cleared in deterministic quickslot-position order; unrelated skill/command quickslots remain
 - locked carried stacks fail closed: no point change, item refresh, quickslot change, or placeholder chat is visible

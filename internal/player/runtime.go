@@ -950,8 +950,12 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 		return ItemUseResult{}, false
 	}
 	effect := *template.UseEffect
+	consumeCount := effect.ConsumeCount
+	if consumeCount == 0 {
+		consumeCount = 1
+	}
 	item := r.liveInventory[index]
-	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount || consumeCount == 0 || consumeCount > item.Count {
 		return ItemUseResult{}, false
 	}
 	if err := item.Validate(); err != nil {
@@ -972,13 +976,13 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 		EffectMessage: effect.Message,
 	}
 	r.livePoints[effect.PointIndex] = updatedPointValue
-	if item.Count == 1 {
+	if item.Count == consumeCount {
 		r.liveInventory = removeInventoryIndex(r.liveInventory, index)
 		sortInventoryItems(r.liveInventory)
 		result.ItemRemoved = true
 		return result, true
 	}
-	item.Count--
+	item.Count -= consumeCount
 	if err := item.Validate(); err != nil {
 		r.livePoints[effect.PointIndex] = currentPointValue
 		return ItemUseResult{}, false

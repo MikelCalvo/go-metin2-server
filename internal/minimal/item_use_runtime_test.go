@@ -1222,6 +1222,199 @@ func TestGameSessionFlowItemUseRejectsNegativePointUnderflowWithoutMutation(t *t
 	}
 }
 
+func TestGameSessionFlowItemUseConsumesTemplateAuthoredCount(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseConsumeCount", 0x01030581, 0x02040581, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 455, Vnum: 27007, Count: 5, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-consume-count", 0x50505081, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-consume-count", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed consume-count item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27007,
+		Name:      "Triple Dose Template Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 75, ConsumeCount: 3, Message: "consume:27007:x3"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected consume-count item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-consume-count", 0x50505081)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected consume-count item-use packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected consume-count item-use to emit use echo, point, item update, info chat; got %d", len(out))
+	}
+	if useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, out[0])); err != nil || useEcho.Position != itemproto.InventoryPosition(5) || useEcho.Vnum != 27007 {
+		t.Fatalf("unexpected consume-count item-use echo: %+v err=%v", useEcho, err)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode consume-count point-change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 75 || pointChange.Value != 100 {
+		t.Fatalf("unexpected consume-count point-change: %+v", pointChange)
+	}
+	updated, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode consume-count item update: %v", err)
+	}
+	if updated.Position != itemproto.InventoryPosition(5) || updated.Count != 2 {
+		t.Fatalf("expected consume-count item update to decrement by three, got %+v", updated)
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode consume-count info chat: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != "consume:27007:x3" {
+		t.Fatalf("unexpected consume-count info chat: %+v", info)
+	}
+	persisted, err := accounts.Load("item-use-consume-count")
+	if err != nil {
+		t.Fatalf("load persisted consume-count item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, []inventory.ItemInstance{{ID: 455, Vnum: 27007, Count: 2, Slot: 5}}) {
+		t.Fatalf("consume-count item-use persisted unexpected inventory: %+v", persisted.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("consume-count item-use mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 100 {
+		t.Fatalf("consume-count item-use persisted point value: got %d want 100", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowItemUseConsumeCountRemovesExactStackAndQuickslot(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseConsumeExact", 0x01030583, 0x02040583, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 457, Vnum: 27007, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-consume-exact", 0x50505083, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-consume-exact", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exact consume-count item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27007,
+		Name:      "Exact Triple Dose Template Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 75, ConsumeCount: 3, Message: "consume:27007:x3"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exact consume-count item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-consume-exact", 0x50505083)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected exact consume-count item-use packet error: %v", err)
+	}
+	if len(out) != 5 {
+		t.Fatalf("expected exact consume-count item-use to emit use echo, point, item del, quickslot del, info chat; got %d", len(out))
+	}
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode exact consume-count item del: %v", err)
+	}
+	if itemDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected exact consume-count item del: %+v", itemDel)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode exact consume-count quickslot del: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("expected exact consume-count to delete item quickslot position 2, got %+v", quickslotDel)
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[4]))
+	if err != nil {
+		t.Fatalf("decode exact consume-count info chat: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.Message != "consume:27007:x3" {
+		t.Fatalf("unexpected exact consume-count info chat: %+v", info)
+	}
+	persisted, err := accounts.Load("item-use-consume-exact")
+	if err != nil {
+		t.Fatalf("load persisted exact consume-count account: %v", err)
+	}
+	if len(persisted.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected exact consume-count inventory removal, got %+v", persisted.Characters[0].Inventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5}}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected exact consume-count persisted quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 100 {
+		t.Fatalf("exact consume-count item-use persisted point value: got %d want 100", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowItemUseRejectsOverdrawnTemplateAuthoredCountWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseOverdraw", 0x01030582, 0x02040582, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 456, Vnum: 27007, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	issuePeerTicket(t, ticketStore, "item-use-overdraw", 0x50505082, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-overdraw", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed overdrawn consume-count item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27007,
+		Name:      "Overdraw Template Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 75, ConsumeCount: 3, Message: "must not consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected overdrawn consume-count item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-overdraw", 0x50505082)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected overdrawn consume-count item-use packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected overdrawn consume-count item-use to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after overdrawn consume-count rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("item-use-overdraw")
+	if err != nil {
+		t.Fatalf("load persisted overdrawn consume-count item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("overdrawn consume-count item-use mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("overdrawn consume-count item-use mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("overdrawn consume-count item-use mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameSessionFlowItemUseRejectsOverUint8TemplateMaxWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

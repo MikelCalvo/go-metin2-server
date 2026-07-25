@@ -252,10 +252,11 @@ type PointEffect struct {
 }
 
 type UseEffect struct {
-	PointType  uint8  `json:"point_type"`
-	PointIndex uint8  `json:"point_index"`
-	PointDelta int32  `json:"point_delta"`
-	Message    string `json:"message"`
+	PointType    uint8  `json:"point_type"`
+	PointIndex   uint8  `json:"point_index"`
+	PointDelta   int32  `json:"point_delta"`
+	ConsumeCount uint16 `json:"consume_count,omitempty"`
+	Message      string `json:"message"`
 }
 
 type Snapshot struct {
@@ -351,7 +352,7 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.EquipSlot == "" {
-		return template.EquipEffect == nil && validUseEffect(template.UseEffect)
+		return template.EquipEffect == nil && validUseEffect(template.UseEffect, template)
 	}
 	_, ok := inventory.ParseEquipmentSlot(template.EquipSlot)
 	return ok && template.UseEffect == nil && validPointEffect(template.EquipEffect)
@@ -366,11 +367,18 @@ func validDisplayAttributes(attributes AttributeValues) bool {
 	return true
 }
 
-func validUseEffect(effect *UseEffect) bool {
+func validUseEffect(effect *UseEffect, template Template) bool {
 	if effect == nil {
 		return true
 	}
 	if !validNonZeroPointFields(effect.PointType, effect.PointIndex, effect.PointDelta) {
+		return false
+	}
+	consumeCount := effect.ConsumeCount
+	if consumeCount == 0 {
+		consumeCount = 1
+	}
+	if consumeCount > template.MaxCount {
 		return false
 	}
 	return strings.TrimSpace(effect.Message) != ""

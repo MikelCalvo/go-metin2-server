@@ -155,7 +155,7 @@ Already present:
 - stack compatibility checks and max-stack guards for current slices,
 - locked source/target and duplicate occupancy rejection paths,
 - template-backed equip/unequip point-effect application and removal guards, including signed equip-effect penalties, authored `irremovable` equipment unequip rejection, fail-closed rejection when live equipment-source counts exceed authored template `max_count`, and visible appearance projection for equipped `body`, `weapon`, `head`, and `hair` items,
-- consumable item use, including template-authored signed `use_effect.point_delta` values so authored negative consumables can emit self-only point decreases, with signed point overflow/underflow plus `confirm_when_use`, `quest_use`, `quest_use_multiple`, and `applicable` consumables failing closed until their dedicated flows are owned,
+- consumable item use, including template-authored signed `use_effect.point_delta` values so authored negative consumables can emit self-only point decreases and optional `use_effect.consume_count` values so multi-count consumables decrement authored stack units instead of a runtime-hardcoded single item; signed point overflow/underflow, overdrawn consume-count requests, and `confirm_when_use`, `quest_use`, `quest_use_multiple`, or `applicable` consumables fail closed,
 - `ITEM_USE_TO_ITEM` stack merge behavior,
 - quickslot add/delete/swap persistence, including type-scoped retarget cleanup when an item/skill/command tuple is rebound to a new bar position and fail-closed file-backed snapshot validation for duplicate non-item skill/command tuple bindings,
 - quickslot cleanup when item mutations remove or fully merge a source slot,

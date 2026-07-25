@@ -1136,6 +1136,63 @@ func TestUseItemRejectsTemplateAuthoredNegativePointUnderflowWithoutMutation(t *
 	}
 }
 
+func TestUseItemConsumesTemplateAuthoredCount(t *testing.T) {
+	runtime := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27007, Count: 5, Slot: 5}},
+		Points:    [255]int32{1: 25},
+	}, SessionLink{})
+	template := itemcatalog.Template{Vnum: 27007, Name: "Triple Dose Practice Elixir", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 75, ConsumeCount: 3, Message: "consume:27007:x3"}}
+
+	result, ok := runtime.UseItem(5, template)
+	if !ok {
+		t.Fatal("expected template-authored consume-count item use to succeed")
+	}
+	if result.PointType != 1 || result.PointAmount != 75 || result.PointValue != 100 || result.EffectMessage != "consume:27007:x3" {
+		t.Fatalf("unexpected consume-count ITEM_USE result: %+v", result)
+	}
+	if result.ItemRemoved || result.Item.Count != 2 || result.Item.Slot != 5 || result.Item.Vnum != 27007 {
+		t.Fatalf("expected consume-count item use to decrement by three and keep remainder, got %+v", result)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, []inventory.ItemInstance{{ID: 41, Vnum: 27007, Count: 2, Slot: 5}}) {
+		t.Fatalf("unexpected inventory after consume-count ITEM_USE: got %#v", got)
+	}
+	if got := runtime.LiveCharacter().Points[1]; got != 100 {
+		t.Fatalf("expected consume-count ITEM_USE point value 100, got %d", got)
+	}
+}
+
+func TestUseItemConsumeCountRemovesExactStackAndRejectsOverdrawWithoutMutation(t *testing.T) {
+	exact := NewRuntime(loginticket.Character{
+		Inventory: []inventory.ItemInstance{{ID: 41, Vnum: 27007, Count: 3, Slot: 5}},
+		Points:    [255]int32{1: 25},
+	}, SessionLink{})
+	template := itemcatalog.Template{Vnum: 27007, Name: "Triple Dose Practice Elixir", Stackable: true, MaxCount: 200, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 75, ConsumeCount: 3, Message: "consume:27007:x3"}}
+
+	result, ok := exact.UseItem(5, template)
+	if !ok {
+		t.Fatal("expected exact consume-count stack to be accepted")
+	}
+	if !result.ItemRemoved || result.Item != (inventory.ItemInstance{}) || len(exact.LiveInventory()) != 0 {
+		t.Fatalf("expected exact consume-count stack removal, result=%+v inventory=%#v", result, exact.LiveInventory())
+	}
+	if got := exact.LiveCharacter().Points[1]; got != 100 {
+		t.Fatalf("expected exact consume-count point value 100, got %d", got)
+	}
+
+	overdraw := NewRuntime(loginticket.Character{
+		Inventory:  []inventory.ItemInstance{{ID: 42, Vnum: 27007, Count: 2, Slot: 5}},
+		Quickslots: []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}},
+		Points:     [255]int32{1: 25},
+	}, SessionLink{})
+	before := overdraw.LiveCharacter()
+	if result, ok := overdraw.UseItem(5, template); ok {
+		t.Fatalf("expected overdrawn consume-count item use to fail closed, got %+v", result)
+	}
+	if got := overdraw.LiveCharacter(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("overdrawn consume-count ITEM_USE mutated live character:\n got: %#v\nwant: %#v", got, before)
+	}
+}
+
 func TestUseItemRejectsMalformedTemplateUseEffectWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name     string

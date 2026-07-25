@@ -1069,6 +1069,83 @@ func TestFileStoreSaveThenLoadRoundTripPreservesMinLevelRestriction(t *testing.T
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesUseEffectConsumeCount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:      27007,
+		Name:      "Triple Dose Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{
+			PointType:    1,
+			PointIndex:   1,
+			PointDelta:   75,
+			ConsumeCount: 3,
+			Message:      "consume:27007:x3",
+		},
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with use-effect consume-count metadata: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with use-effect consume-count metadata: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with use-effect consume-count metadata:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with use-effect consume-count metadata: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27007,\n      \"name\": \"Triple Dose Practice Elixir\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"use_effect\": {\n        \"point_type\": 1,\n        \"point_index\": 1,\n        \"point_delta\": 75,\n        \"consume_count\": 3,\n        \"message\": \"consume:27007:x3\"\n      }\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with use-effect consume-count metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreSaveRejectsInvalidUseEffectConsumeCount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+
+	overMax := Snapshot{Templates: []Template{{
+		Vnum:      27007,
+		Name:      "Overdrawn Practice Elixir",
+		Stackable: true,
+		MaxCount:  2,
+		UseEffect: &UseEffect{
+			PointType:    1,
+			PointIndex:   1,
+			PointDelta:   75,
+			ConsumeCount: 3,
+			Message:      "must not load",
+		},
+	}}}
+	if err := store.Save(overMax); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for use-effect consume-count above max_count, got %v", err)
+	}
+
+	nonStackableMultiConsume := Snapshot{Templates: []Template{{
+		Vnum:      27008,
+		Name:      "Overdrawn Practice Charm",
+		Stackable: false,
+		MaxCount:  1,
+		UseEffect: &UseEffect{
+			PointType:    1,
+			PointIndex:   1,
+			PointDelta:   75,
+			ConsumeCount: 2,
+			Message:      "must not load",
+		},
+	}}}
+	if err := store.Save(nonStackableMultiConsume); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for non-stackable multi-count use effect, got %v", err)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesEquipEffectMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
