@@ -212,6 +212,35 @@ func TestMapIndexRemoveClearsMapBucketWhenEntityIndexAlreadyMissing(t *testing.T
 	}
 }
 
+func TestMapIndexRemoveUsesEffectiveMapAndClearsDuplicateMapOnlyPlayerBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(27, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040111, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	current.Entity.VID = current.Character.VID
+	index.effectiveMapByEntityID[stale.Entity.ID] = 77
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	removed, ok := index.Remove(stale.Entity.ID)
+	if !ok || removed.Entity.ID != stale.Entity.ID || removed.Entity.Name != "Alpha" || removed.Character.MapIndex != 77 || removed.Character.X != 1700 || removed.Character.Y != 2800 {
+		t.Fatalf("expected removal to return remembered effective-map player, got entity=%+v ok=%v", removed, ok)
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale source player bucket to be cleared after duplicate map-only removal, got %+v", characters)
+	}
+	if characters := index.PlayerCharacters(77); len(characters) != 0 {
+		t.Fatalf("expected effective player bucket to be cleared after duplicate map-only removal, got %+v", characters)
+	}
+	if _, ok := index.effectiveMapByEntityID[stale.Entity.ID]; ok {
+		t.Fatal("expected effective map memory to be cleared after duplicate map-only removal")
+	}
+	if snapshots := index.Snapshot(); len(snapshots) != 0 {
+		t.Fatalf("expected no map snapshots after duplicate map-only player removal, got %+v", snapshots)
+	}
+}
+
 func TestMapIndexRemoveClearsEntityIndexWhenMapBucketAlreadyMissing(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	alpha := newPlayerEntity(8, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
@@ -754,6 +783,35 @@ func TestMapIndexRemoveStaticClearsEntityIndexWhenMapBucketAlreadyMissing(t *tes
 	}
 	if snapshots := index.Snapshot(); len(snapshots) != 0 {
 		t.Fatalf("expected no map snapshots after tolerant static actor removal, got %+v", snapshots)
+	}
+}
+
+func TestMapIndexRemoveStaticUsesEffectiveMapAndClearsDuplicateMapOnlyBuckets(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := StaticEntity{Entity: Entity{ID: 25, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	current := stale
+	current.Entity.Name = "VillageGuard"
+	current.Position = NewPosition(77, 900, 1200)
+	current.RaceNum = 20301
+	index.effectiveStaticMapByEntityID[stale.Entity.ID] = 77
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{stale.Entity.ID: stale}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{stale.Entity.ID: current}
+
+	removed, ok := index.RemoveStatic(stale.Entity.ID)
+	if !ok || removed.Entity.ID != stale.Entity.ID || removed.Entity.Name != "VillageGuard" || removed.Position.MapIndex != 77 || removed.RaceNum != 20301 {
+		t.Fatalf("expected removal to return remembered effective-map static actor, got actor=%+v ok=%v", removed, ok)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected stale source static bucket to be cleared after duplicate map-only removal, got %+v", actors)
+	}
+	if actors := index.StaticActors(77); len(actors) != 0 {
+		t.Fatalf("expected effective static bucket to be cleared after duplicate map-only removal, got %+v", actors)
+	}
+	if _, ok := index.effectiveStaticMapByEntityID[stale.Entity.ID]; ok {
+		t.Fatal("expected effective static map memory to be cleared after duplicate map-only removal")
+	}
+	if snapshots := index.Snapshot(); len(snapshots) != 0 {
+		t.Fatalf("expected no map snapshots after duplicate map-only static removal, got %+v", snapshots)
 	}
 }
 

@@ -120,23 +120,15 @@ func (m *MapIndex) Remove(entityID uint64) (PlayerEntity, bool) {
 	defer m.mu.Unlock()
 
 	player, ok := m.byEntityID[entityID]
+	if !ok {
+		player, ok = m.canonicalPlayerMapPresenceLocked(entityID)
+	}
+	if !ok {
+		player, ok = m.playerMapPresenceLocked(entityID)
+	}
 	if ok {
 		delete(m.byEntityID, entityID)
 		m.removePlayerMapPresenceLocked(entityID)
-		return clonePlayerEntity(player), true
-	}
-
-	for mapIndex, bucket := range m.byMapIndex {
-		player, ok := bucket[entityID]
-		if !ok {
-			continue
-		}
-		delete(bucket, entityID)
-		if len(bucket) == 0 {
-			delete(m.byMapIndex, mapIndex)
-		}
-		delete(m.byEntityID, entityID)
-		delete(m.effectiveMapByEntityID, entityID)
 		return clonePlayerEntity(player), true
 	}
 	delete(m.effectiveMapByEntityID, entityID)
@@ -798,20 +790,18 @@ func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	actor, ok := m.staticByEntityID[entityID]
+	if !ok {
+		actor, ok = m.canonicalStaticMapPresenceLocked(entityID)
+	}
+	if !ok {
+		actor, ok = m.staticActorMapPresenceLocked(entityID)
+	}
 	if ok {
 		delete(m.staticByEntityID, entityID)
 		m.removeStaticMapPresenceLocked(entityID)
 		return cloneStaticEntity(actor), true
 	}
-	for _, bucket := range m.staticByMapIndex {
-		actor, ok := bucket[entityID]
-		if !ok {
-			continue
-		}
-		m.removeStaticMapPresenceLocked(entityID)
-		delete(m.staticByEntityID, entityID)
-		return cloneStaticEntity(actor), true
-	}
+	delete(m.effectiveStaticMapByEntityID, entityID)
 	return StaticEntity{}, false
 }
 

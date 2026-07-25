@@ -596,6 +596,33 @@ func TestEntityRegistryRemoveClearsMapOccupancyWhenPlayerDirectoryEntryAlreadyMi
 	}
 }
 
+func TestEntityRegistryRemoveUsesEffectiveMapWhenPlayerDirectoryMissingAndDuplicateMapBucketsSurvive(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.players.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct player-directory removal to simulate partial teardown")
+	}
+	stale := newPlayerEntity(alpha.Entity.ID, entityRegistryCharacter("StaleAlpha", alpha.Entity.VID, 42, 1100, 2100))
+	current := newPlayerEntity(alpha.Entity.ID, entityRegistryCharacter("AlphaMoved", 0x02040111, 77, 1900, 3000))
+	registry.maps.mu.Lock()
+	delete(registry.maps.byEntityID, alpha.Entity.ID)
+	registry.maps.effectiveMapByEntityID[alpha.Entity.ID] = 77
+	registry.maps.byMapIndex[42] = map[uint64]PlayerEntity{alpha.Entity.ID: stale}
+	registry.maps.byMapIndex[77] = map[uint64]PlayerEntity{alpha.Entity.ID: current}
+	registry.maps.mu.Unlock()
+
+	removed, ok := registry.Remove(alpha.Entity.ID)
+	if !ok || removed.Entity.ID != alpha.Entity.ID || removed.Entity.Name != "AlphaMoved" || removed.Character.MapIndex != 77 || removed.Character.X != 1900 || removed.Character.Y != 3000 {
+		t.Fatalf("expected entity removal to return effective-map player, got entity=%+v ok=%v", removed, ok)
+	}
+	if occupancy := registry.MapOccupancy(); len(occupancy) != 0 {
+		t.Fatalf("expected duplicate map-only player buckets to be cleared after removal, got %+v", occupancy)
+	}
+}
+
 func TestEntityRegistryRemoveClearsPlayerLookupWhenMapIndexEntryAlreadyMissing(t *testing.T) {
 	registry := NewEntityRegistry()
 	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
@@ -1225,6 +1252,36 @@ func TestEntityRegistryRemoveStaticActorClearsMapPresenceWhenDirectoryEntryAlrea
 	}
 	if occupancy := registry.MapOccupancy(); len(occupancy) != 0 {
 		t.Fatalf("expected no map occupancy after tolerant static actor removal, got %+v", occupancy)
+	}
+}
+
+func TestEntityRegistryRemoveStaticActorUsesEffectiveMapWhenDirectoryMissingAndDuplicateMapBucketsSurvive(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected guard registration to succeed")
+	}
+	if _, ok := registry.staticActors.Remove(guard.Entity.ID); !ok {
+		t.Fatal("expected direct non-player-directory removal to simulate partial teardown")
+	}
+	stale := StaticEntity{Entity: Entity{ID: guard.Entity.ID, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	current := StaticEntity{Entity: Entity{ID: guard.Entity.ID, Kind: EntityKindStaticActor, Name: "VillageGuardMoved"}, Position: NewPosition(77, 1900, 3000), RaceNum: 20301}
+	registry.maps.mu.Lock()
+	delete(registry.maps.staticByEntityID, guard.Entity.ID)
+	registry.maps.effectiveStaticMapByEntityID[guard.Entity.ID] = 77
+	registry.maps.staticByMapIndex[42] = map[uint64]StaticEntity{guard.Entity.ID: stale}
+	registry.maps.staticByMapIndex[77] = map[uint64]StaticEntity{guard.Entity.ID: current}
+	registry.maps.mu.Unlock()
+
+	removed, ok := registry.RemoveStaticActor(guard.Entity.ID)
+	if !ok || removed.Entity.ID != guard.Entity.ID || removed.Entity.Name != "VillageGuardMoved" || removed.Position.MapIndex != 77 || removed.RaceNum != 20301 {
+		t.Fatalf("expected static actor removal to return effective-map actor, got actor=%+v ok=%v", removed, ok)
+	}
+	if occupancy := registry.MapOccupancy(); len(occupancy) != 0 {
+		t.Fatalf("expected duplicate map-only static buckets to be cleared after removal, got %+v", occupancy)
+	}
+	if actor, ok := registry.StaticActorByVID(uint32(guard.Entity.ID)); ok {
+		t.Fatalf("expected static actor VID lookup to be absent after effective-map removal, got %+v", actor)
 	}
 }
 
