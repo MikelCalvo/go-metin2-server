@@ -5909,10 +5909,12 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: attempt.HPPercent}
 	resolution.Packet = &packet
 	if staticActorDamageInfoRuntimeEmissionOwned(attempt.Actor) {
+		damageInfoFrame := combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{VID: activeTargetVID, Flag: 0, Damage: int32(attempt.Damage)})
 		resolution.Frames = [][]byte{
 			combatproto.EncodeServerTarget(packet),
-			combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{VID: activeTargetVID, Flag: 0, Damage: int32(attempt.Damage)}),
+			damageInfoFrame,
 		}
+		r.sharedWorld.EnqueueStaticActorFramesToVisiblePeers(attempt.Actor.EntityID, subjectID, [][]byte{damageInfoFrame})
 	}
 	return resolution
 }

@@ -230,7 +230,7 @@ Already present:
 - selected-target snapshot/version checks,
 - loopback combat-target introspection for selected-target ownership and HP debugging,
 - HP mutation and HP percent refreshes,
-- self-only `DAMAGE_INFO` hit-effect emission for standalone bootstrap combat-profile non-lethal hits, while spawn-backed/peer/broader emission policy remains narrow,
+- self and visible-peer `DAMAGE_INFO` hit-effect emission for standalone bootstrap combat-profile non-lethal hits, while spawn-backed/broader emission policy remains narrow,
 - dead-state rejection and target clear,
 - delayed respawn rebuild path,
 - engagement ownership to prevent noisy multi-owner combat loops,

@@ -814,6 +814,30 @@ func (r *sharedWorldRegistry) EnqueueToEntity(entityID uint64, frames [][]byte) 
 	return r.enqueueToEntityLocked(entityID, frames)
 }
 
+func (r *sharedWorldRegistry) EnqueueStaticActorFramesToVisiblePeers(actorEntityID uint64, excludeEntityID uint64, frames [][]byte) int {
+	if r == nil || r.entities == nil || actorEntityID == 0 || len(frames) == 0 {
+		return 0
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	actor, ok := r.entities.StaticActor(actorEntityID)
+	if !ok {
+		return 0
+	}
+	delivered := 0
+	for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+		if target.Entity.ID == excludeEntityID || characterAtBootstrapHPFloor(target.Character) {
+			continue
+		}
+		if r.enqueueToEntityLocked(target.Entity.ID, frames) {
+			delivered++
+		}
+	}
+	return delivered
+}
+
 func (r *sharedWorldRegistry) enqueueToCharacterLocked(character loginticket.Character, frames [][]byte) bool {
 	entry, ok := r.sessionEntryForCharacterLocked(character)
 	if !ok || entry.FrameSink == nil {

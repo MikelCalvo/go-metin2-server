@@ -144,14 +144,14 @@ This gives local operator surfaces a stable read-only seam without granting stal
 
 ## First damage-info hit-effect codec
 
-The repository now owns the fixed-width server `DAMAGE_INFO` (`0x0410`) codec plus the first self-only runtime emission for standalone bootstrap `training_dummy` hits.
+The repository now owns the fixed-width server `DAMAGE_INFO` (`0x0410`) codec plus the first self and visible-peer runtime emission for standalone bootstrap `training_dummy` hits.
 Its focused protocol note is `combat-damage-info-bootstrap.md`.
 
 That hit-effect companion is intentionally separate from the authoritative combat-state carrier in this document:
 - `TARGET(target_vid, hp_percent)` still owns the selected-target HP refresh for non-lethal bootstrap hits and is still sent first.
-- Standalone bootstrap combat-profile non-lethal normal hits append one self-only `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` after that target refresh.
+- Standalone bootstrap combat-profile non-lethal normal hits append one self `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` after that target refresh and queue the same hit-effect companion to currently visible live peers.
 - `DEAD(vid)` plus `TARGET(0, 0)` still owns the zero-HP edge, and the current damage-info slice deliberately does not append a synthetic final damage-info frame on killing hits.
-- Spawn-backed practice mobs, peer fanout, and richer flag meanings remain later runtime emission policy.
+- Spawn-backed practice mobs and richer flag meanings remain later runtime emission policy.
 
 ## Relationship to later HP / death work
 

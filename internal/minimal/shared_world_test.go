@@ -25386,6 +25386,81 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyDamageInfoForStandaloneP
 	}
 }
 
+func TestGameSessionFlowStaticActorAttackDamageInfoQueuesVisiblePeerForStandaloneDummy(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000203, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "TrainingDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected visible standalone training-dummy registration to succeed")
+	}
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible training dummy, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames with visible owner and training dummy, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected owner to receive watcher peer-entry frames before damage-info fanout, got %d", len(queued))
+	}
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected standalone dummy target error before damage-info fanout: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before damage-info fanout, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected standalone dummy attack error before damage-info fanout: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected owner target-refresh plus self damage-info frame, got %d", len(attackOut))
+	}
+	selfDamage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode owner self damage-info frame: %v", err)
+	}
+	if selfDamage.VID != targetVID || selfDamage.Flag != 0 || selfDamage.Damage != int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack) {
+		t.Fatalf("unexpected owner self damage-info packet: %+v", selfDamage)
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected visible watcher to receive 1 queued damage-info frame, got %d", len(watcherQueued))
+	}
+	peerDamage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, watcherQueued[0]))
+	if err != nil {
+		t.Fatalf("decode queued peer damage-info frame: %v", err)
+	}
+	if peerDamage != selfDamage {
+		t.Fatalf("expected peer damage-info to match owner self packet, got peer=%+v self=%+v", peerDamage, selfDamage)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected damage-info fanout not to queue duplicate frames to owner, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowStaticActorAttackDamageInfoUsesRegisteredFormulaDamage(t *testing.T) {
 	const profile = "standalone_damage_info_formula_mob"
 	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
@@ -25700,6 +25775,17 @@ func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(
 		}
 		if len(attackOut) != 2 {
 			t.Fatalf("expected target-refresh plus damage-info frames on visible-session pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		}
+		peerHitFrames := flushServerFrames(t, flowTwo)
+		if len(peerHitFrames) != 1 {
+			t.Fatalf("expected 1 queued peer damage-info frame on visible-session pre-death hit %d, got %d", attackIndex+1, len(peerHitFrames))
+		}
+		peerDamage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, peerHitFrames[0]))
+		if err != nil {
+			t.Fatalf("decode queued peer damage-info frame on visible-session pre-death hit %d: %v", attackIndex+1, err)
+		}
+		if peerDamage.VID != targetVID || peerDamage.Flag != 0 || peerDamage.Damage != int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack) {
+			t.Fatalf("unexpected queued peer damage-info packet on visible-session pre-death hit %d: %+v", attackIndex+1, peerDamage)
 		}
 	}
 
@@ -35986,6 +36072,17 @@ func TestGameSessionFlowStaticActorDummyRespawnRebuildsForOtherVisibleSessionsAn
 		}
 		if len(attackOut) != 2 {
 			t.Fatalf("expected target-refresh plus damage-info frames on respawn-visible pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		}
+		peerHitFrames := flushServerFrames(t, flowTwo)
+		if len(peerHitFrames) != 1 {
+			t.Fatalf("expected 1 queued peer damage-info frame on respawn-visible pre-death hit %d, got %d", attackIndex+1, len(peerHitFrames))
+		}
+		peerDamage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, peerHitFrames[0]))
+		if err != nil {
+			t.Fatalf("decode queued peer damage-info frame on respawn-visible pre-death hit %d: %v", attackIndex+1, err)
+		}
+		if peerDamage.VID != targetVID || peerDamage.Flag != 0 || peerDamage.Damage != int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack) {
+			t.Fatalf("unexpected queued peer damage-info packet on respawn-visible pre-death hit %d: %+v", attackIndex+1, peerDamage)
 		}
 	}
 
