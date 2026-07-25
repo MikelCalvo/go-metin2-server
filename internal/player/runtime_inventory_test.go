@@ -3069,6 +3069,14 @@ func TestMerchantSellCreditForCountPerGoldTemplateUsesLegacyCountDivision(t *tes
 	}
 }
 
+func TestMerchantSellCreditRejectsPointChangeCarrierOverflow(t *testing.T) {
+	template := itemcatalog.Template{Vnum: 27001, Name: "High Value Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 60_000_000}
+
+	if credit, ok := MerchantSellCredit(template, 200); ok {
+		t.Fatalf("expected template-authored merchant sell credit to reject point-change carrier overflow, got %d", credit)
+	}
+}
+
 func TestMerchantSellCreditRejectsTransferRestrictedTemplates(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -3175,6 +3183,25 @@ func TestRuntimeSellMerchantItemWithTemplateRejectsOverTemplateMaxStackWithoutMu
 	}
 	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
 		t.Fatalf("over-template-max stack merchant sell mutated inventory: got %#v want %#v", got, beforeInventory)
+	}
+}
+
+func TestRuntimeSellMerchantItemWithTemplateRejectsGoldCarrierOverflowWithoutMutation(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Gold = uint64(1<<31 - 2)
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	beforeInventory := runtime.LiveInventory()
+	beforeGold := runtime.LiveGold()
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500}
+
+	if result, ok := runtime.SellMerchantItemWithTemplate(5, 1, template); ok {
+		t.Fatalf("expected gold-carrier overflow merchant sell to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveGold(); got != beforeGold {
+		t.Fatalf("gold-carrier overflow merchant sell mutated gold: got %d want %d", got, beforeGold)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+		t.Fatalf("gold-carrier overflow merchant sell mutated inventory: got %#v want %#v", got, beforeInventory)
 	}
 }
 

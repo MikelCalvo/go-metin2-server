@@ -345,6 +345,9 @@ func validTemplate(template Template) bool {
 	if template.MaxCount == 0 || template.MaxCount > 255 {
 		return false
 	}
+	if template.ShopBuyPrice > uint64(^uint32(0)) {
+		return false
+	}
 	if !template.Stackable && template.MaxCount != 1 {
 		return false
 	}

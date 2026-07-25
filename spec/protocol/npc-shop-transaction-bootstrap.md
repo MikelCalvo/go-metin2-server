@@ -207,6 +207,7 @@ The first sell/sell2 path must fail closed when any of these are true:
 - the resolved template carries a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
 - the live carried stack already exceeds the resolved template-authored `max_count`
 - the template has no sell price
+- the template-authored sell credit or resulting selected-character gold value would exceed the current signed `PLAYER_POINT_CHANGE` carrier
 - persistence/writeback fails
 
 Failure behavior in this bootstrap contract:
@@ -351,7 +352,7 @@ The first live sell-back contract remains intentionally narrow:
 - `SELL(slot)` uses count `0`, meaning the full current stack
 - `SELL2(slot,count)` sells the requested count; count `0` and counts larger than the current stack fail closed instead of silently widening into a whole-stack sell
 - explicit zero-count `SELL2` is rejected before credit calculation or mutation, returns bare self-only `GC::SHOP INVALID_POS` while a merchant window is active, and leaves live plus persisted inventory/currency unchanged
-- accepted sells remove the whole stack or decrement the stack count and credit the selected character's live gold total with the owned template-derived sell credit
+- accepted sells remove the whole stack or decrement the stack count and credit the selected character's live gold total with the owned template-derived sell credit only when both the credited amount and resulting gold value fit the current signed `PLAYER_POINT_CHANGE` carrier
 - ordinary sell credit derives from loaded item-template `shop_buy_price` as `floor((shop_buy_price * sold_count) / 5)` minus `floor(3% tax)`
 - templates flagged `sell_count_per_gold` follow the legacy count-per-gold branch first: use `floor(sold_count / shop_buy_price)` when `shop_buy_price > 0`, or `sold_count` when it is zero, then apply the same `/5` and 3% tax floor; if the resulting credit is zero, the bootstrap runtime fails closed
 - templates flagged `anti_sell` or `anti_stack` fail closed before credit calculation, return bare self-only `GC::SHOP INVALID_POS` on the packet sell path while a merchant window is active, and leave live plus persisted inventory/currency unchanged
@@ -363,7 +364,7 @@ The first live sell-back contract remains intentionally narrow:
 - whole-stack success emits self-only `ITEM_DEL(slot)`, then zero or more self-only `QUICKSLOT_DEL(position)` frames for item quickslots that referenced the removed carried slot, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`
 - partial-stack success emits self-only `ITEM_UPDATE(slot, remaining_count)`, preserving the loaded template-authored display sockets/attributes for that carried item, then self-only `PLAYER_POINT_CHANGE(type = POINT_GOLD, amount = credited_elk, value = new_gold)`; it does not delete quickslots because the item remains at the source cell
 - packet `SHOP SELL` / `SHOP SELL2` success does not append an extra bare self-only `GC::SHOP OK`; the owned visible success companion is the item refresh plus gold `POINT_CHANGE`
-- invalid slots, malformed carried item snapshots, locked carried items, equipped items, explicit `SELL2` count `0`, over-count `SELL2`, live carried stacks above the template-authored `max_count`, zero unit price, and arithmetic overflow fail closed without mutating live or persisted state
+- invalid slots, malformed carried item snapshots, locked carried items, equipped items, explicit `SELL2` count `0`, over-count `SELL2`, live carried stacks above the template-authored `max_count`, zero unit price, computed sell-credit overflow, resulting-gold carrier overflow, and other arithmetic overflow fail closed without mutating live or persisted state
 - an invalid packet/runtime sell while an active merchant window exists returns bare self-only `GC::SHOP INVALID_POS`
 - stale active merchant context still returns `GC::SHOP END`, clears the active context, and leaves inventory/currency unchanged
 - if a socket already lost live shared-world ownership because another session reclaimed the same selected character, packet `SHOP SELL` / `SHOP SELL2` may still return the same self-local sell success burst (`ITEM_DEL` or `ITEM_UPDATE` plus gold `PLAYER_POINT_CHANGE`) to that stale socket
@@ -371,7 +372,7 @@ The first live sell-back contract remains intentionally narrow:
 - that stale sell mutation must not replace the replacement live owner's exact-name loopback inventory/currency snapshots
 - no peer-facing packets are emitted from that stale socket for this bootstrap merchant-sell path
 
-The packet/runtime path now loads the item shop-buy price, count-per-gold flag, and first anti-sell policy through `itemstore.Template.shop_buy_price`, `itemstore.Template.sell_count_per_gold`, and `itemstore.Template.anti_sell`, then applies the legacy-compatible count/price branch before the shared `/5` and 3% tax floors. The first runtime-locked and malformed carried item-instance guards are also owned for packet sell-back: locked or invalid carried items fail closed with `INVALID_POS` and leave live plus persisted inventory/currency unchanged. This still is not a full 1:1 pricing claim: broader bound-item policy, locale-specific tax variants, and final UI/result choreography remain later slices.
+The packet/runtime path now loads the item shop-buy price, count-per-gold flag, and first anti-sell policy through `itemstore.Template.shop_buy_price`, `itemstore.Template.sell_count_per_gold`, and `itemstore.Template.anti_sell`, then applies the legacy-compatible count/price branch before the shared `/5` and 3% tax floors. Template-authored sell credit is still clamped to the current signed point-change carrier used by the bootstrap gold refresh; over-carrier credit or resulting gold fails closed with `INVALID_POS` while preserving live and persisted inventory/currency. The first runtime-locked and malformed carried item-instance guards are also owned for packet sell-back: locked or invalid carried items fail closed with `INVALID_POS` and leave live plus persisted inventory/currency unchanged. This still is not a full 1:1 pricing claim: broader bound-item policy, locale-specific tax variants, and final UI/result choreography remain later slices.
 
 This slice owns the state mutation and smallest visible merchant-window companion only. It still does not freeze richer sell-result packets, merchant stock updates, tax formulas, or final client UI refresh choreography.
 

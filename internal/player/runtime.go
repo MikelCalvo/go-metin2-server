@@ -1224,7 +1224,8 @@ func (r *Runtime) MerchantSellCount(slot inventory.SlotIndex, count uint16) (uin
 }
 
 func (r *Runtime) SellMerchantItemForCredit(slot inventory.SlotIndex, count uint16, credit uint64) (MerchantSellResult, bool) {
-	if r == nil || credit == 0 || countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+	const maxPointChangeCarrier = uint64(1<<31 - 1)
+	if r == nil || credit == 0 || credit > maxPointChangeCarrier || countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
 		return MerchantSellResult{}, false
 	}
 	index := findInventorySlot(r.liveInventory, slot)
@@ -1245,7 +1246,7 @@ func (r *Runtime) SellMerchantItemForCredit(slot inventory.SlotIndex, count uint
 	if soldCount == 0 || soldCount > item.Count {
 		return MerchantSellResult{}, false
 	}
-	if r.liveGold > (^uint64(0))-credit {
+	if r.liveGold > maxPointChangeCarrier || r.liveGold > maxPointChangeCarrier-credit {
 		return MerchantSellResult{}, false
 	}
 	result := MerchantSellResult{Slot: slot, GoldBefore: r.liveGold, Gold: r.liveGold + credit}
@@ -1271,6 +1272,7 @@ func MerchantSellCredit(template itemcatalog.Template, count uint16) (uint64, bo
 	if !itemcatalog.ValidTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || count == 0 {
 		return 0, false
 	}
+	const maxPointChangeCarrier = uint64(1<<31 - 1)
 	var price uint64
 	if template.SellCountPerGold {
 		if template.ShopBuyPrice == 0 {
@@ -1287,7 +1289,7 @@ func MerchantSellCredit(template itemcatalog.Template, count uint16) (uint64, bo
 	price /= 5
 	tax := price * 3 / 100
 	price -= tax
-	if price == 0 {
+	if price == 0 || price > maxPointChangeCarrier {
 		return 0, false
 	}
 	return price, true

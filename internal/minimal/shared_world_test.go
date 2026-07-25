@@ -23886,6 +23886,16 @@ func TestGameSessionFlowShopSellRejectsAntiStackTemplateWithoutMutation(t *testi
 	assertMerchantStateUnchanged(t, runtime, accounts, login, buyer, "anti-stack packet shop sell2")
 }
 
+func TestGameSessionFlowShopSellRejectsTemplateCreditCarrierOverflowWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacketCreditOverflow", 0x0104012e, 0x0205012e, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 200, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-credit-overflow", 0x2e2e2e2e, buyer)
+	defer closeSessionFlow(t, flow)
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "High Value Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 60_000_000}
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	assertMerchantSellInvalidPosPreservesState(t, runtime, accounts, flow, login, buyer.Name, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 200}), "merchant sell credit carrier overflow")
+}
+
 func TestGameSessionFlowShopBuyAndSellRejectSelectedCharacterAntiFlagTemplatesWithoutMutation(t *testing.T) {
 	buyBuyer := merchantBuyerCharacter("MerchantBuyerPacketAntiFlag", 0x01040128, 0x02050128, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
 	buyBuyer.Job = 0

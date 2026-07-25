@@ -33,6 +33,31 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsShopBuyPriceAboveLegacyCarrier(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	snapshot := Snapshot{Templates: []Template{{
+		Vnum:         27001,
+		Name:         "Overflow Price Potion",
+		Stackable:    true,
+		MaxCount:     200,
+		ShopBuyPrice: uint64(^uint32(0)) + 1,
+	}}}
+
+	if err := store.Save(snapshot); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when saving shop_buy_price above legacy uint32 carrier, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27001,"name":"Overflow Price Potion","stackable":true,"max_count":200,"shop_buy_price":4294967296}]}`), 0o644); err != nil {
+		t.Fatalf("write oversized shop_buy_price snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading shop_buy_price above legacy uint32 carrier, got %v", err)
+	}
+}
+
 func TestFileStoreValidateReturnsDeterministicSummaryAndCrashTempFiles(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
