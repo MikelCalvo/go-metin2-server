@@ -162,6 +162,21 @@ func (d *PlayerDirectory) PlayerCharacters() []loginticket.Character {
 	return characters
 }
 
+func (d *PlayerDirectory) playerEntities() []PlayerEntity {
+	if d == nil {
+		return nil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	players := make([]PlayerEntity, 0, len(d.byEntityID))
+	for _, player := range d.byEntityID {
+		players = append(players, clonePlayerEntity(player))
+	}
+	sortPlayerEntities(players)
+	return players
+}
+
 func clonePlayerEntity(player PlayerEntity) PlayerEntity {
 	player.Character = cloneCharacterSnapshot(player.Character)
 	return player

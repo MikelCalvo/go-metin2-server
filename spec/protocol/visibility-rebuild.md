@@ -53,7 +53,7 @@ This covers the same-map visibility behavior used by:
 
 The visible-peer helper still owns who is visible to whom.
 Runtime scope readers now obtain connected player snapshots through `EntityRegistry.PlayerCharacters()`, which repairs missing player-directory entries from surviving map-index presence before computing `VisibleTargets(...)` and related scope queries. This keeps a partial teardown or repair that dropped only the player directory from making map-index-live peers disappear from visibility, chat-scope, or introspection calculations.
-Map-occupancy snapshots used by relocate preview, transfer preview, and runtime map-inspection now come from the dedicated `internal/worldruntime` map index via `internal/worldruntime/scopes.go` instead of being rebuilt from whole-world character scans or bootstrap-local preview helpers.
+Map-occupancy snapshots used by relocate preview, transfer preview, and runtime map-inspection now come from the dedicated `internal/worldruntime` map index via `internal/worldruntime/scopes.go` instead of being rebuilt from whole-world character scans or bootstrap-local preview helpers. Before those snapshots or direct map readers return, the entity registry now also repairs map-index presence from surviving player/static directories when no opposite-kind map-index remnant owns the same identity, so directory-live actors are not dropped from operator map visibility after a map-index-only partial teardown.
 
 ### `VisibleStaticActors(...)`
 
