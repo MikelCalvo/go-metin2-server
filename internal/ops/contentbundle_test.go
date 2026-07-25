@@ -509,6 +509,8 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 				{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
 			},
 		}},
+		ShopRouteCount:                         1,
+		ShopRoutes:                             []contentbundle.ShopRouteSummary{{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 469500, SourceY: 964200, Ref: "npc:qa_merchant", Title: "QA Merchant", EntryCount: 1}},
 		WarpDestinations:                       []contentbundle.WarpDestinationSummary{{Kind: interactionstore.KindWarp, Ref: "npc:qa_teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300}},
 		WarpRouteCount:                         1,
 		WarpRoutes:                             []contentbundle.WarpRouteSummary{{ActorName: "Teleporter", SourceMapIndex: 1, SourceX: 469650, SourceY: 964200, Ref: "npc:qa_teleporter", Text: "Step through the gate.", TargetMapIndex: 7, TargetX: 1300, TargetY: 2300}},

@@ -57,6 +57,8 @@ type Summary struct {
 	StaticActors                           []StaticActor                                   `json:"static_actors,omitempty"`
 	ShopCatalogEntryCount                  int                                             `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
+	ShopRouteCount                         int                                             `json:"shop_route_count"`
+	ShopRoutes                             []ShopRouteSummary                              `json:"shop_routes,omitempty"`
 	WarpDestinationCount                   int                                             `json:"warp_destination_count"`
 	WarpDestinations                       []WarpDestinationSummary                        `json:"warp_destinations,omitempty"`
 	WarpRouteCount                         int                                             `json:"warp_route_count"`
@@ -164,6 +166,16 @@ type ShopCatalogEntrySummary struct {
 	Stackable    bool   `json:"stackable"`
 	MaxCount     uint16 `json:"max_count"`
 	ShopBuyPrice uint64 `json:"shop_buy_price,omitempty"`
+}
+
+type ShopRouteSummary struct {
+	ActorName      string `json:"actor_name"`
+	SourceMapIndex uint32 `json:"source_map_index"`
+	SourceX        int32  `json:"source_x"`
+	SourceY        int32  `json:"source_y"`
+	Ref            string `json:"ref"`
+	Title          string `json:"title"`
+	EntryCount     int    `json:"entry_count"`
 }
 
 type WarpDestinationSummary struct {
@@ -401,12 +413,16 @@ func Summarize(bundle Bundle) (Summary, error) {
 			entry.InteractableStaticActorCount++
 			definition := definitionsByKey[interactionDefinitionKey(actor.InteractionKind, actor.InteractionRef)]
 			addMapServiceInteractionSummary(entry, definition)
+			if definition.Kind == interactionstore.KindShopPreview {
+				summary.ShopRoutes = append(summary.ShopRoutes, shopRouteSummary(actor, definition))
+			}
 			if definition.Kind == interactionstore.KindWarp {
 				summary.WarpRoutes = append(summary.WarpRoutes, warpRouteSummary(actor, definition))
 			}
 			summary.InteractableStaticActors = append(summary.InteractableStaticActors, interactableStaticActorSummary(actor, definition, itemTemplatesByVnum))
 		}
 	}
+	summary.ShopRouteCount = len(summary.ShopRoutes)
 	summary.WarpRouteCount = len(summary.WarpRoutes)
 	rewardDropCountsByVnum := make(map[uint32]int)
 	for _, spawnGroup := range normalized.SpawnGroups {
@@ -591,6 +607,20 @@ func warpDestinationSummary(definition interactionstore.Definition) WarpDestinat
 		MapIndex: definition.MapIndex,
 		X:        definition.X,
 		Y:        definition.Y,
+	}
+}
+
+func shopRouteSummary(actor StaticActor, definition interactionstore.Definition) ShopRouteSummary {
+	actor = normalizeStaticActors([]StaticActor{actor})[0]
+	definition = interactionstore.NormalizeDefinition(definition)
+	return ShopRouteSummary{
+		ActorName:      actor.Name,
+		SourceMapIndex: actor.MapIndex,
+		SourceX:        actor.X,
+		SourceY:        actor.Y,
+		Ref:            definition.Ref,
+		Title:          definition.Title,
+		EntryCount:     len(definition.Catalog),
 	}
 }
 

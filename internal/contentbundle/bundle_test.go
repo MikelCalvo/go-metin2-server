@@ -89,6 +89,8 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 				{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1},
 			},
 		}},
+		ShopRouteCount:             1,
+		ShopRoutes:                 []ShopRouteSummary{{ActorName: "Merchant", SourceMapIndex: 2, SourceX: 1200, SourceY: 2200, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 2}},
 		InteractionDefinitionCount: 3,
 		ItemTemplates: []ItemTemplateReferenceSummary{
 			{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
@@ -209,6 +211,52 @@ func TestSummarizeReturnsDeterministicShopCatalogDetails(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary.ShopCatalogs, want) {
 		t.Fatalf("unexpected shop catalog summaries:\n got: %#v\nwant: %#v", summary.ShopCatalogs, want)
+	}
+}
+
+func TestSummarizeReturnsDeterministicShopRoutesForInteractableActors(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "PotionMerchant", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:potion_merchant"},
+			{Name: "ArmsMerchant", MapIndex: 3, X: 1200, Y: 2200, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:arms_merchant"},
+		},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7},
+			{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			{
+				Kind:  interactionstore.KindShopPreview,
+				Ref:   "npc:potion_merchant",
+				Title: "Potion Merchant",
+				Catalog: []interactionstore.MerchantCatalogEntry{
+					{Slot: 1, ItemVnum: 27002, Price: 80, Count: 2},
+					{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+				},
+			},
+			{
+				Kind:  interactionstore.KindShopPreview,
+				Ref:   "npc:arms_merchant",
+				Title: "Arms Merchant",
+				Catalog: []interactionstore.MerchantCatalogEntry{
+					{Slot: 0, ItemVnum: 11200, Price: 500, Count: 1},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize shop routes: %v", err)
+	}
+	want := []ShopRouteSummary{
+		{ActorName: "ArmsMerchant", SourceMapIndex: 3, SourceX: 1200, SourceY: 2200, Ref: "npc:arms_merchant", Title: "Arms Merchant", EntryCount: 1},
+		{ActorName: "PotionMerchant", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:potion_merchant", Title: "Potion Merchant", EntryCount: 2},
+	}
+	if summary.ShopRouteCount != len(want) {
+		t.Fatalf("expected %d shop routes, got %d", len(want), summary.ShopRouteCount)
+	}
+	if !reflect.DeepEqual(summary.ShopRoutes, want) {
+		t.Fatalf("unexpected shop route summaries:\n got: %#v\nwant: %#v", summary.ShopRoutes, want)
 	}
 }
 

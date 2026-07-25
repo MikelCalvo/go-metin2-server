@@ -124,6 +124,7 @@ The structured merchant catalog now already drives:
 - bundled and file-backed merchant catalog carrier guards, so oversized `price` / `count` values fail closed before the runtime can persist a catalog that cannot be represented in the current `GC::SHOP START` item-entry layout
 - bundled `item_templates` count checks, so a merchant entry cannot exceed a stackable template's `max_count` and non-stackable templates can only be sold one at a time
 - content-bundle summaries that expose deterministic `shop_catalogs` entries with the resolved template name, stackability, maximum count, and optional template buy-price metadata next to each authored merchant slot / vnum / count / price
+- content-bundle summaries that expose deterministic `shop_routes` entries for every interactable static actor that resolves to a `shop_preview` definition, carrying the actor name, source `map_index`/`x`/`y`, interaction `ref`, merchant `title`, and catalog `entry_count`
 - content-bundle `maps[]` summaries that expose `shop_preview_actor_count` and `shop_catalog_entry_count` for each authored map, where catalog entries are counted per placed merchant actor so duplicated actors remain visible as duplicated local service capacity
 - interaction-visibility previews
 - the merchant-window `GC::SHOP START` open response, including template-authored display socket/attribute metadata for rendered catalog entries

@@ -541,6 +541,7 @@ Exports or imports one deterministic authored-content artifact spanning both boo
 - `GET` exports the current bundle
 - `POST` imports a full replacement bundle
 - imports reject dangling interaction references before mutating runtime state
+- `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` include compact `shop_routes` entries for each placed merchant actor, so local QA can inspect exact actor-to-catalog placement without fetching or applying the full bundle
 
 A small reference artifact lives at `docs/examples/bootstrap-npc-service-bundle.json`.
 
