@@ -257,6 +257,116 @@ func TestFileStoreCleanupCrashTempFilesFailsClosedOnCorruptCommittedTicket(t *te
 	}
 }
 
+func TestFileStoreCleanupIssuedBeforeRemovesOnlyOlderTickets(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	oldIssuedAt := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	cutoff := time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC)
+	newIssuedAt := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
+	tickets := []Ticket{
+		{Login: "old", LoginKey: 0x01000000, IssuedAt: oldIssuedAt},
+		{Login: "at-cutoff", LoginKey: 0x02000000, IssuedAt: cutoff},
+		{Login: "new", LoginKey: 0x03000000, IssuedAt: newIssuedAt},
+	}
+	for _, ticket := range tickets {
+		if err := store.Issue(ticket); err != nil {
+			t.Fatalf("issue ticket %s: %v", ticket.Login, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(store.dir, ".ticket-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp ticket: %v", err)
+	}
+
+	summary, err := store.CleanupIssuedBefore(cutoff)
+	if err != nil {
+		t.Fatalf("cleanup issued-before tickets: %v", err)
+	}
+	want := IssuedBeforeCleanupSummary{
+		IssuedBefore:     cutoff,
+		RemovedCount:     1,
+		RemovedLogins:    []string{"old"},
+		RemovedLoginKeys: []uint32{0x01000000},
+		Remaining: SnapshotSummary{
+			TicketCount:    2,
+			Logins:         []string{"at-cutoff", "new"},
+			LoginKeys:      []uint32{0x02000000, 0x03000000},
+			CrashTempCount: 1,
+			CrashTempFiles: []string{".ticket-crashed.json"},
+		},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected issued-before cleanup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := store.Load("old", 0x01000000); !errors.Is(err, ErrTicketNotFound) {
+		t.Fatalf("expected old ticket to be removed, got %v", err)
+	}
+	if _, err := store.Load("at-cutoff", 0x02000000); err != nil {
+		t.Fatalf("expected cutoff-equal ticket to remain: %v", err)
+	}
+	if _, err := store.Load("new", 0x03000000); err != nil {
+		t.Fatalf("expected new ticket to remain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(store.dir, ".ticket-crashed.json")); err != nil {
+		t.Fatalf("expected crash temp ticket to be preserved: %v", err)
+	}
+}
+
+func TestFileStoreCleanupIssuedBeforeRejectsZeroCutoff(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue ticket: %v", err)
+	}
+
+	_, err := store.CleanupIssuedBefore(time.Time{})
+	if !errors.Is(err, ErrIssuedBeforeRequired) {
+		t.Fatalf("expected ErrIssuedBeforeRequired for zero cutoff, got %v", err)
+	}
+	if _, err := store.Load("mkmk", 0x01020304); err != nil {
+		t.Fatalf("expected ticket to remain after rejected cleanup: %v", err)
+	}
+}
+
+func TestFileStoreCleanupIssuedBeforeFailsClosedOnCorruptCommittedTicket(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	oldIssuedAt := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	if err := store.Issue(Ticket{Login: "old", LoginKey: 0x01000000, IssuedAt: oldIssuedAt}); err != nil {
+		t.Fatalf("issue old ticket: %v", err)
+	}
+	if err := os.WriteFile(store.ticketPath(0x02000000), []byte(`{"login":"bad","login_key":33554432,"issued_at":"2026-04-17T10:00:00Z","characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt ticket: %v", err)
+	}
+
+	_, err := store.CleanupIssuedBefore(time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC))
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket before stale cleanup, got %v", err)
+	}
+	if _, err := store.Load("old", 0x01000000); err != nil {
+		t.Fatalf("expected old ticket to remain when cleanup fails closed: %v", err)
+	}
+}
+
+func TestFileStoreCleanupIssuedBeforeSyncsStoreDirectoryAfterDelete(t *testing.T) {
+	dir := t.TempDir()
+	store := NewFileStore(dir)
+	if err := store.Issue(Ticket{Login: "old", LoginKey: 0x01000000, IssuedAt: time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)}); err != nil {
+		t.Fatalf("issue old ticket: %v", err)
+	}
+
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	var synced []string
+	syncStoreDir = func(path string) error {
+		synced = append(synced, path)
+		return nil
+	}
+
+	if _, err := store.CleanupIssuedBefore(time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("cleanup old ticket: %v", err)
+	}
+	if !reflect.DeepEqual(synced, []string{dir}) {
+		t.Fatalf("expected login ticket store directory sync after issued-before cleanup, got %#v", synced)
+	}
+}
+
 func TestFileStoreValidateFailsClosedOnCorruptTicket(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	if err := os.WriteFile(store.ticketPath(0x01020304), []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[`), 0o644); err != nil {

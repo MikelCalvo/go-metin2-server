@@ -94,6 +94,16 @@ Removes same-directory `.ticket-*.json` crash-temp residue from the one-shot log
 
 The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup login-ticket JSON summary (`ticket_count`, deterministic `logins`, and matching `login_keys`). Because cleanup validates before removing anything, corrupt committed tickets leave crash-temp files in place for manual recovery. Only hidden `.ticket-*.json` temp files are removed; committed handoff tickets and unrelated hidden files are preserved. Use `/local/login-tickets/validate` first when you want a read-only residue report, then this endpoint when the operator has decided interrupted temp ticket writes are disposable.
 
+### `POST /local/login-tickets/issued-before/cleanup`
+
+Removes committed one-shot login-ticket files whose `issued_at` timestamp is strictly older than an operator-supplied cutoff. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the committed ticket set fails validation or if deletion/directory sync fails.
+
+Request body JSON fields:
+
+- `issued_before` — RFC3339/RFC3339Nano timestamp cutoff; only tickets with `issued_at < issued_before` are removed
+
+The cleanup path validates the whole committed ticket set through the same strict listing boundary used by `/local/login-tickets/validate` before deleting anything, so corrupt committed tickets fail closed and leave all pending handoff files available for inspection. Hidden `.ticket-*.json` crash-temp files are reported in the returned `remaining` summary but are not removed by this endpoint; use `/local/login-tickets/crash-temps/cleanup` for interrupted temp writes. Successful responses include the cutoff, `removed_count`, deterministic `removed_logins` / `removed_login_keys`, and a `remaining` login-ticket summary so operators can verify the pending handoff state after pruning stale tickets. This is a bounded local recovery primitive for abandoned authd-to-gamed handoff keys, not a remote admin API or a normal ticket-consume path.
+
 ### `POST /local/item-templates/validate`
 
 Validates the authored bootstrap item-template snapshot store without mutating item-template state. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed item-template snapshot is malformed, has unknown/trailing JSON, duplicates a vnum, or violates template policy such as invalid max counts, equipment slots, display metadata, use effects, or equip effects.

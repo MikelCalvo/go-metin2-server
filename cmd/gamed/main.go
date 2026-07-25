@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
@@ -75,6 +76,12 @@ func main() {
 	opsHandler = ops.RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(
 		opsHandler,
 		func() (any, error) { return gameRuntime.CleanupLoginTicketStoreCrashTempFiles() },
+	)
+	opsHandler = ops.RegisterLocalLoginTicketStoreIssuedBeforeCleanupEndpoint(
+		opsHandler,
+		func(issuedBefore time.Time) (any, error) {
+			return gameRuntime.CleanupLoginTicketStoreIssuedBefore(issuedBefore)
+		},
 	)
 	opsHandler = ops.RegisterLocalItemTemplateStoreValidateEndpoint(
 		opsHandler,

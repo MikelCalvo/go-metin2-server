@@ -34,6 +34,10 @@ type localAccountStoreRestoreRequest struct {
 	SrcDir string `json:"src_dir"`
 }
 
+type localLoginTicketStoreIssuedBeforeCleanupRequest struct {
+	IssuedBefore time.Time `json:"issued_before"`
+}
+
 type localStaticActorRequest struct {
 	Name            string `json:"name"`
 	MapIndex        uint32 `json:"map_index"`
@@ -213,6 +217,36 @@ func RegisterLocalLoginTicketStoreCrashTempCleanupEndpoint(mux *http.ServeMux, c
 		summary, err := cleanup()
 		if err != nil {
 			slog.Warn("local login ticket store crash temp cleanup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalLoginTicketStoreIssuedBeforeCleanupEndpoint(mux *http.ServeMux, cleanup func(time.Time) (any, error)) *http.ServeMux {
+	if mux == nil || cleanup == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/login-tickets/issued-before/cleanup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		issuedBefore, status, ok := decodeLocalLoginTicketStoreIssuedBeforeCleanupRequest(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := cleanup(issuedBefore)
+		if err != nil {
+			slog.Warn("local login ticket store issued-before cleanup failed", "err", err)
 			w.WriteHeader(http.StatusConflict)
 			return
 		}
@@ -1275,6 +1309,21 @@ func decodeLocalAccountStoreRestoreRequest(r *http.Request) (localAccountStoreRe
 		return localAccountStoreRestoreRequest{}, http.StatusBadRequest, false
 	}
 	return request, http.StatusOK, true
+}
+
+func decodeLocalLoginTicketStoreIssuedBeforeCleanupRequest(r *http.Request) (time.Time, int, bool) {
+	raw, status, ok := readNonEmptyLocalAccountStoreMutationBody(r)
+	if !ok {
+		return time.Time{}, status, false
+	}
+	var request localLoginTicketStoreIssuedBeforeCleanupRequest
+	if !decodeStrictLocalAccountStoreMutationRequest(raw, &request) {
+		return time.Time{}, http.StatusBadRequest, false
+	}
+	if request.IssuedBefore.IsZero() {
+		return time.Time{}, http.StatusBadRequest, false
+	}
+	return request.IssuedBefore, http.StatusOK, true
 }
 
 func readNonEmptyLocalAccountStoreMutationBody(r *http.Request) ([]byte, int, bool) {

@@ -338,6 +338,24 @@ func (r *gameRuntime) CleanupLoginTicketStoreCrashTempFiles() (loginticket.Snaps
 	return cleaner.CleanupCrashTempFiles()
 }
 
+func (r *gameRuntime) CleanupLoginTicketStoreIssuedBefore(issuedBefore time.Time) (loginticket.IssuedBeforeCleanupSummary, error) {
+	if r == nil || r.loginTicketStore == nil {
+		return loginticket.IssuedBeforeCleanupSummary{
+			IssuedBefore:     issuedBefore,
+			RemovedLogins:    []string{},
+			RemovedLoginKeys: []uint32{},
+			Remaining:        loginticket.SnapshotSummary{Logins: []string{}, LoginKeys: []uint32{}},
+		}, nil
+	}
+	cleaner, ok := r.loginTicketStore.(interface {
+		CleanupIssuedBefore(time.Time) (loginticket.IssuedBeforeCleanupSummary, error)
+	})
+	if !ok {
+		return loginticket.IssuedBeforeCleanupSummary{}, fmt.Errorf("login ticket issued-before cleanup is not supported")
+	}
+	return cleaner.CleanupIssuedBefore(issuedBefore)
+}
+
 func (r *gameRuntime) ValidateItemTemplateStore() (itemcatalog.SnapshotSummary, error) {
 	if r == nil || r.itemStore == nil {
 		return itemcatalog.SnapshotSummary{Vnums: []uint32{}}, nil
