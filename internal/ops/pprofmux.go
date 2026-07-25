@@ -751,6 +751,31 @@ func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() a
 	return mux
 }
 
+func RegisterLocalStaticActorEndpoint(mux *http.ServeMux, staticActor func(uint64) (any, bool)) *http.ServeMux {
+	if mux == nil || staticActor == nil {
+		return mux
+	}
+
+	mux.HandleFunc("GET /local/static-actors/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, ok := decodeLocalStaticActorEntityID(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		actor, ok := staticActor(entityID)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, actor, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalStaticActorDeleteEndpoint(mux *http.ServeMux, removeStaticActor func(uint64) (any, bool)) *http.ServeMux {
 	if mux == nil || removeStaticActor == nil {
 		return mux

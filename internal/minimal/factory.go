@@ -1086,6 +1086,13 @@ func (r *gameRuntime) StaticActors() []StaticActorSnapshot {
 	return r.sharedWorld.StaticActors()
 }
 
+func (r *gameRuntime) StaticActor(entityID uint64) (StaticActorSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return StaticActorSnapshot{}, false
+	}
+	return r.sharedWorld.StaticActor(entityID)
+}
+
 func (r *gameRuntime) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil {
 		return StaticActorSnapshot{}, false

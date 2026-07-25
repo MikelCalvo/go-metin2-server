@@ -493,9 +493,9 @@ Each row exposes:
 Rows are sorted by `entity_id`.
 Once `FlushServerFrames()` runs after a due timer and the respawn rebuild is emitted, that actor disappears from this snapshot.
 
-### `GET` / `POST /local/static-actors` and `PATCH` / `PUT` / `DELETE /local/static-actors/{entity_id}`
+### `GET` / `POST /local/static-actors`, `GET /local/static-actors/{entity_id}`, and `PATCH` / `PUT` / `DELETE /local/static-actors/{entity_id}`
 
-Use these endpoints to inspect and author bootstrap static actors.
+Use these endpoints to inspect and author bootstrap static actors. The collection `GET` returns every current static actor snapshot; the entity lookup `GET /local/static-actors/{entity_id}` returns one current snapshot by runtime entity / client-visible static-actor `VID`, returns `404` when that actor no longer exists, and uses the same loopback-only `403`, invalid-ID `400`, and wrong-method `405` guard shape as the other local static-actor endpoints.
 
 Create/update bodies currently use:
 

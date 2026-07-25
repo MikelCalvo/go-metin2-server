@@ -110,6 +110,51 @@ func TestStaticActorCharacterAdditionalInfoUsesCombatProfileLevel(t *testing.T) 
 	}
 }
 
+func TestSharedWorldRegistryStaticActorReturnsDeadStateByEntityID(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummyLookup", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	registry.mu.Lock()
+	registry.staticActorCombatHP[actor.EntityID] = 0
+	registry.mu.Unlock()
+
+	snapshot, ok := registry.StaticActor(actor.EntityID)
+	if !ok {
+		t.Fatalf("expected static actor %d lookup to succeed", actor.EntityID)
+	}
+	if snapshot.EntityID != actor.EntityID || snapshot.Name != "TrainingDummyLookup" || !snapshot.Dead {
+		t.Fatalf("unexpected static actor lookup snapshot: %+v", snapshot)
+	}
+	if _, ok := registry.StaticActor(actor.EntityID + 100); ok {
+		t.Fatal("expected missing static actor lookup to fail")
+	}
+}
+
+func TestGameRuntimeStaticActorLooksUpActorByEntityID(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("LookupGuard", bootstrapMapIndex, 1200, 2200, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	snapshot, ok := runtime.StaticActor(actor.EntityID)
+	if !ok {
+		t.Fatalf("expected runtime static actor %d lookup to succeed", actor.EntityID)
+	}
+	if snapshot.EntityID != actor.EntityID || snapshot.Name != "LookupGuard" || snapshot.MapIndex != bootstrapMapIndex || snapshot.RaceNum != 20300 {
+		t.Fatalf("unexpected runtime static actor lookup snapshot: %+v", snapshot)
+	}
+	if _, ok := runtime.StaticActor(actor.EntityID + 100); ok {
+		t.Fatal("expected missing runtime static actor lookup to fail")
+	}
+}
+
 type loadableFailingAccountStore struct {
 	account accountstore.Account
 	saveErr error

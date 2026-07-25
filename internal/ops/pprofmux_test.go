@@ -3185,6 +3185,106 @@ func TestLocalStaticActorsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T
 	}
 }
 
+func TestLocalStaticActorEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	lookup := &stubStaticActorLookup{actors: map[uint64]any{7: map[string]any{"entity_id": uint64(7), "name": "TrainingDummy", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20350), "dead": true}}}
+	mux := RegisterLocalStaticActorEndpoint(NewPprofMux("gamed"), lookup.StaticActor)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors/7", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastEntityID != 7 {
+		t.Fatalf("expected static actor lookup for entity 7, got calls=%d entity_id=%d", lookup.calls, lookup.lastEntityID)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":7`) || !strings.Contains(string(body), `"name":"TrainingDummy"`) || !strings.Contains(string(body), `"dead":true`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalStaticActorEndpointRejectsInvalidEntityID(t *testing.T) {
+	lookup := &stubStaticActorLookup{}
+	mux := RegisterLocalStaticActorEndpoint(NewPprofMux("gamed"), lookup.StaticActor)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors/not-a-number", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected static actor lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalStaticActorEndpointReturnsNotFoundForMissingActor(t *testing.T) {
+	lookup := &stubStaticActorLookup{}
+	mux := RegisterLocalStaticActorEndpoint(NewPprofMux("gamed"), lookup.StaticActor)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors/7", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastEntityID != 7 {
+		t.Fatalf("expected static actor lookup for missing entity 7, got calls=%d entity_id=%d", lookup.calls, lookup.lastEntityID)
+	}
+}
+
+func TestLocalStaticActorEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	lookup := &stubStaticActorLookup{actors: map[uint64]any{7: map[string]any{"entity_id": uint64(7)}}}
+	mux := RegisterLocalStaticActorEndpoint(NewPprofMux("gamed"), lookup.StaticActor)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actors/7", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected static actor lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalStaticActorEndpointRejectsUnsupportedMethod(t *testing.T) {
+	lookup := &stubStaticActorLookup{actors: map[uint64]any{7: map[string]any{"entity_id": uint64(7)}}}
+	mux := RegisterLocalStaticActorEndpoint(NewPprofMux("gamed"), lookup.StaticActor)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors/7", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected static actor lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
 func TestLocalStaticActorsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	snapshotter := &stubStaticActorSnapshotter{}
 	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), snapshotter.StaticActors, nil)
@@ -3711,6 +3811,19 @@ type stubStaticActorSnapshotter struct {
 func (s *stubStaticActorSnapshotter) StaticActors() any {
 	s.calls++
 	return s.actors
+}
+
+type stubStaticActorLookup struct {
+	actors       map[uint64]any
+	calls        int
+	lastEntityID uint64
+}
+
+func (s *stubStaticActorLookup) StaticActor(entityID uint64) (any, bool) {
+	s.calls++
+	s.lastEntityID = entityID
+	actor, ok := s.actors[entityID]
+	return actor, ok
 }
 
 type stubStaticActorRegistrar struct {

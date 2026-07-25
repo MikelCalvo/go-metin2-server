@@ -1891,6 +1891,20 @@ func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
 	return r.markStaticActorSnapshotsStateLocked(r.scopesLocked().StaticActorSnapshots())
 }
 
+func (r *sharedWorldRegistry) StaticActor(entityID uint64) (StaticActorSnapshot, bool) {
+	if r == nil || r.entities == nil || entityID == 0 {
+		return StaticActorSnapshot{}, false
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	actor, ok := r.entities.StaticActor(entityID)
+	if !ok {
+		return StaticActorSnapshot{}, false
+	}
+	return r.markStaticActorSnapshotStateLocked(staticActorSnapshot(r.topology, actor)), true
+}
+
 func (r *sharedWorldRegistry) VisibleStaticActorFrames(subject loginticket.Character) [][]byte {
 	if r == nil || r.entities == nil || characterAtBootstrapHPFloor(subject) {
 		return nil
