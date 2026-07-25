@@ -3415,7 +3415,7 @@ func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliati
 		if err != nil {
 			t.Fatalf("unexpected practice-mob attack error on pending-retaliation cleanup hit %d: %v", attackIndex+1, err)
 		}
-		wantFrames := 2
+		wantFrames := 3
 		if attackIndex == 9 {
 			wantFrames = 2
 		}
@@ -3525,8 +3525,8 @@ func TestNewGameSessionFactoryPracticeMobServerOriginRetaliationTicksUntilOwnerF
 	if err != nil {
 		t.Fatalf("unexpected first owner attack before server-origin retaliation floor: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected first owner attack to emit target refresh and immediate retaliation, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected first owner attack to emit target refresh, immediate retaliation, and self damage-info, got %d", len(attackOut))
 	}
 	firstPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -5658,8 +5658,8 @@ func TestGameRuntimeBroadcastNoticeSkipsZeroHPOwnerAfterDelayedRetaliationReache
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner server-notice skip after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner server-notice skip after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner server-notice skip after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -5848,8 +5848,8 @@ func TestGameRuntimePeerAppearanceUpdateSkipsZeroHPOwnerRecipientAfterDelayedRet
 	if err != nil {
 		t.Fatalf("unexpected owner attack error before zero-HP peer-appearance recipient skip test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected owner target refresh plus first point-loss retaliation before zero-HP peer-appearance recipient skip test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected owner target refresh, first point-loss retaliation, and self damage-info before zero-HP peer-appearance recipient skip test, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -5952,8 +5952,8 @@ func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterD
 	if err != nil {
 		t.Fatalf("unexpected watcher attack error before zero-HP peer-DEAD recipient skip test: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
-		t.Fatalf("expected watcher target refresh plus first point-loss retaliation before zero-HP peer-DEAD recipient skip test, got %d frames", len(watcherAttackOut))
+	if len(watcherAttackOut) != 3 {
+		t.Fatalf("expected watcher target refresh, first point-loss retaliation, and self damage-info before zero-HP peer-DEAD recipient skip test, got %d frames", len(watcherAttackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -5987,8 +5987,8 @@ func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterD
 	if err != nil {
 		t.Fatalf("unexpected owner attack error before zero-HP peer-DEAD recipient skip test: %v", err)
 	}
-	if len(ownerAttackOut) != 2 {
-		t.Fatalf("expected owner target refresh plus first point-loss retaliation before zero-HP peer-DEAD recipient skip test, got %d frames", len(ownerAttackOut))
+	if len(ownerAttackOut) != 3 {
+		t.Fatalf("expected owner target refresh, first point-loss retaliation, and self damage-info before zero-HP peer-DEAD recipient skip test, got %d frames", len(ownerAttackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -6105,8 +6105,8 @@ func TestGameSessionFlowPracticeMobVisibleMobDeathFanoutSkipsZeroHPOwnerRecipien
 		if err != nil {
 			t.Fatalf("unexpected watcher pre-death hit %d before zero-HP owner visible mob-death recipient skip test: %v", attackIndex+1, err)
 		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected target-refresh plus self-only retaliation point-loss frames on watcher pre-death hit %d before zero-HP owner visible mob-death recipient skip test, got %d", attackIndex+1, len(attackOut))
+		if len(attackOut) != 3 {
+			t.Fatalf("expected target-refresh, self-only retaliation point-loss, and self damage-info frames on watcher pre-death hit %d before zero-HP owner visible mob-death recipient skip test, got %d", attackIndex+1, len(attackOut))
 		}
 	}
 
@@ -6231,8 +6231,8 @@ func TestGameSessionFlowPracticeMobRespawnRebuildSkipsZeroHPOwnerRecipientAfterI
 		if err != nil {
 			t.Fatalf("unexpected watcher pre-death hit %d before zero-HP owner respawn recipient skip test: %v", attackIndex+1, err)
 		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected target-refresh plus self-only retaliation point-loss frames on watcher pre-death hit %d before zero-HP owner respawn recipient skip test, got %d", attackIndex+1, len(attackOut))
+		if len(attackOut) != 3 {
+			t.Fatalf("expected target-refresh, self-only retaliation point-loss, and self damage-info frames on watcher pre-death hit %d before zero-HP owner respawn recipient skip test, got %d", attackIndex+1, len(attackOut))
 		}
 	}
 
@@ -6348,8 +6348,8 @@ func drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t *testing.T, ownerFlo
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP static-actor visibility recipient test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP static-actor visibility recipient test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP static-actor visibility recipient test, got %d frames", len(attackOut))
 	}
 
 	advance(time.Second)
@@ -8037,8 +8037,8 @@ func TestGameSessionFlowPracticeMobPeerJoinSkipsZeroHPOwnerRecipientAfterDelayed
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner peer-join skip test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner peer-join skip test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner peer-join skip test, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -8151,8 +8151,8 @@ func TestGameSessionFlowPracticeMobFreshPeerBootstrapAppendsDeadForAlreadyDeadVi
 	if err != nil {
 		t.Fatalf("unexpected attack error before fresh-peer dead bootstrap test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before fresh-peer dead bootstrap test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before fresh-peer dead bootstrap test, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -8262,8 +8262,8 @@ func TestGameSessionFlowPracticeMobPeerMoveIntoRangeSkipsZeroHPOwnerRecipientAft
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner move-into-range skip test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner move-into-range skip test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner move-into-range skip test, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -17319,7 +17319,7 @@ func TestGameRuntimeRegisteredProfileRespawnUsesRegisteredDelayAndFullHP(t *test
 	if err != nil {
 		t.Fatalf("unexpected registered-profile first attack error: %v", err)
 	}
-	if len(firstHit) != 2 {
+	if len(firstHit) != 3 {
 		t.Fatalf("expected first registered-profile hit to return HP refresh plus self-only retaliation point-loss, got %d frames", len(firstHit))
 	}
 	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHit[0]))
@@ -18870,7 +18870,7 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileCombinedDeathRe
 	if err != nil {
 		t.Fatalf("unexpected formula reward first attack error: %v", err)
 	}
-	if len(firstHit) != 2 {
+	if len(firstHit) != 3 {
 		t.Fatalf("expected first formula reward hit to return HP refresh plus self-only retaliation point-loss, got %d frames", len(firstHit))
 	}
 	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHit[0]))
@@ -19091,8 +19091,8 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileDeathReward(t *
 	if err != nil {
 		t.Fatalf("unexpected formula reward first hit error: %v", err)
 	}
-	if len(firstHitOut) != 2 {
-		t.Fatalf("expected non-lethal formula hit to return target refresh plus self-only retaliation point-loss, got %d frames", len(firstHitOut))
+	if len(firstHitOut) != 3 {
+		t.Fatalf("expected non-lethal formula hit to return target refresh, self-only retaliation, and self damage-info point-loss, got %d frames", len(firstHitOut))
 	}
 	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHitOut[0]))
 	if err != nil {
@@ -23359,8 +23359,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMerchantWind
 	if err != nil {
 		t.Fatalf("unexpected attack error before merchant floor-close test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before merchant floor-close test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before merchant floor-close test, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -25531,6 +25531,86 @@ func TestGameSessionFlowStaticActorAttackDamageInfoUsesRegisteredFormulaDamage(t
 	}
 }
 
+func TestGameSessionFlowContentSpawnBackedPracticeMobAttackAppendsSelfDamageInfo(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000205, 0)
+	runtime.now = func() time.Time { return currentTime }
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.damage_info_spawn",
+		Name:          "PracticeDamageInfoSpawn",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}); err != nil {
+		t.Fatalf("import spawn-backed damage-info practice mob: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 || actors[0].SpawnGroupRef != "practice.damage_info_spawn" {
+		t.Fatalf("expected one spawn-backed practice mob after import, got %#v", actors)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible spawn-backed practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	targetVID := uint32(actors[0].EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected spawn-backed practice-mob target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only spawn-backed practice-mob target frame, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected spawn-backed practice-mob attack error: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target-refresh, retaliation point-change, and self damage-info frames for accepted spawn-backed practice-mob attack, got %d", len(attackOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode spawn-backed practice-mob target-refresh frame: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 90 {
+		t.Fatalf("unexpected spawn-backed practice-mob target-refresh packet: %+v", refresh)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode spawn-backed practice-mob retaliation point-change frame: %v", err)
+	}
+	if pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != bootstrapPracticeMobRetaliationPointDelta || pointChange.Value != peer.Points[bootstrapPlayerPointValueIndex]+bootstrapPracticeMobRetaliationPointDelta {
+		t.Fatalf("unexpected spawn-backed practice-mob retaliation point-change packet: %+v", pointChange)
+	}
+	damage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, attackOut[2]))
+	if err != nil {
+		t.Fatalf("decode spawn-backed practice-mob damage-info frame: %v", err)
+	}
+	if damage.VID != targetVID || damage.Flag != 0 || damage.Damage != int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack) {
+		t.Fatalf("unexpected spawn-backed practice-mob damage-info packet: %+v", damage)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected spawn-backed self damage-info not to queue peer frames in the one-session test, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndRejectsPostDeathRequests(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -26050,8 +26130,8 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 		if err != nil {
 			t.Fatalf("unexpected combat attack error on content practice-mob pre-death hit %d: %v", attackIndex+1, err)
 		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected target-refresh plus self-only retaliation point-loss frames on content practice-mob pre-death hit %d, got %d", attackIndex+1, len(attackOut))
+		if len(attackOut) != 3 {
+			t.Fatalf("expected target-refresh, self-only retaliation point-loss, and self damage-info frames on content practice-mob pre-death hit %d, got %d", attackIndex+1, len(attackOut))
 		}
 	}
 
@@ -26239,8 +26319,8 @@ func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRe
 			}
 			continue
 		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected live hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
+		if len(attackOut) != 3 {
+			t.Fatalf("expected live hit %d to return target refresh, immediate retaliation, and self damage-info, got %d frames", attackIndex+1, len(attackOut))
 		}
 	}
 
@@ -26325,8 +26405,8 @@ func TestGameSessionFlowPracticeMobAggroLiteRejectsFreshThirdPartyTargetAfterFir
 	if err != nil {
 		t.Fatalf("unexpected first accepted aggro-lite attack error: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target-refresh plus self-only retaliation point-loss frames on first aggro-lite hit, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target-refresh, self-only retaliation point-loss, and self damage-info frames on first aggro-lite hit, got %d", len(attackOut))
 	}
 
 	thirdPartyTarget, err := flowTwo.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -26410,8 +26490,8 @@ func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTa
 	if err != nil {
 		t.Fatalf("unexpected first accepted custom-profile aggro-lite attack error: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target-refresh plus self-only retaliation point-loss frames on first accepted custom-profile hit, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target-refresh, self-only retaliation point-loss, and self damage-info frames on first accepted custom-profile hit, got %d", len(attackOut))
 	}
 	refreshed, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
 	if err != nil {
@@ -26505,8 +26585,8 @@ func TestGameSessionFlowPracticeMobFirstHostileRetaliationAppliesSelfOnlyPointLo
 	if err != nil {
 		t.Fatalf("unexpected first hostile retaliation attack error: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target-refresh plus self-only point-loss retaliation on first hostile practice-mob hit, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target-refresh, self-only point-loss retaliation, and self damage-info on first hostile practice-mob hit, got %d frames", len(attackOut))
 	}
 	refreshed, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
 	if err != nil {
@@ -26577,8 +26657,8 @@ func TestGameSessionFlowPracticeMobProfileFirstHostileRetaliationAppliesSelfOnly
 	if err != nil {
 		t.Fatalf("unexpected first practice-mob-profile hostile retaliation attack error: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target-refresh plus self-only point-loss retaliation on first practice_mob-profile hit, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target-refresh, self-only point-loss retaliation, and self damage-info on first practice_mob-profile hit, got %d frames", len(attackOut))
 	}
 	refreshed, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
 	if err != nil {
@@ -26648,8 +26728,8 @@ func TestGameSessionFlowPracticeMobQueuesDelayedServerOriginRetaliationBeatAfter
 	if err != nil {
 		t.Fatalf("unexpected first attack error before delayed retaliation beat: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation on first practice-mob hit, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info on first practice-mob hit, got %d frames", len(attackOut))
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued delayed retaliation beat before the owned delay expires, got %d frames", len(queued))
@@ -26721,8 +26801,8 @@ func TestGameSessionFlowPracticeMobProfileQueuesDelayedServerOriginRetaliationBe
 	if err != nil {
 		t.Fatalf("unexpected first practice-mob-profile attack error before delayed retaliation beat: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation on first practice-mob-profile hit, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info on first practice-mob-profile hit, got %d frames", len(attackOut))
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued practice-mob-profile delayed retaliation beat before the owned delay expires, got %d frames", len(queued))
@@ -26795,8 +26875,8 @@ func TestGameSessionFlowPracticeMobDeniedAttackInsideCadenceWindowDoesNotRetalia
 	if err != nil {
 		t.Fatalf("unexpected first attack error before cadence-window denial test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected first attack target-refresh plus self-only point-loss retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected first attack target-refresh, self-only point-loss retaliation, and self damage-info, got %d frames", len(attackOut))
 	}
 	firstTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
 	if err != nil {
@@ -26837,7 +26917,7 @@ func TestGameSessionFlowPracticeMobDeniedAttackInsideCadenceWindowDoesNotRetalia
 	if err != nil {
 		t.Fatalf("unexpected post-window attack error: %v", err)
 	}
-	if len(lateAttackOut) != 2 {
+	if len(lateAttackOut) != 3 {
 		t.Fatalf("expected post-window attack to be accepted with target refresh plus retaliation, got %d frames", len(lateAttackOut))
 	}
 	lateTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, lateAttackOut[0]))
@@ -26909,8 +26989,8 @@ func TestGameSessionFlowPracticeMobSustainsDelayedServerOriginRetaliationCadence
 	if err != nil {
 		t.Fatalf("unexpected first attack error before sustained delayed retaliation cadence test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before sustained delayed cadence, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before sustained delayed cadence, got %d frames", len(attackOut))
 	}
 	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -26990,8 +27070,8 @@ func TestGameSessionFlowPracticeMobAcceptedHitWhileDelayedRetaliationPendingDoes
 	if err != nil {
 		t.Fatalf("unexpected first attack error before pending-retaliation stacking test: %v", err)
 	}
-	if len(firstAttackOut) != 2 {
-		t.Fatalf("expected first attack target-refresh plus self-only retaliation, got %d frames", len(firstAttackOut))
+	if len(firstAttackOut) != 3 {
+		t.Fatalf("expected first attack target-refresh, self-only retaliation, and self damage-info, got %d frames", len(firstAttackOut))
 	}
 	firstPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, firstAttackOut[1]))
 	if err != nil {
@@ -27009,7 +27089,7 @@ func TestGameSessionFlowPracticeMobAcceptedHitWhileDelayedRetaliationPendingDoes
 	if err != nil {
 		t.Fatalf("unexpected second accepted attack error before pending-retaliation stacking test: %v", err)
 	}
-	if len(secondAttackOut) != 2 {
+	if len(secondAttackOut) != 3 {
 		t.Fatalf("expected second accepted attack to keep ordinary target-refresh plus immediate retaliation while delayed beat is pending, got %d frames", len(secondAttackOut))
 	}
 	secondTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, secondAttackOut[0]))
@@ -27181,8 +27261,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationStopsAtOwnerHPFloor(t *test
 	if err != nil {
 		t.Fatalf("unexpected first attack error before delayed owner-HP-floor retaliation test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before delayed owner-HP-floor beat, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before delayed owner-HP-floor beat, got %d frames", len(attackOut))
 	}
 	firstPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -27341,8 +27421,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsP
 	if err != nil {
 		t.Fatalf("unexpected first attack error before delayed retaliation /phase_select recovery test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before delayed retaliation /phase_select recovery test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before delayed retaliation /phase_select recovery test, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -27414,8 +27494,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsP
 	if err != nil {
 		t.Fatalf("unexpected attack error after delayed retaliation /phase_select recovery: %v", err)
 	}
-	if len(attackAfterRecovery) != 2 {
-		t.Fatalf("expected target-refresh plus self-only retaliation point-loss after delayed retaliation /phase_select recovery, got %d frames", len(attackAfterRecovery))
+	if len(attackAfterRecovery) != 3 {
+		t.Fatalf("expected target-refresh, self-only retaliation, and self damage-info point-loss after delayed retaliation /phase_select recovery, got %d frames", len(attackAfterRecovery))
 	}
 	recoveryTargetRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackAfterRecovery[0]))
 	if err != nil {
@@ -27490,8 +27570,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPointLossStaysRuntimeOnlyAc
 	if err != nil {
 		t.Fatalf("unexpected first attack error before delayed retaliation reconnect test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before delayed retaliation reconnect test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before delayed retaliation reconnect test, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -27592,8 +27672,8 @@ func TestGameSessionFlowPracticeMobRetaliationPointLossStaysRuntimeOnlyAcrossPer
 	if err != nil {
 		t.Fatalf("unexpected first attack error before persisted-move retaliation test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before persisted-move retaliation test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before persisted-move retaliation test, got %d frames", len(attackOut))
 	}
 	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -27718,8 +27798,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnly
 	if err != nil {
 		t.Fatalf("unexpected first attack error before transfer rebootstrap retaliation test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before transfer rebootstrap retaliation test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before transfer rebootstrap retaliation test, got %d frames", len(attackOut))
 	}
 	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -27867,8 +27947,8 @@ func TestGameSessionFlowPracticeMobTransferRebootstrapStopsPendingRetaliationAnd
 	if err != nil {
 		t.Fatalf("unexpected attack error before transfer retaliation teardown test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before transfer, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before transfer, got %d frames", len(attackOut))
 	}
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -28055,8 +28135,8 @@ func TestGameSessionFlowPracticeMobAttackFailsClosedAfterDelayedRetaliationReach
 	if err != nil {
 		t.Fatalf("unexpected first attack error before zero-HP owner attack denial after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before zero-HP owner attack denial after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before zero-HP owner attack denial after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -28213,8 +28293,8 @@ func TestGameSessionFlowPracticeMobTargetFailsClosedAfterDelayedRetaliationReach
 	if err != nil {
 		t.Fatalf("unexpected first attack error before zero-HP owner target denial after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before zero-HP owner target denial after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before zero-HP owner target denial after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -28333,7 +28413,7 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterImmediateRetaliatio
 	if err != nil {
 		t.Fatalf("unexpected watcher attack error after immediate retaliation killed owner: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
+	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher retargeted hit to refresh mob HP and append self-only retaliation after immediate owner death, got %d frames", len(watcherAttackOut))
 	}
 	watcherRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, watcherAttackOut[0]))
@@ -28408,8 +28488,8 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterDelayedRetaliationK
 	if err != nil {
 		t.Fatalf("unexpected owner attack error before delayed-retaliation aggro release: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before delayed-retaliation aggro release, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before delayed-retaliation aggro release, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -28444,7 +28524,7 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterDelayedRetaliationK
 	if err != nil {
 		t.Fatalf("unexpected watcher attack error after delayed retaliation killed owner: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
+	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher retargeted hit to refresh mob HP and append self-only retaliation after delayed owner death, got %d frames", len(watcherAttackOut))
 	}
 	watcherRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, watcherAttackOut[0]))
@@ -28631,8 +28711,8 @@ func TestGameSessionFlowPracticeMobSyncPositionFailsClosedAfterDelayedRetaliatio
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner sync-position denial after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner sync-position denial after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner sync-position denial after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -28851,8 +28931,8 @@ func TestGameSessionFlowPracticeMobInteractionFailsClosedAfterDelayedRetaliation
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner interaction denial after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner interaction denial after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner interaction denial after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -29107,8 +29187,8 @@ func TestGameSessionFlowPracticeMobSlashShopBuyFailsClosedAfterDelayedRetaliatio
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP merchant slash-buy denial: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected delayed retaliation setup attack to emit 2 frames before zero-HP merchant slash-buy denial, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected delayed retaliation setup attack to emit 3 frames before zero-HP merchant slash-buy denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
@@ -29368,8 +29448,8 @@ func TestGameSessionFlowPracticeMobPacketShopSell2FailsClosedAfterDelayedRetalia
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP merchant packet-sell2 denial: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected delayed retaliation setup attack to emit 2 frames before zero-HP merchant packet-sell2 denial, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected delayed retaliation setup attack to emit 3 frames before zero-HP merchant packet-sell2 denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
@@ -29500,8 +29580,8 @@ func TestGameSessionFlowPracticeMobMerchantBuyKeepsRetaliationPointLossRuntimeOn
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only merchant buy persistence: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate retaliation setup attack to emit 2 frames before runtime-only merchant buy persistence, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate retaliation setup attack to emit 3 frames before runtime-only merchant buy persistence, got %d", len(attackOut))
 	}
 	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -29767,8 +29847,8 @@ func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterDelayedRetaliationRe
 	if err != nil {
 		t.Fatalf("unexpected attack error before delayed zero-HP merchant close: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected delayed retaliation setup attack to emit 2 frames before delayed zero-HP merchant close, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected delayed retaliation setup attack to emit 3 frames before delayed zero-HP merchant close, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
@@ -30263,8 +30343,8 @@ func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterDelayedRetaliationReac
 	if err != nil {
 		t.Fatalf("unexpected attack error before delayed zero-HP item-use denial: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected delayed retaliation setup attack to emit 2 frames before delayed zero-HP item-use denial, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected delayed retaliation setup attack to emit 3 frames before delayed zero-HP item-use denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
@@ -30609,8 +30689,8 @@ func TestGameSessionFlowPracticeMobUnequipItemFailsClosedAfterDelayedRetaliation
 	if err != nil {
 		t.Fatalf("unexpected attack error before delayed zero-HP equip denial: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected delayed retaliation setup attack to emit 2 frames before delayed zero-HP equip denial, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected delayed retaliation setup attack to emit 3 frames before delayed zero-HP equip denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
@@ -30827,8 +30907,8 @@ func TestGameSessionFlowPracticeMobInventoryMoveFailsClosedAfterDelayedRetaliati
 	if err != nil {
 		t.Fatalf("unexpected attack error before delayed zero-HP inventory-move denial: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected delayed retaliation setup attack to emit 2 frames before delayed zero-HP inventory-move denial, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected delayed retaliation setup attack to emit 3 frames before delayed zero-HP inventory-move denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
@@ -30934,8 +31014,8 @@ func TestGameSessionFlowPracticeMobInventoryMoveKeepsRetaliationPointLossRuntime
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only inventory-move persistence: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate retaliation attack to emit 2 frames before runtime-only inventory-move persistence, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate retaliation attack to emit 3 frames before runtime-only inventory-move persistence, got %d", len(attackOut))
 	}
 	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -31240,8 +31320,8 @@ func TestGameSessionFlowPracticeMobInfoChatFailsClosedAfterDelayedRetaliationRea
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner info-chat denial after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner info-chat denial after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner info-chat denial after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -31332,8 +31412,8 @@ func TestGameSessionFlowPracticeMobWhisperFailsClosedAfterDelayedRetaliationReac
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner whisper denial after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner whisper denial after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner whisper denial after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -31443,8 +31523,8 @@ func TestGameSessionFlowPracticeMobWhisperToZeroHPOwnerFailsClosedAfterDelayedRe
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner recipient whisper denial after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner recipient whisper denial after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner recipient whisper denial after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -31546,8 +31626,8 @@ func TestGameSessionFlowPracticeMobLocalChatSkipsZeroHPOwnerRecipientAfterDelaye
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner recipient local-chat skip after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner recipient local-chat skip after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner recipient local-chat skip after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -31660,8 +31740,8 @@ func TestGameSessionFlowPracticeMobPeerChatRecipientSkipsZeroHPOwnerAfterDelayed
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner recipient broadcast-chat skip after delayed retaliation: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected target refresh plus first point-loss retaliation before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target refresh, first point-loss retaliation, and self damage-info before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -32008,8 +32088,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationSendsSelfDeadBeforeTargetCl
 	if err != nil {
 		t.Fatalf("unexpected attack error before delayed retaliation target clear: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target refresh plus first point-loss retaliation before delayed retaliation target clear, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target refresh, first point-loss retaliation, and self damage-info before delayed retaliation target clear, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -32173,8 +32253,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationQueuesVisiblePeerDeadAtOwne
 	if err != nil {
 		t.Fatalf("unexpected attack error before delayed peer-dead retaliation check: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target refresh plus first point-loss retaliation before delayed peer-dead retaliation check, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target refresh, first point-loss retaliation, and self damage-info before delayed peer-dead retaliation check, got %d frames", len(attackOut))
 	}
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
 		t.Fatalf("expected no visible-peer death frame before delayed retaliation actually reaches owner HP floor, got %d", len(queued))
@@ -32341,8 +32421,8 @@ func TestGameSessionFlowPracticeMobCadenceWindowDeniedRepeatDoesNotAppendRetalia
 	if err != nil {
 		t.Fatalf("unexpected first attack error before cadence-window retaliation test: %v", err)
 	}
-	if len(firstAttack) != 2 {
-		t.Fatalf("expected target-refresh plus self-only point-loss retaliation on first practice-mob hit before cadence-window denial, got %d frames", len(firstAttack))
+	if len(firstAttack) != 3 {
+		t.Fatalf("expected target-refresh, self-only point-loss retaliation, and self damage-info on first practice-mob hit before cadence-window denial, got %d frames", len(firstAttack))
 	}
 
 	currentTime = currentTime.Add(100 * time.Millisecond)
@@ -32426,8 +32506,8 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationContinuesAutono
 	if err != nil {
 		t.Fatalf("unexpected first attack error before autonomous delayed retaliation cadence: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation on first practice-mob hit, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info on first practice-mob hit, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -32509,8 +32589,8 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationDoesNotResetPen
 	if err != nil {
 		t.Fatalf("unexpected first attack error before repeatable delayed retaliation beat: %v", err)
 	}
-	if len(firstAttackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation on first practice-mob hit, got %d frames", len(firstAttackOut))
+	if len(firstAttackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info on first practice-mob hit, got %d frames", len(firstAttackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -32534,8 +32614,8 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationDoesNotResetPen
 	if err != nil {
 		t.Fatalf("unexpected second attack error while autonomous delayed retaliation cadence is already pending: %v", err)
 	}
-	if len(secondAttackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation on second practice-mob hit during autonomous cadence, got %d frames", len(secondAttackOut))
+	if len(secondAttackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info on second practice-mob hit during autonomous cadence, got %d frames", len(secondAttackOut))
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no extra delayed retaliation beat immediately after the later accepted hit during autonomous cadence, got %d frames", len(queued))
@@ -32616,8 +32696,8 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationDoesNotStackWhi
 		if err != nil {
 			t.Fatalf("unexpected attack error on rapid practice-mob hit %d before delayed retaliation beat: %v", hitIndex+1, err)
 		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation on rapid practice-mob hit %d, got %d frames", hitIndex+1, len(attackOut))
+		if len(attackOut) != 3 {
+			t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info on rapid practice-mob hit %d, got %d frames", hitIndex+1, len(attackOut))
 		}
 	}
 
@@ -32768,7 +32848,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	if err != nil {
 		t.Fatalf("unexpected first attack error before mob-death retaliation cleanup test: %v", err)
 	}
-	if len(firstAttack) != 2 {
+	if len(firstAttack) != 3 {
 		t.Fatalf("expected first hit to arm delayed retaliation and append immediate point-loss, got %d frames", len(firstAttack))
 	}
 	var killingAttack [][]byte
@@ -32785,8 +32865,8 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 			killingAttack = attackOut
 			break
 		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected live hit %d to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, len(attackOut))
+		if len(attackOut) != 3 {
+			t.Fatalf("expected live hit %d to return target refresh, immediate retaliation, and self damage-info, got %d frames", attackIndex+1, len(attackOut))
 		}
 	}
 	if len(killingAttack) != 2 {
@@ -32877,7 +32957,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	if err != nil {
 		t.Fatalf("unexpected post-respawn accepted attack error after retaliation cleanup: %v", err)
 	}
-	if len(postRespawnAcceptedAttack) != 2 {
+	if len(postRespawnAcceptedAttack) != 3 {
 		t.Fatalf("expected post-respawn accepted attack to restart target-refresh plus retaliation loop, got %d frames", len(postRespawnAcceptedAttack))
 	}
 	postRespawnRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, postRespawnAcceptedAttack[0]))
@@ -33265,6 +33345,10 @@ func (h *practiceMobTCPHarness) attack(t *testing.T) []frame.Frame {
 	h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
 	first := h.client.readFrame(t)
 	second := h.client.readFrame(t)
+	if first.Header == combatproto.HeaderServerTarget {
+		third := h.client.readFrame(t)
+		return []frame.Frame{first, second, third}
+	}
 	return []frame.Frame{first, second}
 }
 
@@ -33831,8 +33915,8 @@ func drivePracticeMobOwnerKill(t *testing.T, ownerFlow service.SessionFlow, targ
 			killingAttack = attackOut
 			break
 		}
-		if len(attackOut) != 2 {
-			t.Fatalf("expected live owner hit %d before %s to return target refresh plus immediate retaliation, got %d frames", attackIndex+1, context, len(attackOut))
+		if len(attackOut) != 3 {
+			t.Fatalf("expected live owner hit %d before %s to return target refresh, immediate retaliation, and self damage-info, got %d frames", attackIndex+1, context, len(attackOut))
 		}
 	}
 	if len(killingAttack) != 2 {
@@ -33960,7 +34044,7 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
+	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher attack after respawn reselect to restart target-refresh plus retaliation loop, got %d frames", len(watcherAttackOut))
 	}
 	watcherRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, watcherAttackOut[0]))
@@ -34079,7 +34163,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherCombatBlocksSecondWatcher(t *te
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
+	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher attack after respawn reselect to restart target-refresh plus retaliation loop, got %d frames", len(watcherAttackOut))
 	}
 	blockedTargetOut, err := blockerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -34206,7 +34290,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatc
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
+	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher attack after respawn reselect to restart target-refresh plus retaliation loop, got %d frames", len(watcherAttackOut))
 	}
 	blockedTargetOut, err := blockerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -34348,7 +34432,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
+	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher attack after respawn reselect to restart target-refresh plus retaliation loop, got %d frames", len(watcherAttackOut))
 	}
 	blockedTargetOut, err := blockerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -34504,7 +34588,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
+	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher attack after respawn reselect to restart target-refresh plus retaliation loop, got %d frames", len(watcherAttackOut))
 	}
 	blockedTargetOut, err := blockerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -34568,7 +34652,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 	if err != nil {
 		t.Fatalf("unexpected blocker attack after watcher /quit released post-respawn mob: %v", err)
 	}
-	if len(blockerAttackOut) != 2 {
+	if len(blockerAttackOut) != 3 {
 		t.Fatalf("expected blocker attack after watcher /quit to restart target-refresh plus retaliation loop, got %d frames", len(blockerAttackOut))
 	}
 	blockerRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, blockerAttackOut[0]))
@@ -34674,7 +34758,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherSyncClearReleasesSecondWatcher(
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
+	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher attack after respawn reselect to restart target-refresh plus retaliation loop, got %d frames", len(watcherAttackOut))
 	}
 	blockedTargetOut, err := blockerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -34783,8 +34867,8 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTarge
 	if err != nil {
 		t.Fatalf("unexpected first attack error before delayed retaliation stop test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before target replacement, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before target replacement, got %d frames", len(attackOut))
 	}
 
 	replaceOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: secondTargetVID})))
@@ -34860,8 +34944,8 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMovem
 	if err != nil {
 		t.Fatalf("unexpected attack error before movement-clear retaliation stop test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before movement-clear target teardown, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before movement-clear target teardown, got %d frames", len(attackOut))
 	}
 
 	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1900, Y: 3100, Time: 0x21222324})))
@@ -34951,8 +35035,8 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterSyncP
 	if err != nil {
 		t.Fatalf("unexpected attack error before sync-position-clear retaliation stop test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before sync-position-clear target teardown, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before sync-position-clear target teardown, got %d frames", len(attackOut))
 	}
 
 	syncOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: owner.VID, X: 1900, Y: 3100}}})))
@@ -35050,8 +35134,8 @@ func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected attack error before movement-clear aggro release test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before movement-clear aggro release test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before movement-clear aggro release test, got %d frames", len(attackOut))
 	}
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -35164,8 +35248,8 @@ func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *
 	if err != nil {
 		t.Fatalf("unexpected owner attack error before stale-third-party clear test: %v", err)
 	}
-	if len(ownerAttackOut) != 2 {
-		t.Fatalf("expected owner attack to return target-refresh plus self-only retaliation, got %d frames", len(ownerAttackOut))
+	if len(ownerAttackOut) != 3 {
+		t.Fatalf("expected owner attack to return target-refresh, self-only retaliation, and self damage-info, got %d frames", len(ownerAttackOut))
 	}
 	queuedClear := flushServerFrames(t, watcherFlow)
 	if len(queuedClear) != 1 {
@@ -35284,8 +35368,8 @@ func TestGameSessionFlowPracticeMobRetargetReleasesPreviousAggro(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected attack error before retarget aggro release test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before retarget aggro release test, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before retarget aggro release test, got %d frames", len(attackOut))
 	}
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstTargetVID})))
@@ -35382,8 +35466,8 @@ func TestGameSessionFlowPracticeMobSlashLogoutStopsPendingRetaliationAndReleases
 	if err != nil {
 		t.Fatalf("unexpected attack error before slash-logout retaliation stop test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before slash logout, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before slash logout, got %d frames", len(attackOut))
 	}
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -35518,8 +35602,8 @@ func TestGameSessionFlowPracticeMobSlashQuitStopsPendingRetaliationAndReleasesAg
 	if err != nil {
 		t.Fatalf("unexpected attack error before slash-quit retaliation stop test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before slash quit, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before slash quit, got %d frames", len(attackOut))
 	}
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -35589,7 +35673,7 @@ func TestGameSessionFlowPracticeMobSlashQuitStopsPendingRetaliationAndReleasesAg
 	if err != nil {
 		t.Fatalf("unexpected watcher attack error after owner /quit released practice-mob aggro-lite gate: %v", err)
 	}
-	if len(watcherAttackOut) != 2 {
+	if len(watcherAttackOut) != 3 {
 		t.Fatalf("expected watcher attack to restart target-refresh plus retaliation loop after owner /quit, got %d frames", len(watcherAttackOut))
 	}
 	watcherRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, watcherAttackOut[0]))
@@ -35679,8 +35763,8 @@ func TestGameSessionFlowPracticeMobPhaseSelectStopsPendingRetaliationAndReleases
 	if err != nil {
 		t.Fatalf("unexpected attack error before /phase_select retaliation stop test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before /phase_select, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before /phase_select, got %d frames", len(attackOut))
 	}
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -35814,8 +35898,8 @@ func TestGameSessionFlowPracticeMobCloseStopsPendingRetaliationAndReleasesAggro(
 	if err != nil {
 		t.Fatalf("unexpected attack error before close retaliation stop test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before close, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before close, got %d frames", len(attackOut))
 	}
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -35931,8 +36015,8 @@ func setupPracticeMobPendingRetaliationWithBlockedWatcher(t *testing.T) (*gameRu
 	if err != nil {
 		t.Fatalf("unexpected attack error before partial-ownership-loss retaliation test: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate target-refresh plus self-only point-loss retaliation before partial ownership loss, got %d frames", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, and self damage-info before partial ownership loss, got %d frames", len(attackOut))
 	}
 
 	blockedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -37217,8 +37301,8 @@ func TestGameSessionFlowPracticeMobEquipKeepsRetaliationPointLossRuntimeOnlyWhil
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only equip persistence: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate retaliation setup attack to emit 2 frames before runtime-only equip persistence, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate retaliation setup attack to emit 3 frames before runtime-only equip persistence, got %d", len(attackOut))
 	}
 	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -37350,8 +37434,8 @@ func TestGameSessionFlowPracticeMobUnequipKeepsRetaliationPointLossRuntimeOnlyWh
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only unequip persistence: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate retaliation setup attack to emit 2 frames before runtime-only unequip persistence, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate retaliation setup attack to emit 3 frames before runtime-only unequip persistence, got %d", len(attackOut))
 	}
 	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -37483,8 +37567,8 @@ func TestGameSessionFlowPracticeMobUseItemKeepsRetaliationPointLossRuntimeOnlyWh
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only item-use persistence: %v", err)
 	}
-	if len(attackOut) != 2 {
-		t.Fatalf("expected immediate retaliation setup attack to emit 2 frames before runtime-only item-use persistence, got %d", len(attackOut))
+	if len(attackOut) != 3 {
+		t.Fatalf("expected immediate retaliation setup attack to emit 3 frames before runtime-only item-use persistence, got %d", len(attackOut))
 	}
 	immediatePointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {

@@ -203,6 +203,7 @@ type staticActorCombatAttackResolution struct {
 	Damage                      uint8
 	Packet                      *combatproto.ServerTargetPacket
 	Frames                      [][]byte
+	SelfPostMutationFrames      [][]byte
 	ClearActiveTarget           bool
 }
 
@@ -3376,6 +3377,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok {
 						return gameflow.AttackResult{Accepted: true, Frames: attackFrames}
 					}
+					if !clearTarget && len(resolution.SelfPostMutationFrames) != 0 {
+						persistedFrames = append(persistedFrames, resolution.SelfPostMutationFrames...)
+					}
 					persistedFrames = appendPostFloorMerchantCloseFrame(persistedFrames, clearTarget)
 					if !resolution.ClearActiveTarget && !clearTarget {
 						scheduleFirstPracticeMobServerOriginRetaliation(resolution.ActiveTargetVID, resolution.ActiveTargetSnapshotVersion)
@@ -5984,8 +5988,15 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 	}
 	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: attempt.HPPercent}
 	resolution.Packet = &packet
+	damageInfoFrame := combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{VID: activeTargetVID, Flag: 0, Damage: int32(attempt.Damage)})
+	if staticActorSpawnBackedSelfDamageInfoRuntimeEmissionOwned(attempt.Actor) {
+		resolution.Frames = [][]byte{
+			combatproto.EncodeServerTarget(packet),
+		}
+		resolution.SelfPostMutationFrames = [][]byte{damageInfoFrame}
+		return resolution
+	}
 	if staticActorDamageInfoRuntimeEmissionOwned(attempt.Actor) {
-		damageInfoFrame := combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{VID: activeTargetVID, Flag: 0, Damage: int32(attempt.Damage)})
 		resolution.Frames = [][]byte{
 			combatproto.EncodeServerTarget(packet),
 			damageInfoFrame,
@@ -5993,6 +6004,14 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 		r.sharedWorld.EnqueueStaticActorFramesToVisiblePeers(attempt.Actor.EntityID, subjectID, [][]byte{damageInfoFrame})
 	}
 	return resolution
+}
+
+func staticActorSpawnBackedSelfDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
+	if actor.SpawnGroupRef == "" {
+		return false
+	}
+	_, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(actor.CombatProfile)
+	return ok
 }
 
 func staticActorDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {

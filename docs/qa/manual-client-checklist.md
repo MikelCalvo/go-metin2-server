@@ -1202,7 +1202,7 @@ Expected result:
 - [ ] Import or preload one authored `spawn_groups` entry that materializes a visible stationary practice mob using either owned built-in practice profile (`combat_profile = training_dummy` or `combat_profile = practice_mob`)
 - [ ] Confirm the mob appears at the authored position with the authored display name and can be targeted in the same way as the earlier bootstrap dummy slices
 - [ ] With two visible clients, let client one land the first accepted hit and verify client two's fresh `TARGET` attempt on the already-engaged mob fails closed while client one still owns that live engagement
-- [ ] On the owning client, confirm each accepted live content-loaded hit now returns both the usual target-refresh and one immediate self-only HP `POINT_CHANGE` decrement while the mob remains alive; do not expect `DAMAGE_INFO` for spawn-backed practice mobs yet
+- [ ] On the owning client, confirm each accepted live content-loaded hit now returns the usual target-refresh, one immediate self-only HP `POINT_CHANGE` decrement, and then one self-only plain `DAMAGE_INFO(target_vid, damage)` hit-effect companion while the mob remains alive; do not expect peer `DAMAGE_INFO` fanout for spawn-backed practice mobs yet
 - [ ] If you can control timing precisely, send one repeated normal `ATTACK` against that same live selected mob before the owned `250ms` cadence window expires and confirm it fails closed with no target refresh, no extra immediate retaliation tick, and no delayed-cadence reset
 - [ ] Wait at least the owned `250ms` cadence window and confirm the next same-target normal `ATTACK` is accepted again
 - [ ] After the first accepted live owner hit, stop sending `ATTACK` for at least the owned `1s` retaliation delay and confirm one queued self-only HP `POINT_CHANGE` follow-up beat arrives without a second client attack
@@ -1290,7 +1290,7 @@ Expected result:
 
 Expected result:
 - the first attackable content-loaded mob now comes from the authored `spawn_groups` seam instead of ad hoc runtime-only bootstrap registration
-- its runtime combat loop still reuses the owned built-in practice-profile semantics for HP, death, timed respawn, retaliation, and the first fixed same-target `250ms` normal-attack cadence gate, while current `DAMAGE_INFO` hit-effect emission remains limited to standalone non-spawn actors
+- its runtime combat loop still reuses the owned built-in practice-profile semantics for HP, death, timed respawn, retaliation, and the first fixed same-target `250ms` normal-attack cadence gate, while current spawn-backed `DAMAGE_INFO` hit-effect emission is owner self-only and peer hit-effect fanout remains limited to standalone non-spawn actors
 - after the first accepted hit, the mob now owns one tiny aggro-lite gate: fresh third-party `TARGET` attempts fail closed while the engaged owner still lives, but that same still-live mob becomes targetable again if retaliation kills the current owner before mob death / respawn resets it
 - while alive, each accepted owner-side hit also applies one deterministic immediate self-only HP decrement back to that engaged session, and the first accepted live hit now starts a delayed self-only follow-up cadence that keeps firing one beat at a time after each owned `1s` server timer while the same engagement remains live
 - bootstrap death rewards now cover EXP-only and gold-only persisted point/currency rewards plus a first single-drop-vnum ground-item reward that is visible to the killer without mutating inventory/account persistence by itself

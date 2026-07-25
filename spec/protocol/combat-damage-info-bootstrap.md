@@ -9,7 +9,7 @@ It sits next to, but does not replace:
 
 ## Scope
 
-This slice owns the packet codec, the internal damage descriptor, and the first runtime emission for accepted non-lethal normal attacks against standalone bootstrap combat-profile actors.
+This slice owns the packet codec, the internal damage descriptor, visible-peer fanout for standalone bootstrap combat-profile actors, and the first self-only spawn-backed practice-mob emission for accepted non-lethal normal attacks.
 
 The packet is:
 - name: `DAMAGE_INFO`
@@ -30,13 +30,20 @@ The current client-side rendering surface treats `vid` as the actor receiving th
 
 The current accepted normal-attack runtime still uses `GC TARGET(target_vid, hp_percent)` as the authoritative HP refresh and switches to `GC DEAD(vid)` plus `GC TARGET(0, 0)` at the zero-HP edge.
 
-For the first runtime emission slice, an accepted non-lethal normal attack against a standalone bootstrap combat-profile actor now returns one self `DAMAGE_INFO` frame immediately after the authoritative self `GC TARGET(target_vid, hp_percent)` refresh:
+For standalone bootstrap combat-profile actors, an accepted non-lethal normal attack returns one self `DAMAGE_INFO` frame immediately after the authoritative self `GC TARGET(target_vid, hp_percent)` refresh:
 1. `GC TARGET(target_vid, updated_hp_percent)`
 2. `GC DAMAGE_INFO(vid = target_vid, flag = 0, damage = applied_bootstrap_damage)`
 
-The same plain `DAMAGE_INFO` packet is now also queued to currently visible live peer sessions for that standalone actor. This first peer path is intentionally smaller than a full combat-result fanout: peers receive only the hit-effect companion, not the attacker's self-only `TARGET` HP refresh, and connected recipients already at the bootstrap `0`-HP floor are skipped by the shared-world visibility gate.
+The same plain `DAMAGE_INFO` packet is also queued to currently visible live peer sessions for that standalone actor. This first peer path is intentionally smaller than a full combat-result fanout: peers receive only the hit-effect companion, not the attacker's self-only `TARGET` HP refresh, and connected recipients already at the bootstrap `0`-HP floor are skipped by the shared-world visibility gate.
 
-The `damage` value comes from the authoritative shared-world attack attempt, which already derives it from the same combat-profile formula that mutates runtime HP. The session/runtime layer must not recompute the number independently when encoding either the self hit-effect companion or the peer queued copy. The current standalone emission set is intentionally bounded to actors with no `spawn_group_ref` whose `combat_profile` resolves through the bootstrap combat-profile registry: built-in `training_dummy`, built-in `practice_mob`, and custom registered formula profiles. Content-loaded `spawn_groups` practice mobs still stay on their existing `TARGET` refresh plus retaliation/reward path without a `DAMAGE_INFO` companion until a later slice owns spawn-backed hit-effect policy.
+The `damage` value comes from the authoritative shared-world attack attempt, which already derives it from the same combat-profile formula that mutates runtime HP. The session/runtime layer must not recompute the number independently when encoding either the self hit-effect companion or the peer queued copy. The standalone emission set is intentionally bounded to actors with no `spawn_group_ref` whose `combat_profile` resolves through the bootstrap combat-profile registry: built-in `training_dummy`, built-in `practice_mob`, and custom registered formula profiles.
+
+Content-loaded `spawn_groups` practice mobs now own the first smaller hit-effect path too, but only for the attacking owner socket. On an accepted non-lethal owner hit where the owner survives the immediate retaliation tick, the existing spawn-backed self ordering stays stable and appends one plain damage-info companion after the already-owned retaliation point-change:
+1. `GC TARGET(target_vid, updated_hp_percent)`
+2. `GC PLAYER_POINT_CHANGE(owner_vid, HP, -1, updated_owner_hp)` for the current retaliation slice
+3. `GC DAMAGE_INFO(vid = target_vid, flag = 0, damage = applied_bootstrap_damage)`
+
+That spawn-backed path deliberately does not queue peer `DAMAGE_INFO` yet. Visible peers still observe the existing practice-mob lifecycle through target selection, death/respawn visibility, and other already-owned fanout, while spawn-backed peer hit-effect fanout remains a later policy slice.
 
 Killing hits deliberately do **not** append `DAMAGE_INFO` in this slice. They keep the existing death-first choreography:
 1. `GC DEAD(vid)`
@@ -44,10 +51,11 @@ Killing hits deliberately do **not** append `DAMAGE_INFO` in this slice. They ke
 3. any owned reward feedback after the death/clear pair
 
 The current client-visible response contract is therefore still conservative:
-- standalone bootstrap combat-profile non-lethal hits are authoritative through the selected-target HP refresh and now carry one self hit-effect companion,
+- standalone bootstrap combat-profile non-lethal hits are authoritative through the selected-target HP refresh and carry one self hit-effect companion,
 - killing hits still use the existing death + clear-target choreography without a synthetic final damage-info frame,
 - visible live peers now receive the same standalone hit-effect companion through the queued server-frame path,
-- no spawn-backed practice-mob emission, critical/miss flag policy, or broader hit-result gameplay semantics are owned here.
+- content-loaded spawn-backed practice mobs now append one owner self-only hit-effect companion on accepted non-lethal owner-surviving hits after the existing target refresh plus retaliation point-change,
+- no spawn-backed peer damage-info fanout, critical/miss flag policy, or broader hit-result gameplay semantics are owned here.
 
 ## Non-goals
 
@@ -56,7 +64,7 @@ This slice does not freeze:
 - critical, miss, block, poison, or special flag meanings,
 - player-vs-player damage info,
 - skill damage, projectile damage, or multi-target damage,
-- whether spawn-backed practice mobs, killing hits, skills, or player-vs-player hits should emit a damage info packet,
+- whether spawn-backed practice-mob peer fanout, killing hits, skills, or player-vs-player hits should emit a damage info packet,
 - whether peer damage-info fanout should widen beyond currently visible live peers for standalone bootstrap combat-profile actors,
 - any replacement for `TARGET` as the current HP percentage carrier.
 
@@ -69,4 +77,5 @@ After this slice:
 - the shared-world normal-attack attempt exposes the applied bootstrap damage amount as an internal descriptor,
 - accepted standalone bootstrap combat-profile non-lethal normal attacks append one self plain-flag `DAMAGE_INFO` frame after the `TARGET` HP refresh, using the authoritative attack/defense-derived damage descriptor for registered formula profiles,
 - currently visible live peers receive that same standalone plain-flag `DAMAGE_INFO` through the queued server-frame path without receiving the attacker's self-only target refresh,
-- later runtime slices can broaden spawn-backed emission, flag meanings, killing-hit presentation, or other hit-effect policy without re-discovering the packet layout or recomputing damage outside the authoritative attack seam.
+- accepted spawn-backed practice-mob non-lethal normal attacks now append one owner self-only plain-flag `DAMAGE_INFO` after the existing immediate retaliation point-change when that owner remains alive,
+- later runtime slices can broaden spawn-backed peer emission, flag meanings, killing-hit presentation, or other hit-effect policy without re-discovering the packet layout or recomputing damage outside the authoritative attack seam.
