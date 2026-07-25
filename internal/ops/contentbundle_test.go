@@ -601,7 +601,7 @@ func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbac
 	}}
 	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
 
-	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"static_actors":[{"name":"Merchant","map_index":1,"x":1200,"y":2200,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:merchant"},{"name":"Teleporter","map_index":7,"x":1300,"y":2300,"race_num":20303,"interaction_kind":"warp","interaction_ref":"npc:teleporter"}],"spawn_groups":[{"ref":"practice.reward_mob","name":"Reward Mob","map_index":7,"x":1400,"y":2400,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5},{"vnum":11200,"name":"Wooden Sword","stackable":false,"max_count":1}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1},{"slot":1,"item_vnum":11200,"price":500,"count":1}]},{"kind":"warp","ref":"npc:teleporter","text":"Step through the gate.","map_index":7,"x":1300,"y":2300}]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"static_actors":[{"name":"Merchant","map_index":1,"x":1200,"y":2200,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:merchant"},{"name":"Teleporter","map_index":7,"x":1300,"y":2300,"race_num":20303,"interaction_kind":"warp","interaction_ref":"npc:teleporter"}],"spawn_groups":[{"ref":"practice.reward_mob","name":"Reward Mob","map_index":7,"x":1400,"y":2400,"race_num":101,"combat_profile":"practice_mob","reward_experience":75,"reward_gold":60,"reward_drop_vnums":[27001]}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5},{"vnum":11200,"name":"Wooden Sword","stackable":false,"max_count":1}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1},{"slot":1,"item_vnum":11200,"price":500,"count":1}]},{"kind":"warp","ref":"npc:teleporter","text":"Step through the gate.","map_index":7,"x":1300,"y":2300}]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -613,6 +613,12 @@ func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbac
 	var got contentbundle.ImportPreview
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode import preview per-map response: %v", err)
+	}
+	if got.Deltas.RewardExperienceTotal != (contentbundle.SummaryAmountDelta{Current: 0, Candidate: 75, Delta: 75}) {
+		t.Fatalf("unexpected reward experience delta: %+v", got.Deltas.RewardExperienceTotal)
+	}
+	if got.Deltas.RewardGoldTotal != (contentbundle.SummaryAmountDelta{Current: 0, Candidate: 60, Delta: 60}) {
+		t.Fatalf("unexpected reward gold delta: %+v", got.Deltas.RewardGoldTotal)
 	}
 	want := []contentbundle.MapContentDelta{
 		{
@@ -629,6 +635,8 @@ func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbac
 			InteractableStaticActorCount: contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 			WarpActorCount:               contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 			SpawnGroupCount:              contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			RewardExperienceTotal:        contentbundle.SummaryAmountDelta{Current: 0, Candidate: 75, Delta: 75},
+			RewardGoldTotal:              contentbundle.SummaryAmountDelta{Current: 0, Candidate: 60, Delta: 60},
 			RewardDropItemCount:          contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 		},
 	}

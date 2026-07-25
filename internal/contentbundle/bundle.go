@@ -88,20 +88,22 @@ type ImportPreview struct {
 }
 
 type SummaryDeltas struct {
-	StaticActorCount                       SummaryCountDelta `json:"static_actor_count"`
-	InteractableStaticActorCount           SummaryCountDelta `json:"interactable_static_actor_count"`
-	SpawnGroupCount                        SummaryCountDelta `json:"spawn_group_count"`
-	CombatProfileCount                     SummaryCountDelta `json:"combat_profile_count"`
-	ItemTemplateCount                      SummaryCountDelta `json:"item_template_count"`
-	ShopCatalogEntryCount                  SummaryCountDelta `json:"shop_catalog_entry_count"`
-	ShopRouteCount                         SummaryCountDelta `json:"shop_route_count"`
-	WarpDestinationCount                   SummaryCountDelta `json:"warp_destination_count"`
-	WarpRouteCount                         SummaryCountDelta `json:"warp_route_count"`
-	RewardDropItemCount                    SummaryCountDelta `json:"reward_drop_item_count"`
-	InteractionDefinitionCount             SummaryCountDelta `json:"interaction_definition_count"`
-	ReferencedInteractionDefinitionCount   SummaryCountDelta `json:"referenced_interaction_definition_count"`
-	UnreferencedInteractionDefinitionCount SummaryCountDelta `json:"unreferenced_interaction_definition_count"`
-	Maps                                   []MapContentDelta `json:"maps,omitempty"`
+	StaticActorCount                       SummaryCountDelta  `json:"static_actor_count"`
+	InteractableStaticActorCount           SummaryCountDelta  `json:"interactable_static_actor_count"`
+	SpawnGroupCount                        SummaryCountDelta  `json:"spawn_group_count"`
+	CombatProfileCount                     SummaryCountDelta  `json:"combat_profile_count"`
+	ItemTemplateCount                      SummaryCountDelta  `json:"item_template_count"`
+	ShopCatalogEntryCount                  SummaryCountDelta  `json:"shop_catalog_entry_count"`
+	ShopRouteCount                         SummaryCountDelta  `json:"shop_route_count"`
+	WarpDestinationCount                   SummaryCountDelta  `json:"warp_destination_count"`
+	WarpRouteCount                         SummaryCountDelta  `json:"warp_route_count"`
+	RewardExperienceTotal                  SummaryAmountDelta `json:"reward_experience_total"`
+	RewardGoldTotal                        SummaryAmountDelta `json:"reward_gold_total"`
+	RewardDropItemCount                    SummaryCountDelta  `json:"reward_drop_item_count"`
+	InteractionDefinitionCount             SummaryCountDelta  `json:"interaction_definition_count"`
+	ReferencedInteractionDefinitionCount   SummaryCountDelta  `json:"referenced_interaction_definition_count"`
+	UnreferencedInteractionDefinitionCount SummaryCountDelta  `json:"unreferenced_interaction_definition_count"`
+	Maps                                   []MapContentDelta  `json:"maps,omitempty"`
 }
 
 type SummaryCountDelta struct {
@@ -110,17 +112,25 @@ type SummaryCountDelta struct {
 	Delta     int `json:"delta"`
 }
 
+type SummaryAmountDelta struct {
+	Current   uint64 `json:"current"`
+	Candidate uint64 `json:"candidate"`
+	Delta     int64  `json:"delta"`
+}
+
 type MapContentDelta struct {
-	MapIndex                     uint32            `json:"map_index"`
-	StaticActorCount             SummaryCountDelta `json:"static_actor_count"`
-	InteractableStaticActorCount SummaryCountDelta `json:"interactable_static_actor_count"`
-	InfoActorCount               SummaryCountDelta `json:"info_actor_count,omitempty"`
-	TalkActorCount               SummaryCountDelta `json:"talk_actor_count,omitempty"`
-	ShopPreviewActorCount        SummaryCountDelta `json:"shop_preview_actor_count,omitempty"`
-	ShopCatalogEntryCount        SummaryCountDelta `json:"shop_catalog_entry_count,omitempty"`
-	WarpActorCount               SummaryCountDelta `json:"warp_actor_count,omitempty"`
-	SpawnGroupCount              SummaryCountDelta `json:"spawn_group_count"`
-	RewardDropItemCount          SummaryCountDelta `json:"reward_drop_item_count,omitempty"`
+	MapIndex                     uint32             `json:"map_index"`
+	StaticActorCount             SummaryCountDelta  `json:"static_actor_count"`
+	InteractableStaticActorCount SummaryCountDelta  `json:"interactable_static_actor_count"`
+	InfoActorCount               SummaryCountDelta  `json:"info_actor_count,omitempty"`
+	TalkActorCount               SummaryCountDelta  `json:"talk_actor_count,omitempty"`
+	ShopPreviewActorCount        SummaryCountDelta  `json:"shop_preview_actor_count,omitempty"`
+	ShopCatalogEntryCount        SummaryCountDelta  `json:"shop_catalog_entry_count,omitempty"`
+	WarpActorCount               SummaryCountDelta  `json:"warp_actor_count,omitempty"`
+	SpawnGroupCount              SummaryCountDelta  `json:"spawn_group_count"`
+	RewardExperienceTotal        SummaryAmountDelta `json:"reward_experience_total,omitempty"`
+	RewardGoldTotal              SummaryAmountDelta `json:"reward_gold_total,omitempty"`
+	RewardDropItemCount          SummaryCountDelta  `json:"reward_drop_item_count,omitempty"`
 }
 
 type InteractionKindSummary struct {
@@ -407,6 +417,8 @@ func buildSummaryDeltas(current Summary, candidate Summary) SummaryDeltas {
 		ShopRouteCount:                         summaryCountDelta(current.ShopRouteCount, candidate.ShopRouteCount),
 		WarpDestinationCount:                   summaryCountDelta(current.WarpDestinationCount, candidate.WarpDestinationCount),
 		WarpRouteCount:                         summaryCountDelta(current.WarpRouteCount, candidate.WarpRouteCount),
+		RewardExperienceTotal:                  summaryAmountDelta(current.RewardExperienceTotal, candidate.RewardExperienceTotal),
+		RewardGoldTotal:                        summaryAmountDelta(current.RewardGoldTotal, candidate.RewardGoldTotal),
 		RewardDropItemCount:                    summaryCountDelta(current.RewardDropItemCount, candidate.RewardDropItemCount),
 		InteractionDefinitionCount:             summaryCountDelta(current.InteractionDefinitionCount, candidate.InteractionDefinitionCount),
 		ReferencedInteractionDefinitionCount:   summaryCountDelta(current.ReferencedInteractionDefinitionCount, candidate.ReferencedInteractionDefinitionCount),
@@ -417,6 +429,16 @@ func buildSummaryDeltas(current Summary, candidate Summary) SummaryDeltas {
 
 func summaryCountDelta(current int, candidate int) SummaryCountDelta {
 	return SummaryCountDelta{Current: current, Candidate: candidate, Delta: candidate - current}
+}
+
+func summaryAmountDelta(current uint64, candidate uint64) SummaryAmountDelta {
+	delta := int64(0)
+	if candidate >= current {
+		delta = int64(candidate - current)
+	} else {
+		delta = -int64(current - candidate)
+	}
+	return SummaryAmountDelta{Current: current, Candidate: candidate, Delta: delta}
 }
 
 func buildMapContentDeltas(currentMaps []MapContentSummary, candidateMaps []MapContentSummary) []MapContentDelta {
@@ -453,6 +475,8 @@ func buildMapContentDeltas(currentMaps []MapContentSummary, candidateMaps []MapC
 			ShopCatalogEntryCount:        summaryCountDelta(current.ShopCatalogEntryCount, candidate.ShopCatalogEntryCount),
 			WarpActorCount:               summaryCountDelta(current.WarpActorCount, candidate.WarpActorCount),
 			SpawnGroupCount:              summaryCountDelta(current.SpawnGroupCount, candidate.SpawnGroupCount),
+			RewardExperienceTotal:        summaryAmountDelta(current.RewardExperienceTotal, candidate.RewardExperienceTotal),
+			RewardGoldTotal:              summaryAmountDelta(current.RewardGoldTotal, candidate.RewardGoldTotal),
 			RewardDropItemCount:          summaryCountDelta(current.RewardDropItemCount, candidate.RewardDropItemCount),
 		}
 		if !mapContentDeltaIsZero(delta) {
@@ -474,6 +498,8 @@ func mapContentDeltaIsZero(delta MapContentDelta) bool {
 		delta.ShopCatalogEntryCount.Delta == 0 &&
 		delta.WarpActorCount.Delta == 0 &&
 		delta.SpawnGroupCount.Delta == 0 &&
+		delta.RewardExperienceTotal.Delta == 0 &&
+		delta.RewardGoldTotal.Delta == 0 &&
 		delta.RewardDropItemCount.Delta == 0
 }
 

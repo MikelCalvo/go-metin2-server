@@ -236,6 +236,67 @@ func TestBuildImportPreviewReturnsPerMapCountDeltas(t *testing.T) {
 	}
 }
 
+func TestBuildImportPreviewReturnsRewardAmountDeltas(t *testing.T) {
+	current := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.reward_mob",
+			Name:             "Reward Mob",
+			MapIndex:         42,
+			X:                1785,
+			Y:                2885,
+			RaceNum:          101,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardExperience: 75,
+			RewardGold:       60,
+		}},
+	}
+	candidate := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:              "practice.reward_mob",
+			Name:             "Reward Mob",
+			MapIndex:         42,
+			X:                1785,
+			Y:                2885,
+			RaceNum:          101,
+			CombatProfile:    worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardExperience: 125,
+			RewardGold:       90,
+		}},
+	}
+
+	preview, err := BuildImportPreview(current, candidate)
+	if err != nil {
+		t.Fatalf("build import preview reward amount deltas: %v", err)
+	}
+
+	if preview.Deltas.RewardExperienceTotal != (SummaryAmountDelta{Current: 75, Candidate: 125, Delta: 50}) {
+		t.Fatalf("unexpected reward experience delta: %+v", preview.Deltas.RewardExperienceTotal)
+	}
+	if preview.Deltas.RewardGoldTotal != (SummaryAmountDelta{Current: 60, Candidate: 90, Delta: 30}) {
+		t.Fatalf("unexpected reward gold delta: %+v", preview.Deltas.RewardGoldTotal)
+	}
+	wantMaps := []MapContentDelta{{
+		MapIndex:              42,
+		SpawnGroupCount:       SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		RewardExperienceTotal: SummaryAmountDelta{Current: 75, Candidate: 125, Delta: 50},
+		RewardGoldTotal:       SummaryAmountDelta{Current: 60, Candidate: 90, Delta: 30},
+	}}
+	if !reflect.DeepEqual(preview.Deltas.Maps, wantMaps) {
+		t.Fatalf("unexpected per-map reward amount deltas:\n got: %#v\nwant: %#v", preview.Deltas.Maps, wantMaps)
+	}
+
+	decreasePreview, err := BuildImportPreview(candidate, current)
+	if err != nil {
+		t.Fatalf("build import preview decreased reward amount deltas: %v", err)
+	}
+	if decreasePreview.Deltas.RewardExperienceTotal != (SummaryAmountDelta{Current: 125, Candidate: 75, Delta: -50}) {
+		t.Fatalf("unexpected decreased reward experience delta: %+v", decreasePreview.Deltas.RewardExperienceTotal)
+	}
+	if decreasePreview.Deltas.RewardGoldTotal != (SummaryAmountDelta{Current: 90, Candidate: 60, Delta: -30}) {
+		t.Fatalf("unexpected decreased reward gold delta: %+v", decreasePreview.Deltas.RewardGoldTotal)
+	}
+}
+
 func TestSummarizeReturnsDeterministicStaticActorDetails(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		StaticActors: []StaticActor{

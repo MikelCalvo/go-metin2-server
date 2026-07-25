@@ -143,6 +143,8 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 		ShopRouteCount:                         contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 		WarpDestinationCount:                   contentbundle.SummaryCountDelta{},
 		WarpRouteCount:                         contentbundle.SummaryCountDelta{},
+		RewardExperienceTotal:                  contentbundle.SummaryAmountDelta{},
+		RewardGoldTotal:                        contentbundle.SummaryAmountDelta{},
 		RewardDropItemCount:                    contentbundle.SummaryCountDelta{},
 		InteractionDefinitionCount:             contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
 		ReferencedInteractionDefinitionCount:   contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},

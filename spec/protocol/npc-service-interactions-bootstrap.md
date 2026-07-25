@@ -72,7 +72,7 @@ Current owned warp operator-summary semantics:
 - the same summary now reports deterministic `warp_routes` entries for every interactable static actor that resolves to a `warp` definition
 - each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, optional `text`, and target `map_index`/`x`/`y`
 - the same summary `maps[]` audit reports `warp_actor_count` for each authored map, counting visible static actors on that map that resolve to a `warp` definition
-- `POST /local/content-bundle/import-preview` compares a candidate replacement bundle against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count `deltas`
+- `POST /local/content-bundle/import-preview` compares a candidate replacement bundle against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count/amount `deltas`, including reward EXP/gold totals when authored spawn rewards would change
 - this makes both teleporter destinations and exact actor-to-destination routes inspectable without fetching the full authored bundle or applying a candidate import, and it makes replacement impact inspectable before committing a candidate import
 
 Current owned interaction cooldown semantics:
