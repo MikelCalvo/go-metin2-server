@@ -374,6 +374,13 @@ func TestGameRuntimeExportContentBundleSummaryIncludesWarpDestinationDetails(t *
 	if !reflect.DeepEqual(summary.WarpDestinations, want) {
 		t.Fatalf("unexpected runtime summary warp destinations:\n got: %#v\nwant: %#v", summary.WarpDestinations, want)
 	}
+	wantRoutes := []contentbundle.WarpRouteSummary{{ActorName: "Teleporter", SourceMapIndex: 42, SourceX: 1850, SourceY: 2950, Ref: "npc:teleporter", Text: "Step through the gate.", TargetMapIndex: 7, TargetX: 1300, TargetY: 2300}}
+	if summary.WarpRouteCount != len(wantRoutes) {
+		t.Fatalf("expected %d warp routes, got %d", len(wantRoutes), summary.WarpRouteCount)
+	}
+	if !reflect.DeepEqual(summary.WarpRoutes, wantRoutes) {
+		t.Fatalf("unexpected runtime summary warp routes:\n got: %#v\nwant: %#v", summary.WarpRoutes, wantRoutes)
+	}
 }
 
 func TestGameRuntimeImportContentBundleRejectsDanglingInteractionReference(t *testing.T) {

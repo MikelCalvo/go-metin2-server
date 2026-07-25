@@ -235,6 +235,32 @@ func TestSummarizeReturnsDeterministicWarpDestinationDetails(t *testing.T) {
 	}
 }
 
+func TestSummarizeReturnsDeterministicWarpRoutesForInteractableActors(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "EastTeleporter", MapIndex: 1, X: 1300, Y: 2300, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:east_gate"},
+			{Name: "WestTeleporter", MapIndex: 3, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:west_gate"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindWarp, Ref: "npc:west_gate", Text: "Return to the west gate.", MapIndex: 7, X: 1300, Y: 2300},
+			{Kind: interactionstore.KindWarp, Ref: "npc:east_gate", MapIndex: 3, X: 1200, Y: 2200},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize warp routes: %v", err)
+	}
+	want := []WarpRouteSummary{
+		{ActorName: "EastTeleporter", SourceMapIndex: 1, SourceX: 1300, SourceY: 2300, Ref: "npc:east_gate", TargetMapIndex: 3, TargetX: 1200, TargetY: 2200},
+		{ActorName: "WestTeleporter", SourceMapIndex: 3, SourceX: 1200, SourceY: 2200, Ref: "npc:west_gate", TargetMapIndex: 7, TargetX: 1300, TargetY: 2300, Text: "Return to the west gate."},
+	}
+	if summary.WarpRouteCount != len(want) {
+		t.Fatalf("expected %d warp routes, got %d", len(want), summary.WarpRouteCount)
+	}
+	if !reflect.DeepEqual(summary.WarpRoutes, want) {
+		t.Fatalf("unexpected warp route summaries:\n got: %#v\nwant: %#v", summary.WarpRoutes, want)
+	}
+}
+
 func TestSummarizeAuditsServiceInteractionsPerMap(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		StaticActors: []StaticActor{

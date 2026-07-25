@@ -57,6 +57,8 @@ type Summary struct {
 	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
 	WarpDestinationCount                   int                                             `json:"warp_destination_count"`
 	WarpDestinations                       []WarpDestinationSummary                        `json:"warp_destinations,omitempty"`
+	WarpRouteCount                         int                                             `json:"warp_route_count"`
+	WarpRoutes                             []WarpRouteSummary                              `json:"warp_routes,omitempty"`
 	RewardExperienceTotal                  uint64                                          `json:"reward_experience_total,omitempty"`
 	RewardGoldTotal                        uint64                                          `json:"reward_gold_total,omitempty"`
 	RewardDropItemCount                    int                                             `json:"reward_drop_item_count,omitempty"`
@@ -169,6 +171,18 @@ type WarpDestinationSummary struct {
 	MapIndex uint32 `json:"map_index"`
 	X        int32  `json:"x"`
 	Y        int32  `json:"y"`
+}
+
+type WarpRouteSummary struct {
+	ActorName      string `json:"actor_name"`
+	SourceMapIndex uint32 `json:"source_map_index"`
+	SourceX        int32  `json:"source_x"`
+	SourceY        int32  `json:"source_y"`
+	Ref            string `json:"ref"`
+	Text           string `json:"text,omitempty"`
+	TargetMapIndex uint32 `json:"target_map_index"`
+	TargetX        int32  `json:"target_x"`
+	TargetY        int32  `json:"target_y"`
 }
 
 type MapContentSummary struct {
@@ -382,9 +396,13 @@ func Summarize(bundle Bundle) (Summary, error) {
 			entry.InteractableStaticActorCount++
 			definition := definitionsByKey[interactionDefinitionKey(actor.InteractionKind, actor.InteractionRef)]
 			addMapServiceInteractionSummary(entry, definition)
+			if definition.Kind == interactionstore.KindWarp {
+				summary.WarpRoutes = append(summary.WarpRoutes, warpRouteSummary(actor, definition))
+			}
 			summary.InteractableStaticActors = append(summary.InteractableStaticActors, interactableStaticActorSummary(actor, definition, itemTemplatesByVnum))
 		}
 	}
+	summary.WarpRouteCount = len(summary.WarpRoutes)
 	rewardDropCountsByVnum := make(map[uint32]int)
 	for _, spawnGroup := range normalized.SpawnGroups {
 		entry := mapContentSummaryForIndex(mapCounts, spawnGroup.MapIndex)
@@ -568,6 +586,22 @@ func warpDestinationSummary(definition interactionstore.Definition) WarpDestinat
 		MapIndex: definition.MapIndex,
 		X:        definition.X,
 		Y:        definition.Y,
+	}
+}
+
+func warpRouteSummary(actor StaticActor, definition interactionstore.Definition) WarpRouteSummary {
+	actor = normalizeStaticActors([]StaticActor{actor})[0]
+	definition = interactionstore.NormalizeDefinition(definition)
+	return WarpRouteSummary{
+		ActorName:      actor.Name,
+		SourceMapIndex: actor.MapIndex,
+		SourceX:        actor.X,
+		SourceY:        actor.Y,
+		Ref:            definition.Ref,
+		Text:           definition.Text,
+		TargetMapIndex: definition.MapIndex,
+		TargetX:        definition.X,
+		TargetY:        definition.Y,
 	}
 }
 
