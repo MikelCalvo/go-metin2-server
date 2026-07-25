@@ -406,6 +406,26 @@ func TestMapIndexPlayerByNamePrunesDuplicateMapOnlyBuckets(t *testing.T) {
 	}
 }
 
+func TestMapIndexPlayerCharactersPrunesDuplicateCanonicalMapBucketsUsingEffectiveIndex(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := newPlayerEntity(26, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
+	current := stale
+	current.Character = entityRegistryCharacter("Alpha", 0x02040111, 77, 1700, 2800)
+	current.Entity.Name = current.Character.Name
+	current.Entity.VID = current.Character.VID
+	index.effectiveMapByEntityID[stale.Entity.ID] = 77
+	index.byMapIndex[42] = map[uint64]PlayerEntity{stale.Entity.ID: stale}
+	index.byMapIndex[77] = map[uint64]PlayerEntity{stale.Entity.ID: current}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected stale canonical player bucket to be pruned from map 42, got %+v", characters)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].VID != current.Entity.VID || characters[0].MapIndex != 77 {
+		t.Fatalf("expected effective-index player bucket to remain on map 77, got %+v", characters)
+	}
+}
+
 func TestMapIndexPlayerCharactersPrunesDuplicateStaleMapBuckets(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	stale := newPlayerEntity(18, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
@@ -1039,6 +1059,26 @@ func TestMapIndexStaticActorByVIDPrunesDuplicateMapOnlyBuckets(t *testing.T) {
 	actors := index.StaticActors(77)
 	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" || actors[0].RaceNum != 20301 {
 		t.Fatalf("expected current map-only static actor bucket to remain after VID lookup, got %+v", actors)
+	}
+}
+
+func TestMapIndexStaticActorsPrunesDuplicateCanonicalMapBucketsUsingEffectiveIndex(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	stale := StaticEntity{Entity: Entity{ID: 24, Kind: EntityKindStaticActor, Name: "StaleGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	current := stale
+	current.Entity.Name = "VillageGuard"
+	current.Position = NewPosition(77, 900, 1200)
+	current.RaceNum = 20301
+	index.effectiveStaticMapByEntityID[stale.Entity.ID] = 77
+	index.staticByMapIndex[42] = map[uint64]StaticEntity{stale.Entity.ID: stale}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{stale.Entity.ID: current}
+
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected stale canonical static actor bucket to be pruned from map 42, got %+v", actors)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" || actors[0].RaceNum != 20301 || actors[0].Position.MapIndex != 77 {
+		t.Fatalf("expected effective-index static actor bucket to remain on map 77, got %+v", actors)
 	}
 }
 

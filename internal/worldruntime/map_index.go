@@ -14,23 +14,25 @@ type MapOccupancy struct {
 }
 
 type MapIndex struct {
-	mu                     sync.Mutex
-	topology               BootstrapTopology
-	byEntityID             map[uint64]PlayerEntity
-	effectiveMapByEntityID map[uint64]uint32
-	byMapIndex             map[uint32]map[uint64]PlayerEntity
-	staticByEntityID       map[uint64]StaticEntity
-	staticByMapIndex       map[uint32]map[uint64]StaticEntity
+	mu                           sync.Mutex
+	topology                     BootstrapTopology
+	byEntityID                   map[uint64]PlayerEntity
+	effectiveMapByEntityID       map[uint64]uint32
+	byMapIndex                   map[uint32]map[uint64]PlayerEntity
+	staticByEntityID             map[uint64]StaticEntity
+	effectiveStaticMapByEntityID map[uint64]uint32
+	staticByMapIndex             map[uint32]map[uint64]StaticEntity
 }
 
 func NewMapIndex(topology BootstrapTopology) *MapIndex {
 	return &MapIndex{
-		topology:               topology,
-		byEntityID:             make(map[uint64]PlayerEntity),
-		effectiveMapByEntityID: make(map[uint64]uint32),
-		byMapIndex:             make(map[uint32]map[uint64]PlayerEntity),
-		staticByEntityID:       make(map[uint64]StaticEntity),
-		staticByMapIndex:       make(map[uint32]map[uint64]StaticEntity),
+		topology:                     topology,
+		byEntityID:                   make(map[uint64]PlayerEntity),
+		effectiveMapByEntityID:       make(map[uint64]uint32),
+		byMapIndex:                   make(map[uint32]map[uint64]PlayerEntity),
+		staticByEntityID:             make(map[uint64]StaticEntity),
+		effectiveStaticMapByEntityID: make(map[uint64]uint32),
+		staticByMapIndex:             make(map[uint32]map[uint64]StaticEntity),
 	}
 }
 
@@ -161,6 +163,7 @@ func (m *MapIndex) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.repairMisplacedPlayerMapPresenceLocked()
+	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 	for _, player := range m.byEntityID {
 		if player.Entity.VID == vid {
 			m.repairPlayerMapPresenceLocked(player)
@@ -192,6 +195,7 @@ func (m *MapIndex) PlayerByName(name string) (PlayerEntity, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.repairMisplacedPlayerMapPresenceLocked()
+	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 	for _, player := range m.byEntityID {
 		if player.Entity.Name == name {
 			m.repairPlayerMapPresenceLocked(player)
@@ -223,6 +227,7 @@ func (m *MapIndex) Player(entityID uint64) (PlayerEntity, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.repairMisplacedPlayerMapPresenceLocked()
+	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 	player, ok := m.byEntityID[entityID]
 	if ok {
 		m.repairPlayerMapPresenceLocked(player)
@@ -294,6 +299,13 @@ func (m *MapIndex) canonicalPlayerMapPresenceLocked(entityID uint64) (PlayerEnti
 	if m == nil || entityID == 0 {
 		return PlayerEntity{}, false
 	}
+	if effectiveMapIndex, ok := m.effectiveMapByEntityID[entityID]; ok {
+		if bucket := m.byMapIndex[effectiveMapIndex]; bucket != nil {
+			if player, ok := bucket[entityID]; ok {
+				return clonePlayerEntity(player), true
+			}
+		}
+	}
 	var selected PlayerEntity
 	var selectedMap uint32
 	found := false
@@ -316,6 +328,40 @@ func (m *MapIndex) canonicalPlayerMapPresenceLocked(entityID uint64) (PlayerEnti
 	return selected, found
 }
 
+func (m *MapIndex) repairPlayerMapPresenceFromEffectiveIndexLocked() {
+	if m == nil || len(m.effectiveMapByEntityID) == 0 {
+		return
+	}
+	entityIDs := make([]uint64, 0, len(m.effectiveMapByEntityID))
+	for entityID := range m.effectiveMapByEntityID {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i int, j int) bool {
+		return entityIDs[i] < entityIDs[j]
+	})
+	for _, entityID := range entityIDs {
+		if _, ok := m.byEntityID[entityID]; ok {
+			continue
+		}
+		if _, ok := m.staticByEntityID[entityID]; ok {
+			continue
+		}
+		if _, ok := m.staticActorMapPresenceLocked(entityID); ok {
+			continue
+		}
+		effectiveMapIndex := m.effectiveMapByEntityID[entityID]
+		bucket := m.byMapIndex[effectiveMapIndex]
+		player, ok := bucket[entityID]
+		if !ok {
+			if _, found := m.playerMapPresenceLocked(entityID); !found {
+				delete(m.effectiveMapByEntityID, entityID)
+			}
+			continue
+		}
+		m.repairPlayerMapPresenceLocked(player)
+	}
+}
+
 func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
 	if m == nil {
 		return nil
@@ -328,6 +374,7 @@ func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
 		m.repairPlayerMapPresenceLocked(player)
 	}
 	m.repairMisplacedPlayerMapPresenceLocked()
+	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 
 	effectiveMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: mapIndex})
 	bucket := m.byMapIndex[effectiveMapIndex]
@@ -356,6 +403,7 @@ func (m *MapIndex) AllPlayers() []PlayerEntity {
 		m.repairPlayerMapPresenceLocked(player)
 	}
 	m.repairMisplacedPlayerMapPresenceLocked()
+	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 
 	playersByID := make(map[uint64]PlayerEntity, len(m.byEntityID))
 	for _, player := range m.byEntityID {
@@ -406,6 +454,7 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 		m.repairPlayerMapPresenceLocked(player)
 	}
 	m.repairMisplacedPlayerMapPresenceLocked()
+	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 	for _, actor := range m.staticByEntityID {
 		m.repairStaticMapPresenceLocked(actor)
 	}
@@ -463,6 +512,7 @@ func (m *MapIndex) RegisterStatic(actor StaticEntity) bool {
 	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
 	m.removeStaticMapPresenceLocked(actor.Entity.ID)
 	m.staticByEntityID[actor.Entity.ID] = actor
+	m.effectiveStaticMapByEntityID[actor.Entity.ID] = mapIndex
 	bucket := m.staticByMapIndex[mapIndex]
 	if bucket == nil {
 		bucket = make(map[uint64]StaticEntity)
@@ -493,6 +543,7 @@ func (m *MapIndex) UpdateStatic(actor StaticEntity) bool {
 	m.removeStaticMapPresenceLocked(actor.Entity.ID)
 	actor = cloneStaticEntity(actor)
 	m.staticByEntityID[actor.Entity.ID] = actor
+	m.effectiveStaticMapByEntityID[actor.Entity.ID] = nextMapIndex
 	bucket := m.staticByMapIndex[nextMapIndex]
 	if bucket == nil {
 		bucket = make(map[uint64]StaticEntity)
@@ -519,6 +570,7 @@ func (m *MapIndex) StaticActor(entityID uint64) (StaticEntity, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.repairMisplacedStaticMapPresenceLocked()
+	m.repairStaticMapPresenceFromEffectiveIndexLocked()
 	actor, ok := m.staticByEntityID[entityID]
 	if ok {
 		m.repairStaticMapPresenceLocked(actor)
@@ -535,6 +587,7 @@ func (m *MapIndex) StaticActorByVID(vid uint32) (StaticEntity, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.repairMisplacedStaticMapPresenceLocked()
+	m.repairStaticMapPresenceFromEffectiveIndexLocked()
 	for _, actor := range m.staticByEntityID {
 		canonicalVID, ok := StaticActorVisibilityVID(actor)
 		if !ok || canonicalVID != vid {
@@ -572,6 +625,7 @@ func (m *MapIndex) AllStaticActors() []StaticEntity {
 		return nil
 	}
 	m.repairMisplacedStaticMapPresenceLocked()
+	m.repairStaticMapPresenceFromEffectiveIndexLocked()
 
 	actorsByID := make(map[uint64]StaticEntity, len(m.staticByEntityID))
 	for _, actor := range m.staticByEntityID {
@@ -614,6 +668,7 @@ func (m *MapIndex) AllStaticActors() []StaticEntity {
 func (m *MapIndex) repairStaticMapPresenceLocked(actor StaticEntity) {
 	m.removeStaticMapPresenceLocked(actor.Entity.ID)
 	mapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex})
+	m.effectiveStaticMapByEntityID[actor.Entity.ID] = mapIndex
 	bucket := m.staticByMapIndex[mapIndex]
 	if bucket == nil {
 		bucket = make(map[uint64]StaticEntity)
@@ -673,6 +728,13 @@ func (m *MapIndex) canonicalStaticMapPresenceLocked(entityID uint64) (StaticEnti
 	if m == nil || entityID == 0 {
 		return StaticEntity{}, false
 	}
+	if effectiveMapIndex, ok := m.effectiveStaticMapByEntityID[entityID]; ok {
+		if bucket := m.staticByMapIndex[effectiveMapIndex]; bucket != nil {
+			if actor, ok := bucket[entityID]; ok {
+				return cloneStaticEntity(actor), true
+			}
+		}
+	}
 	var selected StaticEntity
 	var selectedMap uint32
 	found := false
@@ -693,6 +755,40 @@ func (m *MapIndex) canonicalStaticMapPresenceLocked(entityID uint64) (StaticEnti
 		found = true
 	}
 	return selected, found
+}
+
+func (m *MapIndex) repairStaticMapPresenceFromEffectiveIndexLocked() {
+	if m == nil || len(m.effectiveStaticMapByEntityID) == 0 {
+		return
+	}
+	entityIDs := make([]uint64, 0, len(m.effectiveStaticMapByEntityID))
+	for entityID := range m.effectiveStaticMapByEntityID {
+		entityIDs = append(entityIDs, entityID)
+	}
+	sort.Slice(entityIDs, func(i int, j int) bool {
+		return entityIDs[i] < entityIDs[j]
+	})
+	for _, entityID := range entityIDs {
+		if _, ok := m.staticByEntityID[entityID]; ok {
+			continue
+		}
+		if _, ok := m.byEntityID[entityID]; ok {
+			continue
+		}
+		if _, ok := m.playerMapPresenceLocked(entityID); ok {
+			continue
+		}
+		effectiveMapIndex := m.effectiveStaticMapByEntityID[entityID]
+		bucket := m.staticByMapIndex[effectiveMapIndex]
+		actor, ok := bucket[entityID]
+		if !ok {
+			if _, found := m.staticActorMapPresenceLocked(entityID); !found {
+				delete(m.effectiveStaticMapByEntityID, entityID)
+			}
+			continue
+		}
+		m.repairStaticMapPresenceLocked(actor)
+	}
 }
 
 func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
@@ -720,6 +816,7 @@ func (m *MapIndex) RemoveStatic(entityID uint64) (StaticEntity, bool) {
 }
 
 func (m *MapIndex) removeStaticMapPresenceLocked(entityID uint64) {
+	delete(m.effectiveStaticMapByEntityID, entityID)
 	for mapIndex, bucket := range m.staticByMapIndex {
 		if _, ok := bucket[entityID]; !ok {
 			continue
@@ -741,6 +838,7 @@ func (m *MapIndex) StaticActors(mapIndex uint32) []StaticEntity {
 		m.repairStaticMapPresenceLocked(actor)
 	}
 	m.repairMisplacedStaticMapPresenceLocked()
+	m.repairStaticMapPresenceFromEffectiveIndexLocked()
 	effectiveMapIndex := m.topology.EffectiveMapIndex(loginticket.Character{MapIndex: mapIndex})
 	bucket := m.staticByMapIndex[effectiveMapIndex]
 	if len(bucket) == 0 {
