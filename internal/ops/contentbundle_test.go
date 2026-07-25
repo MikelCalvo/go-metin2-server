@@ -557,12 +557,15 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 
 func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
-		StaticActors:           []contentbundle.StaticActor{{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
-		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."}},
+		StaticActors: []contentbundle.StaticActor{{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Old notice."},
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+		},
 	}}
 	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
 
-	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"static_actors":[{"name":"  Merchant  ","map_index":42,"x":1800,"y":2900,"race_num":20302,"interaction_kind":" shop_preview ","interaction_ref":" npc:merchant "}],"item_templates":[{"vnum":27001,"name":" Small Red Potion ","stackable":true,"max_count":200,"shop_buy_price":5},{"vnum":11200,"name":" Wooden Sword ","stackable":false,"max_count":1}],"interaction_definitions":[{"kind":" shop_preview ","ref":" npc:merchant ","title":" Village Merchant ","catalog":[{"slot":1,"item_vnum":11200,"price":500,"count":1},{"slot":0,"item_vnum":27001,"price":50,"count":1}]}]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"static_actors":[{"name":"  Merchant  ","map_index":42,"x":1800,"y":2900,"race_num":20302,"interaction_kind":" shop_preview ","interaction_ref":" npc:merchant "}],"item_templates":[{"vnum":27001,"name":" Small Red Potion ","stackable":true,"max_count":200,"shop_buy_price":5},{"vnum":11200,"name":" Wooden Sword ","stackable":false,"max_count":1}],"interaction_definitions":[{"kind":"info","ref":"lore:notice","text":"New notice."},{"kind":" shop_preview ","ref":" npc:merchant ","title":" Village Merchant ","catalog":[{"slot":1,"item_vnum":11200,"price":500,"count":1},{"slot":0,"item_vnum":27001,"price":50,"count":1}]}]}`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -575,9 +578,12 @@ func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(
 		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
 	}
 	wantCandidate := contentbundle.Bundle{
-		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
-		ItemTemplates:          testOpsMerchantItemTemplates(),
-		InteractionDefinitions: []interactionstore.Definition{testOpsMerchantCatalogDefinition()},
+		StaticActors:  []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates: testOpsMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "New notice."},
+			testOpsMerchantCatalogDefinition(),
+		},
 	}
 	if !reflect.DeepEqual(previewer.lastBundle, wantCandidate) {
 		t.Fatalf("expected canonical candidate bundle passed to previewer:\n got: %#v\nwant: %#v", previewer.lastBundle, wantCandidate)
@@ -598,6 +604,14 @@ func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(
 	}
 	if !reflect.DeepEqual(got.Deltas.InteractionKinds, wantKinds) {
 		t.Fatalf("unexpected interaction-kind import preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.InteractionKinds, wantKinds)
+	}
+	wantDefinitions := []contentbundle.InteractionDefinitionDelta{
+		{Kind: interactionstore.KindInfo, Ref: "lore:notice", Change: "changed", CurrentPreview: "Old notice.", CandidatePreview: "New notice."},
+		{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Change: "added", CandidatePreview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"},
+		{Kind: interactionstore.KindTalk, Ref: "npc:guide", Change: "removed", CurrentPreview: "Welcome."},
+	}
+	if !reflect.DeepEqual(got.Deltas.InteractionDefinitions, wantDefinitions) {
+		t.Fatalf("unexpected interaction-definition import preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.InteractionDefinitions, wantDefinitions)
 	}
 }
 

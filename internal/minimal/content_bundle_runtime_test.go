@@ -112,7 +112,10 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 
 func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntime(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
-	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."}})
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{
+		{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Old notice."},
+		{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+	})
 	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -126,9 +129,12 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 	}
 
 	preview, err := runtime.PreviewContentBundleImport(contentbundle.Bundle{
-		StaticActors:           []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
-		ItemTemplates:          defaultMerchantItemTemplates(),
-		InteractionDefinitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+		StaticActors:  []contentbundle.StaticActor{{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+		ItemTemplates: defaultMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "New notice."},
+			defaultMerchantCatalogDefinition(),
+		},
 	})
 	if err != nil {
 		t.Fatalf("preview content bundle import: %v", err)
@@ -146,12 +152,17 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 		RewardExperienceTotal:                  contentbundle.SummaryAmountDelta{},
 		RewardGoldTotal:                        contentbundle.SummaryAmountDelta{},
 		RewardDropItemCount:                    contentbundle.SummaryCountDelta{},
-		InteractionDefinitionCount:             contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		InteractionDefinitionCount:             contentbundle.SummaryCountDelta{Current: 2, Candidate: 2, Delta: 0},
 		ReferencedInteractionDefinitionCount:   contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
-		UnreferencedInteractionDefinitionCount: contentbundle.SummaryCountDelta{},
+		UnreferencedInteractionDefinitionCount: contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
 		InteractionKinds: []contentbundle.InteractionKindDelta{
 			{Kind: interactionstore.KindShopPreview, Count: contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, ReferencedCount: contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: contentbundle.SummaryCountDelta{}},
 			{Kind: interactionstore.KindTalk, Count: contentbundle.SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, ReferencedCount: contentbundle.SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, UnreferencedCount: contentbundle.SummaryCountDelta{}},
+		},
+		InteractionDefinitions: []contentbundle.InteractionDefinitionDelta{
+			{Kind: interactionstore.KindInfo, Ref: "lore:notice", Change: "changed", CurrentPreview: "Old notice.", CandidatePreview: "New notice."},
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Change: "added", CandidatePreview: defaultMerchantPreview},
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Change: "removed", CurrentPreview: "Welcome."},
 		},
 		Maps: []contentbundle.MapContentDelta{{
 			MapIndex:                     42,

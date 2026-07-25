@@ -179,6 +179,11 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 			{Kind: interactionstore.KindTalk, Count: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, ReferencedCount: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, UnreferencedCount: SummaryCountDelta{}},
 			{Kind: interactionstore.KindWarp, Count: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, ReferencedCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: SummaryCountDelta{}},
 		},
+		InteractionDefinitions: []InteractionDefinitionDelta{
+			{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Change: "added", CandidatePreview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"},
+			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Change: "removed", CurrentPreview: "Welcome."},
+			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Change: "added", CandidatePreview: "Step through the gate. [warp -> map 7 @ 1300,2300]"},
+		},
 		Maps: []MapContentDelta{{
 			MapIndex:                     1,
 			StaticActorCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
@@ -250,6 +255,43 @@ func TestBuildImportPreviewReturnsInteractionKindDeltas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(preview.Deltas.InteractionKinds, want) {
 		t.Fatalf("unexpected interaction-kind import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.InteractionKinds, want)
+	}
+}
+
+func TestBuildImportPreviewReturnsInteractionDefinitionDeltas(t *testing.T) {
+	preview, err := BuildImportPreview(
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+			},
+			InteractionDefinitions: []interactionstore.Definition{
+				{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "Old notice."},
+				{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+			},
+		},
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "NoticeBoard", MapIndex: 1, X: 900, Y: 1900, RaceNum: 20304, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:notice"},
+				{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+			},
+			ItemTemplates: testMerchantItemTemplates(),
+			InteractionDefinitions: []interactionstore.Definition{
+				{Kind: interactionstore.KindInfo, Ref: "lore:notice", Text: "New notice."},
+				testMerchantCatalogDefinition(),
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview interaction-definition deltas: %v", err)
+	}
+
+	want := []InteractionDefinitionDelta{
+		{Kind: interactionstore.KindInfo, Ref: "lore:notice", Change: "changed", CurrentPreview: "Old notice.", CandidatePreview: "New notice."},
+		{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Change: "added", CandidatePreview: "Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"},
+		{Kind: interactionstore.KindTalk, Ref: "npc:guide", Change: "removed", CurrentPreview: "Welcome."},
+	}
+	if !reflect.DeepEqual(preview.Deltas.InteractionDefinitions, want) {
+		t.Fatalf("unexpected interaction-definition import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.InteractionDefinitions, want)
 	}
 }
 

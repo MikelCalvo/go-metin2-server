@@ -88,23 +88,24 @@ type ImportPreview struct {
 }
 
 type SummaryDeltas struct {
-	StaticActorCount                       SummaryCountDelta      `json:"static_actor_count"`
-	InteractableStaticActorCount           SummaryCountDelta      `json:"interactable_static_actor_count"`
-	SpawnGroupCount                        SummaryCountDelta      `json:"spawn_group_count"`
-	CombatProfileCount                     SummaryCountDelta      `json:"combat_profile_count"`
-	ItemTemplateCount                      SummaryCountDelta      `json:"item_template_count"`
-	ShopCatalogEntryCount                  SummaryCountDelta      `json:"shop_catalog_entry_count"`
-	ShopRouteCount                         SummaryCountDelta      `json:"shop_route_count"`
-	WarpDestinationCount                   SummaryCountDelta      `json:"warp_destination_count"`
-	WarpRouteCount                         SummaryCountDelta      `json:"warp_route_count"`
-	RewardExperienceTotal                  SummaryAmountDelta     `json:"reward_experience_total"`
-	RewardGoldTotal                        SummaryAmountDelta     `json:"reward_gold_total"`
-	RewardDropItemCount                    SummaryCountDelta      `json:"reward_drop_item_count"`
-	InteractionDefinitionCount             SummaryCountDelta      `json:"interaction_definition_count"`
-	ReferencedInteractionDefinitionCount   SummaryCountDelta      `json:"referenced_interaction_definition_count"`
-	UnreferencedInteractionDefinitionCount SummaryCountDelta      `json:"unreferenced_interaction_definition_count"`
-	InteractionKinds                       []InteractionKindDelta `json:"interaction_kinds,omitempty"`
-	Maps                                   []MapContentDelta      `json:"maps,omitempty"`
+	StaticActorCount                       SummaryCountDelta            `json:"static_actor_count"`
+	InteractableStaticActorCount           SummaryCountDelta            `json:"interactable_static_actor_count"`
+	SpawnGroupCount                        SummaryCountDelta            `json:"spawn_group_count"`
+	CombatProfileCount                     SummaryCountDelta            `json:"combat_profile_count"`
+	ItemTemplateCount                      SummaryCountDelta            `json:"item_template_count"`
+	ShopCatalogEntryCount                  SummaryCountDelta            `json:"shop_catalog_entry_count"`
+	ShopRouteCount                         SummaryCountDelta            `json:"shop_route_count"`
+	WarpDestinationCount                   SummaryCountDelta            `json:"warp_destination_count"`
+	WarpRouteCount                         SummaryCountDelta            `json:"warp_route_count"`
+	RewardExperienceTotal                  SummaryAmountDelta           `json:"reward_experience_total"`
+	RewardGoldTotal                        SummaryAmountDelta           `json:"reward_gold_total"`
+	RewardDropItemCount                    SummaryCountDelta            `json:"reward_drop_item_count"`
+	InteractionDefinitionCount             SummaryCountDelta            `json:"interaction_definition_count"`
+	ReferencedInteractionDefinitionCount   SummaryCountDelta            `json:"referenced_interaction_definition_count"`
+	UnreferencedInteractionDefinitionCount SummaryCountDelta            `json:"unreferenced_interaction_definition_count"`
+	InteractionKinds                       []InteractionKindDelta       `json:"interaction_kinds,omitempty"`
+	InteractionDefinitions                 []InteractionDefinitionDelta `json:"interaction_definitions,omitempty"`
+	Maps                                   []MapContentDelta            `json:"maps,omitempty"`
 }
 
 type SummaryCountDelta struct {
@@ -124,6 +125,14 @@ type InteractionKindDelta struct {
 	Count             SummaryCountDelta `json:"count"`
 	ReferencedCount   SummaryCountDelta `json:"referenced_count"`
 	UnreferencedCount SummaryCountDelta `json:"unreferenced_count"`
+}
+
+type InteractionDefinitionDelta struct {
+	Kind             string `json:"kind"`
+	Ref              string `json:"ref"`
+	Change           string `json:"change"`
+	CurrentPreview   string `json:"current_preview,omitempty"`
+	CandidatePreview string `json:"candidate_preview,omitempty"`
 }
 
 type MapContentDelta struct {
@@ -399,22 +408,30 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 }
 
 func BuildImportPreview(current Bundle, candidate Bundle) (ImportPreview, error) {
-	currentSummary, err := Summarize(current)
+	currentCanonical, err := Canonicalize(current)
 	if err != nil {
 		return ImportPreview{}, err
 	}
-	candidateSummary, err := Summarize(candidate)
+	candidateCanonical, err := Canonicalize(candidate)
+	if err != nil {
+		return ImportPreview{}, err
+	}
+	currentSummary, err := Summarize(currentCanonical)
+	if err != nil {
+		return ImportPreview{}, err
+	}
+	candidateSummary, err := Summarize(candidateCanonical)
 	if err != nil {
 		return ImportPreview{}, err
 	}
 	return ImportPreview{
 		Current:   currentSummary,
 		Candidate: candidateSummary,
-		Deltas:    buildSummaryDeltas(currentSummary, candidateSummary),
+		Deltas:    buildSummaryDeltas(currentSummary, candidateSummary, currentCanonical, candidateCanonical),
 	}, nil
 }
 
-func buildSummaryDeltas(current Summary, candidate Summary) SummaryDeltas {
+func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle, candidateBundle Bundle) SummaryDeltas {
 	return SummaryDeltas{
 		StaticActorCount:                       summaryCountDelta(current.StaticActorCount, candidate.StaticActorCount),
 		InteractableStaticActorCount:           summaryCountDelta(current.InteractableStaticActorCount, candidate.InteractableStaticActorCount),
@@ -432,6 +449,7 @@ func buildSummaryDeltas(current Summary, candidate Summary) SummaryDeltas {
 		ReferencedInteractionDefinitionCount:   summaryCountDelta(current.ReferencedInteractionDefinitionCount, candidate.ReferencedInteractionDefinitionCount),
 		UnreferencedInteractionDefinitionCount: summaryCountDelta(current.UnreferencedInteractionDefinitionCount, candidate.UnreferencedInteractionDefinitionCount),
 		InteractionKinds:                       buildInteractionKindDeltas(current.InteractionKinds, candidate.InteractionKinds),
+		InteractionDefinitions:                 buildInteractionDefinitionDeltas(currentBundle, candidateBundle),
 		Maps:                                   buildMapContentDeltas(current.Maps, candidate.Maps),
 	}
 }
@@ -494,6 +512,71 @@ func interactionKindDeltaIsZero(delta InteractionKindDelta) bool {
 	return delta.Count.Delta == 0 &&
 		delta.ReferencedCount.Delta == 0 &&
 		delta.UnreferencedCount.Delta == 0
+}
+
+func buildInteractionDefinitionDeltas(current Bundle, candidate Bundle) []InteractionDefinitionDelta {
+	if len(current.InteractionDefinitions) == 0 && len(candidate.InteractionDefinitions) == 0 {
+		return nil
+	}
+	currentDefinitions := interactionDefinitionMapByKey(current.InteractionDefinitions)
+	candidateDefinitions := interactionDefinitionMapByKey(candidate.InteractionDefinitions)
+	currentItemTemplates := itemTemplateMapByVnum(current.ItemTemplates)
+	candidateItemTemplates := itemTemplateMapByVnum(candidate.ItemTemplates)
+
+	identitiesByKey := make(map[string]InteractionDefinitionReferenceSummary, len(currentDefinitions)+len(candidateDefinitions))
+	for _, definition := range current.InteractionDefinitions {
+		definition = interactionstore.NormalizeDefinition(definition)
+		identitiesByKey[interactionDefinitionKey(definition.Kind, definition.Ref)] = InteractionDefinitionReferenceSummary{Kind: definition.Kind, Ref: definition.Ref}
+	}
+	for _, definition := range candidate.InteractionDefinitions {
+		definition = interactionstore.NormalizeDefinition(definition)
+		identitiesByKey[interactionDefinitionKey(definition.Kind, definition.Ref)] = InteractionDefinitionReferenceSummary{Kind: definition.Kind, Ref: definition.Ref}
+	}
+	identities := make([]InteractionDefinitionReferenceSummary, 0, len(identitiesByKey))
+	for _, identity := range identitiesByKey {
+		identities = append(identities, identity)
+	}
+	sort.Slice(identities, func(i int, j int) bool {
+		if identities[i].Kind == identities[j].Kind {
+			return identities[i].Ref < identities[j].Ref
+		}
+		return identities[i].Kind < identities[j].Kind
+	})
+
+	deltas := make([]InteractionDefinitionDelta, 0, len(identities))
+	for _, identity := range identities {
+		key := interactionDefinitionKey(identity.Kind, identity.Ref)
+		currentDefinition, currentOK := currentDefinitions[key]
+		candidateDefinition, candidateOK := candidateDefinitions[key]
+		switch {
+		case !currentOK:
+			deltas = append(deltas, InteractionDefinitionDelta{
+				Kind:             identity.Kind,
+				Ref:              identity.Ref,
+				Change:           "added",
+				CandidatePreview: compactInteractionPreview(interactionDefinitionCatalogPreview(candidateDefinition, candidateItemTemplates)),
+			})
+		case !candidateOK:
+			deltas = append(deltas, InteractionDefinitionDelta{
+				Kind:           identity.Kind,
+				Ref:            identity.Ref,
+				Change:         "removed",
+				CurrentPreview: compactInteractionPreview(interactionDefinitionCatalogPreview(currentDefinition, currentItemTemplates)),
+			})
+		case !reflect.DeepEqual(currentDefinition, candidateDefinition):
+			deltas = append(deltas, InteractionDefinitionDelta{
+				Kind:             identity.Kind,
+				Ref:              identity.Ref,
+				Change:           "changed",
+				CurrentPreview:   compactInteractionPreview(interactionDefinitionCatalogPreview(currentDefinition, currentItemTemplates)),
+				CandidatePreview: compactInteractionPreview(interactionDefinitionCatalogPreview(candidateDefinition, candidateItemTemplates)),
+			})
+		}
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
 }
 
 func buildMapContentDeltas(currentMaps []MapContentSummary, candidateMaps []MapContentSummary) []MapContentDelta {
