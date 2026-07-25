@@ -143,6 +143,45 @@ func TestGameSessionFlowQuickslotAddRetargetsDuplicateTupleQuickslot(t *testing.
 	}
 }
 
+func TestGameSessionFlowQuickslotAddRejectsLockedItemWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("QuickslotLockedAdd", 0x0103058d, 0x0204058d, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 411, Vnum: 27001, Count: 2, Slot: 5, Locked: true}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "quickslot-locked-add", 0x5050508d, owner)
+	if err := accounts.Save(accountstore.Account{Login: "quickslot-locked-add", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed locked-item quickslot add account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected locked-item quickslot add runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quickslot-locked-add", 0x5050508d)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 2, Slot: quickslotproto.Slot{Type: quickslotproto.TypeItem, Position: 5}})))
+	if err != nil {
+		t.Fatalf("unexpected locked-item quickslot add packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected locked-item quickslot add to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after locked-item quickslot add rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("quickslot-locked-add")
+	if err != nil {
+		t.Fatalf("load locked-item quickslot add account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("locked-item quickslot add mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("locked-item quickslot add mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+}
+
 func TestGameSessionFlowQuickslotSwapRejectsSamePositionWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

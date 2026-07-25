@@ -267,8 +267,15 @@ func (r *Runtime) SetQuickslot(position uint8, slot loginticket.Quickslot) (logi
 	if slot.Type == quickslotproto.TypeNone {
 		return r.DeleteQuickslot(position)
 	}
-	if slot.Type == quickslotproto.TypeItem && countInventorySlotOccupancy(r.liveInventory, inventory.SlotIndex(slot.Slot)) != 1 {
-		return loginticket.Quickslot{}, false
+	if slot.Type == quickslotproto.TypeItem {
+		itemSlot := inventory.SlotIndex(slot.Slot)
+		if countInventorySlotOccupancy(r.liveInventory, itemSlot) != 1 {
+			return loginticket.Quickslot{}, false
+		}
+		itemIndex := findInventorySlot(r.liveInventory, itemSlot)
+		if itemIndex < 0 || r.liveInventory[itemIndex].Locked {
+			return loginticket.Quickslot{}, false
+		}
 	}
 	updated := cloneQuickslots(r.liveQuickslots)
 	for i := 0; i < len(updated); {

@@ -1471,6 +1471,25 @@ func TestRuntimeSetQuickslotRejectsDuplicateItemSlotOccupancyWithoutMutation(t *
 	}
 }
 
+func TestRuntimeSetQuickslotRejectsLockedItemSlotWithoutMutation(t *testing.T) {
+	persisted := inventoryRuntimeCharacterFixture()
+	persisted.Inventory = []inventory.ItemInstance{{ID: 101, Vnum: 27001, Count: 2, Slot: 5, Locked: true}}
+	persisted.Quickslots = []loginticket.Quickslot{{Position: 7, Type: quickslotproto.TypeSkill, Slot: 9}}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	beforeQuickslots := runtime.LiveQuickslots()
+	beforeInventory := runtime.LiveInventory()
+
+	if result, ok := runtime.SetQuickslot(3, loginticket.Quickslot{Type: quickslotproto.TypeItem, Slot: 5}); ok {
+		t.Fatalf("expected locked carried item quickslot add to fail closed, got %+v", result)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, beforeQuickslots) {
+		t.Fatalf("locked item-slot quickslot add mutated quickslots: got %#v want %#v", got, beforeQuickslots)
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+		t.Fatalf("locked item-slot quickslot add mutated inventory: got %#v want %#v", got, beforeInventory)
+	}
+}
+
 func TestRuntimeSetQuickslotRejectsInvalidInputs(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	invalid := []struct {
