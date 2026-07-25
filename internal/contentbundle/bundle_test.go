@@ -174,9 +174,65 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 		InteractionDefinitionCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
 		ReferencedInteractionDefinitionCount:   SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
 		UnreferencedInteractionDefinitionCount: SummaryCountDelta{},
+		Maps: []MapContentDelta{{
+			MapIndex:                     1,
+			StaticActorCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+			InteractableStaticActorCount: SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+			TalkActorCount:               SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
+			ShopPreviewActorCount:        SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			ShopCatalogEntryCount:        SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+			WarpActorCount:               SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+		}},
 	}
 	if !reflect.DeepEqual(preview.Deltas, wantDeltas) {
 		t.Fatalf("unexpected import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas, wantDeltas)
+	}
+}
+
+func TestBuildImportPreviewReturnsPerMapCountDeltas(t *testing.T) {
+	preview, err := BuildImportPreview(
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+			},
+			InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."}},
+		},
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"},
+				{Name: "Teleporter", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"},
+			},
+			SpawnGroups:   []SpawnGroup{{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 7, X: 1400, Y: 2400, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}}},
+			ItemTemplates: testMerchantItemTemplates(),
+			InteractionDefinitions: []interactionstore.Definition{
+				testMerchantCatalogDefinition(),
+				{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview with map deltas: %v", err)
+	}
+	want := []MapContentDelta{
+		{
+			MapIndex:                     1,
+			StaticActorCount:             SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+			InteractableStaticActorCount: SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+			TalkActorCount:               SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
+			ShopPreviewActorCount:        SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			ShopCatalogEntryCount:        SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+		},
+		{
+			MapIndex:                     7,
+			StaticActorCount:             SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			InteractableStaticActorCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			WarpActorCount:               SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			SpawnGroupCount:              SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			RewardDropItemCount:          SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+		},
+	}
+	if !reflect.DeepEqual(preview.Deltas.Maps, want) {
+		t.Fatalf("unexpected per-map import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.Maps, want)
 	}
 }
 

@@ -146,6 +146,14 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 		InteractionDefinitionCount:             contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
 		ReferencedInteractionDefinitionCount:   contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
 		UnreferencedInteractionDefinitionCount: contentbundle.SummaryCountDelta{},
+		Maps: []contentbundle.MapContentDelta{{
+			MapIndex:                     42,
+			StaticActorCount:             contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+			InteractableStaticActorCount: contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+			TalkActorCount:               contentbundle.SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
+			ShopPreviewActorCount:        contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			ShopCatalogEntryCount:        contentbundle.SummaryCountDelta{Current: 0, Candidate: 3, Delta: 3},
+		}},
 	}
 	if !reflect.DeepEqual(preview.Deltas, wantDeltas) {
 		t.Fatalf("unexpected runtime import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas, wantDeltas)

@@ -101,12 +101,26 @@ type SummaryDeltas struct {
 	InteractionDefinitionCount             SummaryCountDelta `json:"interaction_definition_count"`
 	ReferencedInteractionDefinitionCount   SummaryCountDelta `json:"referenced_interaction_definition_count"`
 	UnreferencedInteractionDefinitionCount SummaryCountDelta `json:"unreferenced_interaction_definition_count"`
+	Maps                                   []MapContentDelta `json:"maps,omitempty"`
 }
 
 type SummaryCountDelta struct {
 	Current   int `json:"current"`
 	Candidate int `json:"candidate"`
 	Delta     int `json:"delta"`
+}
+
+type MapContentDelta struct {
+	MapIndex                     uint32            `json:"map_index"`
+	StaticActorCount             SummaryCountDelta `json:"static_actor_count"`
+	InteractableStaticActorCount SummaryCountDelta `json:"interactable_static_actor_count"`
+	InfoActorCount               SummaryCountDelta `json:"info_actor_count,omitempty"`
+	TalkActorCount               SummaryCountDelta `json:"talk_actor_count,omitempty"`
+	ShopPreviewActorCount        SummaryCountDelta `json:"shop_preview_actor_count,omitempty"`
+	ShopCatalogEntryCount        SummaryCountDelta `json:"shop_catalog_entry_count,omitempty"`
+	WarpActorCount               SummaryCountDelta `json:"warp_actor_count,omitempty"`
+	SpawnGroupCount              SummaryCountDelta `json:"spawn_group_count"`
+	RewardDropItemCount          SummaryCountDelta `json:"reward_drop_item_count,omitempty"`
 }
 
 type InteractionKindSummary struct {
@@ -397,11 +411,70 @@ func buildSummaryDeltas(current Summary, candidate Summary) SummaryDeltas {
 		InteractionDefinitionCount:             summaryCountDelta(current.InteractionDefinitionCount, candidate.InteractionDefinitionCount),
 		ReferencedInteractionDefinitionCount:   summaryCountDelta(current.ReferencedInteractionDefinitionCount, candidate.ReferencedInteractionDefinitionCount),
 		UnreferencedInteractionDefinitionCount: summaryCountDelta(current.UnreferencedInteractionDefinitionCount, candidate.UnreferencedInteractionDefinitionCount),
+		Maps:                                   buildMapContentDeltas(current.Maps, candidate.Maps),
 	}
 }
 
 func summaryCountDelta(current int, candidate int) SummaryCountDelta {
 	return SummaryCountDelta{Current: current, Candidate: candidate, Delta: candidate - current}
+}
+
+func buildMapContentDeltas(currentMaps []MapContentSummary, candidateMaps []MapContentSummary) []MapContentDelta {
+	if len(currentMaps) == 0 && len(candidateMaps) == 0 {
+		return nil
+	}
+	currentByIndex := make(map[uint32]MapContentSummary, len(currentMaps))
+	candidateByIndex := make(map[uint32]MapContentSummary, len(candidateMaps))
+	indexesSeen := make(map[uint32]struct{}, len(currentMaps)+len(candidateMaps))
+	for _, summary := range currentMaps {
+		currentByIndex[summary.MapIndex] = summary
+		indexesSeen[summary.MapIndex] = struct{}{}
+	}
+	for _, summary := range candidateMaps {
+		candidateByIndex[summary.MapIndex] = summary
+		indexesSeen[summary.MapIndex] = struct{}{}
+	}
+	indexes := make([]uint32, 0, len(indexesSeen))
+	for index := range indexesSeen {
+		indexes = append(indexes, index)
+	}
+	sort.Slice(indexes, func(i int, j int) bool { return indexes[i] < indexes[j] })
+	deltas := make([]MapContentDelta, 0, len(indexes))
+	for _, index := range indexes {
+		current := currentByIndex[index]
+		candidate := candidateByIndex[index]
+		delta := MapContentDelta{
+			MapIndex:                     index,
+			StaticActorCount:             summaryCountDelta(current.StaticActorCount, candidate.StaticActorCount),
+			InteractableStaticActorCount: summaryCountDelta(current.InteractableStaticActorCount, candidate.InteractableStaticActorCount),
+			InfoActorCount:               summaryCountDelta(current.InfoActorCount, candidate.InfoActorCount),
+			TalkActorCount:               summaryCountDelta(current.TalkActorCount, candidate.TalkActorCount),
+			ShopPreviewActorCount:        summaryCountDelta(current.ShopPreviewActorCount, candidate.ShopPreviewActorCount),
+			ShopCatalogEntryCount:        summaryCountDelta(current.ShopCatalogEntryCount, candidate.ShopCatalogEntryCount),
+			WarpActorCount:               summaryCountDelta(current.WarpActorCount, candidate.WarpActorCount),
+			SpawnGroupCount:              summaryCountDelta(current.SpawnGroupCount, candidate.SpawnGroupCount),
+			RewardDropItemCount:          summaryCountDelta(current.RewardDropItemCount, candidate.RewardDropItemCount),
+		}
+		if !mapContentDeltaIsZero(delta) {
+			deltas = append(deltas, delta)
+		}
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func mapContentDeltaIsZero(delta MapContentDelta) bool {
+	return delta.StaticActorCount.Delta == 0 &&
+		delta.InteractableStaticActorCount.Delta == 0 &&
+		delta.InfoActorCount.Delta == 0 &&
+		delta.TalkActorCount.Delta == 0 &&
+		delta.ShopPreviewActorCount.Delta == 0 &&
+		delta.ShopCatalogEntryCount.Delta == 0 &&
+		delta.WarpActorCount.Delta == 0 &&
+		delta.SpawnGroupCount.Delta == 0 &&
+		delta.RewardDropItemCount.Delta == 0
 }
 
 func Summarize(bundle Bundle) (Summary, error) {

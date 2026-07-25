@@ -303,7 +303,7 @@ Successful responses are JSON with:
 - `candidate` — the candidate bundle summary after canonicalization
 - `deltas` — compact count deltas where each count has `current`, `candidate`, and signed `delta`
 
-The current delta set covers static actors, interactable actors, spawn groups, portable combat profiles, item templates, shop catalog entries, shop routes, warp destinations, warp routes, reward drop items, interaction definitions, referenced interaction definitions, and unreferenced interaction definitions. Invalid JSON, unknown fields, dangling refs, invalid static actors/spawn groups/combat profiles, missing merchant or reward-drop item templates, and other candidate bundle validation failures return `400`; non-loopback callers return `403`; methods other than `POST` return `405`. Use this endpoint when an operator wants a no-mutation before/after audit before applying a replacement bundle through `POST /local/content-bundle`.
+The current delta set covers static actors, interactable actors, spawn groups, portable combat profiles, item templates, shop catalog entries, shop routes, warp destinations, warp routes, reward drop items, interaction definitions, referenced interaction definitions, unreferenced interaction definitions, and a deterministic `maps` array for only map indexes whose tracked authored counts change. Each map delta carries before/after/signed count values for static actors, interactables, info/talk/shop/warp service actors, shop catalog entries, spawn groups, and reward-drop item counts. Invalid JSON, unknown fields, dangling refs, invalid static actors/spawn groups/combat profiles, missing merchant or reward-drop item templates, and other candidate bundle validation failures return `400`; non-loopback callers return `403`; methods other than `POST` return `405`. Use this endpoint when an operator wants a no-mutation before/after audit before applying a replacement bundle through `POST /local/content-bundle`.
 
 ### `POST /local/content-bundle/validate`
 
@@ -601,7 +601,7 @@ Exports or imports one deterministic authored-content artifact spanning both boo
 - `POST` imports a full replacement bundle
 - imports reject dangling interaction references before mutating runtime state
 - `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` include compact `shop_routes` entries for each placed merchant actor, so local QA can inspect exact actor-to-catalog placement without fetching or applying the full bundle
-- `POST /local/content-bundle/import-preview` compares a candidate replacement against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count `deltas`
+- `POST /local/content-bundle/import-preview` compares a candidate replacement against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count `deltas`, including per-map before/after/signed deltas for changed authored map counts
 
 A small reference artifact lives at `docs/examples/bootstrap-npc-service-bundle.json`.
 
