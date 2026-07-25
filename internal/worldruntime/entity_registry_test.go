@@ -410,6 +410,131 @@ func TestEntityRegistryTracksPlayersByEffectiveMapIndex(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryMapReadersRepairMapIndexWhenPlayerDirectoryEntrySurvives(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed")
+	}
+	if _, ok := registry.maps.Remove(alpha.Entity.ID); !ok {
+		t.Fatal("expected direct map-index removal to simulate player directory-only survival")
+	}
+	registry.players.mu.Lock()
+	registry.players.removeSecondaryIndexesForEntityIDLocked(alpha.Entity.ID)
+	registry.players.mu.Unlock()
+
+	characters := registry.MapCharacters(42)
+	if len(characters) != 1 || characters[0].Name != "Alpha" || characters[0].VID != alpha.Entity.VID || characters[0].MapIndex != 42 {
+		t.Fatalf("expected direct map character reader to repair player map presence from directory, got %+v", characters)
+	}
+	occupancy := registry.MapOccupancy()
+	if len(occupancy) != 1 || occupancy[0].MapIndex != 42 || len(occupancy[0].Characters) != 1 || occupancy[0].Characters[0].Name != "Alpha" {
+		t.Fatalf("expected map occupancy to include repaired player directory survivor, got %+v", occupancy)
+	}
+}
+
+func TestEntityRegistryMapReadersRepairMapIndexWhenStaticActorDirectoryEntrySurvives(t *testing.T) {
+	registry := NewEntityRegistry()
+	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	if _, ok := registry.maps.RemoveStatic(guard.Entity.ID); !ok {
+		t.Fatal("expected direct map-index removal to simulate static actor directory-only survival")
+	}
+	registry.staticActors.removeVisibilityVIDsForEntityID(guard.Entity.ID)
+
+	actors := registry.StaticActors(42)
+	if len(actors) != 1 || actors[0].Entity.ID != guard.Entity.ID || actors[0].Entity.Name != "VillageGuard" || actors[0].Position.MapIndex != 42 {
+		t.Fatalf("expected direct static actor map reader to repair static actor map presence from directory, got %+v", actors)
+	}
+	occupancy := registry.MapOccupancy()
+	if len(occupancy) != 1 || occupancy[0].MapIndex != 42 || len(occupancy[0].StaticActors) != 1 || occupancy[0].StaticActors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected map occupancy to include repaired static actor directory survivor, got %+v", occupancy)
+	}
+}
+
+func TestEntityRegistryMapReaderRepairDoesNotShadowMapOnlyOppositeKindEntity(t *testing.T) {
+	registry := NewEntityRegistry()
+	player := newPlayerEntity(7, entityRegistryCharacter("DirectoryOnlyAlpha", 0x02040101, 42, 1700, 2800))
+	if !registry.players.Register(player) {
+		t.Fatal("expected direct player-directory registration to simulate player map-index loss")
+	}
+	registry.players.mu.Lock()
+	registry.players.removeSecondaryIndexesForEntityIDLocked(player.Entity.ID)
+	registry.players.mu.Unlock()
+	actor := StaticEntity{Entity: Entity{ID: player.Entity.ID, Kind: EntityKindStaticActor, Name: "MapOnlyGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300}
+	if !registry.maps.RegisterStatic(actor) {
+		t.Fatal("expected direct static actor map-index registration to simulate opposite-kind remnant")
+	}
+	registry.staticActors.entityIDByVID[uint32(actor.Entity.ID)] = actor.Entity.ID
+
+	occupancy := registry.MapOccupancy()
+	if len(occupancy) != 1 || occupancy[0].MapIndex != 42 || len(occupancy[0].Characters) != 0 || len(occupancy[0].StaticActors) != 1 || occupancy[0].StaticActors[0].Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected map reader repair not to shadow map-only opposite-kind entity, got %+v", occupancy)
+	}
+	if lookup, ok := registry.maps.StaticActor(actor.Entity.ID); !ok || lookup.Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected opposite-kind map remnant to remain intact, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
+func TestEntityRegistryMapReaderRepairDoesNotShadowMapOnlyPlayerWithStaticDirectoryEntry(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !registry.staticActors.Register(actor) {
+		t.Fatal("expected direct static-actor directory registration to simulate static map-index loss")
+	}
+	registry.staticActors.removeVisibilityVIDsForEntityID(actor.Entity.ID)
+	player := newPlayerEntity(actor.Entity.ID, entityRegistryCharacter("MapOnlyAlpha", 0x02040101, 42, 1800, 2900))
+	if !registry.maps.Register(player) {
+		t.Fatal("expected direct player map-index registration to simulate opposite-kind remnant")
+	}
+
+	occupancy := registry.MapOccupancy()
+	if len(occupancy) != 1 || occupancy[0].MapIndex != 42 || len(occupancy[0].Characters) != 1 || occupancy[0].Characters[0].Name != "MapOnlyAlpha" || len(occupancy[0].StaticActors) != 0 {
+		t.Fatalf("expected map reader repair not to shadow map-only player, got %+v", occupancy)
+	}
+	if lookup, ok := registry.maps.Player(player.Entity.ID); !ok || lookup.Entity.Name != "MapOnlyAlpha" {
+		t.Fatalf("expected opposite-kind player map remnant to remain intact, got player=%+v ok=%v", lookup, ok)
+	}
+}
+
+func TestEntityRegistryMapReaderRepairDoesNotShadowMapOnlyOppositeKindVisibilityVID(t *testing.T) {
+	t.Run("player directory survivor", func(t *testing.T) {
+		registry := NewEntityRegistry()
+		actor := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, Name: "MapOnlyGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+		if !registry.maps.RegisterStatic(actor) {
+			t.Fatal("expected direct static actor map-index registration to simulate opposite-kind visible VID remnant")
+		}
+		player := newPlayerEntity(99, entityRegistryCharacter("DirectoryOnlyAlpha", uint32(actor.Entity.ID), 42, 1800, 2900))
+		if !registry.players.Register(player) {
+			t.Fatal("expected direct player-directory registration to simulate player map-index loss")
+		}
+
+		occupancy := registry.MapOccupancy()
+		if len(occupancy) != 1 || occupancy[0].MapIndex != 42 || len(occupancy[0].Characters) != 0 || len(occupancy[0].StaticActors) != 1 || occupancy[0].StaticActors[0].Entity.Name != "MapOnlyGuard" {
+			t.Fatalf("expected player map repair not to shadow map-only static actor visible VID, got %+v", occupancy)
+		}
+	})
+
+	t.Run("static actor directory survivor", func(t *testing.T) {
+		registry := NewEntityRegistry()
+		actor := StaticEntity{Entity: Entity{ID: 0x02040101, Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+		if !registry.staticActors.Register(actor) {
+			t.Fatal("expected direct static-actor directory registration to simulate static map-index loss")
+		}
+		player := newPlayerEntity(7, entityRegistryCharacter("MapOnlyAlpha", uint32(actor.Entity.ID), 42, 1800, 2900))
+		if !registry.maps.Register(player) {
+			t.Fatal("expected direct player map-index registration to simulate opposite-kind visible VID remnant")
+		}
+
+		occupancy := registry.MapOccupancy()
+		if len(occupancy) != 1 || occupancy[0].MapIndex != 42 || len(occupancy[0].Characters) != 1 || occupancy[0].Characters[0].Name != "MapOnlyAlpha" || len(occupancy[0].StaticActors) != 0 {
+			t.Fatalf("expected static actor map repair not to shadow map-only player visible VID, got %+v", occupancy)
+		}
+	})
+}
+
 func TestEntityRegistryUpdateRepairsPlayerDirectoryWhenPlayerDirectoryEntryAlreadyMissing(t *testing.T) {
 	registry := NewEntityRegistry()
 	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))

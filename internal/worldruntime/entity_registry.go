@@ -384,6 +384,7 @@ func (r *EntityRegistry) MapCharacters(mapIndex uint32) []loginticket.Character 
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.repairMapIndexFromDirectoriesLocked()
 	return r.maps.PlayerCharacters(mapIndex)
 }
 
@@ -393,6 +394,7 @@ func (r *EntityRegistry) MapOccupancy() []MapOccupancy {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.repairMapIndexFromDirectoriesLocked()
 	return r.maps.Snapshot()
 }
 
@@ -430,6 +432,7 @@ func (r *EntityRegistry) StaticActors(mapIndex uint32) []StaticEntity {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	r.repairMapIndexFromDirectoriesLocked()
 	return r.maps.StaticActors(mapIndex)
 }
 
@@ -440,6 +443,32 @@ func (r *EntityRegistry) NextEntityID() uint64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.nextID + 1
+}
+
+func (r *EntityRegistry) repairMapIndexFromDirectoriesLocked() {
+	if r == nil || r.maps == nil {
+		return
+	}
+	if r.players != nil {
+		for _, player := range r.players.playerEntities() {
+			if r.entityIDOwnedByStaticActorLocked(player.Entity.ID) || r.playerVisibilityVIDConflictsWithStaticActorLocked(player) || r.playerIdentityConflictsLocked(player) {
+				continue
+			}
+			if !r.maps.Update(player) {
+				_ = r.maps.Register(player)
+			}
+		}
+	}
+	if r.staticActors != nil {
+		for _, actor := range r.staticActors.StaticActors() {
+			if r.entityIDOwnedByPlayerLocked(actor.Entity.ID) || r.staticActorVisibilityVIDConflictsWithPlayerLocked(actor) {
+				continue
+			}
+			if !r.maps.UpdateStatic(actor) {
+				_ = r.maps.RegisterStatic(actor)
+			}
+		}
+	}
 }
 
 func (r *EntityRegistry) repairPlayerDirectoryFromMapLocked(player PlayerEntity) bool {
