@@ -1039,6 +1039,65 @@ func TestFileStoreSaveThenLoadRoundTripPreservesUseEffectInfoMessage(t *testing.
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesDropRejectText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:           27009,
+		Name:           "Sealed Drop Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiDrop:       true,
+		DropRejectText: "The seal prevents dropping this item.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with drop reject message: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with drop reject message: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with drop reject message:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with drop reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27009,\n      \"name\": \"Sealed Drop Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_drop\": true,\n      \"drop_reject_message\": \"The seal prevents dropping this item.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with drop reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreRejectsInvalidDropRejectTextMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	invalid := Snapshot{Templates: []Template{{
+		Vnum:           27009,
+		Name:           "Broken Drop Message Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiDrop:       true,
+		DropRejectText: "bad\x00message",
+	}}}
+
+	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL drop reject message, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27009,"name":"Broken Drop Message Potion","stackable":true,"max_count":200,"anti_drop":true,"drop_reject_message":"bad\u0000message"}]}`), 0o644); err != nil {
+		t.Fatalf("write invalid drop reject message snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading NUL drop reject message, got %v", err)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesDisplaySocketAndAttributeMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

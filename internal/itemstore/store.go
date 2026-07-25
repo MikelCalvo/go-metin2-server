@@ -76,6 +76,7 @@ type Template struct {
 	Attributes       AttributeValues `json:"attributes,omitempty"`
 	UseEffect        *UseEffect      `json:"use_effect,omitempty"`
 	EquipEffect      *PointEffect    `json:"equip_effect,omitempty"`
+	DropRejectText   string          `json:"drop_reject_message,omitempty"`
 }
 
 type SocketValues [ItemSocketCount]int32
@@ -131,6 +132,7 @@ type templateJSON struct {
 	Attributes       *AttributeValues `json:"attributes,omitempty"`
 	UseEffect        *UseEffect       `json:"use_effect,omitempty"`
 	EquipEffect      *PointEffect     `json:"equip_effect,omitempty"`
+	DropRejectText   string           `json:"drop_reject_message,omitempty"`
 }
 
 func (template Template) MarshalJSON() ([]byte, error) {
@@ -176,6 +178,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		EquipSlot:        template.EquipSlot,
 		UseEffect:        template.UseEffect,
 		EquipEffect:      template.EquipEffect,
+		DropRejectText:   template.DropRejectText,
 	}
 	if template.Sockets != (SocketValues{}) {
 		jsonTemplate.Sockets = &template.Sockets
@@ -235,6 +238,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		EquipSlot:        jsonTemplate.EquipSlot,
 		UseEffect:        jsonTemplate.UseEffect,
 		EquipEffect:      jsonTemplate.EquipEffect,
+		DropRejectText:   jsonTemplate.DropRejectText,
 	}
 	if jsonTemplate.Sockets != nil {
 		template.Sockets = *jsonTemplate.Sockets
@@ -302,6 +306,7 @@ func normalizeSnapshot(snapshot Snapshot) Snapshot {
 func normalizeTemplate(template Template) Template {
 	template.Name = strings.TrimSpace(template.Name)
 	template.EquipSlot = normalizeEquipSlot(template.EquipSlot)
+	template.DropRejectText = strings.TrimSpace(template.DropRejectText)
 	if template.UseEffect != nil {
 		effect := *template.UseEffect
 		effect.Message = strings.TrimSpace(effect.Message)
@@ -356,6 +361,9 @@ func validTemplate(template Template) bool {
 	if !validDisplayAttributes(template.Attributes) {
 		return false
 	}
+	if !validTemplateMessage(template.DropRejectText) {
+		return false
+	}
 	if template.EquipSlot == "" {
 		return template.EquipEffect == nil && validUseEffect(template.UseEffect, template)
 	}
@@ -373,6 +381,10 @@ func validDisplayAttributes(attributes AttributeValues) bool {
 		}
 	}
 	return true
+}
+
+func validTemplateMessage(message string) bool {
+	return !strings.ContainsRune(message, '\x00')
 }
 
 func validUseEffect(effect *UseEffect, template Template) bool {

@@ -2221,7 +2221,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return nil, false
 			}
 			if hasDropTemplate && (dropTemplate.AntiGet || dropTemplate.AntiDrop || dropTemplate.AntiGive || dropTemplate.AntiSell || dropTemplate.AntiStack) {
-				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemDropRejectedInfoMessage})}, true
+				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemDropRejectText(dropTemplate)})}, true
 			}
 			for _, item := range selectedPlayer.LiveInventory() {
 				if item.Slot == slot && !item.Equipped {
@@ -4525,6 +4525,13 @@ func merchantBuyResultFrames(result player.MerchantBuyResult, templates map[uint
 		frames = append(frames, updateFrame)
 	}
 	return frames, nil
+}
+
+func itemDropRejectText(template itemcatalog.Template) string {
+	if template.DropRejectText != "" {
+		return template.DropRejectText
+	}
+	return itemDropRejectedInfoMessage
 }
 
 func merchantSellTemplateForSlot(templates map[uint32]itemcatalog.Template, selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {

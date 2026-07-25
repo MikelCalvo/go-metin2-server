@@ -739,24 +739,34 @@ func TestGameRuntimeItemDrop2NormalizesOversizedCountToWholeStackAndClearsItemQu
 
 func TestGameRuntimeItemDropRejectsTransferGuardTemplatesWithoutMutation(t *testing.T) {
 	cases := []struct {
-		name     string
-		login    string
-		template itemcatalog.Template
+		name        string
+		login       string
+		template    itemcatalog.Template
+		wantMessage string
 	}{
 		{
-			name:     "anti-drop",
-			login:    "drop-anti-drop",
-			template: itemcatalog.Template{Vnum: 27003, Name: "Bound Drop Potion", Stackable: true, MaxCount: 200, AntiDrop: true},
+			name:        "anti-drop",
+			login:       "drop-anti-drop",
+			template:    itemcatalog.Template{Vnum: 27003, Name: "Bound Drop Potion", Stackable: true, MaxCount: 200, AntiDrop: true},
+			wantMessage: itemDropRejectedInfoMessage,
 		},
 		{
-			name:     "anti-give",
-			login:    "drop-anti-give",
-			template: itemcatalog.Template{Vnum: 27003, Name: "Bound Give Potion", Stackable: true, MaxCount: 200, AntiGive: true},
+			name:        "anti-drop authored message",
+			login:       "drop-anti-drop-message",
+			template:    itemcatalog.Template{Vnum: 27003, Name: "Sealed Drop Potion", Stackable: true, MaxCount: 200, AntiDrop: true, DropRejectText: "The seal prevents dropping this item."},
+			wantMessage: "The seal prevents dropping this item.",
 		},
 		{
-			name:     "anti-sell",
-			login:    "drop-anti-sell",
-			template: itemcatalog.Template{Vnum: 27003, Name: "Bound Sell Potion", Stackable: true, MaxCount: 200, AntiSell: true},
+			name:        "anti-give",
+			login:       "drop-anti-give",
+			template:    itemcatalog.Template{Vnum: 27003, Name: "Bound Give Potion", Stackable: true, MaxCount: 200, AntiGive: true},
+			wantMessage: itemDropRejectedInfoMessage,
+		},
+		{
+			name:        "anti-sell",
+			login:       "drop-anti-sell",
+			template:    itemcatalog.Template{Vnum: 27003, Name: "Bound Sell Potion", Stackable: true, MaxCount: 200, AntiSell: true},
+			wantMessage: itemDropRejectedInfoMessage,
 		},
 	}
 
@@ -795,7 +805,7 @@ func TestGameRuntimeItemDropRejectsTransferGuardTemplatesWithoutMutation(t *test
 			if err != nil {
 				t.Fatalf("decode %s drop info chat: %v", tc.name, err)
 			}
-			if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != itemDropRejectedInfoMessage {
+			if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != tc.wantMessage {
 				t.Fatalf("unexpected %s drop rejection chat: %+v", tc.name, info)
 			}
 			if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -812,6 +822,16 @@ func TestGameRuntimeItemDropRejectsTransferGuardTemplatesWithoutMutation(t *test
 				t.Fatalf("%s drop mutated quickslots: got %#v want %#v", tc.name, account.Characters[0].Quickslots, owner.Quickslots)
 			}
 		})
+	}
+}
+
+func TestItemDropRejectTextUsesTemplateMetadataWithFallback(t *testing.T) {
+	if got := itemDropRejectText(itemcatalog.Template{Vnum: 27003, Name: "Bound Drop Potion", Stackable: true, MaxCount: 200, AntiDrop: true}); got != itemDropRejectedInfoMessage {
+		t.Fatalf("expected default drop rejection message, got %q", got)
+	}
+	template := itemcatalog.Template{Vnum: 27003, Name: "Sealed Drop Potion", Stackable: true, MaxCount: 200, AntiDrop: true, DropRejectText: "The seal prevents dropping this item."}
+	if got := itemDropRejectText(template); got != template.DropRejectText {
+		t.Fatalf("expected template-authored drop rejection message %q, got %q", template.DropRejectText, got)
 	}
 }
 
