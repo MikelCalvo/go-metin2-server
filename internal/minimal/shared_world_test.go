@@ -133,6 +133,48 @@ func (s loadableFailingAccountStore) Save(accountstore.Account) error {
 	return errors.New("account save failed")
 }
 
+type selectiveFailingAccountStore struct {
+	accounts      map[string]accountstore.Account
+	failSaveLogin string
+	saveErr       error
+}
+
+func (s *selectiveFailingAccountStore) Load(login string) (accountstore.Account, error) {
+	if s == nil {
+		return accountstore.Account{}, accountstore.ErrAccountNotFound
+	}
+	account, ok := s.accounts[login]
+	if !ok {
+		return accountstore.Account{}, accountstore.ErrAccountNotFound
+	}
+	return cloneTestAccount(account), nil
+}
+
+func (s *selectiveFailingAccountStore) Save(account accountstore.Account) error {
+	if s == nil {
+		return errors.New("account store unavailable")
+	}
+	if account.Login == s.failSaveLogin {
+		if s.saveErr != nil {
+			return s.saveErr
+		}
+		return errors.New("account save failed")
+	}
+	if s.accounts == nil {
+		s.accounts = make(map[string]accountstore.Account)
+	}
+	s.accounts[account.Login] = cloneTestAccount(account)
+	return nil
+}
+
+func cloneTestAccount(account accountstore.Account) accountstore.Account {
+	return accountstore.Account{
+		Login:      account.Login,
+		Empire:     account.Empire,
+		Characters: cloneCharacters(account.Characters),
+	}
+}
+
 func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFrames(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -7704,6 +7746,103 @@ func TestGameSessionFlowPracticeMobRestartTownFailsClosedWhenPersistedSnapshotIs
 	}
 	if len(persisted.Characters) != 1 || persisted.Characters[0].MapIndex != owner.MapIndex || persisted.Characters[0].X != owner.X || persisted.Characters[0].Y != owner.Y || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
 		t.Fatalf("expected rejected persisted-dead /restart_town to leave persisted snapshot unchanged, got %+v", persisted.Characters)
+	}
+}
+
+func TestGameSessionFlowPracticeMobRestartTownFailsClosedWhenTownPositionSaveFails(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("TownSaveFailOwner", 0x010301a1, 0x020401a1, 1100, 2100, 0, 101, 201)
+	owner.Empire = 2
+	owner.Points[bootstrapPlayerPointValueIndex] = 2
+	watcher := peerVisibilityCharacter("TownSaveFailWatcher", 0x010301a2, 0x020401a2, 1300, 2300, 2, 102, 202)
+	issuePeerTicket(t, store, "town-save-fail-owner", 0x92929399, owner)
+	issuePeerTicket(t, store, "town-save-fail-watcher", 0x92929499, watcher)
+	accounts := &selectiveFailingAccountStore{
+		accounts: map[string]accountstore.Account{
+			"town-save-fail-owner":   {Login: "town-save-fail-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+			"town-save-fail-watcher": {Login: "town-save-fail-watcher", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})},
+		},
+		failSaveLogin: "town-save-fail-owner",
+		saveErr:       errors.New("forced restart-town save failure"),
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error for /restart_town save-failure guard: %v", err)
+	}
+	currentTime := time.Unix(1700000577, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_restart_town_save_failure",
+		Name:          "PracticeMobRestartTownSaveFailure",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle for /restart_town save-failure guard: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import for /restart_town save-failure guard, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "town-save-fail-owner", 0x92929399)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner in /restart_town save-failure guard, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "town-save-fail-watcher", 0x92929499)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher in /restart_town save-failure guard, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins in /restart_town save-failure guard, got %d", len(queued))
+	}
+
+	advance := func(duration time.Duration) { currentTime = currentTime.Add(duration) }
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_town save-failure error: %v", err)
+	}
+	if len(restartOut) != 0 {
+		t.Fatalf("expected /restart_town save failure to fail closed with no self frames, got %d", len(restartOut))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected /restart_town save failure to avoid queued owner frames, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+		t.Fatalf("expected /restart_town save failure to avoid queued watcher transfer frames, got %d", len(queued))
+	}
+
+	connected := runtime.ConnectedCharacters()
+	var ownerSnapshot *ConnectedCharacterSnapshot
+	for i := range connected {
+		if connected[i].Name == owner.Name {
+			ownerSnapshot = &connected[i]
+			break
+		}
+	}
+	if ownerSnapshot == nil {
+		t.Fatalf("expected rejected /restart_town save failure to leave owner connected, got %+v", connected)
+	}
+	if !ownerSnapshot.Dead || ownerSnapshot.MapIndex != owner.MapIndex || ownerSnapshot.X != owner.X || ownerSnapshot.Y != owner.Y {
+		t.Fatalf("expected rejected /restart_town save failure to leave owner dead at source map=%d x=%d y=%d, got %+v", owner.MapIndex, owner.X, owner.Y, ownerSnapshot)
+	}
+	persisted, err := accounts.Load("town-save-fail-owner")
+	if err != nil {
+		t.Fatalf("load save-failure /restart_town account after rejection: %v", err)
+	}
+	if len(persisted.Characters) != 1 || persisted.Characters[0].MapIndex != owner.MapIndex || persisted.Characters[0].X != owner.X || persisted.Characters[0].Y != owner.Y || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected rejected /restart_town save failure to leave persisted snapshot unchanged, got %+v", persisted.Characters)
 	}
 }
 

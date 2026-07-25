@@ -48,6 +48,8 @@ It does **not** yet claim:
 
 Otherwise it fails closed.
 
+A failed account-store save of the town-return snapshot is also a fail-closed boundary: the session emits no recovery frames, queues no peer transfer/rebuild frames, keeps the owner connected at the source runtime position, and leaves the persisted account snapshot unchanged.
+
 The nearest explicitly deferred neighbor stays out of scope:
 - any separate non-chat client respawn / revive ingress remains unsupported for now and is tracked as an open capture-backed follow-up in `player-restart-request-bootstrap.md`
 
