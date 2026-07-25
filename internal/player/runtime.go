@@ -1210,6 +1210,9 @@ func (r *Runtime) MerchantSellCount(slot inventory.SlotIndex, count uint16) (uin
 	if item.Equipped || item.Locked || item.Count == 0 {
 		return 0, false
 	}
+	if err := item.Validate(); err != nil {
+		return 0, false
+	}
 	soldCount := count
 	if soldCount == 0 {
 		soldCount = item.Count
@@ -1230,6 +1233,9 @@ func (r *Runtime) SellMerchantItemForCredit(slot inventory.SlotIndex, count uint
 	}
 	item := r.liveInventory[index]
 	if item.Equipped || item.Locked || item.Count == 0 {
+		return MerchantSellResult{}, false
+	}
+	if err := item.Validate(); err != nil {
 		return MerchantSellResult{}, false
 	}
 	soldCount := count

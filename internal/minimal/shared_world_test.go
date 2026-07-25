@@ -14824,53 +14824,32 @@ func TestGameSessionFlowMerchantSellRejectsEquippedCarriedSlot(t *testing.T) {
 	defer closeSessionFlow(t, flow)
 
 	interactWithMerchantForBuy(t, flow, actorID)
-	beforePersisted, err := accounts.Load(login)
-	if err != nil {
-		t.Fatalf("load persisted account before equipped-slot sell: %v", err)
-	}
-	beforeCurrency, ok := runtime.CurrencySnapshot(buyer.Name)
-	if !ok {
-		t.Fatal("expected currency snapshot before equipped-slot sell")
-	}
-	beforeInventory, ok := runtime.InventorySnapshot(buyer.Name)
-	if !ok {
-		t.Fatal("expected inventory snapshot before equipped-slot sell")
-	}
+	assertMerchantSellInvalidPosPreservesState(t, runtime, accounts, flow, login, buyer.Name, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 5}), "equipped-slot sell")
+}
 
-	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 5})))
-	if err != nil {
-		t.Fatalf("unexpected equipped-slot sell error: %v", err)
+func TestGameSessionFlowMerchantSellRejectsMalformedCarriedSlotWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name string
+		item inventory.ItemInstance
+	}{
+		{name: "zero item instance id", item: inventory.ItemInstance{ID: 0, Vnum: 27001, Count: 3, Slot: 5}},
+		{name: "zero item vnum", item: inventory.ItemInstance{ID: 77, Vnum: 0, Count: 3, Slot: 5}},
+		{name: "unequipped item with stale equipment slot", item: inventory.ItemInstance{ID: 77, Vnum: 27001, Count: 3, Slot: 5, EquipSlot: inventory.EquipmentSlotWeapon}},
 	}
-	if len(sellOut) != 1 {
-		t.Fatalf("expected one invalid-pos frame for equipped carried-slot sell, got %d", len(sellOut))
-	}
-	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
-		t.Fatalf("decode equipped-slot sell invalid-pos frame: %v", err)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			buyer := merchantBuyerCharacter("MerchantSellerMalformed", 0x01040129, 0x02050129, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+			runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-malformed", 0x29292929, buyer)
+			defer closeSessionFlow(t, flow)
 
-	persisted, err := accounts.Load(login)
-	if err != nil {
-		t.Fatalf("load persisted account after equipped-slot sell: %v", err)
-	}
-	if len(persisted.Characters) != 1 {
-		t.Fatalf("expected exactly one persisted seller after equipped-slot sell, got %+v", persisted)
-	}
-	if persisted.Characters[0].Gold != beforePersisted.Characters[0].Gold || !reflect.DeepEqual(persisted.Characters[0].Inventory, beforePersisted.Characters[0].Inventory) || !reflect.DeepEqual(persisted.Characters[0].Equipment, beforePersisted.Characters[0].Equipment) {
-		t.Fatalf("expected equipped-slot sell to leave persisted state unchanged, before=%+v after=%+v", beforePersisted.Characters[0], persisted.Characters[0])
-	}
-	afterCurrency, ok := runtime.CurrencySnapshot(buyer.Name)
-	if !ok {
-		t.Fatal("expected currency snapshot after equipped-slot sell")
-	}
-	if afterCurrency != beforeCurrency {
-		t.Fatalf("expected equipped-slot sell to leave live currency unchanged, before=%+v after=%+v", beforeCurrency, afterCurrency)
-	}
-	afterInventory, ok := runtime.InventorySnapshot(buyer.Name)
-	if !ok {
-		t.Fatal("expected inventory snapshot after equipped-slot sell")
-	}
-	if !reflect.DeepEqual(afterInventory, beforeInventory) {
-		t.Fatalf("expected equipped-slot sell to leave live inventory unchanged, before=%+v after=%+v", beforeInventory, afterInventory)
+			interactWithMerchantForBuy(t, flow, actorID)
+			malformedLive := buyer
+			malformedLive.Inventory = []inventory.ItemInstance{tc.item}
+			if !runtime.applyLiveCharacterPersistedSnapshot(buyer.Name, malformedLive) {
+				t.Fatalf("expected malformed live merchant seller snapshot to be applied for %s", tc.name)
+			}
+			assertMerchantSellInvalidPosPreservesState(t, runtime, accounts, flow, login, buyer.Name, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 5}), tc.name)
+		})
 	}
 }
 
@@ -38291,6 +38270,11 @@ func setupMerchantBuySessionWithCatalogDefinition(t *testing.T, login string, lo
 	t.Helper()
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
+	return setupMerchantBuySessionWithStoresAndCatalogDefinition(t, login, loginKey, buyer, ticketStore, accounts, catalog)
+}
+
+func setupMerchantBuySessionWithStoresAndCatalogDefinition(t *testing.T, login string, loginKey uint32, buyer loginticket.Character, ticketStore *loginticket.FileStore, accounts accountstore.Store, catalog interactionstore.Definition) (*gameRuntime, accountstore.Store, service.SessionFlow, uint64, string) {
+	t.Helper()
 	issuePeerTicket(t, ticketStore, login, loginKey, buyer)
 	if err := accounts.Save(accountstore.Account{Login: login, Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
 		t.Fatalf("seed merchant buyer account: %v", err)
@@ -38340,6 +38324,58 @@ func interactWithMerchantForBuyWithExpectedSlotTwo(t *testing.T, flow service.Se
 	}
 	if start.Items[2].Vnum != 27001 || start.Items[2].Price != slotTwoPrice || start.Items[2].Count != slotTwoCount || start.Items[2].DisplayPos != 2 {
 		t.Fatalf("unexpected merchant shop slot 2 before buy: %+v", start.Items[2])
+	}
+}
+
+func assertMerchantSellInvalidPosPreservesState(t *testing.T, runtime *gameRuntime, accounts accountstore.Store, flow service.SessionFlow, login string, characterName string, raw []byte, context string) {
+	t.Helper()
+	beforePersisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted account before %s: %v", context, err)
+	}
+	beforeCurrency, ok := runtime.CurrencySnapshot(characterName)
+	if !ok {
+		t.Fatalf("expected currency snapshot before %s", context)
+	}
+	beforeInventory, ok := runtime.InventorySnapshot(characterName)
+	if !ok {
+		t.Fatalf("expected inventory snapshot before %s", context)
+	}
+
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("unexpected %s packet error: %v", context, err)
+	}
+	if len(sellOut) != 1 {
+		t.Fatalf("expected one invalid-pos frame for %s, got %d", context, len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode %s invalid-pos frame: %v", context, err)
+	}
+
+	persisted, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted account after %s: %v", context, err)
+	}
+	if len(persisted.Characters) != 1 {
+		t.Fatalf("expected exactly one persisted seller after %s, got %+v", context, persisted)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0], beforePersisted.Characters[0]) {
+		t.Fatalf("expected %s to leave persisted state unchanged, before=%+v after=%+v", context, beforePersisted.Characters[0], persisted.Characters[0])
+	}
+	afterCurrency, ok := runtime.CurrencySnapshot(characterName)
+	if !ok {
+		t.Fatalf("expected currency snapshot after %s", context)
+	}
+	if afterCurrency != beforeCurrency {
+		t.Fatalf("expected %s to leave live currency unchanged, before=%+v after=%+v", context, beforeCurrency, afterCurrency)
+	}
+	afterInventory, ok := runtime.InventorySnapshot(characterName)
+	if !ok {
+		t.Fatalf("expected inventory snapshot after %s", context)
+	}
+	if !reflect.DeepEqual(afterInventory, beforeInventory) {
+		t.Fatalf("expected %s to leave live inventory unchanged, before=%+v after=%+v", context, beforeInventory, afterInventory)
 	}
 }
 

@@ -3264,6 +3264,74 @@ func TestRuntimeSellMerchantItemRejectsLockedCarriedSlotWithoutMutatingState(t *
 	}
 }
 
+func TestRuntimeSellMerchantItemRejectsMalformedCarriedSlotWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name string
+		item inventory.ItemInstance
+	}{
+		{name: "zero item instance id", item: inventory.ItemInstance{ID: 0, Vnum: 27001, Count: 3, Slot: 5}},
+		{name: "zero item vnum", item: inventory.ItemInstance{ID: 31, Vnum: 0, Count: 3, Slot: 5}},
+		{name: "unequipped item with stale equipment slot", item: inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 3, Slot: 5, EquipSlot: inventory.EquipmentSlotWeapon}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := inventoryRuntimeCharacterFixture()
+			persisted.Inventory = []inventory.ItemInstance{tc.item}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+
+			if soldCount, ok := runtime.MerchantSellCount(5, 0); ok {
+				t.Fatalf("expected malformed carried-slot merchant sell count resolution to fail, got %d", soldCount)
+			}
+			if result, ok := runtime.SellMerchantItemForCredit(5, 0, 30); ok {
+				t.Fatalf("expected malformed carried-slot credit-backed merchant sell to fail closed, got %+v", result)
+			}
+			if result, ok := runtime.SellMerchantItem(5, 0, 10); ok {
+				t.Fatalf("expected malformed carried-slot whole-stack merchant sell to fail closed, got %+v", result)
+			}
+			if got := runtime.LiveGold(); got != persisted.Gold {
+				t.Fatalf("expected live gold to stay unchanged after malformed carried-slot sell attempt, got %d want %d", got, persisted.Gold)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, persisted.Inventory) {
+				t.Fatalf("expected live inventory to stay unchanged after malformed carried-slot sell attempt, got %#v want %#v", got, persisted.Inventory)
+			}
+			if snapshot := runtime.PersistedSnapshot(); !reflect.DeepEqual(snapshot.Inventory, persisted.Inventory) || snapshot.Gold != persisted.Gold {
+				t.Fatalf("expected persisted state to stay unchanged after malformed carried-slot sell attempt, got %+v", snapshot)
+			}
+		})
+	}
+}
+
+func TestRuntimeSellMerchantItemWithTemplateRejectsMalformedCarriedSlotWithoutMutatingState(t *testing.T) {
+	cases := []struct {
+		name string
+		item inventory.ItemInstance
+	}{
+		{name: "zero item instance id", item: inventory.ItemInstance{ID: 0, Vnum: 27001, Count: 3, Slot: 5}},
+		{name: "unequipped item with stale equipment slot", item: inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 3, Slot: 5, EquipSlot: inventory.EquipmentSlotWeapon}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := inventoryRuntimeCharacterFixture()
+			persisted.Inventory = []inventory.ItemInstance{tc.item}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500}
+
+			if result, ok := runtime.SellMerchantItemWithTemplate(5, 0, template); ok {
+				t.Fatalf("expected malformed carried-slot template-backed whole-stack merchant sell to fail closed, got %+v", result)
+			}
+			if got := runtime.LiveGold(); got != persisted.Gold {
+				t.Fatalf("expected live gold to stay unchanged after malformed template-backed sell attempt, got %d want %d", got, persisted.Gold)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, persisted.Inventory) {
+				t.Fatalf("expected live inventory to stay unchanged after malformed template-backed sell attempt, got %#v want %#v", got, persisted.Inventory)
+			}
+			if snapshot := runtime.PersistedSnapshot(); !reflect.DeepEqual(snapshot.Inventory, persisted.Inventory) || snapshot.Gold != persisted.Gold {
+				t.Fatalf("expected persisted state to stay unchanged after malformed template-backed sell attempt, got %+v", snapshot)
+			}
+		})
+	}
+}
+
 func TestRuntimeSellMerchantItemRejectsDuplicateSlotOccupancyWithoutMutatingState(t *testing.T) {
 	persisted := inventoryRuntimeCharacterFixture()
 	persisted.Inventory = []inventory.ItemInstance{
