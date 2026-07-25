@@ -713,6 +713,62 @@ func TestGameRuntimePersistenceStatusKeepsCheckingAfterStoreFailure(t *testing.T
 	}
 }
 
+func TestGameRuntimeCleanupStaticActorStoreCrashTempFiles(t *testing.T) {
+	staticPath := filepath.Join(t.TempDir(), "static", "static-actors.json")
+	staticStore := staticstore.NewFileStore(staticPath)
+	if err := staticStore.Save(staticstore.Snapshot{StaticActors: []staticstore.StaticActor{{EntityID: 7, Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy}}}); err != nil {
+		t.Fatalf("save static actor snapshot: %v", err)
+	}
+	crashTemp := filepath.Join(filepath.Dir(staticPath), ".static-actors-crashed.json")
+	if err := os.WriteFile(crashTemp, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write static actor crash temp: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticStore, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.CleanupStaticActorStoreCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup static actor store crash temp files: %v", err)
+	}
+	want := staticstore.SnapshotSummary{ActorCount: 1, ActorIDs: []uint64{7}, ActorNames: []string{"TrainingDummy"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected static actor cleanup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(crashTemp); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected static actor crash temp to be removed, stat err=%v", err)
+	}
+}
+
+func TestGameRuntimeCleanupInteractionStoreCrashTempFiles(t *testing.T) {
+	interactionPath := filepath.Join(t.TempDir(), "interaction", "interaction-definitions.json")
+	interactionStore := interactionstore.NewFileStore(interactionPath)
+	if err := interactionStore.Save(interactionstore.Snapshot{Definitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."}}}); err != nil {
+		t.Fatalf("save interaction snapshot: %v", err)
+	}
+	crashTemp := filepath.Join(filepath.Dir(interactionPath), ".interaction-definitions-crashed.json")
+	if err := os.WriteFile(crashTemp, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write interaction crash temp: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, interactionStore, nil, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.CleanupInteractionStoreCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup interaction store crash temp files: %v", err)
+	}
+	want := interactionstore.SnapshotSummary{DefinitionCount: 1, DefinitionKeys: []string{"info:lore:alchemist"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected interaction cleanup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := os.Stat(crashTemp); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected interaction crash temp to be removed, stat err=%v", err)
+	}
+}
+
 func TestGameRuntimeRestoreItemTemplateStoreRestoresManifestedBackup(t *testing.T) {
 	source := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
 	backupSnapshot := itemcatalog.Snapshot{Templates: []itemcatalog.Template{

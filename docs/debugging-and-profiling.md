@@ -132,6 +132,18 @@ Removes same-directory `.item-templates-*.json` crash-temp residue from the auth
 
 The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup item-template JSON summary (`template_count` and deterministic `vnums`). Because cleanup validates before removing anything, corrupt committed item-template snapshots leave crash-temp files in place for manual recovery. Only hidden `.item-templates-*.json` temp files are removed; committed snapshots and unrelated hidden files are preserved. Use `/local/item-templates/validate` first when you want a read-only residue report, then this endpoint when the operator has decided interrupted item-template temp writes are disposable.
 
+### `POST /local/static-actor-store/crash-temps/cleanup`
+
+Removes same-directory `.static-actors-*.json` crash-temp residue from the authored static-actor snapshot store after first validating the committed `static-actors.json` snapshot through the same strict loader used by `/local/persistence/status`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed snapshot is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
+
+The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup static-actor JSON summary (`actor_count`, deterministic `actor_ids` / `actor_names`, and authored-content counters). Because cleanup validates before removing anything, corrupt committed static-actor snapshots leave crash-temp files in place for manual recovery. Only hidden `.static-actors-*.json` temp files are removed; committed snapshots and unrelated hidden files are preserved.
+
+### `POST /local/interaction-store/crash-temps/cleanup`
+
+Removes same-directory `.interaction-definitions-*.json` crash-temp residue from the authored interaction-definition snapshot store after first validating the committed `interaction-definitions.json` snapshot through the same strict loader used by `/local/persistence/status`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed snapshot is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
+
+The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup interaction JSON summary (`definition_count` and deterministic `definition_keys`). Because cleanup validates before removing anything, corrupt committed interaction-definition snapshots leave crash-temp files in place for manual recovery. Only hidden `.interaction-definitions-*.json` temp files are removed; committed snapshots and unrelated hidden files are preserved.
+
 ### `POST /local/item-templates/backup`
 
 Copies the authored bootstrap item-template snapshot into an operator-supplied empty destination directory and returns the validation summary of the copied snapshot set. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects malformed JSON with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the source snapshot is invalid, the destination is non-empty, the destination is equal to or nested under the active item-template store directory, or the backup cannot be completed.

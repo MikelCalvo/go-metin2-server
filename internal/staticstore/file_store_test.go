@@ -138,6 +138,62 @@ func TestFileStoreValidateTreatsMissingStaticActorSnapshotAsEmpty(t *testing.T) 
 	}
 }
 
+func TestFileStoreCleanupCrashTempFilesRemovesOnlyStaticActorTempResidue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{StaticActors: []StaticActor{
+		{EntityID: 9, Name: "VillageGuard", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355, InteractionKind: "talk", InteractionRef: "npc:village_guard"},
+		{EntityID: 7, Name: "TrainingDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy},
+	}}); err != nil {
+		t.Fatalf("save static actor snapshot: %v", err)
+	}
+	for _, name := range []string{".static-actors-zeta.json", ".static-actors-alpha.json", ".unrelated-temp.json"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write temp file %s: %v", name, err)
+		}
+	}
+
+	summary, err := store.CleanupCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup static actor crash temp files: %v", err)
+	}
+	want := SnapshotSummary{ActorCount: 2, InteractableActorCount: 1, ActorIDs: []uint64{7, 9}, ActorNames: []string{"TrainingDummy", "VillageGuard"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected post-cleanup static actor summary: got %#v want %#v", summary, want)
+	}
+	for _, name := range []string{".static-actors-zeta.json", ".static-actors-alpha.json"} {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(path), name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected static actor crash temp %s to be removed, stat err=%v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), ".unrelated-temp.json")); err != nil {
+		t.Fatalf("expected unrelated hidden file to be preserved: %v", err)
+	}
+}
+
+func TestFileStoreCleanupCrashTempFilesFailsClosedOnCorruptStaticActorSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	crashTemp := filepath.Join(filepath.Dir(path), ".static-actors-crashed.json")
+	if err := os.WriteFile(path, []byte(`{"static_actors":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt static actor snapshot: %v", err)
+	}
+	if err := os.WriteFile(crashTemp, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp: %v", err)
+	}
+
+	_, err := store.CleanupCrashTempFiles()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot and no cleanup for corrupt committed snapshot, got %v", err)
+	}
+	if _, err := os.Stat(crashTemp); err != nil {
+		t.Fatalf("expected crash temp to remain after failed cleanup: %v", err)
+	}
+}
+
 func TestFileStoreValidateFailsClosedOnCorruptStaticActorSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)

@@ -177,6 +177,63 @@ func TestFileStoreValidateTreatsMissingInteractionSnapshotAsEmpty(t *testing.T) 
 	}
 }
 
+func TestFileStoreCleanupCrashTempFilesRemovesOnlyInteractionTempResidue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Definitions: []Definition{
+		{Kind: KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."},
+		{Kind: KindInfo, Ref: "lore:alchemist", Text: "The alchemist studies forgotten herbs."},
+		testMerchantCatalogDefinition(),
+	}}); err != nil {
+		t.Fatalf("save interaction snapshot: %v", err)
+	}
+	for _, name := range []string{".interaction-definitions-zeta.json", ".interaction-definitions-alpha.json", ".unrelated-temp.json"} {
+		if err := os.WriteFile(filepath.Join(filepath.Dir(path), name), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write temp file %s: %v", name, err)
+		}
+	}
+
+	summary, err := store.CleanupCrashTempFiles()
+	if err != nil {
+		t.Fatalf("cleanup interaction crash temp files: %v", err)
+	}
+	want := SnapshotSummary{DefinitionCount: 3, DefinitionKeys: []string{"info:lore:alchemist", "shop_preview:npc:merchant", "talk:npc:village_guard"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected post-cleanup interaction summary: got %#v want %#v", summary, want)
+	}
+	for _, name := range []string{".interaction-definitions-zeta.json", ".interaction-definitions-alpha.json"} {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(path), name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("expected interaction crash temp %s to be removed, stat err=%v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), ".unrelated-temp.json")); err != nil {
+		t.Fatalf("expected unrelated hidden file to be preserved: %v", err)
+	}
+}
+
+func TestFileStoreCleanupCrashTempFilesFailsClosedOnCorruptInteractionSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	crashTemp := filepath.Join(filepath.Dir(path), ".interaction-definitions-crashed.json")
+	if err := os.WriteFile(path, []byte(`{"definitions":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt interaction snapshot: %v", err)
+	}
+	if err := os.WriteFile(crashTemp, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write crash temp: %v", err)
+	}
+
+	_, err := store.CleanupCrashTempFiles()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot and no cleanup for corrupt committed snapshot, got %v", err)
+	}
+	if _, err := os.Stat(crashTemp); err != nil {
+		t.Fatalf("expected crash temp to remain after failed cleanup: %v", err)
+	}
+}
+
 func TestFileStoreValidateFailsClosedOnCorruptInteractionSnapshot(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)

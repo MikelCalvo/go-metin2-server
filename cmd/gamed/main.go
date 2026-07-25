@@ -97,6 +97,14 @@ func main() {
 		opsHandler,
 		func() (any, error) { return gameRuntime.CleanupItemTemplateStoreCrashTempFiles() },
 	)
+	opsHandler = ops.RegisterLocalStaticActorStoreCrashTempCleanupEndpoint(
+		opsHandler,
+		func() (any, error) { return gameRuntime.CleanupStaticActorStoreCrashTempFiles() },
+	)
+	opsHandler = ops.RegisterLocalInteractionStoreCrashTempCleanupEndpoint(
+		opsHandler,
+		func() (any, error) { return gameRuntime.CleanupInteractionStoreCrashTempFiles() },
+	)
 	opsHandler = ops.RegisterLocalItemTemplateStoreBackupEndpoint(
 		opsHandler,
 		func(dstDir string) (any, error) { return gameRuntime.BackupItemTemplateStore(dstDir) },

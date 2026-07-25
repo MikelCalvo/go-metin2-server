@@ -554,6 +554,36 @@ func (r *gameRuntime) CleanupItemTemplateStoreCrashTempFiles() (itemcatalog.Snap
 	return cleaner.CleanupCrashTempFiles()
 }
 
+func (r *gameRuntime) CleanupStaticActorStoreCrashTempFiles() (staticstore.SnapshotSummary, error) {
+	if r == nil || r.staticStore == nil {
+		return staticstore.SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}, nil
+	}
+	cleaner, ok := r.staticStore.(interface {
+		CleanupCrashTempFiles() (staticstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return staticstore.SnapshotSummary{}, fmt.Errorf("static actor store crash temp cleanup is not supported")
+	}
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+	return cleaner.CleanupCrashTempFiles()
+}
+
+func (r *gameRuntime) CleanupInteractionStoreCrashTempFiles() (interactionstore.SnapshotSummary, error) {
+	if r == nil || r.interactionStore == nil {
+		return interactionstore.SnapshotSummary{DefinitionKeys: []string{}}, nil
+	}
+	cleaner, ok := r.interactionStore.(interface {
+		CleanupCrashTempFiles() (interactionstore.SnapshotSummary, error)
+	})
+	if !ok {
+		return interactionstore.SnapshotSummary{}, fmt.Errorf("interaction store crash temp cleanup is not supported")
+	}
+	r.interactionDefinitionMu.Lock()
+	defer r.interactionDefinitionMu.Unlock()
+	return cleaner.CleanupCrashTempFiles()
+}
+
 func (r *gameRuntime) ValidateStaticActorStore() (staticstore.SnapshotSummary, error) {
 	if r == nil || r.staticStore == nil {
 		return staticstore.SnapshotSummary{ActorIDs: []uint64{}, ActorNames: []string{}}, nil

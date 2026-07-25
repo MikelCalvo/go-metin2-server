@@ -1255,6 +1255,240 @@ func TestLocalItemTemplateStoreCrashTempCleanupEndpointReportsCleanupFailure(t *
 	}
 }
 
+func TestLocalStaticActorStoreCrashTempCleanupEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
+	cleaner := &stubStaticActorStoreCrashTempCleaner{summary: map[string]any{"actor_count": 2, "actor_ids": []uint64{7, 9}, "actor_names": []string{"TrainingDummy", "VillageGuard"}}}
+	mux := RegisterLocalStaticActorStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if cleaner.calls != 1 {
+		t.Fatalf("expected cleaner to be called once, got %d", cleaner.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"actor_count":2`, `"actor_ids":[7,9]`, `"actor_names":["TrainingDummy","VillageGuard"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalStaticActorStoreCrashTempCleanupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	cleaner := &stubStaticActorStoreCrashTempCleaner{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalStaticActorStoreCrashTempCleanupEndpointRejectsWrongMethod(t *testing.T) {
+	cleaner := &stubStaticActorStoreCrashTempCleaner{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalStaticActorStoreCrashTempCleanupEndpointRejectsUnexpectedBody(t *testing.T) {
+	cleaner := &stubStaticActorStoreCrashTempCleaner{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/crash-temps/cleanup", strings.NewReader(`{"confirm":true}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalStaticActorStoreCrashTempCleanupEndpointRejectsOversizedBody(t *testing.T) {
+	cleaner := &stubStaticActorStoreCrashTempCleaner{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/crash-temps/cleanup", strings.NewReader(strings.Repeat(" ", maxLocalAccountStoreMutationBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalStaticActorStoreCrashTempCleanupEndpointReportsCleanupFailure(t *testing.T) {
+	cleaner := &stubStaticActorStoreCrashTempCleaner{err: errStubStaticActorStoreInvalid}
+	mux := RegisterLocalStaticActorStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if cleaner.calls != 1 {
+		t.Fatalf("expected cleaner to be called once, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalInteractionStoreCrashTempCleanupEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
+	cleaner := &stubInteractionStoreCrashTempCleaner{summary: map[string]any{"definition_count": 2, "definition_keys": []string{"info:lore:alchemist", "talk:npc:village_guard"}}}
+	mux := RegisterLocalInteractionStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if cleaner.calls != 1 {
+		t.Fatalf("expected cleaner to be called once, got %d", cleaner.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"definition_count":2`, `"definition_keys":["info:lore:alchemist","talk:npc:village_guard"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalInteractionStoreCrashTempCleanupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	cleaner := &stubInteractionStoreCrashTempCleaner{summary: map[string]any{"definition_count": 1}}
+	mux := RegisterLocalInteractionStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalInteractionStoreCrashTempCleanupEndpointRejectsWrongMethod(t *testing.T) {
+	cleaner := &stubInteractionStoreCrashTempCleaner{summary: map[string]any{"definition_count": 1}}
+	mux := RegisterLocalInteractionStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/interaction-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalInteractionStoreCrashTempCleanupEndpointRejectsUnexpectedBody(t *testing.T) {
+	cleaner := &stubInteractionStoreCrashTempCleaner{summary: map[string]any{"definition_count": 1}}
+	mux := RegisterLocalInteractionStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/crash-temps/cleanup", strings.NewReader(`{"confirm":true}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalInteractionStoreCrashTempCleanupEndpointRejectsOversizedBody(t *testing.T) {
+	cleaner := &stubInteractionStoreCrashTempCleaner{summary: map[string]any{"definition_count": 1}}
+	mux := RegisterLocalInteractionStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/crash-temps/cleanup", strings.NewReader(strings.Repeat(" ", maxLocalAccountStoreMutationBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if cleaner.calls != 0 {
+		t.Fatalf("expected cleaner not to be called, got %d", cleaner.calls)
+	}
+}
+
+func TestLocalInteractionStoreCrashTempCleanupEndpointReportsCleanupFailure(t *testing.T) {
+	cleaner := &stubInteractionStoreCrashTempCleaner{err: errStubInteractionStoreInvalid}
+	mux := RegisterLocalInteractionStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/crash-temps/cleanup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if cleaner.calls != 1 {
+		t.Fatalf("expected cleaner to be called once, got %d", cleaner.calls)
+	}
+}
+
 func TestLocalItemTemplateStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
 	backer := &stubItemTemplateStoreBacker{summary: map[string]any{"template_count": 2, "vnums": []uint32{11200, 27001}}}
 	mux := RegisterLocalItemTemplateStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
@@ -1786,6 +2020,32 @@ func (s *stubItemTemplateStoreCrashTempCleaner) Cleanup() (any, error) {
 	s.calls++
 	return s.summary, s.err
 }
+
+type stubStaticActorStoreCrashTempCleaner struct {
+	summary any
+	err     error
+	calls   int
+}
+
+func (s *stubStaticActorStoreCrashTempCleaner) Cleanup() (any, error) {
+	s.calls++
+	return s.summary, s.err
+}
+
+var errStubStaticActorStoreInvalid = errors.New("static actor store invalid")
+
+type stubInteractionStoreCrashTempCleaner struct {
+	summary any
+	err     error
+	calls   int
+}
+
+func (s *stubInteractionStoreCrashTempCleaner) Cleanup() (any, error) {
+	s.calls++
+	return s.summary, s.err
+}
+
+var errStubInteractionStoreInvalid = errors.New("interaction store invalid")
 
 type stubItemTemplateStoreBacker struct {
 	summary any
