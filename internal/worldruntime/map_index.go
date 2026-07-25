@@ -158,7 +158,7 @@ func (m *MapIndex) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 	for _, player := range m.byEntityID {
 		if player.Entity.VID == vid {
-			m.repairPlayerMapPresenceLocked(player)
+			m.repairPlayerMapPresenceIfUnblockedLocked(player)
 			return clonePlayerEntity(player), true
 		}
 	}
@@ -168,11 +168,14 @@ func (m *MapIndex) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 				continue
 			}
 			if current, ok := m.byEntityID[player.Entity.ID]; ok {
-				m.repairPlayerMapPresenceLocked(current)
+				m.repairPlayerMapPresenceIfUnblockedLocked(current)
 				if current.Entity.VID == vid {
 					return clonePlayerEntity(current), true
 				}
 				continue
+			}
+			if m.playerRepairBlockedByStaticPresenceLocked(player.Entity.ID) {
+				return PlayerEntity{}, false
 			}
 			return clonePlayerEntity(player), true
 		}
@@ -190,7 +193,7 @@ func (m *MapIndex) PlayerByName(name string) (PlayerEntity, bool) {
 	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 	for _, player := range m.byEntityID {
 		if player.Entity.Name == name {
-			m.repairPlayerMapPresenceLocked(player)
+			m.repairPlayerMapPresenceIfUnblockedLocked(player)
 			return clonePlayerEntity(player), true
 		}
 	}
@@ -200,11 +203,14 @@ func (m *MapIndex) PlayerByName(name string) (PlayerEntity, bool) {
 				continue
 			}
 			if current, ok := m.byEntityID[player.Entity.ID]; ok {
-				m.repairPlayerMapPresenceLocked(current)
+				m.repairPlayerMapPresenceIfUnblockedLocked(current)
 				if current.Entity.Name == name {
 					return clonePlayerEntity(current), true
 				}
 				continue
+			}
+			if m.playerRepairBlockedByStaticPresenceLocked(player.Entity.ID) {
+				return PlayerEntity{}, false
 			}
 			return clonePlayerEntity(player), true
 		}
@@ -222,10 +228,34 @@ func (m *MapIndex) Player(entityID uint64) (PlayerEntity, bool) {
 	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 	player, ok := m.byEntityID[entityID]
 	if ok {
-		m.repairPlayerMapPresenceLocked(player)
+		m.repairPlayerMapPresenceIfUnblockedLocked(player)
 		return clonePlayerEntity(player), true
 	}
+	if m.playerRepairBlockedByStaticPresenceLocked(entityID) {
+		return PlayerEntity{}, false
+	}
 	return m.playerMapPresenceLocked(entityID)
+}
+
+func (m *MapIndex) playerRepairBlockedByStaticPresenceLocked(entityID uint64) bool {
+	if entityID == 0 {
+		return true
+	}
+	if _, ok := m.staticByEntityID[entityID]; ok {
+		return true
+	}
+	if _, ok := m.staticActorMapPresenceLocked(entityID); ok {
+		return true
+	}
+	return false
+}
+
+func (m *MapIndex) repairPlayerMapPresenceIfUnblockedLocked(player PlayerEntity) bool {
+	if m.playerRepairBlockedByStaticPresenceLocked(player.Entity.ID) {
+		return false
+	}
+	m.repairPlayerMapPresenceLocked(player)
+	return true
 }
 
 func (m *MapIndex) repairPlayerMapPresenceLocked(player PlayerEntity) {
@@ -363,7 +393,7 @@ func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
 	defer m.mu.Unlock()
 
 	for _, player := range m.byEntityID {
-		m.repairPlayerMapPresenceLocked(player)
+		m.repairPlayerMapPresenceIfUnblockedLocked(player)
 	}
 	m.repairMisplacedPlayerMapPresenceLocked()
 	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
@@ -392,7 +422,7 @@ func (m *MapIndex) AllPlayers() []PlayerEntity {
 	}
 
 	for _, player := range m.byEntityID {
-		m.repairPlayerMapPresenceLocked(player)
+		m.repairPlayerMapPresenceIfUnblockedLocked(player)
 	}
 	m.repairMisplacedPlayerMapPresenceLocked()
 	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
@@ -443,12 +473,12 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 	defer m.mu.Unlock()
 
 	for _, player := range m.byEntityID {
-		m.repairPlayerMapPresenceLocked(player)
+		m.repairPlayerMapPresenceIfUnblockedLocked(player)
 	}
 	m.repairMisplacedPlayerMapPresenceLocked()
 	m.repairPlayerMapPresenceFromEffectiveIndexLocked()
 	for _, actor := range m.staticByEntityID {
-		m.repairStaticMapPresenceLocked(actor)
+		m.repairStaticMapPresenceIfUnblockedLocked(actor)
 	}
 	m.repairMisplacedStaticMapPresenceLocked()
 	m.repairStaticMapPresenceFromEffectiveIndexLocked()
@@ -566,8 +596,11 @@ func (m *MapIndex) StaticActor(entityID uint64) (StaticEntity, bool) {
 	m.repairStaticMapPresenceFromEffectiveIndexLocked()
 	actor, ok := m.staticByEntityID[entityID]
 	if ok {
-		m.repairStaticMapPresenceLocked(actor)
+		m.repairStaticMapPresenceIfUnblockedLocked(actor)
 		return cloneStaticEntity(actor), true
+	}
+	if m.staticRepairBlockedByPlayerPresenceLocked(entityID) {
+		return StaticEntity{}, false
 	}
 	actor, ok = m.staticActorMapPresenceLocked(entityID)
 	return cloneStaticEntity(actor), ok
@@ -586,7 +619,7 @@ func (m *MapIndex) StaticActorByVID(vid uint32) (StaticEntity, bool) {
 		if !ok || canonicalVID != vid {
 			continue
 		}
-		m.repairStaticMapPresenceLocked(actor)
+		m.repairStaticMapPresenceIfUnblockedLocked(actor)
 		return cloneStaticEntity(actor), true
 	}
 	for _, bucket := range m.staticByMapIndex {
@@ -596,11 +629,14 @@ func (m *MapIndex) StaticActorByVID(vid uint32) (StaticEntity, bool) {
 				continue
 			}
 			if current, exists := m.staticByEntityID[actor.Entity.ID]; exists {
-				m.repairStaticMapPresenceLocked(current)
+				m.repairStaticMapPresenceIfUnblockedLocked(current)
 				if currentVID, ok := StaticActorVisibilityVID(current); ok && currentVID == vid {
 					return cloneStaticEntity(current), true
 				}
 				continue
+			}
+			if m.staticRepairBlockedByPlayerPresenceLocked(actor.Entity.ID) {
+				return StaticEntity{}, false
 			}
 			return cloneStaticEntity(actor), true
 		}
@@ -622,7 +658,7 @@ func (m *MapIndex) AllStaticActors() []StaticEntity {
 
 	actorsByID := make(map[uint64]StaticEntity, len(m.staticByEntityID))
 	for _, actor := range m.staticByEntityID {
-		m.repairStaticMapPresenceLocked(actor)
+		m.repairStaticMapPresenceIfUnblockedLocked(actor)
 		actorsByID[actor.Entity.ID] = cloneStaticEntity(actor)
 	}
 
@@ -668,6 +704,27 @@ func (m *MapIndex) repairStaticMapPresenceLocked(actor StaticEntity) {
 		m.staticByMapIndex[mapIndex] = bucket
 	}
 	bucket[actor.Entity.ID] = cloneStaticEntity(actor)
+}
+
+func (m *MapIndex) staticRepairBlockedByPlayerPresenceLocked(entityID uint64) bool {
+	if entityID == 0 {
+		return true
+	}
+	if _, ok := m.byEntityID[entityID]; ok {
+		return true
+	}
+	if _, ok := m.playerMapPresenceLocked(entityID); ok {
+		return true
+	}
+	return false
+}
+
+func (m *MapIndex) repairStaticMapPresenceIfUnblockedLocked(actor StaticEntity) bool {
+	if m.staticRepairBlockedByPlayerPresenceLocked(actor.Entity.ID) {
+		return false
+	}
+	m.repairStaticMapPresenceLocked(actor)
+	return true
 }
 
 func (m *MapIndex) repairMisplacedStaticMapPresenceLocked() {
@@ -826,7 +883,7 @@ func (m *MapIndex) StaticActors(mapIndex uint32) []StaticEntity {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, actor := range m.staticByEntityID {
-		m.repairStaticMapPresenceLocked(actor)
+		m.repairStaticMapPresenceIfUnblockedLocked(actor)
 	}
 	m.repairMisplacedStaticMapPresenceLocked()
 	m.repairStaticMapPresenceFromEffectiveIndexLocked()

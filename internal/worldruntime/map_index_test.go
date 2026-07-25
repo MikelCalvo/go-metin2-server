@@ -568,6 +568,62 @@ func TestMapIndexRegisterRejectsStaticEntityIndexCollisionWhenStaticMapBucketMis
 	}
 }
 
+func TestMapIndexSnapshotDoesNotRepairPlayerPrimaryOverStaticMapPresenceCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(16, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	actor := StaticEntity{Entity: Entity{ID: player.Entity.ID, Kind: EntityKindStaticActor, Name: "MapOnlyGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	index.byEntityID[player.Entity.ID] = player
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{actor.Entity.ID: actor}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected direct player reader not to rebuild over static map presence collision, got %+v", characters)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected direct static reader to preserve static map presence, got %+v", actors)
+	}
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || snapshots[0].MapIndex != 77 || len(snapshots[0].Characters) != 0 || len(snapshots[0].StaticActors) != 1 || snapshots[0].StaticActors[0].Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected cross-kind collision snapshot to preserve only static map presence, got %+v", snapshots)
+	}
+	playerLookup, ok := index.Player(player.Entity.ID)
+	if !ok || playerLookup.Entity.Name != "Alpha" {
+		t.Fatalf("expected player entity lookup to remain available without rebuilding map presence, got player=%+v ok=%v", playerLookup, ok)
+	}
+	actors = index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected static map presence to remain after rejected player repair, got %+v", actors)
+	}
+}
+
+func TestMapIndexSnapshotDoesNotRepairStaticPrimaryOverPlayerMapPresenceCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 17, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	player := newPlayerEntity(actor.Entity.ID, entityRegistryCharacter("MapOnlyAlpha", 0x02040101, 77, 1100, 2100))
+	index.staticByEntityID[actor.Entity.ID] = actor
+	index.byMapIndex[77] = map[uint64]PlayerEntity{player.Entity.ID: player}
+
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected direct static reader not to rebuild over player map presence collision, got %+v", actors)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "MapOnlyAlpha" {
+		t.Fatalf("expected direct player reader to preserve player map presence, got %+v", characters)
+	}
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || snapshots[0].MapIndex != 77 || len(snapshots[0].Characters) != 1 || snapshots[0].Characters[0].Name != "MapOnlyAlpha" || len(snapshots[0].StaticActors) != 0 {
+		t.Fatalf("expected cross-kind collision snapshot to preserve only player map presence, got %+v", snapshots)
+	}
+	actorLookup, ok := index.StaticActor(actor.Entity.ID)
+	if !ok || actorLookup.Entity.Name != "VillageGuard" {
+		t.Fatalf("expected static entity lookup to remain available without rebuilding map presence, got actor=%+v ok=%v", actorLookup, ok)
+	}
+	characters = index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "MapOnlyAlpha" {
+		t.Fatalf("expected player map presence to remain after rejected static repair, got %+v", characters)
+	}
+}
+
 func TestMapIndexSnapshotPrunesDuplicatePlayerMapBuckets(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	stale := newPlayerEntity(14, entityRegistryCharacter("StaleAlpha", 0x02040101, 42, 1100, 2100))
