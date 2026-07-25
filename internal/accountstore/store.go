@@ -129,6 +129,9 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	if err != nil {
 		return SnapshotSummary{}, err
 	}
+	if err := s.validateActiveBackupManifestForAccounts(accounts); err != nil {
+		return SnapshotSummary{}, err
+	}
 	crashTempFiles, err := s.crashTempFiles()
 	if err != nil {
 		return SnapshotSummary{}, err
@@ -144,6 +147,28 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 		summary.CharacterCount += len(account.Characters)
 	}
 	return summary, nil
+}
+
+func (s *FileStore) validateActiveBackupManifest() error {
+	accounts, err := s.List()
+	if err != nil {
+		return err
+	}
+	return s.validateActiveBackupManifestForAccounts(accounts)
+}
+
+func (s *FileStore) validateActiveBackupManifestForAccounts(accounts []Account) error {
+	if s.dir == "" {
+		return ErrStoreDirRequired
+	}
+	manifestPath := filepath.Join(s.dir, BackupManifestFilename)
+	if _, err := os.Stat(manifestPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat active account backup manifest: %w", err)
+	}
+	return s.validateBackupManifestForAccounts(accounts, false)
 }
 
 func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
@@ -464,6 +489,10 @@ func (s *FileStore) loadBackupAccountsForRestore(srcDir string) ([]Account, erro
 }
 
 func (s *FileStore) validateBackupManifest(accounts []Account) error {
+	return s.validateBackupManifestForAccounts(accounts, true)
+}
+
+func (s *FileStore) validateBackupManifestForAccounts(accounts []Account, requireClosedDirectory bool) error {
 	manifestPath := filepath.Join(s.dir, BackupManifestFilename)
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -530,8 +559,10 @@ func (s *FileStore) validateBackupManifest(accounts []Account) error {
 			return fmt.Errorf("%w: account %q checksum mismatch", ErrInvalidBackupManifest, file.Login)
 		}
 	}
-	if err := s.validateBackupDirectoryEntries(seenFiles); err != nil {
-		return err
+	if requireClosedDirectory {
+		if err := s.validateBackupDirectoryEntries(seenFiles); err != nil {
+			return err
+		}
 	}
 	return nil
 }

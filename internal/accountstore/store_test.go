@@ -566,10 +566,13 @@ func TestFileStoreCleanupCrashTempFilesRemovesOnlyCrashTemps(t *testing.T) {
 	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
 		t.Fatalf("save account: %v", err)
 	}
-	for _, filename := range []string{".account-zeta.json", ".account-alpha.json", ".ignored-hidden.json", BackupManifestFilename} {
+	for _, filename := range []string{".account-zeta.json", ".account-alpha.json", ".ignored-hidden.json"} {
 		if err := os.WriteFile(filepath.Join(store.dir, filename), []byte(`{"not":"committed"}`), 0o644); err != nil {
 			t.Fatalf("write file %s: %v", filename, err)
 		}
+	}
+	if err := store.writeBackupManifest([]Account{{Login: "mkmk", Empire: 2}}); err != nil {
+		t.Fatalf("write valid backup manifest: %v", err)
 	}
 
 	summary, err := store.CleanupCrashTempFiles()
@@ -727,6 +730,46 @@ func TestFileStoreBackupToWritesDeterministicManifest(t *testing.T) {
 	}
 	if !reflect.DeepEqual(gotLogins, wantLogins) {
 		t.Fatalf("unexpected manifest file order: got %#v want %#v", gotLogins, wantLogins)
+	}
+}
+
+func TestFileStoreValidateRejectsStaleBackupManifest(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
+	if err := store.Save(account); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := store.writeBackupManifest([]Account{account}); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	if err := os.WriteFile(store.accountPath("mkmk"), []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"TamperedWar"}]}`), 0o644); err != nil {
+		t.Fatalf("tamper account after manifest write: %v", err)
+	}
+	if err := store.validateActiveBackupManifest(); !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected active manifest preflight to detect stale manifest, got %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for stale active manifest, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsMalformedBackupManifest(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(store.dir, BackupManifestFilename), []byte(`{"format":"manual"}`), 0o644); err != nil {
+		t.Fatalf("write malformed backup manifest: %v", err)
+	}
+	if err := store.validateActiveBackupManifest(); !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected active manifest preflight to detect malformed manifest, got %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for malformed active manifest, got %v", err)
 	}
 }
 

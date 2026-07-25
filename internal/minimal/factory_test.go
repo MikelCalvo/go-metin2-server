@@ -713,6 +713,66 @@ func TestGameRuntimePersistenceStatusKeepsCheckingAfterStoreFailure(t *testing.T
 	}
 }
 
+func TestGameRuntimePersistenceStatusRejectsStaleAccountBackupManifest(t *testing.T) {
+	source := accountstore.NewFileStore(t.TempDir())
+	if err := source.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "account-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup account store: %v", err)
+	}
+	active := accountstore.NewFileStore(filepath.Join(t.TempDir(), "active"))
+	if err := active.RestoreFrom(backupDir); err != nil {
+		t.Fatalf("restore account store: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(active.Dir(), "6d6b6d6b.json"), []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"TamperedWar"}]}`), 0o644); err != nil {
+		t.Fatalf("tamper restored active account snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), active, nil, nil, itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")), nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if status.OK || status.AccountStore.Valid || !strings.Contains(status.AccountStore.Error, accountstore.ErrInvalidBackupManifest.Error()) {
+		t.Fatalf("expected stale active account manifest to fail persistence status, got %#v", status.AccountStore)
+	}
+	if !status.LoginTicketStore.Valid || !status.ItemTemplateStore.Valid {
+		t.Fatalf("expected stale account manifest not to mask other store checks: %#v", status)
+	}
+}
+
+func TestGameRuntimePersistenceStatusRejectsStaleItemTemplateBackupManifest(t *testing.T) {
+	source := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "source", "item-templates.json"))
+	if err := source.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+	active := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "active", "item-templates.json"))
+	if err := active.RestoreFrom(backupDir); err != nil {
+		t.Fatalf("restore item templates: %v", err)
+	}
+	if err := os.WriteFile(active.Path(), []byte(`{"templates":[{"vnum":27001,"name":"Tampered Potion","stackable":true,"max_count":200}]}`), 0o644); err != nil {
+		t.Fatalf("tamper restored active item templates: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, active, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if status.OK || status.ItemTemplateStore.Valid || !strings.Contains(status.ItemTemplateStore.Error, itemcatalog.ErrInvalidBackupManifest.Error()) {
+		t.Fatalf("expected stale active item-template manifest to fail persistence status, got %#v", status.ItemTemplateStore)
+	}
+	if !status.AccountStore.Valid || !status.LoginTicketStore.Valid {
+		t.Fatalf("expected stale item-template manifest not to mask other store checks: %#v", status)
+	}
+}
+
 func TestGameRuntimeCleanupStaticActorStoreCrashTempFiles(t *testing.T) {
 	staticPath := filepath.Join(t.TempDir(), "static", "static-actors.json")
 	staticStore := staticstore.NewFileStore(staticPath)

@@ -184,6 +184,66 @@ func TestFileStoreBackupToTreatsMissingSnapshotAsEmptyAuthoredStore(t *testing.T
 	}
 }
 
+func TestFileStoreValidateRejectsStaleBackupManifest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	snapshot := Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}
+	if err := store.Save(snapshot); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	summary := SnapshotSummary{TemplateCount: 1, Vnums: []uint32{27001}}
+	if err := writeBackupManifest(filepath.Dir(path), filepath.Base(path), summary, true); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27001,"name":"Tampered Potion","stackable":true,"max_count":200}]}`), 0o644); err != nil {
+		t.Fatalf("tamper item template snapshot after manifest write: %v", err)
+	}
+	if err := store.validateActiveBackupManifest(); !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected active manifest preflight to detect stale manifest, got %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for stale active manifest, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsMalformedBackupManifest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), BackupManifestFilename), []byte(`{"format":"manual"}`), 0o644); err != nil {
+		t.Fatalf("write malformed backup manifest: %v", err)
+	}
+	if err := store.validateActiveBackupManifest(); !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected active manifest preflight to detect malformed manifest, got %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for malformed active manifest, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsBackupManifestOmittingActiveSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	manifest := BackupManifest{Format: BackupManifestFormat, Summary: SnapshotSummary{Vnums: []uint32{}}, Files: []BackupManifestFile{}}
+	if err := writeJSONFileAtomically(filepath.Dir(path), BackupManifestFilename, manifest, "empty item template backup manifest"); err != nil {
+		t.Fatalf("write empty backup manifest: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for manifest omitting active snapshot, got %v", err)
+	}
+}
+
 func TestFileStoreValidateBackupFromValidatesManifestWithoutMutatingTarget(t *testing.T) {
 	store := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
 	if err := store.Save(Snapshot{Templates: []Template{

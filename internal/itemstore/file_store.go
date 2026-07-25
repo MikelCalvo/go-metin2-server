@@ -76,7 +76,34 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	}
 	summary.CrashTempCount = len(crashTempFiles)
 	summary.CrashTempFiles = crashTempFiles
+	if err := s.validateActiveBackupManifest(); err != nil {
+		return SnapshotSummary{}, err
+	}
 	return summary, nil
+}
+
+func (s *FileStore) validateActiveBackupManifest() error {
+	if s == nil || s.path == "" {
+		return ErrStorePathRequired
+	}
+	storeDir := filepath.Dir(s.path)
+	manifestPath := filepath.Join(storeDir, BackupManifestFilename)
+	if _, err := os.Stat(manifestPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat active item template backup manifest: %w", err)
+	}
+	_, _, hasSnapshot, err := s.validateBackupManifestWithCoverage(storeDir, false)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(s.path); err == nil && !hasSnapshot {
+		return fmt.Errorf("%w: active manifest omits committed item template snapshot", ErrInvalidBackupManifest)
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("stat active item template snapshot for backup manifest: %w", err)
+	}
+	return nil
 }
 
 func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
@@ -365,6 +392,10 @@ func (s *FileStore) loadBackupSnapshotForRestore(srcDir string) (SnapshotSummary
 }
 
 func (s *FileStore) validateBackupManifest(srcDir string) (SnapshotSummary, Snapshot, bool, error) {
+	return s.validateBackupManifestWithCoverage(srcDir, true)
+}
+
+func (s *FileStore) validateBackupManifestWithCoverage(srcDir string, requireClosedDirectory bool) (SnapshotSummary, Snapshot, bool, error) {
 	manifestPath := filepath.Join(srcDir, BackupManifestFilename)
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
@@ -424,8 +455,10 @@ func (s *FileStore) validateBackupManifest(srcDir string) (SnapshotSummary, Snap
 	if !snapshotSummariesEqual(manifest.Summary, summary) {
 		return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: summary does not match committed snapshot", ErrInvalidBackupManifest)
 	}
-	if err := validateBackupDirectoryEntries(srcDir, committedFiles); err != nil {
-		return SnapshotSummary{}, Snapshot{}, false, err
+	if requireClosedDirectory {
+		if err := validateBackupDirectoryEntries(srcDir, committedFiles); err != nil {
+			return SnapshotSummary{}, Snapshot{}, false, err
+		}
 	}
 	return summary, snapshot, hasSnapshot, nil
 }
