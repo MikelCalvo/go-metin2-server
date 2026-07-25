@@ -149,9 +149,9 @@ Its focused protocol note is `combat-damage-info-bootstrap.md`.
 
 That hit-effect companion is intentionally separate from the authoritative combat-state carrier in this document:
 - `TARGET(target_vid, hp_percent)` still owns the selected-target HP refresh for non-lethal bootstrap hits and is still sent first.
-- Standalone bootstrap `training_dummy` non-lethal normal hits append one self-only `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` after that target refresh.
+- Standalone bootstrap combat-profile non-lethal normal hits append one self-only `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` after that target refresh.
 - `DEAD(vid)` plus `TARGET(0, 0)` still owns the zero-HP edge, and the current damage-info slice deliberately does not append a synthetic final damage-info frame on killing hits.
-- Spawn-backed practice mobs, registered-profile actors, peer fanout, and richer flag meanings remain later runtime emission policy.
+- Spawn-backed practice mobs, peer fanout, and richer flag meanings remain later runtime emission policy.
 
 ## Relationship to later HP / death work
 
@@ -173,7 +173,7 @@ What this still freezes about the **visible state carrier** for later slices:
 The profile-stat formula slice now freezes that combat-profile defaults can carry `attack_value` and `defense_value` alongside the legacy `damage_per_normal_attack` fallback.
 Registered combat profiles use the first deterministic formula for normal-attack HP mutation: `max(1, attack_value - defense_value)`.
 Built-in bootstrap profiles keep their current one-point behavior because their owned defaults are `attack_value = 1` and `defense_value = 0`.
-The shared-world attack attempt now also reports the actual non-negative damage amount applied by that formula as an internal runtime descriptor; standalone bootstrap `training_dummy` hit-effect emission uses that descriptor for its self-only `DAMAGE_INFO` companion, and later broader emission policy should keep using the same authoritative damage value instead of letting presentation code recompute damage separately.
+The shared-world attack attempt now also reports the actual non-negative damage amount applied by that formula as an internal runtime descriptor; standalone bootstrap combat-profile hit-effect emission uses that descriptor for its self-only `DAMAGE_INFO` companion, including custom registered formula profiles, and later broader emission policy should keep using the same authoritative damage value instead of letting presentation code recompute damage separately.
 If a registered profile omits `attack_value` but supplies legacy `damage_per_normal_attack`, registration canonicalizes `attack_value = damage_per_normal_attack + defense_value` so older tests/content keep the same visible damage even after adding defense metadata; that compatibility path now fails closed if the sum cannot fit the current `uint16` profile carrier.
 If a registered profile instead omits legacy `damage_per_normal_attack` but provides explicit non-zero `attack_value` / `defense_value`, registration now canonicalizes the legacy fallback from the same deterministic formula so formula-first authored profiles can be accepted without carrying two duplicate damage fields.
 If a registered profile supplies both legacy `damage_per_normal_attack` and explicit formula values, registration now requires those two surfaces to agree with the same deterministic formula; contradictory profiles fail closed instead of letting authored metadata claim one damage value while runtime attacks apply another.

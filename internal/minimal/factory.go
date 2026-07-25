@@ -5893,7 +5893,11 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 }
 
 func staticActorDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
-	return actor.SpawnGroupRef == "" && actor.CombatProfile == worldruntime.StaticActorCombatKindTrainingDummy
+	if actor.SpawnGroupRef != "" {
+		return false
+	}
+	_, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(actor.CombatProfile)
+	return ok
 }
 
 func staticActorInteractionFailureDelivery(failure string) *chatproto.ChatDeliveryPacket {

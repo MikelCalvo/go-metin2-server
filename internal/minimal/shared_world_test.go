@@ -25327,6 +25327,135 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshAndDamageIn
 	}
 }
 
+func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyDamageInfoForStandalonePracticeMob(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000202, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "PracticeMob", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatProfilePracticeMob)
+	if !ok {
+		t.Fatal("expected visible standalone practice-mob registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible practice mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected practice-mob combat target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only practice-mob target frame, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected practice-mob attack error: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected target-refresh plus self-only damage-info frame for accepted standalone practice-mob attack, got %d", len(attackOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode standalone practice-mob target-refresh frame: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 90 {
+		t.Fatalf("unexpected standalone practice-mob target-refresh packet: %+v", refresh)
+	}
+	damage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode standalone practice-mob damage-info frame: %v", err)
+	}
+	if damage.VID != targetVID || damage.Flag != 0 || damage.Damage != int32(worldruntime.PracticeMobBootstrapDamagePerNormalAttack) {
+		t.Fatalf("unexpected standalone practice-mob damage-info packet: %+v", damage)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for accepted standalone practice-mob attack, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorAttackDamageInfoUsesRegisteredFormulaDamage(t *testing.T) {
+	const profile = "standalone_damage_info_formula_mob"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:        20,
+		AttackValue:  9,
+		DefenseValue: 4,
+		RespawnDelay: worldruntime.PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected registered formula damage-info profile %q to be accepted", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000204, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.registerStaticActor(0, "FormulaDamageInfoMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", profile, "", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected visible standalone registered-profile mob registration to succeed")
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames with visible registered-profile mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	targetVID := uint32(actor.EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected registered-profile combat target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only registered-profile target frame, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected registered-profile attack error: %v", err)
+	}
+	if len(attackOut) != 2 {
+		t.Fatalf("expected target-refresh plus self-only damage-info frame for accepted registered-profile attack, got %d", len(attackOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode registered-profile target-refresh frame: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 75 {
+		t.Fatalf("unexpected registered-profile target-refresh packet: %+v", refresh)
+	}
+	damage, err := combatproto.DecodeServerDamageInfo(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode registered-profile damage-info frame: %v", err)
+	}
+	if damage.VID != targetVID || damage.Flag != 0 || damage.Damage != 5 {
+		t.Fatalf("unexpected registered-profile damage-info packet: %+v", damage)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for accepted registered-profile attack, got %d", len(queued))
+	}
+}
+
 func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndRejectsPostDeathRequests(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
