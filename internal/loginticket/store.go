@@ -18,11 +18,12 @@ import (
 )
 
 var (
-	ErrStoreDirRequired    = errors.New("login ticket store dir is required")
-	ErrTicketExists        = errors.New("login ticket already exists")
-	ErrTicketNotFound      = errors.New("login ticket not found")
-	ErrTicketLoginMismatch = errors.New("login ticket login does not match")
-	ErrInvalidTicket       = errors.New("invalid login ticket snapshot")
+	ErrStoreDirRequired     = errors.New("login ticket store dir is required")
+	ErrTicketExists         = errors.New("login ticket already exists")
+	ErrTicketNotFound       = errors.New("login ticket not found")
+	ErrTicketLoginMismatch  = errors.New("login ticket login does not match")
+	ErrInvalidTicket        = errors.New("invalid login ticket snapshot")
+	ErrIssuedBeforeRequired = errors.New("login ticket issued-before cutoff is required")
 )
 
 type Character struct {
@@ -108,6 +109,14 @@ type SnapshotSummary struct {
 	LoginKeys      []uint32 `json:"login_keys"`
 	CrashTempCount int      `json:"crash_temp_count,omitempty"`
 	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
+}
+
+type IssuedBeforeCleanupSummary struct {
+	IssuedBefore     time.Time       `json:"issued_before"`
+	RemovedCount     int             `json:"removed_count"`
+	RemovedLogins    []string        `json:"removed_logins"`
+	RemovedLoginKeys []uint32        `json:"removed_login_keys"`
+	Remaining        SnapshotSummary `json:"remaining"`
 }
 
 func normalizeCharactersItemState(characters []Character) {
@@ -223,6 +232,46 @@ func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
 		return SnapshotSummary{}, fmt.Errorf("sync login ticket store dir after crash temp cleanup: %w", err)
 	}
 	return s.Validate()
+}
+
+func (s *FileStore) CleanupIssuedBefore(issuedBefore time.Time) (IssuedBeforeCleanupSummary, error) {
+	if s.dir == "" {
+		return IssuedBeforeCleanupSummary{}, ErrStoreDirRequired
+	}
+	if issuedBefore.IsZero() {
+		return IssuedBeforeCleanupSummary{}, ErrIssuedBeforeRequired
+	}
+	tickets, err := s.List()
+	if err != nil {
+		return IssuedBeforeCleanupSummary{}, err
+	}
+	summary := IssuedBeforeCleanupSummary{
+		IssuedBefore:     issuedBefore,
+		RemovedLogins:    []string{},
+		RemovedLoginKeys: []uint32{},
+	}
+	for _, ticket := range tickets {
+		if !ticket.IssuedAt.Before(issuedBefore) {
+			continue
+		}
+		if err := os.Remove(s.ticketPath(ticket.LoginKey)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return IssuedBeforeCleanupSummary{}, fmt.Errorf("remove login ticket %08x issued before %s: %w", ticket.LoginKey, issuedBefore.Format(time.RFC3339Nano), err)
+		}
+		summary.RemovedLogins = append(summary.RemovedLogins, ticket.Login)
+		summary.RemovedLoginKeys = append(summary.RemovedLoginKeys, ticket.LoginKey)
+	}
+	summary.RemovedCount = len(summary.RemovedLoginKeys)
+	if summary.RemovedCount != 0 {
+		if err := syncStoreDir(s.dir); err != nil {
+			return IssuedBeforeCleanupSummary{}, fmt.Errorf("sync login ticket store dir after issued-before cleanup: %w", err)
+		}
+	}
+	remaining, err := s.Validate()
+	if err != nil {
+		return IssuedBeforeCleanupSummary{}, err
+	}
+	summary.Remaining = remaining
+	return summary, nil
 }
 
 func (s *FileStore) crashTempFiles() ([]string, error) {

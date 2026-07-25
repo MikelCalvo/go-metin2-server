@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
@@ -326,6 +327,50 @@ func TestGameRuntimeCleanupLoginTicketStoreCrashTempFilesFailsClosedForCorruptTi
 	}
 	if _, err := os.Stat(crashTemp); err != nil {
 		t.Fatalf("expected crash temp file to remain after failed cleanup: %v", err)
+	}
+}
+
+func TestGameRuntimeCleanupLoginTicketStoreIssuedBeforeRemovesOnlyStaleTickets(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	oldIssuedAt := time.Date(2026, 4, 17, 10, 0, 0, 0, time.UTC)
+	cutoff := time.Date(2026, 4, 17, 11, 0, 0, 0, time.UTC)
+	newIssuedAt := time.Date(2026, 4, 17, 12, 0, 0, 0, time.UTC)
+	for _, ticket := range []loginticket.Ticket{
+		{Login: "old", LoginKey: 0x01000000, IssuedAt: oldIssuedAt},
+		{Login: "new", LoginKey: 0x02000000, IssuedAt: newIssuedAt},
+	} {
+		if err := ticketStore.Issue(ticket); err != nil {
+			t.Fatalf("issue ticket %s: %v", ticket.Login, err)
+		}
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.CleanupLoginTicketStoreIssuedBefore(cutoff)
+	if err != nil {
+		t.Fatalf("cleanup stale login tickets: %v", err)
+	}
+	want := loginticket.IssuedBeforeCleanupSummary{
+		IssuedBefore:     cutoff,
+		RemovedCount:     1,
+		RemovedLogins:    []string{"old"},
+		RemovedLoginKeys: []uint32{0x01000000},
+		Remaining: loginticket.SnapshotSummary{
+			TicketCount: 1,
+			Logins:      []string{"new"},
+			LoginKeys:   []uint32{0x02000000},
+		},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected stale cleanup summary: got %#v want %#v", summary, want)
+	}
+	if _, err := ticketStore.Load("old", 0x01000000); !errors.Is(err, loginticket.ErrTicketNotFound) {
+		t.Fatalf("expected old ticket to be removed, got %v", err)
+	}
+	if _, err := ticketStore.Load("new", 0x02000000); err != nil {
+		t.Fatalf("expected new ticket to remain: %v", err)
 	}
 }
 
