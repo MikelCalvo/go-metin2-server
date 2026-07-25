@@ -125,7 +125,7 @@ func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 			}},
 		},
 		Maps: []MapContentSummary{
-			{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1, SpawnGroupCount: 0},
+			{MapIndex: 1, StaticActorCount: 1, InteractableStaticActorCount: 1, TalkActorCount: 1, SpawnGroupCount: 0},
 			{MapIndex: 2, StaticActorCount: 1, InteractableStaticActorCount: 1, ShopPreviewActorCount: 1, ShopCatalogEntryCount: 2, SpawnGroupCount: 1, RewardDropItemCount: 1},
 		},
 	}
@@ -354,6 +354,31 @@ func TestSummarizeAuditsServiceInteractionsPerMap(t *testing.T) {
 	want := []MapContentSummary{{MapIndex: 1, StaticActorCount: 3, InteractableStaticActorCount: 3, ShopPreviewActorCount: 2, ShopCatalogEntryCount: 4, WarpActorCount: 1}}
 	if !reflect.DeepEqual(summary.Maps, want) {
 		t.Fatalf("unexpected per-map service interaction audit:\n got: %#v\nwant: %#v", summary.Maps, want)
+	}
+}
+
+func TestSummarizeAuditsSelfOnlyInteractionKindsPerMap(t *testing.T) {
+	summary, err := Summarize(Bundle{
+		StaticActors: []StaticActor{
+			{Name: "NoticeBoard", MapIndex: 1, X: 900, Y: 1900, RaceNum: 20304, InteractionKind: interactionstore.KindInfo, InteractionRef: "lore:notice_board"},
+			{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guide"},
+			{Name: "RemoteGuide", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:remote_guide"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			{Kind: interactionstore.KindInfo, Ref: "lore:notice_board", Text: "Read the notices."},
+			{Kind: interactionstore.KindTalk, Ref: "npc:remote_guide", Text: "The road is quiet."},
+			{Kind: interactionstore.KindTalk, Ref: "npc:village_guide", Text: "Welcome."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("summarize per-map self-only interactions: %v", err)
+	}
+	want := []MapContentSummary{
+		{MapIndex: 1, StaticActorCount: 2, InteractableStaticActorCount: 2, InfoActorCount: 1, TalkActorCount: 1},
+		{MapIndex: 7, StaticActorCount: 1, InteractableStaticActorCount: 1, TalkActorCount: 1},
+	}
+	if !reflect.DeepEqual(summary.Maps, want) {
+		t.Fatalf("unexpected per-map self-only interaction audit:\n got: %#v\nwant: %#v", summary.Maps, want)
 	}
 }
 

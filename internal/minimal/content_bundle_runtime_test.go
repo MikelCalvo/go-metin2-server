@@ -102,7 +102,7 @@ func TestGameRuntimeExportContentBundleSummaryReturnsDeterministicCounts(t *test
 		InteractableStaticActors: []contentbundle.InteractableStaticActorSummary{
 			{Name: "VillageGuard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:village_guard", Preview: "VillageGuard:\nKeep your blade sharp."},
 		},
-		Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 2, InteractableStaticActorCount: 1}},
+		Maps: []contentbundle.MapContentSummary{{MapIndex: 42, StaticActorCount: 2, InteractableStaticActorCount: 1, TalkActorCount: 1}},
 	}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected exported content bundle summary:\n got: %#v\nwant: %#v", summary, want)

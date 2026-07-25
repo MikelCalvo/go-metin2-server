@@ -547,10 +547,37 @@ func TestLocalContentBundleSummaryEndpointReturnsDryRunSummaryForLoopbackPost(t 
 		},
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: "practice_qa_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500, DeathReward: worldruntime.StaticActorDeathReward{Experience: 75, Gold: 60, DropVnums: []uint32{27001}}}},
 		ItemTemplates:  []contentbundle.ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
-		Maps:           []contentbundle.MapContentSummary{{MapIndex: 1, StaticActorCount: 3, InteractableStaticActorCount: 3, ShopPreviewActorCount: 1, ShopCatalogEntryCount: 1, WarpActorCount: 1, SpawnGroupCount: 1, RewardExperienceTotal: 75, RewardGoldTotal: 60, RewardDropItemCount: 1}},
+		Maps:           []contentbundle.MapContentSummary{{MapIndex: 1, StaticActorCount: 3, InteractableStaticActorCount: 3, TalkActorCount: 1, ShopPreviewActorCount: 1, ShopCatalogEntryCount: 1, WarpActorCount: 1, SpawnGroupCount: 1, RewardExperienceTotal: 75, RewardGoldTotal: 60, RewardDropItemCount: 1}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected dry-run summary response:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestLocalContentBundleSummaryEndpointReturnsPerMapInfoTalkActorCountsForLoopbackPost(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"static_actors":[{"name":"NoticeBoard","map_index":1,"x":469200,"y":964200,"race_num":20303,"interaction_kind":"info","interaction_ref":"lore:qa_square"},{"name":"VillageGuide","map_index":1,"x":469350,"y":964200,"race_num":20302,"interaction_kind":"talk","interaction_ref":"npc:qa_guide"}],"interaction_definitions":[{"kind":"info","ref":"lore:qa_square","text":"Read the notices."},{"kind":"talk","ref":"npc:qa_guide","text":"Welcome."}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode per-map info/talk summary response body: %v", err)
+	}
+	wantMaps := []contentbundle.MapContentSummary{{MapIndex: 1, StaticActorCount: 2, InteractableStaticActorCount: 2, InfoActorCount: 1, TalkActorCount: 1}}
+	if !reflect.DeepEqual(got.Maps, wantMaps) {
+		t.Fatalf("unexpected per-map info/talk summary counts:\n got: %#v\nwant: %#v", got.Maps, wantMaps)
 	}
 }
 

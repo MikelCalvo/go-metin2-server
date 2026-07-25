@@ -203,6 +203,8 @@ type MapContentSummary struct {
 	MapIndex                     uint32 `json:"map_index"`
 	StaticActorCount             int    `json:"static_actor_count"`
 	InteractableStaticActorCount int    `json:"interactable_static_actor_count"`
+	InfoActorCount               int    `json:"info_actor_count,omitempty"`
+	TalkActorCount               int    `json:"talk_actor_count,omitempty"`
 	ShopPreviewActorCount        int    `json:"shop_preview_actor_count,omitempty"`
 	ShopCatalogEntryCount        int    `json:"shop_catalog_entry_count,omitempty"`
 	WarpActorCount               int    `json:"warp_actor_count,omitempty"`
@@ -729,6 +731,10 @@ func mapContentSummaryForIndex(counts map[uint32]*MapContentSummary, mapIndex ui
 func addMapServiceInteractionSummary(entry *MapContentSummary, definition interactionstore.Definition) {
 	definition = interactionstore.NormalizeDefinition(definition)
 	switch definition.Kind {
+	case interactionstore.KindInfo:
+		entry.InfoActorCount++
+	case interactionstore.KindTalk:
+		entry.TalkActorCount++
 	case interactionstore.KindShopPreview:
 		entry.ShopPreviewActorCount++
 		entry.ShopCatalogEntryCount += len(definition.Catalog)

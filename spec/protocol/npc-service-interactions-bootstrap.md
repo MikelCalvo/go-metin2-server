@@ -96,7 +96,12 @@ Current owned shop operator-summary semantics:
 - `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` report deterministic `shop_catalogs` entries for every authored `shop_preview` definition
 - the same summary now reports deterministic `shop_routes` entries for every interactable static actor that resolves to a `shop_preview` definition
 - each route summary entry carries `actor_name`, source `map_index`/`x`/`y`, `ref`, merchant `title`, and catalog `entry_count`
+- per-map `maps[]` entries include `shop_preview_actor_count` and `shop_catalog_entry_count`
 - this makes exact actor-to-catalog merchant placement inspectable without fetching the full authored bundle or applying a candidate import
+
+Current owned self-only interaction operator-summary semantics:
+- per-map `maps[]` entries now also include `info_actor_count` and `talk_actor_count`
+- these counts audit authored `info` / `talk` static actors separately from service-style `shop_preview` and `warp` actors without requiring operators to expand the full `interactable_static_actors` array
 
 This remains intentionally narrow even now that the first buy-only merchant path exists: sell-back, stock depletion, and richer merchant-window choreography still remain separate later work.
 
