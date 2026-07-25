@@ -2550,6 +2550,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							refreshLiveCharacterRegistration()
 							return gameflow.ChatResult{Accepted: false}
 						}
+						if quickslotFrames, ok := itemMoveQuickslotSyncFrames(selectedPlayer, moveResult); !ok {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.ChatResult{Accepted: false}
+						} else {
+							frames = append(frames, quickslotFrames...)
+						}
 						return commitSelectedNonPointItemMutation(selectedPlayer, previousSelected, frames)
 					}
 

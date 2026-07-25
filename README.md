@@ -158,7 +158,7 @@ Already present:
 - consumable item use, including template-authored signed `use_effect.point_delta` values so authored negative consumables can emit self-only point decreases and optional `use_effect.consume_count` values so multi-count consumables decrement authored stack units instead of a runtime-hardcoded single item; signed point overflow/underflow, overdrawn consume-count requests, and `confirm_when_use`, `quest_use`, `quest_use_multiple`, or `applicable` consumables fail closed,
 - `ITEM_USE_TO_ITEM` stack merge behavior,
 - quickslot add/delete/swap persistence, including type-scoped retarget cleanup when an item/skill/command tuple is rebound to a new bar position and fail-closed file-backed snapshot validation for duplicate non-item skill/command tuple bindings,
-- quickslot cleanup when item mutations remove or fully merge a source slot,
+- quickslot cleanup and retargeting when item mutations remove, move, or fully merge a source slot, including the bootstrap `/inventory_move` compatibility seam,
 - basic persisted account/character snapshots, including fail-closed validation for malformed carried/equipped item instances and duplicate per-character item instance IDs before snapshots or login tickets become authoritative.
 
 Still missing:

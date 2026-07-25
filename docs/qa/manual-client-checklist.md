@@ -1013,7 +1013,7 @@ Expected result:
 Expected result:
 - packet `ITEM_MOVE` reuses the same authoritative full-stack empty-destination move semantics as `/inventory_move`
 - empty-destination partial splits plus compatible occupied-destination partial, exact, and zero-count merges are accepted and persisted; full-stack incompatible occupied destinations swap and persist instead of failing closed
-- the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` / `ITEM_UPDATE` refresh family; quickslot sync retargets source item quickslots only for full-stack moves/swaps where the source item lands in the destination cell, preserves source item quickslots for partial splits/merges, and deletes source item quickslots when the source stack is fully consumed by a compatible merge
+- the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` / `ITEM_UPDATE` refresh family; quickslot sync retargets source item quickslots only for full-stack moves/swaps where the source item lands in the destination cell, deletes stale destination-cell item quickslots first, preserves source item quickslots for partial splits/merges, and deletes source item quickslots when the source stack is fully consumed by a compatible merge; the bootstrap `/inventory_move` compatibility seam follows the same quickslot retarget/delete rule for accepted full-stack carried-cell moves
 - non-carried windows and out-of-range cells fail closed without mutation
 
 ### 6.20 `ITEM_USE_TO_ITEM` stack consolidation smoke (packet-harness optional)
