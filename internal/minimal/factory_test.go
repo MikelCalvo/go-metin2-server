@@ -571,6 +571,84 @@ func TestGameRuntimeValidateItemTemplateStoreBackupDryRunsManifestedBackup(t *te
 	}
 }
 
+func TestGameRuntimePersistenceStatusReportsAllStoreSummaries(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	if err := ticketStore.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: issuedAt}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	if err := accountStore.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save account snapshot: %v", err)
+	}
+	itemPath := filepath.Join(t.TempDir(), "item-templates.json")
+	itemStore := itemcatalog.NewFileStore(itemPath)
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountStore, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if !status.OK {
+		t.Fatalf("expected aggregate persistence status to be ok: %#v", status)
+	}
+	if !status.AccountStore.Valid || status.AccountStore.Path != accountStore.Dir() {
+		t.Fatalf("unexpected account store status: %#v", status.AccountStore)
+	}
+	wantAccount := accountstore.SnapshotSummary{AccountCount: 1, CharacterCount: 1, Logins: []string{"mkmk"}}
+	if !reflect.DeepEqual(status.AccountStore.Summary, wantAccount) {
+		t.Fatalf("unexpected account store summary: got %#v want %#v", status.AccountStore.Summary, wantAccount)
+	}
+	if !status.LoginTicketStore.Valid || status.LoginTicketStore.Path != ticketStore.Dir() {
+		t.Fatalf("unexpected login ticket store status: %#v", status.LoginTicketStore)
+	}
+	wantTickets := loginticket.SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}}
+	if !reflect.DeepEqual(status.LoginTicketStore.Summary, wantTickets) {
+		t.Fatalf("unexpected login ticket store summary: got %#v want %#v", status.LoginTicketStore.Summary, wantTickets)
+	}
+	if !status.ItemTemplateStore.Valid || status.ItemTemplateStore.Path != itemStore.Path() {
+		t.Fatalf("unexpected item template store status: %#v", status.ItemTemplateStore)
+	}
+	wantItems := itemcatalog.SnapshotSummary{TemplateCount: 1, Vnums: []uint32{27001}}
+	if !reflect.DeepEqual(status.ItemTemplateStore.Summary, wantItems) {
+		t.Fatalf("unexpected item template store summary: got %#v want %#v", status.ItemTemplateStore.Summary, wantItems)
+	}
+}
+
+func TestGameRuntimePersistenceStatusKeepsCheckingAfterStoreFailure(t *testing.T) {
+	accountDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(accountDir, "6d6b6d6b.json"), []byte(`{"login":"mkmk","empire":2,"characters":[`), 0o644); err != nil {
+		t.Fatalf("write corrupt account snapshot: %v", err)
+	}
+	accountStore := accountstore.NewFileStore(accountDir)
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	if err := ticketStore.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accountStore, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if status.OK {
+		t.Fatalf("expected aggregate persistence status to report failure: %#v", status)
+	}
+	if status.AccountStore.Valid || status.AccountStore.Error == "" {
+		t.Fatalf("expected account store status to carry validation error: %#v", status.AccountStore)
+	}
+	if !status.LoginTicketStore.Valid || status.LoginTicketStore.Error != "" {
+		t.Fatalf("expected login ticket store status to remain valid: %#v", status.LoginTicketStore)
+	}
+	if !status.ItemTemplateStore.Valid || status.ItemTemplateStore.Error != "" {
+		t.Fatalf("expected missing item-template snapshot to remain valid empty state: %#v", status.ItemTemplateStore)
+	}
+}
+
 func TestGameRuntimeRestoreItemTemplateStoreRestoresManifestedBackup(t *testing.T) {
 	source := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
 	backupSnapshot := itemcatalog.Snapshot{Templates: []itemcatalog.Template{

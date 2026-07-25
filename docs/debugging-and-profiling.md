@@ -210,6 +210,31 @@ The default bootstrap runtime reports local channel `1` and whole-map visibility
 
 The `persistence` block reports the active bootstrap JSON store locations selected from `METIN2_*_STORE_*` / service-specific environment overrides. Use it before running local backup, restore, validation, or stale-ticket cleanup endpoints so the operator confirms the daemon is pointing at the intended account, login-ticket, static-actor, interaction, and item-template stores. A running `gamed` has already rejected empty or overlapping persistence paths at startup: account and login-ticket directories must be separate trees, file-backed content stores must be separate files, and no file-backed store may resolve into either persistence directory.
 
+### `GET /local/persistence/status`
+
+Returns a loopback-only JSON health snapshot for the bootstrap persistence stores that already have strict runtime validation primitives. This endpoint is read-only, is registered only on `gamed`, rejects non-`GET` methods with `405`, and returns `200` even when one store is invalid so operators can inspect all store statuses in one response.
+
+Current response fields:
+
+- `ok` — `true` only when every included store validates successfully
+- `account_store`
+  - `path`
+  - `valid`
+  - `summary` with the same `account_count`, `character_count`, `logins`, and optional crash-temp fields returned by `/local/account-store/validate`
+  - optional `error` when validation fails
+- `login_ticket_store`
+  - `path`
+  - `valid`
+  - `summary` with the same `ticket_count`, `logins`, `login_keys`, and optional crash-temp fields returned by `/local/login-tickets/validate`
+  - optional `error` when validation fails
+- `item_template_store`
+  - `path`
+  - `valid`
+  - `summary` with the same `template_count`, `vnums`, and optional crash-temp fields returned by `/local/item-templates/validate`
+  - optional `error` when validation fails
+
+Use this endpoint as the first read-only persistence triage check before choosing a narrower validate, crash-temp cleanup, stale-ticket cleanup, backup, or restore endpoint. It deliberately keeps checking the remaining stores after one store fails, so a corrupt account snapshot does not hide a healthy login-ticket or item-template store. It is an operator/debugging surface, not a gameplay API and not a remote admin API.
+
 ### `GET` / `POST /local/static-actor-combat-profiles`
 
 Lists and registers process-local bootstrap static-actor combat profiles for later static-actor or spawn-group authoring. This is loopback-only operator tooling, not gameplay protocol and not durable content storage.

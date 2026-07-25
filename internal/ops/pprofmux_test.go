@@ -2397,6 +2397,86 @@ func TestLocalRuntimeConfigEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalPersistenceStatusEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	snapshotter := &stubPersistenceStatusSnapshotter{snapshot: map[string]any{
+		"ok": true,
+		"account_store": map[string]any{
+			"path":    "/state/accounts",
+			"valid":   true,
+			"summary": map[string]any{"account_count": 1, "character_count": 1, "logins": []string{"mkmk"}},
+		},
+		"login_ticket_store": map[string]any{
+			"path":    "/state/tickets",
+			"valid":   true,
+			"summary": map[string]any{"ticket_count": 1, "logins": []string{"mkmk"}, "login_keys": []uint32{0x01020304}},
+		},
+		"item_template_store": map[string]any{
+			"path":    "/state/item-templates.json",
+			"valid":   true,
+			"summary": map[string]any{"template_count": 1, "vnums": []uint32{27001}},
+		},
+	}}
+	mux := RegisterLocalPersistenceStatusEndpoint(NewPprofMux("gamed"), snapshotter.PersistenceStatus)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/persistence/status", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected persistence status snapshotter to be called once, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"ok":true`, `"account_store"`, `"path":"/state/accounts"`, `"valid":true`, `"account_count":1`, `"login_ticket_store"`, `"ticket_count":1`, `"login_keys":[16909060]`, `"item_template_store"`, `"template_count":1`, `"vnums":[27001]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestLocalPersistenceStatusEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubPersistenceStatusSnapshotter{}
+	mux := RegisterLocalPersistenceStatusEndpoint(NewPprofMux("gamed"), snapshotter.PersistenceStatus)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/persistence/status", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected persistence status snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalPersistenceStatusEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubPersistenceStatusSnapshotter{}
+	mux := RegisterLocalPersistenceStatusEndpoint(NewPprofMux("gamed"), snapshotter.PersistenceStatus)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/persistence/status", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected persistence status snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
 func TestLocalStaticActorRespawnsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing.T) {
 	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"entity_id": uint64(33), "ready_at": "2026-07-25T12:00:00Z", "remaining_ms": int64(1200), "actor": map[string]any{"entity_id": uint64(33), "name": "RespawnMob", "dead": true}}}}
 	mux := RegisterLocalStaticActorRespawnsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
@@ -3586,6 +3666,16 @@ type stubRuntimeConfigSnapshotter struct {
 }
 
 func (s *stubRuntimeConfigSnapshotter) RuntimeConfig() any {
+	s.calls++
+	return s.snapshot
+}
+
+type stubPersistenceStatusSnapshotter struct {
+	snapshot map[string]any
+	calls    int
+}
+
+func (s *stubPersistenceStatusSnapshotter) PersistenceStatus() any {
 	s.calls++
 	return s.snapshot
 }

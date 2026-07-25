@@ -236,6 +236,34 @@ type PersistenceConfigSnapshot struct {
 	ItemTemplateStorePath string `json:"item_template_store_path"`
 }
 
+type PersistenceStatusSnapshot struct {
+	OK                bool                    `json:"ok"`
+	AccountStore      AccountStoreStatus      `json:"account_store"`
+	LoginTicketStore  LoginTicketStoreStatus  `json:"login_ticket_store"`
+	ItemTemplateStore ItemTemplateStoreStatus `json:"item_template_store"`
+}
+
+type AccountStoreStatus struct {
+	Path    string                       `json:"path"`
+	Valid   bool                         `json:"valid"`
+	Summary accountstore.SnapshotSummary `json:"summary"`
+	Error   string                       `json:"error,omitempty"`
+}
+
+type LoginTicketStoreStatus struct {
+	Path    string                      `json:"path"`
+	Valid   bool                        `json:"valid"`
+	Summary loginticket.SnapshotSummary `json:"summary"`
+	Error   string                      `json:"error,omitempty"`
+}
+
+type ItemTemplateStoreStatus struct {
+	Path    string                      `json:"path"`
+	Valid   bool                        `json:"valid"`
+	Summary itemcatalog.SnapshotSummary `json:"summary"`
+	Error   string                      `json:"error,omitempty"`
+}
+
 type MapOccupancyChange = worldruntime.MapOccupancyChange
 
 type RelocationPreview = worldruntime.RelocationPreview
@@ -300,6 +328,66 @@ func (r *gameRuntime) BroadcastNotice(message string) int {
 		return 0
 	}
 	return r.sharedWorld.EnqueueSystemNotice(message)
+}
+
+func (r *gameRuntime) PersistenceStatus() PersistenceStatusSnapshot {
+	if r == nil {
+		return PersistenceStatusSnapshot{}
+	}
+	accountStatus := r.accountStoreStatus()
+	loginTicketStatus := r.loginTicketStoreStatus()
+	itemTemplateStatus := r.itemTemplateStoreStatus()
+	return PersistenceStatusSnapshot{
+		OK:                accountStatus.Valid && loginTicketStatus.Valid && itemTemplateStatus.Valid,
+		AccountStore:      accountStatus,
+		LoginTicketStore:  loginTicketStatus,
+		ItemTemplateStore: itemTemplateStatus,
+	}
+}
+
+func (r *gameRuntime) accountStoreStatus() AccountStoreStatus {
+	status := AccountStoreStatus{Path: accountStoreDir(nil)}
+	if r != nil {
+		status.Path = accountStoreDir(r.accountStore)
+	}
+	summary, err := r.ValidateAccountStore()
+	if err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Valid = true
+	status.Summary = summary
+	return status
+}
+
+func (r *gameRuntime) loginTicketStoreStatus() LoginTicketStoreStatus {
+	status := LoginTicketStoreStatus{Path: loginTicketStoreDir(nil)}
+	if r != nil {
+		status.Path = loginTicketStoreDir(r.loginTicketStore)
+	}
+	summary, err := r.ValidateLoginTicketStore()
+	if err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Valid = true
+	status.Summary = summary
+	return status
+}
+
+func (r *gameRuntime) itemTemplateStoreStatus() ItemTemplateStoreStatus {
+	status := ItemTemplateStoreStatus{Path: itemTemplateStorePath(nil)}
+	if r != nil {
+		status.Path = itemTemplateStorePath(r.itemStore)
+	}
+	summary, err := r.ValidateItemTemplateStore()
+	if err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Valid = true
+	status.Summary = summary
+	return status
 }
 
 func (r *gameRuntime) ValidateAccountStore() (accountstore.SnapshotSummary, error) {
