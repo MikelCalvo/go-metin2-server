@@ -646,6 +646,28 @@ func RegisterLocalStaticActorRespawnsEndpoint(mux *http.ServeMux, staticActorRes
 	return mux
 }
 
+func RegisterLocalSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroups func() any) *http.ServeMux {
+	if mux == nil || spawnGroups == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/spawn-groups", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if err := json.NewEncoder(w).Encode(spawnGroups()); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	return mux
+}
+
 func RegisterLocalGroundItemsEndpoint(mux *http.ServeMux, groundItems func() any) *http.ServeMux {
 	if mux == nil || groundItems == nil {
 		return mux

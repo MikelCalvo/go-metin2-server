@@ -2811,6 +2811,70 @@ func TestLocalStaticActorRespawnsEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalSpawnGroupsEndpointReturnsJSONSnapshotsForLoopbackGet(t *testing.T) {
+	snapshotter := &stubListSnapshotter{snapshots: []map[string]any{{"entity_id": uint64(44), "name": "Practice Wolf", "spawn_group_ref": "practice.wolf_1", "combat_profile": "practice_mob"}}}
+	mux := RegisterLocalSpawnGroupsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if snapshotter.calls != 1 {
+		t.Fatalf("expected spawn-groups snapshotter call, got %d calls", snapshotter.calls)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body, err := io.ReadAll(rec.Body)
+	if err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if !strings.Contains(string(body), `"entity_id":44`) || !strings.Contains(string(body), `"spawn_group_ref":"practice.wolf_1"`) || !strings.Contains(string(body), `"combat_profile":"practice_mob"`) {
+		t.Fatalf("unexpected JSON response body %q", string(body))
+	}
+}
+
+func TestLocalSpawnGroupsEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	snapshotter := &stubListSnapshotter{}
+	mux := RegisterLocalSpawnGroupsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected spawn-groups snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
+func TestLocalSpawnGroupsEndpointRejectsWrongMethod(t *testing.T) {
+	snapshotter := &stubListSnapshotter{}
+	mux := RegisterLocalSpawnGroupsEndpoint(NewPprofMux("gamed"), snapshotter.Snapshot)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/spawn-groups", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if snapshotter.calls != 0 {
+		t.Fatalf("expected spawn-groups snapshotter not to be called, got %d calls", snapshotter.calls)
+	}
+}
+
 func TestLocalStaticActorCombatProfileEndpointRegistersProfileForLoopbackPost(t *testing.T) {
 	const profile = "ops_profile_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

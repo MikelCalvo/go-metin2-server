@@ -254,6 +254,32 @@ Current runtime rules:
 
 This keeps authored attackable spawn content distinct from hand-authored visible/static actor content while still letting local QA export and re-import the current bootstrap content bundle deterministically, including live QA sessions that are already connected when the import succeeds.
 
+## Local spawn-group introspection
+
+The shipped `gamed` runtime also exposes a loopback-only read model for the currently materialized spawn-backed actors:
+
+- `GET /local/spawn-groups`
+
+This is an operator/debugging surface, not a gameplay packet and not a content mutation API.
+
+The response is the deterministic subset of static-actor snapshots whose `spawn_group_ref` is non-empty.
+It intentionally omits ordinary `static_actors`, even if they have a combat profile, so local QA can distinguish authored attackable spawn presence from hand-authored visible/service actors without fetching and filtering the full `/local/static-actors` list.
+
+Each row reuses the current static-actor snapshot fields:
+- `entity_id` / client-visible static-actor `VID`
+- `name`
+- effective `map_index`
+- `x`, `y`
+- `race_num`
+- resolved `combat_profile`
+- resolved descriptor metadata (`combat_level`, `combat_rank`)
+- `spawn_group_ref`
+- reward descriptor fields (`reward_experience`, `reward_gold`, `reward_drop_vnums`)
+- optional `dead: true` while the actor is in its runtime-owned dead interval before respawn
+
+Rows are sorted by actor name with `entity_id` as the tie-breaker, matching the existing static-actor snapshot ordering.
+This keeps spawn content observable directly through the runtime while preserving the existing export/import bundle contract as the authoring source of truth.
+
 ## Relationship to existing static actors
 
 This document does **not** retroactively make every static actor attackable.

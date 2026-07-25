@@ -1891,6 +1891,16 @@ func (r *sharedWorldRegistry) StaticActors() []StaticActorSnapshot {
 	return r.markStaticActorSnapshotsStateLocked(r.scopesLocked().StaticActorSnapshots())
 }
 
+func (r *sharedWorldRegistry) SpawnGroups() []StaticActorSnapshot {
+	if r == nil || r.entities == nil {
+		return nil
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.markStaticActorSnapshotsStateLocked(r.scopesLocked().SpawnGroupSnapshots())
+}
+
 func (r *sharedWorldRegistry) StaticActor(entityID uint64) (StaticActorSnapshot, bool) {
 	if r == nil || r.entities == nil || entityID == 0 {
 		return StaticActorSnapshot{}, false

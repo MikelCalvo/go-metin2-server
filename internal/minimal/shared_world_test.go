@@ -66,6 +66,53 @@ func TestCloneStaticActorSnapshotsClonesRewardDropVnums(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeSpawnGroupsReportsOnlySpawnBackedActors(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:     "VillageGuide",
+			MapIndex: bootstrapMapIndex,
+			X:        1100,
+			Y:        2100,
+			RaceNum:  20300,
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.spawn_snapshot",
+			Name:          "SpawnSnapshotMob",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       20350,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import mixed static actor/spawn-group bundle: %v", err)
+	}
+	if actors := runtime.StaticActors(); len(actors) != 2 {
+		t.Fatalf("expected mixed content bundle to materialize two static actors, got %#v", actors)
+	}
+
+	groups := runtime.SpawnGroups()
+	if len(groups) != 1 {
+		t.Fatalf("expected one spawn-backed actor snapshot, got %#v", groups)
+	}
+	group := groups[0]
+	if group.Name != "SpawnSnapshotMob" || group.SpawnGroupRef != "practice.spawn_snapshot" || group.CombatProfile != string(worldruntime.StaticActorCombatProfileTrainingDummy) || group.MapIndex != bootstrapMapIndex || group.X != 1200 || group.Y != 2200 {
+		t.Fatalf("unexpected spawn-group snapshot: %+v", group)
+	}
+}
+
 func TestLegacyCreatePositionForEmpireCoversOwnedTownRestartTable(t *testing.T) {
 	tests := []struct {
 		name         string

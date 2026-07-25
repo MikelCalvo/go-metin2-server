@@ -141,6 +141,10 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.StaticActorRespawns() },
 	)
+	opsHandler = ops.RegisterLocalSpawnGroupsEndpoint(
+		opsHandler,
+		func() any { return gameRuntime.SpawnGroups() },
+	)
 	opsHandler = ops.RegisterLocalGroundItemsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.GroundItems() },

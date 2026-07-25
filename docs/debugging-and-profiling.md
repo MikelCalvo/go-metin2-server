@@ -527,6 +527,29 @@ Each row exposes:
 Rows are sorted by `entity_id`.
 Once `FlushServerFrames()` runs after a due timer and the respawn rebuild is emitted, that actor disappears from this snapshot.
 
+### `GET /local/spawn-groups`
+
+Returns the deterministic list of currently materialized spawn-backed runtime actors: static-actor snapshots whose `spawn_group_ref` is non-empty.
+This endpoint is loopback-only, read-only, rejects non-`GET` methods with `405`, and is intended for QA/debugging of the authored `spawn_groups` contract frozen in `spec/protocol/content-spawn-groups-bootstrap.md`.
+
+Each row reuses the same static-actor snapshot shape exposed by `/local/static-actors`, including:
+
+- `entity_id`
+- `name`
+- `map_index`
+- `x`
+- `y`
+- `race_num`
+- `combat_profile`
+- `combat_level`
+- `combat_rank`
+- `spawn_group_ref`
+- reward descriptor fields (`reward_experience`, `reward_gold`, `reward_drop_vnums`)
+- optional `dead: true` while the materialized actor is in its server-owned dead interval before respawn
+
+Plain `static_actors` without `spawn_group_ref` are intentionally omitted so operators can inspect authored attackable spawn presence separately from ordinary visible/service actors.
+Rows are sorted by actor name with `entity_id` as the tie-breaker, matching the runtime static-actor snapshot ordering.
+
 ### `GET` / `POST /local/static-actors`, `GET /local/static-actors/{entity_id}`, and `PATCH` / `PUT` / `DELETE /local/static-actors/{entity_id}`
 
 Use these endpoints to inspect and author bootstrap static actors. The collection `GET` returns every current static actor snapshot; the entity lookup `GET /local/static-actors/{entity_id}` returns one current snapshot by runtime entity / client-visible static-actor `VID`, returns `404` when that actor no longer exists, and uses the same loopback-only `403`, invalid-ID `400`, and wrong-method `405` guard shape as the other local static-actor endpoints.
@@ -704,6 +727,14 @@ curl http://127.0.0.1:6060/local/combat-targets
 ```
 
 Both combat-target endpoints are read-only local runtime snapshots. They do not introduce new client packets and still fail closed when a selected target is stale, invisible, or no longer combat-targetable.
+
+List currently materialized authored spawn-group actors:
+
+```bash
+curl http://127.0.0.1:6060/local/spawn-groups
+```
+
+This snapshot filters to attackable content materialized from `spawn_groups`; use `/local/static-actors` when you need the full visible static-actor set.
 
 List the authored interaction catalog:
 

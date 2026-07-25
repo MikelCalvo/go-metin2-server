@@ -260,6 +260,21 @@ func (s Scopes) StaticActorSnapshots() []StaticActorSnapshot {
 	return staticActorSnapshots(s.Topology, s.Entities.AllStaticActors())
 }
 
+func (s Scopes) SpawnGroupSnapshots() []StaticActorSnapshot {
+	if s.Entities == nil {
+		return nil
+	}
+	actors := s.Entities.AllStaticActors()
+	spawnActors := make([]StaticEntity, 0, len(actors))
+	for _, actor := range actors {
+		if actor.SpawnGroupRef == "" {
+			continue
+		}
+		spawnActors = append(spawnActors, actor)
+	}
+	return staticActorSnapshots(s.Topology, spawnActors)
+}
+
 func (s Scopes) VisibleStaticActors(subject loginticket.Character) []StaticEntity {
 	if s.Entities == nil {
 		return nil

@@ -227,6 +227,33 @@ func TestScopesVisibleStaticActorsFollowConfiguredVisibilityPolicyAndOrder(t *te
 	}
 }
 
+func TestScopesSpawnGroupSnapshotsReturnOnlySpawnBackedActorsInDeterministicOrder(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuide"}, Position: NewPosition(42, 1100, 2100), RaceNum: 20300}); !ok {
+		t.Fatal("expected plain static actor registration to succeed")
+	}
+	zulu, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "ZuluMob"}, Position: NewPosition(42, 1500, 2500), RaceNum: 20350, CombatProfile: StaticActorCombatProfileTrainingDummy, SpawnGroupRef: "practice.zulu"})
+	if !ok {
+		t.Fatal("expected zulu spawn actor registration to succeed")
+	}
+	alpha, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "AlphaMob"}, Position: NewPosition(1, 1200, 2200), RaceNum: 20351, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.alpha", DeathReward: StaticActorDeathReward{Experience: 7, Gold: 11, DropVnums: []uint32{27002, 27001}}})
+	if !ok {
+		t.Fatal("expected alpha spawn actor registration to succeed")
+	}
+
+	snapshots := NewScopes(topology, registry).SpawnGroupSnapshots()
+	if len(snapshots) != 2 {
+		t.Fatalf("expected only two spawn-backed actor snapshots, got %+v", snapshots)
+	}
+	if snapshots[0].EntityID != alpha.Entity.ID || snapshots[1].EntityID != zulu.Entity.ID {
+		t.Fatalf("expected deterministic spawn-group snapshot ordering [AlphaMob ZuluMob], got %+v", snapshots)
+	}
+	if snapshots[0].MapIndex != 1 || snapshots[0].SpawnGroupRef != "practice.alpha" || snapshots[0].CombatProfile != StaticActorCombatProfilePracticeMob || snapshots[0].RewardExperience != 7 || snapshots[0].RewardGold != 11 || !reflect.DeepEqual(snapshots[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("unexpected alpha spawn-group snapshot: %+v", snapshots[0])
+	}
+}
+
 func TestScopesVisibleStaticActorsRepairFromMapIndexPresence(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := NewEntityRegistryWithTopology(topology)
