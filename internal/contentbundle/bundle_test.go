@@ -38,6 +38,43 @@ func testMerchantItemTemplates() []itemcatalog.Template {
 	}
 }
 
+func TestCanonicalJSONCanonicalizesBeforeEncoding(t *testing.T) {
+	got, err := CanonicalJSON(Bundle{
+		StaticActors:           []StaticActor{{Name: "  VillageGuide  ", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: " talk ", InteractionRef: " npc:guide "}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: " talk ", Ref: " npc:guide ", Text: " Welcome. "}},
+	})
+	if err != nil {
+		t.Fatalf("canonical JSON: %v", err)
+	}
+	want := "{\n  \"static_actors\": [\n    {\n      \"name\": \"VillageGuide\",\n      \"map_index\": 1,\n      \"x\": 1000,\n      \"y\": 2000,\n      \"race_num\": 20302,\n      \"interaction_kind\": \"talk\",\n      \"interaction_ref\": \"npc:guide\"\n    }\n  ],\n  \"interaction_definitions\": [\n    {\n      \"kind\": \"talk\",\n      \"ref\": \"npc:guide\",\n      \"text\": \"Welcome.\"\n    }\n  ]\n}\n"
+	if string(got) != want {
+		t.Fatalf("unexpected canonical JSON:\n got: %s\nwant: %s", string(got), want)
+	}
+}
+
+func TestCanonicalJSONMatchesBootstrapNPCServiceExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-npc-service-bundle.json"))
+	if err != nil {
+		t.Fatalf("read example content bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode example content bundle: %v", err)
+	}
+	canonical, err := CanonicalJSON(bundle)
+	if err != nil {
+		t.Fatalf("canonicalize example content bundle: %v", err)
+	}
+	if !bytes.Equal(canonical, raw) {
+		t.Fatalf("example content bundle is not byte-for-byte canonical\n--- got ---\n%s\n--- want ---\n%s", string(raw), string(canonical))
+	}
+}
+
 func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		StaticActors: []StaticActor{

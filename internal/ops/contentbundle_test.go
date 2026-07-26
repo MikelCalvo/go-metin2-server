@@ -42,7 +42,7 @@ func TestLocalContentBundleEndpointReturnsDeterministicJSONForLoopbackGet(t *tes
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"static_actors"`) || !strings.Contains(string(body), `"interaction_definitions"`) || !strings.Contains(string(body), `"ref":"npc:village_guard"`) {
+	if !strings.Contains(string(body), `"static_actors"`) || !strings.Contains(string(body), `"interaction_definitions"`) || !strings.Contains(string(body), `"ref": "npc:village_guard"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
@@ -81,6 +81,13 @@ func TestLocalContentBundleEndpointCanonicalizesExporterBundleForLoopbackGet(t *
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("expected exported bundle to be canonicalized:\n got: %#v\nwant: %#v", got, want)
+	}
+	wantRaw, err := contentbundle.CanonicalJSON(want)
+	if err != nil {
+		t.Fatalf("canonicalize expected exporter response: %v", err)
+	}
+	if !reflect.DeepEqual(rec.Body.Bytes(), wantRaw) {
+		t.Fatalf("expected exported bundle response to use canonical JSON\n--- got ---\n%s\n--- want ---\n%s", rec.Body.String(), string(wantRaw))
 	}
 }
 
@@ -137,6 +144,13 @@ func TestLocalContentBundleEndpointImportsBundleForLoopbackPost(t *testing.T) {
 	}
 	if importer.calls != 1 || len(importer.lastBundle.StaticActors) != 1 || importer.lastBundle.StaticActors[0].Name != "VillageGuard" || len(importer.lastBundle.InteractionDefinitions) != 1 {
 		t.Fatalf("unexpected content bundle importer call state: %+v", importer)
+	}
+	wantRaw, err := contentbundle.CanonicalJSON(importer.bundle)
+	if err != nil {
+		t.Fatalf("canonicalize imported bundle response: %v", err)
+	}
+	if !reflect.DeepEqual(rec.Body.Bytes(), wantRaw) {
+		t.Fatalf("expected import response to use canonical JSON\n--- got ---\n%s\n--- want ---\n%s", rec.Body.String(), string(wantRaw))
 	}
 }
 
@@ -320,6 +334,9 @@ func TestLocalContentBundleValidateEndpointAcceptsExampleBundle(t *testing.T) {
 	}
 	if len(got.StaticActors) != 4 || len(got.SpawnGroups) != 1 || len(got.ItemTemplates) != 2 || len(got.InteractionDefinitions) != 4 {
 		t.Fatalf("unexpected canonical example validation response: %+v", got)
+	}
+	if !reflect.DeepEqual(rec.Body.Bytes(), raw) {
+		t.Fatalf("expected example validation response to be byte-for-byte canonical\n--- got ---\n%s\n--- want ---\n%s", rec.Body.String(), string(raw))
 	}
 }
 

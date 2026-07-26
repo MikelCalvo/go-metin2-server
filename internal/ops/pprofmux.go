@@ -1155,12 +1155,8 @@ func RegisterLocalContentBundleEndpoint(mux *http.ServeMux, exportContentBundle 
 					w.WriteHeader(http.StatusInternalServerError)
 					return
 				}
-				normalized, err := contentbundle.Canonicalize(bundle)
-				if err != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-				result = normalized
+				writeLocalContentBundleCanonicalResponse(w, bundle, status)
+				return
 			}
 			writeLocalJSONMutationResponse(w, result, status)
 		case http.MethodPost:
@@ -1183,6 +1179,15 @@ func RegisterLocalContentBundleEndpoint(mux *http.ServeMux, exportContentBundle 
 				return
 			}
 			result, status := importContentBundle(normalized)
+			if status >= 200 && status < 300 {
+				bundle, ok := result.(contentbundle.Bundle)
+				if !ok {
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				writeLocalContentBundleCanonicalResponse(w, bundle, status)
+				return
+			}
 			writeLocalJSONMutationResponse(w, result, status)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1282,7 +1287,7 @@ func RegisterLocalContentBundleValidateEndpoint(mux *http.ServeMux) *http.ServeM
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		writeLocalJSONMutationResponse(w, normalized, http.StatusOK)
+		writeLocalContentBundleCanonicalResponse(w, normalized, http.StatusOK)
 	})
 	return mux
 }
@@ -1759,6 +1764,24 @@ func writeLocalJSONMutationResponse(w http.ResponseWriter, value any, status int
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
+}
+
+func writeLocalContentBundleCanonicalResponse(w http.ResponseWriter, bundle contentbundle.Bundle, status int) {
+	if status == 0 {
+		status = http.StatusOK
+	}
+	if status < 200 || status >= 300 {
+		w.WriteHeader(status)
+		return
+	}
+	encoded, err := contentbundle.CanonicalJSON(bundle)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(encoded)
 }
 
 func isLoopbackRemoteAddr(remoteAddr string) bool {

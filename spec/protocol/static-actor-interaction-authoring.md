@@ -69,7 +69,8 @@ The first owned bundle surface is:
 - `POST /local/content-bundle/validate`
 
 Current rules:
-- export returns one deterministic JSON artifact containing:
+- export returns one pretty-printed deterministic canonical JSON artifact; `/local/content-bundle`, `/local/content-bundle/validate`, and successful `/local/content-bundle` imports now share the same byte-stable encoder so checked-in example bundles can be pasted into the local endpoints without hidden formatting drift
+- that artifact contains:
   - `static_actors`
   - `spawn_groups` when authored spawn-backed actors are present
   - `combat_profiles` when a referenced non-default combat profile must travel with spawn content

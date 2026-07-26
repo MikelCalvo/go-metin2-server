@@ -1,6 +1,7 @@
 package contentbundle
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -408,6 +409,18 @@ func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions inte
 	portableCombatProfiles := combatProfilesForAuthoredActors(normalizedStaticActors, normalizedSpawnGroups, nil)
 	bundle.ItemTemplates = filterReferencedItemTemplates(items.Templates, referencedItemTemplateVnums(bundle.InteractionDefinitions, normalizedSpawnGroups, portableCombatProfiles))
 	return Canonicalize(bundle)
+}
+
+func CanonicalJSON(bundle Bundle) ([]byte, error) {
+	normalized, err := Canonicalize(bundle)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := json.MarshalIndent(normalized, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(encoded, '\n'), nil
 }
 
 func Canonicalize(bundle Bundle) (Bundle, error) {
