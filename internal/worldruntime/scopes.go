@@ -51,6 +51,7 @@ type CharacterVisibilitySnapshot struct {
 	ConnectedCharacterSnapshot
 	VisiblePeers        []ConnectedCharacterSnapshot `json:"visible_peers"`
 	VisibleStaticActors []StaticActorSnapshot        `json:"visible_static_actors"`
+	VisibleSpawnGroups  []StaticActorSnapshot        `json:"visible_spawn_groups"`
 	VisibleGroundItems  []GroundItemSnapshot         `json:"visible_ground_items,omitempty"`
 }
 
@@ -232,6 +233,7 @@ func (s Scopes) CharacterVisibilitySnapshotsWithGroundItems(groundItems []Ground
 			ConnectedCharacterSnapshot: ConnectedCharacterSnapshotFor(s.Topology, entry.Subject.Character),
 			VisiblePeers:               connectedCharacterSnapshots(s.Topology, playerEntitiesToCharacters(entry.VisiblePeers)),
 			VisibleStaticActors:        staticActorSnapshots(s.Topology, s.VisibleStaticActors(entry.Subject.Character)),
+			VisibleSpawnGroups:         staticActorSnapshots(s.Topology, s.VisibleSpawnGroups(entry.Subject.Character)),
 			VisibleGroundItems:         VisibleGroundItems(s.Topology, entry.Subject.Character, groundItems),
 		})
 	}
@@ -291,6 +293,19 @@ func (s Scopes) VisibleStaticActors(subject loginticket.Character) []StaticEntit
 	}
 	sortStaticEntities(visible)
 	return visible
+}
+
+func (s Scopes) VisibleSpawnGroups(subject loginticket.Character) []StaticEntity {
+	visible := s.VisibleStaticActors(subject)
+	spawnActors := make([]StaticEntity, 0, len(visible))
+	for _, actor := range visible {
+		if actor.SpawnGroupRef == "" {
+			continue
+		}
+		spawnActors = append(spawnActors, actor)
+	}
+	sortStaticEntities(spawnActors)
+	return spawnActors
 }
 
 func (s Scopes) VisibleInteractableStaticActors(subject loginticket.Character) []StaticEntity {

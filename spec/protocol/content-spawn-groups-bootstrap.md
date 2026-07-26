@@ -259,11 +259,14 @@ This keeps authored attackable spawn content distinct from hand-authored visible
 The shipped `gamed` runtime also exposes a loopback-only read model for the currently materialized spawn-backed actors:
 
 - `GET /local/spawn-groups`
+- `GET /local/visibility`
 
 This is an operator/debugging surface, not a gameplay packet and not a content mutation API.
 
-The response is the deterministic subset of static-actor snapshots whose `spawn_group_ref` is non-empty.
+`GET /local/spawn-groups` returns the deterministic global subset of static-actor snapshots whose `spawn_group_ref` is non-empty.
 It intentionally omits ordinary `static_actors`, even if they have a combat profile, so local QA can distinguish authored attackable spawn presence from hand-authored visible/service actors without fetching and filtering the full `/local/static-actors` list.
+`GET /local/visibility` now carries the same subset per connected character as `visible_spawn_groups` beside the full `visible_static_actors` list.
+That per-player subset obeys the same topology/AOI visibility policy as `visible_static_actors`; actors outside the subject's visible world are omitted, and runtime-owned dead practice mobs keep `dead: true` in both arrays while they are waiting for server-driven respawn.
 The broader map-occupancy view also carries that same per-map subset:
 
 - `GET /local/maps`

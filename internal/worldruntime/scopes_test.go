@@ -475,6 +475,13 @@ func TestScopesCharacterVisibilitySnapshotsIncludeVisibleStaticActors(t *testing
 	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 2600, 3800), RaceNum: 20300}); !ok {
 		t.Fatal("expected far static actor registration to succeed")
 	}
+	spawn, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "PracticeMob"}, Position: NewPosition(42, 1740, 2820), RaceNum: 20350, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.mob"})
+	if !ok {
+		t.Fatal("expected visible spawn-group actor registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "FarPracticeMob"}, Position: NewPosition(42, 2700, 3900), RaceNum: 20350, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.far_mob"}); !ok {
+		t.Fatal("expected far spawn-group actor registration to succeed")
+	}
 
 	snapshots := NewScopes(topology, registry).CharacterVisibilitySnapshots()
 	if len(snapshots) != 1 {
@@ -483,11 +490,14 @@ func TestScopesCharacterVisibilitySnapshotsIncludeVisibleStaticActors(t *testing
 	if snapshots[0].VID != subject.Character.VID {
 		t.Fatalf("expected subject snapshot for VID %#08x, got %+v", subject.Character.VID, snapshots[0])
 	}
-	if len(snapshots[0].VisibleStaticActors) != 2 {
-		t.Fatalf("expected 2 visible static actors in character visibility snapshot, got %+v", snapshots[0].VisibleStaticActors)
+	if len(snapshots[0].VisibleStaticActors) != 3 {
+		t.Fatalf("expected 3 visible static actors in character visibility snapshot, got %+v", snapshots[0].VisibleStaticActors)
 	}
-	if snapshots[0].VisibleStaticActors[0].EntityID != alchemist.Entity.ID || snapshots[0].VisibleStaticActors[1].EntityID != merchant.Entity.ID {
-		t.Fatalf("expected deterministic visible static actor snapshots [Alchemist Merchant], got %+v", snapshots[0].VisibleStaticActors)
+	if snapshots[0].VisibleStaticActors[0].EntityID != alchemist.Entity.ID || snapshots[0].VisibleStaticActors[1].EntityID != merchant.Entity.ID || snapshots[0].VisibleStaticActors[2].EntityID != spawn.Entity.ID {
+		t.Fatalf("expected deterministic visible static actor snapshots [Alchemist Merchant PracticeMob], got %+v", snapshots[0].VisibleStaticActors)
+	}
+	if len(snapshots[0].VisibleSpawnGroups) != 1 || snapshots[0].VisibleSpawnGroups[0].EntityID != spawn.Entity.ID || snapshots[0].VisibleSpawnGroups[0].SpawnGroupRef != "practice.mob" {
+		t.Fatalf("expected visible spawn-group subset [PracticeMob], got %+v", snapshots[0].VisibleSpawnGroups)
 	}
 }
 

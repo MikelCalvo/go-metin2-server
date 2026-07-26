@@ -415,10 +415,12 @@ Each entry includes the same effective runtime location fields exposed by `/loca
 
 - `visible_peers`
 - `visible_static_actors`
+- `visible_spawn_groups`
 - `visible_ground_items`
 
 Connected-character and visible-peer player entries now also expose `dead: true` while a still-connected owner remains at the retaliation-owned `0`-HP floor.
 Visible static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still in its server-owned dead interval.
+`visible_spawn_groups` is the deterministic subset of `visible_static_actors` whose `spawn_group_ref` is non-empty, using the same spawn-backed static-actor snapshot shape as `/local/spawn-groups`; dead practice mobs keep the same `dead: true` flag in both arrays.
 `visible_ground_items` reports the item-shaped and gold-shaped ground rewards currently visible to that specific connected character, sorted by visible ground `vid`, using the same fields exposed by `/local/ground-items`.
 
 ### `GET /local/maps`

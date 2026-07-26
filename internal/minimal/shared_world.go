@@ -2556,6 +2556,7 @@ func (r *sharedWorldRegistry) markStaticActorSnapshotsStateLocked(snapshots []St
 func (r *sharedWorldRegistry) markCharacterVisibilityStaticActorStateLocked(snapshots []CharacterVisibilitySnapshot) []CharacterVisibilitySnapshot {
 	for i := range snapshots {
 		snapshots[i].VisibleStaticActors = r.markStaticActorSnapshotsStateLocked(snapshots[i].VisibleStaticActors)
+		snapshots[i].VisibleSpawnGroups = r.markStaticActorSnapshotsStateLocked(snapshots[i].VisibleSpawnGroups)
 	}
 	return snapshots
 }

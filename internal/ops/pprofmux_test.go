@@ -3646,6 +3646,7 @@ func TestLocalVisibilityEndpointIncludesVisibleStaticActorsForLoopbackGet(t *tes
 		ConnectedCharacterSnapshot: worldruntime.ConnectedCharacterSnapshot{Name: "PeerOne", VID: 0x02040101, MapIndex: 42, X: 1700, Y: 2800, Empire: 2, GuildID: 10},
 		VisiblePeers:               []worldruntime.ConnectedCharacterSnapshot{{Name: "PeerTwo", VID: 0x02040102, MapIndex: 42, X: 1900, Y: 2900, Empire: 2, GuildID: 10}},
 		VisibleStaticActors:        []worldruntime.StaticActorSnapshot{{EntityID: 7, Name: "Blacksmith", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20300}},
+		VisibleSpawnGroups:         []worldruntime.StaticActorSnapshot{{EntityID: 9, Name: "PracticeMob", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: "practice_mob", SpawnGroupRef: "practice.mob"}},
 	}}}
 	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, visibility.CharacterVisibility, nil)
 
@@ -3667,6 +3668,9 @@ func TestLocalVisibilityEndpointIncludesVisibleStaticActorsForLoopbackGet(t *tes
 	}
 	if !strings.Contains(string(body), `"visible_static_actors"`) || !strings.Contains(string(body), `"name":"Blacksmith"`) || !strings.Contains(string(body), `"entity_id":7`) {
 		t.Fatalf("unexpected visibility JSON response body %q", string(body))
+	}
+	if !strings.Contains(string(body), `"visible_spawn_groups"`) || !strings.Contains(string(body), `"name":"PracticeMob"`) || !strings.Contains(string(body), `"spawn_group_ref":"practice.mob"`) {
+		t.Fatalf("expected visible spawn-group subset in visibility JSON response body %q", string(body))
 	}
 }
 

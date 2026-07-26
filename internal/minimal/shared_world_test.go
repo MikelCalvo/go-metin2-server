@@ -10547,6 +10547,30 @@ func TestGameRuntimeStaticActorSnapshotsMarkDeadTrainingDummy(t *testing.T) {
 	}
 }
 
+func TestSharedWorldRegistryCharacterVisibilityMarksDeadSpawnGroups(t *testing.T) {
+	registry := newSharedWorldRegistryWithTopology(worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200))
+	subject := peerVisibilityCharacter("SpawnWatcher", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	registry.Join(subject, newPendingServerFrames(), nil)
+	actor, ok := registry.registerStaticActor(0, "PracticeMobAlpha", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.mob_alpha", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed practice mob registration to succeed")
+	}
+	registry.mu.Lock()
+	registry.staticActorCombatHP[actor.EntityID] = 0
+	registry.mu.Unlock()
+
+	visibility := registry.CharacterVisibility()
+	if len(visibility) != 1 {
+		t.Fatalf("expected one character visibility snapshot, got %+v", visibility)
+	}
+	if len(visibility[0].VisibleStaticActors) != 1 || visibility[0].VisibleStaticActors[0].EntityID != actor.EntityID || !visibility[0].VisibleStaticActors[0].Dead {
+		t.Fatalf("expected dead spawn actor to remain marked in visible_static_actors, got %+v", visibility[0].VisibleStaticActors)
+	}
+	if len(visibility[0].VisibleSpawnGroups) != 1 || visibility[0].VisibleSpawnGroups[0].EntityID != actor.EntityID || visibility[0].VisibleSpawnGroups[0].SpawnGroupRef != "practice.mob_alpha" || !visibility[0].VisibleSpawnGroups[0].Dead {
+		t.Fatalf("expected dead spawn actor to be marked in visible_spawn_groups, got %+v", visibility[0].VisibleSpawnGroups)
+	}
+}
+
 func TestGameRuntimePlayerSnapshotsMarkDeadOwner(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("Owner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
