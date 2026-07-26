@@ -62,6 +62,7 @@ const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
 const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
+const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -2038,11 +2039,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return frames, true
 			}
 			template, ok := merchantSellTemplateForSlot(runtime.itemTemplates, selectedPlayer, slot)
-			if !ok || !selectedPlayer.CanUseTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack {
+			if !ok || !selectedPlayer.CanUseTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiStack {
 				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
 				if !ok {
 					return nil, false
 				}
+				return frames, true
+			}
+			if template.AntiSell {
+				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
+				if !ok {
+					return nil, false
+				}
+				frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemSellRejectText(template)}))
 				return frames, true
 			}
 			credit, ok := player.MerchantSellCredit(template, soldCount)
@@ -4546,6 +4555,13 @@ func itemPickupRejectText(template itemcatalog.Template) string {
 		return template.PickupRejectText
 	}
 	return itemPickupInventoryFullInfoMessage
+}
+
+func itemSellRejectText(template itemcatalog.Template) string {
+	if template.SellRejectText != "" {
+		return template.SellRejectText
+	}
+	return itemSellRejectedInfoMessage
 }
 
 func merchantSellTemplateForSlot(templates map[uint32]itemcatalog.Template, selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {

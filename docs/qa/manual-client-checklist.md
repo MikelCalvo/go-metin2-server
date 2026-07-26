@@ -374,11 +374,11 @@ Expected result:
 - [ ] Open a known bootstrap merchant window with a disposable QA character
 - [ ] Attempt to buy a catalog item whose authored template requires a higher `min_level` than the selected character has
 - [ ] Attempt to sell a carried item whose authored template requires a higher `min_level` than the selected character has
-- [ ] Attempt to sell carried items whose authored templates are marked `anti_get`, `anti_drop`, `anti_give`, `anti_sell`, or `anti_stack`
+- [ ] Attempt to sell carried items whose authored templates are marked `anti_get`, `anti_drop`, `anti_give`, `anti_sell`, or `anti_stack`; include one `anti_sell` fixture with a non-empty `sell_reject_message`
 - [ ] If packet logging is available, sell part of a carried stack whose authored template has non-zero display sockets/attributes
 
 Expected result:
-- restricted packet paths fail with the current merchant invalid-position companion and no inventory, item quickslot, gold, or persisted account mutation is visible
+- restricted packet paths fail with the current merchant invalid-position companion and no inventory, item quickslot, gold, or persisted account mutation is visible; `anti_sell` additionally shows the authored `sell_reject_message` as self-only info chat when present, otherwise the deterministic merchant-refusal fallback text
 - adjacent allowed merchant buy/sell cases still use the template-authored price/sell-credit behavior
 - carried sell-back stacks whose live count already exceeds the resolved template-authored `max_count` fail with the same invalid-position companion before inventory, item quickslot, gold, or persisted account mutation
 - partial-stack `SHOP SELL2` success refreshes the remaining stack with `ITEM_UPDATE`, preserves the authored display socket/attribute arrays while changing only the count, credits gold, and keeps item quickslots for the still-occupied cell unchanged
@@ -657,7 +657,7 @@ Run this only when the target build has a visible authored `shop_preview` mercha
 
 Expected result:
 - accepted merchant sell-back responses are ordered as whole-stack `ITEM_DEL` or partial-stack `ITEM_UPDATE`, then self-only `PLAYER_POINT_CHANGE(POINT_GOLD)`, with no extra bare `GC::SHOP OK`
-- invalid, malformed carried-item, anti-sell, equipped, runtime-locked, explicit zero-count `SELL2`, zero-HP owner, template sell-credit carrier overflow, or resulting-gold carrier overflow attempts fail closed and leave both live and persisted inventory/gold unchanged
+- invalid, malformed carried-item, anti-sell, equipped, runtime-locked, explicit zero-count `SELL2`, zero-HP owner, template sell-credit carrier overflow, or resulting-gold carrier overflow attempts fail closed and leave both live and persisted inventory/gold unchanged; the anti-sell branch also shows template-authored `sell_reject_message` when present, otherwise the deterministic merchant-refusal fallback text
 - after practice-mob retaliation reaches the player's current zero-HP floor, both whole-stack `SELL` and partial-stack `SELL2` attempts emit no sell success frames and do not delete carried-item quickslots
 - richer `GC::SHOP UPDATE_ITEM` / `UPDATE_PRICE` merchant-window choreography remains out of scope for this bootstrap sell-back smoke
 

@@ -78,6 +78,7 @@ type Template struct {
 	EquipEffect      *PointEffect    `json:"equip_effect,omitempty"`
 	DropRejectText   string          `json:"drop_reject_message,omitempty"`
 	PickupRejectText string          `json:"pickup_reject_message,omitempty"`
+	SellRejectText   string          `json:"sell_reject_message,omitempty"`
 }
 
 type SocketValues [ItemSocketCount]int32
@@ -135,6 +136,7 @@ type templateJSON struct {
 	EquipEffect      *PointEffect     `json:"equip_effect,omitempty"`
 	DropRejectText   string           `json:"drop_reject_message,omitempty"`
 	PickupRejectText string           `json:"pickup_reject_message,omitempty"`
+	SellRejectText   string           `json:"sell_reject_message,omitempty"`
 }
 
 func (template Template) MarshalJSON() ([]byte, error) {
@@ -182,6 +184,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		EquipEffect:      template.EquipEffect,
 		DropRejectText:   template.DropRejectText,
 		PickupRejectText: template.PickupRejectText,
+		SellRejectText:   template.SellRejectText,
 	}
 	if template.Sockets != (SocketValues{}) {
 		jsonTemplate.Sockets = &template.Sockets
@@ -243,6 +246,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		EquipEffect:      jsonTemplate.EquipEffect,
 		DropRejectText:   jsonTemplate.DropRejectText,
 		PickupRejectText: jsonTemplate.PickupRejectText,
+		SellRejectText:   jsonTemplate.SellRejectText,
 	}
 	if jsonTemplate.Sockets != nil {
 		template.Sockets = *jsonTemplate.Sockets
@@ -312,6 +316,7 @@ func normalizeTemplate(template Template) Template {
 	template.EquipSlot = normalizeEquipSlot(template.EquipSlot)
 	template.DropRejectText = strings.TrimSpace(template.DropRejectText)
 	template.PickupRejectText = strings.TrimSpace(template.PickupRejectText)
+	template.SellRejectText = strings.TrimSpace(template.SellRejectText)
 	if template.UseEffect != nil {
 		effect := *template.UseEffect
 		effect.Message = strings.TrimSpace(effect.Message)
@@ -370,6 +375,9 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if !validTemplateMessage(template.PickupRejectText) {
+		return false
+	}
+	if !validTemplateMessage(template.SellRejectText) {
 		return false
 	}
 	if template.EquipSlot == "" {

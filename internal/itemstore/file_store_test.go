@@ -1131,6 +1131,65 @@ func TestFileStoreSaveThenLoadRoundTripPreservesPickupRejectText(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesSellRejectText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:           27011,
+		Name:           "Sealed Sell Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiSell:       true,
+		SellRejectText: "The merchant refuses to buy this item.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with sell reject message: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with sell reject message: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with sell reject message:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with sell reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27011,\n      \"name\": \"Sealed Sell Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_sell\": true,\n      \"sell_reject_message\": \"The merchant refuses to buy this item.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with sell reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreRejectsInvalidSellRejectTextMetadata(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	invalid := Snapshot{Templates: []Template{{
+		Vnum:           27011,
+		Name:           "Broken Sell Message Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiSell:       true,
+		SellRejectText: "bad\x00message",
+	}}}
+
+	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL sell reject message, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27011,"name":"Broken Sell Message Potion","stackable":true,"max_count":200,"anti_sell":true,"sell_reject_message":"bad\u0000message"}]}`), 0o644); err != nil {
+		t.Fatalf("write invalid sell reject message snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading NUL sell reject message, got %v", err)
+	}
+}
+
 func TestFileStoreRejectsInvalidPickupRejectTextMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
