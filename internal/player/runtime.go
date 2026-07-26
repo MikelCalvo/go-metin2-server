@@ -1654,7 +1654,7 @@ func validQuickslotPosition(position uint8) bool {
 func validQuickslotTuple(slot loginticket.Quickslot) bool {
 	switch slot.Type {
 	case quickslotproto.TypeNone:
-		return true
+		return slot.Slot == 0
 	case quickslotproto.TypeItem:
 		return slot.Slot < uint8(inventory.CarriedInventorySlotCount)
 	case quickslotproto.TypeSkill:

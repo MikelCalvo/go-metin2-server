@@ -58,6 +58,48 @@ func TestGameSessionFlowQuickslotAddTypeNoneDeletesExistingQuickslot(t *testing.
 	}
 }
 
+func TestGameSessionFlowQuickslotAddTypeNoneWithPayloadFailsClosedWithoutDeletingExisting(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("QuickslotNonePayload", 0x0103058a, 0x0204058a, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 390, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "quickslot-none-payload", 0x5050508a, owner)
+	if err := accounts.Save(accountstore.Account{Login: "quickslot-none-payload", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed quickslot type-none payload account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected quickslot type-none payload runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quickslot-none-payload", 0x5050508a)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{Position: 2, Slot: quickslotproto.Slot{Type: quickslotproto.TypeNone, Position: 5}})))
+	if err != nil {
+		t.Fatalf("unexpected quickslot type-none payload packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected type-none quickslot with payload to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after type-none payload rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("quickslot-none-payload")
+	if err != nil {
+		t.Fatalf("load quickslot type-none payload account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("type-none payload quickslot add mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("type-none payload quickslot add mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+}
+
 func TestGameSessionFlowQuickslotAddRetargetsDuplicateTupleQuickslot(t *testing.T) {
 	cases := []struct {
 		name           string

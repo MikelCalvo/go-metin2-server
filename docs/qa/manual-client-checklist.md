@@ -286,6 +286,7 @@ Expected result:
 Expected result:
 - deleting the occupied position clears that binding and persists after reconnect
 - a type-none `QUICKSLOT_ADD` clear returns the same visible delete behavior: the occupied binding is cleared, no new none binding remains, and reconnect shows the binding gone
+- if packet tooling can emit a malformed type-none `QUICKSLOT_ADD` with non-zero `slot.pos`, it fails closed: no quickslot refresh frame is visible, the occupied binding remains, and reconnect shows no persisted mutation
 - deleting the empty position fails closed: no quickslot refresh frame is visible, existing quickslot bindings remain, and reconnect shows no persisted change
 
 ### 4.5.5 Swap quickslots (`QUICKSLOT_SWAP`)

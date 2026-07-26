@@ -42,6 +42,22 @@ func TestRuntimeSyncItemQuickslotsForItemRemovalDeletesAllMatchingItemSlotsOnly(
 	}
 }
 
+func TestRuntimeSetQuickslotRejectsTypeNoneWithPayloadWithoutDeletingExisting(t *testing.T) {
+	character := loginticket.Character{Quickslots: []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}}
+	runtime := NewRuntime(character, SessionLink{Login: "quickslot-none-payload"})
+
+	result, ok := runtime.SetQuickslot(2, loginticket.Quickslot{Type: quickslotproto.TypeNone, Slot: 5})
+	if ok {
+		t.Fatalf("expected type-none quickslot with non-zero payload to be rejected, got %+v", result)
+	}
+	if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, character.Quickslots) {
+		t.Fatalf("type-none quickslot with payload mutated live quickslots: got %+v want %+v", got, character.Quickslots)
+	}
+}
+
 func TestRuntimeSeparatesLivePositionFromPersistedSnapshot(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:       0x01030102,
