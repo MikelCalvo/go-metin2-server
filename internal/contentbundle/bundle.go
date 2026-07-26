@@ -179,6 +179,8 @@ type MapContentDelta struct {
 	RewardExperienceTotal        SummaryAmountDelta `json:"reward_experience_total,omitempty"`
 	RewardGoldTotal              SummaryAmountDelta `json:"reward_gold_total,omitempty"`
 	RewardDropItemCount          SummaryCountDelta  `json:"reward_drop_item_count,omitempty"`
+	StaticActors                 []StaticActorDelta `json:"static_actors,omitempty"`
+	SpawnGroups                  []SpawnGroupDelta  `json:"spawn_groups,omitempty"`
 }
 
 type InteractionKindSummary struct {
@@ -485,7 +487,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		ItemTemplates:                          buildItemTemplateDeltas(currentBundle.ItemTemplates, candidateBundle.ItemTemplates),
 		CombatProfiles:                         buildCombatProfileDeltas(currentBundle.CombatProfiles, candidateBundle.CombatProfiles),
 		SpawnGroups:                            buildSpawnGroupDeltas(current.SpawnGroups, candidate.SpawnGroups),
-		Maps:                                   buildMapContentDeltas(current.Maps, candidate.Maps),
+		Maps:                                   buildMapContentDeltas(current, candidate, currentBundle, candidateBundle),
 	}
 }
 
@@ -814,7 +816,9 @@ func spawnGroupSummaryMapByRef(spawnGroups []SpawnGroupReferenceSummary) map[str
 	return byRef
 }
 
-func buildMapContentDeltas(currentMaps []MapContentSummary, candidateMaps []MapContentSummary) []MapContentDelta {
+func buildMapContentDeltas(current Summary, candidate Summary, currentBundle Bundle, candidateBundle Bundle) []MapContentDelta {
+	currentMaps := current.Maps
+	candidateMaps := candidate.Maps
 	if len(currentMaps) == 0 && len(candidateMaps) == 0 {
 		return nil
 	}
@@ -836,21 +840,23 @@ func buildMapContentDeltas(currentMaps []MapContentSummary, candidateMaps []MapC
 	sort.Slice(indexes, func(i int, j int) bool { return indexes[i] < indexes[j] })
 	deltas := make([]MapContentDelta, 0, len(indexes))
 	for _, index := range indexes {
-		current := currentByIndex[index]
-		candidate := candidateByIndex[index]
+		currentMap := currentByIndex[index]
+		candidateMap := candidateByIndex[index]
 		delta := MapContentDelta{
 			MapIndex:                     index,
-			StaticActorCount:             summaryCountDelta(current.StaticActorCount, candidate.StaticActorCount),
-			InteractableStaticActorCount: summaryCountDelta(current.InteractableStaticActorCount, candidate.InteractableStaticActorCount),
-			InfoActorCount:               summaryCountDelta(current.InfoActorCount, candidate.InfoActorCount),
-			TalkActorCount:               summaryCountDelta(current.TalkActorCount, candidate.TalkActorCount),
-			ShopPreviewActorCount:        summaryCountDelta(current.ShopPreviewActorCount, candidate.ShopPreviewActorCount),
-			ShopCatalogEntryCount:        summaryCountDelta(current.ShopCatalogEntryCount, candidate.ShopCatalogEntryCount),
-			WarpActorCount:               summaryCountDelta(current.WarpActorCount, candidate.WarpActorCount),
-			SpawnGroupCount:              summaryCountDelta(current.SpawnGroupCount, candidate.SpawnGroupCount),
-			RewardExperienceTotal:        summaryAmountDelta(current.RewardExperienceTotal, candidate.RewardExperienceTotal),
-			RewardGoldTotal:              summaryAmountDelta(current.RewardGoldTotal, candidate.RewardGoldTotal),
-			RewardDropItemCount:          summaryCountDelta(current.RewardDropItemCount, candidate.RewardDropItemCount),
+			StaticActorCount:             summaryCountDelta(currentMap.StaticActorCount, candidateMap.StaticActorCount),
+			InteractableStaticActorCount: summaryCountDelta(currentMap.InteractableStaticActorCount, candidateMap.InteractableStaticActorCount),
+			InfoActorCount:               summaryCountDelta(currentMap.InfoActorCount, candidateMap.InfoActorCount),
+			TalkActorCount:               summaryCountDelta(currentMap.TalkActorCount, candidateMap.TalkActorCount),
+			ShopPreviewActorCount:        summaryCountDelta(currentMap.ShopPreviewActorCount, candidateMap.ShopPreviewActorCount),
+			ShopCatalogEntryCount:        summaryCountDelta(currentMap.ShopCatalogEntryCount, candidateMap.ShopCatalogEntryCount),
+			WarpActorCount:               summaryCountDelta(currentMap.WarpActorCount, candidateMap.WarpActorCount),
+			SpawnGroupCount:              summaryCountDelta(currentMap.SpawnGroupCount, candidateMap.SpawnGroupCount),
+			RewardExperienceTotal:        summaryAmountDelta(currentMap.RewardExperienceTotal, candidateMap.RewardExperienceTotal),
+			RewardGoldTotal:              summaryAmountDelta(currentMap.RewardGoldTotal, candidateMap.RewardGoldTotal),
+			RewardDropItemCount:          summaryCountDelta(currentMap.RewardDropItemCount, candidateMap.RewardDropItemCount),
+			StaticActors:                 buildStaticActorDeltas(staticActorsForMap(currentBundle.StaticActors, index), staticActorsForMap(candidateBundle.StaticActors, index)),
+			SpawnGroups:                  buildSpawnGroupDeltas(spawnGroupSummariesForMap(current.SpawnGroups, index), spawnGroupSummariesForMap(candidate.SpawnGroups, index)),
 		}
 		if !mapContentDeltaIsZero(delta) {
 			deltas = append(deltas, delta)
@@ -860,6 +866,40 @@ func buildMapContentDeltas(currentMaps []MapContentSummary, candidateMaps []MapC
 		return nil
 	}
 	return deltas
+}
+
+func staticActorsForMap(actors []StaticActor, mapIndex uint32) []StaticActor {
+	if len(actors) == 0 {
+		return nil
+	}
+	filtered := make([]StaticActor, 0, len(actors))
+	for _, actor := range actors {
+		if actor.MapIndex != mapIndex {
+			continue
+		}
+		filtered = append(filtered, actor)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func spawnGroupSummariesForMap(spawnGroups []SpawnGroupReferenceSummary, mapIndex uint32) []SpawnGroupReferenceSummary {
+	if len(spawnGroups) == 0 {
+		return nil
+	}
+	filtered := make([]SpawnGroupReferenceSummary, 0, len(spawnGroups))
+	for _, spawnGroup := range spawnGroups {
+		if spawnGroup.MapIndex != mapIndex {
+			continue
+		}
+		filtered = append(filtered, spawnGroup)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
 }
 
 func mapContentDeltaIsZero(delta MapContentDelta) bool {
@@ -873,7 +913,9 @@ func mapContentDeltaIsZero(delta MapContentDelta) bool {
 		delta.SpawnGroupCount.Delta == 0 &&
 		delta.RewardExperienceTotal.Delta == 0 &&
 		delta.RewardGoldTotal.Delta == 0 &&
-		delta.RewardDropItemCount.Delta == 0
+		delta.RewardDropItemCount.Delta == 0 &&
+		len(delta.StaticActors) == 0 &&
+		len(delta.SpawnGroups) == 0
 }
 
 func Summarize(bundle Bundle) (Summary, error) {

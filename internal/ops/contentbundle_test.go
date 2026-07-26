@@ -663,6 +663,10 @@ func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbac
 			TalkActorCount:               contentbundle.SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
 			ShopPreviewActorCount:        contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 			ShopCatalogEntryCount:        contentbundle.SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+			StaticActors: []contentbundle.StaticActorDelta{
+				{Change: "added", Candidate: &contentbundle.StaticActor{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+				{Change: "removed", Current: &contentbundle.StaticActor{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
+			},
 		},
 		{
 			MapIndex:                     7,
@@ -673,6 +677,8 @@ func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbac
 			RewardExperienceTotal:        contentbundle.SummaryAmountDelta{Current: 0, Candidate: 75, Delta: 75},
 			RewardGoldTotal:              contentbundle.SummaryAmountDelta{Current: 0, Candidate: 60, Delta: 60},
 			RewardDropItemCount:          contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			StaticActors:                 []contentbundle.StaticActorDelta{{Change: "added", Candidate: &contentbundle.StaticActor{Name: "Teleporter", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"}}},
+			SpawnGroups:                  []contentbundle.SpawnGroupDelta{{Ref: "practice.reward_mob", Change: "added", Candidate: &contentbundle.SpawnGroupReferenceSummary{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 7, X: 1400, Y: 2400, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 75, RewardGold: 60, RewardDropVnums: []uint32{27001}, RewardDropItems: []contentbundle.RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}}}},
 		},
 	}
 	if !reflect.DeepEqual(got.Deltas.Maps, want) {

@@ -201,6 +201,11 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 			ShopPreviewActorCount:        SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 			ShopCatalogEntryCount:        SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
 			WarpActorCount:               SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			StaticActors: []StaticActorDelta{
+				{Change: "added", Candidate: &StaticActor{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+				{Change: "added", Candidate: &StaticActor{Name: "Teleporter", MapIndex: 1, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"}},
+				{Change: "removed", Current: &StaticActor{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
+			},
 		}},
 	}
 	if !reflect.DeepEqual(preview.Deltas, wantDeltas) {
@@ -423,6 +428,80 @@ func TestBuildImportPreviewReturnsItemTemplateDeltas(t *testing.T) {
 	}
 }
 
+func TestBuildImportPreviewReturnsPerMapStaticActorDeltas(t *testing.T) {
+	currentAlpha := StaticActor{Name: "AlphaGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300}
+	currentKeep := StaticActor{Name: "KeepGuide", MapIndex: 42, X: 1710, Y: 2810, RaceNum: 20301}
+	currentRemote := StaticActor{Name: "RemoteOld", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20302}
+	candidateBeta := StaticActor{Name: "BetaGuide", MapIndex: 42, X: 1720, Y: 2820, RaceNum: 20303}
+	candidateRemote := StaticActor{Name: "RemoteNew", MapIndex: 8, X: 1400, Y: 2400, RaceNum: 20304}
+
+	preview, err := BuildImportPreview(
+		Bundle{StaticActors: []StaticActor{currentRemote, currentKeep, currentAlpha}},
+		Bundle{StaticActors: []StaticActor{candidateRemote, currentKeep, candidateBeta}},
+	)
+	if err != nil {
+		t.Fatalf("build import preview per-map static actor deltas: %v", err)
+	}
+
+	want := []MapContentDelta{
+		{
+			MapIndex:         7,
+			StaticActorCount: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
+			StaticActors:     []StaticActorDelta{{Change: "removed", Current: &currentRemote}},
+		},
+		{
+			MapIndex:         8,
+			StaticActorCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			StaticActors:     []StaticActorDelta{{Change: "added", Candidate: &candidateRemote}},
+		},
+		{
+			MapIndex:         42,
+			StaticActorCount: SummaryCountDelta{Current: 2, Candidate: 2, Delta: 0},
+			StaticActors: []StaticActorDelta{
+				{Change: "removed", Current: &currentAlpha},
+				{Change: "added", Candidate: &candidateBeta},
+			},
+		},
+	}
+	if !reflect.DeepEqual(preview.Deltas.Maps, want) {
+		t.Fatalf("unexpected per-map static-actor import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.Maps, want)
+	}
+}
+
+func TestBuildImportPreviewReturnsPerMapSpawnGroupDeltas(t *testing.T) {
+	currentKeep := SpawnGroupReferenceSummary{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 42, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob}
+	currentRemoved := SpawnGroupReferenceSummary{Ref: "practice.remove", Name: "Removed Mob", MapIndex: 42, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob}
+	candidateAdded := SpawnGroupReferenceSummary{Ref: "practice.add", Name: "Added Mob", MapIndex: 42, X: 1300, Y: 2300, RaceNum: 103, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob}
+	candidateKeep := SpawnGroupReferenceSummary{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 42, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob}
+
+	preview, err := BuildImportPreview(
+		Bundle{SpawnGroups: []SpawnGroup{
+			{Ref: currentKeep.Ref, Name: currentKeep.Name, MapIndex: currentKeep.MapIndex, X: currentKeep.X, Y: currentKeep.Y, RaceNum: currentKeep.RaceNum, CombatProfile: currentKeep.CombatProfile},
+			{Ref: currentRemoved.Ref, Name: currentRemoved.Name, MapIndex: currentRemoved.MapIndex, X: currentRemoved.X, Y: currentRemoved.Y, RaceNum: currentRemoved.RaceNum, CombatProfile: currentRemoved.CombatProfile},
+		}},
+		Bundle{SpawnGroups: []SpawnGroup{
+			{Ref: candidateAdded.Ref, Name: candidateAdded.Name, MapIndex: candidateAdded.MapIndex, X: candidateAdded.X, Y: candidateAdded.Y, RaceNum: candidateAdded.RaceNum, CombatProfile: candidateAdded.CombatProfile},
+			{Ref: candidateKeep.Ref, Name: candidateKeep.Name, MapIndex: candidateKeep.MapIndex, X: candidateKeep.X, Y: candidateKeep.Y, RaceNum: candidateKeep.RaceNum, CombatProfile: candidateKeep.CombatProfile},
+		}},
+	)
+	if err != nil {
+		t.Fatalf("build import preview per-map spawn-group deltas: %v", err)
+	}
+
+	want := []MapContentDelta{{
+		MapIndex:        42,
+		SpawnGroupCount: SummaryCountDelta{Current: 2, Candidate: 2, Delta: 0},
+		SpawnGroups: []SpawnGroupDelta{
+			{Ref: "practice.add", Change: "added", Candidate: &candidateAdded},
+			{Ref: "practice.keep", Change: "changed", Current: &currentKeep, Candidate: &candidateKeep},
+			{Ref: "practice.remove", Change: "removed", Current: &currentRemoved},
+		},
+	}}
+	if !reflect.DeepEqual(preview.Deltas.Maps, want) {
+		t.Fatalf("unexpected per-map spawn-group import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.Maps, want)
+	}
+}
+
 func TestBuildImportPreviewReturnsPerMapCountDeltas(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{
@@ -455,6 +534,10 @@ func TestBuildImportPreviewReturnsPerMapCountDeltas(t *testing.T) {
 			TalkActorCount:               SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1},
 			ShopPreviewActorCount:        SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 			ShopCatalogEntryCount:        SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+			StaticActors: []StaticActorDelta{
+				{Change: "added", Candidate: &StaticActor{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+				{Change: "removed", Current: &StaticActor{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
+			},
 		},
 		{
 			MapIndex:                     7,
@@ -463,6 +546,8 @@ func TestBuildImportPreviewReturnsPerMapCountDeltas(t *testing.T) {
 			WarpActorCount:               SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 			SpawnGroupCount:              SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 			RewardDropItemCount:          SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+			StaticActors:                 []StaticActorDelta{{Change: "added", Candidate: &StaticActor{Name: "Teleporter", MapIndex: 7, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"}}},
+			SpawnGroups:                  []SpawnGroupDelta{{Ref: "practice.reward_mob", Change: "added", Candidate: &SpawnGroupReferenceSummary{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 7, X: 1400, Y: 2400, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}, RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}}}},
 		},
 	}
 	if !reflect.DeepEqual(preview.Deltas.Maps, want) {
@@ -514,6 +599,12 @@ func TestBuildImportPreviewReturnsRewardAmountDeltas(t *testing.T) {
 		SpawnGroupCount:       SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
 		RewardExperienceTotal: SummaryAmountDelta{Current: 75, Candidate: 125, Delta: 50},
 		RewardGoldTotal:       SummaryAmountDelta{Current: 60, Candidate: 90, Delta: 30},
+		SpawnGroups: []SpawnGroupDelta{{
+			Ref:       "practice.reward_mob",
+			Change:    "changed",
+			Current:   &SpawnGroupReferenceSummary{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 42, X: 1785, Y: 2885, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 75, RewardGold: 60},
+			Candidate: &SpawnGroupReferenceSummary{Ref: "practice.reward_mob", Name: "Reward Mob", MapIndex: 42, X: 1785, Y: 2885, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 125, RewardGold: 90},
+		}},
 	}}
 	if !reflect.DeepEqual(preview.Deltas.Maps, wantMaps) {
 		t.Fatalf("unexpected per-map reward amount deltas:\n got: %#v\nwant: %#v", preview.Deltas.Maps, wantMaps)
