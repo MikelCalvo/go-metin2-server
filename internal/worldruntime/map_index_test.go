@@ -568,6 +568,173 @@ func TestMapIndexRegisterRejectsStaticEntityIndexCollisionWhenStaticMapBucketMis
 	}
 }
 
+func TestMapIndexRegisterRejectsPlayerVisibilityVIDCollisionWithStaticActor(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	player := newPlayerEntity(99, entityRegistryCharacter("Alpha", uint32(actor.Entity.ID), 77, 900, 1200))
+	if index.Register(player) {
+		t.Fatal("expected player registration to reject a static actor visibility-VID collision")
+	}
+	if actors := index.StaticActors(42); len(actors) != 1 || actors[0].Entity.ID != actor.Entity.ID || actors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected original static actor to remain after rejected player visibility collision, got %+v", actors)
+	}
+	if characters := index.PlayerCharacters(77); len(characters) != 0 {
+		t.Fatalf("expected rejected player not to enter destination map, got %+v", characters)
+	}
+}
+
+func TestMapIndexRegisterStaticRejectsPlayerVisibilityVIDCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(99, entityRegistryCharacter("Alpha", 7, 42, 1100, 2100))
+	if !index.Register(player) {
+		t.Fatal("expected player registration to succeed")
+	}
+
+	actor := StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(77, 900, 1200), RaceNum: 20300}
+	if index.RegisterStatic(actor) {
+		t.Fatal("expected static actor registration to reject a player visibility-VID collision")
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 1 || characters[0].Name != "Alpha" {
+		t.Fatalf("expected original player to remain after rejected static visibility collision, got %+v", characters)
+	}
+	if actors := index.StaticActors(77); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor not to enter destination map, got %+v", actors)
+	}
+}
+
+func TestMapIndexUpdateRejectsPlayerVisibilityVIDCollisionWithStaticActor(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(99, entityRegistryCharacter("Alpha", 0x02040177, 42, 1100, 2100))
+	if !index.Register(player) {
+		t.Fatal("expected player registration to succeed")
+	}
+	actor := StaticEntity{Entity: Entity{ID: 0x02040188, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := player
+	updated.Entity.VID = uint32(actor.Entity.ID)
+	updated.Character = entityRegistryCharacter("Alpha", uint32(actor.Entity.ID), 42, 1200, 2200)
+	if index.Update(updated) {
+		t.Fatal("expected player update to reject a static actor visibility-VID collision")
+	}
+	characters := index.PlayerCharacters(42)
+	if len(characters) != 1 || characters[0].VID != player.Entity.VID || characters[0].X != 1100 || characters[0].Y != 2100 {
+		t.Fatalf("expected original player map presence to remain after rejected visible-ID update, got %+v", characters)
+	}
+	if actors := index.StaticActors(77); len(actors) != 1 || actors[0].Entity.ID != actor.Entity.ID {
+		t.Fatalf("expected static actor to remain after rejected player visible-ID update, got %+v", actors)
+	}
+}
+
+func TestMapIndexUpdateStaticRejectsPlayerVisibilityVIDCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 0x02040101, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	player := newPlayerEntity(99, entityRegistryCharacter("MapOnlyAlpha", uint32(actor.Entity.ID), 77, 1100, 2100))
+	index.byMapIndex[77] = map[uint64]PlayerEntity{player.Entity.ID: player}
+
+	updated := actor
+	updated.Entity.Name = "MovedGuard"
+	updated.Position = NewPosition(99, 900, 1200)
+	if index.UpdateStatic(updated) {
+		t.Fatal("expected static actor update to reject a player visibility-VID collision")
+	}
+	if actors := index.StaticActors(42); len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected original static actor map presence to remain after rejected visible-ID update, got %+v", actors)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "MapOnlyAlpha" {
+		t.Fatalf("expected player map presence to remain after rejected static visible-ID update, got %+v", characters)
+	}
+	if actors := index.StaticActors(99); len(actors) != 0 {
+		t.Fatalf("expected rejected static update not to insert destination map presence, got %+v", actors)
+	}
+}
+
+func TestMapIndexPlayerByVIDRejectsStaticActorVisibilityVIDCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(16, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	actor := StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Kind: EntityKindStaticActor, Name: "MapOnlyGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	index.byEntityID[player.Entity.ID] = player
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{actor.Entity.ID: actor}
+
+	if lookup, ok := index.PlayerByVID(player.Entity.VID); ok {
+		t.Fatalf("expected player visible-ID lookup to fail closed over static actor visibility collision, got %+v", lookup)
+	}
+	if lookup, ok := index.Player(player.Entity.ID); !ok || lookup.Entity.Name != "Alpha" {
+		t.Fatalf("expected primary player lookup to remain available, got player=%+v ok=%v", lookup, ok)
+	}
+}
+
+func TestMapIndexStaticActorByVIDRejectsPlayerVisibilityVIDCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 0x02040101, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	player := newPlayerEntity(17, entityRegistryCharacter("MapOnlyAlpha", uint32(actor.Entity.ID), 77, 1100, 2100))
+	index.staticByEntityID[actor.Entity.ID] = actor
+	index.byMapIndex[77] = map[uint64]PlayerEntity{player.Entity.ID: player}
+
+	if lookup, ok := index.StaticActorByVID(uint32(actor.Entity.ID)); ok {
+		t.Fatalf("expected static actor visible-ID lookup to fail closed over player visibility collision, got %+v", lookup)
+	}
+	if lookup, ok := index.StaticActor(actor.Entity.ID); !ok || lookup.Entity.Name != "VillageGuard" {
+		t.Fatalf("expected primary static actor lookup to remain available, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
+func TestMapIndexSnapshotDoesNotRepairPlayerPrimaryOverStaticVisibilityVIDCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(16, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	actor := StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Kind: EntityKindStaticActor, Name: "MapOnlyGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	index.byEntityID[player.Entity.ID] = player
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{actor.Entity.ID: actor}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected direct player reader not to rebuild over static actor visibility-VID collision, got %+v", characters)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected direct static reader to preserve static map presence, got %+v", actors)
+	}
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || snapshots[0].MapIndex != 77 || len(snapshots[0].Characters) != 0 || len(snapshots[0].StaticActors) != 1 || snapshots[0].StaticActors[0].Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected visible-ID collision snapshot to preserve only static map presence, got %+v", snapshots)
+	}
+	if playerLookup, ok := index.Player(player.Entity.ID); !ok || playerLookup.Entity.Name != "Alpha" {
+		t.Fatalf("expected player entity lookup to remain available without rebuilding map presence, got player=%+v ok=%v", playerLookup, ok)
+	}
+}
+
+func TestMapIndexSnapshotDoesNotRepairStaticPrimaryOverPlayerVisibilityVIDCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 0x02040101, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	player := newPlayerEntity(17, entityRegistryCharacter("MapOnlyAlpha", uint32(actor.Entity.ID), 77, 1100, 2100))
+	index.staticByEntityID[actor.Entity.ID] = actor
+	index.byMapIndex[77] = map[uint64]PlayerEntity{player.Entity.ID: player}
+
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected direct static reader not to rebuild over player visibility-VID collision, got %+v", actors)
+	}
+	characters := index.PlayerCharacters(77)
+	if len(characters) != 1 || characters[0].Name != "MapOnlyAlpha" {
+		t.Fatalf("expected direct player reader to preserve player map presence, got %+v", characters)
+	}
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || snapshots[0].MapIndex != 77 || len(snapshots[0].Characters) != 1 || snapshots[0].Characters[0].Name != "MapOnlyAlpha" || len(snapshots[0].StaticActors) != 0 {
+		t.Fatalf("expected visible-ID collision snapshot to preserve only player map presence, got %+v", snapshots)
+	}
+	if actorLookup, ok := index.StaticActor(actor.Entity.ID); !ok || actorLookup.Entity.Name != "VillageGuard" {
+		t.Fatalf("expected static entity lookup to remain available without rebuilding map presence, got actor=%+v ok=%v", actorLookup, ok)
+	}
+}
+
 func TestMapIndexSnapshotDoesNotRepairPlayerPrimaryOverStaticMapPresenceCollision(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	player := newPlayerEntity(16, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
