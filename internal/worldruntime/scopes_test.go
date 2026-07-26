@@ -712,6 +712,34 @@ func TestScopesMapOccupancySnapshotsIncludeStaticOnlyMapsAndDeterministicOrder(t
 	}
 }
 
+func TestScopesMapOccupancySnapshotsExposeSpawnGroupSubsets(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	plain, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "Blacksmith"}, Position: NewPosition(1, 1500, 2500), RaceNum: 20016})
+	if !ok {
+		t.Fatal("expected plain static actor registration to succeed")
+	}
+	spawn, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "PracticeMobAlpha"}, Position: NewPosition(1, 1600, 2600), RaceNum: 20350, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.mob_alpha", DeathReward: StaticActorDeathReward{Experience: 7, Gold: 11, DropVnums: []uint32{27002, 27001}}})
+	if !ok {
+		t.Fatal("expected spawn-group static actor registration to succeed")
+	}
+
+	snapshots := NewScopes(topology, registry).MapOccupancySnapshots()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one occupied map, got %+v", snapshots)
+	}
+	if snapshots[0].StaticActorCount != 2 || len(snapshots[0].StaticActors) != 2 || snapshots[0].StaticActors[0].EntityID != plain.Entity.ID || snapshots[0].StaticActors[1].EntityID != spawn.Entity.ID {
+		t.Fatalf("expected all static actors to stay in the full map occupancy actor list, got %+v", snapshots[0])
+	}
+	if snapshots[0].SpawnGroupCount != 1 || len(snapshots[0].SpawnGroups) != 1 {
+		t.Fatalf("expected one spawn-group subset row, got %+v", snapshots[0])
+	}
+	group := snapshots[0].SpawnGroups[0]
+	if group.EntityID != spawn.Entity.ID || group.SpawnGroupRef != "practice.mob_alpha" || group.CombatProfile != StaticActorCombatProfilePracticeMob || group.RewardExperience != 7 || group.RewardGold != 11 || !reflect.DeepEqual(group.RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("unexpected map occupancy spawn-group subset snapshot: %+v", group)
+	}
+}
+
 func TestScopesStaticActorSnapshotsReturnDeterministicOrder(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)
@@ -875,6 +903,30 @@ func TestAppendGroundItemsToMapOccupancySnapshotsDeepClonesStaticActorRewardDrop
 	updated[0].StaticActors[0].RewardDropVnums[0] = 11111
 	if original[0].StaticActors[0].RewardDropVnums[0] != 27001 || original[0].StaticActors[0].RewardDropVnums[1] != 27002 {
 		t.Fatalf("expected input static actor reward drops to remain cloned, got %+v", original[0].StaticActors[0].RewardDropVnums)
+	}
+}
+
+func TestAppendGroundItemsToMapOccupancySnapshotsDeepClonesSpawnGroupRewardDrops(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	original := []MapOccupancySnapshot{
+		{
+			MapIndex:        42,
+			SpawnGroupCount: 1,
+			SpawnGroups: []StaticActorSnapshot{{
+				EntityID:        7,
+				Name:            "RewardMob",
+				MapIndex:        42,
+				RaceNum:         20350,
+				SpawnGroupRef:   "practice.reward_mob",
+				RewardDropVnums: []uint32{27001, 27002},
+			}},
+		},
+	}
+
+	updated := AppendGroundItemsToMapOccupancySnapshots(topology, original, nil)
+	updated[0].SpawnGroups[0].RewardDropVnums[0] = 11111
+	if original[0].SpawnGroups[0].RewardDropVnums[0] != 27001 || original[0].SpawnGroups[0].RewardDropVnums[1] != 27002 {
+		t.Fatalf("expected original spawn-group reward drops to stay cloned, got %+v", original[0].SpawnGroups[0].RewardDropVnums)
 	}
 }
 

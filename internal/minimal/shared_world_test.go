@@ -10357,6 +10357,9 @@ func TestGameRuntimeStaticActorSnapshotsMarkDeadTrainingDummy(t *testing.T) {
 	if len(occupancy) != 1 || occupancy[0].MapIndex != bootstrapMapIndex || len(occupancy[0].StaticActors) != 1 || occupancy[0].StaticActors[0].EntityID != actor.EntityID || !occupancy[0].StaticActors[0].Dead {
 		t.Fatalf("expected map occupancy snapshot to mark dead training dummy, got %+v", occupancy)
 	}
+	if occupancy[0].SpawnGroupCount != 0 || len(occupancy[0].SpawnGroups) != 0 {
+		t.Fatalf("expected non-spawn combat actors to stay out of the spawn-group occupancy subset, got %+v", occupancy[0])
+	}
 }
 
 func TestGameRuntimePlayerSnapshotsMarkDeadOwner(t *testing.T) {
@@ -11129,6 +11132,83 @@ func TestGameRuntimeMapOccupancyIncludesStaticActorsOnStaticOnlyMaps(t *testing.
 	}
 	if snapshots[1].StaticActorCount != 1 || len(snapshots[1].StaticActors) != 1 || snapshots[1].StaticActors[0].EntityID != guard.EntityID || snapshots[1].StaticActors[0].Name != "VillageGuard" {
 		t.Fatalf("expected VillageGuard in destination static actor snapshot, got %+v", snapshots[1])
+	}
+}
+
+func TestGameRuntimeMapOccupancyIncludesSpawnGroupSubset(t *testing.T) {
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggers(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{{
+			Name:     "Blacksmith",
+			MapIndex: bootstrapMapIndex,
+			X:        1500,
+			Y:        2500,
+			RaceNum:  20016,
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.map_snapshot_mob",
+			Name:             "PracticeMobAlpha",
+			MapIndex:         bootstrapMapIndex,
+			X:                1600,
+			Y:                2600,
+			RaceNum:          20350,
+			CombatProfile:    string(worldruntime.StaticActorCombatProfilePracticeMob),
+			RewardExperience: 7,
+			RewardGold:       11,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("import mixed static actor/spawn-group bundle: %v", err)
+	}
+
+	snapshots := runtime.MapOccupancy()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one map occupancy snapshot, got %+v", snapshots)
+	}
+	if snapshots[0].StaticActorCount != 2 || len(snapshots[0].StaticActors) != 2 {
+		t.Fatalf("expected full static actor occupancy to keep both actors, got %+v", snapshots[0])
+	}
+	if snapshots[0].StaticActors[1].Name != "PracticeMobAlpha" || snapshots[0].StaticActors[1].SpawnGroupRef != "practice.map_snapshot_mob" {
+		t.Fatalf("expected full static actor occupancy to include spawn-backed actor metadata, got %+v", snapshots[0].StaticActors[1])
+	}
+	if snapshots[0].SpawnGroupCount != 1 || len(snapshots[0].SpawnGroups) != 1 {
+		t.Fatalf("expected one spawn-group subset in map occupancy, got %+v", snapshots[0])
+	}
+	group := snapshots[0].SpawnGroups[0]
+	if group.Name != "PracticeMobAlpha" || group.SpawnGroupRef != "practice.map_snapshot_mob" || group.CombatProfile != worldruntime.StaticActorCombatProfilePracticeMob || group.RewardExperience != 7 || group.RewardGold != 11 {
+		t.Fatalf("unexpected map occupancy spawn-group subset snapshot: %+v", group)
+	}
+}
+
+func TestSharedWorldMapOccupancyMarksDeadSpawnGroupSubset(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	actor, ok := registry.registerStaticActor(0, "DeadPracticeMob", bootstrapMapIndex, 1200, 2200, 20350, "", "", worldruntime.StaticActorCombatKindTrainingDummy, "practice.dead_mob", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected spawn-backed training dummy registration to succeed")
+	}
+	registry.mu.Lock()
+	registry.staticActorCombatHP[actor.EntityID] = 0
+	registry.mu.Unlock()
+
+	snapshots := registry.MapOccupancy()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one map occupancy snapshot, got %+v", snapshots)
+	}
+	if snapshots[0].StaticActorCount != 1 || len(snapshots[0].StaticActors) != 1 || !snapshots[0].StaticActors[0].Dead {
+		t.Fatalf("expected full static actor occupancy to mark dead spawn actor, got %+v", snapshots[0])
+	}
+	if snapshots[0].SpawnGroupCount != 1 || len(snapshots[0].SpawnGroups) != 1 || snapshots[0].SpawnGroups[0].EntityID != actor.EntityID || !snapshots[0].SpawnGroups[0].Dead {
+		t.Fatalf("expected spawn-group subset occupancy to mark dead spawn actor, got %+v", snapshots[0])
 	}
 }
 

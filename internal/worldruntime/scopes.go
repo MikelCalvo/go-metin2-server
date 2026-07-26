@@ -101,6 +101,8 @@ type MapOccupancySnapshot struct {
 	Characters       []ConnectedCharacterSnapshot `json:"characters"`
 	StaticActorCount int                          `json:"static_actor_count"`
 	StaticActors     []StaticActorSnapshot        `json:"static_actors"`
+	SpawnGroupCount  int                          `json:"spawn_group_count"`
+	SpawnGroups      []StaticActorSnapshot        `json:"spawn_groups"`
 	GroundItemCount  int                          `json:"ground_item_count"`
 	GroundItems      []GroundItemSnapshot         `json:"ground_items"`
 }
@@ -650,16 +652,33 @@ func buildMapOccupancySnapshots(topology BootstrapTopology, occupancies []MapOcc
 	snapshots := make([]MapOccupancySnapshot, 0, len(occupancies))
 	for _, occupancy := range occupancies {
 		staticActors := staticActorSnapshots(topology, occupancy.StaticActors)
+		spawnGroups := spawnGroupSnapshots(topology, occupancy.StaticActors)
 		snapshots = append(snapshots, MapOccupancySnapshot{
 			MapIndex:         occupancy.MapIndex,
 			CharacterCount:   len(occupancy.Characters),
 			Characters:       connectedCharacterSnapshots(topology, occupancy.Characters),
 			StaticActorCount: len(occupancy.StaticActors),
 			StaticActors:     staticActors,
+			SpawnGroupCount:  len(spawnGroups),
+			SpawnGroups:      spawnGroups,
 		})
 	}
 	sortMapOccupancySnapshots(snapshots)
 	return snapshots
+}
+
+func spawnGroupSnapshots(topology BootstrapTopology, actors []StaticEntity) []StaticActorSnapshot {
+	if len(actors) == 0 {
+		return nil
+	}
+	spawnActors := make([]StaticEntity, 0, len(actors))
+	for _, actor := range actors {
+		if actor.SpawnGroupRef == "" {
+			continue
+		}
+		spawnActors = append(spawnActors, actor)
+	}
+	return staticActorSnapshots(topology, spawnActors)
 }
 
 func AppendGroundItemsToMapOccupancySnapshots(topology BootstrapTopology, snapshots []MapOccupancySnapshot, groundItems []GroundItemOccupancy) []MapOccupancySnapshot {
@@ -846,6 +865,8 @@ func cloneMapOccupancySnapshots(snapshots []MapOccupancySnapshot) []MapOccupancy
 			Characters:       append([]ConnectedCharacterSnapshot(nil), snapshot.Characters...),
 			StaticActorCount: snapshot.StaticActorCount,
 			StaticActors:     cloneStaticActorSnapshots(snapshot.StaticActors),
+			SpawnGroupCount:  snapshot.SpawnGroupCount,
+			SpawnGroups:      cloneStaticActorSnapshots(snapshot.SpawnGroups),
 			GroundItemCount:  snapshot.GroundItemCount,
 			GroundItems:      append([]GroundItemSnapshot(nil), snapshot.GroundItems...),
 		}

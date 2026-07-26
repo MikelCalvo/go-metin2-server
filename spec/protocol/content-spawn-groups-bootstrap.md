@@ -264,6 +264,14 @@ This is an operator/debugging surface, not a gameplay packet and not a content m
 
 The response is the deterministic subset of static-actor snapshots whose `spawn_group_ref` is non-empty.
 It intentionally omits ordinary `static_actors`, even if they have a combat profile, so local QA can distinguish authored attackable spawn presence from hand-authored visible/service actors without fetching and filtering the full `/local/static-actors` list.
+The broader map-occupancy view also carries that same per-map subset:
+
+- `GET /local/maps`
+  - each map entry keeps the full `static_actors` array unchanged
+  - each map entry also exposes `spawn_group_count` and `spawn_groups` for the spawn-backed actors on that effective map
+  - `spawn_groups` rows use the same static-actor snapshot shape as `GET /local/spawn-groups`
+
+This makes authored attackable spawn placement visible in map-local debugging output while preserving the existing static-actor occupancy contract for all visible actors.
 
 Each row reuses the current static-actor snapshot fields:
 - `entity_id` / client-visible static-actor `VID`

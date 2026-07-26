@@ -3364,7 +3364,10 @@ func TestLocalCurrencyEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 }
 
 func TestLocalMapsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
-	snapshotter := &stubMapOccupancySnapshotter{snapshots: []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "Zulu"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "Alpha"}, {"name": "PeerTwo"}}}}}
+	snapshotter := &stubMapOccupancySnapshotter{snapshots: []map[string]any{
+		{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "Zulu"}}},
+		{"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "Alpha"}, {"name": "PeerTwo"}}, "spawn_group_count": 1, "spawn_groups": []map[string]any{{"name": "PracticeMobAlpha", "spawn_group_ref": "practice.mob_alpha"}}},
+	}}
 	mux := NewPprofMuxWithLocalRuntimeIntrospection("gamed", nil, nil, nil, nil, nil, nil, snapshotter.MapOccupancy)
 
 	req := httptest.NewRequest(http.MethodGet, "/local/maps", nil)
@@ -3386,8 +3389,9 @@ func TestLocalMapsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"map_index":42`) || !strings.Contains(string(body), `"character_count":2`) || !strings.Contains(string(body), `"name":"PeerTwo"`) {
-		t.Fatalf("unexpected JSON response body %q", string(body))
+	response := string(body)
+	if !strings.Contains(response, `"map_index":42`) || !strings.Contains(response, `"character_count":2`) || !strings.Contains(response, `"name":"PeerTwo"`) || !strings.Contains(response, `"spawn_group_count":1`) || !strings.Contains(response, `"spawn_group_ref":"practice.mob_alpha"`) {
+		t.Fatalf("unexpected JSON response body %q", response)
 	}
 }
 

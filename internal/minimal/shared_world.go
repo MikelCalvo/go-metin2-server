@@ -2563,6 +2563,8 @@ func (r *sharedWorldRegistry) markCharacterVisibilityStaticActorStateLocked(snap
 func (r *sharedWorldRegistry) markMapOccupancyStaticActorStateLocked(snapshots []MapOccupancySnapshot) []MapOccupancySnapshot {
 	for i := range snapshots {
 		snapshots[i].StaticActors = r.markStaticActorSnapshotsStateLocked(snapshots[i].StaticActors)
+		snapshots[i].SpawnGroups = r.markStaticActorSnapshotsStateLocked(snapshots[i].SpawnGroups)
+		snapshots[i].SpawnGroupCount = len(snapshots[i].SpawnGroups)
 	}
 	return snapshots
 }

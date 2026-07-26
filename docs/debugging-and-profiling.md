@@ -431,12 +431,15 @@ Each entry includes:
 - `characters`
 - `static_actor_count`
 - `static_actors`
+- `spawn_group_count`
+- `spawn_groups`
 - `ground_item_count`
 - `ground_items`
 
 The `characters` array is sorted by name and each character uses the same effective runtime location fields exposed by `/local/players`, including the current `dead` flag.
 Static actors are surfaced in the owned map snapshots as the current runtime expands beyond player-only visibility.
 Those static-actor entries now also expose `dead: true` while a runtime-owned practice mob is still dead before respawn.
+`spawn_group_count` and `spawn_groups` provide the deterministic per-map subset of those static actors whose `spawn_group_ref` is non-empty, using the same spawn-backed static-actor snapshot shape as `/local/spawn-groups`. This keeps attackable authored spawn presence inspectable from map occupancy without removing the actor from the full `static_actors` array.
 Temporary pending ground items are surfaced with their visible `vid`, `vnum`, optional `count`, optional display `owner_name`, owner identity (`owner_login`, `owner_character_id`, `owner_vid`), optional `gold_amount`, effective `map_index`, and `x/y/z` position so operator map snapshots show both connected actors and transient ground occupancy without losing the owned ground-entry identity used by stale-pickup guards.
 
 ### `GET /local/ground-items`
@@ -735,6 +738,7 @@ curl http://127.0.0.1:6060/local/spawn-groups
 ```
 
 This snapshot filters to attackable content materialized from `spawn_groups`; use `/local/static-actors` when you need the full visible static-actor set.
+`/local/maps` also embeds the same spawn-backed subset per occupied map as `spawn_group_count` and `spawn_groups`, so map-local QA does not need to cross-filter `/local/static-actors` manually.
 
 List the authored interaction catalog:
 
