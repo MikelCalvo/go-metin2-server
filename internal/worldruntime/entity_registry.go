@@ -194,6 +194,9 @@ func (r *EntityRegistry) StaticActor(id uint64) (StaticEntity, bool) {
 	defer r.mu.Unlock()
 	actor, ok := r.staticActors.ByEntityID(id)
 	if ok {
+		if r.staticActorVisibilityVIDConflictsWithPlayerLocked(actor) {
+			return StaticEntity{}, false
+		}
 		return actor, true
 	}
 	if r.maps == nil {
@@ -217,6 +220,9 @@ func (r *EntityRegistry) StaticActorByVID(vid uint32) (StaticEntity, bool) {
 	defer r.mu.Unlock()
 	actor, ok := r.staticActors.ByVID(vid)
 	if ok {
+		if r.entityIDOwnedByPlayerLocked(actor.Entity.ID) || r.staticActorVisibilityVIDConflictsWithPlayerLocked(actor) {
+			return StaticEntity{}, false
+		}
 		return actor, true
 	}
 	if r.maps == nil {

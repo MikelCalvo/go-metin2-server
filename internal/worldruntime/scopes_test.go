@@ -294,6 +294,24 @@ func TestScopesVisibleStaticActorsSkipDirectoryActorWithMapOnlyPlayerVisibleIDCo
 	}
 }
 
+func TestScopesVisibleStaticActorByVIDSkipsDirectoryActorWithMapOnlyPlayerVisibleIDCollision(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := NewEntityRegistryWithTopology(topology)
+	subject := registry.RegisterPlayer(entityRegistryCharacter("Subject", 0x02040101, 42, 1700, 2800))
+	actor := StaticEntity{Entity: Entity{ID: 0x02040122, Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(42, 1750, 2850), RaceNum: 20300}
+	if !registry.staticActors.Register(actor) {
+		t.Fatal("expected direct static actor directory registration to simulate partial map-index loss")
+	}
+	collidingPlayer := newPlayerEntity(17, entityRegistryCharacter("MapOnlyAlpha", uint32(actor.Entity.ID), 77, 1100, 2100))
+	if !registry.maps.Register(collidingPlayer) {
+		t.Fatal("expected direct player map-index registration to simulate missing player directory")
+	}
+
+	if lookup, ok := NewScopes(topology, registry).VisibleStaticActorByVID(subject.Character, uint32(actor.Entity.ID)); ok {
+		t.Fatalf("expected visible static actor VID target lookup to fail closed over map-only player visible-ID collision, got %+v", lookup)
+	}
+}
+
 func TestVisibleGroundItemsFollowConfiguredVisibilityPolicyAndRejectZeroVID(t *testing.T) {
 	topology := NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	subject := entityRegistryCharacter("Subject", 0x02040101, 0, 1700, 2800)

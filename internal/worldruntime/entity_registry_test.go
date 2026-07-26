@@ -1208,6 +1208,31 @@ func TestEntityRegistryAllStaticActorsSkipsDirectoryStaticActorWithMapOnlyPlayer
 	}
 }
 
+func TestEntityRegistryStaticActorLookupSkipsDirectoryStaticActorWithMapOnlyPlayerVisibleIDCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor := StaticEntity{Entity: Entity{ID: 0x02040101, Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !registry.staticActors.Register(actor) {
+		t.Fatal("expected direct static actor directory registration to simulate partial map-index loss")
+	}
+	player := newPlayerEntity(17, entityRegistryCharacter("MapOnlyAlpha", uint32(actor.Entity.ID), 77, 1100, 2100))
+	if !registry.maps.Register(player) {
+		t.Fatal("expected direct player map-index registration to simulate missing player directory")
+	}
+
+	if lookup, ok := registry.StaticActor(actor.Entity.ID); ok {
+		t.Fatalf("expected direct static actor lookup to fail closed over map-only player visible-ID collision, got %+v", lookup)
+	}
+	if lookup, ok := registry.StaticActorByVID(uint32(actor.Entity.ID)); ok {
+		t.Fatalf("expected static actor VID lookup to fail closed over map-only player visible-ID collision, got %+v", lookup)
+	}
+	if _, ok := registry.staticActors.ByEntityID(actor.Entity.ID); !ok {
+		t.Fatal("expected directory static actor to remain for explicit cleanup after rejected lookup")
+	}
+	if lookup, ok := registry.maps.PlayerByVID(player.Entity.VID); !ok || lookup.Entity.ID != player.Entity.ID {
+		t.Fatalf("expected map-only player visible-ID owner to remain intact, got player=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestEntityRegistryReturnsDeterministicSortedStaticActors(t *testing.T) {
 	registry := NewEntityRegistry()
 	guard, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
