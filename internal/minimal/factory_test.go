@@ -230,10 +230,11 @@ func TestGameRuntimeCleanupAccountStoreCrashTempFilesRemovesResidue(t *testing.T
 
 func TestGameRuntimeValidateLoginTicketStoreDryRunsTicketHandoffState(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
-	if err := store.Issue(loginticket.Ticket{Login: "zeta", LoginKey: 0x02000000}); err != nil {
+	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	if err := store.Issue(loginticket.Ticket{Login: "zeta", LoginKey: 0x02000000, IssuedAt: issuedAt}); err != nil {
 		t.Fatalf("issue zeta ticket: %v", err)
 	}
-	if err := store.Issue(loginticket.Ticket{Login: "alpha", LoginKey: 0x01000000}); err != nil {
+	if err := store.Issue(loginticket.Ticket{Login: "alpha", LoginKey: 0x01000000, IssuedAt: issuedAt}); err != nil {
 		t.Fatalf("issue alpha ticket: %v", err)
 	}
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
@@ -245,7 +246,7 @@ func TestGameRuntimeValidateLoginTicketStoreDryRunsTicketHandoffState(t *testing
 	if err != nil {
 		t.Fatalf("validate login ticket store: %v", err)
 	}
-	want := loginticket.SnapshotSummary{TicketCount: 2, Logins: []string{"alpha", "zeta"}, LoginKeys: []uint32{0x01000000, 0x02000000}}
+	want := loginticket.SnapshotSummary{TicketCount: 2, Logins: []string{"alpha", "zeta"}, LoginKeys: []uint32{0x01000000, 0x02000000}, OldestIssuedAt: minimalTimePtr(issuedAt), NewestIssuedAt: minimalTimePtr(issuedAt)}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected login ticket validation summary: got %#v want %#v", summary, want)
 	}
@@ -257,7 +258,8 @@ func TestGameRuntimeValidateLoginTicketStoreDryRunsTicketHandoffState(t *testing
 func TestGameRuntimeValidateLoginTicketStoreReportsCrashTempFiles(t *testing.T) {
 	ticketDir := t.TempDir()
 	store := loginticket.NewFileStore(ticketDir)
-	if err := store.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	if err := store.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: issuedAt}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(ticketDir, ".ticket-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
@@ -280,7 +282,8 @@ func TestGameRuntimeValidateLoginTicketStoreReportsCrashTempFiles(t *testing.T) 
 func TestGameRuntimeCleanupLoginTicketStoreCrashTempFilesRemovesResidue(t *testing.T) {
 	ticketDir := t.TempDir()
 	store := loginticket.NewFileStore(ticketDir)
-	if err := store.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
+	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	if err := store.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: issuedAt}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(ticketDir, ".ticket-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
@@ -295,7 +298,7 @@ func TestGameRuntimeCleanupLoginTicketStoreCrashTempFilesRemovesResidue(t *testi
 	if err != nil {
 		t.Fatalf("cleanup login ticket crash temp files: %v", err)
 	}
-	want := loginticket.SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}}
+	want := loginticket.SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}, OldestIssuedAt: minimalTimePtr(issuedAt), NewestIssuedAt: minimalTimePtr(issuedAt)}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected cleanup summary: got %#v want %#v", summary, want)
 	}
@@ -359,9 +362,11 @@ func TestGameRuntimePreviewLoginTicketStoreIssuedBeforeReportsStaleTicketsWithou
 		StaleLogins:    []string{"old"},
 		StaleLoginKeys: []uint32{0x01000000},
 		Current: loginticket.SnapshotSummary{
-			TicketCount: 2,
-			Logins:      []string{"new", "old"},
-			LoginKeys:   []uint32{0x02000000, 0x01000000},
+			TicketCount:    2,
+			Logins:         []string{"new", "old"},
+			LoginKeys:      []uint32{0x02000000, 0x01000000},
+			OldestIssuedAt: minimalTimePtr(oldIssuedAt),
+			NewestIssuedAt: minimalTimePtr(newIssuedAt),
 		},
 	}
 	if !reflect.DeepEqual(summary, want) {
@@ -403,9 +408,11 @@ func TestGameRuntimeCleanupLoginTicketStoreIssuedBeforeRemovesOnlyStaleTickets(t
 		RemovedLogins:    []string{"old"},
 		RemovedLoginKeys: []uint32{0x01000000},
 		Remaining: loginticket.SnapshotSummary{
-			TicketCount: 1,
-			Logins:      []string{"new"},
-			LoginKeys:   []uint32{0x02000000},
+			TicketCount:    1,
+			Logins:         []string{"new"},
+			LoginKeys:      []uint32{0x02000000},
+			OldestIssuedAt: minimalTimePtr(newIssuedAt),
+			NewestIssuedAt: minimalTimePtr(newIssuedAt),
 		},
 	}
 	if !reflect.DeepEqual(summary, want) {
@@ -574,7 +581,11 @@ func TestGameRuntimeValidateItemTemplateStoreBackupDryRunsManifestedBackup(t *te
 
 func TestGameRuntimePersistenceStatusReportsAllStoreSummaries(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
+	oldIssuedAt := time.Date(2026, 4, 17, 9, 30, 0, 0, time.UTC)
 	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	if err := ticketStore.Issue(loginticket.Ticket{Login: "old", LoginKey: 0x01020303, IssuedAt: oldIssuedAt}); err != nil {
+		t.Fatalf("issue old login ticket: %v", err)
+	}
 	if err := ticketStore.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: issuedAt}); err != nil {
 		t.Fatalf("issue login ticket: %v", err)
 	}
@@ -616,7 +627,13 @@ func TestGameRuntimePersistenceStatusReportsAllStoreSummaries(t *testing.T) {
 	if !status.LoginTicketStore.Valid || status.LoginTicketStore.Path != ticketStore.Dir() {
 		t.Fatalf("unexpected login ticket store status: %#v", status.LoginTicketStore)
 	}
-	wantTickets := loginticket.SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}}
+	wantTickets := loginticket.SnapshotSummary{
+		TicketCount:    2,
+		Logins:         []string{"mkmk", "old"},
+		LoginKeys:      []uint32{0x01020304, 0x01020303},
+		OldestIssuedAt: minimalTimePtr(oldIssuedAt),
+		NewestIssuedAt: minimalTimePtr(issuedAt),
+	}
 	if !reflect.DeepEqual(status.LoginTicketStore.Summary, wantTickets) {
 		t.Fatalf("unexpected login ticket store summary: got %#v want %#v", status.LoginTicketStore.Summary, wantTickets)
 	}
@@ -5507,4 +5524,9 @@ func decodeSingleFrame(t *testing.T, raw []byte) frame.Frame {
 		t.Fatalf("expected 1 frame, got %d", len(frames))
 	}
 	return frames[0]
+}
+
+func minimalTimePtr(value time.Time) *time.Time {
+	value = value.UTC()
+	return &value
 }

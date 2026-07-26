@@ -84,15 +84,16 @@ Successful responses are JSON summaries with:
 - `ticket_count`
 - `logins` sorted in deterministic ticket-list order
 - `login_keys` in the same order as `logins`
+- optional `oldest_issued_at` / `newest_issued_at` bounds when at least one committed ticket is present
 - optional `crash_temp_count` and `crash_temp_files` when same-directory `.ticket-*.json` temp files are present
 
-Crash leftovers such as hidden `.ticket-*.json` temp files are not treated as pending handoff tickets, but validation reports them as deterministic residue. Use this endpoint to inspect both pending committed handoff state and interrupted ticket writes before debugging authd/gamed login-key issues; it is not a replay, consume, restore, or remote admin API.
+Crash leftovers such as hidden `.ticket-*.json` temp files are not treated as pending handoff tickets, but validation reports them as deterministic residue. The issued-at bounds are calculated from committed tickets only, so operators can quickly see the age span of pending one-shot handoffs before choosing a cutoff for stale-ticket preview or cleanup. Use this endpoint to inspect both pending committed handoff state and interrupted ticket writes before debugging authd/gamed login-key issues; it is not a replay, consume, restore, or remote admin API.
 
 ### `POST /local/login-tickets/crash-temps/cleanup`
 
 Removes same-directory `.ticket-*.json` crash-temp residue from the one-shot login-ticket handoff store after first validating the committed ticket set through the same strict loader used by `/local/login-tickets/validate`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if committed ticket state is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
 
-The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup login-ticket JSON summary (`ticket_count`, deterministic `logins`, and matching `login_keys`). Because cleanup validates before removing anything, corrupt committed tickets leave crash-temp files in place for manual recovery. Only hidden `.ticket-*.json` temp files are removed; committed handoff tickets and unrelated hidden files are preserved. Use `/local/login-tickets/validate` first when you want a read-only residue report, then this endpoint when the operator has decided interrupted temp ticket writes are disposable.
+The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup login-ticket JSON summary (`ticket_count`, deterministic `logins`, matching `login_keys`, and issued-at bounds when committed tickets remain). Because cleanup validates before removing anything, corrupt committed tickets leave crash-temp files in place for manual recovery. Only hidden `.ticket-*.json` temp files are removed; committed handoff tickets and unrelated hidden files are preserved. Use `/local/login-tickets/validate` first when you want a read-only residue report, then this endpoint when the operator has decided interrupted temp ticket writes are disposable.
 
 ### `POST /local/login-tickets/issued-before/preview`
 
@@ -102,7 +103,7 @@ Request body JSON fields:
 
 - `issued_before` — RFC3339/RFC3339Nano timestamp cutoff; tickets with `issued_at < issued_before` are reported as stale
 
-The preview path validates the whole committed ticket set through the same strict listing boundary used by `/local/login-tickets/validate`, including the requirement that every committed ticket has a non-zero `issued_at`, reports `stale_count`, deterministic `stale_logins` / `stale_login_keys`, and embeds the unchanged `current` login-ticket summary. Hidden `.ticket-*.json` crash-temp files are visible in the `current` summary but are not stale cleanup candidates. Use this endpoint before `/local/login-tickets/issued-before/cleanup` when an operator wants a no-mutation audit of abandoned authd-to-gamed handoff keys.
+The preview path validates the whole committed ticket set through the same strict listing boundary used by `/local/login-tickets/validate`, including the requirement that every committed ticket has a non-zero `issued_at`, reports `stale_count`, deterministic `stale_logins` / `stale_login_keys`, and embeds the unchanged `current` login-ticket summary with issued-at bounds when tickets are present. Hidden `.ticket-*.json` crash-temp files are visible in the `current` summary but are not stale cleanup candidates. Use this endpoint before `/local/login-tickets/issued-before/cleanup` when an operator wants a no-mutation audit of abandoned authd-to-gamed handoff keys.
 
 ### `POST /local/login-tickets/issued-before/cleanup`
 
@@ -112,7 +113,7 @@ Request body JSON fields:
 
 - `issued_before` — RFC3339/RFC3339Nano timestamp cutoff; only tickets with `issued_at < issued_before` are removed
 
-The cleanup path validates the whole committed ticket set through the same strict listing boundary used by `/local/login-tickets/validate` before deleting anything, so corrupt committed tickets or tickets with missing/zero `issued_at` fail closed and leave all pending handoff files available for inspection. Hidden `.ticket-*.json` crash-temp files are reported in the returned `remaining` summary but are not removed by this endpoint; use `/local/login-tickets/crash-temps/cleanup` for interrupted temp writes and `/local/login-tickets/issued-before/preview` for a no-mutation stale-ticket audit. Successful responses include the cutoff, `removed_count`, deterministic `removed_logins` / `removed_login_keys`, and a `remaining` login-ticket summary so operators can verify the pending handoff state after pruning stale tickets. This is a bounded local recovery primitive for abandoned authd-to-gamed handoff keys, not a remote admin API or a normal ticket-consume path.
+The cleanup path validates the whole committed ticket set through the same strict listing boundary used by `/local/login-tickets/validate` before deleting anything, so corrupt committed tickets or tickets with missing/zero `issued_at` fail closed and leave all pending handoff files available for inspection. Hidden `.ticket-*.json` crash-temp files are reported in the returned `remaining` summary but are not removed by this endpoint; use `/local/login-tickets/crash-temps/cleanup` for interrupted temp writes and `/local/login-tickets/issued-before/preview` for a no-mutation stale-ticket audit. Successful responses include the cutoff, `removed_count`, deterministic `removed_logins` / `removed_login_keys`, and a `remaining` login-ticket summary including issued-at bounds for the surviving handoff set, so operators can verify both pending count and age span after pruning stale tickets. This is a bounded local recovery primitive for abandoned authd-to-gamed handoff keys, not a remote admin API or a normal ticket-consume path.
 
 ### `POST /local/item-templates/validate`
 
@@ -237,7 +238,7 @@ Current response fields:
 - `login_ticket_store`
   - `path`
   - `valid`
-  - `summary` with the same `ticket_count`, `logins`, `login_keys`, and optional crash-temp fields returned by `/local/login-tickets/validate`
+  - `summary` with the same `ticket_count`, `logins`, `login_keys`, optional issued-at bounds, and optional crash-temp fields returned by `/local/login-tickets/validate`
   - optional `error` when validation fails
 - `item_template_store`
   - `path`

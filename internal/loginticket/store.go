@@ -104,11 +104,13 @@ type Ticket struct {
 }
 
 type SnapshotSummary struct {
-	TicketCount    int      `json:"ticket_count"`
-	Logins         []string `json:"logins"`
-	LoginKeys      []uint32 `json:"login_keys"`
-	CrashTempCount int      `json:"crash_temp_count,omitempty"`
-	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
+	TicketCount    int        `json:"ticket_count"`
+	Logins         []string   `json:"logins"`
+	LoginKeys      []uint32   `json:"login_keys"`
+	OldestIssuedAt *time.Time `json:"oldest_issued_at,omitempty"`
+	NewestIssuedAt *time.Time `json:"newest_issued_at,omitempty"`
+	CrashTempCount int        `json:"crash_temp_count,omitempty"`
+	CrashTempFiles []string   `json:"crash_temp_files,omitempty"`
 }
 
 type IssuedBeforePreviewSummary struct {
@@ -224,6 +226,15 @@ func summarizeTickets(tickets []Ticket, crashTempFiles []string) SnapshotSummary
 	for _, ticket := range tickets {
 		summary.Logins = append(summary.Logins, ticket.Login)
 		summary.LoginKeys = append(summary.LoginKeys, ticket.LoginKey)
+		issuedAt := ticket.IssuedAt.UTC()
+		if summary.OldestIssuedAt == nil || issuedAt.Before(*summary.OldestIssuedAt) {
+			oldest := issuedAt
+			summary.OldestIssuedAt = &oldest
+		}
+		if summary.NewestIssuedAt == nil || issuedAt.After(*summary.NewestIssuedAt) {
+			newest := issuedAt
+			summary.NewestIssuedAt = &newest
+		}
 	}
 	return summary
 }

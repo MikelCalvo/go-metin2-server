@@ -138,12 +138,41 @@ func TestFileStoreValidateReportsDeterministicTicketSummary(t *testing.T) {
 		t.Fatalf("validate ticket store: %v", err)
 	}
 	want := SnapshotSummary{
-		TicketCount: 3,
-		Logins:      []string{"Alpha", "alpha", "zeta"},
-		LoginKeys:   []uint32{0x01000000, 0x01000001, 0x02000000},
+		TicketCount:    3,
+		Logins:         []string{"Alpha", "alpha", "zeta"},
+		LoginKeys:      []uint32{0x01000000, 0x01000001, 0x02000000},
+		OldestIssuedAt: timePtr(issuedAt),
+		NewestIssuedAt: timePtr(issuedAt),
 	}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected ticket validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateReportsIssuedAtBounds(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	oldest := time.Date(2026, 4, 17, 9, 30, 0, 0, time.UTC)
+	middle := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	newest := time.Date(2026, 4, 17, 12, 45, 0, 0, time.UTC)
+	for _, ticket := range []Ticket{
+		{Login: "middle", LoginKey: 0x02000000, IssuedAt: middle},
+		{Login: "newest", LoginKey: 0x03000000, IssuedAt: newest},
+		{Login: "oldest", LoginKey: 0x01000000, IssuedAt: oldest},
+	} {
+		if err := store.Issue(ticket); err != nil {
+			t.Fatalf("issue ticket %s/%08x: %v", ticket.Login, ticket.LoginKey, err)
+		}
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate ticket store: %v", err)
+	}
+	if summary.OldestIssuedAt == nil || !summary.OldestIssuedAt.Equal(oldest) {
+		t.Fatalf("unexpected oldest issued_at: got %#v want %s", summary.OldestIssuedAt, oldest)
+	}
+	if summary.NewestIssuedAt == nil || !summary.NewestIssuedAt.Equal(newest) {
+		t.Fatalf("unexpected newest issued_at: got %#v want %s", summary.NewestIssuedAt, newest)
 	}
 }
 
@@ -174,7 +203,7 @@ func TestFileStoreValidateDoesNotTreatCrashTempTicketsAsCommitted(t *testing.T) 
 	if err != nil {
 		t.Fatalf("validate ticket store with crash temp file: %v", err)
 	}
-	want := SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}, CrashTempCount: 1, CrashTempFiles: []string{".ticket-crashed.json"}}
+	want := SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}, OldestIssuedAt: timePtr(issuedAt), NewestIssuedAt: timePtr(issuedAt), CrashTempCount: 1, CrashTempFiles: []string{".ticket-crashed.json"}}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected ticket summary: got %#v want %#v", summary, want)
 	}
@@ -221,7 +250,7 @@ func TestFileStoreCleanupCrashTempFilesRemovesOnlyCrashTemps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cleanup login ticket crash temp files: %v", err)
 	}
-	want := SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}}
+	want := SnapshotSummary{TicketCount: 1, Logins: []string{"mkmk"}, LoginKeys: []uint32{0x01020304}, OldestIssuedAt: timePtr(issuedAt), NewestIssuedAt: timePtr(issuedAt)}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected post-cleanup ticket summary: got %#v want %#v", summary, want)
 	}
@@ -289,6 +318,8 @@ func TestFileStoreCleanupIssuedBeforeRemovesOnlyOlderTickets(t *testing.T) {
 			TicketCount:    2,
 			Logins:         []string{"at-cutoff", "new"},
 			LoginKeys:      []uint32{0x02000000, 0x03000000},
+			OldestIssuedAt: timePtr(cutoff),
+			NewestIssuedAt: timePtr(newIssuedAt),
 			CrashTempCount: 1,
 			CrashTempFiles: []string{".ticket-crashed.json"},
 		},
@@ -399,6 +430,8 @@ func TestFileStorePreviewIssuedBeforeReportsStaleTicketsWithoutDeleting(t *testi
 			TicketCount:    3,
 			Logins:         []string{"at-cutoff", "new", "old"},
 			LoginKeys:      []uint32{0x02000000, 0x03000000, 0x01000000},
+			OldestIssuedAt: timePtr(oldIssuedAt),
+			NewestIssuedAt: timePtr(newIssuedAt),
 			CrashTempCount: 1,
 			CrashTempFiles: []string{".ticket-crashed.json"},
 		},
@@ -1117,4 +1150,9 @@ func mustJSON(t *testing.T, value any) []byte {
 		t.Fatalf("marshal JSON: %v", err)
 	}
 	return raw
+}
+
+func timePtr(value time.Time) *time.Time {
+	value = value.UTC()
+	return &value
 }
