@@ -174,6 +174,11 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 		InteractionDefinitionCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
 		ReferencedInteractionDefinitionCount:   SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
 		UnreferencedInteractionDefinitionCount: SummaryCountDelta{},
+		StaticActors: []StaticActorDelta{
+			{Change: "added", Candidate: &StaticActor{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
+			{Change: "added", Candidate: &StaticActor{Name: "Teleporter", MapIndex: 1, X: 1300, Y: 2300, RaceNum: 20303, InteractionKind: interactionstore.KindWarp, InteractionRef: "npc:teleporter"}},
+			{Change: "removed", Current: &StaticActor{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
+		},
 		InteractionKinds: []InteractionKindDelta{
 			{Kind: interactionstore.KindShopPreview, Count: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, ReferencedCount: SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}, UnreferencedCount: SummaryCountDelta{}},
 			{Kind: interactionstore.KindTalk, Count: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, ReferencedCount: SummaryCountDelta{Current: 1, Candidate: 0, Delta: -1}, UnreferencedCount: SummaryCountDelta{}},
@@ -200,6 +205,43 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(preview.Deltas, wantDeltas) {
 		t.Fatalf("unexpected import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas, wantDeltas)
+	}
+}
+
+func TestBuildImportPreviewReturnsStaticActorDeltas(t *testing.T) {
+	currentBlacksmith := StaticActor{Name: "Blacksmith", MapIndex: 1, X: 900, Y: 1900, RaceNum: 20300}
+	candidateMerchant := StaticActor{Name: "Merchant", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}
+
+	preview, err := BuildImportPreview(
+		Bundle{
+			StaticActors: []StaticActor{
+				currentBlacksmith,
+				{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+			},
+			InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."}},
+		},
+		Bundle{
+			StaticActors: []StaticActor{
+				candidateMerchant,
+				{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"},
+			},
+			ItemTemplates: testMerchantItemTemplates(),
+			InteractionDefinitions: []interactionstore.Definition{
+				testMerchantCatalogDefinition(),
+				{Kind: interactionstore.KindTalk, Ref: "npc:guide", Text: "Welcome."},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview static actor deltas: %v", err)
+	}
+
+	want := []StaticActorDelta{
+		{Change: "removed", Current: &currentBlacksmith},
+		{Change: "added", Candidate: &candidateMerchant},
+	}
+	if !reflect.DeepEqual(preview.Deltas.StaticActors, want) {
+		t.Fatalf("unexpected static-actor import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.StaticActors, want)
 	}
 }
 

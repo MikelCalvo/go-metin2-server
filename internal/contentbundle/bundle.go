@@ -103,6 +103,7 @@ type SummaryDeltas struct {
 	InteractionDefinitionCount             SummaryCountDelta            `json:"interaction_definition_count"`
 	ReferencedInteractionDefinitionCount   SummaryCountDelta            `json:"referenced_interaction_definition_count"`
 	UnreferencedInteractionDefinitionCount SummaryCountDelta            `json:"unreferenced_interaction_definition_count"`
+	StaticActors                           []StaticActorDelta           `json:"static_actors,omitempty"`
 	InteractionKinds                       []InteractionKindDelta       `json:"interaction_kinds,omitempty"`
 	InteractionDefinitions                 []InteractionDefinitionDelta `json:"interaction_definitions,omitempty"`
 	ItemTemplates                          []ItemTemplateDelta          `json:"item_templates,omitempty"`
@@ -135,6 +136,12 @@ type InteractionDefinitionDelta struct {
 	Change           string `json:"change"`
 	CurrentPreview   string `json:"current_preview,omitempty"`
 	CandidatePreview string `json:"candidate_preview,omitempty"`
+}
+
+type StaticActorDelta struct {
+	Change    string       `json:"change"`
+	Current   *StaticActor `json:"current,omitempty"`
+	Candidate *StaticActor `json:"candidate,omitempty"`
 }
 
 type ItemTemplateDelta struct {
@@ -464,6 +471,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		InteractionDefinitionCount:             summaryCountDelta(current.InteractionDefinitionCount, candidate.InteractionDefinitionCount),
 		ReferencedInteractionDefinitionCount:   summaryCountDelta(current.ReferencedInteractionDefinitionCount, candidate.ReferencedInteractionDefinitionCount),
 		UnreferencedInteractionDefinitionCount: summaryCountDelta(current.UnreferencedInteractionDefinitionCount, candidate.UnreferencedInteractionDefinitionCount),
+		StaticActors:                           buildStaticActorDeltas(currentBundle.StaticActors, candidateBundle.StaticActors),
 		InteractionKinds:                       buildInteractionKindDeltas(current.InteractionKinds, candidate.InteractionKinds),
 		InteractionDefinitions:                 buildInteractionDefinitionDeltas(currentBundle, candidateBundle),
 		ItemTemplates:                          buildItemTemplateDeltas(currentBundle.ItemTemplates, candidateBundle.ItemTemplates),
@@ -530,6 +538,56 @@ func interactionKindDeltaIsZero(delta InteractionKindDelta) bool {
 	return delta.Count.Delta == 0 &&
 		delta.ReferencedCount.Delta == 0 &&
 		delta.UnreferencedCount.Delta == 0
+}
+
+func buildStaticActorDeltas(currentActors []StaticActor, candidateActors []StaticActor) []StaticActorDelta {
+	if len(currentActors) == 0 && len(candidateActors) == 0 {
+		return nil
+	}
+	currentByKey := staticActorMapByAuthoringKey(currentActors)
+	candidateByKey := staticActorMapByAuthoringKey(candidateActors)
+	keysSeen := make(map[string]struct{}, len(currentByKey)+len(candidateByKey))
+	for key := range currentByKey {
+		keysSeen[key] = struct{}{}
+	}
+	for key := range candidateByKey {
+		keysSeen[key] = struct{}{}
+	}
+	keys := make([]string, 0, len(keysSeen))
+	for key := range keysSeen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	deltas := make([]StaticActorDelta, 0, len(keys))
+	for _, key := range keys {
+		current, currentOK := currentByKey[key]
+		candidate, candidateOK := candidateByKey[key]
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			deltas = append(deltas, StaticActorDelta{Change: "added", Candidate: &candidateCopy})
+		case !candidateOK:
+			currentCopy := current
+			deltas = append(deltas, StaticActorDelta{Change: "removed", Current: &currentCopy})
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			deltas = append(deltas, StaticActorDelta{Change: "changed", Current: &currentCopy, Candidate: &candidateCopy})
+		}
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func staticActorMapByAuthoringKey(actors []StaticActor) map[string]StaticActor {
+	byKey := make(map[string]StaticActor, len(actors))
+	for _, actor := range normalizeStaticActors(actors) {
+		byKey[staticActorAuthoringKey(actor)] = actor
+	}
+	return byKey
 }
 
 func buildInteractionDefinitionDeltas(current Bundle, candidate Bundle) []InteractionDefinitionDelta {
