@@ -260,6 +260,8 @@ The shipped `gamed` runtime also exposes a loopback-only read model for the curr
 
 - `GET /local/spawn-groups`
 - `GET /local/visibility`
+- `POST /local/relocate-preview`
+- `POST /local/transfer`
 
 This is an operator/debugging surface, not a gameplay packet and not a content mutation API.
 
@@ -275,6 +277,16 @@ The broader map-occupancy view also carries that same per-map subset:
   - `spawn_groups` rows use the same static-actor snapshot shape as `GET /local/spawn-groups`
 
 This makes authored attackable spawn placement visible in map-local debugging output while preserving the existing static-actor occupancy contract for all visible actors.
+
+The structured relocation preview/commit surfaces also expose spawn-backed visibility subsets beside their full static-actor visibility arrays:
+
+- `current_visible_spawn_groups`
+- `target_visible_spawn_groups`
+- `removed_visible_spawn_groups`
+- `added_visible_spawn_groups`
+
+Those fields are deterministic filters of the matching `*_visible_static_actors` arrays by non-empty `spawn_group_ref`.
+They preserve the same static-actor snapshot fields as `/local/spawn-groups`, including `dead: true` during the runtime-owned respawn interval and reward descriptor fields for authored reward mobs.
 
 Each row reuses the current static-actor snapshot fields:
 - `entity_id` / client-visible static-actor `VID`

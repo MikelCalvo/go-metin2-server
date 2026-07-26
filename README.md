@@ -13,7 +13,7 @@ This repository is a public rewrite built around owned protocol documentation, s
 - a shared in-process world runtime,
 - protocol codecs and fixtures for the owned packet families,
 - real-client-oriented integration tests around movement, visibility, chat, items, shops, combat, death, restart, and respawn slices,
-- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer and spawn-group snapshot/map-occupancy inspection, and manifest-backed item-template/account-store backup/restore preflights.
+- local operator/debug endpoints for runtime inspection, controlled bootstrap actions, static-actor respawn timer plus spawn-group snapshot/map-occupancy/transfer visibility inspection, and manifest-backed item-template/account-store backup/restore preflights.
 
 Current repository shape from the latest scan:
 
@@ -46,7 +46,7 @@ Legend used below:
   - Inventory/equipment bootstrap, carried item movement, counted split/merge, quickslot edits, consumable use, `ITEM_USE_TO_ITEM` stack merging, item dropping, ground visibility, pickup, merchant buy/sell, gold mutation, and item/quickslot persistence slices exist. Full legacy item semantics are still not done: sockets, attributes, refine, anti-flag breadth, storage, trade, ownership timers, and compatibility-grade DB persistence remain future work.
 
 - `[~]` **M4 — NPCs, shops, static actors, and authored content**
-  - Static actors can be authored, inspected, imported/exported, and connected to `info`, `talk`, `warp`, and `shop_preview` definitions. Shops have structured catalogs and first buy/sell behavior. Spawn groups can materialize stationary practice mobs with bootstrap combat profiles and reward descriptors, including portable `combat_profiles` snapshots that canonicalization can register before spawn validation, and the loopback runtime now exposes filtered spawn-group snapshots both as a flat list and as per-map occupancy subsets for local QA. This is a useful content seam, not a complete quest/NPC/content scripting system.
+  - Static actors can be authored, inspected, imported/exported, and connected to `info`, `talk`, `warp`, and `shop_preview` definitions. Shops have structured catalogs and first buy/sell behavior. Spawn groups can materialize stationary practice mobs with bootstrap combat profiles and reward descriptors, including portable `combat_profiles` snapshots that canonicalization can register before spawn validation, and the loopback runtime now exposes filtered spawn-group snapshots as a flat list, per-map occupancy subsets, per-player visibility subsets, and structured relocation preview/transfer visibility deltas for local QA. This is a useful content seam, not a complete quest/NPC/content scripting system.
 
 - `[~]` **M5 — Combat, mobs, death, restart, and rewards**
   - Target selection, normal attack ingress, cadence gates, runtime HP, dead-state rejection, delayed respawn, aggro-lite engagement ownership, retaliation, player death floor, restart-here/restart-town bootstrap recovery, deterministic EXP/gold rewards, and fixed drop-vnum reward seams exist for practice mobs. Real combat formulas, skills, PvP, mob AI, chase/leash/return, loot tables, and full revive choreography are not compatibility-grade yet.

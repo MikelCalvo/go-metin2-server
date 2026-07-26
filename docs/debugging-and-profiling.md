@@ -354,11 +354,16 @@ Use this as an on-box dry-run check before applying a larger content bundle or b
   - `target_visible_static_actors`
   - `removed_visible_static_actors`
   - `added_visible_static_actors`
+  - `current_visible_spawn_groups`
+  - `target_visible_spawn_groups`
+  - `removed_visible_spawn_groups`
+  - `added_visible_spawn_groups`
   - `before_map_occupancy`
   - `after_map_occupancy`
   - `map_occupancy_changes`
 
 Visible static-actor entries in this preview now also expose `dead: true` while a runtime-owned practice mob remains in its owned dead interval before respawn.
+The visible spawn-group arrays are deterministic subsets of the matching static-actor arrays whose `spawn_group_ref` is non-empty, preserving the same `dead` and reward-descriptor fields as `/local/spawn-groups`.
 `before_map_occupancy` and `after_map_occupancy` also include currently pending bootstrap ground items, preserving transient ground occupancy across dry-run map snapshots without redefining `map_occupancy_changes`, which remains character-count oriented.
 Player snapshots in the same preview now also expose `dead: true` while a still-connected engaged owner remains at the current retaliation-owned `0`-HP floor, whether that owner appears as `character`, `target`, or a visible peer.
 

@@ -126,6 +126,10 @@ type RelocationPreview struct {
 	TargetVisibleStaticActors  []StaticActorSnapshot        `json:"target_visible_static_actors"`
 	RemovedVisibleStaticActors []StaticActorSnapshot        `json:"removed_visible_static_actors"`
 	AddedVisibleStaticActors   []StaticActorSnapshot        `json:"added_visible_static_actors"`
+	CurrentVisibleSpawnGroups  []StaticActorSnapshot        `json:"current_visible_spawn_groups"`
+	TargetVisibleSpawnGroups   []StaticActorSnapshot        `json:"target_visible_spawn_groups"`
+	RemovedVisibleSpawnGroups  []StaticActorSnapshot        `json:"removed_visible_spawn_groups"`
+	AddedVisibleSpawnGroups    []StaticActorSnapshot        `json:"added_visible_spawn_groups"`
 	CurrentVisibleGroundItems  []GroundItemSnapshot         `json:"current_visible_ground_items,omitempty"`
 	TargetVisibleGroundItems   []GroundItemSnapshot         `json:"target_visible_ground_items,omitempty"`
 	RemovedVisibleGroundItems  []GroundItemSnapshot         `json:"removed_visible_ground_items,omitempty"`
@@ -407,6 +411,10 @@ func (s Scopes) BuildRelocationPreviewWithGroundItems(current, target loginticke
 		TargetVisibleStaticActors:  staticActorSnapshots(s.Topology, staticActorVisibilityDiff.TargetVisibleActors),
 		RemovedVisibleStaticActors: staticActorSnapshots(s.Topology, staticActorVisibilityDiff.RemovedVisibleActors),
 		AddedVisibleStaticActors:   staticActorSnapshots(s.Topology, staticActorVisibilityDiff.AddedVisibleActors),
+		CurrentVisibleSpawnGroups:  spawnGroupSnapshots(s.Topology, staticActorVisibilityDiff.CurrentVisibleActors),
+		TargetVisibleSpawnGroups:   spawnGroupSnapshots(s.Topology, staticActorVisibilityDiff.TargetVisibleActors),
+		RemovedVisibleSpawnGroups:  spawnGroupSnapshots(s.Topology, staticActorVisibilityDiff.RemovedVisibleActors),
+		AddedVisibleSpawnGroups:    spawnGroupSnapshots(s.Topology, staticActorVisibilityDiff.AddedVisibleActors),
 		CurrentVisibleGroundItems:  groundItemVisibilityDiff.CurrentVisibleItems,
 		TargetVisibleGroundItems:   groundItemVisibilityDiff.TargetVisibleItems,
 		RemovedVisibleGroundItems:  groundItemVisibilityDiff.RemovedVisibleItems,

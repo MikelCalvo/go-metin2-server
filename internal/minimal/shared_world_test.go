@@ -13340,6 +13340,88 @@ func TestGameRuntimePreviewRelocationRejectsUnknownTarget(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeTransferCharacterStructuredSnapshotsExposeSpawnGroupVisibilityDeltas(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerThree := peerVisibilityCharacter("PeerThree", 0x01030103, 0x02040103, 1700, 2800, 1, 103, 203)
+	peerThree.MapIndex = 42
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+	issuePeerTicket(t, store, "peer-three", 0x33333333, peerThree)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{Ref: "practice.source_mob", Name: "SourcePracticeMob", MapIndex: bootstrapMapIndex, X: 1350, Y: 2350, RaceNum: 20350, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob)},
+		{Ref: "practice.destination_mob", Name: "DestinationPracticeMob", MapIndex: 42, X: 1750, Y: 2850, RaceNum: 20351, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob)},
+	}})
+	if err != nil {
+		t.Fatalf("import source and destination spawn-group bundle: %v", err)
+	}
+	actors := runtime.SpawnGroups()
+	if len(actors) != 2 {
+		t.Fatalf("expected two spawn-group snapshots after import, got %+v", actors)
+	}
+	var sourceSpawn, destinationSpawn StaticActorSnapshot
+	for _, actor := range actors {
+		if actor.SpawnGroupRef == "practice.source_mob" {
+			sourceSpawn = actor
+		}
+		if actor.SpawnGroupRef == "practice.destination_mob" {
+			destinationSpawn = actor
+		}
+	}
+	if sourceSpawn.EntityID == 0 || destinationSpawn.EntityID == 0 {
+		t.Fatalf("expected source and destination spawn groups to be materialized, got %+v", actors)
+	}
+
+	factory := runtime.SessionFactory()
+	peerThreeFlow, _ := enterGameWithLoginTicket(t, factory, "peer-three", 0x33333333)
+	defer closeSessionFlow(t, peerThreeFlow)
+	peerTwoFlow, _ := enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	defer closeSessionFlow(t, peerTwoFlow)
+
+	preview, ok := runtime.PreviewRelocation("PeerTwo", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected relocation preview across spawn-group maps to succeed")
+	}
+	if len(preview.CurrentVisibleSpawnGroups) != 1 || preview.CurrentVisibleSpawnGroups[0].EntityID != sourceSpawn.EntityID || preview.CurrentVisibleSpawnGroups[0].SpawnGroupRef != "practice.source_mob" {
+		t.Fatalf("unexpected preview current visible spawn groups: %+v", preview.CurrentVisibleSpawnGroups)
+	}
+	if len(preview.TargetVisibleSpawnGroups) != 1 || preview.TargetVisibleSpawnGroups[0].EntityID != destinationSpawn.EntityID || preview.TargetVisibleSpawnGroups[0].SpawnGroupRef != "practice.destination_mob" {
+		t.Fatalf("unexpected preview target visible spawn groups: %+v", preview.TargetVisibleSpawnGroups)
+	}
+	if len(preview.RemovedVisibleSpawnGroups) != 1 || preview.RemovedVisibleSpawnGroups[0].EntityID != sourceSpawn.EntityID || preview.RemovedVisibleSpawnGroups[0].SpawnGroupRef != "practice.source_mob" {
+		t.Fatalf("unexpected preview removed visible spawn groups: %+v", preview.RemovedVisibleSpawnGroups)
+	}
+	if len(preview.AddedVisibleSpawnGroups) != 1 || preview.AddedVisibleSpawnGroups[0].EntityID != destinationSpawn.EntityID || preview.AddedVisibleSpawnGroups[0].SpawnGroupRef != "practice.destination_mob" {
+		t.Fatalf("unexpected preview added visible spawn groups: %+v", preview.AddedVisibleSpawnGroups)
+	}
+
+	result, ok := runtime.TransferCharacter("PeerTwo", 42, 1700, 2800)
+	if !ok {
+		t.Fatal("expected transfer across spawn-group maps to succeed")
+	}
+	if !result.Applied {
+		t.Fatal("expected transfer result to be marked applied")
+	}
+	if len(result.CurrentVisibleSpawnGroups) != 1 || result.CurrentVisibleSpawnGroups[0].EntityID != sourceSpawn.EntityID || result.CurrentVisibleSpawnGroups[0].SpawnGroupRef != "practice.source_mob" {
+		t.Fatalf("unexpected transfer current visible spawn groups: %+v", result.CurrentVisibleSpawnGroups)
+	}
+	if len(result.TargetVisibleSpawnGroups) != 1 || result.TargetVisibleSpawnGroups[0].EntityID != destinationSpawn.EntityID || result.TargetVisibleSpawnGroups[0].SpawnGroupRef != "practice.destination_mob" {
+		t.Fatalf("unexpected transfer target visible spawn groups: %+v", result.TargetVisibleSpawnGroups)
+	}
+	if len(result.RemovedVisibleSpawnGroups) != 1 || result.RemovedVisibleSpawnGroups[0].EntityID != sourceSpawn.EntityID || result.RemovedVisibleSpawnGroups[0].SpawnGroupRef != "practice.source_mob" {
+		t.Fatalf("unexpected transfer removed visible spawn groups: %+v", result.RemovedVisibleSpawnGroups)
+	}
+	if len(result.AddedVisibleSpawnGroups) != 1 || result.AddedVisibleSpawnGroups[0].EntityID != destinationSpawn.EntityID || result.AddedVisibleSpawnGroups[0].SpawnGroupRef != "practice.destination_mob" {
+		t.Fatalf("unexpected transfer added visible spawn groups: %+v", result.AddedVisibleSpawnGroups)
+	}
+}
+
 func TestSharedWorldRegistryJoinUsesSessionDirectoryFrameSink(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

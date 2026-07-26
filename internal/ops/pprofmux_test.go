@@ -2253,6 +2253,10 @@ func TestLocalTransferEndpointReturnsStructuredJSONForLoopbackPost(t *testing.T)
 		"added_visible_peers":           []map[string]any{{"name": "PeerThree"}},
 		"removed_visible_static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}},
 		"added_visible_static_actors":   []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}},
+		"current_visible_spawn_groups":  []map[string]any{{"entity_id": uint64(3), "name": "SourcePracticeMob", "spawn_group_ref": "practice.source_mob"}},
+		"target_visible_spawn_groups":   []map[string]any{{"entity_id": uint64(4), "name": "DestinationPracticeMob", "spawn_group_ref": "practice.destination_mob"}},
+		"removed_visible_spawn_groups":  []map[string]any{{"entity_id": uint64(3), "name": "SourcePracticeMob", "spawn_group_ref": "practice.source_mob"}},
+		"added_visible_spawn_groups":    []map[string]any{{"entity_id": uint64(4), "name": "DestinationPracticeMob", "spawn_group_ref": "practice.destination_mob"}},
 		"map_occupancy_changes":         []map[string]any{{"map_index": uint32(1), "before_count": 2, "after_count": 1}, {"map_index": uint32(42), "before_count": 1, "after_count": 2}},
 		"before_map_occupancy":          []map[string]any{{"map_index": uint32(1), "character_count": 2, "characters": []map[string]any{{"name": "PeerOne"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 1, "characters": []map[string]any{{"name": "PeerThree"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
 		"after_map_occupancy":           []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "PeerOne"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "PeerThree"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
@@ -2278,7 +2282,7 @@ func TestLocalTransferEndpointReturnsStructuredJSONForLoopbackPost(t *testing.T)
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"applied":true`) || !strings.Contains(string(body), `"map_occupancy_changes"`) || !strings.Contains(string(body), `"before_map_occupancy"`) || !strings.Contains(string(body), `"after_map_occupancy"`) || !strings.Contains(string(body), `"removed_visible_static_actors"`) || !strings.Contains(string(body), `"added_visible_static_actors"`) || !strings.Contains(string(body), `"static_actor_count":1`) || !strings.Contains(string(body), `"name":"PeerThree"`) || !strings.Contains(string(body), `"name":"VillageGuard"`) {
+	if !strings.Contains(string(body), `"applied":true`) || !strings.Contains(string(body), `"map_occupancy_changes"`) || !strings.Contains(string(body), `"before_map_occupancy"`) || !strings.Contains(string(body), `"after_map_occupancy"`) || !strings.Contains(string(body), `"removed_visible_static_actors"`) || !strings.Contains(string(body), `"added_visible_static_actors"`) || !strings.Contains(string(body), `"current_visible_spawn_groups"`) || !strings.Contains(string(body), `"target_visible_spawn_groups"`) || !strings.Contains(string(body), `"removed_visible_spawn_groups"`) || !strings.Contains(string(body), `"added_visible_spawn_groups"`) || !strings.Contains(string(body), `"spawn_group_ref":"practice.destination_mob"`) || !strings.Contains(string(body), `"static_actor_count":1`) || !strings.Contains(string(body), `"name":"PeerThree"`) || !strings.Contains(string(body), `"name":"VillageGuard"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }
@@ -2363,6 +2367,10 @@ func TestLocalRelocatePreviewEndpointReturnsJSONSnapshotForLoopbackPost(t *testi
 		"added_visible_peers":           []map[string]any{{"name": "PeerThree"}},
 		"removed_visible_static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}},
 		"added_visible_static_actors":   []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}},
+		"current_visible_spawn_groups":  []map[string]any{{"entity_id": uint64(3), "name": "SourcePracticeMob", "spawn_group_ref": "practice.source_mob"}},
+		"target_visible_spawn_groups":   []map[string]any{{"entity_id": uint64(4), "name": "DestinationPracticeMob", "spawn_group_ref": "practice.destination_mob"}},
+		"removed_visible_spawn_groups":  []map[string]any{{"entity_id": uint64(3), "name": "SourcePracticeMob", "spawn_group_ref": "practice.source_mob"}},
+		"added_visible_spawn_groups":    []map[string]any{{"entity_id": uint64(4), "name": "DestinationPracticeMob", "spawn_group_ref": "practice.destination_mob"}},
 		"map_occupancy_changes":         []map[string]any{{"map_index": uint32(1), "before_count": 2, "after_count": 1}, {"map_index": uint32(42), "before_count": 1, "after_count": 2}},
 		"before_map_occupancy":          []map[string]any{{"map_index": uint32(1), "character_count": 2, "characters": []map[string]any{{"name": "PeerOne"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 1, "characters": []map[string]any{{"name": "PeerThree"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
 		"after_map_occupancy":           []map[string]any{{"map_index": uint32(1), "character_count": 1, "characters": []map[string]any{{"name": "PeerOne"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(1), "name": "Blacksmith"}}}, {"map_index": uint32(42), "character_count": 2, "characters": []map[string]any{{"name": "PeerThree"}, {"name": "PeerTwo"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(2), "name": "VillageGuard"}}}},
@@ -2388,7 +2396,7 @@ func TestLocalRelocatePreviewEndpointReturnsJSONSnapshotForLoopbackPost(t *testi
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"removed_visible_peers"`) || !strings.Contains(string(body), `"map_occupancy_changes"`) || !strings.Contains(string(body), `"before_map_occupancy"`) || !strings.Contains(string(body), `"after_map_occupancy"`) || !strings.Contains(string(body), `"removed_visible_static_actors"`) || !strings.Contains(string(body), `"added_visible_static_actors"`) || !strings.Contains(string(body), `"static_actor_count":1`) || !strings.Contains(string(body), `"name":"PeerThree"`) || !strings.Contains(string(body), `"name":"VillageGuard"`) {
+	if !strings.Contains(string(body), `"removed_visible_peers"`) || !strings.Contains(string(body), `"map_occupancy_changes"`) || !strings.Contains(string(body), `"before_map_occupancy"`) || !strings.Contains(string(body), `"after_map_occupancy"`) || !strings.Contains(string(body), `"removed_visible_static_actors"`) || !strings.Contains(string(body), `"added_visible_static_actors"`) || !strings.Contains(string(body), `"current_visible_spawn_groups"`) || !strings.Contains(string(body), `"target_visible_spawn_groups"`) || !strings.Contains(string(body), `"removed_visible_spawn_groups"`) || !strings.Contains(string(body), `"added_visible_spawn_groups"`) || !strings.Contains(string(body), `"spawn_group_ref":"practice.destination_mob"`) || !strings.Contains(string(body), `"static_actor_count":1`) || !strings.Contains(string(body), `"name":"PeerThree"`) || !strings.Contains(string(body), `"name":"VillageGuard"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }

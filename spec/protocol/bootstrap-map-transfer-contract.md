@@ -68,6 +68,10 @@ Both preview and commit return the same JSON shape:
 - `target_visible_static_actors`
 - `removed_visible_static_actors`
 - `added_visible_static_actors`
+- `current_visible_spawn_groups`
+- `target_visible_spawn_groups`
+- `removed_visible_spawn_groups`
+- `added_visible_spawn_groups`
 - `map_occupancy_changes`
 - `before_map_occupancy`
 - `after_map_occupancy`
@@ -118,6 +122,25 @@ Static actors that would stop being visible after the transfer.
 
 Static actors that would become visible after the transfer.
 
+### `current_visible_spawn_groups`
+
+The deterministic subset of `current_visible_static_actors` whose `spawn_group_ref` is non-empty.
+This lets operator consumers inspect attackable authored spawn presence directly without re-filtering the full static-actor array.
+
+### `target_visible_spawn_groups`
+
+The deterministic subset of `target_visible_static_actors` whose `spawn_group_ref` is non-empty.
+
+### `removed_visible_spawn_groups`
+
+Spawn-backed actors that would stop being visible after the transfer.
+The entries use the same static-actor snapshot shape as `/local/spawn-groups` and preserve runtime state such as `dead: true` while a practice mob is waiting for respawn.
+
+### `added_visible_spawn_groups`
+
+Spawn-backed actors that would become visible after the transfer.
+This is an explicit convenience projection of the already-owned static-actor visibility diff; it does not redefine the gameplay transfer packet choreography.
+
 ### `map_occupancy_changes`
 
 A sorted list of only the maps whose occupancy would change, with:
@@ -140,11 +163,14 @@ Each map entry currently includes:
 - `characters`
 - `static_actor_count`
 - `static_actors`
+- `spawn_group_count`
+- `spawn_groups`
 
 ### `after_map_occupancy`
 
 A full sorted map-occupancy snapshot of the bootstrap runtime after the hypothetical or committed relocation.
 For the current bootstrap non-player contract, static actors remain unchanged across player relocation and should therefore appear in both the before/after snapshots for their effective maps.
+Spawn-backed actors also appear in each occupancy entry's `spawn_groups` subset while still remaining in the full `static_actors` array.
 
 ## Commit guarantees
 

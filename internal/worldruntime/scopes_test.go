@@ -1106,6 +1106,50 @@ func TestScopesBuildRelocationPreviewPreservesStaticOnlyMapsAndCharacterCountDel
 	}
 }
 
+func TestScopesBuildRelocationPreviewExposesSpawnGroupVisibilityDeltas(t *testing.T) {
+	topology := NewBootstrapTopology(1)
+	registry := NewEntityRegistryWithTopology(topology)
+	current := entityRegistryCharacter("PeerTwo", 0x02040102, 1, 1300, 2300)
+	registry.RegisterPlayer(current)
+
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "SourceBlacksmith"}, Position: NewPosition(1, 1350, 2350), RaceNum: 20301}); !ok {
+		t.Fatal("expected source plain static actor registration to succeed")
+	}
+	sourceSpawn, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "SourcePracticeMob"}, Position: NewPosition(1, 1400, 2400), RaceNum: 20350, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.source_mob"})
+	if !ok {
+		t.Fatal("expected source spawn-group actor registration to succeed")
+	}
+	if _, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "DestinationGuard"}, Position: NewPosition(42, 1750, 2850), RaceNum: 20300}); !ok {
+		t.Fatal("expected destination plain static actor registration to succeed")
+	}
+	destinationSpawn, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "DestinationPracticeMob"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20351, CombatProfile: StaticActorCombatProfilePracticeMob, SpawnGroupRef: "practice.destination_mob"})
+	if !ok {
+		t.Fatal("expected destination spawn-group actor registration to succeed")
+	}
+
+	target := current
+	target.MapIndex = 42
+	target.X = 1750
+	target.Y = 2850
+
+	preview := NewScopes(topology, registry).BuildRelocationPreview(current, target, false)
+	if len(preview.CurrentVisibleStaticActors) != 2 || len(preview.TargetVisibleStaticActors) != 2 {
+		t.Fatalf("expected full static actor visibility sets to keep plain and spawn actors, got current=%+v target=%+v", preview.CurrentVisibleStaticActors, preview.TargetVisibleStaticActors)
+	}
+	if len(preview.CurrentVisibleSpawnGroups) != 1 || preview.CurrentVisibleSpawnGroups[0].EntityID != sourceSpawn.Entity.ID || preview.CurrentVisibleSpawnGroups[0].SpawnGroupRef != "practice.source_mob" {
+		t.Fatalf("unexpected current visible spawn groups: %+v", preview.CurrentVisibleSpawnGroups)
+	}
+	if len(preview.TargetVisibleSpawnGroups) != 1 || preview.TargetVisibleSpawnGroups[0].EntityID != destinationSpawn.Entity.ID || preview.TargetVisibleSpawnGroups[0].SpawnGroupRef != "practice.destination_mob" {
+		t.Fatalf("unexpected target visible spawn groups: %+v", preview.TargetVisibleSpawnGroups)
+	}
+	if len(preview.RemovedVisibleSpawnGroups) != 1 || preview.RemovedVisibleSpawnGroups[0].EntityID != sourceSpawn.Entity.ID || preview.RemovedVisibleSpawnGroups[0].SpawnGroupRef != "practice.source_mob" {
+		t.Fatalf("unexpected removed visible spawn groups: %+v", preview.RemovedVisibleSpawnGroups)
+	}
+	if len(preview.AddedVisibleSpawnGroups) != 1 || preview.AddedVisibleSpawnGroups[0].EntityID != destinationSpawn.Entity.ID || preview.AddedVisibleSpawnGroups[0].SpawnGroupRef != "practice.destination_mob" {
+		t.Fatalf("unexpected added visible spawn groups: %+v", preview.AddedVisibleSpawnGroups)
+	}
+}
+
 func TestScopesBuildRelocationPreviewUsesAppliedFlag(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)

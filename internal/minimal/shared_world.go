@@ -2575,6 +2575,10 @@ func (r *sharedWorldRegistry) markRelocationPreviewStateLocked(preview Relocatio
 	preview.TargetVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.TargetVisibleStaticActors)
 	preview.RemovedVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.RemovedVisibleStaticActors)
 	preview.AddedVisibleStaticActors = r.markStaticActorSnapshotsStateLocked(preview.AddedVisibleStaticActors)
+	preview.CurrentVisibleSpawnGroups = r.markStaticActorSnapshotsStateLocked(preview.CurrentVisibleSpawnGroups)
+	preview.TargetVisibleSpawnGroups = r.markStaticActorSnapshotsStateLocked(preview.TargetVisibleSpawnGroups)
+	preview.RemovedVisibleSpawnGroups = r.markStaticActorSnapshotsStateLocked(preview.RemovedVisibleSpawnGroups)
+	preview.AddedVisibleSpawnGroups = r.markStaticActorSnapshotsStateLocked(preview.AddedVisibleSpawnGroups)
 	preview.BeforeMapOccupancy = r.markMapOccupancyStaticActorStateLocked(preview.BeforeMapOccupancy)
 	preview.AfterMapOccupancy = r.markMapOccupancyStaticActorStateLocked(preview.AfterMapOccupancy)
 	return preview
