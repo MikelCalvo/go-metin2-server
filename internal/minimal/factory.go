@@ -1602,6 +1602,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if targetVID == 0 || snapshotVersion == 0 || issuedPracticeMobServerOriginRetaliationSnapshotVersion == snapshotVersion {
 				return
 			}
+			if pendingPracticeMobServerOriginRetaliation && pendingPracticeMobServerOriginRetaliationTargetVID == targetVID && pendingPracticeMobServerOriginRetaliationSnapshotVersion == snapshotVersion {
+				return
+			}
 			now := sessionNow()
 			pendingPracticeMobServerOriginRetaliation = true
 			pendingPracticeMobServerOriginRetaliationAt = now.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
