@@ -184,6 +184,10 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 			{Kind: interactionstore.KindTalk, Ref: "npc:guide", Change: "removed", CurrentPreview: "Welcome."},
 			{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Change: "added", CandidatePreview: "Step through the gate. [warp -> map 7 @ 1300,2300]"},
 		},
+		ItemTemplates: []ItemTemplateDelta{
+			{Vnum: 11200, Change: "added", Candidate: &itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}},
+			{Vnum: 27001, Change: "added", Candidate: &itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
+		},
 		Maps: []MapContentDelta{{
 			MapIndex:                     1,
 			StaticActorCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
@@ -292,6 +296,52 @@ func TestBuildImportPreviewReturnsInteractionDefinitionDeltas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(preview.Deltas.InteractionDefinitions, want) {
 		t.Fatalf("unexpected interaction-definition import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.InteractionDefinitions, want)
+	}
+}
+
+func TestBuildImportPreviewReturnsItemTemplateDeltas(t *testing.T) {
+	currentRedPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	currentWoodenSword := itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}
+	candidateRedPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7}
+	candidateBluePotion := itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 6}
+
+	preview, err := BuildImportPreview(
+		Bundle{
+			ItemTemplates: []itemcatalog.Template{currentWoodenSword, currentRedPotion},
+			InteractionDefinitions: []interactionstore.Definition{{
+				Kind:  interactionstore.KindShopPreview,
+				Ref:   "npc:merchant",
+				Title: "Village Merchant",
+				Catalog: []interactionstore.MerchantCatalogEntry{
+					{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+					{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+				},
+			}},
+		},
+		Bundle{
+			ItemTemplates: []itemcatalog.Template{candidateBluePotion, candidateRedPotion},
+			InteractionDefinitions: []interactionstore.Definition{{
+				Kind:  interactionstore.KindShopPreview,
+				Ref:   "npc:merchant",
+				Title: "Village Merchant",
+				Catalog: []interactionstore.MerchantCatalogEntry{
+					{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+					{Slot: 1, ItemVnum: 27002, Price: 80, Count: 1},
+				},
+			}},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview item-template deltas: %v", err)
+	}
+
+	want := []ItemTemplateDelta{
+		{Vnum: 11200, Change: "removed", Current: &currentWoodenSword},
+		{Vnum: 27001, Change: "changed", Current: &currentRedPotion, Candidate: &candidateRedPotion},
+		{Vnum: 27002, Change: "added", Candidate: &candidateBluePotion},
+	}
+	if !reflect.DeepEqual(preview.Deltas.ItemTemplates, want) {
+		t.Fatalf("unexpected item-template import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.ItemTemplates, want)
 	}
 }
 

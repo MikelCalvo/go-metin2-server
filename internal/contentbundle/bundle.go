@@ -105,6 +105,7 @@ type SummaryDeltas struct {
 	UnreferencedInteractionDefinitionCount SummaryCountDelta            `json:"unreferenced_interaction_definition_count"`
 	InteractionKinds                       []InteractionKindDelta       `json:"interaction_kinds,omitempty"`
 	InteractionDefinitions                 []InteractionDefinitionDelta `json:"interaction_definitions,omitempty"`
+	ItemTemplates                          []ItemTemplateDelta          `json:"item_templates,omitempty"`
 	Maps                                   []MapContentDelta            `json:"maps,omitempty"`
 }
 
@@ -133,6 +134,13 @@ type InteractionDefinitionDelta struct {
 	Change           string `json:"change"`
 	CurrentPreview   string `json:"current_preview,omitempty"`
 	CandidatePreview string `json:"candidate_preview,omitempty"`
+}
+
+type ItemTemplateDelta struct {
+	Vnum      uint32                `json:"vnum"`
+	Change    string                `json:"change"`
+	Current   *itemcatalog.Template `json:"current,omitempty"`
+	Candidate *itemcatalog.Template `json:"candidate,omitempty"`
 }
 
 type MapContentDelta struct {
@@ -450,6 +458,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		UnreferencedInteractionDefinitionCount: summaryCountDelta(current.UnreferencedInteractionDefinitionCount, candidate.UnreferencedInteractionDefinitionCount),
 		InteractionKinds:                       buildInteractionKindDeltas(current.InteractionKinds, candidate.InteractionKinds),
 		InteractionDefinitions:                 buildInteractionDefinitionDeltas(currentBundle, candidateBundle),
+		ItemTemplates:                          buildItemTemplateDeltas(currentBundle.ItemTemplates, candidateBundle.ItemTemplates),
 		Maps:                                   buildMapContentDeltas(current.Maps, candidate.Maps),
 	}
 }
@@ -571,6 +580,48 @@ func buildInteractionDefinitionDeltas(current Bundle, candidate Bundle) []Intera
 				CurrentPreview:   compactInteractionPreview(interactionDefinitionCatalogPreview(currentDefinition, currentItemTemplates)),
 				CandidatePreview: compactInteractionPreview(interactionDefinitionCatalogPreview(candidateDefinition, candidateItemTemplates)),
 			})
+		}
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func buildItemTemplateDeltas(currentTemplates []itemcatalog.Template, candidateTemplates []itemcatalog.Template) []ItemTemplateDelta {
+	if len(currentTemplates) == 0 && len(candidateTemplates) == 0 {
+		return nil
+	}
+	currentByVnum := itemTemplateMapByVnum(currentTemplates)
+	candidateByVnum := itemTemplateMapByVnum(candidateTemplates)
+	vnumsSeen := make(map[uint32]struct{}, len(currentByVnum)+len(candidateByVnum))
+	for vnum := range currentByVnum {
+		vnumsSeen[vnum] = struct{}{}
+	}
+	for vnum := range candidateByVnum {
+		vnumsSeen[vnum] = struct{}{}
+	}
+	vnums := make([]uint32, 0, len(vnumsSeen))
+	for vnum := range vnumsSeen {
+		vnums = append(vnums, vnum)
+	}
+	sort.Slice(vnums, func(i int, j int) bool { return vnums[i] < vnums[j] })
+
+	deltas := make([]ItemTemplateDelta, 0, len(vnums))
+	for _, vnum := range vnums {
+		current, currentOK := currentByVnum[vnum]
+		candidate, candidateOK := candidateByVnum[vnum]
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			deltas = append(deltas, ItemTemplateDelta{Vnum: vnum, Change: "added", Candidate: &candidateCopy})
+		case !candidateOK:
+			currentCopy := current
+			deltas = append(deltas, ItemTemplateDelta{Vnum: vnum, Change: "removed", Current: &currentCopy})
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			deltas = append(deltas, ItemTemplateDelta{Vnum: vnum, Change: "changed", Current: &currentCopy, Candidate: &candidateCopy})
 		}
 	}
 	if len(deltas) == 0 {
