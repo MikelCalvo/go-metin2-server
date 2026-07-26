@@ -2669,9 +2669,10 @@ func TestLocalPersistenceStatusEndpointReturnsJSONSnapshotForLoopbackGet(t *test
 	snapshotter := &stubPersistenceStatusSnapshotter{snapshot: map[string]any{
 		"ok": true,
 		"account_store": map[string]any{
-			"path":    "/state/accounts",
-			"valid":   true,
-			"summary": map[string]any{"account_count": 1, "character_count": 1, "logins": []string{"mkmk"}},
+			"path":            "/state/accounts",
+			"valid":           true,
+			"summary":         map[string]any{"account_count": 1, "character_count": 1, "logins": []string{"mkmk"}},
+			"backup_manifest": map[string]any{"present": true, "path": "/state/accounts/account-backup-manifest.json"},
 		},
 		"login_ticket_store": map[string]any{
 			"path":    "/state/tickets",
@@ -2679,9 +2680,10 @@ func TestLocalPersistenceStatusEndpointReturnsJSONSnapshotForLoopbackGet(t *test
 			"summary": map[string]any{"ticket_count": 1, "logins": []string{"mkmk"}, "login_keys": []uint32{0x01020304}},
 		},
 		"item_template_store": map[string]any{
-			"path":    "/state/item-templates.json",
-			"valid":   true,
-			"summary": map[string]any{"template_count": 1, "vnums": []uint32{27001}},
+			"path":            "/state/item-templates.json",
+			"valid":           true,
+			"summary":         map[string]any{"template_count": 1, "vnums": []uint32{27001}},
+			"backup_manifest": map[string]any{"present": true, "path": "/state/item-template-backup-manifest.json"},
 		},
 		"static_actor_store": map[string]any{
 			"path":    "/state/static-actors.json",
@@ -2712,7 +2714,7 @@ func TestLocalPersistenceStatusEndpointReturnsJSONSnapshotForLoopbackGet(t *test
 		t.Fatalf("expected application/json content type, got %q", contentType)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"ok":true`, `"account_store"`, `"path":"/state/accounts"`, `"valid":true`, `"account_count":1`, `"login_ticket_store"`, `"ticket_count":1`, `"login_keys":[16909060]`, `"item_template_store"`, `"template_count":1`, `"vnums":[27001]`, `"static_actor_store"`, `"actor_count":1`, `"actor_ids":[7]`, `"interaction_store"`, `"definition_count":1`, `"definition_keys":["info:lore:alchemist"]`} {
+	for _, want := range []string{`"ok":true`, `"account_store"`, `"path":"/state/accounts"`, `"valid":true`, `"account_count":1`, `"backup_manifest":{"path":"/state/accounts/account-backup-manifest.json","present":true}`, `"login_ticket_store"`, `"ticket_count":1`, `"login_keys":[16909060]`, `"item_template_store"`, `"template_count":1`, `"vnums":[27001]`, `"backup_manifest":{"path":"/state/item-template-backup-manifest.json","present":true}`, `"static_actor_store"`, `"actor_count":1`, `"actor_ids":[7]`, `"interaction_store"`, `"definition_count":1`, `"definition_keys":["info:lore:alchemist"]`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected response body to contain %s, got %s", want, body)
 		}

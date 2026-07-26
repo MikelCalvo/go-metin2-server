@@ -234,6 +234,7 @@ Current response fields:
   - `path`
   - `valid`
   - `summary` with the same `account_count`, `character_count`, `logins`, and optional crash-temp fields returned by `/local/account-store/validate`
+  - `backup_manifest` with `present` plus `path` when a restored/backup metadata file is currently present in the active store directory
   - optional `error` when validation fails
 - `login_ticket_store`
   - `path`
@@ -244,6 +245,7 @@ Current response fields:
   - `path`
   - `valid`
   - `summary` with the same `template_count`, `vnums`, and optional crash-temp fields returned by `/local/item-templates/validate`
+  - `backup_manifest` with `present` plus `path` when a restored/backup metadata file is currently present next to the active item-template snapshot
   - optional `error` when validation fails
 - `static_actor_store`
   - `path`
@@ -256,7 +258,7 @@ Current response fields:
   - `summary` with `definition_count`, deterministic `definition_keys` (`kind:ref`), and optional interaction crash-temp fields
   - optional `error` when validation fails
 
-Use this endpoint as the first read-only persistence triage check before choosing a narrower validate, crash-temp cleanup, stale-ticket cleanup, backup, or restore endpoint. It deliberately keeps checking the remaining stores after one store fails, so a corrupt account snapshot does not hide healthy login-ticket, item-template, static-actor, or interaction-definition stores. Authored content stores that have no committed snapshot are reported as valid empty stores, while corrupt committed snapshots fail closed and still let operators inspect the other persistence surfaces in the same response. Account and item-template stores that still carry a restored backup manifest also verify that active manifest against the current committed snapshot bytes; malformed manifests, stale checksum/summary data, or item-template manifests that omit an existing committed snapshot make the affected store invalid so operators can detect post-restore drift before treating a replacement store as an exact backup copy. It is an operator/debugging surface, not a gameplay API and not a remote admin API.
+Use this endpoint as the first read-only persistence triage check before choosing a narrower validate, crash-temp cleanup, stale-ticket cleanup, backup, or restore endpoint. It deliberately keeps checking the remaining stores after one store fails, so a corrupt account snapshot does not hide healthy login-ticket, item-template, static-actor, or interaction-definition stores. Authored content stores that have no committed snapshot are reported as valid empty stores, while corrupt committed snapshots fail closed and still let operators inspect the other persistence surfaces in the same response. Account and item-template stores that still carry a restored backup manifest now report that manifest explicitly under `backup_manifest`, and validation still verifies that active manifest against the current committed snapshot bytes; malformed manifests, stale checksum/summary data, or item-template manifests that omit an existing committed snapshot make the affected store invalid so operators can detect post-restore drift before treating a replacement store as an exact backup copy. It is an operator/debugging surface, not a gameplay API and not a remote admin API.
 
 ### `GET` / `POST /local/static-actor-combat-profiles`
 

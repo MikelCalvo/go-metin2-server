@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -248,10 +250,11 @@ type PersistenceStatusSnapshot struct {
 }
 
 type AccountStoreStatus struct {
-	Path    string                       `json:"path"`
-	Valid   bool                         `json:"valid"`
-	Summary accountstore.SnapshotSummary `json:"summary"`
-	Error   string                       `json:"error,omitempty"`
+	Path           string                       `json:"path"`
+	Valid          bool                         `json:"valid"`
+	Summary        accountstore.SnapshotSummary `json:"summary"`
+	BackupManifest BackupManifestStatus         `json:"backup_manifest"`
+	Error          string                       `json:"error,omitempty"`
 }
 
 type LoginTicketStoreStatus struct {
@@ -262,10 +265,16 @@ type LoginTicketStoreStatus struct {
 }
 
 type ItemTemplateStoreStatus struct {
-	Path    string                      `json:"path"`
-	Valid   bool                        `json:"valid"`
-	Summary itemcatalog.SnapshotSummary `json:"summary"`
-	Error   string                      `json:"error,omitempty"`
+	Path           string                      `json:"path"`
+	Valid          bool                        `json:"valid"`
+	Summary        itemcatalog.SnapshotSummary `json:"summary"`
+	BackupManifest BackupManifestStatus        `json:"backup_manifest"`
+	Error          string                      `json:"error,omitempty"`
+}
+
+type BackupManifestStatus struct {
+	Present bool   `json:"present"`
+	Path    string `json:"path,omitempty"`
 }
 
 type StaticActorStoreStatus struct {
@@ -372,6 +381,7 @@ func (r *gameRuntime) accountStoreStatus() AccountStoreStatus {
 	if r != nil {
 		status.Path = accountStoreDir(r.accountStore)
 	}
+	status.BackupManifest = accountBackupManifestStatus(status.Path)
 	summary, err := r.ValidateAccountStore()
 	if err != nil {
 		status.Error = err.Error()
@@ -402,6 +412,7 @@ func (r *gameRuntime) itemTemplateStoreStatus() ItemTemplateStoreStatus {
 	if r != nil {
 		status.Path = itemTemplateStorePath(r.itemStore)
 	}
+	status.BackupManifest = itemTemplateBackupManifestStatus(status.Path)
 	summary, err := r.ValidateItemTemplateStore()
 	if err != nil {
 		status.Error = err.Error()
@@ -907,6 +918,28 @@ func itemTemplateStorePath(store itemcatalog.Store) string {
 		return locator.Path()
 	}
 	return ""
+}
+
+func accountBackupManifestStatus(accountStoreDir string) BackupManifestStatus {
+	if strings.TrimSpace(accountStoreDir) == "" {
+		return BackupManifestStatus{}
+	}
+	path := filepath.Join(accountStoreDir, accountstore.BackupManifestFilename)
+	if _, err := os.Stat(path); err == nil {
+		return BackupManifestStatus{Present: true, Path: path}
+	}
+	return BackupManifestStatus{}
+}
+
+func itemTemplateBackupManifestStatus(itemTemplatePath string) BackupManifestStatus {
+	if strings.TrimSpace(itemTemplatePath) == "" {
+		return BackupManifestStatus{}
+	}
+	path := filepath.Join(filepath.Dir(itemTemplatePath), itemcatalog.BackupManifestFilename)
+	if _, err := os.Stat(path); err == nil {
+		return BackupManifestStatus{Present: true, Path: path}
+	}
+	return BackupManifestStatus{}
 }
 
 func (r *gameRuntime) CombatTargetSnapshot(name string) (CombatTargetSnapshot, bool) {

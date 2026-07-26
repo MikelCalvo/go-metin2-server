@@ -1268,6 +1268,61 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 	}
 }
 
+func TestGameRuntimePersistenceStatusReportsActiveBackupManifestPresence(t *testing.T) {
+	root := t.TempDir()
+	sourceAccounts := accountstore.NewFileStore(filepath.Join(root, "source-accounts"))
+	if err := sourceAccounts.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	accountBackupDir := filepath.Join(root, "account-backup")
+	if err := sourceAccounts.BackupTo(accountBackupDir); err != nil {
+		t.Fatalf("backup source account store: %v", err)
+	}
+	activeAccounts := accountstore.NewFileStore(filepath.Join(root, "active-accounts"))
+	if err := activeAccounts.RestoreFrom(accountBackupDir); err != nil {
+		t.Fatalf("restore active account store: %v", err)
+	}
+
+	sourceItems := itemcatalog.NewFileStore(filepath.Join(root, "source-items", "item-templates.json"))
+	if err := sourceItems.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	itemBackupDir := filepath.Join(root, "item-template-backup")
+	if err := sourceItems.BackupTo(itemBackupDir); err != nil {
+		t.Fatalf("backup source item templates: %v", err)
+	}
+	activeItems := itemcatalog.NewFileStore(filepath.Join(root, "active-items", "item-templates.json"))
+	if err := activeItems.RestoreFrom(itemBackupDir); err != nil {
+		t.Fatalf("restore active item templates: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(filepath.Join(root, "tickets")),
+		activeAccounts,
+		nil,
+		nil,
+		activeItems,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if !status.OK {
+		t.Fatalf("expected restored stores to validate in persistence status: %+v", status)
+	}
+	wantAccountManifestPath := filepath.Join(activeAccounts.Dir(), accountstore.BackupManifestFilename)
+	if !status.AccountStore.BackupManifest.Present || status.AccountStore.BackupManifest.Path != wantAccountManifestPath {
+		t.Fatalf("unexpected account backup manifest status: got %+v want present path %q", status.AccountStore.BackupManifest, wantAccountManifestPath)
+	}
+	wantItemManifestPath := filepath.Join(filepath.Dir(activeItems.Path()), itemcatalog.BackupManifestFilename)
+	if !status.ItemTemplateStore.BackupManifest.Present || status.ItemTemplateStore.BackupManifest.Path != wantItemManifestPath {
+		t.Fatalf("unexpected item-template backup manifest status: got %+v want present path %q", status.ItemTemplateStore.BackupManifest, wantItemManifestPath)
+	}
+}
+
 func TestNewGameRuntimeRejectsOverlappingPersistencePaths(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Service{
