@@ -127,13 +127,15 @@ type Ticket struct {
 }
 
 type SnapshotSummary struct {
-	TicketCount    int        `json:"ticket_count"`
-	Logins         []string   `json:"logins"`
-	LoginKeys      []uint32   `json:"login_keys"`
-	OldestIssuedAt *time.Time `json:"oldest_issued_at,omitempty"`
-	NewestIssuedAt *time.Time `json:"newest_issued_at,omitempty"`
-	CrashTempCount int        `json:"crash_temp_count,omitempty"`
-	CrashTempFiles []string   `json:"crash_temp_files,omitempty"`
+	TicketCount             int        `json:"ticket_count"`
+	CharacterCount          int        `json:"character_count"`
+	EmptyCharacterSlotCount int        `json:"empty_character_slot_count,omitempty"`
+	Logins                  []string   `json:"logins"`
+	LoginKeys               []uint32   `json:"login_keys"`
+	OldestIssuedAt          *time.Time `json:"oldest_issued_at,omitempty"`
+	NewestIssuedAt          *time.Time `json:"newest_issued_at,omitempty"`
+	CrashTempCount          int        `json:"crash_temp_count,omitempty"`
+	CrashTempFiles          []string   `json:"crash_temp_files,omitempty"`
 }
 
 type IssuedBeforePreviewSummary struct {
@@ -249,6 +251,12 @@ func summarizeTickets(tickets []Ticket, crashTempFiles []string) SnapshotSummary
 	for _, ticket := range tickets {
 		summary.Logins = append(summary.Logins, ticket.Login)
 		summary.LoginKeys = append(summary.LoginKeys, ticket.LoginKey)
+		summary.CharacterCount += len(ticket.Characters)
+		for _, character := range ticket.Characters {
+			if character.IsEmptySlot() {
+				summary.EmptyCharacterSlotCount++
+			}
+		}
 		issuedAt := ticket.IssuedAt.UTC()
 		if summary.OldestIssuedAt == nil || issuedAt.Before(*summary.OldestIssuedAt) {
 			oldest := issuedAt

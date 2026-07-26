@@ -608,7 +608,7 @@ func TestLocalAccountStoreRestoreEndpointRejectsWrongMethod(t *testing.T) {
 }
 
 func TestLocalLoginTicketStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
-	validator := &stubLoginTicketStoreValidator{summary: map[string]any{"ticket_count": 2, "logins": []string{"alpha", "zeta"}, "login_keys": []uint32{0x01000000, 0x02000000}, "crash_temp_count": 1, "crash_temp_files": []string{".ticket-crashed.json"}}}
+	validator := &stubLoginTicketStoreValidator{summary: map[string]any{"ticket_count": 2, "character_count": 5, "empty_character_slot_count": 1, "logins": []string{"alpha", "zeta"}, "login_keys": []uint32{0x01000000, 0x02000000}, "crash_temp_count": 1, "crash_temp_files": []string{".ticket-crashed.json"}}}
 	mux := RegisterLocalLoginTicketStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/validate", nil)
@@ -624,7 +624,7 @@ func TestLocalLoginTicketStoreValidateEndpointReturnsSummaryForLoopbackPost(t *t
 		t.Fatalf("expected validator to be called once, got %d", validator.calls)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"ticket_count":2`, `"logins":["alpha","zeta"]`, `"login_keys":[16777216,33554432]`, `"crash_temp_count":1`, `"crash_temp_files":[".ticket-crashed.json"]`} {
+	for _, want := range []string{`"ticket_count":2`, `"character_count":5`, `"empty_character_slot_count":1`, `"logins":["alpha","zeta"]`, `"login_keys":[16777216,33554432]`, `"crash_temp_count":1`, `"crash_temp_files":[".ticket-crashed.json"]`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected response body to contain %s, got %s", want, body)
 		}

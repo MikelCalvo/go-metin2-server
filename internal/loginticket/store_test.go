@@ -183,6 +183,36 @@ func TestFileStoreValidateReportsDeterministicTicketSummary(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateReportsEmptyCharacterSlotCount(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	issuedAt := time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)
+	if err := store.Issue(Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: issuedAt, Characters: []Character{
+		{ID: 1, Name: "MkmkWar"},
+		{},
+		{ID: 2, Name: "MkmkSura"},
+		{},
+	}}); err != nil {
+		t.Fatalf("issue ticket with empty character slots: %v", err)
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate ticket store: %v", err)
+	}
+	want := SnapshotSummary{
+		TicketCount:             1,
+		CharacterCount:          4,
+		EmptyCharacterSlotCount: 2,
+		Logins:                  []string{"mkmk"},
+		LoginKeys:               []uint32{0x01020304},
+		OldestIssuedAt:          timePtr(issuedAt),
+		NewestIssuedAt:          timePtr(issuedAt),
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected empty-slot ticket summary: got %#v want %#v", summary, want)
+	}
+}
+
 func TestFileStoreValidateReportsIssuedAtBounds(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	oldest := time.Date(2026, 4, 17, 9, 30, 0, 0, time.UTC)
