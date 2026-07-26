@@ -126,6 +126,7 @@ The client-originated clear request is deliberately separate from that server cl
 - client -> server `TARGET(target_vid = 0)` is accepted as a silent clear-target intent for the current live selected session
 - it emits no self `GC TARGET(0, 0)` echo because the current client clears local target state before sending the zero-VID request
 - it clears the session's active target binding, resets the current first-owned normal-attack cadence window, cancels any pending practice-mob delayed retaliation beat owned by that selected target, and releases that session's current practice-mob engagement so another visible live session may select the still-live mob
+- an accepted non-zero retarget is deliberately different: it may cancel the session-local pending delayed retaliation beat for the old selected target, but it must **not** release any current-life practice-mob engagement that was already established by an accepted hit, so fresh third-party `TARGET` attempts against that still-live mob continue to fail closed until an explicit release boundary such as client `TARGET(0)`, owner disappearance/rebootstrap, owner zero-HP stale cleanup, actor update/removal, or mob death/respawn
 - a later `ATTACK` using the old target VID must fail closed until the session sends a fresh accepted non-zero `TARGET`
 
 ## Runtime combat-target snapshot
@@ -214,7 +215,7 @@ The next owned timing rule is still intentionally tiny:
 - the window is measured from server-owned runtime time (`runtime.now` in tests, wall-clock time otherwise), not from client animation or any client-supplied timestamp
 - clearing the active selected target resets this first owned cadence window, but replacing it through an accepted retarget does **not** reset the timer: an accepted hit against one target still suppresses immediate normal attacks against a newly selected second target until the same `250ms` window expires
 - this retarget-preserved window is covered directly in the minimal runtime regression suite so future target-selection changes cannot accidentally turn accepted retargets into an attack-speed bypass
-- client-originated `TARGET(0)` is now one of the explicit clear-selected-target boundaries that resets the window; accepted non-zero retargets remain cadence-preserving as above
+- client-originated `TARGET(0)` is now one of the explicit clear-selected-target boundaries that resets the window and releases that session's current practice-mob engagement; accepted non-zero retargets remain cadence-preserving and do not release already-engaged still-live practice mobs as above
 
 ## Failure semantics
 

@@ -3496,9 +3496,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					}
 					if activeCombatTargetVID != resolution.Packet.TargetVID || activeCombatTargetSnapshotVersion != resolution.SnapshotVersion {
 						resetPracticeMobServerOriginRetaliationState()
-						if activeCombatTargetVID != 0 && sharedWorld != nil && sharedWorldID != 0 {
-							sharedWorld.ClearStaticActorCombatEngagementsBySubject(sharedWorldID)
-						}
 					}
 					activeCombatTargetVID = resolution.Packet.TargetVID
 					activeCombatTargetSnapshotVersion = resolution.SnapshotVersion
