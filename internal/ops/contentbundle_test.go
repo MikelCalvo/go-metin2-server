@@ -598,6 +598,24 @@ func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(
 	if got.Deltas.ShopRouteCount != (contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1}) {
 		t.Fatalf("unexpected shop route delta: %+v", got.Deltas.ShopRouteCount)
 	}
+	wantShopCatalogs := []contentbundle.ShopCatalogDelta{{
+		Kind:   interactionstore.KindShopPreview,
+		Ref:    "npc:merchant",
+		Change: "added",
+		Candidate: &contentbundle.ShopCatalogSummary{
+			Kind:       interactionstore.KindShopPreview,
+			Ref:        "npc:merchant",
+			Title:      "Village Merchant",
+			EntryCount: 2,
+			Entries: []contentbundle.ShopCatalogEntrySummary{
+				{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+				{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1},
+			},
+		},
+	}}
+	if !reflect.DeepEqual(got.Deltas.ShopCatalogs, wantShopCatalogs) {
+		t.Fatalf("unexpected shop catalog import preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.ShopCatalogs, wantShopCatalogs)
+	}
 	wantStaticActors := []contentbundle.StaticActorDelta{
 		{Change: "added", Candidate: &contentbundle.StaticActor{Name: "Merchant", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20302, InteractionKind: interactionstore.KindShopPreview, InteractionRef: "npc:merchant"}},
 		{Change: "removed", Current: &contentbundle.StaticActor{Name: "VillageGuide", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},

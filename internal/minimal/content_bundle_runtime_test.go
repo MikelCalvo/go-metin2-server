@@ -140,12 +140,28 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 		t.Fatalf("preview content bundle import: %v", err)
 	}
 	wantDeltas := contentbundle.SummaryDeltas{
-		StaticActorCount:                       contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
-		InteractableStaticActorCount:           contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
-		SpawnGroupCount:                        contentbundle.SummaryCountDelta{},
-		CombatProfileCount:                     contentbundle.SummaryCountDelta{},
-		ItemTemplateCount:                      contentbundle.SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
-		ShopCatalogEntryCount:                  contentbundle.SummaryCountDelta{Current: 0, Candidate: 3, Delta: 3},
+		StaticActorCount:             contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		InteractableStaticActorCount: contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
+		SpawnGroupCount:              contentbundle.SummaryCountDelta{},
+		CombatProfileCount:           contentbundle.SummaryCountDelta{},
+		ItemTemplateCount:            contentbundle.SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+		ShopCatalogEntryCount:        contentbundle.SummaryCountDelta{Current: 0, Candidate: 3, Delta: 3},
+		ShopCatalogs: []contentbundle.ShopCatalogDelta{{
+			Kind:   interactionstore.KindShopPreview,
+			Ref:    "npc:merchant",
+			Change: "added",
+			Candidate: &contentbundle.ShopCatalogSummary{
+				Kind:       interactionstore.KindShopPreview,
+				Ref:        "npc:merchant",
+				Title:      "Village Merchant",
+				EntryCount: 3,
+				Entries: []contentbundle.ShopCatalogEntrySummary{
+					{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+					{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1},
+					{Slot: 2, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 2, Price: 100, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+				},
+			},
+		}},
 		ShopRouteCount:                         contentbundle.SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 		WarpDestinationCount:                   contentbundle.SummaryCountDelta{},
 		WarpRouteCount:                         contentbundle.SummaryCountDelta{},

@@ -161,12 +161,27 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 		t.Fatalf("unexpected preview summaries: current=%+v candidate=%+v", preview.Current, preview.Candidate)
 	}
 	wantDeltas := SummaryDeltas{
-		StaticActorCount:                       SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
-		InteractableStaticActorCount:           SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
-		SpawnGroupCount:                        SummaryCountDelta{},
-		CombatProfileCount:                     SummaryCountDelta{},
-		ItemTemplateCount:                      SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
-		ShopCatalogEntryCount:                  SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+		StaticActorCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+		InteractableStaticActorCount: SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
+		SpawnGroupCount:              SummaryCountDelta{},
+		CombatProfileCount:           SummaryCountDelta{},
+		ItemTemplateCount:            SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+		ShopCatalogEntryCount:        SummaryCountDelta{Current: 0, Candidate: 2, Delta: 2},
+		ShopCatalogs: []ShopCatalogDelta{{
+			Kind:   interactionstore.KindShopPreview,
+			Ref:    "npc:merchant",
+			Change: "added",
+			Candidate: &ShopCatalogSummary{
+				Kind:       interactionstore.KindShopPreview,
+				Ref:        "npc:merchant",
+				Title:      "Village Merchant",
+				EntryCount: 2,
+				Entries: []ShopCatalogEntrySummary{
+					{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+					{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1},
+				},
+			},
+		}},
 		ShopRouteCount:                         SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 		WarpDestinationCount:                   SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 		WarpRouteCount:                         SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
@@ -436,6 +451,110 @@ func TestBuildImportPreviewReturnsServiceRouteDeltas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(preview.Deltas.WarpRoutes, wantWarpRoutes) {
 		t.Fatalf("unexpected warp route import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.WarpRoutes, wantWarpRoutes)
+	}
+}
+
+func TestBuildImportPreviewReturnsShopCatalogDeltas(t *testing.T) {
+	redPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	woodenSword := itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}
+	currentShop := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Old Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: redPotion.Vnum, Price: 50, Count: 1},
+		},
+	}
+	currentOldShop := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:old_merchant",
+		Title: "Old Remote Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: redPotion.Vnum, Price: 80, Count: 1},
+		},
+	}
+	candidateShop := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Village Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: redPotion.Vnum, Price: 50, Count: 1},
+			{Slot: 1, ItemVnum: woodenSword.Vnum, Price: 500, Count: 1},
+		},
+	}
+	candidateRemoteShop := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:remote_merchant",
+		Title: "Remote Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: redPotion.Vnum, Price: 75, Count: 1},
+		},
+	}
+
+	preview, err := BuildImportPreview(
+		Bundle{
+			ItemTemplates: []itemcatalog.Template{redPotion},
+			InteractionDefinitions: []interactionstore.Definition{
+				currentShop,
+				currentOldShop,
+			},
+		},
+		Bundle{
+			ItemTemplates: []itemcatalog.Template{redPotion, woodenSword},
+			InteractionDefinitions: []interactionstore.Definition{
+				candidateShop,
+				candidateRemoteShop,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview shop catalog deltas: %v", err)
+	}
+
+	currentMerchantCatalog := ShopCatalogSummary{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:merchant",
+		Title:      "Old Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
+	}
+	candidateMerchantCatalog := ShopCatalogSummary{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:merchant",
+		Title:      "Village Merchant",
+		EntryCount: 2,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+			{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1},
+		},
+	}
+	currentOldCatalog := ShopCatalogSummary{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:old_merchant",
+		Title:      "Old Remote Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 80, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
+	}
+	candidateRemoteCatalog := ShopCatalogSummary{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:remote_merchant",
+		Title:      "Remote Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 75, Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		},
+	}
+	want := []ShopCatalogDelta{
+		{Kind: interactionstore.KindShopPreview, Ref: "npc:merchant", Change: "changed", Current: &currentMerchantCatalog, Candidate: &candidateMerchantCatalog},
+		{Kind: interactionstore.KindShopPreview, Ref: "npc:old_merchant", Change: "removed", Current: &currentOldCatalog},
+		{Kind: interactionstore.KindShopPreview, Ref: "npc:remote_merchant", Change: "added", Candidate: &candidateRemoteCatalog},
+	}
+	if !reflect.DeepEqual(preview.Deltas.ShopCatalogs, want) {
+		t.Fatalf("unexpected shop catalog import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.ShopCatalogs, want)
 	}
 }
 

@@ -94,6 +94,7 @@ type SummaryDeltas struct {
 	CombatProfileCount                     SummaryCountDelta            `json:"combat_profile_count"`
 	ItemTemplateCount                      SummaryCountDelta            `json:"item_template_count"`
 	ShopCatalogEntryCount                  SummaryCountDelta            `json:"shop_catalog_entry_count"`
+	ShopCatalogs                           []ShopCatalogDelta           `json:"shop_catalogs,omitempty"`
 	ShopRouteCount                         SummaryCountDelta            `json:"shop_route_count"`
 	WarpDestinationCount                   SummaryCountDelta            `json:"warp_destination_count"`
 	WarpRouteCount                         SummaryCountDelta            `json:"warp_route_count"`
@@ -174,6 +175,14 @@ type RewardDropDelta struct {
 	Change    string                      `json:"change"`
 	Current   *RewardDropAggregateSummary `json:"current,omitempty"`
 	Candidate *RewardDropAggregateSummary `json:"candidate,omitempty"`
+}
+
+type ShopCatalogDelta struct {
+	Kind      string              `json:"kind"`
+	Ref       string              `json:"ref"`
+	Change    string              `json:"change"`
+	Current   *ShopCatalogSummary `json:"current,omitempty"`
+	Candidate *ShopCatalogSummary `json:"candidate,omitempty"`
 }
 
 type ShopRouteDelta struct {
@@ -504,6 +513,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		CombatProfileCount:                     summaryCountDelta(current.CombatProfileCount, candidate.CombatProfileCount),
 		ItemTemplateCount:                      summaryCountDelta(current.ItemTemplateCount, candidate.ItemTemplateCount),
 		ShopCatalogEntryCount:                  summaryCountDelta(current.ShopCatalogEntryCount, candidate.ShopCatalogEntryCount),
+		ShopCatalogs:                           buildShopCatalogDeltas(current.ShopCatalogs, candidate.ShopCatalogs),
 		ShopRouteCount:                         summaryCountDelta(current.ShopRouteCount, candidate.ShopRouteCount),
 		WarpDestinationCount:                   summaryCountDelta(current.WarpDestinationCount, candidate.WarpDestinationCount),
 		WarpRouteCount:                         summaryCountDelta(current.WarpRouteCount, candidate.WarpRouteCount),
@@ -897,6 +907,92 @@ func rewardDropSummaryMapByVnum(drops []RewardDropAggregateSummary) map[uint32]R
 		byVnum[drop.ItemVnum] = drop
 	}
 	return byVnum
+}
+
+func buildShopCatalogDeltas(currentCatalogs []ShopCatalogSummary, candidateCatalogs []ShopCatalogSummary) []ShopCatalogDelta {
+	if len(currentCatalogs) == 0 && len(candidateCatalogs) == 0 {
+		return nil
+	}
+	currentByKey := make(map[string]ShopCatalogSummary, len(currentCatalogs))
+	candidateByKey := make(map[string]ShopCatalogSummary, len(candidateCatalogs))
+	identitiesByKey := make(map[string]InteractionDefinitionReferenceSummary, len(currentCatalogs)+len(candidateCatalogs))
+	for _, catalog := range currentCatalogs {
+		catalog = normalizeShopCatalogSummary(catalog)
+		key := interactionDefinitionKey(catalog.Kind, catalog.Ref)
+		currentByKey[key] = catalog
+		identitiesByKey[key] = InteractionDefinitionReferenceSummary{Kind: catalog.Kind, Ref: catalog.Ref}
+	}
+	for _, catalog := range candidateCatalogs {
+		catalog = normalizeShopCatalogSummary(catalog)
+		key := interactionDefinitionKey(catalog.Kind, catalog.Ref)
+		candidateByKey[key] = catalog
+		identitiesByKey[key] = InteractionDefinitionReferenceSummary{Kind: catalog.Kind, Ref: catalog.Ref}
+	}
+	identities := make([]InteractionDefinitionReferenceSummary, 0, len(identitiesByKey))
+	for _, identity := range identitiesByKey {
+		identities = append(identities, identity)
+	}
+	sort.Slice(identities, func(i int, j int) bool {
+		if identities[i].Kind == identities[j].Kind {
+			return identities[i].Ref < identities[j].Ref
+		}
+		return identities[i].Kind < identities[j].Kind
+	})
+
+	deltas := make([]ShopCatalogDelta, 0, len(identities))
+	for _, identity := range identities {
+		key := interactionDefinitionKey(identity.Kind, identity.Ref)
+		current, currentOK := currentByKey[key]
+		candidate, candidateOK := candidateByKey[key]
+		delta := ShopCatalogDelta{Kind: identity.Kind, Ref: identity.Ref}
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			delta.Change = "added"
+			delta.Candidate = &candidateCopy
+		case !candidateOK:
+			currentCopy := current
+			delta.Change = "removed"
+			delta.Current = &currentCopy
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			delta.Change = "changed"
+			delta.Current = &currentCopy
+			delta.Candidate = &candidateCopy
+		default:
+			continue
+		}
+		deltas = append(deltas, delta)
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func normalizeShopCatalogSummary(catalog ShopCatalogSummary) ShopCatalogSummary {
+	catalog.Kind = strings.TrimSpace(catalog.Kind)
+	catalog.Ref = strings.TrimSpace(catalog.Ref)
+	catalog.Title = strings.TrimSpace(catalog.Title)
+	catalog.Entries = cloneShopCatalogEntrySummaries(catalog.Entries)
+	catalog.EntryCount = len(catalog.Entries)
+	return catalog
+}
+
+func cloneShopCatalogEntrySummaries(entries []ShopCatalogEntrySummary) []ShopCatalogEntrySummary {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]ShopCatalogEntrySummary, len(entries))
+	copy(cloned, entries)
+	sort.Slice(cloned, func(i int, j int) bool {
+		if cloned[i].Slot == cloned[j].Slot {
+			return cloned[i].ItemVnum < cloned[j].ItemVnum
+		}
+		return cloned[i].Slot < cloned[j].Slot
+	})
+	return cloned
 }
 
 type serviceRouteIdentity struct {
