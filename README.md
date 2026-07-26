@@ -152,7 +152,7 @@ Already present:
 - carried inventory/equipment bootstrap replay,
 - item set/delete/update refreshes, including selected-character `ITEM_SET` projection of the currently owned authored item flag metadata (`refineable`, `save`, `stackable`, `sell_count_per_gold`, `slow_query`, `rare`, `unique`, `make_count`, `irremovable`, `confirm_when_use`, `quest_use`, `quest_use_multiple`, `log`, and `applicable`), anti-flag metadata (`anti_get`, transfer/job/sex/empire guards, stack guard, and storage/shop metadata bits `anti_save`, `anti_pk_drop`, `anti_myshop`, and `anti_safebox`), display socket/attribute metadata, and template-authored `highlight` hints while leaving unowned bits zero; partial-stack consumable, compatible merchant/drag-to-item/pickup merge, counted-drop, and compatible carried `ITEM_MOVE` merge `ITEM_UPDATE` refreshes preserve authored display sockets/attributes while updating only the count; incompatible occupied-destination carried `ITEM_MOVE` swaps now require both authored templates when an item-template snapshot is loaded, reject source/target live counts already above authored `max_count`, and project each resolved template's metadata into the swapped `ITEM_SET` refreshes,
 - item move, swap, split, and merge cases,
-- fail-closed item-template validation for malformed equipment metadata, including snapshots that combine stackable item semantics with an authored `equip_slot`,
+- fail-closed item-template validation for malformed equipment metadata and unguarded authored pickup rejection text, including snapshots that combine stackable item semantics with an authored `equip_slot`,
 - stack compatibility checks and max-stack guards for current slices,
 - locked source/target and duplicate occupancy rejection paths,
 - template-backed equip/unequip point-effect application and removal guards, including signed equip-effect penalties, authored `irremovable` equipment unequip rejection with template-authored `unequip_reject_message` info-chat feedback, fail-closed rejection when live equipment-source counts exceed authored template `max_count`, and visible appearance projection for equipped `body`, `weapon`, `head`, and `hair` items,
@@ -181,7 +181,7 @@ Already present:
 - temporary ground handles,
 - ground-item visibility to peers in scope,
 - `ITEM_GROUND_ADD` encoding now uses the TMP4-compatible client-facing payload order `x/y/z/vid/vnum`,
-- pickup into inventory with stack-merge behavior and template-authored pickup-rejection info text for transfer/selected-character restriction failures,
+- pickup into inventory with stack-merge behavior and guarded template-authored pickup-rejection info text for transfer/selected-character restriction failures,
 - first owner-delivery/notice shape for pickups,
 - merchant preview/catalog/open/close/buy/sell slices, including `GC::SHOP START` catalog entries backed by template-authored display sockets/attributes, refresh-only merchant-buy success bursts shared by packet `SHOP BUY` and the local `/shop_buy` debug harness, template-authored `anti_get` plus selected-character buy rejection info text, template-authored `anti_sell` plus selected-character sell rejection info text, template-authored `anti_stack`, malformed carried-item, over-template-max, sell-credit carrier overflow, and resulting-gold carrier overflow fail-closed sell-back rejection, and partial-stack sell `ITEM_UPDATE` refreshes that preserve authored display sockets/attributes,
 - gold mutation for current merchant and reward cases.

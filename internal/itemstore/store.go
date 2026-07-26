@@ -424,6 +424,9 @@ func validTemplate(template Template) bool {
 	if template.DropRejectText != "" && !templateHasDropRejectGuard(template) {
 		return false
 	}
+	if template.PickupRejectText != "" && !templateHasPickupRejectGuard(template) {
+		return false
+	}
 	if template.SellRejectText != "" && !templateHasSellRejectGuard(template) {
 		return false
 	}
@@ -471,6 +474,10 @@ func templateHasBuyRejectGuard(template Template) bool {
 }
 
 func templateHasDropRejectGuard(template Template) bool {
+	return templateHasSelectedCharacterGuard(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack
+}
+
+func templateHasPickupRejectGuard(template Template) bool {
 	return templateHasSelectedCharacterGuard(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack
 }
 

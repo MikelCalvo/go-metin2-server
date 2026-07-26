@@ -1839,6 +1839,31 @@ func TestFileStoreRejectsInvalidPickupRejectTextMetadata(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsPickupRejectTextWithoutOwnedGuard(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	invalid := Snapshot{Templates: []Template{{
+		Vnum:             27011,
+		Name:             "Unguarded Pickup Message Potion",
+		Stackable:        true,
+		MaxCount:         200,
+		PickupRejectText: "This item has no owned pickup rejection guard.",
+	}}}
+
+	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for pickup reject message without pickup guard, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27011,"name":"Unguarded Pickup Message Potion","stackable":true,"max_count":200,"pickup_reject_message":"This item has no owned pickup rejection guard."}]}`), 0o644); err != nil {
+		t.Fatalf("write invalid pickup reject message snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading pickup reject message without pickup guard, got %v", err)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesDisplaySocketAndAttributeMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

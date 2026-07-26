@@ -309,7 +309,7 @@ Expected result:
 - [ ] Pick up the same temporary ground handle while still in range
 - [ ] Drop a small amount of gold/elk through the client gold-drop path and, if QA tooling can vary the packed item position, repeat with a non-carried position while the gold amount is non-zero
 - [ ] If possible in the QA fixture, repeat with a deliberately missing, malformed, mismatched, or ground-count-over-template-`max_count` authored item-template/state fixture for that `vnum`
-- [ ] If possible in the QA fixture, repeat pickup with a transfer-guarded or selected-character-restricted template that authors a non-empty `pickup_reject_message`
+- [ ] If possible in the QA fixture, repeat pickup with a transfer-guarded or selected-character-restricted template that authors a non-empty `pickup_reject_message`; also verify authored item-template validation rejects a `pickup_reject_message` on a template with no owned pickup rejection guard before gameplay testing starts
 
 Expected result:
 - valid pickup removes the ground actor, refreshes the carried inventory slot or compatible stack according to the authored stack metadata, preserves template-authored socket/attribute display arrays in compatible-stack `ITEM_UPDATE` refreshes, preserves existing item/non-item quickslots for a compatible merge target cell, shows the normal pickup notice, and does not produce a second/duplicate delayed ground-delete for the collector after the direct pickup response
@@ -320,7 +320,7 @@ Expected result:
 - if a corrupt/disposable fixture has duplicate live items in the same carried cell, `ITEM_DROP` / `ITEM_DROP2` fails closed with no ground actor, no carried-slot deletion/update, no quickslot mutation, and no persisted-state mutation
 - missing, malformed, mismatched, or ground-count-over-template-`max_count` authored pickup template metadata fails closed: no item pickup notice, no inventory mutation, and the ground handle remains available for a later valid retry
 - fallback/no-template pickup fixtures whose ground stack count exceeds the current one-byte item refresh range (`255`) fail closed before item pickup notice, inventory mutation, or ground-handle removal
-- loaded pickup template metadata marked `anti_get` / `anti_give` / `anti_stack` or restricted by the selected character's job/sex/min-level metadata also fails closed, emits template-authored `pickup_reject_message` as self-only info chat when present and otherwise the bootstrap inventory-full info message, and leaves the ground handle available for a later valid retry
+- loaded pickup template metadata marked `anti_get` / `anti_give` / `anti_stack` or restricted by the selected character's job/sex/min-level metadata also fails closed, emits guarded template-authored `pickup_reject_message` as self-only info chat when present and otherwise the bootstrap inventory-full info message, and leaves the ground handle available for a later valid retry; `pickup_reject_message` authored without an owned pickup guard is an invalid template snapshot rather than a runtime pickup policy
 - selected characters at the bootstrap zero-HP floor cannot pick up visible ground items; `ITEM_PICKUP` fails closed with no item pickup notice, inventory/gold mutation, or ground-handle removal
 - if a corrupt/disposable fixture already has the same non-zero item instance ID in carried inventory or equipment as the temporary ground item being picked up, pickup fails closed with the bootstrap inventory-full info message, no inventory mutation, and the ground handle remains available for a later valid retry
 

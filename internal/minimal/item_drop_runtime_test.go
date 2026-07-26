@@ -2,6 +2,8 @@ package minimal
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -3359,6 +3361,27 @@ func TestItemPickupRejectTextUsesTemplateMetadataWithFallback(t *testing.T) {
 	template := itemcatalog.Template{Vnum: 27007, Name: "Sealed Pickup Potion", Stackable: true, MaxCount: 200, AntiGet: true, PickupRejectText: "The seal prevents picking up this item."}
 	if got := itemPickupRejectText(template); got != template.PickupRejectText {
 		t.Fatalf("expected template-authored pickup rejection message %q, got %q", template.PickupRejectText, got)
+	}
+}
+
+func TestGameRuntimeRejectsPickupRejectTextWithoutOwnedGuardAtBoot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "item-templates.json")
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27011,"name":"Unguarded Pickup Message Potion","stackable":true,"max_count":200,"pickup_reject_message":"This item has no owned pickup rejection guard."}]}`), 0o644); err != nil {
+		t.Fatalf("write invalid pickup reject-text template snapshot: %v", err)
+	}
+	itemStore := itemcatalog.NewFileStore(path)
+
+	_, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		loginticket.NewFileStore(t.TempDir()),
+		accountstore.NewFileStore(t.TempDir()),
+		nil,
+		nil,
+		itemStore,
+		nil,
+	)
+	if !errors.Is(err, itemcatalog.ErrInvalidSnapshot) {
+		t.Fatalf("expected runtime boot to reject unguarded pickup_reject_message snapshot, got %v", err)
 	}
 }
 
