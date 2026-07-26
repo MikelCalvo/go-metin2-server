@@ -421,6 +421,9 @@ func validTemplate(template Template) bool {
 	if template.BuyRejectText != "" && !templateHasBuyRejectGuard(template) {
 		return false
 	}
+	if template.DropRejectText != "" && !templateHasDropRejectGuard(template) {
+		return false
+	}
 	if template.SellRejectText != "" && !templateHasSellRejectGuard(template) {
 		return false
 	}
@@ -465,6 +468,10 @@ func templateHasUseRejectGuard(template Template) bool {
 
 func templateHasBuyRejectGuard(template Template) bool {
 	return templateHasSelectedCharacterGuard(template) || template.AntiGet
+}
+
+func templateHasDropRejectGuard(template Template) bool {
+	return templateHasSelectedCharacterGuard(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack
 }
 
 func templateHasSellRejectGuard(template Template) bool {

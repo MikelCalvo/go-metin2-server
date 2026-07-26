@@ -12,6 +12,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	"github.com/MikelCalvo/go-metin2-server/internal/proto/frame"
@@ -825,13 +826,21 @@ func TestGameRuntimeItemDropRejectsTransferGuardTemplatesWithoutMutation(t *test
 	}
 }
 
-func TestItemDropRejectTextUsesTemplateMetadataWithFallback(t *testing.T) {
-	if got := itemDropRejectText(itemcatalog.Template{Vnum: 27003, Name: "Bound Drop Potion", Stackable: true, MaxCount: 200, AntiDrop: true}); got != itemDropRejectedInfoMessage {
-		t.Fatalf("expected default drop rejection message, got %q", got)
+func TestRuntimeTemplateDropRejectTextUsesTemplateMetadataWithFallback(t *testing.T) {
+	selectedPlayer := player.NewRuntime(loginticket.Character{ID: 0x01030102, VID: 0x02040102, Name: "PeerTwo", Level: 5}, player.SessionLink{Login: "peer-two", CharacterIndex: 1})
+	if got, ok := runtimeTemplateDropRejectText(itemcatalog.Template{Vnum: 27003, Name: "Bound Drop Potion", Stackable: true, MaxCount: 200, AntiDrop: true}, selectedPlayer); !ok || got != itemDropRejectedInfoMessage {
+		t.Fatalf("expected default drop rejection message, got %q ok=%v", got, ok)
 	}
 	template := itemcatalog.Template{Vnum: 27003, Name: "Sealed Drop Potion", Stackable: true, MaxCount: 200, AntiDrop: true, DropRejectText: "The seal prevents dropping this item."}
-	if got := itemDropRejectText(template); got != template.DropRejectText {
-		t.Fatalf("expected template-authored drop rejection message %q, got %q", template.DropRejectText, got)
+	if got, ok := runtimeTemplateDropRejectText(template, selectedPlayer); !ok || got != template.DropRejectText {
+		t.Fatalf("expected template-authored drop rejection message %q, got %q ok=%v", template.DropRejectText, got, ok)
+	}
+	levelTemplate := itemcatalog.Template{Vnum: 27004, Name: "Veteran Drop Potion", Stackable: true, MaxCount: 200, MinLevel: 10, DropRejectText: "You are not experienced enough to drop this item."}
+	if got, ok := runtimeTemplateDropRejectText(levelTemplate, selectedPlayer); !ok || got != levelTemplate.DropRejectText {
+		t.Fatalf("expected selected-character drop rejection message %q, got %q ok=%v", levelTemplate.DropRejectText, got, ok)
+	}
+	if got, ok := runtimeTemplateDropRejectText(itemcatalog.Template{Vnum: 27005, Name: "Silent Veteran Drop Potion", Stackable: true, MaxCount: 200, MinLevel: 10}, selectedPlayer); ok || got != "" {
+		t.Fatalf("expected selected-character drop rejection without template text to stay silent, got %q ok=%v", got, ok)
 	}
 }
 
@@ -917,6 +926,78 @@ func TestGameRuntimeItemDropRejectsSelectedCharacterRestrictionsWithoutMutation(
 			}
 			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
 				t.Fatalf("%s restricted drop mutated quickslots: got %#v want %#v", tc.name, account.Characters[0].Quickslots, owner.Quickslots)
+			}
+		})
+	}
+}
+
+func TestGameRuntimeItemDropSelectedCharacterRestrictionUsesTemplateRejectText(t *testing.T) {
+	for index, tc := range []struct {
+		name   string
+		packet []byte
+	}{
+		{name: "drop", packet: itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})},
+		{name: "drop2", packet: itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{Position: itemproto.InventoryPosition(5), Count: 1})},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("DropRestrictText", 0x010301aa+uint32(index), 0x020401aa+uint32(index), 1250, 2250, 0, 101, 201)
+			owner.Level = 5
+			owner.Inventory = []inventory.ItemInstance{{ID: uint64(1042 + index), Vnum: 27033, Count: 4, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			login := "drop-restrict-text-" + tc.name
+			issuePeerTicket(t, ticketStore, login, 0x4b4b4b4b+uint32(index), owner)
+			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s drop reject-text account: %v", tc.name, err)
+			}
+			template := itemcatalog.Template{
+				Vnum:           27033,
+				Name:           "Veteran Drop Text Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				MinLevel:       10,
+				DropRejectText: "You are not experienced enough to drop this item.",
+			}
+			runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(
+				config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+				ticketStore,
+				accounts,
+				nil,
+				newItemTemplateStore(t, []itemcatalog.Template{template}),
+			)
+			if err != nil {
+				t.Fatalf("unexpected %s item-drop reject-text runtime error: %v", tc.name, err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x4b4b4b4b+uint32(index))
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, tc.packet))
+			if err != nil {
+				t.Fatalf("unexpected %s item-drop reject-text error: %v", tc.name, err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected %s selected-character drop rejection to emit one info frame, got %d", tc.name, len(out))
+			}
+			info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+			if err != nil {
+				t.Fatalf("decode %s selected-character drop rejection info chat: %v", tc.name, err)
+			}
+			if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Message != template.DropRejectText {
+				t.Fatalf("unexpected %s selected-character drop rejection chat: %+v", tc.name, info)
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s selected-character drop rejection, got %d", tc.name, len(queued))
+			}
+			account, err := accounts.Load(login)
+			if err != nil {
+				t.Fatalf("load %s drop reject-text account: %v", tc.name, err)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+				t.Fatalf("%s selected-character drop rejection mutated inventory: got %#v want %#v", tc.name, account.Characters[0].Inventory, owner.Inventory)
+			}
+			if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+				t.Fatalf("%s selected-character drop rejection mutated quickslots: got %#v want %#v", tc.name, account.Characters[0].Quickslots, owner.Quickslots)
 			}
 		})
 	}

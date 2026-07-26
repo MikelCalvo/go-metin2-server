@@ -2327,8 +2327,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if runtime.itemTemplatesAuthored && !hasDropTemplate {
 				return nil, false
 			}
-			if hasDropTemplate && (dropTemplate.AntiGet || dropTemplate.AntiDrop || dropTemplate.AntiGive || dropTemplate.AntiSell || dropTemplate.AntiStack) {
-				return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemDropRejectText(dropTemplate)})}, true
+			if hasDropTemplate {
+				if message, ok := runtimeTemplateDropRejectText(dropTemplate, selectedPlayer); ok {
+					return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}, true
+				}
+				if !selectedPlayer.CanUseTemplate(dropTemplate) {
+					return nil, false
+				}
 			}
 			for _, item := range selectedPlayer.LiveInventory() {
 				if item.Slot == slot && !item.Equipped {
@@ -4654,6 +4659,19 @@ func itemDropRejectText(template itemcatalog.Template) string {
 		return template.DropRejectText
 	}
 	return itemDropRejectedInfoMessage
+}
+
+func runtimeTemplateDropRejectText(template itemcatalog.Template, selectedPlayer *player.Runtime) (string, bool) {
+	if selectedPlayer == nil {
+		return "", false
+	}
+	if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack {
+		return itemDropRejectText(template), true
+	}
+	if template.DropRejectText == "" || selectedPlayer.CanUseTemplate(template) {
+		return "", false
+	}
+	return itemDropRejectText(template), true
 }
 
 func itemPickupRejectText(template itemcatalog.Template) string {

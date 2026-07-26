@@ -1144,29 +1144,90 @@ func TestFileStoreSaveThenLoadRoundTripPreservesDropRejectText(t *testing.T) {
 	}
 }
 
-func TestFileStoreRejectsInvalidDropRejectTextMetadata(t *testing.T) {
+func TestFileStoreSaveThenLoadRoundTripPreservesDropRejectTextForSelectedCharacterGuard(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
-	invalid := Snapshot{Templates: []Template{{
-		Vnum:           27009,
-		Name:           "Broken Drop Message Potion",
+	want := Snapshot{Templates: []Template{{
+		Vnum:           27019,
+		Name:           "Veteran Drop Potion",
 		Stackable:      true,
 		MaxCount:       200,
-		AntiDrop:       true,
-		DropRejectText: "bad\x00message",
+		MinLevel:       10,
+		DropRejectText: "You are not experienced enough to drop this item.",
 	}}}
 
-	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
-		t.Fatalf("expected ErrInvalidSnapshot for NUL drop reject message, got %v", err)
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with selected-character drop reject message: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("create item template test dir: %v", err)
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with selected-character drop reject message: %v", err)
 	}
-	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27009,"name":"Broken Drop Message Potion","stackable":true,"max_count":200,"anti_drop":true,"drop_reject_message":"bad\u0000message"}]}`), 0o644); err != nil {
-		t.Fatalf("write invalid drop reject message snapshot: %v", err)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with selected-character drop reject message:\n got: %#v\nwant: %#v", got, want)
 	}
-	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
-		t.Fatalf("expected ErrInvalidSnapshot when loading NUL drop reject message, got %v", err)
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with selected-character drop reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27019,\n      \"name\": \"Veteran Drop Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"min_level\": 10,\n      \"drop_reject_message\": \"You are not experienced enough to drop this item.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with selected-character drop reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
+func TestFileStoreRejectsInvalidDropRejectTextMetadata(t *testing.T) {
+	cases := []struct {
+		name     string
+		invalid  Template
+		rawJSON  string
+		wantText string
+	}{
+		{
+			name: "nul_message",
+			invalid: Template{
+				Vnum:           27009,
+				Name:           "Broken Drop Message Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				AntiDrop:       true,
+				DropRejectText: "bad\x00message",
+			},
+			rawJSON:  `{"templates":[{"vnum":27009,"name":"Broken Drop Message Potion","stackable":true,"max_count":200,"anti_drop":true,"drop_reject_message":"bad\u0000message"}]}`,
+			wantText: "NUL drop reject message",
+		},
+		{
+			name: "without_owned_drop_guard",
+			invalid: Template{
+				Vnum:           27020,
+				Name:           "Unguarded Drop Message Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				DropRejectText: "This item has no owned drop rejection guard.",
+			},
+			rawJSON:  `{"templates":[{"vnum":27020,"name":"Unguarded Drop Message Potion","stackable":true,"max_count":200,"drop_reject_message":"This item has no owned drop rejection guard."}]}`,
+			wantText: "drop reject message without drop guard",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			if err := store.Save(Snapshot{Templates: []Template{tc.invalid}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.wantText, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("create item template test dir: %v", err)
+			}
+			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
+				t.Fatalf("write invalid drop reject message snapshot: %v", err)
+			}
+			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when loading %s, got %v", tc.wantText, err)
+			}
+		})
 	}
 }
 
