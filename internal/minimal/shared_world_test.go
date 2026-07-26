@@ -3649,6 +3649,98 @@ func TestNewGameSessionFactoryNormalAttackCadenceSurvivesAcceptedRetarget(t *tes
 	}
 }
 
+func TestNewGameSessionFactoryClientTargetZeroClearsSelectedTargetAndCadence(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	attacker := peerVisibilityCharacter("ClearTargetCadence", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "clear-target-cadence", 0x11111111, attacker)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000504, 0)
+	runtime.now = func() time.Time { return currentTime }
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "ClearTargetDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("expected clear-target dummy registration to succeed")
+	}
+	targetVID := uint32(actor.EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "clear-target-cadence", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for attacker with visible training dummy, got %d", len(enterOut))
+	}
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target selection error before client clear-target test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before client clear-target test, got %d", len(selectOut))
+	}
+
+	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected first attack error before client clear-target test: %v", err)
+	}
+	if len(firstAttack) != 2 {
+		t.Fatalf("expected first accepted attack to return target refresh plus damage-info, got %d", len(firstAttack))
+	}
+	firstRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstAttack[0]))
+	if err != nil {
+		t.Fatalf("decode first clear-target cadence refresh: %v", err)
+	}
+	if firstRefresh.TargetVID != targetVID || firstRefresh.HPPercent != 90 {
+		t.Fatalf("expected first hit to damage selected target to 90%% before clear, got %+v", firstRefresh)
+	}
+
+	clearOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0})))
+	if err != nil {
+		t.Fatalf("unexpected client clear-target dispatch error: %v", err)
+	}
+	if len(clearOut) != 0 {
+		t.Fatalf("expected client TARGET(0) to clear silently with no echo frames, got %d", len(clearOut))
+	}
+
+	staleAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected stale old-target attack dispatch error after client clear-target: %v", err)
+	}
+	if len(staleAttack) != 0 {
+		t.Fatalf("expected old-target attack after client clear-target to fail closed, got %d frames", len(staleAttack))
+	}
+
+	freshSelect, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected fresh selection error after client clear-target: %v", err)
+	}
+	if len(freshSelect) != 1 {
+		t.Fatalf("expected fresh target selection after client clear-target to return 1 frame, got %d", len(freshSelect))
+	}
+	freshTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, freshSelect[0]))
+	if err != nil {
+		t.Fatalf("decode fresh target selection after client clear-target: %v", err)
+	}
+	if freshTarget.TargetVID != targetVID || freshTarget.HPPercent != 90 {
+		t.Fatalf("expected fresh selection after clear to preserve current runtime HP at 90%%, got %+v", freshTarget)
+	}
+
+	immediateFreshAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected immediate fresh attack error after client clear-target: %v", err)
+	}
+	if len(immediateFreshAttack) != 2 {
+		t.Fatalf("expected client clear-target to reset attack cadence before fresh selection, got %d immediate fresh attack frames", len(immediateFreshAttack))
+	}
+	secondRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, immediateFreshAttack[0]))
+	if err != nil {
+		t.Fatalf("decode immediate fresh attack after client clear-target: %v", err)
+	}
+	if secondRefresh.TargetVID != targetVID || secondRefresh.HPPercent != 80 {
+		t.Fatalf("expected immediate fresh attack after clear/reselect to move target to 80%% HP, got %+v", secondRefresh)
+	}
+}
+
 func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliationUntilRespawn(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	attacker := peerVisibilityCharacter("Attacker", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -3760,6 +3852,99 @@ func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliati
 	}
 	if freshTarget.TargetVID != targetVID || freshTarget.HPPercent != 100 {
 		t.Fatalf("expected respawned practice mob to require fresh full-HP selection, got %+v", freshTarget)
+	}
+}
+
+func TestNewGameSessionFactoryClientTargetZeroClearsPracticeMobDelayedRetaliationAndEngagement(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ClearTargetOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 5
+	watcher := peerVisibilityCharacter("ClearTargetWatcher", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	watcher.Points[bootstrapPlayerPointValueIndex] = 5
+	issuePeerTicket(t, store, "clear-target-owner", 0x11111111, owner)
+	issuePeerTicket(t, store, "clear-target-watcher", 0x22222222, watcher)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000505, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.mob_clear_target",
+		Name:          "PracticeMobClearTarget",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import content spawn-group bundle for clear-target test: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "clear-target-owner", 0x11111111)
+	defer closeSessionFlow(t, ownerFlow)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "clear-target-watcher", 0x22222222)
+	defer closeSessionFlow(t, watcherFlow)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target-selection error before practice-mob clear-target test: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 owner target-selection frame before practice-mob clear-target test, got %d", len(selectOut))
+	}
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner attack before practice-mob clear-target test: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected owner attack to emit target refresh, immediate retaliation, and self damage-info before clear-target, got %d", len(attackOut))
+	}
+	flushSingleDamageInfoFrame(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "before practice-mob clear-target release")
+
+	clearOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0})))
+	if err != nil {
+		t.Fatalf("unexpected owner TARGET(0) clear dispatch error for practice mob: %v", err)
+	}
+	if len(clearOut) != 0 {
+		t.Fatalf("expected owner TARGET(0) clear for practice mob to emit no frames, got %d", len(clearOut))
+	}
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected client TARGET(0) to cancel delayed retaliation before timer expiry, got %d queued frames", len(queued))
+	}
+
+	watcherSelect, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected watcher target-selection error after owner clear-target: %v", err)
+	}
+	if len(watcherSelect) != 1 {
+		t.Fatalf("expected watcher to target still-live practice mob after owner clear-target, got %d frames", len(watcherSelect))
+	}
+	watcherTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, watcherSelect[0]))
+	if err != nil {
+		t.Fatalf("decode watcher target after owner clear-target: %v", err)
+	}
+	if watcherTarget.TargetVID != targetVID || watcherTarget.HPPercent != 90 {
+		t.Fatalf("expected watcher to observe owner-damaged mob at 90%% after clear-target release, got %+v", watcherTarget)
 	}
 }
 

@@ -3477,6 +3477,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
 						return gameflow.TargetResult{Accepted: false}
 					}
+					if packet.TargetVID == 0 {
+						clearActiveCombatTarget()
+						return gameflow.TargetResult{Accepted: true}
+					}
 					resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, packet.TargetVID)
 					if !resolution.Accepted || resolution.Packet == nil {
 						return gameflow.TargetResult{Accepted: false}

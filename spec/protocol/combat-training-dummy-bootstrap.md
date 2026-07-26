@@ -94,15 +94,19 @@ The minimal self-only acknowledgement companion is now also frozen as:
 - payload: little-endian `uint32 target_vid` + `uint8 hp_percent`
 - current bootstrap meaning: fresh accepted dummy selection starts at `hp_percent = 100`, while later accepted dummy attacks may reuse the same packet family with the current runtime-owned percentage
 
-This contract now freezes the **family name, direction, phase, concrete wire headers, and the narrow request/ack payload shapes**.
+This slice freezes the **family name, direction, phase, concrete wire headers, and the narrow request/ack payload shapes**.
 The repo now owns:
 - an exact `internal/proto/combat` codec for both directions
 - `GAME`-phase flow dispatch for the request
 - minimal runtime wiring that reuses the existing shared-world `AttemptStaticActorCombatTarget(...)` seam
 - one accepted self-only `GC TARGET` ack for a visible in-range `training_dummy`
 
+It now also owns one client-originated clear-target request shape:
+- client -> server `TARGET(target_vid = 0)` means the client has locally cleared or lost its selected target
+- the bootstrap server consumes that request silently with no self acknowledgement, because the current TMP4-style client clears its local target before sending the zero-VID request
+- the request clears only the current session's live selected combat-target ownership; it is not a way to target visible actor `0` and it must not emit peer fanout, mutate dummy HP, or create reward/combat side effects
+
 It does **not** yet freeze:
-- a clear-target request shape
 - a damage or hit-result packet family
 - visible target-loss packets on transfer, reconnect, re-enter, reclaim, actor replacement, or death; visibility/range invalidation is now owned by the follow-up combat-normal bootstrap contract via self-only `GC TARGET(0, 0)`
 
@@ -141,6 +145,7 @@ This first contract intentionally expects:
 - target ownership is per selected live session
 - accepted target identity is not just the dummy `VID`; it also binds the current runtime snapshot behind that visible dummy until the session reselects it
 - selecting a dummy does not mutate persistence, inventory, equipment, or points by itself
+- sending client `TARGET(0)` clears that selected target ownership silently and later `ATTACK` requests must fail closed until a fresh accepted non-zero `TARGET` succeeds
 - dummy combat HP is world-runtime-owned state, not character/account persistence
 - repeated accepted attacks may later mutate that live dummy HP without implying any player-save write
 - selecting a dummy emits at most one self-only `GC TARGET` acknowledgement on accept
@@ -171,6 +176,7 @@ The current owned failure contract should stay minimal and fail closed:
 - malformed payload -> codec/flow rejection applies
 - subject has no live selected character -> request fails closed
 - subject's current bootstrap HP is already `0` -> request fails closed
+- target `VID` is `0` -> request is treated as a silent clear-target intent for the current live session, not as a selection failure
 - target `VID` not found in current visible non-player state -> request fails closed
 - target actor is visible but not marked `training_dummy` -> request fails closed
 - target actor is visible and targetable but out of the `300`-unit range band -> request fails closed

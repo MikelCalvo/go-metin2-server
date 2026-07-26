@@ -672,6 +672,8 @@ Run this only when the target build has a visible authored `training_dummy` near
 - [ ] Confirm the selected target remains stable and the dummy HP display moves down from full by one deterministic bootstrap step
 - [ ] Confirm a standalone bootstrap `training_dummy` hit shows a damage-number / hit-effect companion after the HP refresh; this is the first self plain `DAMAGE_INFO` runtime emission and is not yet a spawn-backed practice-mob policy
 - [ ] With a second living visible client watching the same standalone bootstrap dummy, confirm that watcher also sees the same plain hit-effect companion for the hit, without receiving the attacker's self-only target HP refresh
+- [ ] Clear the selected target in the client UI, then try to attack the old dummy without reselecting it if the packet harness/client path allows it
+- [ ] Confirm the old-target attack fails closed with no HP refresh or damage-info frame until a fresh non-zero `TARGET` selection succeeds again
 - [ ] If loopback ops access is available, query the same combat-target endpoint again and confirm `hp_percent` reflects the damaged runtime-owned dummy instead of resetting to `100`
 - [ ] Perform at least one more accepted normal attack
 - [ ] Confirm the selected target HP display steps down again instead of bouncing back to full on every hit
@@ -734,6 +736,8 @@ If the QA bundle uses a custom registered or bundled combat profile instead of t
 - [ ] Confirm a stale attack still fails until the practice mob is selected again
 - [ ] If loopback ops access is available, confirm the combat-target snapshot remains absent after `/restart_here` until the practice mob is freshly selected again
 - [ ] With a second living visible client, confirm that a practice mob left alive by the owner's zero-HP floor can be freshly targeted by that second client without waiting for mob death / respawn or owner disconnect
+- [ ] In a separate live-owner run, land one accepted hit on a practice mob, clear the selected target before the delayed retaliation timer expires, and confirm no delayed retaliation beat arrives for that cleared target
+- [ ] In that same clear-target run, confirm a second living visible client can freshly target the still-live practice mob after the owner clears it
 - [ ] Re-select the still-live practice mob and confirm its HP remains at the current runtime-owned value instead of resetting because of `/restart_here`
 - [ ] Optional fixture/debug guard: if the selected character's persisted account snapshot is deliberately seeded at `0` HP, issue `/restart_here` and confirm it fails closed with no recovery burst
 
