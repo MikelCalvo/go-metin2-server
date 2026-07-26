@@ -1138,6 +1138,168 @@ func TestLocalItemTemplateStoreValidateEndpointReportsValidationFailure(t *testi
 	}
 }
 
+func TestLocalStaticActorStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
+	validator := &stubStaticActorStoreValidator{summary: map[string]any{"actor_count": 2, "actor_ids": []uint64{7, 9}, "actor_names": []string{"TrainingDummy", "VillageGuard"}, "crash_temp_count": 1, "crash_temp_files": []string{".static-actors-crashed.json"}}}
+	mux := RegisterLocalStaticActorStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validator to be called once, got %d", validator.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"actor_count":2`, `"actor_ids":[7,9]`, `"actor_names":["TrainingDummy","VillageGuard"]`, `"crash_temp_count":1`, `"crash_temp_files":[".static-actors-crashed.json"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalStaticActorStoreValidateEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	validator := &stubStaticActorStoreValidator{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/validate", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalStaticActorStoreValidateEndpointRejectsWrongMethod(t *testing.T) {
+	validator := &stubStaticActorStoreValidator{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/static-actor-store/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalStaticActorStoreValidateEndpointReportsValidationFailure(t *testing.T) {
+	validator := &stubStaticActorStoreValidator{err: errStubStaticActorStoreInvalid}
+	mux := RegisterLocalStaticActorStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validator to be called once, got %d", validator.calls)
+	}
+}
+
+func TestLocalInteractionStoreValidateEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
+	validator := &stubInteractionStoreValidator{summary: map[string]any{"definition_count": 2, "definition_keys": []string{"info:lore:alchemist", "talk:npc:village_guard"}, "crash_temp_count": 1, "crash_temp_files": []string{".interaction-definitions-crashed.json"}}}
+	mux := RegisterLocalInteractionStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validator to be called once, got %d", validator.calls)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"definition_count":2`, `"definition_keys":["info:lore:alchemist","talk:npc:village_guard"]`, `"crash_temp_count":1`, `"crash_temp_files":[".interaction-definitions-crashed.json"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalInteractionStoreValidateEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	validator := &stubInteractionStoreValidator{summary: map[string]any{"definition_count": 1}}
+	mux := RegisterLocalInteractionStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/validate", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalInteractionStoreValidateEndpointRejectsWrongMethod(t *testing.T) {
+	validator := &stubInteractionStoreValidator{summary: map[string]any{"definition_count": 1}}
+	mux := RegisterLocalInteractionStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/interaction-store/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalInteractionStoreValidateEndpointReportsValidationFailure(t *testing.T) {
+	validator := &stubInteractionStoreValidator{err: errStubInteractionStoreInvalid}
+	mux := RegisterLocalInteractionStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validator to be called once, got %d", validator.calls)
+	}
+}
+
 func TestLocalItemTemplateStoreCrashTempCleanupEndpointReturnsSummaryForLoopbackPost(t *testing.T) {
 	cleaner := &stubItemTemplateStoreCrashTempCleaner{summary: map[string]any{"template_count": 2, "vnums": []uint32{11200, 27001}}}
 	mux := RegisterLocalItemTemplateStoreCrashTempCleanupEndpoint(NewPprofMux("gamed"), cleaner.Cleanup)
@@ -2021,6 +2183,17 @@ func (s *stubItemTemplateStoreCrashTempCleaner) Cleanup() (any, error) {
 	return s.summary, s.err
 }
 
+type stubStaticActorStoreValidator struct {
+	summary any
+	err     error
+	calls   int
+}
+
+func (s *stubStaticActorStoreValidator) Validate() (any, error) {
+	s.calls++
+	return s.summary, s.err
+}
+
 type stubStaticActorStoreCrashTempCleaner struct {
 	summary any
 	err     error
@@ -2033,6 +2206,17 @@ func (s *stubStaticActorStoreCrashTempCleaner) Cleanup() (any, error) {
 }
 
 var errStubStaticActorStoreInvalid = errors.New("static actor store invalid")
+
+type stubInteractionStoreValidator struct {
+	summary any
+	err     error
+	calls   int
+}
+
+func (s *stubInteractionStoreValidator) Validate() (any, error) {
+	s.calls++
+	return s.summary, s.err
+}
 
 type stubInteractionStoreCrashTempCleaner struct {
 	summary any

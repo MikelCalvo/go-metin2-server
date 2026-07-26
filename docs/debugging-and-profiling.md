@@ -133,15 +133,42 @@ Removes same-directory `.item-templates-*.json` crash-temp residue from the auth
 
 The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup item-template JSON summary (`template_count` and deterministic `vnums`). Because cleanup validates before removing anything, corrupt committed item-template snapshots leave crash-temp files in place for manual recovery. Only hidden `.item-templates-*.json` temp files are removed; committed snapshots and unrelated hidden files are preserved. Use `/local/item-templates/validate` first when you want a read-only residue report, then this endpoint when the operator has decided interrupted item-template temp writes are disposable.
 
+### `POST /local/static-actor-store/validate`
+
+Validates the authored bootstrap static-actor snapshot store without mutating actor content. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed `static-actors.json` snapshot is malformed, has unknown/trailing JSON, duplicates actor IDs or spawn-group refs, or violates actor policy such as missing names, zero map indexes, invalid race numbers, invalid interaction refs, invalid combat profiles, or invalid reward descriptors.
+
+Successful responses are JSON summaries with:
+
+- `actor_count`
+- optional `interactable_actor_count`
+- optional `spawn_group_count`
+- deterministic `actor_ids`
+- deterministic `actor_names`
+- optional `crash_temp_count` and `crash_temp_files` when same-directory `.static-actors-*.json` temp files are present
+
+A missing committed `static-actors.json` is reported as an empty authored actor store. Crash leftovers are reported for operator visibility but are not treated as committed static actors. Use this endpoint before content import/restore work or before deleting static-actor crash-temp residue; it is not a gameplay API or a remote admin API.
+
 ### `POST /local/static-actor-store/crash-temps/cleanup`
 
-Removes same-directory `.static-actors-*.json` crash-temp residue from the authored static-actor snapshot store after first validating the committed `static-actors.json` snapshot through the same strict loader used by `/local/persistence/status`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed snapshot is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
+Removes same-directory `.static-actors-*.json` crash-temp residue from the authored static-actor snapshot store after first validating the committed `static-actors.json` snapshot through the same strict loader used by `/local/static-actor-store/validate` and `/local/persistence/status`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed snapshot is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
 
 The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup static-actor JSON summary (`actor_count`, deterministic `actor_ids` / `actor_names`, and authored-content counters). Because cleanup validates before removing anything, corrupt committed static-actor snapshots leave crash-temp files in place for manual recovery. Only hidden `.static-actors-*.json` temp files are removed; committed snapshots and unrelated hidden files are preserved.
 
+### `POST /local/interaction-store/validate`
+
+Validates the authored bootstrap interaction-definition snapshot store without mutating interaction content. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed `interaction-definitions.json` snapshot is malformed, has unknown/trailing JSON, duplicates a `kind:ref`, or violates definition policy for supported `info`, `talk`, `shop_preview`, or `warp` definitions.
+
+Successful responses are JSON summaries with:
+
+- `definition_count`
+- deterministic `definition_keys` (`kind:ref`)
+- optional `crash_temp_count` and `crash_temp_files` when same-directory `.interaction-definitions-*.json` temp files are present
+
+A missing committed `interaction-definitions.json` is reported as an empty authored interaction store. Crash leftovers are reported for operator visibility but are not treated as committed definitions. Use this endpoint before content import/restore work or before deleting interaction crash-temp residue; it is not a gameplay API or a remote admin API.
+
 ### `POST /local/interaction-store/crash-temps/cleanup`
 
-Removes same-directory `.interaction-definitions-*.json` crash-temp residue from the authored interaction-definition snapshot store after first validating the committed `interaction-definitions.json` snapshot through the same strict loader used by `/local/persistence/status`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed snapshot is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
+Removes same-directory `.interaction-definitions-*.json` crash-temp residue from the authored interaction-definition snapshot store after first validating the committed `interaction-definitions.json` snapshot through the same strict loader used by `/local/interaction-store/validate` and `/local/persistence/status`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed snapshot is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
 
 The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup interaction JSON summary (`definition_count` and deterministic `definition_keys`). Because cleanup validates before removing anything, corrupt committed interaction-definition snapshots leave crash-temp files in place for manual recovery. Only hidden `.interaction-definitions-*.json` temp files are removed; committed snapshots and unrelated hidden files are preserved.
 
