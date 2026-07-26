@@ -28,8 +28,9 @@ For the target compatibility track of this repository, the current owned answer 
 ## Current owned behavior
 
 Today the repository owns exactly this restart ingress surface:
-- restart intent is entered through chat slash commands while the session is already in `GAME`
+- restart intent is entered through exact chat slash commands while the session is already in `GAME`
 - `/restart_here` and `/restart_town` reuse the already-documented recovery results from their dedicated protocol notes
+- whitespace-padded or argument-bearing variants such as `/restart_here `, `/ restart_town`, and `/restart_town 2` are not restart ingress and must not recover a dead player
 - denied restart attempts fail closed with no self chat echo, no compensating failure packet, and no peer-visible side effects
 
 The first public evidence note for that owned surface now lives here:

@@ -4112,16 +4112,16 @@ func ticketEmpire(ticket loginticket.Ticket) uint8 {
 }
 
 func slashGameCommand(message string) (string, bool) {
-	if !strings.HasPrefix(message, "/") {
+	if !strings.HasPrefix(message, "/") || message != strings.TrimSpace(message) {
 		return "", false
 	}
-	fields := strings.Fields(strings.TrimSpace(message[1:]))
-	if len(fields) != 1 {
+	command := message[1:]
+	if command == "" || strings.ContainsAny(command, " 	\n\r\v\f") {
 		return "", false
 	}
-	switch fields[0] {
+	switch command {
 	case "quit", "logout", "phase_select", "restart_here", "restart_town":
-		return fields[0], true
+		return command, true
 	default:
 		return "", false
 	}

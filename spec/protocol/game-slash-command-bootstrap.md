@@ -26,9 +26,11 @@ The supported slash commands are intercepted before normal talking-chat delivery
 They are **not** echoed back as `CHAT_TYPE_TALKING`.
 
 The current parser is deliberately exact for the owned command family:
-- the input must contain exactly one slash command token
+- the input must be exactly one slash-prefixed command string with no leading or trailing whitespace
+- the command body after `/` must not contain spaces, tabs, newlines, or other ASCII whitespace
 - the packet must be normal talking chat (`CHAT_TYPE_TALKING`); the same slash-looking text in `INFO`, `PARTY`, `GUILD`, `SHOUT`, or any other chat subtype is not a command trigger
-- `/quit`, `/logout`, `/phase_select`, `/restart_here`, and `/restart_town` are accepted as standalone tokens only
+- `/quit`, `/logout`, `/phase_select`, `/restart_here`, and `/restart_town` are accepted as exact standalone strings only
+- whitespace-padded forms such as `/restart_here `, `/ restart_town`, or `/phase_select\n` stay outside the owned slash-command ingress
 - argument-bearing forms such as `/restart_town 2` or `/quit now` stay outside the owned slash-command ingress and fall through to the ordinary chat policy instead of partially executing the leading token
 
 ## Current owned behavior

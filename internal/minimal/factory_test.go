@@ -1459,6 +1459,26 @@ func TestSlashGameCommandRejectsArgumentsForOwnedRestartAndLeaveCommands(t *test
 	}
 }
 
+func TestSlashGameCommandRejectsWhitespacePaddedOwnedRestartAndLeaveCommands(t *testing.T) {
+	tests := []struct {
+		name    string
+		message string
+	}{
+		{name: "space after slash", message: "/ restart_here"},
+		{name: "tab after slash", message: "/	restart_town"},
+		{name: "trailing space", message: "/restart_here "},
+		{name: "trailing tab", message: "/restart_town	"},
+		{name: "trailing newline", message: "/phase_select\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if command, ok := slashGameCommand(tt.message); ok {
+				t.Fatalf("expected whitespace-padded slash command %q to stay outside owned ingress, got command %q", tt.message, command)
+			}
+		})
+	}
+}
+
 func TestSlashGameCommandAcceptsExactOwnedRestartAndLeaveCommands(t *testing.T) {
 	for _, message := range []string{
 		"/quit",

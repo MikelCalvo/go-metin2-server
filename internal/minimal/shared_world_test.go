@@ -6204,6 +6204,39 @@ func TestGameSessionFlowRejectsNonTalkingSlashRestartAfterDelayedRetaliationReac
 	}
 }
 
+func TestGameSessionFlowRejectsWhitespacePaddedSlashRestartAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
+	runtime, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	for _, message := range []string{"/restart_here ", "/ restart_town"} {
+		out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: message})))
+		if err != nil {
+			t.Fatalf("unexpected whitespace-padded restart command error for %q: %v", message, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected whitespace-padded restart command %q to fail closed with no recovery frames, got %d", message, len(out))
+		}
+		if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
+			t.Fatalf("expected whitespace-padded restart command %q to queue no peer frames, got %d", message, len(queued))
+		}
+	}
+
+	connected := runtime.ConnectedCharacters()
+	var ownerSnapshot *ConnectedCharacterSnapshot
+	for i := range connected {
+		if connected[i].Name == owner.Name {
+			ownerSnapshot = &connected[i]
+			break
+		}
+	}
+	if ownerSnapshot == nil || !ownerSnapshot.Dead {
+		t.Fatalf("expected whitespace-padded restart attempts to leave owner dead, got %+v in %+v", ownerSnapshot, connected)
+	}
+}
+
 func TestGameSessionFlowRejectsQuickslotMutationsAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
 	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
 	defer closeSessionFlow(t, ownerFlow)

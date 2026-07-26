@@ -735,7 +735,9 @@ If the QA bundle uses a custom registered or bundled combat profile instead of t
 - [ ] Confirm the attempt fails closed with no new combat-visible frames
 - [ ] Try one carried-inventory `ITEM_MOVE` drag while still at `0` HP
 - [ ] Confirm the move fails closed: no item cells change and no item refresh frames are visible
-- [ ] Issue `/restart_here` on the same socket
+- [ ] Issue whitespace-padded restart-looking chat such as `/restart_here ` or `/ restart_town` on the same socket
+- [ ] Confirm the owner remains dead and no recovery/peer frames are emitted
+- [ ] Issue exact `/restart_here` on the same socket
 - [ ] Confirm the character rebuilds in place with the ordinary self bootstrap burst and restored persisted HP
 - [ ] Confirm a stale attack still fails until the practice mob is selected again
 - [ ] If loopback ops access is available, confirm the combat-target snapshot remains absent after `/restart_here` until the practice mob is freshly selected again
