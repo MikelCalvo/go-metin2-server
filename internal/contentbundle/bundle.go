@@ -107,6 +107,7 @@ type SummaryDeltas struct {
 	InteractionKinds                       []InteractionKindDelta       `json:"interaction_kinds,omitempty"`
 	InteractionDefinitions                 []InteractionDefinitionDelta `json:"interaction_definitions,omitempty"`
 	ItemTemplates                          []ItemTemplateDelta          `json:"item_templates,omitempty"`
+	CombatProfiles                         []CombatProfileDelta         `json:"combat_profiles,omitempty"`
 	SpawnGroups                            []SpawnGroupDelta            `json:"spawn_groups,omitempty"`
 	Maps                                   []MapContentDelta            `json:"maps,omitempty"`
 }
@@ -149,6 +150,13 @@ type ItemTemplateDelta struct {
 	Change    string                `json:"change"`
 	Current   *itemcatalog.Template `json:"current,omitempty"`
 	Candidate *itemcatalog.Template `json:"candidate,omitempty"`
+}
+
+type CombatProfileDelta struct {
+	Profile   string                                         `json:"profile"`
+	Change    string                                         `json:"change"`
+	Current   *worldruntime.StaticActorCombatProfileSnapshot `json:"current,omitempty"`
+	Candidate *worldruntime.StaticActorCombatProfileSnapshot `json:"candidate,omitempty"`
 }
 
 type SpawnGroupDelta struct {
@@ -475,6 +483,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		InteractionKinds:                       buildInteractionKindDeltas(current.InteractionKinds, candidate.InteractionKinds),
 		InteractionDefinitions:                 buildInteractionDefinitionDeltas(currentBundle, candidateBundle),
 		ItemTemplates:                          buildItemTemplateDeltas(currentBundle.ItemTemplates, candidateBundle.ItemTemplates),
+		CombatProfiles:                         buildCombatProfileDeltas(currentBundle.CombatProfiles, candidateBundle.CombatProfiles),
 		SpawnGroups:                            buildSpawnGroupDeltas(current.SpawnGroups, candidate.SpawnGroups),
 		Maps:                                   buildMapContentDeltas(current.Maps, candidate.Maps),
 	}
@@ -695,6 +704,56 @@ func buildItemTemplateDeltas(currentTemplates []itemcatalog.Template, candidateT
 		return nil
 	}
 	return deltas
+}
+
+func buildCombatProfileDeltas(currentProfiles []worldruntime.StaticActorCombatProfileSnapshot, candidateProfiles []worldruntime.StaticActorCombatProfileSnapshot) []CombatProfileDelta {
+	if len(currentProfiles) == 0 && len(candidateProfiles) == 0 {
+		return nil
+	}
+	currentByProfile := combatProfileSnapshotMapByProfile(currentProfiles)
+	candidateByProfile := combatProfileSnapshotMapByProfile(candidateProfiles)
+	profilesSeen := make(map[string]struct{}, len(currentByProfile)+len(candidateByProfile))
+	for profile := range currentByProfile {
+		profilesSeen[profile] = struct{}{}
+	}
+	for profile := range candidateByProfile {
+		profilesSeen[profile] = struct{}{}
+	}
+	profiles := make([]string, 0, len(profilesSeen))
+	for profile := range profilesSeen {
+		profiles = append(profiles, profile)
+	}
+	sort.Strings(profiles)
+
+	deltas := make([]CombatProfileDelta, 0, len(profiles))
+	for _, profile := range profiles {
+		current, currentOK := currentByProfile[profile]
+		candidate, candidateOK := candidateByProfile[profile]
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			deltas = append(deltas, CombatProfileDelta{Profile: profile, Change: "added", Candidate: &candidateCopy})
+		case !candidateOK:
+			currentCopy := current
+			deltas = append(deltas, CombatProfileDelta{Profile: profile, Change: "removed", Current: &currentCopy})
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			deltas = append(deltas, CombatProfileDelta{Profile: profile, Change: "changed", Current: &currentCopy, Candidate: &candidateCopy})
+		}
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func combatProfileSnapshotMapByProfile(profiles []worldruntime.StaticActorCombatProfileSnapshot) map[string]worldruntime.StaticActorCombatProfileSnapshot {
+	byProfile := make(map[string]worldruntime.StaticActorCombatProfileSnapshot, len(profiles))
+	for _, profile := range cloneCombatProfileSnapshots(profiles) {
+		byProfile[profile.Profile] = profile
+	}
+	return byProfile
 }
 
 func buildSpawnGroupDeltas(currentSpawnGroups []SpawnGroupReferenceSummary, candidateSpawnGroups []SpawnGroupReferenceSummary) []SpawnGroupDelta {

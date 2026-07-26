@@ -717,6 +717,43 @@ func TestLocalContentBundleImportPreviewEndpointReturnsSpawnGroupDeltaJSONForLoo
 	}
 }
 
+func TestLocalContentBundleImportPreviewEndpointReturnsCombatProfileDeltaJSONForLoopbackPost(t *testing.T) {
+	currentKeepProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500}
+	currentRemovedProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_remove_profile", MaxHP: 20, DamagePerNormalAttack: 2, AttackValue: 6, DefenseValue: 4, Level: 1, RespawnDelayMs: 1500}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{currentRemovedProfile, currentKeepProfile},
+		SpawnGroups: []contentbundle.SpawnGroup{
+			{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: currentKeepProfile.Profile},
+			{Ref: "practice.remove", Name: "Removed Mob", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: currentRemovedProfile.Profile},
+		},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"combat_profiles":[{"profile":"practice_keep_profile","max_hp":28,"damage_per_normal_attack":3,"attack_value":7,"defense_value":4,"level":2,"rank":1,"respawn_delay_ms":1500},{"profile":"practice_add_profile","max_hp":30,"damage_per_normal_attack":4,"attack_value":8,"defense_value":4,"level":3,"rank":1,"respawn_delay_ms":2000}],"spawn_groups":[{"ref":"practice.add","name":"Added Mob","map_index":2,"x":1300,"y":2300,"race_num":103,"combat_profile":"practice_add_profile"},{"ref":"practice.keep","name":"Keep Mob","map_index":1,"x":1000,"y":2000,"race_num":101,"combat_profile":"practice_keep_profile"}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.ImportPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode import preview combat-profile response: %v", err)
+	}
+	candidateAddedProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_add_profile", MaxHP: 30, DamagePerNormalAttack: 4, AttackValue: 8, DefenseValue: 4, Level: 3, Rank: 1, RespawnDelayMs: 2000}
+	candidateKeepProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 28, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500}
+	want := []contentbundle.CombatProfileDelta{
+		{Profile: "practice_add_profile", Change: "added", Candidate: &candidateAddedProfile},
+		{Profile: "practice_keep_profile", Change: "changed", Current: &currentKeepProfile, Candidate: &candidateKeepProfile},
+		{Profile: "practice_remove_profile", Change: "removed", Current: &currentRemovedProfile},
+	}
+	if !reflect.DeepEqual(got.Deltas.CombatProfiles, want) {
+		t.Fatalf("unexpected combat-profile import-preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.CombatProfiles, want)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointRejectsInvalidCandidateBeforeCallback(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{}
 	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)

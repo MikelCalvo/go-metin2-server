@@ -533,6 +533,42 @@ func TestBuildImportPreviewReturnsSpawnGroupDeltas(t *testing.T) {
 	}
 }
 
+func TestBuildImportPreviewReturnsCombatProfileDeltas(t *testing.T) {
+	currentKeepProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500}
+	currentRemovedProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_remove_profile", MaxHP: 20, DamagePerNormalAttack: 2, AttackValue: 6, DefenseValue: 4, Level: 1, RespawnDelayMs: 1500}
+	candidateAddedProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_add_profile", MaxHP: 30, DamagePerNormalAttack: 4, AttackValue: 8, DefenseValue: 4, Level: 3, Rank: 1, RespawnDelayMs: 2000}
+	candidateKeepProfile := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_keep_profile", MaxHP: 28, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 2, Rank: 1, RespawnDelayMs: 1500}
+
+	preview, err := BuildImportPreview(
+		Bundle{
+			CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{currentRemovedProfile, currentKeepProfile},
+			SpawnGroups: []SpawnGroup{
+				{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: currentKeepProfile.Profile},
+				{Ref: "practice.remove", Name: "Removed Mob", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: currentRemovedProfile.Profile},
+			},
+		},
+		Bundle{
+			CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{candidateKeepProfile, candidateAddedProfile},
+			SpawnGroups: []SpawnGroup{
+				{Ref: "practice.add", Name: "Added Mob", MapIndex: 2, X: 1300, Y: 2300, RaceNum: 103, CombatProfile: candidateAddedProfile.Profile},
+				{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: candidateKeepProfile.Profile},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview combat-profile deltas: %v", err)
+	}
+
+	want := []CombatProfileDelta{
+		{Profile: "practice_add_profile", Change: "added", Candidate: &candidateAddedProfile},
+		{Profile: "practice_keep_profile", Change: "changed", Current: &currentKeepProfile, Candidate: &candidateKeepProfile},
+		{Profile: "practice_remove_profile", Change: "removed", Current: &currentRemovedProfile},
+	}
+	if !reflect.DeepEqual(preview.Deltas.CombatProfiles, want) {
+		t.Fatalf("unexpected combat-profile import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.CombatProfiles, want)
+	}
+}
+
 func TestSummarizeReturnsDeterministicStaticActorDetails(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		StaticActors: []StaticActor{
