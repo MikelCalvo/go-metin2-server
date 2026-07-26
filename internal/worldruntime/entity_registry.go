@@ -405,6 +405,14 @@ func (r *EntityRegistry) AllStaticActors() []StaticEntity {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	actors := r.staticActors.StaticActors()
+	filtered := make([]StaticEntity, 0, len(actors))
+	for _, actor := range actors {
+		if r.entityIDOwnedByPlayerLocked(actor.Entity.ID) || r.staticActorVisibilityVIDConflictsWithPlayerLocked(actor) {
+			continue
+		}
+		filtered = append(filtered, actor)
+	}
+	actors = filtered
 	if r.maps == nil {
 		return actors
 	}
