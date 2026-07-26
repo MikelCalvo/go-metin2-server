@@ -960,6 +960,23 @@ func TestFileStoreValidateBackupFromRejectsMissingBackupManifest(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateBackupFromRejectsWhitespaceSource(t *testing.T) {
+	restoreTarget := NewFileStore(filepath.Join(t.TempDir(), "restore-target"))
+	sourceDir := "   "
+	t.Cleanup(func() { _ = os.RemoveAll(sourceDir) })
+
+	_, err := restoreTarget.ValidateBackupFrom(sourceDir)
+	if !errors.Is(err, ErrRestoreSourceRequired) {
+		t.Fatalf("expected ErrRestoreSourceRequired for whitespace restore source, got %v", err)
+	}
+	if _, statErr := os.Stat(sourceDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected whitespace restore source not to be created, stat err=%v", statErr)
+	}
+	if _, statErr := os.Stat(restoreTarget.dir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected dry-run whitespace-source validation not to create restore target dir, stat err=%v", statErr)
+	}
+}
+
 func TestFileStoreValidateBackupFromRejectsUntrackedVisibleBackupEntry(t *testing.T) {
 	source := NewFileStore(t.TempDir())
 	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
@@ -1061,6 +1078,23 @@ func TestFileStoreBackupToRejectsNonEmptyDestination(t *testing.T) {
 	err := store.BackupTo(backupDir)
 	if !errors.Is(err, ErrBackupDirNotEmpty) {
 		t.Fatalf("expected ErrBackupDirNotEmpty, got %v", err)
+	}
+}
+
+func TestFileStoreBackupToRejectsWhitespaceDestination(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	backupDir := "   "
+	t.Cleanup(func() { _ = os.RemoveAll(backupDir) })
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrBackupDirRequired) {
+		t.Fatalf("expected ErrBackupDirRequired, got %v", err)
+	}
+	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected whitespace backup destination not to be created, stat err=%v", statErr)
 	}
 }
 
@@ -1366,6 +1400,23 @@ func TestFileStoreRestoreFromRejectsMissingBackupSource(t *testing.T) {
 	err := restored.RestoreFrom(filepath.Join(t.TempDir(), "missing-backup"))
 	if !errors.Is(err, ErrRestoreSourceNotFound) {
 		t.Fatalf("expected ErrRestoreSourceNotFound, got %v", err)
+	}
+}
+
+func TestFileStoreRestoreFromRejectsWhitespaceSource(t *testing.T) {
+	restored := NewFileStore(filepath.Join(t.TempDir(), "restored"))
+	sourceDir := "   "
+	t.Cleanup(func() { _ = os.RemoveAll(sourceDir) })
+
+	err := restored.RestoreFrom(sourceDir)
+	if !errors.Is(err, ErrRestoreSourceRequired) {
+		t.Fatalf("expected ErrRestoreSourceRequired for whitespace restore source, got %v", err)
+	}
+	if _, statErr := os.Stat(sourceDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected whitespace restore source not to be created, stat err=%v", statErr)
+	}
+	if _, statErr := os.Stat(restored.dir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected whitespace-source restore not to create destination dir, stat err=%v", statErr)
 	}
 }
 

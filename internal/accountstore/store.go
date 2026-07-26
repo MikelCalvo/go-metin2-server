@@ -319,7 +319,7 @@ func (s *FileStore) BackupTo(dstDir string) error {
 	if s.dir == "" {
 		return ErrStoreDirRequired
 	}
-	if dstDir == "" {
+	if strings.TrimSpace(dstDir) == "" {
 		return ErrBackupDirRequired
 	}
 	if err := rejectBackupDestinationInsideStore(s.dir, dstDir); err != nil {
@@ -403,7 +403,7 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 	if s.dir == "" {
 		return ErrStoreDirRequired
 	}
-	if srcDir == "" {
+	if strings.TrimSpace(srcDir) == "" {
 		return ErrRestoreSourceRequired
 	}
 	if err := rejectRestoreDestinationInsideSource(srcDir, s.dir); err != nil {
@@ -468,7 +468,7 @@ func (s *FileStore) ValidateBackupFrom(srcDir string) (SnapshotSummary, error) {
 }
 
 func (s *FileStore) loadBackupAccountsForRestore(srcDir string) ([]Account, error) {
-	if srcDir == "" {
+	if strings.TrimSpace(srcDir) == "" {
 		return nil, ErrRestoreSourceRequired
 	}
 	if _, err := os.Stat(srcDir); err != nil {
