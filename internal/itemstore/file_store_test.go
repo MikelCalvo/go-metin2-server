@@ -1236,6 +1236,40 @@ func TestFileStoreSaveThenLoadRoundTripPreservesSellRejectText(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesUnequipRejectText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:              11200,
+		Name:              "Sealed Armor",
+		Stackable:         false,
+		MaxCount:          1,
+		EquipSlot:         inventory.EquipmentSlotBody.String(),
+		Irremovable:       true,
+		UnequipRejectText: "The seal prevents removing this item.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with unequip reject message: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with unequip reject message: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with unequip reject message:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with unequip reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 11200,\n      \"name\": \"Sealed Armor\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"irremovable\": true,\n      \"equip_slot\": \"body\",\n      \"unequip_reject_message\": \"The seal prevents removing this item.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with unequip reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreRejectsInvalidSellRejectTextMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
@@ -1259,6 +1293,75 @@ func TestFileStoreRejectsInvalidSellRejectTextMetadata(t *testing.T) {
 	}
 	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot when loading NUL sell reject message, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsInvalidUnequipRejectTextMetadata(t *testing.T) {
+	cases := []struct {
+		name     string
+		invalid  Template
+		rawJSON  string
+		wantText string
+	}{
+		{
+			name: "nul message",
+			invalid: Template{
+				Vnum:              11200,
+				Name:              "Broken Unequip Message Armor",
+				Stackable:         false,
+				MaxCount:          1,
+				EquipSlot:         inventory.EquipmentSlotBody.String(),
+				Irremovable:       true,
+				UnequipRejectText: "bad\x00message",
+			},
+			rawJSON:  `{"templates":[{"vnum":11200,"name":"Broken Unequip Message Armor","stackable":false,"max_count":1,"equip_slot":"body","irremovable":true,"unequip_reject_message":"bad\u0000message"}]}`,
+			wantText: "NUL unequip reject message",
+		},
+		{
+			name: "without irremovable",
+			invalid: Template{
+				Vnum:              11200,
+				Name:              "Movable Message Armor",
+				Stackable:         false,
+				MaxCount:          1,
+				EquipSlot:         inventory.EquipmentSlotBody.String(),
+				UnequipRejectText: "This movable item should not author removal text.",
+			},
+			rawJSON:  `{"templates":[{"vnum":11200,"name":"Movable Message Armor","stackable":false,"max_count":1,"equip_slot":"body","unequip_reject_message":"This movable item should not author removal text."}]}`,
+			wantText: "unequip reject message without irremovable",
+		},
+		{
+			name: "without equip slot",
+			invalid: Template{
+				Vnum:              27001,
+				Name:              "Consumable Removal Message",
+				Stackable:         true,
+				MaxCount:          200,
+				Irremovable:       true,
+				UnequipRejectText: "This carried item should not author removal text.",
+			},
+			rawJSON:  `{"templates":[{"vnum":27001,"name":"Consumable Removal Message","stackable":true,"max_count":200,"irremovable":true,"unequip_reject_message":"This carried item should not author removal text."}]}`,
+			wantText: "unequip reject message without equip slot",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			if err := store.Save(Snapshot{Templates: []Template{tc.invalid}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.wantText, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("create item template test dir: %v", err)
+			}
+			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
+				t.Fatalf("write invalid unequip reject message snapshot: %v", err)
+			}
+			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when loading %s, got %v", tc.wantText, err)
+			}
+		})
 	}
 }
 

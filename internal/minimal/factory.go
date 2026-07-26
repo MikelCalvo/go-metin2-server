@@ -63,6 +63,7 @@ const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
 const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
+const itemUnequipRejectedInfoMessage = "You cannot remove this item."
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -2859,6 +2860,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: false}
 						}
 						var inventoryItem inventory.ItemInstance
+						if hasUnequipTemplate && template.Irremovable {
+							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemUnequipRejectText(template)})}
+							return gameflow.ChatResult{Accepted: true, Frames: frames}
+						}
 						if hasUnequipTemplate {
 							inventoryItem, ok = selectedPlayer.UnequipItemWithTemplate(equipSlot, toSlot, template)
 						} else {
@@ -3146,6 +3151,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						var inventoryItem inventory.ItemInstance
+						if hasUnequipTemplate && template.Irremovable {
+							frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemUnequipRejectText(template)})}
+							return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
+						}
 						if hasUnequipTemplate {
 							inventoryItem, ok = selectedPlayer.UnequipItemWithTemplate(equipSlot, inventory.SlotIndex(packet.Destination.Cell), template)
 						} else {
@@ -4566,6 +4575,13 @@ func itemSellRejectText(template itemcatalog.Template) string {
 		return template.SellRejectText
 	}
 	return itemSellRejectedInfoMessage
+}
+
+func itemUnequipRejectText(template itemcatalog.Template) string {
+	if template.UnequipRejectText != "" {
+		return template.UnequipRejectText
+	}
+	return itemUnequipRejectedInfoMessage
 }
 
 func merchantSellTemplateForSlot(templates map[uint32]itemcatalog.Template, selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {

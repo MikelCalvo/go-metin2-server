@@ -366,7 +366,8 @@ Expected result:
 Expected result:
 - allowed unequip emits the self-only equipment clear, carried-cell set, any template-authored inverse `PLAYER_POINT_CHANGE` when the item has `equip_effect`, and appearance update; unequipping projected `hair` equipment restores `parts[3]` to the character's base `HairPart`
 - the point-effect removal is backed by the just-removed item instance, so it still subtracts the authored delta after the item has moved out of the equipment slice
-- `irremovable`, mismatched, or malformed removal metadata fails closed with no point change and no committed inventory/equipment/persistence mutation
+- `irremovable` removal metadata fails closed with one self-only `CHAT_TYPE_INFO` rejection; when the template authors `unequip_reject_message`, that text is shown, otherwise the deterministic fallback is `You cannot remove this item.`; no carried/equipment, point, appearance, quickslot, or persisted-state mutation is committed
+- mismatched or malformed removal metadata fails closed with no point change and no committed inventory/equipment/persistence mutation
 - corrupt/disposable equipped-source fixtures whose live count exceeds the authored template `max_count` fail closed the same way: no item refresh, no point change, no appearance update, and no committed inventory/equipment/persistence mutation
 
 ### 4.5.10 Merchant buy/sell template restrictions (`SHOP BUY` / `SHOP SELL2`)

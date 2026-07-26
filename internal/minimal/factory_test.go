@@ -2990,12 +2990,13 @@ func TestNewGameSessionFactoryItemMovePacketRejectsIrremovableTemplateUnequipWit
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	itemTemplates := staticItemTemplateStore{snapshot: itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
-		Vnum:        0x11223344,
-		Name:        "Fixed Armor",
-		Stackable:   false,
-		MaxCount:    1,
-		EquipSlot:   inventory.EquipmentSlotBody.String(),
-		Irremovable: true,
+		Vnum:              0x11223344,
+		Name:              "Fixed Armor",
+		Stackable:         false,
+		MaxCount:          1,
+		EquipSlot:         inventory.EquipmentSlotBody.String(),
+		Irremovable:       true,
+		UnequipRejectText: "The seal prevents removing this item.",
 	}}}}
 	characters := stubCharacters()
 	characters[1].Inventory = []inventory.ItemInstance{}
@@ -3013,8 +3014,15 @@ func TestNewGameSessionFactoryItemMovePacketRejectsIrremovableTemplateUnequipWit
 	if err != nil {
 		t.Fatalf("unexpected irremovable unequip packet error: %v", err)
 	}
-	if len(unequipOut) != 0 {
-		t.Fatalf("expected irremovable unequip to fail closed with no frames, got %d", len(unequipOut))
+	if len(unequipOut) != 1 {
+		t.Fatalf("expected irremovable unequip to emit one info rejection frame, got %d", len(unequipOut))
+	}
+	reject, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, unequipOut[0]))
+	if err != nil {
+		t.Fatalf("decode irremovable unequip rejection chat: %v", err)
+	}
+	if reject.Type != chatproto.ChatTypeInfo || reject.VID != 0 || reject.Message != "The seal prevents removing this item." {
+		t.Fatalf("unexpected irremovable unequip rejection chat: %+v", reject)
 	}
 	account, err := accounts.Load(StubLogin)
 	if err != nil {
@@ -3025,6 +3033,65 @@ func TestNewGameSessionFactoryItemMovePacketRejectsIrremovableTemplateUnequipWit
 	}
 	if len(account.Characters[1].Inventory) != 0 {
 		t.Fatalf("expected irremovable unequip to leave inventory empty, got %#v", account.Characters[1].Inventory)
+	}
+}
+
+func TestNewGameSessionFactorySlashUnequipRejectsIrremovableTemplateWithAuthoredText(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemTemplates := staticItemTemplateStore{snapshot: itemcatalog.Snapshot{Templates: []itemcatalog.Template{{
+		Vnum:              0x11223345,
+		Name:              "Fixed Slash Armor",
+		Stackable:         false,
+		MaxCount:          1,
+		EquipSlot:         inventory.EquipmentSlotBody.String(),
+		Irremovable:       true,
+		UnequipRejectText: "The slash seal prevents removing this item.",
+	}}}}
+	characters := stubCharacters()
+	characters[1].Inventory = []inventory.ItemInstance{}
+	characters[1].Equipment = []inventory.ItemInstance{{ID: 1002, Vnum: 0x11223345, Count: 1, Slot: 0, Equipped: true, EquipSlot: inventory.EquipmentSlotBody}}
+	if err := store.Issue(loginticket.Ticket{Login: StubLogin, LoginKey: 0x01020304, Empire: 2, Characters: characters}); err != nil {
+		t.Fatalf("issue login ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: StubLogin, Empire: 2, Characters: cloneCharacters(characters)}); err != nil {
+		t.Fatalf("seed account store: %v", err)
+	}
+
+	flow := newStartedGameFlowWithItemStore(t, store, accounts, itemTemplates)
+	unequipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/unequip_item body 8"})))
+	if err != nil {
+		t.Fatalf("unexpected slash irremovable unequip error: %v", err)
+	}
+	if len(unequipOut) != 1 {
+		t.Fatalf("expected slash irremovable unequip to emit one info rejection frame, got %d", len(unequipOut))
+	}
+	reject, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, unequipOut[0]))
+	if err != nil {
+		t.Fatalf("decode slash irremovable unequip rejection chat: %v", err)
+	}
+	if reject.Type != chatproto.ChatTypeInfo || reject.VID != 0 || reject.Message != "The slash seal prevents removing this item." {
+		t.Fatalf("unexpected slash irremovable unequip rejection chat: %+v", reject)
+	}
+	account, err := accounts.Load(StubLogin)
+	if err != nil {
+		t.Fatalf("load persisted account: %v", err)
+	}
+	if !sameItemInstances(account.Characters[1].Equipment, characters[1].Equipment) {
+		t.Fatalf("expected slash irremovable unequip to leave equipment unchanged, got %#v want %#v", account.Characters[1].Equipment, characters[1].Equipment)
+	}
+	if len(account.Characters[1].Inventory) != 0 {
+		t.Fatalf("expected slash irremovable unequip to leave inventory empty, got %#v", account.Characters[1].Inventory)
+	}
+}
+
+func TestItemUnequipRejectTextUsesTemplateMetadataWithFallback(t *testing.T) {
+	if got := itemUnequipRejectText(itemcatalog.Template{Vnum: 11200, Name: "Fixed Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), Irremovable: true}); got != itemUnequipRejectedInfoMessage {
+		t.Fatalf("expected default unequip rejection message, got %q", got)
+	}
+	template := itemcatalog.Template{Vnum: 11200, Name: "Sealed Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String(), Irremovable: true, UnequipRejectText: "The seal prevents removing this item."}
+	if got := itemUnequipRejectText(template); got != template.UnequipRejectText {
+		t.Fatalf("expected template-authored unequip rejection message %q, got %q", template.UnequipRejectText, got)
 	}
 }
 
