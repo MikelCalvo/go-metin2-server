@@ -421,6 +421,9 @@ func validTemplate(template Template) bool {
 	if template.BuyRejectText != "" && !templateHasBuyRejectGuard(template) {
 		return false
 	}
+	if template.SellRejectText != "" && !templateHasSellRejectGuard(template) {
+		return false
+	}
 	if template.UnequipRejectText != "" && (template.EquipSlot == "" || !template.Irremovable) {
 		return false
 	}
@@ -461,7 +464,16 @@ func templateHasUseRejectGuard(template Template) bool {
 }
 
 func templateHasBuyRejectGuard(template Template) bool {
-	return template.AntiGet
+	return templateHasSelectedCharacterGuard(template) || template.AntiGet
+}
+
+func templateHasSellRejectGuard(template Template) bool {
+	return templateHasSelectedCharacterGuard(template) || template.AntiSell
+}
+
+func templateHasSelectedCharacterGuard(template Template) bool {
+	return template.AntiMale || template.AntiFemale || template.AntiWarrior || template.AntiAssassin || template.AntiSura || template.AntiShaman ||
+		template.AntiEmpireA || template.AntiEmpireB || template.AntiEmpireC || template.MinLevel != 0
 }
 
 func validUseEffect(effect *UseEffect, template Template) bool {

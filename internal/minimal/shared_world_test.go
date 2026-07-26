@@ -24842,18 +24842,26 @@ func TestGameSessionFlowShopBuyAndSellRejectSelectedCharacterAntiFlagTemplatesWi
 	buyBuyer.Job = 0
 	buyRuntime, buyAccounts, buyFlow, buyActorID, buyLogin := setupMerchantBuySession(t, "merchant-anti-flag-buy", 0x28282828, buyBuyer)
 	defer closeSessionFlow(t, buyFlow)
-	buyRuntime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiWarrior: true}
+	buyTemplate := itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiWarrior: true, BuyRejectText: "This merchant will not sell this potion to warriors."}
+	buyRuntime.itemTemplates[27001] = buyTemplate
 
 	interactWithMerchantForBuy(t, buyFlow, buyActorID)
 	buyOut, err := buyFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
 	if err != nil {
 		t.Fatalf("unexpected anti-flag packet shop buy error: %v", err)
 	}
-	if len(buyOut) != 1 {
-		t.Fatalf("expected anti-flag packet shop buy to emit 1 invalid-pos frame, got %d", len(buyOut))
+	if len(buyOut) != 2 {
+		t.Fatalf("expected anti-flag packet shop buy to emit invalid-pos plus authored info text, got %d", len(buyOut))
 	}
 	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, buyOut[0])); err != nil {
 		t.Fatalf("decode anti-flag packet shop buy invalid-pos frame: %v", err)
+	}
+	buyInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[1]))
+	if err != nil {
+		t.Fatalf("decode anti-flag packet shop buy rejection info: %v", err)
+	}
+	if buyInfo.Type != chatproto.ChatTypeInfo || buyInfo.VID != 0 || buyInfo.Empire != 0 || buyInfo.Message != buyTemplate.BuyRejectText {
+		t.Fatalf("unexpected anti-flag packet shop buy rejection info: %+v", buyInfo)
 	}
 	assertMerchantStateUnchanged(t, buyRuntime, buyAccounts, buyLogin, buyBuyer, "anti-flag packet shop buy")
 
@@ -24861,18 +24869,26 @@ func TestGameSessionFlowShopBuyAndSellRejectSelectedCharacterAntiFlagTemplatesWi
 	sellBuyer.Job = 0
 	sellRuntime, sellAccounts, sellFlow, sellActorID, sellLogin := setupMerchantBuySession(t, "merchant-anti-flag-sell", 0x29292929, sellBuyer)
 	defer closeSessionFlow(t, sellFlow)
-	sellRuntime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiWarrior: true}
+	sellTemplate := itemcatalog.Template{Vnum: 27001, Name: "Restricted Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiWarrior: true, SellRejectText: "This merchant will not buy this potion from warriors."}
+	sellRuntime.itemTemplates[27001] = sellTemplate
 
 	interactWithMerchantForBuy(t, sellFlow, sellActorID)
 	sellOut, err := sellFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
 	if err != nil {
 		t.Fatalf("unexpected anti-flag packet shop sell2 error: %v", err)
 	}
-	if len(sellOut) != 1 {
-		t.Fatalf("expected anti-flag packet shop sell2 to emit 1 invalid-pos frame, got %d", len(sellOut))
+	if len(sellOut) != 2 {
+		t.Fatalf("expected anti-flag packet shop sell2 to emit invalid-pos plus authored info text, got %d", len(sellOut))
 	}
 	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
 		t.Fatalf("decode anti-flag packet shop sell2 invalid-pos frame: %v", err)
+	}
+	sellInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, sellOut[1]))
+	if err != nil {
+		t.Fatalf("decode anti-flag packet shop sell2 rejection info: %v", err)
+	}
+	if sellInfo.Type != chatproto.ChatTypeInfo || sellInfo.VID != 0 || sellInfo.Empire != 0 || sellInfo.Message != sellTemplate.SellRejectText {
+		t.Fatalf("unexpected anti-flag packet shop sell2 rejection info: %+v", sellInfo)
 	}
 	assertMerchantStateUnchanged(t, sellRuntime, sellAccounts, sellLogin, sellBuyer, "anti-flag packet shop sell2")
 }

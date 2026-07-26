@@ -2073,8 +2073,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				if !ok {
 					return nil, false
 				}
-				if failure == player.MerchantBuyFailureInvalid && template.AntiGet {
-					frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemBuyRejectText(template)}))
+				if failure == player.MerchantBuyFailureInvalid {
+					if message, ok := runtimeTemplateBuyRejectText(template, selectedPlayer); ok {
+						frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message}))
+					}
 				}
 				return frames, true
 			}
@@ -2120,19 +2122,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				return frames, true
 			}
 			template, ok := merchantSellTemplateForSlot(runtime.itemTemplates, selectedPlayer, slot)
-			if !ok || !selectedPlayer.CanUseTemplate(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiStack {
+			if !ok || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiStack {
 				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
 				if !ok {
 					return nil, false
+				}
+				if message, ok := runtimeTemplateSellRejectText(template, selectedPlayer); ok {
+					frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message}))
 				}
 				return frames, true
 			}
-			if template.AntiSell {
+			if !selectedPlayer.CanUseTemplate(template) || template.AntiSell {
 				frames, ok := merchantBuyFailureFrames(player.MerchantBuyFailureInvalid, packetShopFrames)
 				if !ok {
 					return nil, false
 				}
-				frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemSellRejectText(template)}))
+				if message, ok := runtimeTemplateSellRejectText(template, selectedPlayer); ok {
+					frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message}))
+				}
 				return frames, true
 			}
 			credit, ok := player.MerchantSellCredit(template, soldCount)
@@ -4663,11 +4670,37 @@ func itemBuyRejectText(template itemcatalog.Template) string {
 	return itemBuyRejectedInfoMessage
 }
 
+func runtimeTemplateBuyRejectText(template itemcatalog.Template, selectedPlayer *player.Runtime) (string, bool) {
+	if selectedPlayer == nil {
+		return "", false
+	}
+	if template.AntiGet {
+		return itemBuyRejectText(template), true
+	}
+	if template.BuyRejectText == "" || selectedPlayer.CanUseTemplate(template) {
+		return "", false
+	}
+	return itemBuyRejectText(template), true
+}
+
 func itemSellRejectText(template itemcatalog.Template) string {
 	if template.SellRejectText != "" {
 		return template.SellRejectText
 	}
 	return itemSellRejectedInfoMessage
+}
+
+func runtimeTemplateSellRejectText(template itemcatalog.Template, selectedPlayer *player.Runtime) (string, bool) {
+	if selectedPlayer == nil {
+		return "", false
+	}
+	if template.AntiSell {
+		return itemSellRejectText(template), true
+	}
+	if template.SellRejectText == "" || selectedPlayer.CanUseTemplate(template) {
+		return "", false
+	}
+	return itemSellRejectText(template), true
 }
 
 func runtimeTemplateEquipRejectText(template itemcatalog.Template, selectedPlayer *player.Runtime, equipSlot inventory.EquipmentSlot) (string, bool) {
