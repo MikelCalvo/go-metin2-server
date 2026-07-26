@@ -580,6 +580,9 @@ func (s *FileStore) validateBackupDirectoryEntries(manifestFiles map[string]stru
 		if _, ok := manifestFiles[name]; ok {
 			continue
 		}
+		if entry.IsDir() {
+			return fmt.Errorf("%w: backup contains untracked directory %q", ErrInvalidBackupManifest, name)
+		}
 		if isAccountCrashTempFilename(name) {
 			continue
 		}

@@ -1028,6 +1028,56 @@ func TestFileStoreRestoreFromRejectsUntrackedVisibleBackupEntry(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateBackupFromRejectsCrashTempDirectory(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(backupDir, ".account-crashed.json"), 0o755); err != nil {
+		t.Fatalf("create crash-temp-shaped backup directory: %v", err)
+	}
+	restoreTarget := NewFileStore(filepath.Join(t.TempDir(), "restore-target"))
+
+	_, err := restoreTarget.ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for crash-temp-shaped backup directory, got %v", err)
+	}
+	if _, statErr := os.Stat(restoreTarget.dir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected dry-run validation not to create restore target dir, stat err=%v", statErr)
+	}
+}
+
+func TestFileStoreRestoreFromRejectsCrashTempDirectory(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(backupDir, ".account-crashed.json"), 0o755); err != nil {
+		t.Fatalf("create crash-temp-shaped backup directory: %v", err)
+	}
+	restoreDir := filepath.Join(t.TempDir(), "restored")
+
+	err := NewFileStore(restoreDir).RestoreFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for crash-temp-shaped backup directory, got %v", err)
+	}
+	entries, readErr := os.ReadDir(restoreDir)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		t.Fatalf("read restore dir after rejected crash-temp-shaped directory: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected rejected crash-temp-shaped directory to leave destination empty, got %#v", entries)
+	}
+}
+
 func TestFileStoreRestoreFromRejectsMissingBackupManifest(t *testing.T) {
 	backup := NewFileStore(t.TempDir())
 	if err := backup.Save(Account{Login: "mkmk", Empire: 2}); err != nil {
