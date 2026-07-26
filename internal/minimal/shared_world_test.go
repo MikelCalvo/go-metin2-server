@@ -24764,6 +24764,43 @@ func TestGameSessionFlowShopBuyAndSellRejectSelectedCharacterAntiFlagTemplatesWi
 	assertMerchantStateUnchanged(t, sellRuntime, sellAccounts, sellLogin, sellBuyer, "anti-flag packet shop sell2")
 }
 
+func TestGameSessionFlowShopBuyRejectsAntiGetTemplateWithAuthoredInfoTextWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantBuyerPacketAntiGetText", 0x0104012f, 0x0205012f, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27002, Count: 3, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-anti-get-buy-text", 0x2f2f2f2f, buyer)
+	defer closeSessionFlow(t, flow)
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Merchant Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiGet: true, BuyRejectText: "The merchant will not sell this item to you."}
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected anti-get text packet shop buy error: %v", err)
+	}
+	if len(buyOut) != 2 {
+		t.Fatalf("expected anti-get packet shop buy to emit invalid-pos plus authored info text, got %d", len(buyOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, buyOut[0])); err != nil {
+		t.Fatalf("decode anti-get text packet shop buy invalid-pos frame: %v", err)
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, buyOut[1]))
+	if err != nil {
+		t.Fatalf("decode anti-get text packet shop buy rejection info: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Empire != 0 || info.Message != "The merchant will not sell this item to you." {
+		t.Fatalf("unexpected anti-get text packet shop buy rejection info: %+v", info)
+	}
+	assertMerchantStateUnchanged(t, runtime, accounts, login, buyer, "anti-get text packet shop buy")
+}
+
+func TestItemBuyRejectTextUsesTemplateMetadataWithFallback(t *testing.T) {
+	if got := itemBuyRejectText(itemcatalog.Template{Vnum: 27001, Name: "Bound Buy Potion", Stackable: true, MaxCount: 200, AntiGet: true}); got != itemBuyRejectedInfoMessage {
+		t.Fatalf("expected default buy rejection message, got %q", got)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Sealed Buy Potion", Stackable: true, MaxCount: 200, AntiGet: true, BuyRejectText: "The merchant will not sell this item to you."}
+	if got := itemBuyRejectText(template); got != template.BuyRejectText {
+		t.Fatalf("expected template-authored buy rejection message %q, got %q", template.BuyRejectText, got)
+	}
+}
+
 func TestGameSessionFlowShopBuyAndSellRejectMinLevelTemplatesWithoutMutation(t *testing.T) {
 	buyBuyer := merchantBuyerCharacter("MerchantBuyerPacketMinLevel", 0x0104012a, 0x0205012a, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
 	buyBuyer.Level = 9

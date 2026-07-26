@@ -1203,6 +1203,39 @@ func TestFileStoreSaveThenLoadRoundTripPreservesPickupRejectText(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesBuyRejectText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:          27015,
+		Name:          "Sealed Buy Potion",
+		Stackable:     true,
+		MaxCount:      200,
+		AntiGet:       true,
+		BuyRejectText: "The merchant will not sell this item to you.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with buy reject message: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with buy reject message: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with buy reject message:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with buy reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27015,\n      \"name\": \"Sealed Buy Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_get\": true,\n      \"buy_reject_message\": \"The merchant will not sell this item to you.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with buy reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesSellRejectText(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
@@ -1361,6 +1394,60 @@ func TestFileStoreRejectsInvalidSellRejectTextMetadata(t *testing.T) {
 	}
 	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot when loading NUL sell reject message, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsInvalidBuyRejectTextMetadata(t *testing.T) {
+	cases := []struct {
+		name     string
+		invalid  Template
+		rawJSON  string
+		wantText string
+	}{
+		{
+			name: "nul message",
+			invalid: Template{
+				Vnum:          27015,
+				Name:          "Broken Buy Message Potion",
+				Stackable:     true,
+				MaxCount:      200,
+				AntiGet:       true,
+				BuyRejectText: "bad\x00message",
+			},
+			rawJSON:  `{"templates":[{"vnum":27015,"name":"Broken Buy Message Potion","stackable":true,"max_count":200,"anti_get":true,"buy_reject_message":"bad\u0000message"}]}`,
+			wantText: "NUL buy reject message",
+		},
+		{
+			name: "without merchant-buy guard",
+			invalid: Template{
+				Vnum:          27016,
+				Name:          "Unguarded Buy Message Potion",
+				Stackable:     true,
+				MaxCount:      200,
+				BuyRejectText: "This item has no owned buy rejection guard.",
+			},
+			rawJSON:  `{"templates":[{"vnum":27016,"name":"Unguarded Buy Message Potion","stackable":true,"max_count":200,"buy_reject_message":"This item has no owned buy rejection guard."}]}`,
+			wantText: "buy reject message without merchant-buy guard",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			if err := store.Save(Snapshot{Templates: []Template{tc.invalid}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.wantText, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("create item template test dir: %v", err)
+			}
+			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
+				t.Fatalf("write invalid buy reject message snapshot: %v", err)
+			}
+			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when loading %s, got %v", tc.wantText, err)
+			}
+		})
 	}
 }
 

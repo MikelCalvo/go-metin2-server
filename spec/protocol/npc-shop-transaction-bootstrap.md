@@ -135,6 +135,7 @@ When a gated `BUY` request arrives, the runtime must validate all of the followi
 - the entry `count` is greater than zero and still fits the owned `GC::SHOP START` `uint8` count carrier
 - the selected character has at least that much gold available
 - the selected character has a valid carried-inventory placement for that template/count under `item-stack-bootstrap.md`, including `anti_stack` templates skipping existing-stack merge/fan-out paths
+- the resolved template does not carry the acquisition guard `anti_get`
 - the resolved template does not carry a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
 - persistence/writeback can succeed before the new live state is committed
 
@@ -192,6 +193,7 @@ The first buy path must fail closed when any of these are true:
 - the catalog/template resolution fails
 - the player has insufficient gold
 - no valid carried inventory placement exists
+- the resolved template is marked with the acquisition guard `anti_get`
 - the resolved template carries a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
 - persistence/writeback fails
 
@@ -218,6 +220,7 @@ Failure behavior in this bootstrap contract:
 - packet `SHOP BUY` insufficient-gold failure now emits one bare self-only `GC::SHOP NOT_ENOUGH_MONEY`
 - packet `SHOP BUY` no-valid-placement failure now emits one bare self-only `GC::SHOP INVENTORY_FULL`
 - packet `SHOP BUY` unknown-slot failure now emits one bare self-only `GC::SHOP INVALID_POS`
+- packet `SHOP BUY` anti-get/template-acquisition failure emits the same self-only `GC::SHOP INVALID_POS` companion and then appends one self-only `CHAT_TYPE_INFO` rejection text sourced from template `buy_reject_message` when present or the deterministic fallback `"The merchant will not sell this item to you."` when omitted
 - packet `SHOP BUY` against a still-open merchant window whose live actor/context or bound catalog snapshot has gone stale now emits one self-only `GC::SHOP END`, clears the active merchant context immediately, and still leaves gold/inventory unchanged
 - a successful warp interaction or exact-position transfer trigger while that merchant window is still open now prepends one self-only `GC::SHOP END` before the self transfer rebootstrap burst and clears the active merchant context immediately, so later `SHOP BUY` requests on the destination side fail closed until the player opens a fresh merchant window again
 - the local `/shop_buy <slot>` debug harness now reuses those same merchant-family insufficient-gold / no-valid-placement / unknown-slot visible failures (`GC::SHOP NOT_ENOUGH_MONEY` / `GC::SHOP INVENTORY_FULL` / `GC::SHOP INVALID_POS`) instead of keeping a second placeholder or silent unknown-slot surface
@@ -227,7 +230,7 @@ Failure behavior in this bootstrap contract:
 The narrowest honest merchant-window failure contract is now live too:
 - packet `SHOP BUY` insufficient-gold failure answers with one bare `GC::SHOP NOT_ENOUGH_MONEY`
 - packet `SHOP BUY` no-valid-placement failure answers with one bare `GC::SHOP INVENTORY_FULL`
-- packet `SHOP BUY` unknown-slot failure answers with one bare `GC::SHOP INVALID_POS`
+- packet `SHOP BUY` unknown-slot failure answers with one bare `GC::SHOP INVALID_POS`; anti-get/template-acquisition failure uses that same first frame and appends the owned info-chat rejection text described above
 - packet `SHOP BUY` on a stale merchant window now answers with one bare `GC::SHOP END` instead of a merchant error subheader
 - all three merchant error frames use only the common `SHOP (0x0810)` envelope plus the selected error subheader, with no extra payload bytes
 

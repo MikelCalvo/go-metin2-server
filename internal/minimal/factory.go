@@ -67,6 +67,7 @@ const bootstrapNormalAttackCadenceWindow = 250 * time.Millisecond
 const bootstrapPracticeMobServerOriginRetaliationDelay = time.Second
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
+const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you."
 const itemSellRejectedInfoMessage = "The merchant refuses to buy this item."
 const itemUnequipRejectedInfoMessage = "You cannot remove this item."
 const bootstrapMapIndex uint32 = 1
@@ -2068,6 +2069,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 				frames, ok := merchantBuyFailureFrames(failure, packetShopFrames)
 				if !ok {
 					return nil, false
+				}
+				if failure == player.MerchantBuyFailureInvalid && template.AntiGet {
+					frames = append(frames, chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemBuyRejectText(template)}))
 				}
 				return frames, true
 			}
@@ -4647,6 +4651,13 @@ func itemPickupRejectText(template itemcatalog.Template) string {
 		return template.PickupRejectText
 	}
 	return itemPickupInventoryFullInfoMessage
+}
+
+func itemBuyRejectText(template itemcatalog.Template) string {
+	if template.BuyRejectText != "" {
+		return template.BuyRejectText
+	}
+	return itemBuyRejectedInfoMessage
 }
 
 func itemSellRejectText(template itemcatalog.Template) string {

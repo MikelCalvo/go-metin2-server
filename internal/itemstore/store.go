@@ -76,6 +76,7 @@ type Template struct {
 	Attributes        AttributeValues `json:"attributes,omitempty"`
 	UseEffect         *UseEffect      `json:"use_effect,omitempty"`
 	UseRejectText     string          `json:"use_reject_message,omitempty"`
+	BuyRejectText     string          `json:"buy_reject_message,omitempty"`
 	EquipEffect       *PointEffect    `json:"equip_effect,omitempty"`
 	DropRejectText    string          `json:"drop_reject_message,omitempty"`
 	PickupRejectText  string          `json:"pickup_reject_message,omitempty"`
@@ -137,6 +138,7 @@ type templateJSON struct {
 	Attributes        *AttributeValues `json:"attributes,omitempty"`
 	UseEffect         *UseEffect       `json:"use_effect,omitempty"`
 	UseRejectText     string           `json:"use_reject_message,omitempty"`
+	BuyRejectText     string           `json:"buy_reject_message,omitempty"`
 	EquipEffect       *PointEffect     `json:"equip_effect,omitempty"`
 	DropRejectText    string           `json:"drop_reject_message,omitempty"`
 	PickupRejectText  string           `json:"pickup_reject_message,omitempty"`
@@ -188,6 +190,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		EquipSlot:         template.EquipSlot,
 		UseEffect:         template.UseEffect,
 		UseRejectText:     template.UseRejectText,
+		BuyRejectText:     template.BuyRejectText,
 		EquipEffect:       template.EquipEffect,
 		DropRejectText:    template.DropRejectText,
 		PickupRejectText:  template.PickupRejectText,
@@ -253,6 +256,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		EquipSlot:         jsonTemplate.EquipSlot,
 		UseEffect:         jsonTemplate.UseEffect,
 		UseRejectText:     jsonTemplate.UseRejectText,
+		BuyRejectText:     jsonTemplate.BuyRejectText,
 		EquipEffect:       jsonTemplate.EquipEffect,
 		DropRejectText:    jsonTemplate.DropRejectText,
 		PickupRejectText:  jsonTemplate.PickupRejectText,
@@ -327,6 +331,7 @@ func normalizeTemplate(template Template) Template {
 	template.Name = strings.TrimSpace(template.Name)
 	template.EquipSlot = normalizeEquipSlot(template.EquipSlot)
 	template.UseRejectText = strings.TrimSpace(template.UseRejectText)
+	template.BuyRejectText = strings.TrimSpace(template.BuyRejectText)
 	template.DropRejectText = strings.TrimSpace(template.DropRejectText)
 	template.PickupRejectText = strings.TrimSpace(template.PickupRejectText)
 	template.SellRejectText = strings.TrimSpace(template.SellRejectText)
@@ -389,6 +394,9 @@ func validTemplate(template Template) bool {
 	if !validTemplateMessage(template.UseRejectText) {
 		return false
 	}
+	if !validTemplateMessage(template.BuyRejectText) {
+		return false
+	}
 	if !validTemplateMessage(template.DropRejectText) {
 		return false
 	}
@@ -408,6 +416,9 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.UseRejectText != "" && (template.UseEffect == nil || !templateHasUseRejectGuard(template)) {
+		return false
+	}
+	if template.BuyRejectText != "" && !templateHasBuyRejectGuard(template) {
 		return false
 	}
 	if template.UnequipRejectText != "" && (template.EquipSlot == "" || !template.Irremovable) {
@@ -447,6 +458,10 @@ func templateHasUseRejectGuard(template Template) bool {
 		template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell ||
 		template.AntiMale || template.AntiFemale || template.AntiWarrior || template.AntiAssassin || template.AntiSura || template.AntiShaman ||
 		template.AntiEmpireA || template.AntiEmpireB || template.AntiEmpireC || template.MinLevel != 0
+}
+
+func templateHasBuyRejectGuard(template Template) bool {
+	return template.AntiGet
 }
 
 func validUseEffect(effect *UseEffect, template Template) bool {
