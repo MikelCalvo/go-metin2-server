@@ -559,6 +559,9 @@ func validateTicket(ticket Ticket) error {
 		if err := validateCharacterUniqueItemInstanceIDs(character); err != nil {
 			return err
 		}
+		if err := validateCharacterUniqueInventorySlots(character); err != nil {
+			return err
+		}
 		if err := validateCharacterUniqueEquipmentSlots(character); err != nil {
 			return err
 		}
@@ -637,6 +640,17 @@ func validateCharacterUniqueItemInstanceIDs(character Character) error {
 			return fmt.Errorf("%w: item instance id %d appears in %s and equipment slot %s", ErrInvalidTicket, item.ID, previous, item.EquipSlot.String())
 		}
 		itemIDs[item.ID] = fmt.Sprintf("equipment slot %s", item.EquipSlot.String())
+	}
+	return nil
+}
+
+func validateCharacterUniqueInventorySlots(character Character) error {
+	inventorySlots := make(map[inventory.SlotIndex]uint64, len(character.Inventory))
+	for _, item := range character.Inventory {
+		if previousID, ok := inventorySlots[item.Slot]; ok {
+			return fmt.Errorf("%w: inventory slot %d contains item %d and item %d", ErrInvalidTicket, item.Slot, previousID, item.ID)
+		}
+		inventorySlots[item.Slot] = item.ID
 	}
 	return nil
 }

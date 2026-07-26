@@ -94,6 +94,26 @@ func TestFileStoreRejectsDuplicateItemInstanceIDs(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsDuplicateInventorySlots(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	account := Account{
+		Login:  "mkmk",
+		Empire: 2,
+		Characters: []loginticket.Character{{
+			ID:   1,
+			Name: "MkmkWar",
+			Inventory: []inventory.ItemInstance{
+				{ID: 1001, Vnum: 27001, Count: 3, Slot: 8},
+				{ID: 1002, Vnum: 27002, Count: 1, Slot: 8},
+			},
+		}},
+	}
+
+	if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for duplicate inventory slot, got %v", err)
+	}
+}
+
 func TestFileStoreLoadRejectsDuplicateItemInstanceIDs(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":27001,"count":3,"slot":8}],"equipment":[{"id":1001,"vnum":19,"count":1,"equipped":true,"equip_slot":2}],"quickslots":[]}]}`)

@@ -323,10 +323,8 @@ func TestGameRuntimeItemMoveRejectsDuplicateSourceOrTargetOccupancyWithoutMutati
 			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
 			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 			login := "move-duplicate-stack-" + string(rune('a'+index))
-			issuePeerTicket(t, ticketStore, login, 0x60606060+uint32(index), owner)
-			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-				t.Fatalf("seed duplicate-occupancy item-move account: %v", err)
-			}
+			issuePeerTicketForRuntimeRecovery(t, ticketStore, login, 0x60606060+uint32(index), owner)
+			savePeerAccountForRuntimeRecovery(t, accounts, accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})})
 			itemStore := newItemTemplateStore(t, []itemcatalog.Template{{Vnum: 27001, Name: "Duplicate Stack Potion", Stackable: true, MaxCount: 200}})
 			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 			if err != nil {

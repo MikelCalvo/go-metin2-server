@@ -103,6 +103,7 @@ Backwards-compatibility rules for this persistence boundary:
 - zero `gold` remains explicit state instead of being hidden behind undocumented point indices
 - carried and equipped item instances must validate before account snapshots or login tickets can be saved or loaded
 - duplicate item instance IDs within one character fail closed across both carried inventory and equipment, so one logical item identity cannot be authoritative in two slots/windows at once
+- duplicate carried-inventory slot occupancy also fails closed on durable account snapshot saves and on one-shot login-ticket issue/load boundaries, so one carried cell cannot become newly authoritative with two item instances before any live mutation path runs; raw durable account loads still preserve older duplicate-slot recovery fixtures, but those snapshots cannot be re-saved or issued as fresh login tickets unchanged
 - duplicate equipped-slot occupancy also fails closed at the file-backed account and login-ticket boundaries
 
 ## First packet-family boundary

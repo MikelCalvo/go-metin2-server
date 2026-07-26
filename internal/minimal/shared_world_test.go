@@ -2,6 +2,8 @@ package minimal
 
 import (
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -39391,6 +39394,64 @@ func issuePeerTicket(t *testing.T, store loginticket.Store, login string, loginK
 	if err := store.Issue(loginticket.Ticket{Login: login, LoginKey: loginKey, Empire: character.Empire, Characters: []loginticket.Character{character}}); err != nil {
 		t.Fatalf("issue peer ticket: %v", err)
 	}
+}
+
+func issuePeerTicketForRuntimeRecovery(t *testing.T, store loginticket.Store, login string, loginKey uint32, character loginticket.Character) {
+	t.Helper()
+	ticket := loginticket.Ticket{Login: login, LoginKey: loginKey, Empire: character.Empire, Characters: []loginticket.Character{character}}
+	if sanitized, changed := ticketWithoutDuplicateInventorySlots(ticket); changed {
+		ticket = sanitized
+	}
+	if err := store.Issue(ticket); err != nil {
+		t.Fatalf("issue sanitized peer ticket for runtime recovery: %v", err)
+	}
+}
+
+func ticketWithoutDuplicateInventorySlots(ticket loginticket.Ticket) (loginticket.Ticket, bool) {
+	sanitized := ticket
+	sanitized.Characters = cloneCharacters(ticket.Characters)
+	changed := false
+	for index := range sanitized.Characters {
+		seen := make(map[inventory.SlotIndex]struct{}, len(sanitized.Characters[index].Inventory))
+		inventoryItems := sanitized.Characters[index].Inventory[:0]
+		for _, item := range sanitized.Characters[index].Inventory {
+			if _, ok := seen[item.Slot]; ok {
+				changed = true
+				continue
+			}
+			seen[item.Slot] = struct{}{}
+			inventoryItems = append(inventoryItems, item)
+		}
+		sanitized.Characters[index].Inventory = inventoryItems
+	}
+	return sanitized, changed
+}
+
+func savePeerAccountForRuntimeRecovery(t *testing.T, store accountstore.Store, account accountstore.Account) {
+	t.Helper()
+	if err := store.Save(account); err != nil {
+		if writeRawPeerAccount(t, store, account) {
+			return
+		}
+		t.Fatalf("save peer account: %v", err)
+	}
+}
+
+func writeRawPeerAccount(t *testing.T, store accountstore.Store, account accountstore.Account) bool {
+	t.Helper()
+	fileStore, ok := store.(*accountstore.FileStore)
+	if !ok || fileStore == nil || fileStore.Dir() == "" || account.Login == "" {
+		return false
+	}
+	raw, err := json.Marshal(account)
+	if err != nil {
+		t.Fatalf("marshal raw peer account: %v", err)
+	}
+	filename := hex.EncodeToString([]byte(strings.ToLower(account.Login))) + ".json"
+	if err := os.WriteFile(filepath.Join(fileStore.Dir(), filename), raw, 0o644); err != nil {
+		t.Fatalf("write raw peer account: %v", err)
+	}
+	return true
 }
 
 func newInteractionDefinitionStore(t *testing.T, definitions []interactionstore.Definition) interactionstore.Store {

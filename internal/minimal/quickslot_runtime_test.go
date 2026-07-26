@@ -370,10 +370,8 @@ func TestGameSessionFlowQuickslotAddRejectsDuplicateItemSlotOccupancyWithoutMuta
 		{ID: 412, Vnum: 27002, Count: 1, Slot: 5},
 	}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}}
-	issuePeerTicket(t, ticketStore, "quickslot-duplicate-slot", 0x5050508d, owner)
-	if err := accounts.Save(accountstore.Account{Login: "quickslot-duplicate-slot", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-		t.Fatalf("seed quickslot duplicate-slot account: %v", err)
-	}
+	issuePeerTicketForRuntimeRecovery(t, ticketStore, "quickslot-duplicate-slot", 0x5050508d, owner)
+	savePeerAccountForRuntimeRecovery(t, accounts, accountstore.Account{Login: "quickslot-duplicate-slot", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})})
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected quickslot duplicate-slot runtime error: %v", err)

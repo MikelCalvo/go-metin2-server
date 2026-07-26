@@ -274,6 +274,9 @@ func (s *FileStore) Save(account Account) error {
 	if err := validateAccount(account); err != nil {
 		return err
 	}
+	if err := validateAccountUniqueInventorySlots(account); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create account store dir: %w", err)
 	}
@@ -825,6 +828,15 @@ func validateAccount(account Account) error {
 	return nil
 }
 
+func validateAccountUniqueInventorySlots(account Account) error {
+	for _, character := range account.Characters {
+		if err := validateCharacterUniqueInventorySlots(character); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func validateUniqueCharacterIdentity(characters []loginticket.Character) error {
 	ids := make(map[uint32]string, len(characters))
 	names := make(map[string]uint32, len(characters))
@@ -892,6 +904,17 @@ func validateCharacterUniqueItemInstanceIDs(character loginticket.Character) err
 			return fmt.Errorf("%w: item instance id %d appears in %s and equipment slot %s", ErrInvalidAccount, item.ID, previous, item.EquipSlot.String())
 		}
 		itemIDs[item.ID] = fmt.Sprintf("equipment slot %s", item.EquipSlot.String())
+	}
+	return nil
+}
+
+func validateCharacterUniqueInventorySlots(character loginticket.Character) error {
+	inventorySlots := make(map[inventory.SlotIndex]uint64, len(character.Inventory))
+	for _, item := range character.Inventory {
+		if previousID, ok := inventorySlots[item.Slot]; ok {
+			return fmt.Errorf("%w: inventory slot %d contains item %d and item %d", ErrInvalidAccount, item.Slot, previousID, item.ID)
+		}
+		inventorySlots[item.Slot] = item.ID
 	}
 	return nil
 }

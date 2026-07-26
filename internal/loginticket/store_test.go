@@ -87,6 +87,40 @@ func TestFileStoreIssueThenLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFileStoreIssueRejectsDuplicateInventorySlots(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	ticket := Ticket{
+		Login:    "mkmk",
+		LoginKey: 0x01020304,
+		IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC),
+		Characters: []Character{{
+			ID:   1,
+			Name: "MkmkWar",
+			Inventory: []inventory.ItemInstance{
+				{ID: 1001, Vnum: 27001, Count: 3, Slot: 8},
+				{ID: 1002, Vnum: 27002, Count: 1, Slot: 8},
+			},
+		}},
+	}
+
+	if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for duplicate inventory slot, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsDuplicateInventorySlots(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[{"id":1001,"vnum":27001,"count":3,"slot":8},{"id":1002,"vnum":27002,"count":1,"slot":8}],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write duplicate-inventory-slot ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for loaded duplicate inventory slot, got %v", err)
+	}
+}
+
 func TestFileStoreIssueDoesNotOverwriteTicketCommittedAfterPreflight(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	loginKey := uint32(0x01020304)

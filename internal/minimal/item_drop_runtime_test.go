@@ -990,10 +990,8 @@ func TestGameRuntimeItemDropRejectsDuplicateSlotOccupancyWithoutMutation(t *test
 			}
 			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 			login := "drop-duplicate-slot-" + tc.name
-			issuePeerTicket(t, ticketStore, login, 0x6a6a6a6a, owner)
-			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-				t.Fatalf("seed duplicate-slot drop account: %v", err)
-			}
+			issuePeerTicketForRuntimeRecovery(t, ticketStore, login, 0x6a6a6a6a, owner)
+			savePeerAccountForRuntimeRecovery(t, accounts, accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})})
 
 			runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
 			if err != nil {

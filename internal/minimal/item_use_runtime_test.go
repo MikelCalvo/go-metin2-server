@@ -942,10 +942,8 @@ func TestGameSessionFlowItemUseToItemRejectsLockedAndCountEdgesWithoutMutation(t
 			owner.Inventory = append([]inventory.ItemInstance(nil), tc.inventory...)
 			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 			login := "uitguard" + string(rune('a'+index))
-			issuePeerTicket(t, ticketStore, login, 0x5050506c, owner)
-			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-				t.Fatalf("seed item-use-to-item guard account: %v", err)
-			}
+			issuePeerTicketForRuntimeRecovery(t, ticketStore, login, 0x5050506c, owner)
+			savePeerAccountForRuntimeRecovery(t, accounts, accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})})
 			itemStore := newItemTemplateStore(t, []itemcatalog.Template{tc.template})
 			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
 			if err != nil {
@@ -1001,10 +999,8 @@ func TestGameSessionFlowItemUseRejectsDuplicateSlotOccupancyWithoutMutation(t *t
 	}
 	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
 	owner.Points[bootstrapPlayerPointValueIndex] = 25
-	issuePeerTicket(t, ticketStore, "item-use-duplicate-slot", 0x5050507e, owner)
-	if err := accounts.Save(accountstore.Account{Login: "item-use-duplicate-slot", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
-		t.Fatalf("seed duplicate-slot item-use account: %v", err)
-	}
+	issuePeerTicketForRuntimeRecovery(t, ticketStore, "item-use-duplicate-slot", 0x5050507e, owner)
+	savePeerAccountForRuntimeRecovery(t, accounts, accountstore.Account{Login: "item-use-duplicate-slot", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})})
 	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
 		Vnum:      27004,
 		Name:      "Duplicate Slot Template Potion",
