@@ -184,6 +184,7 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 		}},
 		ShopRouteCount:                         SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 		WarpDestinationCount:                   SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
+		WarpDestinations:                       []WarpDestinationDelta{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Change: "added", Candidate: &WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "Step through the gate.", MapIndex: 7, X: 1300, Y: 2300}}},
 		WarpRouteCount:                         SummaryCountDelta{Current: 0, Candidate: 1, Delta: 1},
 		RewardDropItemCount:                    SummaryCountDelta{},
 		InteractionDefinitionCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
@@ -451,6 +452,34 @@ func TestBuildImportPreviewReturnsServiceRouteDeltas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(preview.Deltas.WarpRoutes, wantWarpRoutes) {
 		t.Fatalf("unexpected warp route import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.WarpRoutes, wantWarpRoutes)
+	}
+}
+
+func TestBuildImportPreviewReturnsWarpDestinationDeltas(t *testing.T) {
+	currentGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
+	currentOldGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:old_gate", Text: "Old route.", MapIndex: 4, X: 2200, Y: 3200}
+	candidateGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "New gate.", MapIndex: 3, X: 2100, Y: 3100}
+	candidateRemoteGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:remote_gate", Text: "Remote route.", MapIndex: 9, X: 9000, Y: 9100}
+
+	preview, err := BuildImportPreview(
+		Bundle{InteractionDefinitions: []interactionstore.Definition{currentOldGate, currentGate}},
+		Bundle{InteractionDefinitions: []interactionstore.Definition{candidateRemoteGate, candidateGate}},
+	)
+	if err != nil {
+		t.Fatalf("build import preview warp destination deltas: %v", err)
+	}
+
+	currentGateDestination := WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
+	candidateGateDestination := WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "New gate.", MapIndex: 3, X: 2100, Y: 3100}
+	currentOldGateDestination := WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:old_gate", Text: "Old route.", MapIndex: 4, X: 2200, Y: 3200}
+	candidateRemoteGateDestination := WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:remote_gate", Text: "Remote route.", MapIndex: 9, X: 9000, Y: 9100}
+	want := []WarpDestinationDelta{
+		{Kind: interactionstore.KindWarp, Ref: "npc:gate", Change: "changed", Current: &currentGateDestination, Candidate: &candidateGateDestination},
+		{Kind: interactionstore.KindWarp, Ref: "npc:old_gate", Change: "removed", Current: &currentOldGateDestination},
+		{Kind: interactionstore.KindWarp, Ref: "npc:remote_gate", Change: "added", Candidate: &candidateRemoteGateDestination},
+	}
+	if !reflect.DeepEqual(preview.Deltas.WarpDestinations, want) {
+		t.Fatalf("unexpected warp destination import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.WarpDestinations, want)
 	}
 }
 

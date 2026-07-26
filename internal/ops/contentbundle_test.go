@@ -702,6 +702,46 @@ func TestLocalContentBundleImportPreviewEndpointReturnsServiceRouteDeltaJSONForL
 	}
 }
 
+func TestLocalContentBundleImportPreviewEndpointReturnsWarpDestinationDeltaJSONForLoopbackPost(t *testing.T) {
+	currentGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		InteractionDefinitions: []interactionstore.Definition{
+			currentGate,
+			{Kind: interactionstore.KindWarp, Ref: "npc:old_gate", Text: "Old route.", MapIndex: 4, X: 2200, Y: 3200},
+		},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"interaction_definitions":[{"kind":"warp","ref":"npc:gate","text":"New gate.","map_index":3,"x":2100,"y":3100},{"kind":"warp","ref":"npc:remote_gate","text":"Remote route.","map_index":9,"x":9000,"y":9100}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if previewer.calls != 1 {
+		t.Fatalf("expected import previewer to be called once, got %d calls", previewer.calls)
+	}
+	var got contentbundle.ImportPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode import preview warp-destination response: %v", err)
+	}
+	currentGateDestination := contentbundle.WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
+	candidateGateDestination := contentbundle.WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "New gate.", MapIndex: 3, X: 2100, Y: 3100}
+	currentOldGateDestination := contentbundle.WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:old_gate", Text: "Old route.", MapIndex: 4, X: 2200, Y: 3200}
+	candidateRemoteGateDestination := contentbundle.WarpDestinationSummary{Kind: interactionstore.KindWarp, Ref: "npc:remote_gate", Text: "Remote route.", MapIndex: 9, X: 9000, Y: 9100}
+	want := []contentbundle.WarpDestinationDelta{
+		{Kind: interactionstore.KindWarp, Ref: "npc:gate", Change: "changed", Current: &currentGateDestination, Candidate: &candidateGateDestination},
+		{Kind: interactionstore.KindWarp, Ref: "npc:old_gate", Change: "removed", Current: &currentOldGateDestination},
+		{Kind: interactionstore.KindWarp, Ref: "npc:remote_gate", Change: "added", Candidate: &candidateRemoteGateDestination},
+	}
+	if !reflect.DeepEqual(got.Deltas.WarpDestinations, want) {
+		t.Fatalf("unexpected warp destination import-preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.WarpDestinations, want)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbackPost(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
 		StaticActors:           []contentbundle.StaticActor{{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},
