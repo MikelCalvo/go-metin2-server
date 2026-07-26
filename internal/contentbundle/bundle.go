@@ -106,6 +106,7 @@ type SummaryDeltas struct {
 	InteractionKinds                       []InteractionKindDelta       `json:"interaction_kinds,omitempty"`
 	InteractionDefinitions                 []InteractionDefinitionDelta `json:"interaction_definitions,omitempty"`
 	ItemTemplates                          []ItemTemplateDelta          `json:"item_templates,omitempty"`
+	SpawnGroups                            []SpawnGroupDelta            `json:"spawn_groups,omitempty"`
 	Maps                                   []MapContentDelta            `json:"maps,omitempty"`
 }
 
@@ -141,6 +142,13 @@ type ItemTemplateDelta struct {
 	Change    string                `json:"change"`
 	Current   *itemcatalog.Template `json:"current,omitempty"`
 	Candidate *itemcatalog.Template `json:"candidate,omitempty"`
+}
+
+type SpawnGroupDelta struct {
+	Ref       string                      `json:"ref"`
+	Change    string                      `json:"change"`
+	Current   *SpawnGroupReferenceSummary `json:"current,omitempty"`
+	Candidate *SpawnGroupReferenceSummary `json:"candidate,omitempty"`
 }
 
 type MapContentDelta struct {
@@ -459,6 +467,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		InteractionKinds:                       buildInteractionKindDeltas(current.InteractionKinds, candidate.InteractionKinds),
 		InteractionDefinitions:                 buildInteractionDefinitionDeltas(currentBundle, candidateBundle),
 		ItemTemplates:                          buildItemTemplateDeltas(currentBundle.ItemTemplates, candidateBundle.ItemTemplates),
+		SpawnGroups:                            buildSpawnGroupDeltas(current.SpawnGroups, candidate.SpawnGroups),
 		Maps:                                   buildMapContentDeltas(current.Maps, candidate.Maps),
 	}
 }
@@ -628,6 +637,61 @@ func buildItemTemplateDeltas(currentTemplates []itemcatalog.Template, candidateT
 		return nil
 	}
 	return deltas
+}
+
+func buildSpawnGroupDeltas(currentSpawnGroups []SpawnGroupReferenceSummary, candidateSpawnGroups []SpawnGroupReferenceSummary) []SpawnGroupDelta {
+	if len(currentSpawnGroups) == 0 && len(candidateSpawnGroups) == 0 {
+		return nil
+	}
+	currentByRef := spawnGroupSummaryMapByRef(currentSpawnGroups)
+	candidateByRef := spawnGroupSummaryMapByRef(candidateSpawnGroups)
+	refsSeen := make(map[string]struct{}, len(currentByRef)+len(candidateByRef))
+	for ref := range currentByRef {
+		refsSeen[ref] = struct{}{}
+	}
+	for ref := range candidateByRef {
+		refsSeen[ref] = struct{}{}
+	}
+	refs := make([]string, 0, len(refsSeen))
+	for ref := range refsSeen {
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+
+	deltas := make([]SpawnGroupDelta, 0, len(refs))
+	for _, ref := range refs {
+		current, currentOK := currentByRef[ref]
+		candidate, candidateOK := candidateByRef[ref]
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			deltas = append(deltas, SpawnGroupDelta{Ref: ref, Change: "added", Candidate: &candidateCopy})
+		case !candidateOK:
+			currentCopy := current
+			deltas = append(deltas, SpawnGroupDelta{Ref: ref, Change: "removed", Current: &currentCopy})
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			deltas = append(deltas, SpawnGroupDelta{Ref: ref, Change: "changed", Current: &currentCopy, Candidate: &candidateCopy})
+		}
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func spawnGroupSummaryMapByRef(spawnGroups []SpawnGroupReferenceSummary) map[string]SpawnGroupReferenceSummary {
+	byRef := make(map[string]SpawnGroupReferenceSummary, len(spawnGroups))
+	for _, spawnGroup := range spawnGroups {
+		spawnGroup.Ref = strings.TrimSpace(spawnGroup.Ref)
+		spawnGroup.Name = strings.TrimSpace(spawnGroup.Name)
+		spawnGroup.CombatProfile = strings.TrimSpace(spawnGroup.CombatProfile)
+		spawnGroup.RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
+		spawnGroup.RewardDropItems = cloneRewardDropItemSummaries(spawnGroup.RewardDropItems)
+		byRef[spawnGroup.Ref] = spawnGroup
+	}
+	return byRef
 }
 
 func buildMapContentDeltas(currentMaps []MapContentSummary, candidateMaps []MapContentSummary) []MapContentDelta {
@@ -1040,6 +1104,21 @@ func rewardDropItemSummaries(dropVnums []uint32, itemTemplatesByVnum map[uint32]
 		return nil
 	}
 	return summaries
+}
+
+func cloneRewardDropItemSummaries(items []RewardDropItemSummary) []RewardDropItemSummary {
+	if len(items) == 0 {
+		return nil
+	}
+	cloned := make([]RewardDropItemSummary, len(items))
+	copy(cloned, items)
+	sort.Slice(cloned, func(i int, j int) bool {
+		if cloned[i].ItemVnum == cloned[j].ItemVnum {
+			return cloned[i].ItemName < cloned[j].ItemName
+		}
+		return cloned[i].ItemVnum < cloned[j].ItemVnum
+	})
+	return cloned
 }
 
 func rewardDropAggregateSummaries(countsByVnum map[uint32]int, itemTemplatesByVnum map[uint32]itemcatalog.Template) []RewardDropAggregateSummary {

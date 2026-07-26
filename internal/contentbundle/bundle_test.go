@@ -453,6 +453,44 @@ func TestBuildImportPreviewReturnsRewardAmountDeltas(t *testing.T) {
 	}
 }
 
+func TestBuildImportPreviewReturnsSpawnGroupDeltas(t *testing.T) {
+	redPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	bluePotion := itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7}
+	currentKeep := SpawnGroupReferenceSummary{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 10, RewardGold: 5, RewardDropVnums: []uint32{27001}, RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}}
+	currentRemoved := SpawnGroupReferenceSummary{Ref: "practice.remove", Name: "Removed Mob", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 3, RewardGold: 1}
+	candidateAdded := SpawnGroupReferenceSummary{Ref: "practice.add", Name: "Added Mob", MapIndex: 2, X: 1300, Y: 2300, RaceNum: 103, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 7, RewardGold: 2, RewardDropVnums: []uint32{27002}, RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27002, ItemName: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7}}}
+	candidateKeep := SpawnGroupReferenceSummary{Ref: "practice.keep", Name: "Keep Mob", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardExperience: 20, RewardGold: 8, RewardDropVnums: []uint32{27001}, RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}}}
+
+	preview, err := BuildImportPreview(
+		Bundle{
+			ItemTemplates: []itemcatalog.Template{redPotion},
+			SpawnGroups: []SpawnGroup{
+				{Ref: currentKeep.Ref, Name: currentKeep.Name, MapIndex: currentKeep.MapIndex, X: currentKeep.X, Y: currentKeep.Y, RaceNum: currentKeep.RaceNum, CombatProfile: currentKeep.CombatProfile, RewardExperience: currentKeep.RewardExperience, RewardGold: currentKeep.RewardGold, RewardDropVnums: currentKeep.RewardDropVnums},
+				{Ref: currentRemoved.Ref, Name: currentRemoved.Name, MapIndex: currentRemoved.MapIndex, X: currentRemoved.X, Y: currentRemoved.Y, RaceNum: currentRemoved.RaceNum, CombatProfile: currentRemoved.CombatProfile, RewardExperience: currentRemoved.RewardExperience, RewardGold: currentRemoved.RewardGold},
+			},
+		},
+		Bundle{
+			ItemTemplates: []itemcatalog.Template{redPotion, bluePotion},
+			SpawnGroups: []SpawnGroup{
+				{Ref: candidateAdded.Ref, Name: candidateAdded.Name, MapIndex: candidateAdded.MapIndex, X: candidateAdded.X, Y: candidateAdded.Y, RaceNum: candidateAdded.RaceNum, CombatProfile: candidateAdded.CombatProfile, RewardExperience: candidateAdded.RewardExperience, RewardGold: candidateAdded.RewardGold, RewardDropVnums: candidateAdded.RewardDropVnums},
+				{Ref: candidateKeep.Ref, Name: candidateKeep.Name, MapIndex: candidateKeep.MapIndex, X: candidateKeep.X, Y: candidateKeep.Y, RaceNum: candidateKeep.RaceNum, CombatProfile: candidateKeep.CombatProfile, RewardExperience: candidateKeep.RewardExperience, RewardGold: candidateKeep.RewardGold, RewardDropVnums: candidateKeep.RewardDropVnums},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview spawn-group deltas: %v", err)
+	}
+
+	want := []SpawnGroupDelta{
+		{Ref: "practice.add", Change: "added", Candidate: &candidateAdded},
+		{Ref: "practice.keep", Change: "changed", Current: &currentKeep, Candidate: &candidateKeep},
+		{Ref: "practice.remove", Change: "removed", Current: &currentRemoved},
+	}
+	if !reflect.DeepEqual(preview.Deltas.SpawnGroups, want) {
+		t.Fatalf("unexpected spawn-group import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.SpawnGroups, want)
+	}
+}
+
 func TestSummarizeReturnsDeterministicStaticActorDetails(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		StaticActors: []StaticActor{
