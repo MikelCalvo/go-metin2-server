@@ -206,7 +206,7 @@ Already present:
 - `info`, `talk`, `warp`, and `shop_preview` interaction kinds, with static-actor runtime validation now rejecting unsupported interaction kinds before they can be registered or updated,
 - fail-closed static-actor visibility identity validation: `entity_id` must fit the current `uint32` client-visible `VID` carrier and `race_num` must fit the current `uint16` `CHARACTER_ADD` projection,
 - structured merchant catalogs,
-- content bundle import/export with commit-only live visibility replay for static-actor replacement and import-preview deltas that include top-level counts, per-map static actor and spawn-group rows, and portable combat-profile rows,
+- content bundle import/export with commit-only live visibility replay for static-actor replacement and import-preview deltas that include top-level counts, per-map static actor/spawn-group rows, portable combat-profile rows, and NPC service route rows,
 - loopback-only local endpoints for static actors, interactions, visibility, and content bundles, including compact summaries with interaction-definition previews, shop catalog details, warp destination details, and import-preview deltas for portable combat-profile snapshots,
 - example bootstrap NPC service bundle.
 

@@ -109,6 +109,8 @@ type SummaryDeltas struct {
 	ItemTemplates                          []ItemTemplateDelta          `json:"item_templates,omitempty"`
 	CombatProfiles                         []CombatProfileDelta         `json:"combat_profiles,omitempty"`
 	SpawnGroups                            []SpawnGroupDelta            `json:"spawn_groups,omitempty"`
+	ShopRoutes                             []ShopRouteDelta             `json:"shop_routes,omitempty"`
+	WarpRoutes                             []WarpRouteDelta             `json:"warp_routes,omitempty"`
 	Maps                                   []MapContentDelta            `json:"maps,omitempty"`
 }
 
@@ -164,6 +166,28 @@ type SpawnGroupDelta struct {
 	Change    string                      `json:"change"`
 	Current   *SpawnGroupReferenceSummary `json:"current,omitempty"`
 	Candidate *SpawnGroupReferenceSummary `json:"candidate,omitempty"`
+}
+
+type ShopRouteDelta struct {
+	ActorName      string            `json:"actor_name"`
+	SourceMapIndex uint32            `json:"source_map_index"`
+	SourceX        int32             `json:"source_x"`
+	SourceY        int32             `json:"source_y"`
+	Ref            string            `json:"ref"`
+	Change         string            `json:"change"`
+	Current        *ShopRouteSummary `json:"current,omitempty"`
+	Candidate      *ShopRouteSummary `json:"candidate,omitempty"`
+}
+
+type WarpRouteDelta struct {
+	ActorName      string            `json:"actor_name"`
+	SourceMapIndex uint32            `json:"source_map_index"`
+	SourceX        int32             `json:"source_x"`
+	SourceY        int32             `json:"source_y"`
+	Ref            string            `json:"ref"`
+	Change         string            `json:"change"`
+	Current        *WarpRouteSummary `json:"current,omitempty"`
+	Candidate      *WarpRouteSummary `json:"candidate,omitempty"`
 }
 
 type MapContentDelta struct {
@@ -487,6 +511,8 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		ItemTemplates:                          buildItemTemplateDeltas(currentBundle.ItemTemplates, candidateBundle.ItemTemplates),
 		CombatProfiles:                         buildCombatProfileDeltas(currentBundle.CombatProfiles, candidateBundle.CombatProfiles),
 		SpawnGroups:                            buildSpawnGroupDeltas(current.SpawnGroups, candidate.SpawnGroups),
+		ShopRoutes:                             buildShopRouteDeltas(current.ShopRoutes, candidate.ShopRoutes),
+		WarpRoutes:                             buildWarpRouteDeltas(current.WarpRoutes, candidate.WarpRoutes),
 		Maps:                                   buildMapContentDeltas(current, candidate, currentBundle, candidateBundle),
 	}
 }
@@ -814,6 +840,173 @@ func spawnGroupSummaryMapByRef(spawnGroups []SpawnGroupReferenceSummary) map[str
 		byRef[spawnGroup.Ref] = spawnGroup
 	}
 	return byRef
+}
+
+type serviceRouteIdentity struct {
+	actorName      string
+	sourceMapIndex uint32
+	sourceX        int32
+	sourceY        int32
+	ref            string
+}
+
+func buildShopRouteDeltas(currentRoutes []ShopRouteSummary, candidateRoutes []ShopRouteSummary) []ShopRouteDelta {
+	if len(currentRoutes) == 0 && len(candidateRoutes) == 0 {
+		return nil
+	}
+	currentByID := make(map[serviceRouteIdentity]ShopRouteSummary, len(currentRoutes))
+	candidateByID := make(map[serviceRouteIdentity]ShopRouteSummary, len(candidateRoutes))
+	idsSeen := make(map[serviceRouteIdentity]struct{}, len(currentRoutes)+len(candidateRoutes))
+	for _, route := range currentRoutes {
+		route = normalizeShopRouteSummary(route)
+		id := shopRouteIdentity(route)
+		currentByID[id] = route
+		idsSeen[id] = struct{}{}
+	}
+	for _, route := range candidateRoutes {
+		route = normalizeShopRouteSummary(route)
+		id := shopRouteIdentity(route)
+		candidateByID[id] = route
+		idsSeen[id] = struct{}{}
+	}
+	ids := sortedServiceRouteIdentities(idsSeen)
+	deltas := make([]ShopRouteDelta, 0, len(ids))
+	for _, id := range ids {
+		current, currentOK := currentByID[id]
+		candidate, candidateOK := candidateByID[id]
+		delta := ShopRouteDelta{ActorName: id.actorName, SourceMapIndex: id.sourceMapIndex, SourceX: id.sourceX, SourceY: id.sourceY, Ref: id.ref}
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			delta.Change = "added"
+			delta.Candidate = &candidateCopy
+		case !candidateOK:
+			currentCopy := current
+			delta.Change = "removed"
+			delta.Current = &currentCopy
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			delta.Change = "changed"
+			delta.Current = &currentCopy
+			delta.Candidate = &candidateCopy
+		default:
+			continue
+		}
+		deltas = append(deltas, delta)
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func buildWarpRouteDeltas(currentRoutes []WarpRouteSummary, candidateRoutes []WarpRouteSummary) []WarpRouteDelta {
+	if len(currentRoutes) == 0 && len(candidateRoutes) == 0 {
+		return nil
+	}
+	currentByID := make(map[serviceRouteIdentity]WarpRouteSummary, len(currentRoutes))
+	candidateByID := make(map[serviceRouteIdentity]WarpRouteSummary, len(candidateRoutes))
+	idsSeen := make(map[serviceRouteIdentity]struct{}, len(currentRoutes)+len(candidateRoutes))
+	for _, route := range currentRoutes {
+		route = normalizeWarpRouteSummary(route)
+		id := warpRouteIdentity(route)
+		currentByID[id] = route
+		idsSeen[id] = struct{}{}
+	}
+	for _, route := range candidateRoutes {
+		route = normalizeWarpRouteSummary(route)
+		id := warpRouteIdentity(route)
+		candidateByID[id] = route
+		idsSeen[id] = struct{}{}
+	}
+	ids := sortedServiceRouteIdentities(idsSeen)
+	deltas := make([]WarpRouteDelta, 0, len(ids))
+	for _, id := range ids {
+		current, currentOK := currentByID[id]
+		candidate, candidateOK := candidateByID[id]
+		delta := WarpRouteDelta{ActorName: id.actorName, SourceMapIndex: id.sourceMapIndex, SourceX: id.sourceX, SourceY: id.sourceY, Ref: id.ref}
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			delta.Change = "added"
+			delta.Candidate = &candidateCopy
+		case !candidateOK:
+			currentCopy := current
+			delta.Change = "removed"
+			delta.Current = &currentCopy
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			delta.Change = "changed"
+			delta.Current = &currentCopy
+			delta.Candidate = &candidateCopy
+		default:
+			continue
+		}
+		deltas = append(deltas, delta)
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func normalizeShopRouteSummary(route ShopRouteSummary) ShopRouteSummary {
+	route.ActorName = strings.TrimSpace(route.ActorName)
+	route.Ref = strings.TrimSpace(route.Ref)
+	route.Title = strings.TrimSpace(route.Title)
+	return route
+}
+
+func normalizeWarpRouteSummary(route WarpRouteSummary) WarpRouteSummary {
+	route.ActorName = strings.TrimSpace(route.ActorName)
+	route.Ref = strings.TrimSpace(route.Ref)
+	route.Text = strings.TrimSpace(route.Text)
+	return route
+}
+
+func shopRouteIdentity(route ShopRouteSummary) serviceRouteIdentity {
+	return serviceRouteIdentity{
+		actorName:      route.ActorName,
+		sourceMapIndex: route.SourceMapIndex,
+		sourceX:        route.SourceX,
+		sourceY:        route.SourceY,
+		ref:            route.Ref,
+	}
+}
+
+func warpRouteIdentity(route WarpRouteSummary) serviceRouteIdentity {
+	return serviceRouteIdentity{
+		actorName:      route.ActorName,
+		sourceMapIndex: route.SourceMapIndex,
+		sourceX:        route.SourceX,
+		sourceY:        route.SourceY,
+		ref:            route.Ref,
+	}
+}
+
+func sortedServiceRouteIdentities(idsSeen map[serviceRouteIdentity]struct{}) []serviceRouteIdentity {
+	ids := make([]serviceRouteIdentity, 0, len(idsSeen))
+	for id := range idsSeen {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i int, j int) bool {
+		if ids[i].actorName == ids[j].actorName {
+			if ids[i].sourceMapIndex == ids[j].sourceMapIndex {
+				if ids[i].sourceX == ids[j].sourceX {
+					if ids[i].sourceY == ids[j].sourceY {
+						return ids[i].ref < ids[j].ref
+					}
+					return ids[i].sourceY < ids[j].sourceY
+				}
+				return ids[i].sourceX < ids[j].sourceX
+			}
+			return ids[i].sourceMapIndex < ids[j].sourceMapIndex
+		}
+		return ids[i].actorName < ids[j].actorName
+	})
+	return ids
 }
 
 func buildMapContentDeltas(current Summary, candidate Summary, currentBundle Bundle, candidateBundle Bundle) []MapContentDelta {

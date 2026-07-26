@@ -193,6 +193,12 @@ func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 			{Vnum: 11200, Change: "added", Candidate: &itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}},
 			{Vnum: 27001, Change: "added", Candidate: &itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
 		},
+		ShopRoutes: []ShopRouteDelta{
+			{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1200, SourceY: 2200, Ref: "npc:merchant", Change: "added", Candidate: &ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1200, SourceY: 2200, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 2}},
+		},
+		WarpRoutes: []WarpRouteDelta{
+			{ActorName: "Teleporter", SourceMapIndex: 1, SourceX: 1300, SourceY: 2300, Ref: "npc:teleporter", Change: "added", Candidate: &WarpRouteSummary{ActorName: "Teleporter", SourceMapIndex: 1, SourceX: 1300, SourceY: 2300, Ref: "npc:teleporter", Text: "Step through the gate.", TargetMapIndex: 7, TargetX: 1300, TargetY: 2300}},
+		},
 		Maps: []MapContentDelta{{
 			MapIndex:                     1,
 			StaticActorCount:             SummaryCountDelta{Current: 1, Candidate: 2, Delta: 1},
@@ -343,6 +349,93 @@ func TestBuildImportPreviewReturnsInteractionDefinitionDeltas(t *testing.T) {
 	}
 	if !reflect.DeepEqual(preview.Deltas.InteractionDefinitions, want) {
 		t.Fatalf("unexpected interaction-definition import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.InteractionDefinitions, want)
+	}
+}
+
+func TestBuildImportPreviewReturnsServiceRouteDeltas(t *testing.T) {
+	redPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	woodenSword := itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}
+	currentShop := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Old Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: redPotion.Vnum, Price: 50, Count: 1},
+		},
+	}
+	candidateShop := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Village Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: redPotion.Vnum, Price: 50, Count: 1},
+			{Slot: 1, ItemVnum: woodenSword.Vnum, Price: 500, Count: 1},
+		},
+	}
+	candidateRemoteShop := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:remote_merchant",
+		Title: "Remote Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: redPotion.Vnum, Price: 75, Count: 1},
+		},
+	}
+	currentGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
+	candidateGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "New gate.", MapIndex: 3, X: 2100, Y: 3100}
+	currentOldGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:old_gate", Text: "Old route.", MapIndex: 4, X: 2200, Y: 3200}
+
+	preview, err := BuildImportPreview(
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "Merchant", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: currentShop.Ref},
+				{Name: "Gate", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: currentGate.Ref},
+				{Name: "OldGate", MapIndex: 1, X: 1200, Y: 2200, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: currentOldGate.Ref},
+			},
+			ItemTemplates: []itemcatalog.Template{redPotion},
+			InteractionDefinitions: []interactionstore.Definition{
+				currentShop,
+				currentGate,
+				currentOldGate,
+			},
+		},
+		Bundle{
+			StaticActors: []StaticActor{
+				{Name: "Merchant", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: candidateShop.Ref},
+				{Name: "Gate", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: candidateGate.Ref},
+				{Name: "RemoteMerchant", MapIndex: 3, X: 3000, Y: 4000, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: candidateRemoteShop.Ref},
+			},
+			ItemTemplates: []itemcatalog.Template{redPotion, woodenSword},
+			InteractionDefinitions: []interactionstore.Definition{
+				candidateShop,
+				candidateGate,
+				candidateRemoteShop,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview service route deltas: %v", err)
+	}
+
+	currentMerchantRoute := ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "Old Merchant", EntryCount: 1}
+	candidateMerchantRoute := ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 2}
+	candidateRemoteRoute := ShopRouteSummary{ActorName: "RemoteMerchant", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "npc:remote_merchant", Title: "Remote Merchant", EntryCount: 1}
+	wantShopRoutes := []ShopRouteDelta{
+		{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Change: "changed", Current: &currentMerchantRoute, Candidate: &candidateMerchantRoute},
+		{ActorName: "RemoteMerchant", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "npc:remote_merchant", Change: "added", Candidate: &candidateRemoteRoute},
+	}
+	if !reflect.DeepEqual(preview.Deltas.ShopRoutes, wantShopRoutes) {
+		t.Fatalf("unexpected shop route import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.ShopRoutes, wantShopRoutes)
+	}
+
+	currentGateRoute := WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "Old gate.", TargetMapIndex: 2, TargetX: 2000, TargetY: 3000}
+	candidateGateRoute := WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "New gate.", TargetMapIndex: 3, TargetX: 2100, TargetY: 3100}
+	currentOldGateRoute := WarpRouteSummary{ActorName: "OldGate", SourceMapIndex: 1, SourceX: 1200, SourceY: 2200, Ref: "npc:old_gate", Text: "Old route.", TargetMapIndex: 4, TargetX: 2200, TargetY: 3200}
+	wantWarpRoutes := []WarpRouteDelta{
+		{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Change: "changed", Current: &currentGateRoute, Candidate: &candidateGateRoute},
+		{ActorName: "OldGate", SourceMapIndex: 1, SourceX: 1200, SourceY: 2200, Ref: "npc:old_gate", Change: "removed", Current: &currentOldGateRoute},
+	}
+	if !reflect.DeepEqual(preview.Deltas.WarpRoutes, wantWarpRoutes) {
+		t.Fatalf("unexpected warp route import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.WarpRoutes, wantWarpRoutes)
 	}
 }
 

@@ -629,6 +629,61 @@ func TestLocalContentBundleImportPreviewEndpointReturnsDeltaJSONForLoopbackPost(
 	}
 }
 
+func TestLocalContentBundleImportPreviewEndpointReturnsServiceRouteDeltaJSONForLoopbackPost(t *testing.T) {
+	currentShop := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:merchant",
+		Title: "Old Merchant",
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+		},
+	}
+	currentGate := interactionstore.Definition{Kind: interactionstore.KindWarp, Ref: "npc:gate", Text: "Old gate.", MapIndex: 2, X: 2000, Y: 3000}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{
+			{Name: "Merchant", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20301, InteractionKind: interactionstore.KindShopPreview, InteractionRef: currentShop.Ref},
+			{Name: "Gate", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 20300, InteractionKind: interactionstore.KindWarp, InteractionRef: currentGate.Ref},
+		},
+		ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
+		InteractionDefinitions: []interactionstore.Definition{
+			currentShop,
+			currentGate,
+		},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	body := `{"static_actors":[{"name":"Merchant","map_index":1,"x":1000,"y":2000,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:merchant"},{"name":"Gate","map_index":1,"x":1100,"y":2100,"race_num":20300,"interaction_kind":"warp","interaction_ref":"npc:gate"},{"name":"RemoteMerchant","map_index":3,"x":3000,"y":4000,"race_num":20301,"interaction_kind":"shop_preview","interaction_ref":"npc:remote_merchant"}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200,"shop_buy_price":5},{"vnum":11200,"name":"Wooden Sword","stackable":false,"max_count":1}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:merchant","title":"Village Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1},{"slot":1,"item_vnum":11200,"price":500,"count":1}]},{"kind":"shop_preview","ref":"npc:remote_merchant","title":"Remote Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":75,"count":1}]},{"kind":"warp","ref":"npc:gate","text":"New gate.","map_index":3,"x":2100,"y":3100}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.ImportPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode import preview service route response: %v", err)
+	}
+	currentMerchantRoute := contentbundle.ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "Old Merchant", EntryCount: 1}
+	candidateMerchantRoute := contentbundle.ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 2}
+	candidateRemoteRoute := contentbundle.ShopRouteSummary{ActorName: "RemoteMerchant", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "npc:remote_merchant", Title: "Remote Merchant", EntryCount: 1}
+	wantShopRoutes := []contentbundle.ShopRouteDelta{
+		{ActorName: "Merchant", SourceMapIndex: 1, SourceX: 1000, SourceY: 2000, Ref: "npc:merchant", Change: "changed", Current: &currentMerchantRoute, Candidate: &candidateMerchantRoute},
+		{ActorName: "RemoteMerchant", SourceMapIndex: 3, SourceX: 3000, SourceY: 4000, Ref: "npc:remote_merchant", Change: "added", Candidate: &candidateRemoteRoute},
+	}
+	if !reflect.DeepEqual(got.Deltas.ShopRoutes, wantShopRoutes) {
+		t.Fatalf("unexpected shop route import-preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.ShopRoutes, wantShopRoutes)
+	}
+	currentGateRoute := contentbundle.WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "Old gate.", TargetMapIndex: 2, TargetX: 2000, TargetY: 3000}
+	candidateGateRoute := contentbundle.WarpRouteSummary{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Text: "New gate.", TargetMapIndex: 3, TargetX: 2100, TargetY: 3100}
+	wantWarpRoutes := []contentbundle.WarpRouteDelta{{ActorName: "Gate", SourceMapIndex: 1, SourceX: 1100, SourceY: 2100, Ref: "npc:gate", Change: "changed", Current: &currentGateRoute, Candidate: &candidateGateRoute}}
+	if !reflect.DeepEqual(got.Deltas.WarpRoutes, wantWarpRoutes) {
+		t.Fatalf("unexpected warp route import-preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.WarpRoutes, wantWarpRoutes)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointReturnsPerMapDeltaJSONForLoopbackPost(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
 		StaticActors:           []contentbundle.StaticActor{{Name: "VillageGuide", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 20302, InteractionKind: interactionstore.KindTalk, InteractionRef: "npc:guide"}},

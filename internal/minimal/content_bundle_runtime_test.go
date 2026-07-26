@@ -172,6 +172,9 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 			{Vnum: 11200, Change: "added", Candidate: &itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}},
 			{Vnum: 27001, Change: "added", Candidate: &itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"}}},
 		},
+		ShopRoutes: []contentbundle.ShopRouteDelta{
+			{ActorName: "Merchant", SourceMapIndex: 42, SourceX: 1800, SourceY: 2900, Ref: "npc:merchant", Change: "added", Candidate: &contentbundle.ShopRouteSummary{ActorName: "Merchant", SourceMapIndex: 42, SourceX: 1800, SourceY: 2900, Ref: "npc:merchant", Title: "Village Merchant", EntryCount: 3}},
+		},
 		Maps: []contentbundle.MapContentDelta{{
 			MapIndex:                     42,
 			StaticActorCount:             contentbundle.SummaryCountDelta{Current: 1, Candidate: 1, Delta: 0},
