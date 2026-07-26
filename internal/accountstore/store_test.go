@@ -592,6 +592,28 @@ func TestFileStoreValidateTreatsMissingStoreAsEmpty(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateReportsEmptyCharacterSlotCount(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{
+		{ID: 1, Name: "MkmkWar"},
+		{},
+		{ID: 2, Name: "MkmkSura"},
+		{},
+	}}
+	if err := store.Save(account); err != nil {
+		t.Fatalf("save account with empty character slots: %v", err)
+	}
+
+	summary, err := store.Validate()
+	if err != nil {
+		t.Fatalf("validate account store: %v", err)
+	}
+	want := SnapshotSummary{AccountCount: 1, CharacterCount: 4, EmptyCharacterSlotCount: 2, Logins: []string{"mkmk"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected empty-slot validation summary: got %#v want %#v", summary, want)
+	}
+}
+
 func TestFileStoreValidateFailsClosedOnCorruptSnapshot(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	path := store.accountPath("mkmk")
@@ -755,7 +777,7 @@ func TestFileStoreBackupToWritesDeterministicManifest(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	accounts := []Account{
 		{Login: "zeta", Empire: 3, Characters: []loginticket.Character{{ID: 3, Name: "ZetaWar"}}},
-		{Login: "alpha", Empire: 1, Characters: []loginticket.Character{{ID: 1, Name: "AlphaWar"}, {ID: 2, Name: "AlphaNinja"}}},
+		{Login: "alpha", Empire: 1, Characters: []loginticket.Character{{ID: 1, Name: "AlphaWar"}, {}, {ID: 2, Name: "AlphaNinja"}}},
 	}
 	for _, account := range accounts {
 		if err := store.Save(account); err != nil {
@@ -779,7 +801,7 @@ func TestFileStoreBackupToWritesDeterministicManifest(t *testing.T) {
 	if manifest.Format != BackupManifestFormat {
 		t.Fatalf("unexpected manifest format: got %q want %q", manifest.Format, BackupManifestFormat)
 	}
-	wantSummary := SnapshotSummary{AccountCount: 2, CharacterCount: 3, Logins: []string{"alpha", "zeta"}}
+	wantSummary := SnapshotSummary{AccountCount: 2, CharacterCount: 4, EmptyCharacterSlotCount: 1, Logins: []string{"alpha", "zeta"}}
 	if !reflect.DeepEqual(manifest.Summary, wantSummary) {
 		t.Fatalf("unexpected manifest summary: got %#v want %#v", manifest.Summary, wantSummary)
 	}
@@ -939,6 +961,66 @@ func TestFileStoreValidateBackupFromRejectsManifestChecksumMismatch(t *testing.T
 	_, err := NewFileStore(filepath.Join(t.TempDir(), "restore-target")).ValidateBackupFrom(backup.dir)
 	if !errors.Is(err, ErrInvalidBackupManifest) {
 		t.Fatalf("expected ErrInvalidBackupManifest, got %v", err)
+	}
+}
+
+func TestFileStoreValidateBackupFromAllowsLegacyManifestWithoutEmptyCharacterSlotCount(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}, {}, {ID: 2, Name: "MkmkSura"}}}
+	if err := backup.Save(account); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := backup.writeBackupManifest([]Account{account}); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	manifestPath := filepath.Join(backup.dir, BackupManifestFilename)
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read backup manifest: %v", err)
+	}
+	mutated := strings.Replace(string(raw), "\n    \"empty_character_slot_count\": 1,", "", 1)
+	if mutated == string(raw) {
+		t.Fatalf("expected test manifest to contain empty_character_slot_count: %s", raw)
+	}
+	if err := os.WriteFile(manifestPath, []byte(mutated), 0o644); err != nil {
+		t.Fatalf("write legacy backup manifest: %v", err)
+	}
+
+	summary, err := NewFileStore(filepath.Join(t.TempDir(), "restore-target")).ValidateBackupFrom(backup.dir)
+	if err != nil {
+		t.Fatalf("expected legacy backup manifest without empty slot count to validate: %v", err)
+	}
+	want := SnapshotSummary{AccountCount: 1, CharacterCount: 3, EmptyCharacterSlotCount: 1, Logins: []string{"mkmk"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected legacy backup validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestFileStoreValidateBackupFromRejectsExplicitWrongEmptyCharacterSlotCount(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}, {}, {ID: 2, Name: "MkmkSura"}}}
+	if err := backup.Save(account); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := backup.writeBackupManifest([]Account{account}); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	manifestPath := filepath.Join(backup.dir, BackupManifestFilename)
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read backup manifest: %v", err)
+	}
+	mutated := strings.Replace(string(raw), "\n    \"empty_character_slot_count\": 1,", "\n    \"empty_character_slot_count\": 2,", 1)
+	if mutated == string(raw) {
+		t.Fatalf("expected test manifest to contain empty_character_slot_count: %s", raw)
+	}
+	if err := os.WriteFile(manifestPath, []byte(mutated), 0o644); err != nil {
+		t.Fatalf("write wrong-count backup manifest: %v", err)
+	}
+
+	_, err = NewFileStore(filepath.Join(t.TempDir(), "restore-target")).ValidateBackupFrom(backup.dir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for wrong explicit empty slot count, got %v", err)
 	}
 }
 

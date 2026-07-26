@@ -46,11 +46,12 @@ type Account struct {
 }
 
 type SnapshotSummary struct {
-	AccountCount   int      `json:"account_count"`
-	CharacterCount int      `json:"character_count"`
-	Logins         []string `json:"logins"`
-	CrashTempCount int      `json:"crash_temp_count,omitempty"`
-	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
+	AccountCount            int      `json:"account_count"`
+	CharacterCount          int      `json:"character_count"`
+	EmptyCharacterSlotCount int      `json:"empty_character_slot_count,omitempty"`
+	Logins                  []string `json:"logins"`
+	CrashTempCount          int      `json:"crash_temp_count,omitempty"`
+	CrashTempFiles          []string `json:"crash_temp_files,omitempty"`
 }
 
 type BackupManifest struct {
@@ -136,6 +137,10 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	if err != nil {
 		return SnapshotSummary{}, err
 	}
+	return summarizeAccounts(accounts, crashTempFiles), nil
+}
+
+func summarizeAccounts(accounts []Account, crashTempFiles []string) SnapshotSummary {
 	summary := SnapshotSummary{
 		AccountCount:   len(accounts),
 		Logins:         make([]string, 0, len(accounts)),
@@ -145,8 +150,13 @@ func (s *FileStore) Validate() (SnapshotSummary, error) {
 	for _, account := range accounts {
 		summary.Logins = append(summary.Logins, account.Login)
 		summary.CharacterCount += len(account.Characters)
+		for _, character := range account.Characters {
+			if character.IsEmptySlot() {
+				summary.EmptyCharacterSlotCount++
+			}
+		}
 	}
-	return summary, nil
+	return summary
 }
 
 func (s *FileStore) validateActiveBackupManifest() error {
@@ -376,16 +386,11 @@ func (s *FileStore) rollbackBackupFailure(accounts []Account, backupErr error) e
 
 func (s *FileStore) writeBackupManifest(accounts []Account) error {
 	manifest := BackupManifest{
-		Format: BackupManifestFormat,
-		Summary: SnapshotSummary{
-			AccountCount: len(accounts),
-			Logins:       make([]string, 0, len(accounts)),
-		},
-		Files: make([]BackupManifestFile, 0, len(accounts)),
+		Format:  BackupManifestFormat,
+		Summary: summarizeAccounts(accounts, nil),
+		Files:   make([]BackupManifestFile, 0, len(accounts)),
 	}
 	for _, account := range accounts {
-		manifest.Summary.Logins = append(manifest.Summary.Logins, account.Login)
-		manifest.Summary.CharacterCount += len(account.Characters)
 		filename := filepath.Base(s.accountPath(account.Login))
 		raw, err := os.ReadFile(filepath.Join(s.dir, filename))
 		if err != nil {
@@ -462,12 +467,7 @@ func (s *FileStore) ValidateBackupFrom(srcDir string) (SnapshotSummary, error) {
 	if err != nil {
 		return SnapshotSummary{}, err
 	}
-	summary := SnapshotSummary{AccountCount: len(accounts), Logins: make([]string, 0, len(accounts))}
-	for _, account := range accounts {
-		summary.Logins = append(summary.Logins, account.Login)
-		summary.CharacterCount += len(account.Characters)
-	}
-	return summary, nil
+	return summarizeAccounts(accounts, nil), nil
 }
 
 func (s *FileStore) loadBackupAccountsForRestore(srcDir string) ([]Account, error) {
@@ -513,12 +513,12 @@ func (s *FileStore) validateBackupManifestForAccounts(accounts []Account, requir
 		return fmt.Errorf("%w: format %q", ErrInvalidBackupManifest, manifest.Format)
 	}
 
-	wantSummary := SnapshotSummary{AccountCount: len(accounts), Logins: make([]string, 0, len(accounts))}
-	for _, account := range accounts {
-		wantSummary.Logins = append(wantSummary.Logins, account.Login)
-		wantSummary.CharacterCount += len(account.Characters)
+	wantSummary := summarizeAccounts(accounts, nil)
+	summaryHasEmptyCharacterSlotCount, err := backupManifestSummaryHasField(raw, "empty_character_slot_count")
+	if err != nil {
+		return fmt.Errorf("%w: inspect manifest summary: %v", ErrInvalidBackupManifest, err)
 	}
-	if !snapshotSummariesEqual(manifest.Summary, wantSummary) {
+	if !snapshotSummariesEqual(manifest.Summary, wantSummary, !summaryHasEmptyCharacterSlotCount) {
 		return fmt.Errorf("%w: summary does not match committed snapshots", ErrInvalidBackupManifest)
 	}
 	if len(manifest.Files) != len(accounts) {
@@ -790,8 +790,19 @@ func decodeBackupManifestStrict(raw []byte, manifest *BackupManifest) error {
 	return nil
 }
 
-func snapshotSummariesEqual(a, b SnapshotSummary) bool {
-	if a.AccountCount != b.AccountCount || a.CharacterCount != b.CharacterCount || a.CrashTempCount != b.CrashTempCount || len(a.Logins) != len(b.Logins) || len(a.CrashTempFiles) != len(b.CrashTempFiles) {
+func backupManifestSummaryHasField(raw []byte, field string) (bool, error) {
+	var envelope struct {
+		Summary map[string]json.RawMessage `json:"summary"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return false, err
+	}
+	_, ok := envelope.Summary[field]
+	return ok, nil
+}
+
+func snapshotSummariesEqual(a, b SnapshotSummary, allowMissingEmptyCharacterSlotCount bool) bool {
+	if a.AccountCount != b.AccountCount || a.CharacterCount != b.CharacterCount || !emptyCharacterSlotCountsCompatible(a.EmptyCharacterSlotCount, b.EmptyCharacterSlotCount, allowMissingEmptyCharacterSlotCount) || a.CrashTempCount != b.CrashTempCount || len(a.Logins) != len(b.Logins) || len(a.CrashTempFiles) != len(b.CrashTempFiles) {
 		return false
 	}
 	for i := range a.Logins {
@@ -805,6 +816,16 @@ func snapshotSummariesEqual(a, b SnapshotSummary) bool {
 		}
 	}
 	return true
+}
+
+func emptyCharacterSlotCountsCompatible(got, want int, allowMissing bool) bool {
+	if got == want {
+		return true
+	}
+	// Older backup manifests written before empty select-screen slots became an
+	// explicit summary field omitted this count. Keep those manifests restorable
+	// while still requiring an exact count when the field is present.
+	return allowMissing && got == 0
 }
 
 func validateAccount(account Account) error {

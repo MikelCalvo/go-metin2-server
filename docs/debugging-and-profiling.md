@@ -63,7 +63,8 @@ Validates the durable bootstrap account snapshot store through the same strict l
 Successful responses are JSON summaries with:
 
 - `account_count`
-- `character_count`
+- `character_count` — persisted select-screen character records, including all-zero empty slot placeholders
+- optional `empty_character_slot_count` when all-zero empty slot placeholders are present
 - `logins` sorted in deterministic account-list order
 - optional `crash_temp_count` and `crash_temp_files` when same-directory `.account-*.json` temp files are present
 
@@ -73,7 +74,7 @@ Crash leftovers such as hidden `.account-*.json` temp files are not treated as c
 
 Removes same-directory `.account-*.json` crash-temp residue from the durable bootstrap account snapshot store after first validating the committed snapshot set through the same strict loader used by `/local/account-store/validate`. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if committed account state is corrupt, if a temp file cannot be removed, or if the final directory sync fails.
 
-The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup account-store JSON summary (`account_count`, `character_count`, and deterministic `logins`). Because cleanup validates before removing anything, corrupt committed account snapshots leave crash-temp files in place for manual recovery. Only hidden `.account-*.json` temp files are removed; committed account snapshots, backup manifests, and unrelated hidden files are preserved. Use `/local/account-store/validate` first when you want a read-only residue report, then this endpoint when the operator has decided the interrupted temp writes are disposable.
+The endpoint does not accept a request body: empty or whitespace-only bodies are accepted, non-empty bodies are rejected with `400`, and bodies over 4 KiB are rejected with `413`. Successful responses are the post-cleanup account-store JSON summary (`account_count`, `character_count`, optional `empty_character_slot_count`, and deterministic `logins`). Because cleanup validates before removing anything, corrupt committed account snapshots leave crash-temp files in place for manual recovery. Only hidden `.account-*.json` temp files are removed; committed account snapshots, backup manifests, and unrelated hidden files are preserved. Use `/local/account-store/validate` first when you want a read-only residue report, then this endpoint when the operator has decided the interrupted temp writes are disposable.
 
 ### `POST /local/login-tickets/validate`
 
@@ -210,7 +211,7 @@ Request body JSON fields:
 
 - `dst_dir` — destination directory for the backup; it must be non-empty after trimming and should point to a local path prepared by the operator
 
-The backup path uses the same committed-snapshot list/validate contract as `/local/account-store/validate`: hidden crash-temp files are ignored, corrupt committed snapshots fail closed, and successful responses contain `account_count`, `character_count`, and deterministic `logins` for the backup that was just written. A successful backup also writes `account-backup-manifest.json` with the backup format marker, copied snapshot summary, per-account filenames, byte sizes, and SHA-256 checksums. If an active account store still has a restored backup manifest, normal validation and `/local/persistence/status` verify that manifest against the current committed account files and fail closed on malformed manifests, summary drift, size drift, checksum drift, or login/filename drift. A later successful account save removes the restored manifest, so changed live account state stops claiming to be the exact restored backup. The destination must be empty and must not be equal to or nested under the active account-store directory, including through destination symlinks, so this endpoint cannot silently merge unrelated operator files with a runtime backup or recursively copy its own in-progress output. If account copying, manifest writing, or the final destination-directory sync fails after files were committed, backup removes the account files and manifest it already wrote and syncs the destination again so operators are not left with a partial backup that looks usable.
+The backup path uses the same committed-snapshot list/validate contract as `/local/account-store/validate`: hidden crash-temp files are ignored, corrupt committed snapshots fail closed, and successful responses contain `account_count`, `character_count`, optional `empty_character_slot_count`, and deterministic `logins` for the backup that was just written. A successful backup also writes `account-backup-manifest.json` with the backup format marker, copied snapshot summary, per-account filenames, byte sizes, and SHA-256 checksums. If an active account store still has a restored backup manifest, normal validation and `/local/persistence/status` verify that manifest against the current committed account files and fail closed on malformed manifests, summary drift, size drift, checksum drift, or login/filename drift. A later successful account save removes the restored manifest, so changed live account state stops claiming to be the exact restored backup. The destination must be empty and must not be equal to or nested under the active account-store directory, including through destination symlinks, so this endpoint cannot silently merge unrelated operator files with a runtime backup or recursively copy its own in-progress output. If account copying, manifest writing, or the final destination-directory sync fails after files were committed, backup removes the account files and manifest it already wrote and syncs the destination again so operators are not left with a partial backup that looks usable.
 
 ### `POST /local/account-store/backup/validate`
 
@@ -220,7 +221,7 @@ Request body JSON fields:
 
 - `src_dir` — source backup directory; it must be non-empty after trimming and contain `account-backup-manifest.json` plus committed account snapshots that pass the strict account-store loader
 
-Successful responses are the deterministic backup summary (`account_count`, `character_count`, sorted `logins`) that would be restored. Use this endpoint as the preflight check before pointing a fresh replacement account-store path at `/local/account-store/restore`; manually assembled snapshot directories without the manifest are rejected instead of being treated as restorable backups. Backup directories are also required to be manifest-closed: every non-temp entry must be either `account-backup-manifest.json` or a snapshot file named in that manifest, while hidden `.account-*.json` crash-temp regular files remain visible to operators but are not restorable payload. Crash-temp-shaped directories are rejected as untracked entries instead of being silently ignored.
+Successful responses are the deterministic backup summary (`account_count`, `character_count`, optional `empty_character_slot_count`, sorted `logins`) that would be restored. Use this endpoint as the preflight check before pointing a fresh replacement account-store path at `/local/account-store/restore`; manually assembled snapshot directories without the manifest are rejected instead of being treated as restorable backups. Backup directories are also required to be manifest-closed: every non-temp entry must be either `account-backup-manifest.json` or a snapshot file named in that manifest, while hidden `.account-*.json` crash-temp regular files remain visible to operators but are not restorable payload. Crash-temp-shaped directories are rejected as untracked entries instead of being silently ignored.
 
 ### `POST /local/account-store/restore`
 
@@ -260,7 +261,7 @@ Current response fields:
 - `account_store`
   - `path`
   - `valid`
-  - `summary` with the same `account_count`, `character_count`, `logins`, and optional crash-temp fields returned by `/local/account-store/validate`
+  - `summary` with the same `account_count`, `character_count`, `empty_character_slot_count` when select-screen holes exist, `logins`, and optional crash-temp fields returned by `/local/account-store/validate`
   - `backup_manifest` with `present`, `path`, `format`, `file_count`, total declared `snapshot_size_bytes`, actual `manifest_size_bytes`, and actual `manifest_sha256` when a restored/backup metadata file is currently present in the active store directory
   - optional `error` when validation fails
 - `login_ticket_store`

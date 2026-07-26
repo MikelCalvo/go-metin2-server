@@ -662,6 +662,26 @@ func TestGameRuntimePersistenceStatusReportsAllStoreSummaries(t *testing.T) {
 	}
 }
 
+func TestGameRuntimePersistenceStatusReportsAccountEmptyCharacterSlots(t *testing.T) {
+	accountStore := accountstore.NewFileStore(t.TempDir())
+	if err := accountStore.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}, {}, {ID: 2, Name: "MkmkSura"}}}); err != nil {
+		t.Fatalf("save account snapshot with empty slot: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), accountStore, nil, nil, itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json")), nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	status := runtime.PersistenceStatus()
+	if !status.OK || !status.AccountStore.Valid {
+		t.Fatalf("expected aggregate persistence status to be ok: %#v", status)
+	}
+	want := accountstore.SnapshotSummary{AccountCount: 1, CharacterCount: 3, EmptyCharacterSlotCount: 1, Logins: []string{"mkmk"}}
+	if !reflect.DeepEqual(status.AccountStore.Summary, want) {
+		t.Fatalf("unexpected empty-slot account summary: got %#v want %#v", status.AccountStore.Summary, want)
+	}
+}
+
 func TestGameRuntimePersistenceStatusReportsContentStoreFailureWithoutMaskingOtherStores(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	if err := ticketStore.Issue(loginticket.Ticket{Login: "mkmk", LoginKey: 0x01020304}); err != nil {
