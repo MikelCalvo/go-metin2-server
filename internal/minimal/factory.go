@@ -2,7 +2,10 @@ package minimal
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -273,8 +276,13 @@ type ItemTemplateStoreStatus struct {
 }
 
 type BackupManifestStatus struct {
-	Present bool   `json:"present"`
-	Path    string `json:"path,omitempty"`
+	Present           bool   `json:"present"`
+	Path              string `json:"path,omitempty"`
+	Format            string `json:"format,omitempty"`
+	FileCount         int    `json:"file_count,omitempty"`
+	SnapshotSizeBytes int64  `json:"snapshot_size_bytes,omitempty"`
+	ManifestSizeBytes int64  `json:"manifest_size_bytes,omitempty"`
+	ManifestSHA256    string `json:"manifest_sha256,omitempty"`
 }
 
 type StaticActorStoreStatus struct {
@@ -925,10 +933,21 @@ func accountBackupManifestStatus(accountStoreDir string) BackupManifestStatus {
 		return BackupManifestStatus{}
 	}
 	path := filepath.Join(accountStoreDir, accountstore.BackupManifestFilename)
-	if _, err := os.Stat(path); err == nil {
-		return BackupManifestStatus{Present: true, Path: path}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return BackupManifestStatus{}
 	}
-	return BackupManifestStatus{}
+	status := backupManifestStatusFromRaw(path, raw)
+	var manifest accountstore.BackupManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return status
+	}
+	status.Format = manifest.Format
+	status.FileCount = len(manifest.Files)
+	for _, file := range manifest.Files {
+		status.SnapshotSizeBytes += file.SizeBytes
+	}
+	return status
 }
 
 func itemTemplateBackupManifestStatus(itemTemplatePath string) BackupManifestStatus {
@@ -936,10 +955,31 @@ func itemTemplateBackupManifestStatus(itemTemplatePath string) BackupManifestSta
 		return BackupManifestStatus{}
 	}
 	path := filepath.Join(filepath.Dir(itemTemplatePath), itemcatalog.BackupManifestFilename)
-	if _, err := os.Stat(path); err == nil {
-		return BackupManifestStatus{Present: true, Path: path}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return BackupManifestStatus{}
 	}
-	return BackupManifestStatus{}
+	status := backupManifestStatusFromRaw(path, raw)
+	var manifest itemcatalog.BackupManifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return status
+	}
+	status.Format = manifest.Format
+	status.FileCount = len(manifest.Files)
+	for _, file := range manifest.Files {
+		status.SnapshotSizeBytes += file.SizeBytes
+	}
+	return status
+}
+
+func backupManifestStatusFromRaw(path string, raw []byte) BackupManifestStatus {
+	checksum := sha256.Sum256(raw)
+	return BackupManifestStatus{
+		Present:           true,
+		Path:              path,
+		ManifestSizeBytes: int64(len(raw)),
+		ManifestSHA256:    hex.EncodeToString(checksum[:]),
+	}
 }
 
 func (r *gameRuntime) CombatTargetSnapshot(name string) (CombatTargetSnapshot, bool) {

@@ -2,6 +2,8 @@ package minimal
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net"
@@ -1314,12 +1316,28 @@ func TestGameRuntimePersistenceStatusReportsActiveBackupManifestPresence(t *test
 		t.Fatalf("expected restored stores to validate in persistence status: %+v", status)
 	}
 	wantAccountManifestPath := filepath.Join(activeAccounts.Dir(), accountstore.BackupManifestFilename)
+	accountManifestRaw, err := os.ReadFile(wantAccountManifestPath)
+	if err != nil {
+		t.Fatalf("read active account backup manifest: %v", err)
+	}
+	accountManifestChecksum := sha256.Sum256(accountManifestRaw)
 	if !status.AccountStore.BackupManifest.Present || status.AccountStore.BackupManifest.Path != wantAccountManifestPath {
 		t.Fatalf("unexpected account backup manifest status: got %+v want present path %q", status.AccountStore.BackupManifest, wantAccountManifestPath)
 	}
+	if status.AccountStore.BackupManifest.Format != accountstore.BackupManifestFormat || status.AccountStore.BackupManifest.FileCount != 1 || status.AccountStore.BackupManifest.SnapshotSizeBytes <= 0 || status.AccountStore.BackupManifest.ManifestSizeBytes != int64(len(accountManifestRaw)) || status.AccountStore.BackupManifest.ManifestSHA256 != hex.EncodeToString(accountManifestChecksum[:]) {
+		t.Fatalf("unexpected account backup manifest metadata: %+v", status.AccountStore.BackupManifest)
+	}
 	wantItemManifestPath := filepath.Join(filepath.Dir(activeItems.Path()), itemcatalog.BackupManifestFilename)
+	itemManifestRaw, err := os.ReadFile(wantItemManifestPath)
+	if err != nil {
+		t.Fatalf("read active item-template backup manifest: %v", err)
+	}
+	itemManifestChecksum := sha256.Sum256(itemManifestRaw)
 	if !status.ItemTemplateStore.BackupManifest.Present || status.ItemTemplateStore.BackupManifest.Path != wantItemManifestPath {
 		t.Fatalf("unexpected item-template backup manifest status: got %+v want present path %q", status.ItemTemplateStore.BackupManifest, wantItemManifestPath)
+	}
+	if status.ItemTemplateStore.BackupManifest.Format != itemcatalog.BackupManifestFormat || status.ItemTemplateStore.BackupManifest.FileCount != 1 || status.ItemTemplateStore.BackupManifest.SnapshotSizeBytes <= 0 || status.ItemTemplateStore.BackupManifest.ManifestSizeBytes != int64(len(itemManifestRaw)) || status.ItemTemplateStore.BackupManifest.ManifestSHA256 != hex.EncodeToString(itemManifestChecksum[:]) {
+		t.Fatalf("unexpected item-template backup manifest metadata: %+v", status.ItemTemplateStore.BackupManifest)
 	}
 }
 

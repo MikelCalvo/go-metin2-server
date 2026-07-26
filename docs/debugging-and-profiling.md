@@ -234,7 +234,7 @@ Current response fields:
   - `path`
   - `valid`
   - `summary` with the same `account_count`, `character_count`, `logins`, and optional crash-temp fields returned by `/local/account-store/validate`
-  - `backup_manifest` with `present` plus `path` when a restored/backup metadata file is currently present in the active store directory
+  - `backup_manifest` with `present`, `path`, `format`, `file_count`, total declared `snapshot_size_bytes`, actual `manifest_size_bytes`, and actual `manifest_sha256` when a restored/backup metadata file is currently present in the active store directory
   - optional `error` when validation fails
 - `login_ticket_store`
   - `path`
@@ -245,7 +245,7 @@ Current response fields:
   - `path`
   - `valid`
   - `summary` with the same `template_count`, `vnums`, and optional crash-temp fields returned by `/local/item-templates/validate`
-  - `backup_manifest` with `present` plus `path` when a restored/backup metadata file is currently present next to the active item-template snapshot
+  - `backup_manifest` with `present`, `path`, `format`, `file_count`, total declared `snapshot_size_bytes`, actual `manifest_size_bytes`, and actual `manifest_sha256` when a restored/backup metadata file is currently present next to the active item-template snapshot
   - optional `error` when validation fails
 - `static_actor_store`
   - `path`
