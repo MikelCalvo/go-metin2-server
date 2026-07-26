@@ -428,7 +428,7 @@ If the lab currently has no such content, either:
 
 Optional operator preflight before importing a candidate bundle:
 - [ ] `POST /local/content-bundle/summary` with the candidate JSON and confirm the compact counts, per-kind referenced/unreferenced interaction breakdown, exact referenced/unreferenced interaction identities, compact interaction-definition previews, exact spawn-group identities, exact portable combat-profile snapshots, exact item-template identities, and per-map occupancy look plausible before applying it
-- [ ] `POST /local/content-bundle/import-preview` with the same candidate JSON and confirm the no-mutation `current` / `candidate` summaries plus top-level and per-map deltas identify the maps, exact static-actor/spawn-group rows, and service actor/spawn/reward counts that would change
+- [ ] `POST /local/content-bundle/import-preview` with the same candidate JSON and confirm the no-mutation `current` / `candidate` summaries plus top-level and per-map deltas identify the maps, exact static-actor/spawn-group rows, grouped reward-drop changes, and service actor/spawn/reward counts that would change
 - [ ] `POST /local/content-bundle/validate` with the same JSON and confirm the canonical bundle response matches the intended authored content
 
 #### 5.4.1 Talk / info / merchant interactions

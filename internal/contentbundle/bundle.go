@@ -100,6 +100,7 @@ type SummaryDeltas struct {
 	RewardExperienceTotal                  SummaryAmountDelta           `json:"reward_experience_total"`
 	RewardGoldTotal                        SummaryAmountDelta           `json:"reward_gold_total"`
 	RewardDropItemCount                    SummaryCountDelta            `json:"reward_drop_item_count"`
+	RewardDrops                            []RewardDropDelta            `json:"reward_drops,omitempty"`
 	InteractionDefinitionCount             SummaryCountDelta            `json:"interaction_definition_count"`
 	ReferencedInteractionDefinitionCount   SummaryCountDelta            `json:"referenced_interaction_definition_count"`
 	UnreferencedInteractionDefinitionCount SummaryCountDelta            `json:"unreferenced_interaction_definition_count"`
@@ -166,6 +167,13 @@ type SpawnGroupDelta struct {
 	Change    string                      `json:"change"`
 	Current   *SpawnGroupReferenceSummary `json:"current,omitempty"`
 	Candidate *SpawnGroupReferenceSummary `json:"candidate,omitempty"`
+}
+
+type RewardDropDelta struct {
+	ItemVnum  uint32                      `json:"item_vnum"`
+	Change    string                      `json:"change"`
+	Current   *RewardDropAggregateSummary `json:"current,omitempty"`
+	Candidate *RewardDropAggregateSummary `json:"candidate,omitempty"`
 }
 
 type ShopRouteDelta struct {
@@ -502,6 +510,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		RewardExperienceTotal:                  summaryAmountDelta(current.RewardExperienceTotal, candidate.RewardExperienceTotal),
 		RewardGoldTotal:                        summaryAmountDelta(current.RewardGoldTotal, candidate.RewardGoldTotal),
 		RewardDropItemCount:                    summaryCountDelta(current.RewardDropItemCount, candidate.RewardDropItemCount),
+		RewardDrops:                            buildRewardDropDeltas(current.RewardDrops, candidate.RewardDrops),
 		InteractionDefinitionCount:             summaryCountDelta(current.InteractionDefinitionCount, candidate.InteractionDefinitionCount),
 		ReferencedInteractionDefinitionCount:   summaryCountDelta(current.ReferencedInteractionDefinitionCount, candidate.ReferencedInteractionDefinitionCount),
 		UnreferencedInteractionDefinitionCount: summaryCountDelta(current.UnreferencedInteractionDefinitionCount, candidate.UnreferencedInteractionDefinitionCount),
@@ -840,6 +849,54 @@ func spawnGroupSummaryMapByRef(spawnGroups []SpawnGroupReferenceSummary) map[str
 		byRef[spawnGroup.Ref] = spawnGroup
 	}
 	return byRef
+}
+
+func buildRewardDropDeltas(currentDrops []RewardDropAggregateSummary, candidateDrops []RewardDropAggregateSummary) []RewardDropDelta {
+	if len(currentDrops) == 0 && len(candidateDrops) == 0 {
+		return nil
+	}
+	currentByVnum := rewardDropSummaryMapByVnum(currentDrops)
+	candidateByVnum := rewardDropSummaryMapByVnum(candidateDrops)
+	vnumsSeen := make(map[uint32]struct{}, len(currentDrops)+len(candidateDrops))
+	for vnum := range currentByVnum {
+		vnumsSeen[vnum] = struct{}{}
+	}
+	for vnum := range candidateByVnum {
+		vnumsSeen[vnum] = struct{}{}
+	}
+	vnums := make([]uint32, 0, len(vnumsSeen))
+	for vnum := range vnumsSeen {
+		vnums = append(vnums, vnum)
+	}
+	sort.Slice(vnums, func(i int, j int) bool { return vnums[i] < vnums[j] })
+	deltas := make([]RewardDropDelta, 0, len(vnums))
+	for _, vnum := range vnums {
+		current, currentOK := currentByVnum[vnum]
+		candidate, candidateOK := candidateByVnum[vnum]
+		switch {
+		case currentOK && candidateOK:
+			if reflect.DeepEqual(current, candidate) {
+				continue
+			}
+			deltas = append(deltas, RewardDropDelta{ItemVnum: vnum, Change: "changed", Current: &current, Candidate: &candidate})
+		case currentOK:
+			deltas = append(deltas, RewardDropDelta{ItemVnum: vnum, Change: "removed", Current: &current})
+		case candidateOK:
+			deltas = append(deltas, RewardDropDelta{ItemVnum: vnum, Change: "added", Candidate: &candidate})
+		}
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
+}
+
+func rewardDropSummaryMapByVnum(drops []RewardDropAggregateSummary) map[uint32]RewardDropAggregateSummary {
+	byVnum := make(map[uint32]RewardDropAggregateSummary, len(drops))
+	for _, drop := range drops {
+		byVnum[drop.ItemVnum] = drop
+	}
+	return byVnum
 }
 
 type serviceRouteIdentity struct {

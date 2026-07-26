@@ -715,6 +715,46 @@ func TestBuildImportPreviewReturnsRewardAmountDeltas(t *testing.T) {
 	}
 }
 
+func TestBuildImportPreviewReturnsRewardDropDeltas(t *testing.T) {
+	redPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	bluePotion := itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7}
+	greenPotion := itemcatalog.Template{Vnum: 27003, Name: "Small Green Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 9}
+
+	preview, err := BuildImportPreview(
+		Bundle{
+			ItemTemplates: []itemcatalog.Template{redPotion, bluePotion},
+			SpawnGroups: []SpawnGroup{
+				{Ref: "practice.red", Name: "Red Drop Mob", MapIndex: 42, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}},
+				{Ref: "practice.blue", Name: "Blue Drop Mob", MapIndex: 42, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27002}},
+			},
+		},
+		Bundle{
+			ItemTemplates: []itemcatalog.Template{redPotion, greenPotion},
+			SpawnGroups: []SpawnGroup{
+				{Ref: "practice.red", Name: "Red Drop Mob", MapIndex: 42, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}},
+				{Ref: "practice.red_bonus", Name: "Bonus Red Drop Mob", MapIndex: 42, X: 1200, Y: 2200, RaceNum: 103, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}},
+				{Ref: "practice.green", Name: "Green Drop Mob", MapIndex: 42, X: 1300, Y: 2300, RaceNum: 104, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27003}},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview reward-drop deltas: %v", err)
+	}
+
+	currentRed := RewardDropAggregateSummary{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	candidateRed := RewardDropAggregateSummary{ItemVnum: 27001, ItemName: "Small Red Potion", SourceCount: 2, Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	currentBlue := RewardDropAggregateSummary{ItemVnum: 27002, ItemName: "Small Blue Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 7}
+	candidateGreen := RewardDropAggregateSummary{ItemVnum: 27003, ItemName: "Small Green Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 9}
+	want := []RewardDropDelta{
+		{ItemVnum: 27001, Change: "changed", Current: &currentRed, Candidate: &candidateRed},
+		{ItemVnum: 27002, Change: "removed", Current: &currentBlue},
+		{ItemVnum: 27003, Change: "added", Candidate: &candidateGreen},
+	}
+	if !reflect.DeepEqual(preview.Deltas.RewardDrops, want) {
+		t.Fatalf("unexpected reward-drop import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.RewardDrops, want)
+	}
+}
+
 func TestBuildImportPreviewReturnsSpawnGroupDeltas(t *testing.T) {
 	redPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
 	bluePotion := itemcatalog.Template{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 7}
