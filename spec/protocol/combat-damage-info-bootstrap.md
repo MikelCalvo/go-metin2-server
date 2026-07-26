@@ -45,6 +45,8 @@ Content-loaded `spawn_groups` practice mobs now use the same hit-effect packet f
 
 The same spawn-backed `DAMAGE_INFO` frame is also queued to currently visible live peer sessions after the attacker's runtime-only retaliation point mutation commits. Peers receive only the hit-effect companion; they do not receive the attacker's self-only `TARGET` refresh or retaliation `PLAYER_POINT_CHANGE`. Connected recipients already at the bootstrap `0`-HP floor remain skipped by the shared-world visibility gate.
 
+That owner-side spawn-backed ordering is now also frozen across the plain legacy TCP listener for the first accepted non-lethal practice-mob hit, so socket-level regressions must preserve `TARGET` -> `PLAYER_POINT_CHANGE` -> `DAMAGE_INFO` on the attacking connection rather than proving the hit effect only through direct runtime calls.
+
 Killing hits deliberately do **not** append `DAMAGE_INFO` in this slice. They keep the existing death-first choreography:
 1. `GC DEAD(vid)`
 2. `GC TARGET(0, 0)` for the attacking session when that target was still selected
@@ -77,5 +79,5 @@ After this slice:
 - the shared-world normal-attack attempt exposes the applied bootstrap damage amount as an internal descriptor,
 - accepted standalone bootstrap combat-profile non-lethal normal attacks append one self plain-flag `DAMAGE_INFO` frame after the `TARGET` HP refresh, using the authoritative attack/defense-derived damage descriptor for registered formula profiles,
 - currently visible live peers receive that same standalone plain-flag `DAMAGE_INFO` through the queued server-frame path without receiving the attacker's self-only target refresh,
-- accepted spawn-backed practice-mob non-lethal normal attacks now append one owner self plain-flag `DAMAGE_INFO` after the existing immediate retaliation point-change when that owner remains alive and queue the same plain-flag hit effect to currently visible live peers,
+- accepted spawn-backed practice-mob non-lethal normal attacks now append one owner self plain-flag `DAMAGE_INFO` after the existing immediate retaliation point-change when that owner remains alive, queue the same plain-flag hit effect to currently visible live peers, and preserve that owner-side frame order over the plain legacy TCP listener,
 - later runtime slices can broaden spawn-backed peer emission, flag meanings, killing-hit presentation, or other hit-effect policy without re-discovering the packet layout or recomputing damage outside the authoritative attack seam.

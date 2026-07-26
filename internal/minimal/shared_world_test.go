@@ -34505,6 +34505,18 @@ func (h *practiceMobTCPHarness) attack(t *testing.T) []frame.Frame {
 	return []frame.Frame{first, second}
 }
 
+func assertTCPDamageInfo(t *testing.T, f frame.Frame, targetVID uint32, damage int32, context string) {
+	t.Helper()
+
+	packet, err := combatproto.DecodeServerDamageInfo(f)
+	if err != nil {
+		t.Fatalf("decode tcp %s damage-info: %v", context, err)
+	}
+	if packet.VID != targetVID || packet.Flag != 0 || packet.Damage != damage {
+		t.Fatalf("expected tcp %s damage-info vid=%d flag=0 damage=%d, got %+v", context, targetVID, damage, packet)
+	}
+}
+
 func (h *practiceMobTCPHarness) drainDelayedRetaliation(t *testing.T, context string) worldproto.PlayerPointChangePacket {
 	t.Helper()
 	pointChange, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
@@ -34527,7 +34539,7 @@ func TestGameSessionFlowPracticeMobTargetSelectOverPlainTCP(t *testing.T) {
 	}
 }
 
-func TestGameSessionFlowPracticeMobAttackRefreshAndRetaliationOverPlainTCP(t *testing.T) {
+func TestGameSessionFlowPracticeMobAttackRefreshRetaliationAndDamageInfoOverPlainTCP(t *testing.T) {
 	h := newPracticeMobTCPHarness(t, "tcp-attack-refresh", 0x41414141, "practice.mob_tcp_attack_refresh", 50)
 	defer h.close(t)
 
@@ -34536,6 +34548,9 @@ func TestGameSessionFlowPracticeMobAttackRefreshAndRetaliationOverPlainTCP(t *te
 		t.Fatalf("expected tcp pre-attack select to return full-HP mob %d, got %+v", h.targetID, selected)
 	}
 	frames := h.attack(t)
+	if len(frames) != 3 {
+		t.Fatalf("expected tcp attack to return target refresh, retaliation, and damage-info frames, got %d", len(frames))
+	}
 	refresh, err := combatproto.DecodeServerTarget(frames[0])
 	if err != nil {
 		t.Fatalf("decode tcp attack target refresh: %v", err)
@@ -34550,6 +34565,7 @@ func TestGameSessionFlowPracticeMobAttackRefreshAndRetaliationOverPlainTCP(t *te
 	if pointChange.Type != bootstrapPlayerPointValueIndex || pointChange.Amount >= 0 || pointChange.Value != 49 {
 		t.Fatalf("expected tcp immediate retaliation to reduce player HP to 49, got %+v", pointChange)
 	}
+	assertTCPDamageInfo(t, frames[2], h.targetID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "attack refresh")
 }
 
 func TestGameSessionFlowPracticeMobDeathAndTargetClearOverPlainTCP(t *testing.T) {
