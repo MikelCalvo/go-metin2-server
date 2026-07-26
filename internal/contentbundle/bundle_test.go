@@ -341,6 +341,42 @@ func TestBuildImportPreviewReturnsInteractionDefinitionDeltas(t *testing.T) {
 	}
 }
 
+func TestBuildImportPreviewReturnsCombatProfileDeltasForSpawnReferencedProfiles(t *testing.T) {
+	currentAlpha := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_alpha_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500}
+	currentBeta := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_beta_profile", MaxHP: 30, DamagePerNormalAttack: 5, AttackValue: 8, DefenseValue: 3, Level: 6, Rank: 2, RespawnDelayMs: 2500}
+	candidateAlpha := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_alpha_profile", MaxHP: 24, DamagePerNormalAttack: 5, AttackValue: 9, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500}
+	candidateGamma := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_gamma_profile", MaxHP: 40, DamagePerNormalAttack: 6, AttackValue: 10, DefenseValue: 4, Level: 7, Rank: 3, RespawnDelayMs: 3000}
+
+	preview, err := BuildImportPreview(
+		Bundle{
+			SpawnGroups: []SpawnGroup{
+				{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: currentAlpha.Profile},
+				{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: currentBeta.Profile},
+			},
+			CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{currentBeta, currentAlpha},
+		},
+		Bundle{
+			SpawnGroups: []SpawnGroup{
+				{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: candidateAlpha.Profile},
+				{Ref: "practice.gamma", Name: "Gamma Mob", MapIndex: 2, X: 1200, Y: 2200, RaceNum: 103, CombatProfile: candidateGamma.Profile},
+			},
+			CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{candidateGamma, candidateAlpha},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build import preview combat-profile deltas: %v", err)
+	}
+
+	want := []CombatProfileDelta{
+		{Profile: "practice_alpha_profile", Change: "changed", Current: &currentAlpha, Candidate: &candidateAlpha},
+		{Profile: "practice_beta_profile", Change: "removed", Current: &currentBeta},
+		{Profile: "practice_gamma_profile", Change: "added", Candidate: &candidateGamma},
+	}
+	if !reflect.DeepEqual(preview.Deltas.CombatProfiles, want) {
+		t.Fatalf("unexpected combat-profile import preview deltas:\n got: %#v\nwant: %#v", preview.Deltas.CombatProfiles, want)
+	}
+}
+
 func TestBuildImportPreviewReturnsItemTemplateDeltas(t *testing.T) {
 	currentRedPotion := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
 	currentWoodenSword := itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1}

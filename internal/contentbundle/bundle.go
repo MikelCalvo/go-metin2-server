@@ -751,6 +751,9 @@ func buildCombatProfileDeltas(currentProfiles []worldruntime.StaticActorCombatPr
 func combatProfileSnapshotMapByProfile(profiles []worldruntime.StaticActorCombatProfileSnapshot) map[string]worldruntime.StaticActorCombatProfileSnapshot {
 	byProfile := make(map[string]worldruntime.StaticActorCombatProfileSnapshot, len(profiles))
 	for _, profile := range cloneCombatProfileSnapshots(profiles) {
+		if profile.Profile == "" {
+			continue
+		}
 		byProfile[profile.Profile] = profile
 	}
 	return byProfile

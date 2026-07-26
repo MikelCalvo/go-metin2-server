@@ -754,6 +754,43 @@ func TestLocalContentBundleImportPreviewEndpointReturnsCombatProfileDeltaJSONFor
 	}
 }
 
+func TestLocalContentBundleImportPreviewEndpointReturnsCombatProfileDeltaJSONForSpawnReferencedProfiles(t *testing.T) {
+	currentAlpha := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_alpha_profile", MaxHP: 24, DamagePerNormalAttack: 3, AttackValue: 7, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500}
+	currentBeta := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_beta_profile", MaxHP: 30, DamagePerNormalAttack: 5, AttackValue: 8, DefenseValue: 3, Level: 6, Rank: 2, RespawnDelayMs: 2500}
+	candidateAlpha := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_alpha_profile", MaxHP: 24, DamagePerNormalAttack: 5, AttackValue: 9, DefenseValue: 4, Level: 4, Rank: 1, RespawnDelayMs: 1500}
+	candidateGamma := worldruntime.StaticActorCombatProfileSnapshot{Profile: "practice_gamma_profile", MaxHP: 40, DamagePerNormalAttack: 6, AttackValue: 10, DefenseValue: 4, Level: 7, Rank: 3, RespawnDelayMs: 3000}
+	previewer := &stubContentBundleImportPreviewer{current: contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{
+			{Ref: "practice.alpha", Name: "Alpha Mob", MapIndex: 1, X: 1000, Y: 2000, RaceNum: 101, CombatProfile: currentAlpha.Profile},
+			{Ref: "practice.beta", Name: "Beta Mob", MapIndex: 1, X: 1100, Y: 2100, RaceNum: 102, CombatProfile: currentBeta.Profile},
+		},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{currentBeta, currentAlpha},
+	}}
+	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`{"spawn_groups":[{"ref":"practice.alpha","name":"Alpha Mob","map_index":1,"x":1000,"y":2000,"race_num":101,"combat_profile":"practice_alpha_profile"},{"ref":"practice.gamma","name":"Gamma Mob","map_index":2,"x":1200,"y":2200,"race_num":103,"combat_profile":"practice_gamma_profile"}],"combat_profiles":[{"profile":"practice_alpha_profile","max_hp":24,"damage_per_normal_attack":5,"attack_value":9,"defense_value":4,"level":4,"rank":1,"respawn_delay_ms":1500},{"profile":"practice_gamma_profile","max_hp":40,"damage_per_normal_attack":6,"attack_value":10,"defense_value":4,"level":7,"rank":3,"respawn_delay_ms":3000}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	var got contentbundle.ImportPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode import preview combat-profile response: %v", err)
+	}
+	want := []contentbundle.CombatProfileDelta{
+		{Profile: "practice_alpha_profile", Change: "changed", Current: &currentAlpha, Candidate: &candidateAlpha},
+		{Profile: "practice_beta_profile", Change: "removed", Current: &currentBeta},
+		{Profile: "practice_gamma_profile", Change: "added", Candidate: &candidateGamma},
+	}
+	if !reflect.DeepEqual(got.Deltas.CombatProfiles, want) {
+		t.Fatalf("unexpected combat-profile import-preview delta JSON:\n got: %#v\nwant: %#v", got.Deltas.CombatProfiles, want)
+	}
+}
+
 func TestLocalContentBundleImportPreviewEndpointRejectsInvalidCandidateBeforeCallback(t *testing.T) {
 	previewer := &stubContentBundleImportPreviewer{}
 	mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
