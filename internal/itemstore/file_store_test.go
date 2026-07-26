@@ -184,6 +184,78 @@ func TestFileStoreBackupToTreatsMissingSnapshotAsEmptyAuthoredStore(t *testing.T
 	}
 }
 
+func TestFileStoreBackupToRollsBackSnapshotWhenSaveSyncFailsAfterCommit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save source item template snapshot: %v", err)
+	}
+
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	injectedErr := errors.New("injected item-template backup snapshot sync failure")
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	backupDirSyncCalls := 0
+	syncStoreDir = func(path string) error {
+		if path == backupDir {
+			backupDirSyncCalls++
+			if backupDirSyncCalls == 1 {
+				return injectedErr
+			}
+			return nil
+		}
+		return syncDir(path)
+	}
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("expected injected snapshot sync error, got %v", err)
+	}
+	entries, readErr := os.ReadDir(backupDir)
+	if readErr != nil {
+		t.Fatalf("read backup dir after failed backup: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected failed snapshot-save sync to roll back committed backup files, got %#v", directoryEntryNames(entries))
+	}
+}
+
+func TestFileStoreBackupToRollsBackSnapshotAndManifestWhenFinalSyncFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save source item template snapshot: %v", err)
+	}
+
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	injectedErr := errors.New("injected item-template final backup sync failure")
+	originalSyncStoreDir := syncStoreDir
+	t.Cleanup(func() { syncStoreDir = originalSyncStoreDir })
+	backupDirSyncCalls := 0
+	syncStoreDir = func(path string) error {
+		if path == backupDir {
+			backupDirSyncCalls++
+			if backupDirSyncCalls == 2 {
+				return injectedErr
+			}
+			return nil
+		}
+		return syncDir(path)
+	}
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, injectedErr) {
+		t.Fatalf("expected injected final sync error, got %v", err)
+	}
+	entries, readErr := os.ReadDir(backupDir)
+	if readErr != nil {
+		t.Fatalf("read backup dir after failed final sync: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("expected failed final sync to roll back backup snapshot and manifest, got %#v", directoryEntryNames(entries))
+	}
+}
+
 func TestFileStoreValidateRejectsStaleBackupManifest(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
@@ -1528,6 +1600,14 @@ func TestFileStoreSaveThenLoadRoundTripPreservesNegativeEquipEffectMetadata(t *t
 	if string(raw) != wantJSON {
 		t.Fatalf("unexpected deterministic snapshot with negative equip effect metadata:\n got: %s\nwant: %s", string(raw), wantJSON)
 	}
+}
+
+func directoryEntryNames(entries []os.DirEntry) []string {
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
 }
 
 func TestFileStoreSaveRejectsInvalidEquipEffectMetadata(t *testing.T) {

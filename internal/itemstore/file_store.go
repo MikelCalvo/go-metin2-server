@@ -126,7 +126,7 @@ func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
 			return SnapshotSummary{}, fmt.Errorf("remove item template crash temp file %q: %w", filename, err)
 		}
 	}
-	if err := syncDir(storeDir); err != nil {
+	if err := syncStoreDir(storeDir); err != nil {
 		return SnapshotSummary{}, fmt.Errorf("sync item template store dir after crash temp cleanup: %w", err)
 	}
 	return s.Validate()
@@ -203,7 +203,7 @@ func (s *FileStore) Save(snapshot Snapshot) error {
 	if err := removeBackupManifest(storeDir); err != nil {
 		return fmt.Errorf("remove stale item template backup manifest: %w", err)
 	}
-	if err := syncDir(storeDir); err != nil {
+	if err := syncStoreDir(storeDir); err != nil {
 		return fmt.Errorf("sync item template store dir: %w", err)
 	}
 	return nil
@@ -241,15 +241,15 @@ func (s *FileStore) BackupTo(dstDir string) error {
 	backupPath := filepath.Join(dstDir, filepath.Base(s.path))
 	if hasSnapshot {
 		backup := NewFileStore(backupPath)
+		committedSnapshot = true
 		if err := backup.Save(snapshot); err != nil {
 			return s.rollbackBackupFailure(dstDir, committedSnapshot, fmt.Errorf("backup item template snapshot: %w", err))
 		}
-		committedSnapshot = true
 	}
 	if err := writeBackupManifest(dstDir, filepath.Base(s.path), summary, hasSnapshot); err != nil {
 		return s.rollbackBackupFailure(dstDir, committedSnapshot, err)
 	}
-	if err := syncDir(dstDir); err != nil {
+	if err := syncStoreDir(dstDir); err != nil {
 		return s.rollbackBackupFailure(dstDir, committedSnapshot, fmt.Errorf("sync item template backup dir: %w", err))
 	}
 	return nil
@@ -282,7 +282,7 @@ func (s *FileStore) rollbackBackupFailure(dstDir string, snapshotCommitted bool,
 	if err := os.Remove(filepath.Join(dstDir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove item template backup manifest: %w", err))
 	}
-	if err := syncDir(dstDir); err != nil {
+	if err := syncStoreDir(dstDir); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync item template backup rollback dir: %w", err))
 	}
 	if len(rollbackErrs) == 0 {
@@ -352,7 +352,7 @@ func (s *FileStore) RestoreFrom(srcDir string) error {
 	if err := writeBackupManifest(storeDir, filepath.Base(s.path), summary, hasSnapshot); err != nil {
 		return s.rollbackRestoreFailure(committedSnapshot, err)
 	}
-	if err := syncDir(storeDir); err != nil {
+	if err := syncStoreDir(storeDir); err != nil {
 		return s.rollbackRestoreFailure(committedSnapshot, fmt.Errorf("sync item template restore dir: %w", err))
 	}
 	return nil
@@ -369,7 +369,7 @@ func (s *FileStore) rollbackRestoreFailure(snapshotCommitted bool, restoreErr er
 	if err := os.Remove(filepath.Join(storeDir, BackupManifestFilename)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("remove restored item template backup manifest: %w", err))
 	}
-	if err := syncDir(storeDir); err != nil {
+	if err := syncStoreDir(storeDir); err != nil {
 		rollbackErrs = append(rollbackErrs, fmt.Errorf("sync item template restore rollback dir: %w", err))
 	}
 	if len(rollbackErrs) == 0 {
@@ -665,6 +665,8 @@ func resolveExistingPath(path string) (string, error) {
 	}
 	return "", errors.New("too many symlinks while resolving path")
 }
+
+var syncStoreDir = syncDir
 
 func syncDir(path string) error {
 	dir, err := os.Open(path)
