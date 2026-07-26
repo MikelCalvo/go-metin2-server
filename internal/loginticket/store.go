@@ -75,6 +75,29 @@ func (c *Character) NormalizeItemState() {
 	}
 }
 
+func (c Character) IsEmptySlot() bool {
+	if c.ID != 0 || c.VID != 0 || c.Name != "" || c.Job != 0 || c.RaceNum != 0 || c.Level != 0 || c.PlayMinutes != 0 {
+		return false
+	}
+	if c.ST != 0 || c.HT != 0 || c.DX != 0 || c.IQ != 0 || c.MainPart != 0 || c.ChangeName != 0 || c.HairPart != 0 {
+		return false
+	}
+	if c.X != 0 || c.Y != 0 || c.Z != 0 || c.MapIndex != 0 || c.Empire != 0 || c.SkillGroup != 0 || c.GuildID != 0 || c.GuildName != "" || c.Gold != 0 {
+		return false
+	}
+	for _, value := range c.Dummy {
+		if value != 0 {
+			return false
+		}
+	}
+	for _, value := range c.Points {
+		if value != 0 {
+			return false
+		}
+	}
+	return len(c.Inventory) == 0 && len(c.Equipment) == 0 && len(c.Quickslots) == 0
+}
+
 func CloneCharacters(characters []Character) []Character {
 	if characters == nil {
 		return nil
@@ -550,6 +573,12 @@ func validateUniqueCharacterIdentity(characters []Character) error {
 	ids := make(map[uint32]string, len(characters))
 	names := make(map[string]uint32, len(characters))
 	for _, character := range characters {
+		if character.ID == 0 {
+			if !character.IsEmptySlot() {
+				return fmt.Errorf("%w: character slot with zero id contains non-empty state", ErrInvalidTicket)
+			}
+			continue
+		}
 		if previousName, ok := ids[character.ID]; ok {
 			return fmt.Errorf("%w: character id %d is used by %q and %q", ErrInvalidTicket, character.ID, previousName, character.Name)
 		}

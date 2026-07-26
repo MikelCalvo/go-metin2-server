@@ -356,6 +356,57 @@ func TestFileStoreRejectsDuplicateCharacterIDs(t *testing.T) {
 	}
 }
 
+func TestFileStoreAllowsMultipleEmptyCharacterSlots(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{
+		{ID: 1, Name: "MkmkWar"},
+		{},
+		{ID: 2, Name: "MkmkSura"},
+		{},
+	}}
+
+	if err := store.Save(account); err != nil {
+		t.Fatalf("expected multiple empty character slots to persist, got %v", err)
+	}
+	got, err := store.Load("mkmk")
+	if err != nil {
+		t.Fatalf("load account with empty character slots: %v", err)
+	}
+	if len(got.Characters) != 4 {
+		t.Fatalf("expected four character slots, got %d", len(got.Characters))
+	}
+	for _, index := range []int{1, 3} {
+		slot := got.Characters[index]
+		if slot.ID != 0 || slot.VID != 0 || slot.Name != "" || len(slot.Inventory) != 0 || len(slot.Equipment) != 0 || len(slot.Quickslots) != 0 {
+			t.Fatalf("expected slot %d to stay empty, got %+v", index, slot)
+		}
+	}
+	if got.Characters[0].Name != "MkmkWar" || got.Characters[2].Name != "MkmkSura" {
+		t.Fatalf("expected occupied character slots to stay intact, got %+v", got.Characters)
+	}
+}
+
+func TestFileStoreRejectsZeroIDCharacterSlotsWithNonEmptyState(t *testing.T) {
+	cases := []struct {
+		name      string
+		character loginticket.Character
+	}{
+		{name: "name", character: loginticket.Character{Name: "Ghost"}},
+		{name: "vid", character: loginticket.Character{VID: 0x01020304}},
+		{name: "map", character: loginticket.Character{MapIndex: 1}},
+		{name: "inventory", character: loginticket.Character{Inventory: []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 1, Slot: 8}}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewFileStore(t.TempDir())
+			account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{tc.character}}
+			if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
+				t.Fatalf("expected ErrInvalidAccount for zero-id slot with %s state, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestFileStoreRejectsDuplicateCharacterNamesCaseInsensitive(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{

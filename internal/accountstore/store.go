@@ -829,6 +829,12 @@ func validateUniqueCharacterIdentity(characters []loginticket.Character) error {
 	ids := make(map[uint32]string, len(characters))
 	names := make(map[string]uint32, len(characters))
 	for _, character := range characters {
+		if character.ID == 0 {
+			if !character.IsEmptySlot() {
+				return fmt.Errorf("%w: character slot with zero id contains non-empty state", ErrInvalidAccount)
+			}
+			continue
+		}
 		if previousName, ok := ids[character.ID]; ok {
 			return fmt.Errorf("%w: character id %d is used by %q and %q", ErrInvalidAccount, character.ID, previousName, character.Name)
 		}

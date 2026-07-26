@@ -58,7 +58,7 @@ Unless noted otherwise, non-loopback callers are rejected with `403`.
 
 ### `POST /local/account-store/validate`
 
-Validates the durable bootstrap account snapshot store through the same strict loader used by runtime backup/restore primitives, without mutating any account files. This endpoint is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed account snapshot is corrupt, has an invalid filename/login pairing, uses a non-canonical case-variant filename, duplicates a login by case variant, or violates the deterministic account snapshot invariants.
+Validates the durable bootstrap account snapshot store through the same strict loader used by runtime backup/restore primitives, without mutating any account files. This endpoint is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed account snapshot is corrupt, has an invalid filename/login pairing, uses a non-canonical case-variant filename, duplicates a login by case variant, or violates the deterministic account snapshot invariants. Multiple all-zero character records are accepted as empty select-screen slots, but any zero-ID slot with leftover name, VID, location, stat, guild, gold, item, equipment, or quickslot state fails validation.
 
 Successful responses are JSON summaries with:
 
@@ -77,7 +77,7 @@ The endpoint does not accept a request body: empty or whitespace-only bodies are
 
 ### `POST /local/login-tickets/validate`
 
-Validates the one-shot authd-to-gamed login-ticket handoff store without consuming or deleting any tickets. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed ticket is corrupt, has unknown/trailing JSON, has an invalid or mismatched filename/login-key pairing, has an empty login, has a zero login key, has a missing/zero `issued_at`, or violates the character/item/equipment/quickslot invariants shared with ticket load/consume.
+Validates the one-shot authd-to-gamed login-ticket handoff store without consuming or deleting any tickets. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed ticket is corrupt, has unknown/trailing JSON, has an invalid or mismatched filename/login-key pairing, has an empty login, has a zero login key, has a missing/zero `issued_at`, or violates the character/item/equipment/quickslot invariants shared with ticket load/consume. Multiple all-zero character records are accepted as empty select-screen slots, but any zero-ID slot with leftover persisted character state fails validation before the handoff can be consumed.
 
 Successful responses are JSON summaries with:
 
