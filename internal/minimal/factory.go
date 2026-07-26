@@ -5960,6 +5960,12 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return normalized, nil
 	}
 	previousActors := r.StaticActors()
+	var previousCombatState staticActorCombatStateSnapshot
+	if r.sharedWorld != nil {
+		r.sharedWorld.mu.Lock()
+		previousCombatState = r.sharedWorld.captureStaticActorCombatStateLocked()
+		r.sharedWorld.mu.Unlock()
+	}
 	if err := r.replaceItemTemplates(itemcatalog.Snapshot{Templates: normalized.ItemTemplates}); err != nil {
 		rollbackProfiles()
 		return contentbundle.Bundle{}, err
@@ -5990,6 +5996,9 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 					rollbackErr = errors.Join(rollbackErr, ErrContentBundleUnavailable)
 				}
 			}
+			r.sharedWorld.mu.Lock()
+			r.sharedWorld.restoreStaticActorCombatStateLocked(previousCombatState)
+			r.sharedWorld.mu.Unlock()
 			r.sharedWorld.suppressStaticActorFanout = false
 		}
 		if !r.persistStaticActorSnapshot(previousActors) {

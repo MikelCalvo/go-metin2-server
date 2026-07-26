@@ -786,6 +786,97 @@ func TestGameRuntimeFailedContentBundleImportDoesNotLeakSpawnVisibilityFrames(t 
 	}
 }
 
+func TestGameRuntimeFailedContentBundleImportDoesNotLeakSelectedTargetClear(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	near := peerVisibilityCharacter("SpawnSelRB", 0x01035531, 4, 1800, 2900, 0, 101, 201)
+	near.MapIndex = 42
+	near.X = 1800
+	near.Y = 2900
+	issuePeerTicket(t, store, "spawn-sel-rb", 0x55553131, near)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 500, VisibilitySectorSize: 256}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "spawn-sel-rb", 0x55553131)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 5 {
+		t.Fatalf("expected base enter-game burst before initial spawn import, got %d frames", len(enterOut))
+	}
+	flushServerFrames(t, flow)
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.rollback_selected_original",
+		Name:          "RollbackSelectedOriginalMob",
+		MapIndex:      42,
+		X:             1810,
+		Y:             2910,
+		RaceNum:       101,
+		CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+	}}})
+	if err != nil {
+		t.Fatalf("import initial selected-target spawn bundle: %v", err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 3 {
+		t.Fatalf("expected initial spawn import to queue one visible actor burst, got %d", len(queued))
+	}
+	groups := runtime.SpawnGroups()
+	if len(groups) != 1 {
+		t.Fatalf("expected one initial spawn-backed actor, got %+v", groups)
+	}
+	targetVID := uint32(groups[0].EntityID)
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected selected-target frame error before failed import: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected target selection to return one self frame before failed import, got %d", len(selectOut))
+	}
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{
+			Ref:           "practice.rollback_selected_first",
+			Name:          "RollbackSelectedFirstMob",
+			MapIndex:      42,
+			X:             1815,
+			Y:             2915,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		},
+		{
+			Ref:           "practice.rollback_selected_second",
+			Name:          "RollbackSelectedSecondMob",
+			MapIndex:      42,
+			X:             1820,
+			Y:             2920,
+			RaceNum:       101,
+			CombatProfile: string(worldruntime.StaticActorCombatProfileTrainingDummy),
+		},
+	}})
+	if err == nil {
+		t.Fatal("expected replacement import to fail when the second spawn actor conflicts with a live player VID")
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected failed replacement import not to leak delete/add/clear-target frames, got %d", len(queued))
+	}
+	if snapshot, ok := runtime.sharedWorld.CombatTargetSnapshotByName(near.Name); !ok || snapshot.TargetVID != targetVID || snapshot.HPPercent != 100 {
+		t.Fatalf("expected failed replacement import to preserve selected target ownership, got ok=%v snapshot=%+v", ok, snapshot)
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected selected-target attack error after failed import rollback: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected selected target to remain attackable after failed import rollback, got %d frames", len(attackOut))
+	}
+	groups = runtime.SpawnGroups()
+	if len(groups) != 1 || groups[0].EntityID != uint64(targetVID) || groups[0].SpawnGroupRef != "practice.rollback_selected_original" {
+		t.Fatalf("expected failed replacement import to restore the original spawn-backed actor, got %+v", groups)
+	}
+}
+
 func TestGameRuntimeUpdateSpawnGroupActorSnapshotKeepsCombatLevelAndRank(t *testing.T) {
 	const profile = "practice_spawn_update_ranked_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

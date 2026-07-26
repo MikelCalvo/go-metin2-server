@@ -82,6 +82,15 @@ type sharedGroundItemVisibilityDiff struct {
 	Added   []sharedGroundItem
 }
 
+type staticActorCombatStateSnapshot struct {
+	HP             map[uint64]uint8
+	RespawnAt      map[uint64]time.Time
+	Snapshot       map[uint64]uint64
+	EngagedBy      map[uint64]uint64
+	DeathReward    map[uint64]worldruntime.StaticActorDeathReward
+	NextSnapshotID uint64
+}
+
 const (
 	StaticActorInteractionFailureSubjectNotFound        = "subject_not_found"
 	StaticActorInteractionFailureSubjectDead            = "subject_dead"
@@ -349,6 +358,76 @@ func (r *sharedWorldRegistry) clearStaticActorCombatStateLocked(entityID uint64)
 	if r.staticActorDeathReward != nil {
 		delete(r.staticActorDeathReward, entityID)
 	}
+}
+
+func (r *sharedWorldRegistry) captureStaticActorCombatStateLocked() staticActorCombatStateSnapshot {
+	if r == nil {
+		return staticActorCombatStateSnapshot{}
+	}
+	return staticActorCombatStateSnapshot{
+		HP:             cloneUint64Uint8Map(r.staticActorCombatHP),
+		RespawnAt:      cloneUint64TimeMap(r.staticActorCombatRespawnAt),
+		Snapshot:       cloneUint64Uint64Map(r.staticActorCombatSnapshot),
+		EngagedBy:      cloneUint64Uint64Map(r.staticActorCombatEngagedBy),
+		DeathReward:    cloneStaticActorDeathRewardMap(r.staticActorDeathReward),
+		NextSnapshotID: r.nextStaticActorCombatSnapshotID,
+	}
+}
+
+func (r *sharedWorldRegistry) restoreStaticActorCombatStateLocked(snapshot staticActorCombatStateSnapshot) {
+	if r == nil {
+		return
+	}
+	r.staticActorCombatHP = cloneUint64Uint8Map(snapshot.HP)
+	r.staticActorCombatRespawnAt = cloneUint64TimeMap(snapshot.RespawnAt)
+	r.staticActorCombatSnapshot = cloneUint64Uint64Map(snapshot.Snapshot)
+	r.staticActorCombatEngagedBy = cloneUint64Uint64Map(snapshot.EngagedBy)
+	r.staticActorDeathReward = cloneStaticActorDeathRewardMap(snapshot.DeathReward)
+	r.nextStaticActorCombatSnapshotID = snapshot.NextSnapshotID
+}
+
+func cloneUint64Uint8Map(in map[uint64]uint8) map[uint64]uint8 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[uint64]uint8, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneUint64Uint64Map(in map[uint64]uint64) map[uint64]uint64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[uint64]uint64, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneUint64TimeMap(in map[uint64]time.Time) map[uint64]time.Time {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[uint64]time.Time, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func cloneStaticActorDeathRewardMap(in map[uint64]worldruntime.StaticActorDeathReward) map[uint64]worldruntime.StaticActorDeathReward {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[uint64]worldruntime.StaticActorDeathReward, len(in))
+	for key, value := range in {
+		out[key] = value.Clone()
+	}
+	return out
 }
 
 func (r *sharedWorldRegistry) setStaticActorCombatEngagementLocked(entityID uint64, subjectID uint64) {
@@ -1835,7 +1914,6 @@ func (r *sharedWorldRegistry) clearStaticActorsForContentImportRollback() {
 		r.clearStaticActorCombatStateLocked(actor.Entity.ID)
 	}
 	r.pendingStaticActorImportDeletes = nil
-	r.sessionCombatTargets = make(map[uint64]uint32)
 }
 
 func (r *sharedWorldRegistry) discardStaticActorImportFanout() {
@@ -1857,14 +1935,16 @@ func (r *sharedWorldRegistry) flushStaticActorImportFanout() {
 	r.pendingStaticActorImportDeletes = nil
 	for _, actor := range deletedActors {
 		deleteRaw, encodable := encodeStaticActorDeleteFrame(actor)
-		if !encodable {
-			continue
-		}
-		for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
-			if characterAtBootstrapHPFloor(target.Character) {
-				continue
+		if encodable {
+			for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(actor) {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
 			}
-			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
+		}
+		if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
+			r.clearSelectedCombatTargetsLocked(targetVID, 0)
 		}
 	}
 	for _, actor := range r.entities.AllStaticActors() {
@@ -2212,9 +2292,9 @@ func (r *sharedWorldRegistry) RemoveStaticActor(entityID uint64) (StaticActorSna
 				r.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
 			}
 		}
-	}
-	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
-		r.clearSelectedCombatTargetsLocked(targetVID, 0)
+		if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
+			r.clearSelectedCombatTargetsLocked(targetVID, 0)
+		}
 	}
 	return removedSnapshot, true
 }
