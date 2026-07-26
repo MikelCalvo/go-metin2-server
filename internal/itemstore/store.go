@@ -79,6 +79,7 @@ type Template struct {
 	DropRejectText    string          `json:"drop_reject_message,omitempty"`
 	PickupRejectText  string          `json:"pickup_reject_message,omitempty"`
 	SellRejectText    string          `json:"sell_reject_message,omitempty"`
+	EquipRejectText   string          `json:"equip_reject_message,omitempty"`
 	UnequipRejectText string          `json:"unequip_reject_message,omitempty"`
 }
 
@@ -138,6 +139,7 @@ type templateJSON struct {
 	DropRejectText    string           `json:"drop_reject_message,omitempty"`
 	PickupRejectText  string           `json:"pickup_reject_message,omitempty"`
 	SellRejectText    string           `json:"sell_reject_message,omitempty"`
+	EquipRejectText   string           `json:"equip_reject_message,omitempty"`
 	UnequipRejectText string           `json:"unequip_reject_message,omitempty"`
 }
 
@@ -187,6 +189,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		DropRejectText:    template.DropRejectText,
 		PickupRejectText:  template.PickupRejectText,
 		SellRejectText:    template.SellRejectText,
+		EquipRejectText:   template.EquipRejectText,
 		UnequipRejectText: template.UnequipRejectText,
 	}
 	if template.Sockets != (SocketValues{}) {
@@ -250,6 +253,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		DropRejectText:    jsonTemplate.DropRejectText,
 		PickupRejectText:  jsonTemplate.PickupRejectText,
 		SellRejectText:    jsonTemplate.SellRejectText,
+		EquipRejectText:   jsonTemplate.EquipRejectText,
 		UnequipRejectText: jsonTemplate.UnequipRejectText,
 	}
 	if jsonTemplate.Sockets != nil {
@@ -321,6 +325,7 @@ func normalizeTemplate(template Template) Template {
 	template.DropRejectText = strings.TrimSpace(template.DropRejectText)
 	template.PickupRejectText = strings.TrimSpace(template.PickupRejectText)
 	template.SellRejectText = strings.TrimSpace(template.SellRejectText)
+	template.EquipRejectText = strings.TrimSpace(template.EquipRejectText)
 	template.UnequipRejectText = strings.TrimSpace(template.UnequipRejectText)
 	if template.UseEffect != nil {
 		effect := *template.UseEffect
@@ -385,7 +390,13 @@ func validTemplate(template Template) bool {
 	if !validTemplateMessage(template.SellRejectText) {
 		return false
 	}
+	if !validTemplateMessage(template.EquipRejectText) {
+		return false
+	}
 	if !validTemplateMessage(template.UnequipRejectText) {
+		return false
+	}
+	if template.EquipRejectText != "" && (template.EquipSlot == "" || !templateHasEquipRejectGuard(template)) {
 		return false
 	}
 	if template.UnequipRejectText != "" && (template.EquipSlot == "" || !template.Irremovable) {
@@ -412,6 +423,12 @@ func validDisplayAttributes(attributes AttributeValues) bool {
 
 func validTemplateMessage(message string) bool {
 	return !strings.ContainsRune(message, '\x00')
+}
+
+func templateHasEquipRejectGuard(template Template) bool {
+	return template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell ||
+		template.AntiMale || template.AntiFemale || template.AntiWarrior || template.AntiAssassin || template.AntiSura || template.AntiShaman ||
+		template.AntiEmpireA || template.AntiEmpireB || template.AntiEmpireC || template.MinLevel != 0
 }
 
 func validUseEffect(effect *UseEffect, template Template) bool {

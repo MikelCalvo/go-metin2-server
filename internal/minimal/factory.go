@@ -2837,6 +2837,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ChatResult{Accepted: false}
 						}
 						if requiresTemplate && !runtimeTemplateAllowsEquip(template, selectedPlayer, equipSlot) {
+							if message, ok := runtimeTemplateEquipRejectText(template, selectedPlayer, equipSlot); ok {
+								return gameflow.ChatResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+							}
 							return gameflow.ChatResult{Accepted: false}
 						}
 						var equippedItem inventory.ItemInstance
@@ -3230,6 +3233,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						if requiresTemplate && !runtimeTemplateAllowsEquip(template, selectedPlayer, equipSlot) {
+							if message, ok := runtimeTemplateEquipRejectText(template, selectedPlayer, equipSlot); ok {
+								return gameflow.ItemMoveResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+							}
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						fromSlot := inventory.SlotIndex(packet.Source.Cell)
@@ -4605,6 +4611,16 @@ func itemSellRejectText(template itemcatalog.Template) string {
 		return template.SellRejectText
 	}
 	return itemSellRejectedInfoMessage
+}
+
+func runtimeTemplateEquipRejectText(template itemcatalog.Template, selectedPlayer *player.Runtime, equipSlot inventory.EquipmentSlot) (string, bool) {
+	if template.EquipRejectText == "" || selectedPlayer == nil || !templateAuthoredForRuntimeEquipSlot(template, equipSlot) {
+		return "", false
+	}
+	if selectedPlayer.CanUseTemplate(template) && !template.AntiStack && !template.AntiGet && !template.AntiDrop && !template.AntiGive && !template.AntiSell {
+		return "", false
+	}
+	return template.EquipRejectText, true
 }
 
 func itemUnequipRejectText(template itemcatalog.Template) string {

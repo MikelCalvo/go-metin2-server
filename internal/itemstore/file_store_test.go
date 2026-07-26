@@ -1270,6 +1270,40 @@ func TestFileStoreSaveThenLoadRoundTripPreservesUnequipRejectText(t *testing.T) 
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesEquipRejectText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:            11500,
+		Name:            "Class Locked Armor",
+		Stackable:       false,
+		MaxCount:        1,
+		AntiWarrior:     true,
+		EquipSlot:       inventory.EquipmentSlotBody.String(),
+		EquipRejectText: "This armor rejects your class.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with equip reject message: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with equip reject message: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with equip reject message:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with equip reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 11500,\n      \"name\": \"Class Locked Armor\",\n      \"stackable\": false,\n      \"max_count\": 1,\n      \"anti_warrior\": true,\n      \"equip_slot\": \"body\",\n      \"equip_reject_message\": \"This armor rejects your class.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with equip reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreRejectsInvalidSellRejectTextMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
@@ -1357,6 +1391,75 @@ func TestFileStoreRejectsInvalidUnequipRejectTextMetadata(t *testing.T) {
 			}
 			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
 				t.Fatalf("write invalid unequip reject message snapshot: %v", err)
+			}
+			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when loading %s, got %v", tc.wantText, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreRejectsInvalidEquipRejectTextMetadata(t *testing.T) {
+	cases := []struct {
+		name     string
+		invalid  Template
+		rawJSON  string
+		wantText string
+	}{
+		{
+			name: "nul message",
+			invalid: Template{
+				Vnum:            11500,
+				Name:            "Broken Equip Message Armor",
+				Stackable:       false,
+				MaxCount:        1,
+				AntiWarrior:     true,
+				EquipSlot:       inventory.EquipmentSlotBody.String(),
+				EquipRejectText: "bad\x00message",
+			},
+			rawJSON:  `{"templates":[{"vnum":11500,"name":"Broken Equip Message Armor","stackable":false,"max_count":1,"anti_warrior":true,"equip_slot":"body","equip_reject_message":"bad\u0000message"}]}`,
+			wantText: "NUL equip reject message",
+		},
+		{
+			name: "without equip slot",
+			invalid: Template{
+				Vnum:            27001,
+				Name:            "Consumable Equip Message",
+				Stackable:       true,
+				MaxCount:        200,
+				AntiWarrior:     true,
+				EquipRejectText: "Consumables should not author equip text.",
+			},
+			rawJSON:  `{"templates":[{"vnum":27001,"name":"Consumable Equip Message","stackable":true,"max_count":200,"anti_warrior":true,"equip_reject_message":"Consumables should not author equip text."}]}`,
+			wantText: "equip reject message without equip slot",
+		},
+		{
+			name: "without equip rejection guard",
+			invalid: Template{
+				Vnum:            11500,
+				Name:            "Unguarded Equip Message Armor",
+				Stackable:       false,
+				MaxCount:        1,
+				EquipSlot:       inventory.EquipmentSlotBody.String(),
+				EquipRejectText: "This item has no owned equip rejection guard.",
+			},
+			rawJSON:  `{"templates":[{"vnum":11500,"name":"Unguarded Equip Message Armor","stackable":false,"max_count":1,"equip_slot":"body","equip_reject_message":"This item has no owned equip rejection guard."}]}`,
+			wantText: "equip reject message without equip rejection guard",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			if err := store.Save(Snapshot{Templates: []Template{tc.invalid}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.wantText, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("create item template test dir: %v", err)
+			}
+			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
+				t.Fatalf("write invalid equip reject message snapshot: %v", err)
 			}
 			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
 				t.Fatalf("expected ErrInvalidSnapshot when loading %s, got %v", tc.wantText, err)
