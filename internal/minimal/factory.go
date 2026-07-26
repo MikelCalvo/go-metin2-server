@@ -2183,6 +2183,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			useResult, ok := selectedPlayer.UseItem(slot, template)
 			if !ok {
+				if message, ok := selectedPlayer.UseItemRejectText(slot, template); ok {
+					return gameflow.ItemUseResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+				}
 				return gameflow.ItemUseResult{Accepted: false}
 			}
 			frames, err := itemUseResultFrames(selectedPlayer.LiveCharacter(), useResult, runtime.itemTemplates, emitUseEcho)

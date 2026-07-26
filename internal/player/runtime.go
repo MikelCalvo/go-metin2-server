@@ -1000,6 +1000,43 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	return result, true
 }
 
+func (r *Runtime) UseItemRejectText(slot inventory.SlotIndex, template itemcatalog.Template) (string, bool) {
+	if r == nil || template.UseRejectText == "" || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil {
+		return "", false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return "", false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return "", false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return "", false
+	}
+	if err := item.Validate(); err != nil {
+		return "", false
+	}
+	effect := *template.UseEffect
+	consumeCount := effect.ConsumeCount
+	if consumeCount == 0 {
+		consumeCount = 1
+	}
+	if consumeCount == 0 || consumeCount > item.Count {
+		return "", false
+	}
+	currentPointValue := r.livePoints[effect.PointIndex]
+	nextPointValue := int64(currentPointValue) + int64(effect.PointDelta)
+	if nextPointValue < -1<<31 || nextPointValue > 1<<31-1 {
+		return "", false
+	}
+	if r.CanUseTemplate(template) && !template.ConfirmWhenUse && !template.QuestUse && !template.QuestUseMultiple && !template.Applicable && !template.AntiStack && !template.AntiGet && !template.AntiDrop && !template.AntiGive && !template.AntiSell {
+		return "", false
+	}
+	return template.UseRejectText, true
+}
+
 func useEffectInfoMessage(effect *itemcatalog.UseEffect) string {
 	if effect == nil {
 		return ""

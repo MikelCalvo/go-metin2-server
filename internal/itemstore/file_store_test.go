@@ -1236,6 +1236,40 @@ func TestFileStoreSaveThenLoadRoundTripPreservesSellRejectText(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesUseRejectText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:           27012,
+		Name:           "Confirm Use Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		ConfirmWhenUse: true,
+		UseEffect:      &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "confirm:27012:+50"},
+		UseRejectText:  "You must confirm this item before using it.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with use reject message: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with use reject message: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with use reject message:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with use reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27012,\n      \"name\": \"Confirm Use Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"confirm_when_use\": true,\n      \"use_effect\": {\n        \"point_type\": 1,\n        \"point_index\": 1,\n        \"point_delta\": 50,\n        \"message\": \"confirm:27012:+50\"\n      },\n      \"use_reject_message\": \"You must confirm this item before using it.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with use reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesUnequipRejectText(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
@@ -1327,6 +1361,75 @@ func TestFileStoreRejectsInvalidSellRejectTextMetadata(t *testing.T) {
 	}
 	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot when loading NUL sell reject message, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsInvalidUseRejectTextMetadata(t *testing.T) {
+	cases := []struct {
+		name     string
+		invalid  Template
+		rawJSON  string
+		wantText string
+	}{
+		{
+			name: "nul message",
+			invalid: Template{
+				Vnum:           27012,
+				Name:           "Broken Use Message Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				ConfirmWhenUse: true,
+				UseEffect:      &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "confirm:27012:+50"},
+				UseRejectText:  "bad\x00message",
+			},
+			rawJSON:  `{"templates":[{"vnum":27012,"name":"Broken Use Message Potion","stackable":true,"max_count":200,"confirm_when_use":true,"use_effect":{"point_type":1,"point_index":1,"point_delta":50,"message":"confirm:27012:+50"},"use_reject_message":"bad\u0000message"}]}`,
+			wantText: "NUL use reject message",
+		},
+		{
+			name: "without use effect",
+			invalid: Template{
+				Vnum:           27013,
+				Name:           "Message Without Effect Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				ConfirmWhenUse: true,
+				UseRejectText:  "This item cannot be used yet.",
+			},
+			rawJSON:  `{"templates":[{"vnum":27013,"name":"Message Without Effect Potion","stackable":true,"max_count":200,"confirm_when_use":true,"use_reject_message":"This item cannot be used yet."}]}`,
+			wantText: "use reject message without use effect",
+		},
+		{
+			name: "without direct-use guard",
+			invalid: Template{
+				Vnum:          27014,
+				Name:          "Unguarded Use Message Potion",
+				Stackable:     true,
+				MaxCount:      200,
+				UseEffect:     &UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27014:+50"},
+				UseRejectText: "This item has no owned use rejection guard.",
+			},
+			rawJSON:  `{"templates":[{"vnum":27014,"name":"Unguarded Use Message Potion","stackable":true,"max_count":200,"use_effect":{"point_type":1,"point_index":1,"point_delta":50,"message":"consume:27014:+50"},"use_reject_message":"This item has no owned use rejection guard."}]}`,
+			wantText: "use reject message without direct-use guard",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			if err := store.Save(Snapshot{Templates: []Template{tc.invalid}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.wantText, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("create item template test dir: %v", err)
+			}
+			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
+				t.Fatalf("write invalid use reject message snapshot: %v", err)
+			}
+			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when loading %s, got %v", tc.wantText, err)
+			}
+		})
 	}
 }
 

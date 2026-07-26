@@ -167,6 +167,123 @@ func TestGameSessionFlowItemUseRejectsConfirmWhenUseTemplateWithoutMutation(t *t
 	}
 }
 
+func TestGameSessionFlowItemUseRejectsConfirmWhenUseWithTemplateText(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseConfirmText", 0x01030540, 0x02040540, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 209, Vnum: 27012, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-use-confirm-text", 0x50505040, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-confirm-text", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed confirm-when-use text item-use account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:           27012,
+		Name:           "Confirm Text Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		ConfirmWhenUse: true,
+		UseEffect:      &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume without confirm"},
+		UseRejectText:  "You must confirm this item before using it.",
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected confirm-when-use text item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-confirm-text", 0x50505040)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected confirm-when-use text ITEM_USE packet error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected confirm_when_use ITEM_USE to emit one template-authored info-chat frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode confirm_when_use rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.UseRejectText {
+		t.Fatalf("unexpected confirm_when_use rejection chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after confirm_when_use rejection, got %d", len(queued))
+	}
+	persisted, err := accounts.Load("item-use-confirm-text")
+	if err != nil {
+		t.Fatalf("load persisted confirm-when-use text item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("confirm_when_use text ITEM_USE mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("confirm_when_use text ITEM_USE mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("confirm_when_use text ITEM_USE mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowSlashUseItemRejectsConfirmWhenUseWithTemplateText(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SlashUseConfirmText", 0x01030541, 0x02040541, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 210, Vnum: 27013, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "slash-item-use-confirm-text", 0x50505041, owner)
+	if err := accounts.Save(accountstore.Account{Login: "slash-item-use-confirm-text", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed slash confirm-when-use text item-use account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:           27013,
+		Name:           "Slash Confirm Text Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		ConfirmWhenUse: true,
+		UseEffect:      &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not slash-consume without confirm"},
+		UseRejectText:  "Slash use rejection text.",
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected slash confirm-when-use text item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "slash-item-use-confirm-text", 0x50505041)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 5"})))
+	if err != nil {
+		t.Fatalf("unexpected slash confirm-when-use item-use error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected slash confirm_when_use item use to emit one template-authored info-chat frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode slash confirm_when_use rejection info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != template.UseRejectText {
+		t.Fatalf("unexpected slash confirm_when_use rejection chat: %+v", delivery)
+	}
+	persisted, err := accounts.Load("slash-item-use-confirm-text")
+	if err != nil {
+		t.Fatalf("load persisted slash confirm-when-use text item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("slash confirm_when_use text item-use mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("slash confirm_when_use text item-use mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("slash confirm_when_use text item-use mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
 func TestGameSessionFlowItemUseRejectsQuestUseTemplateFlagsWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name   string

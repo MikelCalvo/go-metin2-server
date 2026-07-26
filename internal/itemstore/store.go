@@ -75,6 +75,7 @@ type Template struct {
 	Sockets           SocketValues    `json:"sockets,omitempty"`
 	Attributes        AttributeValues `json:"attributes,omitempty"`
 	UseEffect         *UseEffect      `json:"use_effect,omitempty"`
+	UseRejectText     string          `json:"use_reject_message,omitempty"`
 	EquipEffect       *PointEffect    `json:"equip_effect,omitempty"`
 	DropRejectText    string          `json:"drop_reject_message,omitempty"`
 	PickupRejectText  string          `json:"pickup_reject_message,omitempty"`
@@ -135,6 +136,7 @@ type templateJSON struct {
 	Sockets           *SocketValues    `json:"sockets,omitempty"`
 	Attributes        *AttributeValues `json:"attributes,omitempty"`
 	UseEffect         *UseEffect       `json:"use_effect,omitempty"`
+	UseRejectText     string           `json:"use_reject_message,omitempty"`
 	EquipEffect       *PointEffect     `json:"equip_effect,omitempty"`
 	DropRejectText    string           `json:"drop_reject_message,omitempty"`
 	PickupRejectText  string           `json:"pickup_reject_message,omitempty"`
@@ -185,6 +187,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		MinLevel:          template.MinLevel,
 		EquipSlot:         template.EquipSlot,
 		UseEffect:         template.UseEffect,
+		UseRejectText:     template.UseRejectText,
 		EquipEffect:       template.EquipEffect,
 		DropRejectText:    template.DropRejectText,
 		PickupRejectText:  template.PickupRejectText,
@@ -249,6 +252,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		MinLevel:          jsonTemplate.MinLevel,
 		EquipSlot:         jsonTemplate.EquipSlot,
 		UseEffect:         jsonTemplate.UseEffect,
+		UseRejectText:     jsonTemplate.UseRejectText,
 		EquipEffect:       jsonTemplate.EquipEffect,
 		DropRejectText:    jsonTemplate.DropRejectText,
 		PickupRejectText:  jsonTemplate.PickupRejectText,
@@ -322,6 +326,7 @@ func normalizeSnapshot(snapshot Snapshot) Snapshot {
 func normalizeTemplate(template Template) Template {
 	template.Name = strings.TrimSpace(template.Name)
 	template.EquipSlot = normalizeEquipSlot(template.EquipSlot)
+	template.UseRejectText = strings.TrimSpace(template.UseRejectText)
 	template.DropRejectText = strings.TrimSpace(template.DropRejectText)
 	template.PickupRejectText = strings.TrimSpace(template.PickupRejectText)
 	template.SellRejectText = strings.TrimSpace(template.SellRejectText)
@@ -381,6 +386,9 @@ func validTemplate(template Template) bool {
 	if !validDisplayAttributes(template.Attributes) {
 		return false
 	}
+	if !validTemplateMessage(template.UseRejectText) {
+		return false
+	}
 	if !validTemplateMessage(template.DropRejectText) {
 		return false
 	}
@@ -397,6 +405,9 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.EquipRejectText != "" && (template.EquipSlot == "" || !templateHasEquipRejectGuard(template)) {
+		return false
+	}
+	if template.UseRejectText != "" && (template.UseEffect == nil || !templateHasUseRejectGuard(template)) {
 		return false
 	}
 	if template.UnequipRejectText != "" && (template.EquipSlot == "" || !template.Irremovable) {
@@ -427,6 +438,13 @@ func validTemplateMessage(message string) bool {
 
 func templateHasEquipRejectGuard(template Template) bool {
 	return template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell ||
+		template.AntiMale || template.AntiFemale || template.AntiWarrior || template.AntiAssassin || template.AntiSura || template.AntiShaman ||
+		template.AntiEmpireA || template.AntiEmpireB || template.AntiEmpireC || template.MinLevel != 0
+}
+
+func templateHasUseRejectGuard(template Template) bool {
+	return template.ConfirmWhenUse || template.QuestUse || template.QuestUseMultiple || template.Applicable ||
+		template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell ||
 		template.AntiMale || template.AntiFemale || template.AntiWarrior || template.AntiAssassin || template.AntiSura || template.AntiShaman ||
 		template.AntiEmpireA || template.AntiEmpireB || template.AntiEmpireC || template.MinLevel != 0
 }
