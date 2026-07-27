@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -425,6 +426,41 @@ func TestFileStoreValidateRejectsMalformedBackupManifest(t *testing.T) {
 	_, err := store.Validate()
 	if !errors.Is(err, ErrInvalidBackupManifest) {
 		t.Fatalf("expected ErrInvalidBackupManifest for malformed active manifest, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsInvalidUTF8BackupManifest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	invalidManifest := append([]byte(`{"format":"`+BackupManifestFormat), 0xff)
+	invalidManifest = append(invalidManifest, []byte(`","summary":{"template_count":1,"vnums":[27001]},"files":[]}`)...)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), BackupManifestFilename), invalidManifest, 0o644); err != nil {
+		t.Fatalf("write invalid-UTF8 active backup manifest: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidBackupManifest) || !strings.Contains(err.Error(), "invalid utf-8") {
+		t.Fatalf("expected invalid-UTF8 active backup manifest to fail closed with ErrInvalidBackupManifest, got %v", err)
+	}
+}
+
+func TestFileStoreValidateBackupFromRejectsInvalidUTF8BackupManifest(t *testing.T) {
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := os.MkdirAll(backupDir, 0o755); err != nil {
+		t.Fatalf("create backup dir: %v", err)
+	}
+	invalidManifest := append([]byte(`{"format":"`+BackupManifestFormat), 0xff)
+	invalidManifest = append(invalidManifest, []byte(`","summary":{"vnums":[]},"files":[]}`)...)
+	if err := os.WriteFile(filepath.Join(backupDir, BackupManifestFilename), invalidManifest, 0o644); err != nil {
+		t.Fatalf("write invalid-UTF8 backup manifest: %v", err)
+	}
+
+	_, err := NewFileStore(filepath.Join(t.TempDir(), "target", "item-templates.json")).ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) || !strings.Contains(err.Error(), "invalid utf-8") {
+		t.Fatalf("expected invalid-UTF8 backup manifest dry-run to fail closed with ErrInvalidBackupManifest, got %v", err)
 	}
 }
 

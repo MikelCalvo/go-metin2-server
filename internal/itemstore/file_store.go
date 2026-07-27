@@ -523,6 +523,9 @@ func decodeSnapshotStrict(raw []byte, snapshot *Snapshot) error {
 }
 
 func decodeBackupManifestStrict(raw []byte, manifest *BackupManifest) error {
+	if !utf8.Valid(raw) {
+		return errors.New("invalid utf-8")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(manifest); err != nil {
