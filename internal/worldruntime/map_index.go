@@ -493,7 +493,6 @@ func (m *MapIndex) AllPlayers() []PlayerEntity {
 				continue
 			}
 			if m.playerMapPresenceBlockedByStaticMapLocked(bucket[entityID]) {
-				m.removePlayerMapPresenceLocked(entityID)
 				continue
 			}
 			playersByID[entityID] = clonePlayerEntity(bucket[entityID])
@@ -727,6 +726,9 @@ func (m *MapIndex) AllStaticActors() []StaticEntity {
 	actorsByID := make(map[uint64]StaticEntity, len(m.staticByEntityID))
 	for _, actor := range m.staticByEntityID {
 		m.repairStaticMapPresenceIfUnblockedLocked(actor)
+		if m.staticMapPresenceBlockedByPlayerMapLocked(actor) {
+			continue
+		}
 		actorsByID[actor.Entity.ID] = cloneStaticEntity(actor)
 	}
 
@@ -748,6 +750,9 @@ func (m *MapIndex) AllStaticActors() []StaticEntity {
 		})
 		for _, entityID := range entityIDs {
 			if _, exists := actorsByID[entityID]; exists {
+				continue
+			}
+			if m.staticMapPresenceBlockedByPlayerMapLocked(bucket[entityID]) {
 				continue
 			}
 			actorsByID[entityID] = cloneStaticEntity(bucket[entityID])
@@ -995,20 +1000,68 @@ func (m *MapIndex) playerMapPresenceBlockedByStaticMapLocked(player PlayerEntity
 	if player.Entity.ID == 0 {
 		return true
 	}
-	if _, primary := m.byEntityID[player.Entity.ID]; !primary {
-		return false
+	if _, primary := m.byEntityID[player.Entity.ID]; primary {
+		return m.staticActorMapVisibilityVIDPresenceLocked(player.Entity.VID, player.Entity.ID)
 	}
-	return m.staticActorMapVisibilityVIDPresenceLocked(player.Entity.VID, player.Entity.ID)
+	return m.mapOnlyStaticMapPresenceCollidesWithPlayerLocked(player)
 }
 
 func (m *MapIndex) staticMapPresenceBlockedByPlayerMapLocked(actor StaticEntity) bool {
 	if actor.Entity.ID == 0 {
 		return true
 	}
-	if _, primary := m.staticByEntityID[actor.Entity.ID]; !primary {
-		return false
+	if _, primary := m.staticByEntityID[actor.Entity.ID]; primary {
+		if _, ok := m.playerMapPresenceLocked(actor.Entity.ID); ok {
+			return true
+		}
+		return m.playerMapVisibilityVIDPresenceLocked(actor, actor.Entity.ID)
 	}
-	return m.playerMapVisibilityVIDPresenceLocked(actor, actor.Entity.ID)
+	return m.mapOnlyPlayerMapPresenceCollidesWithStaticLocked(actor)
+}
+
+func (m *MapIndex) mapOnlyStaticMapPresenceCollidesWithPlayerLocked(player PlayerEntity) bool {
+	if player.Entity.ID == 0 {
+		return true
+	}
+	for _, bucket := range m.staticByMapIndex {
+		for _, actor := range bucket {
+			if _, primary := m.staticByEntityID[actor.Entity.ID]; primary {
+				continue
+			}
+			if actor.Entity.ID == player.Entity.ID {
+				return true
+			}
+			if player.Entity.VID == 0 {
+				continue
+			}
+			actorVID, ok := StaticActorVisibilityVID(actor)
+			if ok && actorVID == player.Entity.VID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (m *MapIndex) mapOnlyPlayerMapPresenceCollidesWithStaticLocked(actor StaticEntity) bool {
+	if actor.Entity.ID == 0 {
+		return true
+	}
+	actorVID, actorHasVID := StaticActorVisibilityVID(actor)
+	for _, bucket := range m.byMapIndex {
+		for _, player := range bucket {
+			if _, primary := m.byEntityID[player.Entity.ID]; primary {
+				continue
+			}
+			if player.Entity.ID == actor.Entity.ID {
+				return true
+			}
+			if actorHasVID && player.Entity.VID == actorVID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *MapIndex) staticActorMapVisibilityVIDPresenceLocked(vid uint32, entityID uint64) bool {

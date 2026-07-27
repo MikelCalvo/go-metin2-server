@@ -740,6 +740,54 @@ func TestMapIndexSnapshotSuppressesExistingPlayerBucketOverStaticVisibilityVIDCo
 	}
 }
 
+func TestMapIndexSnapshotSuppressesMapOnlyVisibilityVIDCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(99, entityRegistryCharacter("MapOnlyAlpha", 0x02040101, 42, 1100, 2100))
+	actor := StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Kind: EntityKindStaticActor, Name: "MapOnlyGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	index.byMapIndex[42] = map[uint64]PlayerEntity{player.Entity.ID: player}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{actor.Entity.ID: actor}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected direct player reader to suppress map-only player over static actor visibility-VID collision, got %+v", characters)
+	}
+	if actors := index.StaticActors(77); len(actors) != 0 {
+		t.Fatalf("expected direct static reader to suppress map-only actor over player visibility-VID collision, got %+v", actors)
+	}
+	if players := index.AllPlayers(); len(players) != 0 {
+		t.Fatalf("expected all-player reader to suppress map-only visible-ID collision, got %+v", players)
+	}
+	if actors := index.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected all-static reader to suppress map-only visible-ID collision, got %+v", actors)
+	}
+	if snapshots := index.Snapshot(); len(snapshots) != 0 {
+		t.Fatalf("expected map snapshot to suppress ambiguous map-only visible-ID collision, got %+v", snapshots)
+	}
+}
+
+func TestMapIndexSnapshotSuppressesMapOnlyEntityIDCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(32, entityRegistryCharacter("MapOnlyAlpha", 0x02040101, 42, 1100, 2100))
+	actor := StaticEntity{Entity: Entity{ID: player.Entity.ID, Kind: EntityKindStaticActor, Name: "MapOnlyGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	index.byMapIndex[42] = map[uint64]PlayerEntity{player.Entity.ID: player}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{actor.Entity.ID: actor}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected direct player reader to suppress map-only player over static actor entity-ID collision, got %+v", characters)
+	}
+	if actors := index.StaticActors(77); len(actors) != 0 {
+		t.Fatalf("expected direct static reader to suppress map-only actor over player entity-ID collision, got %+v", actors)
+	}
+	if players := index.AllPlayers(); len(players) != 0 {
+		t.Fatalf("expected all-player reader to suppress map-only entity-ID collision, got %+v", players)
+	}
+	if actors := index.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected all-static reader to suppress map-only entity-ID collision, got %+v", actors)
+	}
+	if snapshots := index.Snapshot(); len(snapshots) != 0 {
+		t.Fatalf("expected map snapshot to suppress ambiguous map-only entity-ID collision, got %+v", snapshots)
+	}
+}
+
 func TestMapIndexSnapshotDoesNotRepairStaticPrimaryOverPlayerVisibilityVIDCollision(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	actor := StaticEntity{Entity: Entity{ID: 0x02040101, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
