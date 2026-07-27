@@ -159,6 +159,9 @@ func ValidStaticActorVisibilityRaceNum(raceNum uint32) bool {
 }
 
 func ValidStaticActorInteractionMetadata(kind string, ref string) bool {
+	if kind != strings.TrimSpace(kind) || ref != strings.TrimSpace(ref) {
+		return false
+	}
 	if kind == "" && ref == "" {
 		return true
 	}

@@ -100,6 +100,41 @@ func TestNonPlayerDirectoryRejectsUnsupportedInteractionKind(t *testing.T) {
 	}
 }
 
+func TestNonPlayerDirectoryRejectsWhitespacePaddedInteractionMetadata(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	padded := StaticEntity{
+		Entity:          Entity{ID: 5, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position:        NewPosition(42, 1700, 2800),
+		RaceNum:         20300,
+		InteractionKind: " talk ",
+		InteractionRef:  " npc:village_guard ",
+	}
+
+	if directory.Register(padded) {
+		t.Fatal("expected whitespace-padded interaction metadata registration to fail closed")
+	}
+	if _, ok := directory.ByEntityID(padded.Entity.ID); ok {
+		t.Fatal("expected padded interaction actor not to be registered")
+	}
+
+	canonical := padded
+	canonical.InteractionKind = "talk"
+	canonical.InteractionRef = "npc:village_guard"
+	if !directory.Register(canonical) {
+		t.Fatal("expected canonical interaction metadata registration to succeed")
+	}
+	updated := canonical
+	updated.InteractionKind = " info "
+	updated.InteractionRef = " lore:guard "
+	if directory.Update(updated) {
+		t.Fatal("expected whitespace-padded interaction metadata update to fail closed")
+	}
+	lookup, ok := directory.ByEntityID(canonical.Entity.ID)
+	if !ok || lookup.InteractionKind != "talk" || lookup.InteractionRef != "npc:village_guard" {
+		t.Fatalf("expected canonical interaction metadata to survive rejected padded update, got actor=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestNonPlayerDirectoryLooksUpStaticActorsByVisibilityVID(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{

@@ -48,9 +48,10 @@ The first owned validation rule is:
 - exactly one field present = invalid
 - when present, `interaction_kind` must be one of the currently owned interaction-definition kinds: `info`, `talk`, `warp`, or `shop_preview`
 - when present, `interaction_ref` must satisfy the canonical `<namespace>:<name>` rule above
+- low-level runtime entities in `internal/worldruntime` must already carry canonical, unpadded metadata; whitespace-padded `interaction_kind` or `interaction_ref` values are rejected fail-closed at that boundary rather than normalized into a different live actor
 
 This rule applies consistently in:
-- runtime registration/update validation
+- runtime registration/update validation after the local operator layer has parsed/canonicalized request values
 - local operator request decoding
 - file-backed static-actor snapshot validation
 - interaction-definition store validation
