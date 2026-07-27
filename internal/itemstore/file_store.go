@@ -233,6 +233,9 @@ func (s *FileStore) BackupTo(dstDir string) error {
 	if err := ensureEmptyDir(dstDir, ErrBackupDirNotEmpty, "read item template backup dir"); err != nil {
 		return err
 	}
+	if err := s.validateActiveBackupManifest(); err != nil {
+		return err
+	}
 
 	summary, snapshot, hasSnapshot, err := s.backupSourceSnapshot()
 	if err != nil {

@@ -280,6 +280,29 @@ func TestFileStoreValidateRejectsStaleBackupManifest(t *testing.T) {
 	}
 }
 
+func TestFileStoreBackupToRejectsStaleActiveBackupManifestBeforeCreatingDestination(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	if err := writeBackupManifest(filepath.Dir(path), filepath.Base(path), SnapshotSummary{TemplateCount: 1, Vnums: []uint32{27001}}, true); err != nil {
+		t.Fatalf("write active backup manifest: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27001,"name":"Tampered Potion","stackable":true,"max_count":200}]}`), 0o644); err != nil {
+		t.Fatalf("tamper active item template snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest before backup, got %v", err)
+	}
+	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected rejected backup not to create destination, stat err=%v", statErr)
+	}
+}
+
 func TestFileStoreValidateRejectsMalformedBackupManifest(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

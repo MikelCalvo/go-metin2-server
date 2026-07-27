@@ -929,6 +929,37 @@ func TestGameRuntimePersistenceStatusRejectsStaleItemTemplateBackupManifest(t *t
 	}
 }
 
+func TestGameRuntimeBackupItemTemplateStoreRejectsStaleActiveManifestBeforeCreatingDestination(t *testing.T) {
+	source := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "source", "item-templates.json"))
+	if err := source.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save source item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup source item template store: %v", err)
+	}
+	active := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "active", "item-templates.json"))
+	if err := active.RestoreFrom(backupDir); err != nil {
+		t.Fatalf("restore item templates into active store: %v", err)
+	}
+	if err := os.WriteFile(active.Path(), []byte(`{"templates":[{"vnum":27001,"name":"Tampered Potion","stackable":true,"max_count":200}]}`), 0o644); err != nil {
+		t.Fatalf("tamper restored active item templates: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, active, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	rejectedBackupDir := filepath.Join(t.TempDir(), "rejected-item-template-backup")
+
+	_, err = runtime.BackupItemTemplateStore(rejectedBackupDir)
+	if !errors.Is(err, itemcatalog.ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest before item-template backup, got %v", err)
+	}
+	if _, statErr := os.Stat(rejectedBackupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected rejected runtime backup not to create destination, stat err=%v", statErr)
+	}
+}
+
 func TestGameRuntimeCleanupStaticActorStoreCrashTempFiles(t *testing.T) {
 	staticPath := filepath.Join(t.TempDir(), "static", "static-actors.json")
 	staticStore := staticstore.NewFileStore(staticPath)
