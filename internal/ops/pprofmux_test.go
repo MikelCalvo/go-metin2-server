@@ -3091,7 +3091,7 @@ func TestLocalStaticActorCombatProfileEndpointRegistersProfileForLoopbackPost(t 
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 
 	mux := RegisterLocalStaticActorCombatProfileEndpoint(NewPprofMux("gamed"))
-	body := `{"profile":"ops_profile_wolf","max_hp":24,"attack_value":9,"defense_value":4,"level":7,"rank":2,"respawn_delay_ms":1500,"death_reward":{"experience":30,"gold":11,"drop_vnums":[27002,27001]}}`
+	body := `{"profile":"ops_profile_wolf","max_hp":24,"attack_value":9,"defense_value":4,"level":7,"rank":2,"respawn_delay_ms":1500,"retaliation_point_delta":-2,"death_reward":{"experience":30,"gold":11,"drop_vnums":[27002,27001]}}`
 	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-combat-profiles", strings.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
@@ -3108,14 +3108,14 @@ func TestLocalStaticActorCombatProfileEndpointRegistersProfileForLoopbackPost(t 
 	if !ok {
 		t.Fatalf("expected profile %q to be registered", profile)
 	}
-	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 5 || defaults.AttackValue != 9 || defaults.DefenseValue != 4 || defaults.Level != 7 || defaults.Rank != 2 || defaults.RespawnDelay.String() != "1.5s" {
+	if defaults.MaxHP != 24 || defaults.DamagePerNormalAttack != 5 || defaults.AttackValue != 9 || defaults.DefenseValue != 4 || defaults.Level != 7 || defaults.Rank != 2 || defaults.RespawnDelay.String() != "1.5s" || defaults.RetaliationPointDelta != -2 {
 		t.Fatalf("unexpected registered defaults: %+v", defaults)
 	}
 	if defaults.DeathReward.Experience != 30 || defaults.DeathReward.Gold != 11 || len(defaults.DeathReward.DropVnums) != 2 || defaults.DeathReward.DropVnums[0] != 27001 || defaults.DeathReward.DropVnums[1] != 27002 {
 		t.Fatalf("unexpected registered death reward: %+v", defaults.DeathReward)
 	}
 	bodyText := rec.Body.String()
-	if !strings.Contains(bodyText, `"profile":"ops_profile_wolf"`) || !strings.Contains(bodyText, `"damage_per_normal_attack":5`) || !strings.Contains(bodyText, `"respawn_delay_ms":1500`) {
+	if !strings.Contains(bodyText, `"profile":"ops_profile_wolf"`) || !strings.Contains(bodyText, `"damage_per_normal_attack":5`) || !strings.Contains(bodyText, `"respawn_delay_ms":1500`) || !strings.Contains(bodyText, `"retaliation_point_delta":-2`) {
 		t.Fatalf("unexpected JSON response body %q", bodyText)
 	}
 }

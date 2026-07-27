@@ -2158,6 +2158,7 @@ func TestCanonicalizeAcceptsReferencedCustomCombatProfileSnapshot(t *testing.T) 
 			Level:                 7,
 			Rank:                  2,
 			RespawnDelayMs:        1500,
+			RetaliationPointDelta: -2,
 			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 25, Gold: 11, DropVnums: []uint32{27002, 27001}},
 		}},
 	})
@@ -2190,11 +2191,38 @@ func TestCanonicalizeAcceptsReferencedCustomCombatProfileSnapshot(t *testing.T) 
 			Level:                 7,
 			Rank:                  2,
 			RespawnDelayMs:        1500,
+			RetaliationPointDelta: -2,
 			DeathReward:           worldruntime.StaticActorDeathReward{Experience: 25, Gold: 11, DropVnums: []uint32{27001, 27002}},
 		}},
 	}
 	if !reflect.DeepEqual(bundle, want) {
 		t.Fatalf("unexpected canonical custom combat profile bundle:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
+func TestCanonicalizeRejectsPositiveCombatProfileRetaliationPointDelta(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.positive_retaliation_wolf",
+			Name:          "Positive Retaliation Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_positive_retaliation_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               "practice_positive_retaliation_wolf",
+			MaxHP:                 24,
+			DamagePerNormalAttack: 6,
+			AttackValue:           8,
+			DefenseValue:          2,
+			RespawnDelayMs:        1500,
+			RetaliationPointDelta: 1,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for positive combat-profile retaliation point delta, got %v", err)
 	}
 }
 

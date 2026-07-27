@@ -58,6 +58,7 @@ type localStaticActorCombatProfileRequest struct {
 	Level                 uint16                      `json:"level"`
 	Rank                  uint8                       `json:"rank"`
 	RespawnDelayMs        int64                       `json:"respawn_delay_ms"`
+	RetaliationPointDelta int32                       `json:"retaliation_point_delta"`
 	DeathReward           localStaticActorDeathReward `json:"death_reward"`
 }
 
@@ -76,6 +77,7 @@ type localStaticActorCombatProfileResponse struct {
 	Level                 uint16                              `json:"level"`
 	Rank                  uint8                               `json:"rank"`
 	RespawnDelayMs        int64                               `json:"respawn_delay_ms"`
+	RetaliationPointDelta int32                               `json:"retaliation_point_delta"`
 	DeathReward           worldruntime.StaticActorDeathReward `json:"death_reward"`
 }
 
@@ -1006,6 +1008,7 @@ func RegisterLocalStaticActorCombatProfileEndpoint(mux *http.ServeMux) *http.Ser
 				Level:                 registered.Level,
 				Rank:                  registered.Rank,
 				RespawnDelayMs:        registered.RespawnDelay.Milliseconds(),
+				RetaliationPointDelta: registered.RetaliationPointDelta,
 				DeathReward:           registered.DeathReward,
 			}, http.StatusOK)
 		default:
@@ -1536,6 +1539,7 @@ func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldr
 		Level:                 request.Level,
 		Rank:                  request.Rank,
 		RespawnDelay:          time.Duration(request.RespawnDelayMs) * time.Millisecond,
+		RetaliationPointDelta: request.RetaliationPointDelta,
 		DeathReward: worldruntime.StaticActorDeathReward{
 			Experience: request.DeathReward.Experience,
 			Gold:       request.DeathReward.Gold,

@@ -1923,6 +1923,9 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if name == "" || name == worldruntime.StaticActorCombatProfilePracticeMob || name == worldruntime.StaticActorCombatProfileTrainingDummy {
 		return false
 	}
+	if profile.RetaliationPointDelta > 0 {
+		return false
+	}
 	if profile.MaxHP == 0 || profile.AttackValue == 0 || profile.RespawnDelayMs <= 0 {
 		return false
 	}
@@ -1948,6 +1951,7 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 		candidateDefaults.Level == defaults.Level &&
 		candidateDefaults.Rank == defaults.Rank &&
 		candidateDefaults.RespawnDelay == defaults.RespawnDelay &&
+		candidateDefaults.RetaliationPointDelta == defaults.RetaliationPointDelta &&
 		reflect.DeepEqual(candidateDefaults.DeathReward.Clone(), defaults.DeathReward.Clone())
 }
 
@@ -1963,6 +1967,7 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		Level:                 snapshot.Level,
 		Rank:                  snapshot.Rank,
 		RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
+		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}
 	if defaults.DamagePerNormalAttack == 0 {
@@ -1970,6 +1975,9 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 	}
 	if defaults.Level == 0 {
 		defaults.Level = worldruntime.TrainingDummyBootstrapLevel
+	}
+	if defaults.RetaliationPointDelta == 0 {
+		defaults.RetaliationPointDelta = worldruntime.PracticeMobBootstrapRetaliationPointDelta
 	}
 	return defaults, true
 }
@@ -2092,6 +2100,9 @@ func cloneCombatProfileSnapshots(profiles []worldruntime.StaticActorCombatProfil
 	copy(cloned, profiles)
 	for i := range cloned {
 		cloned[i].Profile = strings.TrimSpace(cloned[i].Profile)
+		if cloned[i].RetaliationPointDelta == worldruntime.PracticeMobBootstrapRetaliationPointDelta {
+			cloned[i].RetaliationPointDelta = 0
+		}
 		cloned[i].DeathReward = cloned[i].DeathReward.Clone()
 	}
 	return cloned

@@ -269,6 +269,70 @@ func TestRegisterStaticActorCombatProfileAddsProfileDefaults(t *testing.T) {
 	}
 }
 
+func TestRegisterStaticActorCombatProfileUsesCustomRetaliationPointDelta(t *testing.T) {
+	const profile = "practice_retaliation_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		RetaliationPointDelta: -2,
+	}) {
+		t.Fatalf("expected %q profile registration with custom retaliation point delta to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected registered profile defaults to resolve")
+	}
+	if defaults.RetaliationPointDelta != -2 {
+		t.Fatalf("expected custom retaliation point delta -2, got %+v", defaults)
+	}
+
+	snapshot, ok := staticActorCombatProfileSnapshotByName(StaticActorCombatProfileSnapshots(), profile)
+	if !ok {
+		t.Fatalf("expected registered profile snapshot for %q", profile)
+	}
+	if snapshot.RetaliationPointDelta != -2 {
+		t.Fatalf("expected snapshot to expose custom retaliation point delta -2, got %+v", snapshot)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileDefaultsOmittedRetaliationPointDelta(t *testing.T) {
+	const profile = "practice_default_retaliation_wolf"
+	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+	}) {
+		t.Fatalf("expected %q profile registration with omitted retaliation delta to succeed", profile)
+	}
+	t.Cleanup(func() { UnregisterStaticActorCombatProfileForTest(profile) })
+
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(profile)
+	if !ok {
+		t.Fatalf("expected registered profile defaults to resolve")
+	}
+	if defaults.RetaliationPointDelta != -1 {
+		t.Fatalf("expected omitted retaliation point delta to default to -1, got %+v", defaults)
+	}
+}
+
+func TestRegisterStaticActorCombatProfileRejectsPositiveRetaliationPointDelta(t *testing.T) {
+	const profile = "practice_positive_retaliation_wolf"
+	if RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
+		MaxHP:                 24,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+		RetaliationPointDelta: 1,
+	}) {
+		t.Fatalf("expected %q profile registration with positive retaliation point delta to fail closed", profile)
+	}
+	if ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected positive-retaliation profile %q not to become valid", profile)
+	}
+}
+
 func TestStaticActorCombatProfileSnapshotsReturnBuiltinsAndRegisteredProfilesSorted(t *testing.T) {
 	const profile = "practice_sorted_wolf"
 	if !RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{

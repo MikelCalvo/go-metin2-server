@@ -27882,6 +27882,95 @@ func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTa
 	}
 }
 
+func TestGameSessionFlowRegisteredCombatProfileCustomRetaliationPointDelta(t *testing.T) {
+	const profile = "practice_custom_retaliation_delta"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 12,
+		DamagePerNormalAttack: 3,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		RetaliationPointDelta: -2,
+	}) {
+		t.Fatalf("expected test combat profile %q registration to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RetaliationOwner", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 5
+	issuePeerTicket(t, store, "retaliation-owner", 0x11111111, owner)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000456, 0)
+	runtime.now = func() time.Time { return currentTime }
+	bundle := contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.custom_retaliation_delta",
+		Name:          "PracticeCustomRetaliationDelta",
+		MapIndex:      bootstrapMapIndex,
+		X:             1200,
+		Y:             2200,
+		RaceNum:       101,
+		CombatProfile: profile,
+	}}}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import custom-retaliation content spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime custom-retaliation actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "retaliation-owner", 0x11111111)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible custom-retaliation mob, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected custom-retaliation target-selection error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 self-only target frame before custom-retaliation hit, got %d", len(selectOut))
+	}
+
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected custom-retaliation attack error: %v", err)
+	}
+	if len(attackOut) != 3 {
+		t.Fatalf("expected target-refresh, self-only custom retaliation point-loss, and self damage-info frames, got %d", len(attackOut))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode custom-retaliation immediate point-change frame: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != -2 || pointChange.Value != owner.Points[bootstrapPlayerPointValueIndex]-2 {
+		t.Fatalf("unexpected custom-retaliation immediate point-change packet: %+v", pointChange)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	queued := flushServerFrames(t, flow)
+	if len(queued) != 1 {
+		t.Fatalf("expected exactly 1 queued custom-retaliation delayed beat after the owned delay, got %d frames", len(queued))
+	}
+	delayedPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode custom-retaliation delayed point-change frame: %v", err)
+	}
+	if delayedPointChange.VID != owner.VID || delayedPointChange.Type != bootstrapPlayerPointType || delayedPointChange.Amount != -2 || delayedPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex]-4 {
+		t.Fatalf("unexpected custom-retaliation delayed point-change packet: %+v", delayedPointChange)
+	}
+}
+
 func TestGameSessionFlowPracticeMobFirstHostileRetaliationAppliesSelfOnlyPointLossOnAcceptedOwnerHit(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -35035,6 +35124,68 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationOverPlainTCP(t 
 	secondDelayed := h.drainDelayedRetaliation(t, "second delayed tcp server-origin retaliation")
 	if secondDelayed.Value != 47 {
 		t.Fatalf("expected second tcp delayed retaliation cadence beat to reduce player HP to 47, got %+v", secondDelayed)
+	}
+}
+
+func TestGameSessionFlowPracticeMobCustomRetaliationPointDeltaOverPlainTCP(t *testing.T) {
+	profile := worldruntime.StaticActorCombatProfileSnapshot{
+		Profile:               "tcp_custom_retaliation_mob",
+		MaxHP:                 6,
+		AttackValue:           4,
+		DefenseValue:          2,
+		RespawnDelayMs:        worldruntime.TrainingDummyBootstrapRespawnDelay.Milliseconds(),
+		RetaliationPointDelta: -2,
+	}
+	h := newPracticeMobTCPCustomProfileRewardHarness(t, "tcp-custom-retaliation", 0x7c7c7c7c, "practice.mob_tcp_custom_retaliation", 5, profile)
+	defer h.close(t)
+
+	selected := h.selectTarget(t)
+	if selected.TargetVID != h.targetID || selected.HPPercent != 100 {
+		t.Fatalf("expected tcp custom-retaliation pre-attack select to return full-HP mob %d, got %+v", h.targetID, selected)
+	}
+	frames := h.attack(t)
+	refresh, err := combatproto.DecodeServerTarget(frames[0])
+	if err != nil {
+		t.Fatalf("decode tcp custom-retaliation immediate target refresh: %v", err)
+	}
+	if refresh.TargetVID != h.targetID || refresh.HPPercent != 66 {
+		t.Fatalf("expected tcp custom-retaliation immediate attack to refresh target %d at 66%% HP, got %+v", h.targetID, refresh)
+	}
+	immediate, err := worldproto.DecodePlayerPointChange(frames[1])
+	if err != nil {
+		t.Fatalf("decode tcp custom-retaliation immediate point-change: %v", err)
+	}
+	if immediate.Type != bootstrapPlayerPointValueIndex || immediate.Amount != -2 || immediate.Value != 3 {
+		t.Fatalf("expected tcp custom-retaliation immediate tick to reduce player HP by 2 to 3, got %+v", immediate)
+	}
+
+	h.advance(bootstrapPracticeMobServerOriginRetaliationDelay)
+	firstDelayed := h.drainDelayedRetaliation(t, "custom-delta tcp server-origin retaliation")
+	if firstDelayed.Amount != -2 || firstDelayed.Value != 1 {
+		t.Fatalf("expected first tcp custom-retaliation delayed beat to reduce player HP by 2 to 1, got %+v", firstDelayed)
+	}
+
+	h.advance(bootstrapPracticeMobServerOriginRetaliationDelay)
+	floorPointChange, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp custom-retaliation delayed floor point-change: %v", err)
+	}
+	if floorPointChange.Type != bootstrapPlayerPointValueIndex || floorPointChange.Amount != -1 || floorPointChange.Value != 0 {
+		t.Fatalf("expected tcp custom-retaliation delayed floor to clamp by 1 to 0, got %+v", floorPointChange)
+	}
+	dead, err := worldproto.DecodeDead(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp custom-retaliation delayed floor self dead: %v", err)
+	}
+	if dead.VID != 0x02040131 {
+		t.Fatalf("expected tcp custom-retaliation delayed floor self dead for selected character VID 0x02040131, got %+v", dead)
+	}
+	clear, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp custom-retaliation delayed floor target clear: %v", err)
+	}
+	if clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected tcp custom-retaliation delayed floor to clear target, got %+v", clear)
 	}
 }
 

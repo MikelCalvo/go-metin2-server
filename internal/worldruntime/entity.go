@@ -35,6 +35,7 @@ const (
 	PracticeMobBootstrapLevel                 uint16 = 1
 	PracticeMobBootstrapRank                  uint8  = 0
 	PracticeMobBootstrapRespawnDelay                 = 2 * time.Second
+	PracticeMobBootstrapRetaliationPointDelta int32  = -1
 )
 
 type Entity struct {
@@ -121,6 +122,7 @@ type StaticActorCombatProfileDefaults struct {
 	Level                 uint16
 	Rank                  uint8
 	RespawnDelay          time.Duration
+	RetaliationPointDelta int32
 	DeathReward           StaticActorDeathReward
 }
 
@@ -133,6 +135,7 @@ type StaticActorCombatProfileSnapshot struct {
 	Level                 uint16                 `json:"level"`
 	Rank                  uint8                  `json:"rank"`
 	RespawnDelayMs        int64                  `json:"respawn_delay_ms"`
+	RetaliationPointDelta int32                  `json:"retaliation_point_delta,omitempty"`
 	DeathReward           StaticActorDeathReward `json:"death_reward"`
 }
 
@@ -146,6 +149,9 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 		return false
 	}
 	if !ValidStaticActorDeathReward(defaults.DeathReward) {
+		return false
+	}
+	if defaults.RetaliationPointDelta > 0 {
 		return false
 	}
 	hasLegacyDamage := defaults.DamagePerNormalAttack != 0
@@ -192,6 +198,7 @@ func StaticActorCombatProfileSnapshots() []StaticActorCombatProfileSnapshot {
 			Level:                 PracticeMobBootstrapLevel,
 			Rank:                  PracticeMobBootstrapRank,
 			RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+			RetaliationPointDelta: PracticeMobBootstrapRetaliationPointDelta,
 		}),
 		staticActorCombatProfileSnapshot(StaticActorCombatProfileTrainingDummy, StaticActorCombatProfileDefaults{
 			MaxHP:                 TrainingDummyBootstrapMaxHP,
@@ -201,6 +208,7 @@ func StaticActorCombatProfileSnapshots() []StaticActorCombatProfileSnapshot {
 			Level:                 TrainingDummyBootstrapLevel,
 			Rank:                  TrainingDummyBootstrapRank,
 			RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+			RetaliationPointDelta: PracticeMobBootstrapRetaliationPointDelta,
 		}),
 	}
 	staticActorCombatProfileRegistry.RLock()
@@ -216,7 +224,7 @@ func StaticActorCombatProfileSnapshots() []StaticActorCombatProfileSnapshot {
 
 func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombatProfileDefaults) StaticActorCombatProfileSnapshot {
 	defaults = cloneStaticActorCombatProfileDefaults(defaults)
-	return StaticActorCombatProfileSnapshot{
+	snapshot := StaticActorCombatProfileSnapshot{
 		Profile:               profile,
 		MaxHP:                 defaults.MaxHP,
 		DamagePerNormalAttack: defaults.DamagePerNormalAttack,
@@ -227,6 +235,10 @@ func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombat
 		RespawnDelayMs:        defaults.RespawnDelay.Milliseconds(),
 		DeathReward:           defaults.DeathReward.Clone(),
 	}
+	if defaults.RetaliationPointDelta != PracticeMobBootstrapRetaliationPointDelta {
+		snapshot.RetaliationPointDelta = defaults.RetaliationPointDelta
+	}
+	return snapshot
 }
 
 func validStaticActorCombatProfileName(profile string) bool {
@@ -256,6 +268,9 @@ func cloneStaticActorCombatProfileDefaults(defaults StaticActorCombatProfileDefa
 	}
 	if defaults.Level == 0 {
 		defaults.Level = TrainingDummyBootstrapLevel
+	}
+	if defaults.RetaliationPointDelta == 0 {
+		defaults.RetaliationPointDelta = PracticeMobBootstrapRetaliationPointDelta
 	}
 	defaults.DeathReward = defaults.DeathReward.Clone()
 	return defaults
@@ -298,6 +313,7 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 			Level:                 TrainingDummyBootstrapLevel,
 			Rank:                  TrainingDummyBootstrapRank,
 			RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+			RetaliationPointDelta: PracticeMobBootstrapRetaliationPointDelta,
 			DeathReward:           StaticActorDeathReward{},
 		}, true
 	case StaticActorCombatProfilePracticeMob:
@@ -309,6 +325,7 @@ func BootstrapStaticActorCombatProfileDefaults(combatKind string) (StaticActorCo
 			Level:                 PracticeMobBootstrapLevel,
 			Rank:                  PracticeMobBootstrapRank,
 			RespawnDelay:          PracticeMobBootstrapRespawnDelay,
+			RetaliationPointDelta: PracticeMobBootstrapRetaliationPointDelta,
 			DeathReward:           StaticActorDeathReward{},
 		}, true
 	default:
@@ -344,6 +361,14 @@ func BootstrapStaticActorDeathReward(combatKind string) (StaticActorDeathReward,
 		return StaticActorDeathReward{}, false
 	}
 	return defaults.DeathReward.Clone(), true
+}
+
+func BootstrapStaticActorRetaliationPointDelta(combatKind string) (int32, bool) {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatKind)
+	if !ok {
+		return 0, false
+	}
+	return bootstrapStaticActorRetaliationPointDelta(defaults), true
 }
 
 func BootstrapStaticActorHPPercent(combatKind string, currentHP uint8) (uint8, bool) {
@@ -393,6 +418,13 @@ func bootstrapStaticActorNormalAttackDamage(defaults StaticActorCombatProfileDef
 		return defaults.MaxHP
 	}
 	return uint8(damage)
+}
+
+func bootstrapStaticActorRetaliationPointDelta(defaults StaticActorCombatProfileDefaults) int32 {
+	if defaults.RetaliationPointDelta == 0 {
+		return PracticeMobBootstrapRetaliationPointDelta
+	}
+	return defaults.RetaliationPointDelta
 }
 
 func bootstrapStaticActorHPPercent(currentHP uint8, maxHP uint8) uint8 {
