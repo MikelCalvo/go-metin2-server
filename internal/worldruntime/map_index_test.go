@@ -606,6 +606,40 @@ func TestMapIndexRegisterStaticRejectsPlayerVisibilityVIDCollision(t *testing.T)
 	}
 }
 
+func TestMapIndexRegisterStaticRejectsInvalidStaticActorName(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, Name: string([]byte{'B', 'a', 'd', 0xff})}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+
+	if index.RegisterStatic(actor) {
+		t.Fatal("expected static actor with invalid UTF-8 name to fail closed")
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor name not to enter map presence, got %+v", actors)
+	}
+}
+
+func TestMapIndexUpdateStaticRejectsInvalidStaticActorName(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	actor := StaticEntity{Entity: Entity{ID: 8, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}
+	if !index.RegisterStatic(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := actor
+	updated.Entity.Name = string([]byte{'B', 'a', 'd', 0xff})
+	updated.Position = NewPosition(99, 900, 1200)
+	if index.UpdateStatic(updated) {
+		t.Fatal("expected invalid UTF-8 static actor name update to fail closed")
+	}
+	actors := index.StaticActors(42)
+	if len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" || actors[0].Position != actor.Position {
+		t.Fatalf("expected rejected name update to preserve original map presence, got %+v", actors)
+	}
+	if actors := index.StaticActors(99); len(actors) != 0 {
+		t.Fatalf("expected rejected name update not to insert destination map presence, got %+v", actors)
+	}
+}
+
 func TestMapIndexUpdateRejectsPlayerVisibilityVIDCollisionWithStaticActor(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	player := newPlayerEntity(99, entityRegistryCharacter("Alpha", 0x02040177, 42, 1100, 2100))

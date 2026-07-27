@@ -3,6 +3,7 @@ package worldruntime
 import (
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 )
@@ -145,7 +146,7 @@ func cloneStaticEntity(actor StaticEntity) StaticEntity {
 
 func validStaticEntity(actor StaticEntity) bool {
 	actor = normalizeStaticEntityCombat(actor)
-	if !ValidStaticActorVisibilityEntityID(actor.Entity.ID) || actor.Entity.Kind != EntityKindStaticActor || !actor.Position.Valid() || !ValidStaticActorVisibilityRaceNum(actor.RaceNum) || !ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) || !ValidStaticActorCombatProfile(actor.CombatProfile) || !ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) || !ValidStaticActorDeathReward(actor.DeathReward) {
+	if !ValidStaticActorVisibilityEntityID(actor.Entity.ID) || actor.Entity.Kind != EntityKindStaticActor || !ValidStaticActorName(actor.Entity.Name) || !actor.Position.Valid() || !ValidStaticActorVisibilityRaceNum(actor.RaceNum) || !ValidStaticActorInteractionMetadata(actor.InteractionKind, actor.InteractionRef) || !ValidStaticActorCombatProfile(actor.CombatProfile) || !ValidStaticActorSpawnGroupRef(actor.SpawnGroupRef) || !ValidStaticActorDeathReward(actor.DeathReward) {
 		return false
 	}
 	if actor.SpawnGroupRef != "" {
@@ -156,6 +157,11 @@ func validStaticEntity(actor StaticEntity) bool {
 
 func ValidStaticActorVisibilityRaceNum(raceNum uint32) bool {
 	return raceNum != 0 && raceNum <= uint32(^uint16(0))
+}
+
+func ValidStaticActorName(name string) bool {
+	name = strings.TrimSpace(name)
+	return name != "" && utf8.ValidString(name) && !strings.ContainsRune(name, '\x00')
 }
 
 func ValidStaticActorInteractionMetadata(kind string, ref string) bool {

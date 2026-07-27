@@ -4,7 +4,6 @@ import (
 	"errors"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -110,8 +109,7 @@ func validInteractionMetadata(kind string, ref string) bool {
 }
 
 func validStaticActorName(name string) bool {
-	name = strings.TrimSpace(name)
-	return name != "" && utf8.ValidString(name) && !strings.ContainsRune(name, '\x00')
+	return worldruntime.ValidStaticActorName(name)
 }
 
 func validBootstrapEntityID(entityID uint64) bool {

@@ -569,6 +569,7 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 }
 
 func (m *MapIndex) RegisterStatic(actor StaticEntity) bool {
+	actor = normalizeStaticEntityCombat(actor)
 	if m == nil || !validStaticEntity(actor) {
 		return false
 	}
@@ -601,6 +602,7 @@ func (m *MapIndex) RegisterStatic(actor StaticEntity) bool {
 }
 
 func (m *MapIndex) UpdateStatic(actor StaticEntity) bool {
+	actor = normalizeStaticEntityCombat(actor)
 	if m == nil || !validStaticEntity(actor) {
 		return false
 	}

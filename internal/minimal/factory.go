@@ -18,7 +18,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	authflow "github.com/MikelCalvo/go-metin2-server/internal/auth"
@@ -6675,8 +6674,7 @@ func (r *gameRuntime) interactionDefinitionExists(kind string, ref string) bool 
 }
 
 func validStaticActorRuntimeName(name string) bool {
-	name = strings.TrimSpace(name)
-	return name != "" && utf8.ValidString(name) && !strings.ContainsRune(name, '\x00')
+	return worldruntime.ValidStaticActorName(name)
 }
 
 func (r *gameRuntime) persistStaticActorSnapshot(snapshot []StaticActorSnapshot) bool {

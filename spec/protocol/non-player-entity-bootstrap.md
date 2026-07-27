@@ -53,8 +53,8 @@ A bootstrap non-player actor is only required to own:
 - effective map presence
 - map coordinates
 - one minimal class/template identifier suitable for future packet/content work
-- optional display/name identifier for deterministic lookup, debugging, or tooling
-- operator/runtime static-actor names are trimmed before use and must be non-empty, valid UTF-8, and embedded-NUL-free; create/update requests and direct runtime calls fail closed before persistence or world mutation when that name policy is violated
+- display/name identifier for deterministic lookup, debugging, or tooling
+- operator/runtime static-actor names are trimmed before use and must be non-empty, valid UTF-8, and embedded-NUL-free; `internal/worldruntime` now owns the shared validator consumed by non-player directories, map indexes, entity registries, persistence, and minimal runtime create/update calls, so invalid names fail closed before persistence or world mutation even on lower-level runtime seams
 - a non-zero entity identity that fits the current client-visible static-actor `VID` projection (`uint32`) plus a non-zero class/template/race identifier that fits the current bootstrap `CHARACTER_ADD` wire projection (`uint16`); runtime registration/update and file-backed restore fail closed instead of accepting unencodable static actors that later visibility or interaction paths would have to skip, and content-bundle import remains indirectly guarded by the runtime allocation/registration path plus the same race-number projection
 - optional interaction-ready metadata (`interaction_kind` / `interaction_ref`) limited to the currently owned interaction-definition kinds, so unsupported actor behaviors fail closed at runtime registration/update instead of becoming visible dangling content
 
@@ -68,7 +68,7 @@ The first runtime-owned non-player actor should be representable with fields equ
 - `entity kind`
 - `position { map, x, y }`
 - `class/template/race identifier`
-- optional `name` or stable label
+- non-empty `name` or stable label
 
 The exact Go type names can evolve, but the ownership boundary should stay this small.
 

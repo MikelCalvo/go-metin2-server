@@ -1042,6 +1042,49 @@ func TestEntityRegistryRejectsStaticActorEntityIDAboveVisibilityVIDRange(t *test
 	}
 }
 
+func TestEntityRegistryRejectsInvalidStaticActorNames(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: string([]byte{'B', 'a', 'd', 0xff})}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if ok {
+		t.Fatalf("expected invalid UTF-8 static actor name to fail closed, got %+v", actor)
+	}
+	if next := registry.NextEntityID(); next != 1 {
+		t.Fatalf("expected rejected static actor not to consume entity ID, got next=%d", next)
+	}
+	if actors := registry.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor not to enter runtime snapshots, got %+v", actors)
+	}
+	if actors := registry.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected rejected static actor not to enter map presence, got %+v", actors)
+	}
+}
+
+func TestEntityRegistryRejectsInvalidStaticActorNameUpdates(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := actor
+	updated.Entity.Name = string([]byte{'B', 'a', 'd', 0xff})
+	updated.Position = NewPosition(99, 900, 1200)
+	if result, ok := registry.UpdateStaticActor(updated); ok {
+		t.Fatalf("expected invalid UTF-8 static actor name update to fail closed, got %+v", result)
+	}
+	lookup, ok := registry.StaticActor(actor.Entity.ID)
+	if !ok || lookup.Entity.Name != "VillageGuard" || lookup.Position != actor.Position {
+		t.Fatalf("expected rejected name update to preserve original actor, got actor=%+v ok=%v", lookup, ok)
+	}
+	actors := registry.StaticActors(42)
+	if len(actors) != 1 || actors[0].Entity.ID != actor.Entity.ID || actors[0].Entity.Name != "VillageGuard" {
+		t.Fatalf("expected rejected name update to preserve original map presence, got %+v", actors)
+	}
+	if actors := registry.StaticActors(99); len(actors) != 0 {
+		t.Fatalf("expected rejected name update not to insert destination map presence, got %+v", actors)
+	}
+}
+
 func TestEntityRegistryRegistersAndLooksUpStaticActors(t *testing.T) {
 	registry := NewEntityRegistry()
 	registered, ok := registry.RegisterStaticActor(StaticEntity{Entity: Entity{Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300})

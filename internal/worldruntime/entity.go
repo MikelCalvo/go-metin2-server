@@ -304,6 +304,7 @@ func staticActorCombatProfile(profile string, kind string) string {
 }
 
 func normalizeStaticEntityCombat(actor StaticEntity) StaticEntity {
+	actor.Entity.Name = strings.TrimSpace(actor.Entity.Name)
 	profile := staticActorCombatProfile(actor.CombatProfile, actor.CombatKind)
 	actor.CombatProfile = profile
 	actor.CombatKind = profile

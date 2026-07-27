@@ -43,6 +43,30 @@ func TestNonPlayerDirectoryRejectsStaticActorsWithUnencodableVisibilityID(t *tes
 	}
 }
 
+func TestNonPlayerDirectoryRejectsInvalidStaticActorNames(t *testing.T) {
+	for name, actorName := range map[string]string{
+		"blank":        "   ",
+		"embedded NUL": "Visible\x00Hidden",
+		"invalid utf8": string([]byte{'B', 'a', 'd', 0xff}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			directory := NewNonPlayerDirectory()
+			actor := StaticEntity{
+				Entity:   Entity{ID: 2, Kind: EntityKindStaticActor, Name: actorName},
+				Position: NewPosition(42, 1700, 2800),
+				RaceNum:  20300,
+			}
+
+			if directory.Register(actor) {
+				t.Fatal("expected static actor with invalid runtime name to fail closed")
+			}
+			if _, ok := directory.ByEntityID(actor.Entity.ID); ok {
+				t.Fatal("expected rejected static actor name not to be indexed by entity ID")
+			}
+		})
+	}
+}
+
 func TestNonPlayerDirectoryRejectsPathAmbiguousInteractionRef(t *testing.T) {
 	directory := NewNonPlayerDirectory()
 	actor := StaticEntity{
@@ -357,6 +381,29 @@ func TestNonPlayerDirectoryUpdateReplacesStaticActorByEntityID(t *testing.T) {
 	}
 	if lookup.Entity.Name != "Blacksmith" || lookup.Position != NewPosition(99, 900, 1200) || lookup.RaceNum != 20016 {
 		t.Fatalf("unexpected static actor after update: %+v", lookup)
+	}
+}
+
+func TestNonPlayerDirectoryUpdateRejectsInvalidStaticActorName(t *testing.T) {
+	directory := NewNonPlayerDirectory()
+	actor := StaticEntity{
+		Entity:   Entity{ID: 8, Kind: EntityKindStaticActor, Name: "VillageGuard"},
+		Position: NewPosition(42, 1700, 2800),
+		RaceNum:  20300,
+	}
+	if !directory.Register(actor) {
+		t.Fatal("expected static actor registration to succeed")
+	}
+
+	updated := actor
+	updated.Entity.Name = string([]byte{'B', 'a', 'd', 0xff})
+	updated.Position = NewPosition(99, 900, 1200)
+	if directory.Update(updated) {
+		t.Fatal("expected invalid UTF-8 static actor name update to fail closed")
+	}
+	lookup, ok := directory.ByEntityID(actor.Entity.ID)
+	if !ok || lookup.Entity.Name != "VillageGuard" || lookup.Position != actor.Position {
+		t.Fatalf("expected rejected name update to preserve original static actor, got actor=%+v ok=%v", lookup, ok)
 	}
 }
 
