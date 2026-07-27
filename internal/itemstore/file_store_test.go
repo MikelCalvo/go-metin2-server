@@ -1058,6 +1058,40 @@ func TestFileStoreSaveRejectsInvalidUseEffectMetadata(t *testing.T) {
 		t.Fatalf("expected ErrInvalidSnapshot for missing use-effect message, got %v", err)
 	}
 
+	nulMessage := Snapshot{Templates: []Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{PointType: 7, PointIndex: 1, PointDelta: 25, Message: "consume\x00hidden"},
+	}}}
+	if err := store.Save(nulMessage); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL use-effect message, got %v", err)
+	}
+
+	nulInfoMessage := Snapshot{Templates: []Template{{
+		Vnum:      27002,
+		Name:      "Practice Elixir",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &UseEffect{PointType: 7, PointIndex: 1, PointDelta: 25, Message: "consume:27002:+25", InfoMessage: "visible\x00hidden"},
+	}}}
+	if err := store.Save(nulInfoMessage); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL use-effect info_message, got %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27002,"name":"Practice Elixir","stackable":true,"max_count":200,"use_effect":{"point_type":7,"point_index":1,"point_delta":25,"message":"consume\u0000hidden"}}]}`), 0o644); err != nil {
+		t.Fatalf("write NUL use-effect message snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for loaded NUL use-effect message, got %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27002,"name":"Practice Elixir","stackable":true,"max_count":200,"use_effect":{"point_type":7,"point_index":1,"point_delta":25,"message":"consume:27002:+25","info_message":"visible\u0000hidden"}}]}`), 0o644); err != nil {
+		t.Fatalf("write NUL use-effect info_message snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for loaded NUL use-effect info_message, got %v", err)
+	}
+
 	zeroType := Snapshot{Templates: []Template{{
 		Vnum:      27002,
 		Name:      "Practice Elixir",

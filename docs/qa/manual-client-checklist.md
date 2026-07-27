@@ -246,7 +246,7 @@ Expected result:
 - a consumable whose resolved template `max_count` cannot fit the current one-byte item refresh count range fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose template-authored point delta would overflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - a consumable whose template-authored negative point delta would underflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
-- the placeholder `CHAT_TYPE_INFO` message uses template-authored `use_effect.info_message` when non-empty, otherwise it falls back to `use_effect.message` for older templates and the built-in bootstrap fallback
+- the placeholder `CHAT_TYPE_INFO` message uses template-authored `use_effect.info_message` when non-empty, otherwise it falls back to `use_effect.message` for older templates and the built-in bootstrap fallback; authored snapshots with embedded NUL bytes in either field should fail item-template validation/runtime startup rather than reaching the client as truncated chat text
 
 ### 4.5.2 Drag stack onto stack (`ITEM_USE_TO_ITEM`)
 

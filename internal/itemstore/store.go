@@ -504,6 +504,9 @@ func validUseEffect(effect *UseEffect, template Template) bool {
 	if consumeCount > template.MaxCount {
 		return false
 	}
+	if !validTemplateMessage(effect.Message) || !validTemplateMessage(effect.InfoMessage) {
+		return false
+	}
 	return strings.TrimSpace(effect.Message) != ""
 }
 

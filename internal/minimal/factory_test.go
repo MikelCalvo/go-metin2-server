@@ -1254,6 +1254,35 @@ func TestGameRuntimeFailsClosedForCorruptItemTemplateStoreAtStartup(t *testing.T
 	}
 }
 
+func TestGameRuntimeFailsClosedForNULUseEffectItemTemplateTextAtStartup(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{
+			name: "message",
+			raw:  `{"templates":[{"vnum":27002,"name":"Practice Elixir","stackable":true,"max_count":200,"use_effect":{"point_type":7,"point_index":1,"point_delta":25,"message":"consume\u0000hidden"}}]}`,
+		},
+		{
+			name: "info_message",
+			raw:  `{"templates":[{"vnum":27002,"name":"Practice Elixir","stackable":true,"max_count":200,"use_effect":{"point_type":7,"point_index":1,"point_delta":25,"message":"consume:27002:+25","info_message":"visible\u0000hidden"}}]}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			itemPath := filepath.Join(t.TempDir(), "item-templates.json")
+			if err := os.WriteFile(itemPath, []byte(tc.raw), 0o644); err != nil {
+				t.Fatalf("write NUL use-effect item template snapshot: %v", err)
+			}
+
+			_, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, itemcatalog.NewFileStore(itemPath), nil)
+			if !errors.Is(err, itemcatalog.ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for NUL use-effect %s at runtime boot, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func (s staticItemTemplateStore) Load() (itemcatalog.Snapshot, error) {
 	return s.snapshot, nil
 }

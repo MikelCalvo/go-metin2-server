@@ -150,7 +150,7 @@ The temporary self-facing effect placeholder is intentionally text-backed in thi
 - deterministic message text from `template.use_effect.info_message` when it is non-empty
 - if `info_message` is omitted, deterministic fallback text from `template.use_effect.message`
 
-For the current seeded bootstrap consumable template this still means `consume:27001:+50` because the built-in fallback snapshot does not author `info_message`. Authored template snapshots can now keep the internal effect/debug token in `message` while exposing a different player-facing placeholder through `info_message`.
+For the current seeded bootstrap consumable template this still means `consume:27001:+50` because the built-in fallback snapshot does not author `info_message`. Authored template snapshots can now keep the internal effect/debug token in `message` while exposing a different player-facing placeholder through `info_message`. Both `message` and `info_message` are rejected at the item-template store/runtime-load boundary when they contain embedded NUL bytes so the self-only chat placeholder cannot be silently truncated.
 
 This effect placeholder exists only because there is not yet an owned visual-effect packet family wired through the runtime.
 
