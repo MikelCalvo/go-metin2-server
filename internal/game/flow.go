@@ -381,6 +381,9 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		if err != nil {
 			return nil, err
 		}
+		if packet.AttackType != combatproto.ClientAttackTypeNormal {
+			return nil, nil
+		}
 		result := f.handleAttack(packet)
 		if !result.Accepted {
 			return nil, nil

@@ -96,6 +96,7 @@ An `ATTACK` request is only eligible when all of the following are true:
 - the session is already in `GAME`
 - the session still owns a selected live character
 - that live character currently holds one active combat target from the existing `TARGET` selection contract
+- the game-flow dispatcher decodes the fixed-width packet and rejects any `attack_type != 0` before invoking runtime combat handlers, so unsupported attack modes stay silent and cannot mutate world combat state
 - the request uses `attack_type = 0` for the first normal-attack bootstrap path
 - the request `target_vid` exactly matches the session's currently selected combat target
 - that selected target still resolves to a visible same-map bootstrap practice target (`training_dummy` or `practice_mob` today)

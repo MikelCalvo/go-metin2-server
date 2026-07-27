@@ -227,7 +227,7 @@ Already present:
 
 - non-player entity directory,
 - static/non-player combat profiles,
-- target selection, client-originated silent target clear, and normal attack packet ingress,
+- target selection, client-originated silent target clear, normal attack packet ingress, and game-flow rejection of unsupported attack types before runtime mutation,
 - selected-target snapshot/version checks,
 - loopback combat-target introspection for selected-target ownership and HP debugging,
 - no-op content-bundle reimports and failed replacement rollbacks that preserve live practice-mob HP, selected-target ownership, combat snapshot/respawn state, and visibility state when authored content has not committed,

@@ -835,6 +835,36 @@ func TestHandleClientFrameAcceptsAttackInGameAndReturnsFrames(t *testing.T) {
 	}
 }
 
+func TestHandleClientFrameRejectsUnsupportedAttackTypeBeforeHandler(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	invoked := false
+	flow := NewFlow(machine, Config{
+		HandleAttack: func(packet combatproto.ClientAttackPacket) AttackResult {
+			invoked = true
+			return AttackResult{Accepted: true, Frames: [][]byte{[]byte("unsupported-attack-accepted")}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType:   combatproto.ClientAttackTypeNormal + 1,
+		TargetVID:    0x02040107,
+		CRCProcPiece: 0x12,
+		CRCFilePiece: 0x34,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected unsupported attack dispatch error: %v", err)
+	}
+	if invoked {
+		t.Fatal("unsupported attack type should fail closed before invoking the runtime handler")
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected unsupported attack type to emit no frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsShopEndInGameAndReturnsFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	expected := control.EncodePing(control.PingPacket{ServerTime: 0x01020304})
