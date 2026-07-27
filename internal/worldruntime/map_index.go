@@ -439,6 +439,9 @@ func (m *MapIndex) PlayerCharacters(mapIndex uint32) []loginticket.Character {
 	}
 	characters := make([]loginticket.Character, 0, len(bucket))
 	for _, player := range bucket {
+		if m.playerMapPresenceBlockedByStaticMapLocked(player) {
+			continue
+		}
 		characters = append(characters, cloneCharacterSnapshot(player.Character))
 	}
 	sortCharacters(characters)
@@ -463,6 +466,9 @@ func (m *MapIndex) AllPlayers() []PlayerEntity {
 
 	playersByID := make(map[uint64]PlayerEntity, len(m.byEntityID))
 	for _, player := range m.byEntityID {
+		if m.playerMapPresenceBlockedByStaticMapLocked(player) {
+			continue
+		}
 		playersByID[player.Entity.ID] = clonePlayerEntity(player)
 	}
 
@@ -484,6 +490,10 @@ func (m *MapIndex) AllPlayers() []PlayerEntity {
 		})
 		for _, entityID := range entityIDs {
 			if _, exists := playersByID[entityID]; exists {
+				continue
+			}
+			if m.playerMapPresenceBlockedByStaticMapLocked(bucket[entityID]) {
+				m.removePlayerMapPresenceLocked(entityID)
 				continue
 			}
 			playersByID[entityID] = clonePlayerEntity(bucket[entityID])
@@ -532,15 +542,24 @@ func (m *MapIndex) Snapshot() []MapOccupancy {
 	for mapIndex := range mapIndices {
 		characters := make([]loginticket.Character, 0, len(m.byMapIndex[mapIndex]))
 		for _, player := range m.byMapIndex[mapIndex] {
+			if m.playerMapPresenceBlockedByStaticMapLocked(player) {
+				continue
+			}
 			characters = append(characters, cloneCharacterSnapshot(player.Character))
 		}
 		sortCharacters(characters)
 
 		actors := make([]StaticEntity, 0, len(m.staticByMapIndex[mapIndex]))
 		for _, actor := range m.staticByMapIndex[mapIndex] {
+			if m.staticMapPresenceBlockedByPlayerMapLocked(actor) {
+				continue
+			}
 			actors = append(actors, cloneStaticEntity(actor))
 		}
 		sortStaticEntities(actors)
+		if len(characters) == 0 && len(actors) == 0 {
+			continue
+		}
 
 		snapshots = append(snapshots, MapOccupancy{MapIndex: mapIndex, Characters: characters, StaticActors: actors})
 	}
@@ -963,8 +982,61 @@ func (m *MapIndex) StaticActors(mapIndex uint32) []StaticEntity {
 	}
 	actors := make([]StaticEntity, 0, len(bucket))
 	for _, actor := range bucket {
+		if m.staticMapPresenceBlockedByPlayerMapLocked(actor) {
+			continue
+		}
 		actors = append(actors, cloneStaticEntity(actor))
 	}
 	sortStaticEntities(actors)
 	return actors
+}
+
+func (m *MapIndex) playerMapPresenceBlockedByStaticMapLocked(player PlayerEntity) bool {
+	if player.Entity.ID == 0 {
+		return true
+	}
+	if _, primary := m.byEntityID[player.Entity.ID]; !primary {
+		return false
+	}
+	return m.staticActorMapVisibilityVIDPresenceLocked(player.Entity.VID, player.Entity.ID)
+}
+
+func (m *MapIndex) staticMapPresenceBlockedByPlayerMapLocked(actor StaticEntity) bool {
+	if actor.Entity.ID == 0 {
+		return true
+	}
+	if _, primary := m.staticByEntityID[actor.Entity.ID]; !primary {
+		return false
+	}
+	return m.playerMapVisibilityVIDPresenceLocked(actor, actor.Entity.ID)
+}
+
+func (m *MapIndex) staticActorMapVisibilityVIDPresenceLocked(vid uint32, entityID uint64) bool {
+	if vid == 0 {
+		return false
+	}
+	for _, bucket := range m.staticByMapIndex {
+		for _, actor := range bucket {
+			actorVID, ok := StaticActorVisibilityVID(actor)
+			if ok && actorVID == vid && actor.Entity.ID != entityID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (m *MapIndex) playerMapVisibilityVIDPresenceLocked(actor StaticEntity, entityID uint64) bool {
+	vid, ok := StaticActorVisibilityVID(actor)
+	if !ok {
+		return false
+	}
+	for _, bucket := range m.byMapIndex {
+		for _, player := range bucket {
+			if player.Entity.VID == vid && player.Entity.ID != entityID {
+				return true
+			}
+		}
+	}
+	return false
 }

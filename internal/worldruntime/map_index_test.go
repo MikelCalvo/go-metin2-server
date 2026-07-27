@@ -647,8 +647,11 @@ func TestMapIndexUpdateStaticRejectsPlayerVisibilityVIDCollision(t *testing.T) {
 	if index.UpdateStatic(updated) {
 		t.Fatal("expected static actor update to reject a player visibility-VID collision")
 	}
-	if actors := index.StaticActors(42); len(actors) != 1 || actors[0].Entity.Name != "VillageGuard" {
-		t.Fatalf("expected original static actor map presence to remain after rejected visible-ID update, got %+v", actors)
+	if actorLookup, ok := index.StaticActor(actor.Entity.ID); !ok || actorLookup.Entity.Name != "VillageGuard" || actorLookup.Position.MapIndex != 42 {
+		t.Fatalf("expected original static actor entity lookup to remain after rejected visible-ID update, got actor=%+v ok=%v", actorLookup, ok)
+	}
+	if actors := index.StaticActors(42); len(actors) != 0 {
+		t.Fatalf("expected direct static actor reader to suppress map presence while player visible-ID collision survives, got %+v", actors)
 	}
 	characters := index.PlayerCharacters(77)
 	if len(characters) != 1 || characters[0].Name != "MapOnlyAlpha" {
@@ -709,6 +712,31 @@ func TestMapIndexSnapshotDoesNotRepairPlayerPrimaryOverStaticVisibilityVIDCollis
 	}
 	if playerLookup, ok := index.Player(player.Entity.ID); !ok || playerLookup.Entity.Name != "Alpha" {
 		t.Fatalf("expected player entity lookup to remain available without rebuilding map presence, got player=%+v ok=%v", playerLookup, ok)
+	}
+}
+
+func TestMapIndexSnapshotSuppressesExistingPlayerBucketOverStaticVisibilityVIDCollision(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(16, entityRegistryCharacter("Alpha", 0x02040101, 42, 1100, 2100))
+	if !index.Register(player) {
+		t.Fatal("expected player registration to succeed")
+	}
+	actor := StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Kind: EntityKindStaticActor, Name: "MapOnlyGuard"}, Position: NewPosition(77, 1700, 2800), RaceNum: 20300}
+	index.staticByMapIndex[77] = map[uint64]StaticEntity{actor.Entity.ID: actor}
+
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected direct player reader to suppress existing player bucket over static actor visibility-VID collision, got %+v", characters)
+	}
+	actors := index.StaticActors(77)
+	if len(actors) != 1 || actors[0].Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected direct static reader to preserve static map presence, got %+v", actors)
+	}
+	snapshots := index.Snapshot()
+	if len(snapshots) != 1 || snapshots[0].MapIndex != 77 || len(snapshots[0].Characters) != 0 || len(snapshots[0].StaticActors) != 1 || snapshots[0].StaticActors[0].Entity.Name != "MapOnlyGuard" {
+		t.Fatalf("expected snapshot to suppress existing player bucket and preserve only static map presence, got %+v", snapshots)
+	}
+	if playerLookup, ok := index.Player(player.Entity.ID); !ok || playerLookup.Entity.Name != "Alpha" {
+		t.Fatalf("expected player entity lookup to remain available, got player=%+v ok=%v", playerLookup, ok)
 	}
 }
 
