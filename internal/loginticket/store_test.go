@@ -600,12 +600,28 @@ func TestFileStoreIssueRejectsEmptyLoginAndZeroLoginKey(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	cases := []Ticket{
 		{Login: "", LoginKey: 0x01020304},
+		{Login: "   ", LoginKey: 0x01020304},
+		{Login: " mkmk", LoginKey: 0x01020304},
+		{Login: "mkmk	", LoginKey: 0x01020304},
 		{Login: "mkmk", LoginKey: 0},
 	}
 	for _, ticket := range cases {
 		if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
 			t.Fatalf("expected ErrInvalidTicket for ticket %#v, got %v", ticket, err)
 		}
+	}
+}
+
+func TestFileStoreLoadRejectsWhitespaceSnapshotLogin(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":" mkmk ","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[]}`)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write whitespace-login ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for whitespace snapshot login, got %v", err)
 	}
 }
 
@@ -856,6 +872,39 @@ func TestFileStoreRejectsDuplicateCharacterIDs(t *testing.T) {
 
 	if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
 		t.Fatalf("expected ErrInvalidTicket for duplicate character id, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsNonZeroCharactersWithBlankNames(t *testing.T) {
+	cases := []struct {
+		name          string
+		characterName string
+	}{
+		{name: "empty", characterName: ""},
+		{name: "whitespace", characterName: "   "},
+		{name: "padded", characterName: " MkmkWar "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewFileStore(t.TempDir())
+			ticket := Ticket{Login: "mkmk", LoginKey: 0x12345678, Characters: []Character{{ID: 1, Name: tc.characterName}}}
+			if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+				t.Fatalf("expected ErrInvalidTicket for non-zero character name %q, got %v", tc.characterName, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreLoadRejectsNonZeroCharactersWithBlankNames(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","login_key":305419896,"empire":2,"issued_at":"2026-01-02T03:04:05Z","characters":[{"id":1,"name":" MkmkWar ","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.ticketPath(0x12345678), raw, 0o644); err != nil {
+		t.Fatalf("write whitespace-character-name ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x12345678)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for whitespace character name, got %v", err)
 	}
 }
 

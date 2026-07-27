@@ -250,8 +250,11 @@ func (s *FileStore) Load(login string) (Account, error) {
 	if s.dir == "" {
 		return Account{}, ErrStoreDirRequired
 	}
-	if login == "" {
+	if strings.TrimSpace(login) == "" {
 		return Account{}, ErrLoginRequired
+	}
+	if login != strings.TrimSpace(login) {
+		return Account{}, fmt.Errorf("%w: account login %q has leading or trailing whitespace", ErrInvalidAccount, login)
 	}
 
 	raw, err := os.ReadFile(s.accountPath(login))
@@ -277,8 +280,11 @@ func (s *FileStore) Save(account Account) error {
 	if s.dir == "" {
 		return ErrStoreDirRequired
 	}
-	if account.Login == "" {
+	if strings.TrimSpace(account.Login) == "" {
 		return ErrLoginRequired
+	}
+	if account.Login != strings.TrimSpace(account.Login) {
+		return fmt.Errorf("%w: account login %q has leading or trailing whitespace", ErrInvalidAccount, account.Login)
 	}
 	account.Characters = normalizeAccountCharacters(account.Characters)
 	if err := validateAccount(account); err != nil {
@@ -875,15 +881,19 @@ func validateUniqueCharacterIdentity(characters []loginticket.Character) error {
 			}
 			continue
 		}
+		trimmedName := strings.TrimSpace(character.Name)
+		if trimmedName == "" {
+			return fmt.Errorf("%w: character id %d has empty name", ErrInvalidAccount, character.ID)
+		}
+		if trimmedName != character.Name {
+			return fmt.Errorf("%w: character name %q has leading or trailing whitespace", ErrInvalidAccount, character.Name)
+		}
 		if previousName, ok := ids[character.ID]; ok {
 			return fmt.Errorf("%w: character id %d is used by %q and %q", ErrInvalidAccount, character.ID, previousName, character.Name)
 		}
 		ids[character.ID] = character.Name
 
-		normalizedName := strings.ToLower(strings.TrimSpace(character.Name))
-		if normalizedName == "" {
-			continue
-		}
+		normalizedName := strings.ToLower(character.Name)
 		if previousID, ok := names[normalizedName]; ok {
 			return fmt.Errorf("%w: character name %q is used by id %d and id %d", ErrInvalidAccount, character.Name, previousID, character.ID)
 		}
@@ -893,8 +903,11 @@ func validateUniqueCharacterIdentity(characters []loginticket.Character) error {
 }
 
 func validateLoadedAccountForLogin(requestedLogin string, account Account) error {
-	if account.Login == "" {
+	if strings.TrimSpace(account.Login) == "" {
 		return fmt.Errorf("%w: account login is empty", ErrInvalidAccount)
+	}
+	if account.Login != strings.TrimSpace(account.Login) {
+		return fmt.Errorf("%w: account login %q has leading or trailing whitespace", ErrInvalidAccount, account.Login)
 	}
 	if !strings.EqualFold(account.Login, requestedLogin) {
 		return fmt.Errorf("%w: snapshot login %q does not match requested login %q", ErrInvalidAccount, account.Login, requestedLogin)

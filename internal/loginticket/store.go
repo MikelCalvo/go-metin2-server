@@ -548,8 +548,11 @@ func decodeTicketStrict(raw []byte, ticket *Ticket) error {
 }
 
 func validateTicket(ticket Ticket) error {
-	if ticket.Login == "" {
+	if strings.TrimSpace(ticket.Login) == "" {
 		return fmt.Errorf("%w: login is required", ErrInvalidTicket)
+	}
+	if ticket.Login != strings.TrimSpace(ticket.Login) {
+		return fmt.Errorf("%w: login %q has leading or trailing whitespace", ErrInvalidTicket, ticket.Login)
 	}
 	if ticket.LoginKey == 0 {
 		return fmt.Errorf("%w: login key is required", ErrInvalidTicket)
@@ -590,15 +593,19 @@ func validateUniqueCharacterIdentity(characters []Character) error {
 			}
 			continue
 		}
+		trimmedName := strings.TrimSpace(character.Name)
+		if trimmedName == "" {
+			return fmt.Errorf("%w: character id %d has empty name", ErrInvalidTicket, character.ID)
+		}
+		if trimmedName != character.Name {
+			return fmt.Errorf("%w: character name %q has leading or trailing whitespace", ErrInvalidTicket, character.Name)
+		}
 		if previousName, ok := ids[character.ID]; ok {
 			return fmt.Errorf("%w: character id %d is used by %q and %q", ErrInvalidTicket, character.ID, previousName, character.Name)
 		}
 		ids[character.ID] = character.Name
 
-		normalizedName := strings.ToLower(strings.TrimSpace(character.Name))
-		if normalizedName == "" {
-			continue
-		}
+		normalizedName := strings.ToLower(character.Name)
 		if previousID, ok := names[normalizedName]; ok {
 			return fmt.Errorf("%w: character name %q is used by id %d and id %d", ErrInvalidTicket, character.Name, previousID, character.ID)
 		}

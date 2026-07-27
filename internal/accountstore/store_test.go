@@ -351,6 +351,41 @@ func TestFileStoreLoadRejectsEmptySnapshotLogin(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsWhitespaceAccountLogins(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	cases := []struct {
+		name    string
+		login   string
+		wantErr error
+	}{
+		{name: "blank", login: "   ", wantErr: ErrLoginRequired},
+		{name: "leading", login: " mkmk", wantErr: ErrInvalidAccount},
+		{name: "trailing", login: "mkmk	", wantErr: ErrInvalidAccount},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := store.Save(Account{Login: tc.login, Empire: 2})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v for account login %q, got %v", tc.wantErr, tc.login, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreLoadRejectsWhitespaceSnapshotLogin(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":" mkmk ","empire":2,"characters":[]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write whitespace-login account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for whitespace snapshot login, got %v", err)
+	}
+}
+
 func TestFileStoreLoadRejectsMismatchedSnapshotLogin(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	raw := []byte(`{"login":"shadow","empire":2,"characters":[]}`)
@@ -373,6 +408,39 @@ func TestFileStoreRejectsDuplicateCharacterIDs(t *testing.T) {
 
 	if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
 		t.Fatalf("expected ErrInvalidAccount for duplicate character id, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsNonZeroCharactersWithBlankNames(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	cases := []struct {
+		name          string
+		characterName string
+	}{
+		{name: "empty", characterName: ""},
+		{name: "whitespace", characterName: "   "},
+		{name: "padded", characterName: " MkmkWar "},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: tc.characterName}}}
+			if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
+				t.Fatalf("expected ErrInvalidAccount for non-zero character name %q, got %v", tc.characterName, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreLoadRejectsNonZeroCharactersWithBlankNames(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":" MkmkWar ","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write whitespace-character-name account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for whitespace character name, got %v", err)
 	}
 }
 
