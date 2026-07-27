@@ -245,6 +245,22 @@ func ValidStaticActorCombatProfileName(profile string) bool {
 	return validStaticActorCombatProfileName(profile)
 }
 
+func ValidStaticActorCombatProfileRespawnDelayMs(delayMs int64) bool {
+	_, ok := StaticActorCombatProfileRespawnDelay(delayMs)
+	return ok
+}
+
+func StaticActorCombatProfileRespawnDelay(delayMs int64) (time.Duration, bool) {
+	if delayMs <= 0 {
+		return 0, false
+	}
+	maxDelayMs := int64(1<<63-1) / int64(time.Millisecond)
+	if delayMs > maxDelayMs {
+		return 0, false
+	}
+	return time.Duration(delayMs) * time.Millisecond, true
+}
+
 func validStaticActorCombatProfileName(profile string) bool {
 	if profile == "" || profile != strings.TrimSpace(profile) {
 		return false

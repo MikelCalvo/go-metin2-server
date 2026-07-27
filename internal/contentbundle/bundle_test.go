@@ -2467,6 +2467,30 @@ func TestCanonicalizeRejectsPositiveCombatProfileRetaliationPointDelta(t *testin
 	}
 }
 
+func TestCanonicalizeRejectsOverflowingCombatProfileRespawnDelay(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.overflow_respawn_wolf",
+			Name:          "Overflow Respawn Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: "practice_overflow_respawn_wolf",
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        "practice_overflow_respawn_wolf",
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   2,
+			RespawnDelayMs: int64(1<<63-1)/int64(time.Millisecond) + 1,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for overflowing combat-profile respawn delay, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsInvalidCombatProfile(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		StaticActors: []StaticActor{{Name: "BrokenDummy", MapIndex: 42, X: 1800, Y: 2900, RaceNum: 20350, CombatProfile: "boss"}},

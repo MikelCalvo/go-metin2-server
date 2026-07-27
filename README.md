@@ -234,7 +234,7 @@ Already present:
 - HP mutation and HP percent refreshes,
 - self and visible-peer `DAMAGE_INFO` hit-effect emission for standalone bootstrap combat-profile and spawn-backed practice-mob non-lethal hits, while broader hit-result policy remains narrow,
 - dead-state rejection and target clear,
-- delayed respawn rebuild path,
+- delayed respawn rebuild path with combat-profile respawn delays validated before they are converted into runtime timers,
 - engagement ownership to prevent noisy multi-owner combat loops,
 - retaliation ticks against the engaged player for built-in and registered spawn-group combat profiles,
 - player death floor with denial gates for several live actions, including self `DEAD` replay when entering `GAME` from an already-`0`-HP selected-character snapshot,

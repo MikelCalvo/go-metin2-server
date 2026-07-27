@@ -6162,7 +6162,8 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 }
 
 func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot) (worldruntime.StaticActorCombatProfileDefaults, bool) {
-	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || snapshot.RespawnDelayMs <= 0 {
+	respawnDelay, ok := worldruntime.StaticActorCombatProfileRespawnDelay(snapshot.RespawnDelayMs)
+	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	defaults := worldruntime.StaticActorCombatProfileDefaults{
@@ -6172,7 +6173,7 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 		DefenseValue:          snapshot.DefenseValue,
 		Level:                 snapshot.Level,
 		Rank:                  snapshot.Rank,
-		RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
+		RespawnDelay:          respawnDelay,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}
@@ -6250,7 +6251,8 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			}
 			continue
 		}
-		if snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || snapshot.RespawnDelayMs <= 0 {
+		respawnDelay, ok := worldruntime.StaticActorCombatProfileRespawnDelay(snapshot.RespawnDelayMs)
+		if snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || !ok {
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}
@@ -6265,7 +6267,7 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			DefenseValue:          snapshot.DefenseValue,
 			Level:                 snapshot.Level,
 			Rank:                  snapshot.Rank,
-			RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
+			RespawnDelay:          respawnDelay,
 			RetaliationPointDelta: snapshot.RetaliationPointDelta,
 			DeathReward:           snapshot.DeathReward,
 		}) {

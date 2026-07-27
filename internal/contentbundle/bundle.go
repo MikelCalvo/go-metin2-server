@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
@@ -2054,7 +2053,7 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if profile.RetaliationPointDelta > 0 {
 		return false
 	}
-	if profile.MaxHP == 0 || profile.AttackValue == 0 || profile.RespawnDelayMs <= 0 {
+	if profile.MaxHP == 0 || profile.AttackValue == 0 || !worldruntime.ValidStaticActorCombatProfileRespawnDelayMs(profile.RespawnDelayMs) {
 		return false
 	}
 	if profile.AttackValue > profile.DefenseValue && profile.AttackValue-profile.DefenseValue > uint16(profile.MaxHP) {
@@ -2084,7 +2083,8 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 }
 
 func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfileSnapshot) (worldruntime.StaticActorCombatProfileDefaults, bool) {
-	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || snapshot.RespawnDelayMs <= 0 {
+	respawnDelay, ok := worldruntime.StaticActorCombatProfileRespawnDelay(snapshot.RespawnDelayMs)
+	if strings.TrimSpace(snapshot.Profile) == "" || snapshot.MaxHP == 0 || snapshot.AttackValue == 0 || !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	defaults := worldruntime.StaticActorCombatProfileDefaults{
@@ -2094,7 +2094,7 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		DefenseValue:          snapshot.DefenseValue,
 		Level:                 snapshot.Level,
 		Rank:                  snapshot.Rank,
-		RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
+		RespawnDelay:          respawnDelay,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
 		DeathReward:           snapshot.DeathReward.Clone(),
 	}

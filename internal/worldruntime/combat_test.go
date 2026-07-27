@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestApplyBootstrapStaticActorNormalAttackDecrementsTrainingDummyCombatHP(t *testing.T) {
@@ -330,6 +331,25 @@ func TestRegisterStaticActorCombatProfileRejectsPositiveRetaliationPointDelta(t 
 	}
 	if ValidStaticActorCombatProfile(profile) {
 		t.Fatalf("expected positive-retaliation profile %q not to become valid", profile)
+	}
+}
+
+func TestStaticActorCombatProfileRespawnDelayMsRejectsDurationOverflow(t *testing.T) {
+	validDelayMs := TrainingDummyBootstrapRespawnDelay.Milliseconds()
+	if !ValidStaticActorCombatProfileRespawnDelayMs(validDelayMs) {
+		t.Fatalf("expected bootstrap respawn delay %dms to be valid", validDelayMs)
+	}
+	validDelay, ok := StaticActorCombatProfileRespawnDelay(validDelayMs)
+	if !ok || validDelay != TrainingDummyBootstrapRespawnDelay {
+		t.Fatalf("expected bootstrap respawn delay %dms to round-trip, got delay=%s ok=%v", validDelayMs, validDelay, ok)
+	}
+
+	overflowDelayMs := int64(1<<63-1)/int64(time.Millisecond) + 1
+	if ValidStaticActorCombatProfileRespawnDelayMs(overflowDelayMs) {
+		t.Fatalf("expected overflowing respawn delay %dms to be invalid", overflowDelayMs)
+	}
+	if delay, ok := StaticActorCombatProfileRespawnDelay(overflowDelayMs); ok {
+		t.Fatalf("expected overflowing respawn delay %dms to fail closed, got %s", overflowDelayMs, delay)
 	}
 }
 
