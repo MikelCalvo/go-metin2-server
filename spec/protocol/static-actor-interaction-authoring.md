@@ -37,6 +37,7 @@ Current rules:
 - `info` / `talk` currently use authored `text`
 - `shop_preview` currently uses authored `title + catalog[]`
 - `warp` currently uses authored `map_index`, `x`, `y`, with optional `text`
+- create/update bodies must be valid UTF-8 before JSON decoding; malformed raw bytes are rejected before runtime mutation callbacks can see lossy replacement-character strings
 - updates are full-identity upserts, not partial nested edits
 - update body `kind + ref` must match the path exactly
 - delete fails closed while any bootstrap static actor still references that definition

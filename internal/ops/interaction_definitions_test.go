@@ -172,6 +172,48 @@ func TestLocalInteractionDefinitionUpdateEndpointRejectsNULTitleBeforeUpdate(t *
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointRejectsInvalidUTF8BodyBeforeCreate(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+	body := []byte(`{"kind":"info","ref":"lore:invalid_utf8","text":"visible`)
+	body = append(body, 0xff)
+	body = append(body, []byte(`hidden"}`)...)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(string(body)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for invalid UTF-8 interaction definition body, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if creator.calls != 0 {
+		t.Fatalf("expected interaction definition creator not to be called for invalid UTF-8 body, got %d calls", creator.calls)
+	}
+}
+
+func TestLocalInteractionDefinitionUpdateEndpointRejectsInvalidUTF8BodyBeforeUpdate(t *testing.T) {
+	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
+	body := []byte(`{"kind":"info","ref":"lore:invalid_utf8","text":"visible`)
+	body = append(body, 0xff)
+	body = append(body, []byte(`hidden"}`)...)
+
+	req := httptest.NewRequest(http.MethodPut, "/local/interactions/info/lore:invalid_utf8", strings.NewReader(string(body)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for invalid UTF-8 interaction definition body, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if updater.calls != 0 {
+		t.Fatalf("expected interaction definition updater not to be called for invalid UTF-8 body, got %d calls", updater.calls)
+	}
+}
+
 func TestLocalInteractionDefinitionUpdateEndpointRejectsOversizedBody(t *testing.T) {
 	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK}
 	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)

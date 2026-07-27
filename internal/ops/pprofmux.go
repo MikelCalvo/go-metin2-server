@@ -1707,6 +1707,9 @@ func decodeLocalInteractionDefinitionRequest(r *http.Request) (interactionstore.
 	if len(raw) > maxLocalInteractionDefinitionBodyBytes {
 		return interactionstore.Definition{}, http.StatusRequestEntityTooLarge, false
 	}
+	if !utf8.Valid(raw) {
+		return interactionstore.Definition{}, http.StatusBadRequest, false
+	}
 	var request localInteractionDefinitionRequest
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
