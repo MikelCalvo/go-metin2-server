@@ -93,6 +93,25 @@ func TestFileStoreLoadReturnsNotFoundForMissingSnapshot(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsNULStaticActorNames(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	nulName := Snapshot{StaticActors: []StaticActor{{EntityID: 7, Name: "Visible\x00Hidden", MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355}}}
+	if err := store.Save(nulName); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL static actor name on save, got %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"static_actors":[{"entity_id":7,"name":"Visible\u0000Hidden","map_index":1,"x":469300,"y":964200,"race_num":20355}]}`), 0o644); err != nil {
+		t.Fatalf("write NUL static actor snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL static actor name on load, got %v", err)
+	}
+}
+
 func TestFileStoreValidateReportsDeterministicStaticActorSummary(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
 	store := NewFileStore(path)

@@ -205,6 +205,19 @@ func TestGameRuntimeStaticActorLooksUpActorByEntityID(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeRejectsNULStaticActorNames(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.RegisterStaticActor("Visible\x00Hidden", bootstrapMapIndex, 1200, 2200, 20300); ok {
+		t.Fatal("expected static actor registration with embedded NUL name to be rejected")
+	}
+	if got := runtime.StaticActors(); len(got) != 0 {
+		t.Fatalf("expected rejected NUL static actor not to mutate runtime, got %+v", got)
+	}
+}
+
 type loadableFailingAccountStore struct {
 	account accountstore.Account
 	saveErr error

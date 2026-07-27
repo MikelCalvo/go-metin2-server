@@ -1532,7 +1532,7 @@ func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bo
 	request.Name = strings.TrimSpace(request.Name)
 	request.InteractionKind = strings.TrimSpace(request.InteractionKind)
 	request.InteractionRef = strings.TrimSpace(request.InteractionRef)
-	if request.Name == "" || request.MapIndex == 0 || request.RaceNum == 0 {
+	if !validLocalStaticActorName(request.Name) || request.MapIndex == 0 || request.RaceNum == 0 {
 		return localStaticActorRequest{}, false
 	}
 	if (request.InteractionKind == "") != (request.InteractionRef == "") {
@@ -1542,6 +1542,11 @@ func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bo
 		return localStaticActorRequest{}, false
 	}
 	return request, true
+}
+
+func validLocalStaticActorName(name string) bool {
+	name = strings.TrimSpace(name)
+	return name != "" && !strings.ContainsRune(name, '\x00')
 }
 
 func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldruntime.StaticActorCombatProfileDefaults, bool) {

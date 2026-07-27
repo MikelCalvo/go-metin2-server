@@ -2144,6 +2144,30 @@ func TestCanonicalizeRejectsDuplicateStaticActorAuthoringRows(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsEmbeddedNULAuthoredStaticActorNames(t *testing.T) {
+	cases := []struct {
+		name   string
+		bundle Bundle
+	}{
+		{
+			name:   "static_actor",
+			bundle: Bundle{StaticActors: []StaticActor{{Name: "Visible\x00Hidden", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300}}},
+		},
+		{
+			name:   "spawn_group",
+			bundle: Bundle{SpawnGroups: []SpawnGroup{{Ref: "practice.nul_named_mob", Name: "Visible\x00Hidden", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob}}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Canonicalize(tc.bundle)
+			if !errors.Is(err, ErrInvalidBundle) {
+				t.Fatalf("expected ErrInvalidBundle for embedded-NUL %s name, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestCanonicalizeRejectsDuplicateInteractionDefinitions(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		InteractionDefinitions: []interactionstore.Definition{

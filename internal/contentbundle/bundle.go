@@ -1866,7 +1866,7 @@ func validateBundle(bundle Bundle) error {
 	}
 	staticActorsByKey := make(map[string]struct{}, len(bundle.StaticActors))
 	for _, actor := range bundle.StaticActors {
-		if strings.TrimSpace(actor.Name) == "" || actor.MapIndex == 0 || !validBootstrapRaceNum(actor.RaceNum) {
+		if !validAuthoredContentName(actor.Name) || actor.MapIndex == 0 || !validBootstrapRaceNum(actor.RaceNum) {
 			return ErrInvalidBundle
 		}
 		if !validAuthoredCombatProfile(actor.CombatProfile, profileSnapshots) {
@@ -1908,7 +1908,7 @@ func validBootstrapRaceNum(raceNum uint32) bool {
 }
 
 func validSpawnGroup(spawnGroup SpawnGroup, profileSnapshots map[string]worldruntime.StaticActorCombatProfileSnapshot) bool {
-	if !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroup.Ref) || strings.TrimSpace(spawnGroup.Ref) == "" || strings.TrimSpace(spawnGroup.Name) == "" || spawnGroup.MapIndex == 0 || !validBootstrapRaceNum(spawnGroup.RaceNum) {
+	if !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroup.Ref) || strings.TrimSpace(spawnGroup.Ref) == "" || !validAuthoredContentName(spawnGroup.Name) || spawnGroup.MapIndex == 0 || !validBootstrapRaceNum(spawnGroup.RaceNum) {
 		return false
 	}
 	if strings.TrimSpace(spawnGroup.CombatProfile) == "" || !validAuthoredCombatProfile(spawnGroup.CombatProfile, profileSnapshots) {
@@ -1927,6 +1927,11 @@ func validAuthoredCombatProfile(profile string, profileSnapshots map[string]worl
 	}
 	_, ok := profileSnapshots[profile]
 	return ok
+}
+
+func validAuthoredContentName(name string) bool {
+	name = strings.TrimSpace(name)
+	return name != "" && !strings.ContainsRune(name, '\x00')
 }
 
 func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSnapshot) bool {

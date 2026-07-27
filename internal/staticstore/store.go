@@ -68,7 +68,7 @@ func validateSnapshot(snapshot Snapshot) error {
 	seen := make(map[uint64]struct{}, len(snapshot.StaticActors))
 	spawnGroupRefs := make(map[string]struct{}, len(snapshot.StaticActors))
 	for _, actor := range snapshot.StaticActors {
-		if !validBootstrapEntityID(actor.EntityID) || actor.Name == "" || actor.MapIndex == 0 || !validBootstrapRaceNum(actor.RaceNum) {
+		if !validBootstrapEntityID(actor.EntityID) || !validStaticActorName(actor.Name) || actor.MapIndex == 0 || !validBootstrapRaceNum(actor.RaceNum) {
 			return ErrInvalidSnapshot
 		}
 		if !validInteractionMetadata(actor.InteractionKind, actor.InteractionRef) {
@@ -106,6 +106,11 @@ func validInteractionMetadata(kind string, ref string) bool {
 		return true
 	}
 	return kind != "" && ref != "" && interactionstore.ValidKind(kind) && interactionstore.ValidRef(ref)
+}
+
+func validStaticActorName(name string) bool {
+	name = strings.TrimSpace(name)
+	return name != "" && !strings.ContainsRune(name, '\x00')
 }
 
 func validBootstrapEntityID(entityID uint64) bool {

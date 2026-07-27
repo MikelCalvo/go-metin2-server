@@ -3998,6 +3998,24 @@ func TestLocalStaticActorsEndpointRejectsInvalidSeedBody(t *testing.T) {
 	}
 }
 
+func TestLocalStaticActorsEndpointRejectsNULNameBeforeCallback(t *testing.T) {
+	registrar := &stubStaticActorRegistrar{registered: true}
+	mux := RegisterLocalStaticActorEndpoints(NewPprofMux("gamed"), nil, registrar.RegisterStaticActor)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actors", strings.NewReader(`{"name":"Visible\u0000Hidden","map_index":42,"x":1700,"y":2800,"race_num":20300}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if registrar.calls != 0 {
+		t.Fatalf("expected static actor registrar not to be called for NUL name, got %d calls", registrar.calls)
+	}
+}
+
 func TestLocalStaticActorsEndpointRejectsUnsupportedMethod(t *testing.T) {
 	snapshotter := &stubStaticActorSnapshotter{}
 	registrar := &stubStaticActorRegistrar{registered: true}
@@ -4131,6 +4149,24 @@ func TestLocalStaticActorUpdateEndpointRejectsInvalidBody(t *testing.T) {
 	}
 	if updater.calls != 0 {
 		t.Fatalf("expected static actor updater not to be called, got %d calls", updater.calls)
+	}
+}
+
+func TestLocalStaticActorUpdateEndpointRejectsNULNameBeforeCallback(t *testing.T) {
+	updater := &stubStaticActorUpdater{updated: true}
+	mux := RegisterLocalStaticActorUpdateEndpoint(NewPprofMux("gamed"), updater.UpdateStaticActor)
+
+	req := httptest.NewRequest(http.MethodPatch, "/local/static-actors/7", strings.NewReader(`{"name":"Visible\u0000Hidden","map_index":99,"x":900,"y":1200,"race_num":9001}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if updater.calls != 0 {
+		t.Fatalf("expected static actor updater not to be called for NUL name, got %d calls", updater.calls)
 	}
 }
 

@@ -1178,7 +1178,7 @@ func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupR
 	interactionRef = strings.TrimSpace(interactionRef)
 	combatProfile = strings.TrimSpace(combatProfile)
 	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
-	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
+	if !validStaticActorRuntimeName(name) || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
 		return StaticActorSnapshot{}, false
 	}
 	if spawnGroupRef != "" && (combatProfile == "" || interactionKind != "" || interactionRef != "") {
@@ -1226,7 +1226,7 @@ func (r *gameRuntime) updateStaticActorWithInteractionCombatProfileAndSpawnGroup
 	interactionRef = strings.TrimSpace(interactionRef)
 	combatProfile = strings.TrimSpace(combatProfile)
 	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
-	if name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
+	if !validStaticActorRuntimeName(name) || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !r.interactionDefinitionExists(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatProfile(combatProfile) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
 		return StaticActorSnapshot{}, false
 	}
 	if spawnGroupRef != "" && (combatProfile == "" || interactionKind != "" || interactionRef != "") {
@@ -6668,6 +6668,11 @@ func (r *gameRuntime) interactionDefinitionExists(kind string, ref string) bool 
 	}
 	_, ok := r.ResolveInteractionDefinition(kind, ref)
 	return ok
+}
+
+func validStaticActorRuntimeName(name string) bool {
+	name = strings.TrimSpace(name)
+	return name != "" && !strings.ContainsRune(name, '\x00')
 }
 
 func (r *gameRuntime) persistStaticActorSnapshot(snapshot []StaticActorSnapshot) bool {

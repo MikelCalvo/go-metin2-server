@@ -1755,7 +1755,7 @@ func (r *sharedWorldRegistry) RegisterStaticActorWithCombatKind(entityID uint64,
 
 func (r *sharedWorldRegistry) registerStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string, deathReward worldruntime.StaticActorDeathReward) (StaticActorSnapshot, bool) {
 	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
-	if r == nil || r.entities == nil || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) || !worldruntime.ValidStaticActorDeathReward(deathReward) {
+	if r == nil || r.entities == nil || !validStaticActorRuntimeName(name) || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) || !worldruntime.ValidStaticActorDeathReward(deathReward) {
 		return StaticActorSnapshot{}, false
 	}
 	if spawnGroupRef != "" && (combatKind == "" || interactionKind != "" || interactionRef != "") {
@@ -1824,7 +1824,7 @@ func (r *sharedWorldRegistry) UpdateStaticActorWithCombatKind(entityID uint64, n
 
 func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatKind string, spawnGroupRef string) (StaticActorSnapshot, bool) {
 	spawnGroupRef = strings.TrimSpace(spawnGroupRef)
-	if r == nil || r.entities == nil || entityID == 0 || name == "" || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
+	if r == nil || r.entities == nil || entityID == 0 || !validStaticActorRuntimeName(name) || mapIndex == 0 || raceNum == 0 || !worldruntime.ValidStaticActorInteractionMetadata(interactionKind, interactionRef) || !worldruntime.ValidStaticActorCombatKind(combatKind) || !worldruntime.ValidStaticActorSpawnGroupRef(spawnGroupRef) {
 		return StaticActorSnapshot{}, false
 	}
 	if spawnGroupRef != "" && (combatKind == "" || interactionKind != "" || interactionRef != "") {

@@ -83,6 +83,7 @@ Current rules:
 - when a bundle carries fixed item-shaped reward drops through `spawn_groups` or bundled custom `combat_profiles`, every `reward_drop_vnums` entry must also reference one bundled `item_templates` entry; reward-drop bundles without matching item templates are rejected before import, and export keeps templates referenced only after registered combat-profile reward defaults are expanded so exported bundles remain self-contained and immediately re-importable
 - the deterministic example bundle at `docs/examples/bootstrap-npc-service-bundle.json` is intentionally self-contained for merchant QA: its `item_templates` section carries every item referenced by the `shop_preview` catalog
 - exported static actors are **portable authored content**, not runtime entities, so the bundle omits runtime-only `entity_id`
+- authored static actor and spawn-group names are trimmed, must remain non-empty after trimming, and reject embedded NUL bytes before persistence, import, or loopback static-actor mutation callbacks
 - import is full-replace for the authored bootstrap content currently loaded by `gamed`
 - import validates that every referenced interaction definition exists before mutating runtime state
 - import rejects non-canonical interaction refs before mutating runtime state, using the same `<namespace>:<name>` rule as the interaction-definition store and static-actor store
