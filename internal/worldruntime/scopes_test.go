@@ -148,6 +148,16 @@ func TestScopesPlayerByExactNameUsesEntityRegistry(t *testing.T) {
 	}
 }
 
+func TestConnectedCharacterSnapshotTreatsNegativeBootstrapHPAsDead(t *testing.T) {
+	character := entityRegistryCharacter("BelowFloor", 0x02040111, 42, 1700, 2800)
+	character.Points[bootstrapPlayerPointValueIndex] = -3
+
+	snapshot := ConnectedCharacterSnapshotFor(NewBootstrapTopology(1), character)
+	if !snapshot.Dead {
+		t.Fatalf("expected negative bootstrap HP point to be treated as dead in connected-character snapshot, got %+v", snapshot)
+	}
+}
+
 func TestScopesConnectedTargetsReturnAllPlayersInDeterministicOrder(t *testing.T) {
 	topology := NewBootstrapTopology(1)
 	registry := NewEntityRegistryWithTopology(topology)

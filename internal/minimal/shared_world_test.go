@@ -5878,6 +5878,39 @@ func TestNewGameSessionFactoryRoutesWhisperToRelocatedNamedPeerAndKeepsConnected
 	}
 }
 
+func TestNewGameSessionFactoryConnectedSnapshotTreatsNegativeBootstrapHPAsDead(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("BelowFloor", 0x01030111, 0x02040111, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = -3
+	issuePeerTicket(t, store, "below-floor", 0x11111111, owner)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "below-floor", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 6 {
+		t.Fatalf("expected selected bootstrap plus quickslot replay and self DEAD for below-floor HP snapshot, got %d frames", len(enterOut))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, enterOut[len(enterOut)-1]))
+	if err != nil {
+		t.Fatalf("decode self DEAD for below-floor HP snapshot: %v", err)
+	}
+	if dead.VID != owner.VID {
+		t.Fatalf("expected self DEAD for below-floor owner VID %d, got %+v", owner.VID, dead)
+	}
+
+	snapshots := runtime.ConnectedCharacters()
+	if len(snapshots) != 1 {
+		t.Fatalf("expected one connected below-floor character snapshot, got %+v", snapshots)
+	}
+	if snapshots[0].Name != owner.Name || !snapshots[0].Dead {
+		t.Fatalf("expected below-floor connected snapshot to be marked dead, got %+v", snapshots[0])
+	}
+}
+
 func TestNewGameSessionFactoryQueuesPartyChatForConnectedPeers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

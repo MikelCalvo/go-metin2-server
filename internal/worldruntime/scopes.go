@@ -478,7 +478,7 @@ func ConnectedCharacterSnapshotFor(topology BootstrapTopology, character loginti
 }
 
 func bootstrapPlayerSnapshotDead(character loginticket.Character) bool {
-	return character.Points[bootstrapPlayerPointValueIndex] == 0
+	return character.Points[bootstrapPlayerPointValueIndex] <= 0
 }
 
 func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticActorSnapshot {
