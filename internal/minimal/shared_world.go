@@ -1723,7 +1723,7 @@ func (r *sharedWorldRegistry) InteractionVisibility() []worldruntime.CharacterIn
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.scopesLocked().CharacterInteractionVisibilitySnapshots()
+	return r.markCharacterInteractionVisibilityStaticActorStateLocked(r.scopesLocked().CharacterInteractionVisibilitySnapshots())
 }
 
 func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
@@ -2637,6 +2637,13 @@ func (r *sharedWorldRegistry) markCharacterVisibilityStaticActorStateLocked(snap
 	for i := range snapshots {
 		snapshots[i].VisibleStaticActors = r.markStaticActorSnapshotsStateLocked(snapshots[i].VisibleStaticActors)
 		snapshots[i].VisibleSpawnGroups = r.markStaticActorSnapshotsStateLocked(snapshots[i].VisibleSpawnGroups)
+	}
+	return snapshots
+}
+
+func (r *sharedWorldRegistry) markCharacterInteractionVisibilityStaticActorStateLocked(snapshots []worldruntime.CharacterInteractionVisibilitySnapshot) []worldruntime.CharacterInteractionVisibilitySnapshot {
+	for i := range snapshots {
+		snapshots[i].VisibleInteractableStaticActors = r.markStaticActorSnapshotsStateLocked(snapshots[i].VisibleInteractableStaticActors)
 	}
 	return snapshots
 }

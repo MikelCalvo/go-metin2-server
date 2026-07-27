@@ -54,10 +54,11 @@ It returns, per connected bootstrap player:
 - the currently visible interactable static actors only
 - each actor's `interaction_kind`
 - each actor's `interaction_ref`
+- each actor's current runtime `dead` flag when the target actor is at the bootstrap combat `0`-HP floor
 - a compact resolved preview when the referenced definition currently resolves to a currently previewable kind (`info`, `talk`, `shop_preview`, `warp`)
 - a fail-closed `resolution_failure` marker when it does not
 
-This is intended for live QA/debugging without packet captures.
+This is intended for live QA/debugging without packet captures. It now preserves both sides of the runtime state needed for interaction triage: the connected-player `dead` flag and the visible interactable actor `dead` flag.
 
 ## Deterministic authored-content bundle
 

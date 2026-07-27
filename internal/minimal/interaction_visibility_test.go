@@ -6,6 +6,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func TestGameRuntimeInteractionVisibilityReturnsResolvedPreviewsForVisibleInteractables(t *testing.T) {
@@ -151,5 +152,35 @@ func TestGameRuntimeInteractionVisibilityReturnsWarpDestinationPreviewWhenWarpTe
 	entry := snapshots[0].VisibleInteractableStaticActors[0]
 	if entry.Name != "Teleporter" || entry.Preview != "warp -> map 42 @ 1700,2800" || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected blank-text warp interaction visibility entry: %+v", entry)
+	}
+}
+
+func TestGameRuntimeInteractionVisibilityMarksDeadInteractableStaticActor(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:fallen_guard", Text: "..."}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.registerStaticActor(0, "FallenGuard", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindTalk, "npc:fallen_guard", worldruntime.StaticActorCombatKindTrainingDummy, "", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected interactable combat actor registration to succeed")
+	}
+	runtime.sharedWorld.mu.Lock()
+	runtime.sharedWorld.staticActorCombatHP[actor.EntityID] = 0
+	runtime.sharedWorld.mu.Unlock()
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	snapshots := runtime.InteractionVisibility()
+	if len(snapshots) != 1 || len(snapshots[0].VisibleInteractableStaticActors) != 1 {
+		t.Fatalf("expected one visible dead interactable, got %+v", snapshots)
+	}
+	entry := snapshots[0].VisibleInteractableStaticActors[0]
+	if entry.Name != "FallenGuard" || !entry.Dead || entry.Preview != "FallenGuard:\n..." || entry.ResolutionFailure != "" {
+		t.Fatalf("expected dead interactable snapshot to preserve state and preview, got %+v", entry)
 	}
 }

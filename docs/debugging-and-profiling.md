@@ -512,10 +512,11 @@ This endpoint is also loopback-only and read-only. Decimal and `0x`-prefixed hex
 
 Returns a JSON snapshot of each connected bootstrap character plus the currently visible interactable static actors that would resolve for them.
 
-Each visible interactable entry includes:
+Each visible interactable entry reuses the static-actor snapshot shape from `/local/static-actors`, including:
 
 - `interaction_kind`
 - `interaction_ref`
+- `dead: true` while the target actor is currently at the bootstrap combat `0`-HP floor
 - a compact preview, or
 - `resolution_failure`
 
