@@ -5894,6 +5894,13 @@ func TestNewGameSessionFactoryConnectedSnapshotTreatsNegativeBootstrapHPAsDead(t
 	if len(enterOut) != 6 {
 		t.Fatalf("expected selected bootstrap plus quickslot replay and self DEAD for below-floor HP snapshot, got %d frames", len(enterOut))
 	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, enterOut[4]))
+	if err != nil {
+		t.Fatalf("decode clamped below-floor bootstrap point change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 0 || pointChange.Value != 0 {
+		t.Fatalf("expected below-floor bootstrap point refresh to clamp amount/value to 0 before DEAD, got %+v", pointChange)
+	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, enterOut[len(enterOut)-1]))
 	if err != nil {
 		t.Fatalf("decode self DEAD for below-floor HP snapshot: %v", err)

@@ -55,6 +55,7 @@ The bootstrap runtime currently emits one deterministic self-only point refresh:
 - `type = 1`
 - `amount` mirrors the selected character bootstrap point value at index `1`
 - `value` mirrors the same selected character bootstrap point value
+- if that selected-character bootstrap HP point value is below the current `0`-HP floor, this self-only `PLAYER_POINT_CHANGE` clamps both `amount` and `value` to `0` before the later selected-character `DEAD(selected_vid)` replay; negative persisted or hand-authored HP snapshots are therefore presented at the same visible floor instead of echoing a negative HP refresh during `ENTERGAME`
 
 For the current stub/bootstrap characters this means:
 - existing selected character refresh uses its persisted point value

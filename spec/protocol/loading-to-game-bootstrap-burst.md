@@ -43,11 +43,12 @@ The current selected-character bootstrap burst is emitted in this exact order:
 3. `CHARACTER_UPDATE`
 4. `PLAYER_POINT_CHANGE`
 5. zero or more persisted selected-character `QUICKSLOT_ADD` frames sorted by quickslot position
-6. if the selected-character snapshot is already at the bootstrap `0`-HP floor, one self-only `DEAD(selected_vid)` replay
+6. if the selected-character snapshot is already at or below the bootstrap `0`-HP floor, one self-only `DEAD(selected_vid)` replay
 
 These frames belong to the selected character only.
 They are emitted before any trailing peer frames.
 The `DEAD(selected_vid)` replay is deliberately last inside the selected-character bucket so the client receives the ordinary presence/point state first and still learns the dead state before any peer, static-actor, or ground-entry trailing frames are appended.
+When the selected-character HP point is below that floor, the preceding self-only `PLAYER_POINT_CHANGE` clamps its `amount` and `value` to `0`; malformed negative snapshots are still treated as dead, but the `ENTERGAME` refresh no longer advertises a negative visible HP value before the `DEAD` replay.
 
 ## Trailing peer frames
 
@@ -82,7 +83,7 @@ This slice freezes:
 - the `LOADING -> GAME` phase transition
 - the exact selected-character bootstrap order after `PHASE(GAME)`
 - the rule that persisted selected-character quickslots are replayed as sorted self-only `QUICKSLOT_ADD` frames after the selected-character presence/state frames
-- the rule that an already-`0`-HP selected-character snapshot appends self-only `DEAD(selected_vid)` after the selected-character point/quickslot replay and before trailing visibility
+- the rule that an already-`0`-HP or below-floor selected-character snapshot appends self-only `DEAD(selected_vid)` after the selected-character point/quickslot replay and before trailing visibility, with below-floor point refreshes clamped to the visible `0`-HP floor
 - the rule that trailing visibility frames, when present, are appended after the selected-character burst
 - the current ordering that visible peer-player bursts are appended before visible bootstrap static-actor bursts
 

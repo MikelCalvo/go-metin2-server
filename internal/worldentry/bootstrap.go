@@ -112,10 +112,14 @@ func bootstrapCharacterAppearanceParts(character loginticket.Character) [worldpr
 }
 
 func bootstrapPlayerPointChangePacket(character loginticket.Character) worldproto.PlayerPointChangePacket {
+	value := character.Points[bootstrapPlayerPointValueIndex]
+	if value < 0 {
+		value = 0
+	}
 	return worldproto.PlayerPointChangePacket{
 		VID:    character.VID,
 		Type:   bootstrapPlayerPointType,
-		Amount: character.Points[bootstrapPlayerPointValueIndex],
-		Value:  character.Points[bootstrapPlayerPointValueIndex],
+		Amount: value,
+		Value:  value,
 	}
 }

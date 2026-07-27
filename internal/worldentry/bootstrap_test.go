@@ -112,3 +112,31 @@ func TestBuildBootstrapFramesAppendsSortedQuickslots(t *testing.T) {
 		t.Fatalf("unexpected second quickslot add: %+v", second)
 	}
 }
+
+func TestBuildBootstrapFramesClampsBelowFloorBootstrapHPPointRefresh(t *testing.T) {
+	character := loginticket.Character{
+		ID:      0x01030102,
+		VID:     0x02040102,
+		Name:    "BelowFloor",
+		RaceNum: 2,
+		X:       1700,
+		Y:       2800,
+	}
+	character.Points[bootstrapPlayerPointValueIndex] = -3
+
+	frames, err := BuildBootstrapFrames(character)
+	if err != nil {
+		t.Fatalf("unexpected bootstrap frame error: %v", err)
+	}
+	if len(frames) != 4 {
+		t.Fatalf("expected 4 bootstrap frames, got %d", len(frames))
+	}
+
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, frames[3]))
+	if err != nil {
+		t.Fatalf("decode below-floor bootstrap point change: %v", err)
+	}
+	if pointChange.VID != character.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 0 || pointChange.Value != 0 {
+		t.Fatalf("expected below-floor bootstrap HP refresh to clamp amount/value to 0, got %+v", pointChange)
+	}
+}
