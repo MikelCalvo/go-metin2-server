@@ -1306,6 +1306,13 @@ func validRewardOwnerMetadata(value string) bool {
 	return true
 }
 
+func validRewardDropOwnerNameMetadata(value string) bool {
+	if !validRewardOwnerMetadata(value) {
+		return false
+	}
+	return len(value) <= itemproto.CharacterNameMaxLength+1
+}
+
 func sameGroundRewardOwnerLocation(registered loginticket.Character, supplied loginticket.Character) bool {
 	return sameGroundRewardCharacterLocation(registered, supplied)
 }
