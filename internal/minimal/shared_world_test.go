@@ -205,7 +205,7 @@ func TestGameRuntimeStaticActorLooksUpActorByEntityID(t *testing.T) {
 	}
 }
 
-func TestGameRuntimeRejectsNULStaticActorNames(t *testing.T) {
+func TestGameRuntimeRejectsNULAndInvalidUTF8StaticActorNames(t *testing.T) {
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
@@ -213,8 +213,14 @@ func TestGameRuntimeRejectsNULStaticActorNames(t *testing.T) {
 	if _, ok := runtime.RegisterStaticActor("Visible\x00Hidden", bootstrapMapIndex, 1200, 2200, 20300); ok {
 		t.Fatal("expected static actor registration with embedded NUL name to be rejected")
 	}
+	if _, ok := runtime.RegisterStaticActorWithInteractionAndCombatProfile("Invalid\xffActor", bootstrapMapIndex, 1200, 2200, 20300, "", "", string(worldruntime.StaticActorCombatProfileTrainingDummy)); ok {
+		t.Fatal("expected static actor registration with invalid UTF-8 name to be rejected")
+	}
+	if _, ok := runtime.registerStaticActorWithInteractionCombatProfileAndSpawnGroupRef("Invalid\xfeSpawnMob", bootstrapMapIndex, 1200, 2200, 20300, "", "", string(worldruntime.StaticActorCombatProfilePracticeMob), "practice.invalid_utf8_name"); ok {
+		t.Fatal("expected spawn-backed static actor registration with invalid UTF-8 name to be rejected")
+	}
 	if got := runtime.StaticActors(); len(got) != 0 {
-		t.Fatalf("expected rejected NUL static actor not to mutate runtime, got %+v", got)
+		t.Fatalf("expected rejected static actor names not to mutate runtime, got %+v", got)
 	}
 }
 

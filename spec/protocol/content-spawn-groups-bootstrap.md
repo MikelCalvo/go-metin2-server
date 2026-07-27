@@ -225,7 +225,7 @@ What is **not** yet frozen here:
 
 The first content contract should fail closed when:
 - `ref` is empty, duplicated, or not in the canonical dotted lowercase form `[a-z][a-z0-9_]*(.[a-z][a-z0-9_]*)+`
-- `name` is empty after trimming whitespace
+- `name` is empty after trimming whitespace, contains an embedded NUL byte, or is not valid UTF-8
 - `map_index` is `0`
 - `race_num` is `0` or larger than the current bootstrap visibility packet field can encode (`uint16`, max `65535`)
 - static-actor and spawn-group bundle validation share that same fail-closed `race_num` range because both are projected through the owned `CHARACTER_ADD` bootstrap visibility family
