@@ -554,6 +554,9 @@ func validateTicket(ticket Ticket) error {
 	if ticket.Login != strings.TrimSpace(ticket.Login) {
 		return fmt.Errorf("%w: login %q has leading or trailing whitespace", ErrInvalidTicket, ticket.Login)
 	}
+	if containsNUL(ticket.Login) {
+		return fmt.Errorf("%w: login contains NUL", ErrInvalidTicket)
+	}
 	if ticket.LoginKey == 0 {
 		return fmt.Errorf("%w: login key is required", ErrInvalidTicket)
 	}
@@ -599,6 +602,12 @@ func validateUniqueCharacterIdentity(characters []Character) error {
 		}
 		if trimmedName != character.Name {
 			return fmt.Errorf("%w: character name %q has leading or trailing whitespace", ErrInvalidTicket, character.Name)
+		}
+		if containsNUL(character.Name) {
+			return fmt.Errorf("%w: character name contains NUL", ErrInvalidTicket)
+		}
+		if containsNUL(character.GuildName) {
+			return fmt.Errorf("%w: character guild name contains NUL", ErrInvalidTicket)
 		}
 		if previousName, ok := ids[character.ID]; ok {
 			return fmt.Errorf("%w: character id %d is used by %q and %q", ErrInvalidTicket, character.ID, previousName, character.Name)
@@ -713,4 +722,8 @@ func validQuickslotTuple(quickslot Quickslot) bool {
 	default:
 		return false
 	}
+}
+
+func containsNUL(value string) bool {
+	return strings.ContainsRune(value, '\x00')
 }

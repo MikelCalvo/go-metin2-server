@@ -256,6 +256,9 @@ func (s *FileStore) Load(login string) (Account, error) {
 	if login != strings.TrimSpace(login) {
 		return Account{}, fmt.Errorf("%w: account login %q has leading or trailing whitespace", ErrInvalidAccount, login)
 	}
+	if containsNUL(login) {
+		return Account{}, fmt.Errorf("%w: account login contains NUL", ErrInvalidAccount)
+	}
 
 	raw, err := os.ReadFile(s.accountPath(login))
 	if err != nil {
@@ -285,6 +288,9 @@ func (s *FileStore) Save(account Account) error {
 	}
 	if account.Login != strings.TrimSpace(account.Login) {
 		return fmt.Errorf("%w: account login %q has leading or trailing whitespace", ErrInvalidAccount, account.Login)
+	}
+	if containsNUL(account.Login) {
+		return fmt.Errorf("%w: account login contains NUL", ErrInvalidAccount)
 	}
 	account.Characters = normalizeAccountCharacters(account.Characters)
 	if err := validateAccount(account); err != nil {
@@ -888,6 +894,12 @@ func validateUniqueCharacterIdentity(characters []loginticket.Character) error {
 		if trimmedName != character.Name {
 			return fmt.Errorf("%w: character name %q has leading or trailing whitespace", ErrInvalidAccount, character.Name)
 		}
+		if containsNUL(character.Name) {
+			return fmt.Errorf("%w: character name contains NUL", ErrInvalidAccount)
+		}
+		if containsNUL(character.GuildName) {
+			return fmt.Errorf("%w: character guild name contains NUL", ErrInvalidAccount)
+		}
 		if previousName, ok := ids[character.ID]; ok {
 			return fmt.Errorf("%w: character id %d is used by %q and %q", ErrInvalidAccount, character.ID, previousName, character.Name)
 		}
@@ -908,6 +920,9 @@ func validateLoadedAccountForLogin(requestedLogin string, account Account) error
 	}
 	if account.Login != strings.TrimSpace(account.Login) {
 		return fmt.Errorf("%w: account login %q has leading or trailing whitespace", ErrInvalidAccount, account.Login)
+	}
+	if containsNUL(account.Login) || containsNUL(requestedLogin) {
+		return fmt.Errorf("%w: account login contains NUL", ErrInvalidAccount)
 	}
 	if !strings.EqualFold(account.Login, requestedLogin) {
 		return fmt.Errorf("%w: snapshot login %q does not match requested login %q", ErrInvalidAccount, account.Login, requestedLogin)
@@ -1014,4 +1029,8 @@ func validQuickslotTuple(quickslot loginticket.Quickslot) bool {
 	default:
 		return false
 	}
+}
+
+func containsNUL(value string) bool {
+	return strings.ContainsRune(value, '\x00')
 }

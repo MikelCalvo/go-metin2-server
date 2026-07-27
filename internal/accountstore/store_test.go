@@ -386,6 +386,27 @@ func TestFileStoreLoadRejectsWhitespaceSnapshotLogin(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsEmbeddedNULAccountLogins(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+
+	if err := store.Save(Account{Login: "mk\x00mk", Empire: 2}); !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for account login with embedded NUL, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsEmbeddedNULSnapshotLogin(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk\u0000","empire":2,"characters":[]}`)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write NUL-login account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for NUL snapshot login, got %v", err)
+	}
+}
+
 func TestFileStoreLoadRejectsMismatchedSnapshotLogin(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	raw := []byte(`{"login":"shadow","empire":2,"characters":[]}`)
@@ -441,6 +462,48 @@ func TestFileStoreLoadRejectsNonZeroCharactersWithBlankNames(t *testing.T) {
 	_, err := store.Load("mkmk")
 	if !errors.Is(err, ErrInvalidAccount) {
 		t.Fatalf("expected ErrInvalidAccount for whitespace character name, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsEmbeddedNULCharacterIdentity(t *testing.T) {
+	cases := []struct {
+		name      string
+		character loginticket.Character
+	}{
+		{name: "character name", character: loginticket.Character{ID: 1, Name: "Mkmk\x00War"}},
+		{name: "guild name", character: loginticket.Character{ID: 1, Name: "MkmkWar", GuildName: "Alpha\x00Guild"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewFileStore(t.TempDir())
+			account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{tc.character}}
+			if err := store.Save(account); !errors.Is(err, ErrInvalidAccount) {
+				t.Fatalf("expected ErrInvalidAccount for embedded NUL %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreLoadRejectsEmbeddedNULCharacterIdentity(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  []byte
+	}{
+		{name: "character name", raw: []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"Mkmk\u0000War","inventory":[],"equipment":[],"quickslots":[]}]}`)},
+		{name: "guild name", raw: []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","guild_name":"Alpha\u0000Guild","inventory":[],"equipment":[],"quickslots":[]}]}`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewFileStore(t.TempDir())
+			if err := os.WriteFile(store.accountPath("mkmk"), tc.raw, 0o644); err != nil {
+				t.Fatalf("write NUL-character account snapshot: %v", err)
+			}
+
+			_, err := store.Load("mkmk")
+			if !errors.Is(err, ErrInvalidAccount) {
+				t.Fatalf("expected ErrInvalidAccount for embedded NUL %s, got %v", tc.name, err)
+			}
+		})
 	}
 }
 

@@ -596,6 +596,48 @@ func TestFileStoreValidateRejectsFilenameLoginKeyMismatch(t *testing.T) {
 	}
 }
 
+func TestFileStoreIssueRejectsEmbeddedNULCharacterIdentity(t *testing.T) {
+	cases := []struct {
+		name      string
+		character Character
+	}{
+		{name: "character name", character: Character{ID: 1, Name: "Mkmk\x00War"}},
+		{name: "guild name", character: Character{ID: 1, Name: "MkmkWar", GuildName: "Alpha\x00Guild"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewFileStore(t.TempDir())
+			ticket := Ticket{Login: "mkmk", LoginKey: 0x01020304, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC), Characters: []Character{tc.character}}
+			if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+				t.Fatalf("expected ErrInvalidTicket for embedded NUL %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreLoadRejectsEmbeddedNULCharacterIdentity(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  []byte
+	}{
+		{name: "character name", raw: []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"Mkmk\u0000War","inventory":[],"equipment":[],"quickslots":[]}]}`)},
+		{name: "guild name", raw: []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","guild_name":"Alpha\u0000Guild","inventory":[],"equipment":[],"quickslots":[]}]}`)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewFileStore(t.TempDir())
+			if err := os.WriteFile(store.ticketPath(0x01020304), tc.raw, 0o644); err != nil {
+				t.Fatalf("write NUL-character ticket snapshot: %v", err)
+			}
+
+			_, err := store.Load("mkmk", 0x01020304)
+			if !errors.Is(err, ErrInvalidTicket) {
+				t.Fatalf("expected ErrInvalidTicket for embedded NUL %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestFileStoreIssueRejectsEmptyLoginAndZeroLoginKey(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	cases := []Ticket{
@@ -622,6 +664,28 @@ func TestFileStoreLoadRejectsWhitespaceSnapshotLogin(t *testing.T) {
 	_, err := store.Load("mkmk", 0x01020304)
 	if !errors.Is(err, ErrInvalidTicket) {
 		t.Fatalf("expected ErrInvalidTicket for whitespace snapshot login, got %v", err)
+	}
+}
+
+func TestFileStoreIssueRejectsEmbeddedNULLogin(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	ticket := Ticket{Login: "mk\x00mk", LoginKey: 0x01020304, IssuedAt: time.Date(2026, 4, 17, 10, 21, 0, 0, time.UTC)}
+
+	if err := store.Issue(ticket); !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for login with embedded NUL, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsEmbeddedNULSnapshotLogin(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mk\u0000mk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[]}`)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write NUL-login ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mk\x00mk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for NUL snapshot login, got %v", err)
 	}
 }
 
