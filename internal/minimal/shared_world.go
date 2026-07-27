@@ -1298,7 +1298,7 @@ func validRewardOwnerMetadata(value string) bool {
 		return false
 	}
 	for _, r := range value {
-		if unicode.IsSpace(r) {
+		if r == 0 || unicode.IsSpace(r) {
 			return false
 		}
 	}

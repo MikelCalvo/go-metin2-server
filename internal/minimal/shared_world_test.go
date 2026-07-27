@@ -1512,6 +1512,32 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsEmbeddedWhitespaceOwnerM
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundRewardsRejectsNULOwnerMetadata(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("NULNameRewardOwner", 0x010301a4, 0x020401a4, 1200, 2200, 0, 101, 201)
+	owner.Name = "NUL\x00NameRewardOwner"
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	if ownerID == 0 {
+		t.Fatal("expected NUL-name reward owner join to allocate a shared-world entity id")
+	}
+
+	if registry.RegisterGroundItem(ownerID, "nul-metadata-owner", owner, 0x07000027, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected NUL owner-name ground-item reward registration to fail closed")
+	}
+
+	loginOwner := peerVisibilityCharacter("NULLoginRewardOwner", 0x010301a5, 0x020401a5, 1200, 2200, 1, 101, 201)
+	loginOwnerID, _ := registry.Join(loginOwner, newPendingServerFrames(), nil)
+	if loginOwnerID == 0 {
+		t.Fatal("expected NUL-login reward owner join to allocate a shared-world entity id")
+	}
+	if registry.RegisterGroundGold(loginOwnerID, "nul\x00metadata-owner", loginOwner, 0x07000028, 250) {
+		t.Fatal("expected NUL owner-login ground-gold reward registration to fail closed")
+	}
+	if registry.GroundItemExists(0x07000027) || registry.GroundItemExists(0x07000028) {
+		t.Fatal("expected rejected NUL-metadata reward ground entries to stay absent")
+	}
+}
+
 func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleLiveOwnerSnapshotAfterOwnerDeath(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("StaleLiveRewardOwner", 0x01030193, 0x02040193, 1200, 2200, 0, 101, 201)
