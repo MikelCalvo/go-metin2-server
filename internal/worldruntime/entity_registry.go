@@ -148,6 +148,9 @@ func (r *EntityRegistry) PlayerByVID(vid uint32) (PlayerEntity, bool) {
 	defer r.mu.Unlock()
 	player, ok := r.players.ByVID(vid)
 	if ok {
+		if r.entityIDOwnedByStaticActorLocked(player.Entity.ID) || r.playerVisibilityVIDConflictsWithStaticActorLocked(player) {
+			return PlayerEntity{}, false
+		}
 		return player, true
 	}
 	if r.maps == nil {
@@ -171,6 +174,9 @@ func (r *EntityRegistry) PlayerByName(name string) (PlayerEntity, bool) {
 	defer r.mu.Unlock()
 	player, ok := r.players.ByName(name)
 	if ok {
+		if r.entityIDOwnedByStaticActorLocked(player.Entity.ID) || r.playerVisibilityVIDConflictsWithStaticActorLocked(player) {
+			return PlayerEntity{}, false
+		}
 		return player, true
 	}
 	if r.maps == nil {
@@ -357,18 +363,20 @@ func (r *EntityRegistry) PlayerCharacters() []loginticket.Character {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	characters := r.players.PlayerCharacters()
-	if r.maps == nil {
-		return characters
-	}
-	known := make(map[uint64]struct{}, len(characters))
-	for _, character := range characters {
-		if character.VID == 0 {
+
+	directoryPlayers := r.players.playerEntities()
+	characters := make([]loginticket.Character, 0, len(directoryPlayers))
+	known := make(map[uint64]struct{}, len(directoryPlayers))
+	for _, player := range directoryPlayers {
+		if r.entityIDOwnedByStaticActorLocked(player.Entity.ID) || r.playerVisibilityVIDConflictsWithStaticActorLocked(player) {
 			continue
 		}
-		if player, ok := r.players.ByVID(character.VID); ok {
-			known[player.Entity.ID] = struct{}{}
-		}
+		characters = append(characters, cloneCharacterSnapshot(player.Character))
+		known[player.Entity.ID] = struct{}{}
+	}
+	if r.maps == nil {
+		sortCharacters(characters)
+		return characters
 	}
 	for _, player := range r.maps.AllPlayers() {
 		if _, exists := known[player.Entity.ID]; exists {

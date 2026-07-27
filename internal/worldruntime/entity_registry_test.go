@@ -354,6 +354,100 @@ func TestEntityRegistryRejectsStaticActorLookupRepairWithDirectoryOnlyPlayerVisi
 	}
 }
 
+func TestEntityRegistryConnectedPlayerSnapshotsSuppressStaticActorDirectoryCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	player := newPlayerEntity(7, entityRegistryCharacter("DirectoryOnlyAlpha", 0x02040101, 42, 1700, 2800))
+	if !registry.players.Register(player) {
+		t.Fatal("expected direct player-directory registration to simulate player map-index loss")
+	}
+	actor := StaticEntity{Entity: Entity{ID: player.Entity.ID, Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300}
+	if !registry.staticActors.Register(actor) {
+		t.Fatal("expected direct static-actor directory registration to simulate static map-index loss")
+	}
+
+	if characters := registry.PlayerCharacters(); len(characters) != 0 {
+		t.Fatalf("expected connected-player snapshots to suppress ambiguous directory collision, got %+v", characters)
+	}
+	if lookup, ok := registry.PlayerByVID(player.Entity.VID); ok {
+		t.Fatalf("expected player VID lookup to fail closed over static actor directory collision, got %+v", lookup)
+	}
+	if lookup, ok := registry.PlayerByName(player.Entity.Name); ok {
+		t.Fatalf("expected player exact-name lookup to fail closed over static actor directory collision, got %+v", lookup)
+	}
+	if playerLookup, ok := registry.Player(player.Entity.ID); !ok || playerLookup.Entity.Name != player.Entity.Name {
+		t.Fatalf("expected explicit player entity lookup to remain available for cleanup, got player=%+v ok=%v", playerLookup, ok)
+	}
+	if actorLookup, ok := registry.StaticActor(actor.Entity.ID); !ok || actorLookup.Entity.Name != actor.Entity.Name {
+		t.Fatalf("expected explicit static-actor entity lookup to remain available for cleanup, got actor=%+v ok=%v", actorLookup, ok)
+	}
+}
+
+func TestEntityRegistryConnectedPlayerSnapshotsSuppressStaticActorDirectoryVisibleIDCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	player := newPlayerEntity(7, entityRegistryCharacter("DirectoryOnlyAlpha", 0x02040101, 42, 1700, 2800))
+	if !registry.players.Register(player) {
+		t.Fatal("expected direct player-directory registration to simulate player map-index loss")
+	}
+	actor := StaticEntity{Entity: Entity{ID: uint64(player.Entity.VID), Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300}
+	if !registry.staticActors.Register(actor) {
+		t.Fatal("expected direct static-actor directory registration to simulate static map-index loss")
+	}
+
+	if characters := registry.PlayerCharacters(); len(characters) != 0 {
+		t.Fatalf("expected connected-player snapshots to suppress ambiguous directory visible-ID collision, got %+v", characters)
+	}
+	if playerLookup, ok := registry.Player(player.Entity.ID); !ok || playerLookup.Entity.Name != player.Entity.Name {
+		t.Fatalf("expected explicit player entity lookup to remain available for cleanup, got player=%+v ok=%v", playerLookup, ok)
+	}
+	if actorLookup, ok := registry.staticActors.ByEntityID(actor.Entity.ID); !ok || actorLookup.Entity.Name != actor.Entity.Name {
+		t.Fatalf("expected static-actor directory entry to remain for explicit cleanup, got actor=%+v ok=%v", actorLookup, ok)
+	}
+}
+
+func TestEntityRegistryAllStaticActorsSuppressPlayerDirectoryCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor := StaticEntity{Entity: Entity{ID: 7, Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300}
+	if !registry.staticActors.Register(actor) {
+		t.Fatal("expected direct static-actor directory registration to simulate static map-index loss")
+	}
+	player := newPlayerEntity(actor.Entity.ID, entityRegistryCharacter("DirectoryOnlyAlpha", 0x02040101, 42, 1700, 2800))
+	if !registry.players.Register(player) {
+		t.Fatal("expected direct player-directory registration to simulate player map-index loss")
+	}
+
+	if actors := registry.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected all-static snapshot to suppress ambiguous directory collision, got %+v", actors)
+	}
+	if actorLookup, ok := registry.StaticActor(actor.Entity.ID); !ok || actorLookup.Entity.Name != actor.Entity.Name {
+		t.Fatalf("expected explicit static-actor entity lookup to remain available for cleanup, got actor=%+v ok=%v", actorLookup, ok)
+	}
+	if playerLookup, ok := registry.Player(player.Entity.ID); !ok || playerLookup.Entity.Name != player.Entity.Name {
+		t.Fatalf("expected explicit player entity lookup to remain available for cleanup, got player=%+v ok=%v", playerLookup, ok)
+	}
+}
+
+func TestEntityRegistryAllStaticActorsSuppressPlayerDirectoryVisibleIDCollision(t *testing.T) {
+	registry := NewEntityRegistry()
+	actor := StaticEntity{Entity: Entity{ID: 0x02040101, Kind: EntityKindStaticActor, Name: "DirectoryOnlyGuard"}, Position: NewPosition(42, 1800, 2900), RaceNum: 20300}
+	if !registry.staticActors.Register(actor) {
+		t.Fatal("expected direct static-actor directory registration to simulate static map-index loss")
+	}
+	player := newPlayerEntity(7, entityRegistryCharacter("DirectoryOnlyAlpha", uint32(actor.Entity.ID), 42, 1700, 2800))
+	if !registry.players.Register(player) {
+		t.Fatal("expected direct player-directory registration to simulate player map-index loss")
+	}
+
+	if actors := registry.AllStaticActors(); len(actors) != 0 {
+		t.Fatalf("expected all-static snapshot to suppress ambiguous directory visible-ID collision, got %+v", actors)
+	}
+	if actorLookup, ok := registry.StaticActor(actor.Entity.ID); ok {
+		t.Fatalf("expected static-actor lookup to fail closed over player visible-ID collision, got actor=%+v", actorLookup)
+	}
+	if playerLookup, ok := registry.Player(player.Entity.ID); !ok || playerLookup.Entity.Name != player.Entity.Name {
+		t.Fatalf("expected explicit player entity lookup to remain available for cleanup, got player=%+v ok=%v", playerLookup, ok)
+	}
+}
+
 func TestEntityRegistryReturnsDeterministicSortedPlayerCharacters(t *testing.T) {
 	registry := NewEntityRegistry()
 	registry.RegisterPlayer(entityRegistryCharacter("Zulu", 0x02040103, 42, 1900, 3000))
