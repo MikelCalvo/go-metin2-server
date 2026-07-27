@@ -39,6 +39,7 @@ type Template struct {
 	Stackable         bool            `json:"stackable"`
 	MaxCount          uint16          `json:"max_count"`
 	ShopBuyPrice      uint64          `json:"shop_buy_price,omitempty"`
+	ShopSellPrice     uint64          `json:"shop_sell_price,omitempty"`
 	Refineable        bool            `json:"refineable,omitempty"`
 	Save              bool            `json:"save,omitempty"`
 	SellCountPerGold  bool            `json:"sell_count_per_gold,omitempty"`
@@ -101,6 +102,7 @@ type templateJSON struct {
 	Stackable         bool             `json:"stackable"`
 	MaxCount          uint16           `json:"max_count"`
 	ShopBuyPrice      uint64           `json:"shop_buy_price,omitempty"`
+	ShopSellPrice     uint64           `json:"shop_sell_price,omitempty"`
 	Refineable        bool             `json:"refineable,omitempty"`
 	Save              bool             `json:"save,omitempty"`
 	SellCountPerGold  bool             `json:"sell_count_per_gold,omitempty"`
@@ -155,6 +157,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		Stackable:         template.Stackable,
 		MaxCount:          template.MaxCount,
 		ShopBuyPrice:      template.ShopBuyPrice,
+		ShopSellPrice:     template.ShopSellPrice,
 		Refineable:        template.Refineable,
 		Save:              template.Save,
 		SellCountPerGold:  template.SellCountPerGold,
@@ -221,6 +224,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		Stackable:         jsonTemplate.Stackable,
 		MaxCount:          jsonTemplate.MaxCount,
 		ShopBuyPrice:      jsonTemplate.ShopBuyPrice,
+		ShopSellPrice:     jsonTemplate.ShopSellPrice,
 		Refineable:        jsonTemplate.Refineable,
 		Save:              jsonTemplate.Save,
 		SellCountPerGold:  jsonTemplate.SellCountPerGold,
@@ -420,6 +424,9 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.ShopBuyPrice > uint64(^uint32(0)) {
+		return false
+	}
+	if template.ShopSellPrice > uint64(1<<31-1) {
 		return false
 	}
 	if !template.Stackable && template.MaxCount != 1 {

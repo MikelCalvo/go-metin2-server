@@ -1326,6 +1326,16 @@ func MerchantSellCredit(template itemcatalog.Template, count uint16) (uint64, bo
 		return 0, false
 	}
 	const maxPointChangeCarrier = uint64(1<<31 - 1)
+	if template.ShopSellPrice != 0 {
+		if template.ShopSellPrice > maxPointChangeCarrier || template.ShopSellPrice > (^uint64(0))/uint64(count) {
+			return 0, false
+		}
+		price := template.ShopSellPrice * uint64(count)
+		if price == 0 || price > maxPointChangeCarrier {
+			return 0, false
+		}
+		return price, true
+	}
 	var price uint64
 	if template.SellCountPerGold {
 		if template.ShopBuyPrice == 0 {

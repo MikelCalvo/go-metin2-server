@@ -20,11 +20,18 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	store := NewFileStore(path)
 	want := Snapshot{Templates: []Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: "weapon"},
-		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, SellCountPerGold: true, Highlight: true, AntiSell: true},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 50, ShopSellPrice: 13, SellCountPerGold: true, Highlight: true, AntiSell: true},
 	}}
 
 	if err := store.Save(want); err != nil {
 		t.Fatalf("save snapshot: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot: %v", err)
+	}
+	if !strings.Contains(string(raw), "\"shop_buy_price\": 50,\n      \"shop_sell_price\": 13,") {
+		t.Fatalf("expected shop_sell_price to persist immediately after shop_buy_price in deterministic JSON, got:\n%s", raw)
 	}
 	got, err := store.Load()
 	if err != nil {
@@ -162,6 +169,31 @@ func TestFileStoreRejectsShopBuyPriceAboveLegacyCarrier(t *testing.T) {
 	}
 	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot when loading shop_buy_price above legacy uint32 carrier, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsShopSellPriceAbovePointChangeCarrier(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	snapshot := Snapshot{Templates: []Template{{
+		Vnum:          27001,
+		Name:          "Overflow Sell Potion",
+		Stackable:     true,
+		MaxCount:      200,
+		ShopSellPrice: uint64(1 << 31),
+	}}}
+
+	if err := store.Save(snapshot); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when saving shop_sell_price above point-change carrier, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27001,"name":"Overflow Sell Potion","stackable":true,"max_count":200,"shop_sell_price":2147483648}]}`), 0o644); err != nil {
+		t.Fatalf("write oversized shop_sell_price snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading shop_sell_price above point-change carrier, got %v", err)
 	}
 }
 

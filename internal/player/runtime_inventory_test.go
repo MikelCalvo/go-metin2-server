@@ -3087,6 +3087,17 @@ func TestMerchantSellUnitPriceFromTemplateUsesLegacyFloorAfterTax(t *testing.T) 
 	}
 }
 
+func TestMerchantSellCreditPrefersAuthoredShopSellPrice(t *testing.T) {
+	template := itemcatalog.Template{Vnum: 27001, Name: "Authored Sell Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, ShopSellPrice: 13, SellCountPerGold: true}
+	credit, ok := MerchantSellCredit(template, 3)
+	if !ok {
+		t.Fatal("expected authored shop-sell price to resolve")
+	}
+	if credit != 39 {
+		t.Fatalf("expected authored shop-sell price credit 39, got %d", credit)
+	}
+}
+
 func TestMerchantSellCreditForCountPerGoldTemplateUsesLegacyCountDivision(t *testing.T) {
 	credit, ok := MerchantSellCredit(itemcatalog.Template{Vnum: 80001, Name: "Bundle", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, SellCountPerGold: true, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 1, Message: "metadata"}}, 25)
 	if !ok {

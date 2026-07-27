@@ -24989,6 +24989,50 @@ func TestGameSessionFlowShopSell2PacketDecrementsPartialStackAndCreditsCurrency(
 	}
 }
 
+func TestGameSessionFlowShopSellUsesTemplateAuthoredSellPrice(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerAuthoredPrice", 0x01040132, 0x02050132, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-authored-price", 0x32323232, buyer)
+	defer closeSessionFlow(t, flow)
+	runtime.itemTemplates[27001] = itemcatalog.Template{Vnum: 27001, Name: "Authored Sell Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, ShopSellPrice: 13, SellCountPerGold: true}
+
+	interactWithMerchantForBuy(t, flow, actorID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected authored-price packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 2 {
+		t.Fatalf("expected authored-price packet shop sell2 success to emit item refresh and gold point-change, got %d", len(sellOut))
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, sellOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored-price packet shop-sell2 update frame: %v", err)
+	}
+	if update.Position != itemproto.InventoryPosition(5) || update.Count != 1 {
+		t.Fatalf("unexpected authored-price packet shop-sell2 item update: %+v", update)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, sellOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored-price packet shop-sell2 gold point-change frame: %v", err)
+	}
+	if pointChange.VID != buyer.VID || pointChange.Type != bootstrapGoldPointType || pointChange.Amount != 26 || pointChange.Value != 151 {
+		t.Fatalf("unexpected authored-price packet shop-sell2 gold point-change frame: %+v", pointChange)
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(buyer.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot after authored-price packet shop sell2")
+	}
+	if currencySnapshot.Gold != 151 {
+		t.Fatalf("expected authored-price packet shop sell2 to credit gold to 151, got %+v", currencySnapshot)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted authored-price merchant seller account: %v", err)
+	}
+	if account.Characters[0].Gold != 151 || !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 1, Slot: 5}}) {
+		t.Fatalf("unexpected persisted authored-price merchant seller inventory: %+v", account.Characters[0])
+	}
+}
+
 func TestGameSessionFlowShopSellCountPerGoldCreditsLegacyCountDivision(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantSellerPacketCountPerGold", 0x01040122, 0x02050122, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 25, Slot: 5}})
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-count-per-gold", 0x22222222, buyer)
