@@ -409,7 +409,7 @@ func validTemplate(template Template) bool {
 	if template.Vnum == 0 {
 		return false
 	}
-	if strings.TrimSpace(template.Name) == "" {
+	if strings.TrimSpace(template.Name) == "" || !validTemplateMessage(template.Name) {
 		return false
 	}
 	if template.MaxCount == 0 || template.MaxCount > 255 {

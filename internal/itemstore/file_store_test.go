@@ -87,6 +87,30 @@ func TestFileStoreLoadRejectsMissingTemplateCollection(t *testing.T) {
 	}
 }
 
+func TestFileStoreRejectsTemplateNameWithEmbeddedNUL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	invalid := Snapshot{Templates: []Template{{
+		Vnum:      27001,
+		Name:      "Small\x00Red Potion",
+		Stackable: true,
+		MaxCount:  200,
+	}}}
+
+	if err := store.Save(invalid); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for embedded-NUL template name, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":[{"vnum":27001,"name":"Small\u0000Red Potion","stackable":true,"max_count":200}]}`), 0o644); err != nil {
+		t.Fatalf("write embedded-NUL template-name snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot when loading embedded-NUL template name, got %v", err)
+	}
+}
+
 func TestFileStoreRejectsShopBuyPriceAboveLegacyCarrier(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

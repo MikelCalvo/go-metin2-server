@@ -582,6 +582,20 @@ func TestGameRuntimeBackupItemTemplateStoreWritesManifestedBackup(t *testing.T) 
 	}
 }
 
+func TestGameRuntimeRejectsEmbeddedNULItemTemplateNameAtBoot(t *testing.T) {
+	itemDir := t.TempDir()
+	itemPath := filepath.Join(itemDir, "item-templates.json")
+	if err := os.WriteFile(itemPath, []byte(`{"templates":[{"vnum":27001,"name":"Small\u0000Red Potion","stackable":true,"max_count":200}]}`), 0o644); err != nil {
+		t.Fatalf("write embedded-NUL item template snapshot: %v", err)
+	}
+	items := itemcatalog.NewFileStore(itemPath)
+
+	_, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, items, nil)
+	if !errors.Is(err, itemcatalog.ErrInvalidSnapshot) {
+		t.Fatalf("expected embedded-NUL item template name to reject runtime boot with ErrInvalidSnapshot, got %v", err)
+	}
+}
+
 func TestGameRuntimeValidateItemTemplateStoreBackupDryRunsManifestedBackup(t *testing.T) {
 	itemDir := t.TempDir()
 	itemPath := filepath.Join(itemDir, "item-templates.json")
