@@ -185,6 +185,7 @@ Implemented now:
 - automatic item quickslot deletion synchronization after accepted last-stack carried-inventory `ITEM_USE` packets.
 - automatic item quickslot deletion synchronization after full-source `ITEM_USE_TO_ITEM` stack consolidations, while partial consolidations keep source-slot item quickslots unchanged.
 - automatic item quickslot deletion synchronization after accepted whole-stack carried-inventory `ITEM_DROP` / `ITEM_DROP2` packets, while partial counted drops keep source-slot item quickslots unchanged.
+- stale/reclaimed carried-item drop sockets keep that deletion synchronization self-local only: the old socket can receive `GC::QUICKSLOT_DEL` for its own cleared source-cell item quickslots, but the authoritative persisted account snapshot and fresh live session quickslots stay unchanged and no bootstrap ground handle is registered from the stale mutation.
 - accepted ground-item pickup stack merges refresh compatible target carried stacks without deleting or retargeting existing item quickslots for that target cell; pickup does not emit quickslot synchronization frames unless a later dedicated pickup/removal path owns one.
 - automatic item quickslot deletion synchronization after accepted whole-stack merchant `SHOP SELL` / `SELL2` packets.
 - validation of bootstrap quickslot positions (`0..35`), item quickslot cells (`0..89`), skill quickslot slots (`0..199`), command quickslot slots (`0..59`), and supported tuple types (`item`, `skill`, `command`).

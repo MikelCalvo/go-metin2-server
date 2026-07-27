@@ -98,6 +98,82 @@ func TestGameRuntimeItemDropRemovesWholeStackAndEmitsGroundAdd(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemDropStaleAfterReclaimSuppressesGroundFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DropStale", 0x01030172, 0x02040172, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1002, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "drop-stale", 0x17171718, owner)
+	if err := accounts.Save(accountstore.Account{Login: "drop-stale", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed stale drop owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected stale item-drop runtime error: %v", err)
+	}
+	staleFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-stale", 0x17171718)
+	closeSessionFlow(t, staleFlow)
+
+	issuePeerTicket(t, ticketStore, "drop-stale", 0x17171719, owner)
+	replacementFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "drop-stale", 0x17171719)
+	defer closeSessionFlow(t, replacementFlow)
+
+	staleOut, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected stale item-drop packet error: %v", err)
+	}
+	if len(staleOut) != 2 {
+		t.Fatalf("expected stale item drop to emit only self-local item and quickslot deletion frames, got %d", len(staleOut))
+	}
+	staleItemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, staleOut[0]))
+	if err != nil {
+		t.Fatalf("decode stale item-drop item delete: %v", err)
+	}
+	if staleItemDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected stale item-drop item delete: %+v", staleItemDel)
+	}
+	staleQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, staleOut[1]))
+	if err != nil {
+		t.Fatalf("decode stale item-drop quickslot delete: %v", err)
+	}
+	if staleQuickslotDel.Position != 2 {
+		t.Fatalf("unexpected stale item-drop quickslot delete: %+v", staleQuickslotDel)
+	}
+	if queued := flushServerFrames(t, replacementFlow); len(queued) != 0 {
+		t.Fatalf("expected stale item drop to register no visible ground frames for replacement session, got %d", len(queued))
+	}
+	account, err := accounts.Load("drop-stale")
+	if err != nil {
+		t.Fatalf("load stale drop account: %v", err)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("expected stale item drop to leave authoritative inventory unchanged, got %#v", account.Characters[0].Inventory)
+	}
+	if !reflect.DeepEqual(account.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("expected stale item drop to leave authoritative quickslots unchanged, got %#v", account.Characters[0].Quickslots)
+	}
+
+	replacementOut, err := replacementFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected replacement item-drop packet error: %v", err)
+	}
+	if len(replacementOut) != 4 {
+		t.Fatalf("expected replacement item drop to emit authoritative item, quickslot, ground add, and ownership frames, got %d", len(replacementOut))
+	}
+	replacementGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, replacementOut[2]))
+	if err != nil {
+		t.Fatalf("decode replacement item-drop ground add: %v", err)
+	}
+	if replacementGround.VID == 0 || replacementGround.Vnum != 27001 {
+		t.Fatalf("unexpected replacement item-drop ground add: %+v", replacementGround)
+	}
+}
+
 func TestGameRuntimeItemDropGroundVIDCollisionFailsClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

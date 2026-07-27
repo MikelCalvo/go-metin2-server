@@ -2352,19 +2352,27 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if !ok || !result.Changed {
 				return nil, false
 			}
-			droppedItem, ok := droppedInventoryItem(previousSelected, result.From, count)
-			if !ok {
-				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-				refreshLiveCharacterRegistration()
-				return nil, false
+			liveSharedWorld := ownsLiveSharedWorldSession()
+			var droppedItem inventory.ItemInstance
+			var groundVID uint32
+			if liveSharedWorld {
+				droppedItem, ok = droppedInventoryItem(previousSelected, result.From, count)
+				if !ok {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
+				groundVID = bootstrapGroundItemVID(previousSelected, result.From)
+				if groundVID == 0 || !sharedWorld.CanRegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, droppedItem) {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
 			}
-			groundVID := bootstrapGroundItemVID(previousSelected, result.From)
-			if groundVID == 0 || (ownsLiveSharedWorldSession() && !sharedWorld.CanRegisterGroundItem(sharedWorldID, sessionTicket.Login, previousSelected, groundVID, droppedItem)) {
-				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-				refreshLiveCharacterRegistration()
-				return nil, false
+			frames, err := itemDropInventoryResultFramesWithTemplates(result, runtime.itemTemplates)
+			if err == nil && liveSharedWorld {
+				frames, err = itemDropResultFramesWithTemplates(previousSelected, result, droppedItem, runtime.itemTemplates)
 			}
-			frames, err := itemDropResultFramesWithTemplates(previousSelected, result, droppedItem, runtime.itemTemplates)
 			if err != nil {
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
@@ -4800,7 +4808,7 @@ func itemDropResultFrames(character loginticket.Character, result inventory.Move
 	return itemDropResultFramesWithTemplates(character, result, droppedItem, nil)
 }
 
-func itemDropResultFramesWithTemplates(character loginticket.Character, result inventory.MoveResult, droppedItem inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
+func itemDropInventoryResultFramesWithTemplates(result inventory.MoveResult, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
 	if !result.Changed {
 		return nil, nil
 	}
@@ -4808,15 +4816,23 @@ func itemDropResultFramesWithTemplates(character loginticket.Character, result i
 	if err != nil {
 		return nil, err
 	}
-	frames := make([][]byte, 0, 2)
 	if result.FromOccupied {
 		updateFrame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, result.FromItem, templates)
 		if err != nil {
 			return nil, err
 		}
-		frames = append(frames, updateFrame)
-	} else {
-		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
+		return [][]byte{updateFrame}, nil
+	}
+	return [][]byte{itemproto.EncodeDel(itemproto.DelPacket{Position: position})}, nil
+}
+
+func itemDropResultFramesWithTemplates(character loginticket.Character, result inventory.MoveResult, droppedItem inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([][]byte, error) {
+	frames, err := itemDropInventoryResultFramesWithTemplates(result, templates)
+	if err != nil {
+		return nil, err
+	}
+	if len(frames) == 0 {
+		return nil, nil
 	}
 	if droppedItem.Vnum == 0 {
 		return nil, fmt.Errorf("item drop source item not found for slot %d", result.From)
