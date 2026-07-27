@@ -33,6 +33,60 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveEmptySnapshotWritesDeterministicEmptyTemplateArray(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+
+	if err := store.Save(Snapshot{}); err != nil {
+		t.Fatalf("save empty snapshot: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read empty snapshot: %v", err)
+	}
+	wantRaw := "{\n  \"templates\": []\n}\n"
+	if string(raw) != wantRaw {
+		t.Fatalf("unexpected empty snapshot JSON:\n got: %q\nwant: %q", string(raw), wantRaw)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load empty snapshot: %v", err)
+	}
+	if len(got.Templates) != 0 {
+		t.Fatalf("expected empty template list, got %#v", got.Templates)
+	}
+}
+
+func TestFileStoreLoadRejectsNullTemplateCollection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"templates":null}`), 0o644); err != nil {
+		t.Fatalf("write null-template snapshot: %v", err)
+	}
+
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for null template collection, got %v", err)
+	}
+}
+
+func TestFileStoreLoadRejectsMissingTemplateCollection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("write missing-template snapshot: %v", err)
+	}
+
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for missing template collection, got %v", err)
+	}
+}
+
 func TestFileStoreRejectsShopBuyPriceAboveLegacyCarrier(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

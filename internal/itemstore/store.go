@@ -292,6 +292,39 @@ type Snapshot struct {
 	Templates []Template `json:"templates"`
 }
 
+func (snapshot Snapshot) MarshalJSON() ([]byte, error) {
+	templates := snapshot.Templates
+	if templates == nil {
+		templates = []Template{}
+	}
+	return json.Marshal(struct {
+		Templates []Template `json:"templates"`
+	}{Templates: templates})
+}
+
+func (snapshot *Snapshot) UnmarshalJSON(raw []byte) error {
+	var jsonSnapshot struct {
+		Templates json.RawMessage `json:"templates"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&jsonSnapshot); err != nil {
+		return err
+	}
+	if len(jsonSnapshot.Templates) == 0 {
+		return errors.New("templates collection is required")
+	}
+	if bytes.Equal(bytes.TrimSpace(jsonSnapshot.Templates), []byte("null")) {
+		return errors.New("templates collection cannot be null")
+	}
+	var templates []Template
+	if err := json.Unmarshal(jsonSnapshot.Templates, &templates); err != nil {
+		return err
+	}
+	*snapshot = Snapshot{Templates: templates}
+	return nil
+}
+
 type SnapshotSummary struct {
 	TemplateCount  int      `json:"template_count"`
 	Vnums          []uint32 `json:"vnums"`
