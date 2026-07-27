@@ -1696,6 +1696,9 @@ func decodeLocalContentBundleRequest(r *http.Request) (contentbundle.Bundle, int
 	if len(raw) > maxContentBundleBodyBytes {
 		return contentbundle.Bundle{}, http.StatusRequestEntityTooLarge, false
 	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return contentbundle.Bundle{}, http.StatusBadRequest, false
+	}
 	var bundle contentbundle.Bundle
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()

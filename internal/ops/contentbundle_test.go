@@ -175,21 +175,91 @@ func TestLocalContentBundleEndpointImportsSpawnGroupsForLoopbackPost(t *testing.
 }
 
 func TestLocalContentBundleEndpointRejectsInvalidBody(t *testing.T) {
-	importer := &stubContentBundleImporter{status: http.StatusOK}
+	importer := &stubContentBundleImporter{}
 	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
 
-	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(`{"static_actors":[{"name":"VillageGuard"}]}`))
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(`{"static_actors":[`))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+		t.Fatalf("expected status %d for invalid body, got %d", http.StatusBadRequest, rec.Code)
 	}
 	if importer.calls != 0 {
-		t.Fatalf("expected content bundle importer not to be called, got %d calls", importer.calls)
+		t.Fatalf("expected invalid import body not to call importer, got %d calls", importer.calls)
 	}
+}
+
+func TestLocalContentBundleEndpointsRejectNullRootBeforeCallbacks(t *testing.T) {
+	t.Run("import", func(t *testing.T) {
+		importer := &stubContentBundleImporter{}
+		mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
+
+		req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(`null`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for null import body, got %d", http.StatusBadRequest, rec.Code)
+		}
+		if importer.calls != 0 {
+			t.Fatalf("expected null import body not to call importer, got %d calls", importer.calls)
+		}
+	})
+
+	t.Run("summary", func(t *testing.T) {
+		summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+		mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+		req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(`null`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for null summary body, got %d", http.StatusBadRequest, rec.Code)
+		}
+		if summaryer.calls != 0 {
+			t.Fatalf("expected null dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+		}
+	})
+
+	t.Run("import_preview", func(t *testing.T) {
+		previewer := &stubContentBundleImportPreviewer{}
+		mux := RegisterLocalContentBundleImportPreviewEndpoint(NewPprofMux("gamed"), previewer.PreviewContentBundleImport)
+
+		req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/import-preview", strings.NewReader(`null`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for null import-preview body, got %d", http.StatusBadRequest, rec.Code)
+		}
+		if previewer.calls != 0 {
+			t.Fatalf("expected null import preview not to call previewer, got %d calls", previewer.calls)
+		}
+	})
+
+	t.Run("validate", func(t *testing.T) {
+		mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+		req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", strings.NewReader(`null`))
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected status %d for null validation body, got %d", http.StatusBadRequest, rec.Code)
+		}
+	})
 }
 
 func TestLocalContentBundleEndpointRejectsDuplicateStaticActorsBeforeImport(t *testing.T) {
