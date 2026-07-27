@@ -1,7 +1,9 @@
 package worldruntime
 
 import (
+	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 )
@@ -183,7 +185,11 @@ func clonePlayerEntity(player PlayerEntity) PlayerEntity {
 }
 
 func validPlayerDirectoryEntity(player PlayerEntity) bool {
-	return player.Entity.ID != 0 && player.Entity.Kind == EntityKindPlayer && player.Entity.VID != 0 && player.Entity.Name != ""
+	return player.Entity.ID != 0 && player.Entity.Kind == EntityKindPlayer && player.Entity.VID != 0 && ValidPlayerName(player.Entity.Name) && player.Character.Name == player.Entity.Name && ValidPlayerName(player.Character.Name)
+}
+
+func ValidPlayerName(name string) bool {
+	return name != "" && name == strings.TrimSpace(name) && utf8.ValidString(name) && !strings.ContainsRune(name, '\x00')
 }
 
 func (d *PlayerDirectory) removeSecondaryIndexesForEntityIDLocked(entityID uint64) {

@@ -1510,16 +1510,17 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsBlankOwnerLogin(t *testi
 func TestSharedWorldRegistryRegisterGroundRewardsRejectsBlankOwnerName(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("BlankNameRewardOwner", 0x010301a1, 0x020401a1, 1200, 2200, 0, 101, 201)
-	owner.Name = "\t"
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
 	if ownerID == 0 {
 		t.Fatal("expected blank-name reward owner join to allocate a shared-world entity id")
 	}
+	blankNameOwner := owner
+	blankNameOwner.Name = "	"
 
-	if registry.RegisterGroundItem(ownerID, "blank-name-reward-owner", owner, 0x07000021, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
+	if registry.RegisterGroundItem(ownerID, "blank-name-reward-owner", blankNameOwner, 0x07000021, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
 		t.Fatal("expected blank-name ground-item reward registration to fail closed")
 	}
-	if registry.RegisterGroundGold(ownerID, "blank-name-reward-owner", owner, 0x07000022, 250) {
+	if registry.RegisterGroundGold(ownerID, "blank-name-reward-owner", blankNameOwner, 0x07000022, 250) {
 		t.Fatal("expected blank-name ground-gold reward registration to fail closed")
 	}
 	if registry.GroundItemExists(0x07000021) || registry.GroundItemExists(0x07000022) {
@@ -1572,14 +1573,15 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsEmbeddedWhitespaceOwnerM
 func TestSharedWorldRegistryRegisterGroundRewardsRejectsNULOwnerMetadata(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("NULNameRewardOwner", 0x010301a4, 0x020401a4, 1200, 2200, 0, 101, 201)
-	owner.Name = "NUL\x00NameRewardOwner"
 	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
 	if ownerID == 0 {
 		t.Fatal("expected NUL-name reward owner join to allocate a shared-world entity id")
 	}
+	nulNameOwner := owner
+	nulNameOwner.Name = "NUL\x00NameRewardOwner"
 
-	if registry.RegisterGroundItem(ownerID, "nul-metadata-owner", owner, 0x07000027, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
-		t.Fatal("expected NUL owner-name ground-item reward registration to fail closed")
+	if registry.RegisterGroundItem(ownerID, "nul-metadata-owner", nulNameOwner, 0x07000027, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected NUL owner-name ground-item registration to fail closed")
 	}
 
 	loginOwner := peerVisibilityCharacter("NULLoginRewardOwner", 0x010301a5, 0x020401a5, 1200, 2200, 1, 101, 201)
@@ -1601,16 +1603,18 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsInvalidUTF8OwnerMetadata
 
 	t.Run("owner name", func(t *testing.T) {
 		registry := newSharedWorldRegistry()
-		owner := peerVisibilityCharacter(invalidName, 0x010301a6, 0x020401a6, 1200, 2200, 0, 101, 201)
+		owner := peerVisibilityCharacter("InvalidUTF8NameRewardOwner", 0x010301a6, 0x020401a6, 1200, 2200, 0, 101, 201)
 		ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
 		if ownerID == 0 {
 			t.Fatal("expected invalid-utf8-name reward owner join to allocate a shared-world entity id")
 		}
+		invalidNameOwner := owner
+		invalidNameOwner.Name = invalidName
 
-		if registry.RegisterGroundItem(ownerID, "invalid-utf8-owner", owner, 0x07000029, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
-			t.Fatal("expected invalid-utf8 owner-name ground-item reward registration to fail closed")
+		if registry.RegisterGroundItem(ownerID, "invalid-utf8-owner", invalidNameOwner, 0x07000029, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
+			t.Fatal("expected invalid-utf8 owner-name ground-item registration to fail closed")
 		}
-		if registry.RegisterGroundGold(ownerID, "invalid-utf8-owner", owner, 0x0700002A, 250) {
+		if registry.RegisterGroundGold(ownerID, "invalid-utf8-owner", invalidNameOwner, 0x0700002A, 250) {
 			t.Fatal("expected invalid-utf8 owner-name ground-gold reward registration to fail closed")
 		}
 		if registry.GroundItemExists(0x07000029) || registry.GroundItemExists(0x0700002A) {

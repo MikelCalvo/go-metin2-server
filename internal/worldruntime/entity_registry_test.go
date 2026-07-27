@@ -81,6 +81,63 @@ func TestEntityRegistryLooksUpPlayersByVIDAndExactName(t *testing.T) {
 	}
 }
 
+func TestEntityRegistryRejectsMalformedPlayerNames(t *testing.T) {
+	registry := NewEntityRegistry()
+	cases := []struct {
+		name       string
+		playerName string
+	}{
+		{name: "whitespace only", playerName: "   "},
+		{name: "leading and trailing whitespace", playerName: " Alpha "},
+		{name: "embedded NUL", playerName: "Alpha\x00Shadow"},
+		{name: "invalid utf8", playerName: string([]byte{'B', 'a', 'd', 0xff})},
+	}
+
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			player := registry.RegisterPlayer(entityRegistryCharacter(tc.playerName, uint32(0x02040101+index), 1, 1100, 2100))
+			if player.Entity.ID != 0 {
+				t.Fatalf("expected malformed player name %q to fail closed, got %+v", tc.playerName, player)
+			}
+			if next := registry.NextEntityID(); next != 1 {
+				t.Fatalf("expected rejected malformed player name not to consume entity ID, got next=%d", next)
+			}
+			if characters := registry.PlayerCharacters(); len(characters) != 0 {
+				t.Fatalf("expected rejected malformed player name not to enter player snapshots, got %+v", characters)
+			}
+			if occupancy := registry.MapOccupancy(); len(occupancy) != 0 {
+				t.Fatalf("expected rejected malformed player name not to enter map occupancy, got %+v", occupancy)
+			}
+		})
+	}
+}
+
+func TestEntityRegistryRejectsMalformedPlayerNameUpdates(t *testing.T) {
+	registry := NewEntityRegistry()
+	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if alpha.Entity.ID == 0 {
+		t.Fatal("expected player registration to succeed before malformed update")
+	}
+
+	updated := alpha.Character
+	updated.Name = "Alpha\x00Shadow"
+	updated.X = 1900
+	updated.Y = 3000
+	if registry.UpdatePlayer(alpha.Entity.ID, updated) {
+		t.Fatal("expected malformed player name update to fail closed")
+	}
+	lookup, ok := registry.Player(alpha.Entity.ID)
+	if !ok || lookup.Entity.Name != "Alpha" || lookup.Character.Name != "Alpha" || lookup.Character.X != 1700 || lookup.Character.Y != 2800 {
+		t.Fatalf("expected rejected malformed name update to preserve original player, got player=%+v ok=%v", lookup, ok)
+	}
+	if byName, ok := registry.PlayerByName("Alpha"); !ok || byName.Entity.ID != alpha.Entity.ID {
+		t.Fatalf("expected original exact-name lookup to remain after rejected malformed update, got player=%+v ok=%v", byName, ok)
+	}
+	if byName, ok := registry.PlayerByName(updated.Name); ok {
+		t.Fatalf("expected malformed updated name lookup to stay absent, got %+v", byName)
+	}
+}
+
 func TestEntityRegistryRejectedPlayerRegistrationDoesNotConsumeEntityID(t *testing.T) {
 	registry := NewEntityRegistry()
 	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))

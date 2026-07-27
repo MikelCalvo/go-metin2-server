@@ -44,6 +44,44 @@ func TestPlayerDirectoryLooksUpPlayersByVIDAndExactName(t *testing.T) {
 	}
 }
 
+func TestPlayerDirectoryRejectsMalformedPlayerNames(t *testing.T) {
+	directory := NewPlayerDirectory()
+	cases := []struct {
+		name       string
+		playerName string
+	}{
+		{name: "whitespace only", playerName: "   "},
+		{name: "leading and trailing whitespace", playerName: " Alpha "},
+		{name: "embedded NUL", playerName: "Alpha\x00Shadow"},
+		{name: "invalid utf8", playerName: string([]byte{'B', 'a', 'd', 0xff})},
+	}
+
+	for index, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			player := newPlayerEntity(uint64(index+1), entityRegistryCharacter(tc.playerName, uint32(0x02040101+index), 1, 1100, 2100))
+			if directory.Register(player) {
+				t.Fatalf("expected malformed player name %q to be rejected", tc.playerName)
+			}
+			if characters := directory.PlayerCharacters(); len(characters) != 0 {
+				t.Fatalf("expected rejected malformed player name not to enter directory snapshots, got %+v", characters)
+			}
+		})
+	}
+}
+
+func TestPlayerDirectoryAllowsInternalWhitespaceInPlayerNames(t *testing.T) {
+	directory := NewPlayerDirectory()
+	player := newPlayerEntity(1, entityRegistryCharacter("Invalid Owner", 0x02040101, 1, 1100, 2100))
+
+	if !directory.Register(player) {
+		t.Fatal("expected internal whitespace to stay accepted by the bootstrap runtime name validator")
+	}
+	lookup, ok := directory.ByName("Invalid Owner")
+	if !ok || lookup.Entity.ID != player.Entity.ID {
+		t.Fatalf("expected exact-name lookup for internal-whitespace player, got player=%+v ok=%v", lookup, ok)
+	}
+}
+
 func TestPlayerDirectoryUpdatesVIDAndExactNameIndexes(t *testing.T) {
 	registry := NewEntityRegistry()
 	alpha := registry.RegisterPlayer(entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
