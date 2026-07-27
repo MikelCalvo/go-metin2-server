@@ -826,6 +826,48 @@ func TestFileStoreBackupToWritesDeterministicManifest(t *testing.T) {
 	}
 }
 
+func TestFileStoreBackupToRejectsStaleActiveManifestBeforeCreatingDestination(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
+	if err := store.Save(account); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := store.writeBackupManifest([]Account{account}); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	if err := os.WriteFile(store.accountPath("mkmk"), []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWarTampered"}]}`), 0o644); err != nil {
+		t.Fatalf("tamper account after active manifest write: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "account-backup")
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for stale active manifest, got %v", err)
+	}
+	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected rejected backup not to create destination, stat err=%v", statErr)
+	}
+}
+
+func TestFileStoreBackupToRejectsMalformedActiveManifestBeforeCreatingDestination(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	if err := store.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save account: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(store.dir, BackupManifestFilename), []byte(`{"format":"manual"}`), 0o644); err != nil {
+		t.Fatalf("write malformed active manifest: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "account-backup")
+
+	err := store.BackupTo(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for malformed active manifest, got %v", err)
+	}
+	if _, statErr := os.Stat(backupDir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected rejected backup not to create destination, stat err=%v", statErr)
+	}
+}
+
 func TestFileStoreValidateRejectsStaleBackupManifest(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}

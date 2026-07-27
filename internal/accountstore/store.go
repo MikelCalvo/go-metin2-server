@@ -345,6 +345,9 @@ func (s *FileStore) BackupTo(dstDir string) error {
 	if err != nil {
 		return err
 	}
+	if err := s.validateActiveBackupManifestForAccounts(accounts); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		return fmt.Errorf("create account backup dir: %w", err)
 	}
