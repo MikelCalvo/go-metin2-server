@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -84,6 +85,34 @@ func TestCanonicalJSONEmitsEmptyArraysForContractCollections(t *testing.T) {
 	want := "{\n  \"static_actors\": [],\n  \"interaction_definitions\": []\n}\n"
 	if string(got) != want {
 		t.Fatalf("unexpected empty canonical JSON:\n got: %s\nwant: %s", string(got), want)
+	}
+}
+
+func TestBundleJSONRejectsUnknownTopLevelFields(t *testing.T) {
+	var bundle Bundle
+	err := json.Unmarshal([]byte(`{"static_actors":[],"interaction_definitions":[],"quest_state":[]}`), &bundle)
+	if err == nil {
+		t.Fatal("expected content bundle JSON decoder to reject unknown top-level fields")
+	}
+}
+
+func TestBundleJSONRejectsNullCollectionFields(t *testing.T) {
+	for _, field := range []string{"static_actors", "spawn_groups", "combat_profiles", "item_templates", "interaction_definitions"} {
+		t.Run(field, func(t *testing.T) {
+			var bundle Bundle
+			err := json.Unmarshal([]byte(fmt.Sprintf(`{"%s":null}`, field)), &bundle)
+			if err == nil {
+				t.Fatalf("expected content bundle JSON decoder to reject null %s", field)
+			}
+		})
+	}
+}
+
+func TestBundleJSONRejectsUnknownCollectionFields(t *testing.T) {
+	var bundle Bundle
+	err := json.Unmarshal([]byte(`{"static_actors":[{"name":"VillageGuide","map_index":1,"x":1000,"y":2000,"race_num":20302,"quest":"unknown"}],"interaction_definitions":[]}`), &bundle)
+	if err == nil {
+		t.Fatal("expected content bundle JSON decoder to reject unknown static actor fields")
 	}
 }
 

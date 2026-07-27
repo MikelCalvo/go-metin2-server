@@ -1,9 +1,11 @@
 package contentbundle
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"sort"
 	"strings"
@@ -48,6 +50,74 @@ type Bundle struct {
 	CombatProfiles         []worldruntime.StaticActorCombatProfileSnapshot `json:"combat_profiles,omitempty"`
 	ItemTemplates          []itemcatalog.Template                          `json:"item_templates,omitempty"`
 	InteractionDefinitions []interactionstore.Definition                   `json:"interaction_definitions"`
+}
+
+func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
+	if bundle == nil {
+		return errors.New("content bundle receiver is nil")
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return errors.New("content bundle cannot be null")
+	}
+	var jsonBundle struct {
+		StaticActors           json.RawMessage `json:"static_actors"`
+		SpawnGroups            json.RawMessage `json:"spawn_groups"`
+		CombatProfiles         json.RawMessage `json:"combat_profiles"`
+		ItemTemplates          json.RawMessage `json:"item_templates"`
+		InteractionDefinitions json.RawMessage `json:"interaction_definitions"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&jsonBundle); err != nil {
+		return err
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return errors.New("content bundle has trailing json value")
+		}
+		return err
+	}
+	var decoded Bundle
+	if err := decodeBundleCollection(jsonBundle.StaticActors, &decoded.StaticActors); err != nil {
+		return err
+	}
+	if err := decodeBundleCollection(jsonBundle.SpawnGroups, &decoded.SpawnGroups); err != nil {
+		return err
+	}
+	if err := decodeBundleCollection(jsonBundle.CombatProfiles, &decoded.CombatProfiles); err != nil {
+		return err
+	}
+	if err := decodeBundleCollection(jsonBundle.ItemTemplates, &decoded.ItemTemplates); err != nil {
+		return err
+	}
+	if err := decodeBundleCollection(jsonBundle.InteractionDefinitions, &decoded.InteractionDefinitions); err != nil {
+		return err
+	}
+	*bundle = decoded
+	return nil
+}
+
+func decodeBundleCollection[T any](raw json.RawMessage, dst *[]T) error {
+	if raw == nil {
+		return nil
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return errors.New("content bundle collection cannot be null")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return errors.New("content bundle collection has trailing json value")
+		}
+		return err
+	}
+	return nil
 }
 
 type Summary struct {
