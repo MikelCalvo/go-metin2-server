@@ -435,6 +435,9 @@ func normalizeCanonicalJSONContractCollections(bundle Bundle) Bundle {
 }
 
 func Canonicalize(bundle Bundle) (Bundle, error) {
+	if !combatProfileSnapshotIdentitiesAreCanonical(bundle.CombatProfiles) {
+		return Bundle{}, ErrInvalidBundle
+	}
 	normalizedStaticActors := normalizeStaticActors(bundle.StaticActors)
 	normalizedCombatProfiles := normalizeCombatProfiles(bundle.CombatProfiles)
 	normalizedSpawnGroups := normalizeSpawnGroups(bundle.SpawnGroups, normalizedCombatProfiles)
@@ -2106,6 +2109,18 @@ func normalizeCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSna
 		return normalized[i].Profile < normalized[j].Profile
 	})
 	return normalized
+}
+
+func combatProfileSnapshotIdentitiesAreCanonical(profiles []worldruntime.StaticActorCombatProfileSnapshot) bool {
+	for _, profile := range profiles {
+		if !worldruntime.ValidStaticActorCombatProfileName(profile.Profile) {
+			return false
+		}
+		if !validCombatProfileSnapshot(profile) {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneCombatProfileSnapshotsPreservingRewardDropMultiplicity(profiles []worldruntime.StaticActorCombatProfileSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {

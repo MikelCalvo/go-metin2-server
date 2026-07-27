@@ -6227,9 +6227,10 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 		}
 	}
 	for _, snapshot := range profiles {
-		profile := strings.TrimSpace(snapshot.Profile)
-		if profile == "" || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
-			continue
+		profile := snapshot.Profile
+		if !worldruntime.ValidStaticActorCombatProfileName(profile) || profile == worldruntime.StaticActorCombatProfilePracticeMob || profile == worldruntime.StaticActorCombatProfileTrainingDummy {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
 		}
 		if _, referenced := referencedProfiles[profile]; !referenced {
 			rollback()

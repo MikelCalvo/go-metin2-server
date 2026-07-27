@@ -216,6 +216,46 @@ func TestGameRuntimePreviewContentBundleImportReturnsDeltasWithoutMutatingRuntim
 	}
 }
 
+func TestGameRuntimeImportContentBundleRejectsNonCanonicalCombatProfileSnapshotIdentity(t *testing.T) {
+	const profile = "PracticeRuntimeWolf"
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           "practice.runtime_noncanonical_wolf",
+			Name:          "Runtime Noncanonical Wolf",
+			MapIndex:      42,
+			X:             1800,
+			Y:             2900,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 24,
+			DamagePerNormalAttack: 6,
+			AttackValue:           8,
+			DefenseValue:          2,
+			RespawnDelayMs:        1500,
+		}},
+	})
+	if !errors.Is(err, contentbundle.ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for non-canonical combat profile snapshot identity, got %v", err)
+	}
+	if worldruntime.ValidStaticActorCombatProfile(profile) {
+		t.Fatalf("expected rejected non-canonical combat profile snapshot %q not to stay registered", profile)
+	}
+	if spawnGroups := runtime.SpawnGroups(); len(spawnGroups) != 0 {
+		t.Fatalf("expected rejected non-canonical combat profile import not to materialize spawn groups, got %+v", spawnGroups)
+	}
+}
+
 func TestGameRuntimeExportContentBundleSummaryIncludesSpawnGroupDetails(t *testing.T) {
 	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
 	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")

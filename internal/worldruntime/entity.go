@@ -241,6 +241,10 @@ func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombat
 	return snapshot
 }
 
+func ValidStaticActorCombatProfileName(profile string) bool {
+	return validStaticActorCombatProfileName(profile)
+}
+
 func validStaticActorCombatProfileName(profile string) bool {
 	if profile == "" || profile != strings.TrimSpace(profile) {
 		return false

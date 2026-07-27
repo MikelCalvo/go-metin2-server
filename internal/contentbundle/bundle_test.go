@@ -2241,6 +2241,41 @@ func TestCanonicalizeRejectsEmbeddedNULInteractionDefinitionTextFields(t *testin
 	}
 }
 
+func TestCanonicalizeRejectsNonCanonicalCustomCombatProfileSnapshotIdentities(t *testing.T) {
+	for _, profile := range []string{
+		" practice_padded_wolf ",
+		"PracticeUppercaseWolf",
+		"practice-hyphen-wolf",
+		"practice.dot.wolf",
+		"1practice_digit_wolf",
+	} {
+		t.Run(profile, func(t *testing.T) {
+			_, err := Canonicalize(Bundle{
+				SpawnGroups: []SpawnGroup{{
+					Ref:           "practice.invalid_profile_wolf",
+					Name:          "Invalid Profile Wolf",
+					MapIndex:      42,
+					X:             1800,
+					Y:             2900,
+					RaceNum:       101,
+					CombatProfile: strings.TrimSpace(profile),
+				}},
+				CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+					Profile:               profile,
+					MaxHP:                 24,
+					DamagePerNormalAttack: 6,
+					AttackValue:           8,
+					DefenseValue:          2,
+					RespawnDelayMs:        1500,
+				}},
+			})
+			if !errors.Is(err, ErrInvalidBundle) {
+				t.Fatalf("expected ErrInvalidBundle for non-canonical combat profile snapshot identity %q, got %v", profile, err)
+			}
+		})
+	}
+}
+
 func TestCanonicalizeAcceptsReferencedCustomCombatProfileSnapshot(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
 		ItemTemplates: []itemcatalog.Template{
@@ -2257,7 +2292,7 @@ func TestCanonicalizeAcceptsReferencedCustomCombatProfileSnapshot(t *testing.T) 
 			CombatProfile: "practice_imported_wolf",
 		}},
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
-			Profile:               " practice_imported_wolf ",
+			Profile:               "practice_imported_wolf",
 			MaxHP:                 24,
 			DamagePerNormalAttack: 6,
 			AttackValue:           8,
