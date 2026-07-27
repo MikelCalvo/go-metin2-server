@@ -96,6 +96,18 @@ func TestBundleJSONRejectsUnknownTopLevelFields(t *testing.T) {
 	}
 }
 
+func TestBundleJSONRejectsInvalidUTF8BeforeLossyDecode(t *testing.T) {
+	body := []byte(`{"static_actors":[{"name":"Visible`)
+	body = append(body, 0xff)
+	body = append(body, []byte(`Hidden","map_index":1,"x":1000,"y":2000,"race_num":20302}],"interaction_definitions":[]}`)...)
+
+	var bundle Bundle
+	err := json.Unmarshal(body, &bundle)
+	if err == nil {
+		t.Fatal("expected content bundle JSON decoder to reject invalid UTF-8 before lossy replacement")
+	}
+}
+
 func TestBundleJSONRejectsNullCollectionFields(t *testing.T) {
 	for _, field := range []string{"static_actors", "spawn_groups", "combat_profiles", "item_templates", "interaction_definitions"} {
 		t.Run(field, func(t *testing.T) {

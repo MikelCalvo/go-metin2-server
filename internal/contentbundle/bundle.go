@@ -56,6 +56,9 @@ func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
 	if bundle == nil {
 		return errors.New("content bundle receiver is nil")
 	}
+	if !utf8.Valid(raw) {
+		return errors.New("content bundle must be valid utf-8")
+	}
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return errors.New("content bundle cannot be null")
 	}

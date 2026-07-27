@@ -340,7 +340,7 @@ The current delta set covers static actors, exact added/removed portable static-
 
 ### `POST /local/content-bundle/validate`
 
-Validates and canonicalizes an authored bootstrap content bundle without importing or mutating runtime state. This loopback-only endpoint uses the same 1 MiB request bound, strict JSON decoding, invalid UTF-8 rejection, and `contentbundle.Canonicalize(...)` rules as `POST /local/content-bundle`.
+Validates and canonicalizes an authored bootstrap content bundle without importing or mutating runtime state. This loopback-only endpoint uses the same 1 MiB request bound, strict JSON decoding, invalid UTF-8 rejection, and `contentbundle.Canonicalize(...)` rules as `POST /local/content-bundle`. The underlying bundle decoder also rejects invalid UTF-8 before `encoding/json` can replace malformed bytes, so checked-in fixtures and non-HTTP tooling share the same fail-closed rule.
 
 Successful responses return the canonical bundle JSON that would be accepted by import. Invalid JSON, invalid UTF-8, unknown fields, JSON `null` roots, dangling refs, invalid static actors/spawn groups/combat profiles, missing merchant or reward-drop item templates, and other bundle validation failures return `400`; non-loopback callers return `403`; methods other than `POST` return `405`.
 
