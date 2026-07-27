@@ -224,6 +224,44 @@ func TestGameRuntimeRejectsNULAndInvalidUTF8StaticActorNames(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeRejectsInvalidUTF8StaticActorNames(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	invalidName := string([]byte{'B', 'a', 'd', 0xff})
+
+	if _, ok := runtime.RegisterStaticActor(invalidName, bootstrapMapIndex, 1200, 2200, 20300); ok {
+		t.Fatal("expected static actor registration with invalid UTF-8 name to be rejected")
+	}
+	if got := runtime.StaticActors(); len(got) != 0 {
+		t.Fatalf("expected rejected invalid UTF-8 static actor not to mutate runtime, got %+v", got)
+	}
+}
+
+func TestGameRuntimeRejectsInvalidUTF8StaticActorNameUpdates(t *testing.T) {
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActor("Utf8Guard", bootstrapMapIndex, 1200, 2200, 20300)
+	if !ok {
+		t.Fatal("expected static actor registration to succeed")
+	}
+	invalidName := string([]byte{'B', 'a', 'd', 0xff})
+
+	if _, ok := runtime.UpdateStaticActor(actor.EntityID, invalidName, bootstrapMapIndex, 1300, 2300, 20300); ok {
+		t.Fatal("expected static actor update with invalid UTF-8 name to be rejected")
+	}
+	snapshot, ok := runtime.StaticActor(actor.EntityID)
+	if !ok {
+		t.Fatalf("expected original static actor %d to remain", actor.EntityID)
+	}
+	if snapshot.Name != "Utf8Guard" || snapshot.X != 1200 || snapshot.Y != 2200 {
+		t.Fatalf("expected rejected invalid UTF-8 update to preserve original actor, got %+v", snapshot)
+	}
+}
+
 type loadableFailingAccountStore struct {
 	account accountstore.Account
 	saveErr error

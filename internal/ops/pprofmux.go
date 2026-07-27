@@ -1545,8 +1545,14 @@ func decodeLocalRelocationRequest(r *http.Request) (localRelocationRequest, bool
 }
 
 func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bool) {
+	const maxStaticActorBodyBytes = 4096
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxStaticActorBodyBytes+1))
+	if err != nil || len(raw) > maxStaticActorBodyBytes || !utf8.Valid(raw) {
+		return localStaticActorRequest{}, false
+	}
+
 	var request localStaticActorRequest
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
 		return localStaticActorRequest{}, false
@@ -1572,7 +1578,7 @@ func decodeLocalStaticActorRequest(r *http.Request) (localStaticActorRequest, bo
 
 func validLocalStaticActorName(name string) bool {
 	name = strings.TrimSpace(name)
-	return name != "" && !strings.ContainsRune(name, '\x00')
+	return name != "" && utf8.ValidString(name) && !strings.ContainsRune(name, '\x00')
 }
 
 func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldruntime.StaticActorCombatProfileDefaults, bool) {

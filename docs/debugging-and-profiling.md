@@ -609,6 +609,7 @@ Create/update bodies currently use:
 - optional `combat_profile`
 
 If one interaction field is present, the other must also be present.
+`name` is trimmed before use and must remain non-empty, valid UTF-8, and embedded-NUL-free; raw create/update bodies containing invalid UTF-8 are rejected before the runtime mutation callback is invoked.
 `combat_profile` follows the same bootstrap profile identifiers accepted by content bundles and spawn groups, letting local operator create/update calls seed practice-mob/training-dummy descriptors without importing a full bundle.
 Returned static-actor snapshots now also expose `dead: true` while a runtime-owned practice mob is still in its server-owned dead interval, including `DELETE /local/static-actors/{entity_id}` responses when a dead dummy is removed before respawn.
 
