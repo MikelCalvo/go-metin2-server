@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"net/http"
@@ -363,6 +364,36 @@ func TestLocalAccountStoreBackupEndpointRejectsOversizedBody(t *testing.T) {
 	}
 	if backer.calls != 0 {
 		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalAccountStoreBackupEndpointRejectsInvalidUTF8Body(t *testing.T) {
+	backer := &stubAccountStoreBacker{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+	body := append([]byte(`{"dst_dir":"/tmp/account-`), 0xff)
+	body = append(body, []byte(`-backup"}`)...)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/backup", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestDecodeStrictLocalAccountStoreMutationRequestRejectsInvalidUTF8(t *testing.T) {
+	raw := append([]byte(`{"dst_dir":"/tmp/account-`), 0xff)
+	raw = append(raw, []byte(`-backup"}`)...)
+
+	var request localAccountStoreBackupRequest
+	if decodeStrictLocalAccountStoreMutationRequest(raw, &request) {
+		t.Fatalf("expected invalid UTF-8 mutation request body to be rejected, got %+v", request)
 	}
 }
 

@@ -1690,6 +1690,9 @@ func requireEmptyLocalAccountStoreMutationBody(r *http.Request) (int, bool) {
 }
 
 func decodeStrictLocalAccountStoreMutationRequest(raw []byte, request any) bool {
+	if !utf8.Valid(raw) {
+		return false
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(request); err != nil {
