@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type FileStore struct {
@@ -504,6 +505,9 @@ func validateBackupDirectoryEntries(srcDir string, manifestFiles map[string]stru
 }
 
 func decodeSnapshotStrict(raw []byte, snapshot *Snapshot) error {
+	if !utf8.Valid(raw) {
+		return errors.New("invalid utf-8")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(snapshot); err != nil {

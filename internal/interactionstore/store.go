@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
@@ -166,7 +167,7 @@ func validDefinition(definition Definition) bool {
 }
 
 func validDefinitionText(text string) bool {
-	return !strings.ContainsRune(text, '\x00')
+	return utf8.ValidString(text) && !strings.ContainsRune(text, '\x00')
 }
 
 func validMerchantCatalog(catalog []MerchantCatalogEntry) bool {

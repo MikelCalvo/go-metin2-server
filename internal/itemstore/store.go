@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
@@ -412,6 +413,9 @@ func validTemplate(template Template) bool {
 	if strings.TrimSpace(template.Name) == "" || !validTemplateMessage(template.Name) {
 		return false
 	}
+	if !validTemplateMessage(template.Name) {
+		return false
+	}
 	if template.MaxCount == 0 || template.MaxCount > 255 {
 		return false
 	}
@@ -486,7 +490,7 @@ func validDisplayAttributes(attributes AttributeValues) bool {
 }
 
 func validTemplateMessage(message string) bool {
-	return !strings.ContainsRune(message, '\x00')
+	return utf8.ValidString(message) && !strings.ContainsRune(message, '\x00')
 }
 
 func templateHasEquipRejectGuard(template Template) bool {

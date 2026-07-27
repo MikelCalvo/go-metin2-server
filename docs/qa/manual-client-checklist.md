@@ -74,11 +74,12 @@ Fill this before starting:
 - [ ] Both expected listen ports are open
 - [ ] Recent logs show no fresh fatal startup failure
 - [ ] If QA depends on authored item templates, `POST /local/item-templates/validate` returns the expected template summary and the committed snapshot has a present JSON `templates` array rather than a missing/null collection; item-template names must not contain embedded NUL bytes; if validation reports only disposable `.item-templates-*.json` crash-temp residue, clean it with `POST /local/item-templates/crash-temps/cleanup` before the run
+- [ ] If QA imports authored NPC/content bundles, `POST /local/content-bundle/validate` accepts the exact candidate fixture before import; invalid UTF-8, JSON `null` collection fields, dangling refs, missing merchant/reward item templates, or other validation failures should be fixed in the bundle instead of imported into the live runtime
 - [ ] Before destructive item-template migration/import experiments, create a loopback-only manifested backup with `POST /local/item-templates/backup` and dry-run it with `POST /local/item-templates/backup/validate`; if testing restore, drain connected game sessions first and restore only into an empty active item-template store with `POST /local/item-templates/restore`
 
 Expected result:
 - the server is stably up before opening the client
-- authored item-template state is either clean or has only intentionally cleaned crash-temp residue before item/economy checks
+- authored item-template/content-bundle state is either clean or has only intentionally cleaned crash-temp residue before item/economy/NPC checks
 
 ### 1.2 Target sanity
 

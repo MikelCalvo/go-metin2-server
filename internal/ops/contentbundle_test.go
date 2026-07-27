@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -190,6 +191,27 @@ func TestLocalContentBundleEndpointRejectsInvalidBody(t *testing.T) {
 	}
 	if importer.calls != 0 {
 		t.Fatalf("expected invalid import body not to call importer, got %d calls", importer.calls)
+	}
+}
+
+func TestLocalContentBundleEndpointRejectsInvalidUTF8BodyBeforeImport(t *testing.T) {
+	importer := &stubContentBundleImporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
+
+	body := []byte(`{"static_actors":[{"name":"Visible`)
+	body = append(body, 0xff)
+	body = append(body, []byte(`Hidden","map_index":42,"x":1700,"y":2800,"race_num":20300}]}`)...)
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", bytes.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for invalid UTF-8 body, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if importer.calls != 0 {
+		t.Fatalf("expected invalid UTF-8 body not to call importer, got %d calls", importer.calls)
 	}
 }
 

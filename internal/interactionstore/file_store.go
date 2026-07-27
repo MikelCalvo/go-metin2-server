@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 type FileStore struct {
@@ -37,6 +38,9 @@ func (s *FileStore) Load() (Snapshot, error) {
 			return Snapshot{}, ErrSnapshotNotFound
 		}
 		return Snapshot{}, fmt.Errorf("read interaction snapshot: %w", err)
+	}
+	if !utf8.Valid(raw) {
+		return Snapshot{}, fmt.Errorf("%w: decode interaction snapshot: invalid utf-8", ErrInvalidSnapshot)
 	}
 
 	var snapshot Snapshot

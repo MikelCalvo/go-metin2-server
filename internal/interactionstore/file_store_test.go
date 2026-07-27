@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"unicode/utf8"
 )
 
 func testMerchantCatalogDefinition() Definition {
@@ -326,6 +327,27 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	shopPreviewTitleWithNUL := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village\x00Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}}}
 	if err := store.Save(shopPreviewTitleWithNUL); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for NUL shop preview title, got %v", err)
+	}
+	invalidUTF8 := string([]byte{'v', 'i', 's', 'i', 'b', 'l', 'e', 0xff, 'h', 'i', 'd', 'd', 'e', 'n'})
+	if utf8.ValidString(invalidUTF8) {
+		t.Fatal("test fixture must contain invalid UTF-8")
+	}
+	infoTextWithInvalidUTF8 := Snapshot{Definitions: []Definition{{Kind: KindInfo, Ref: "lore:invalid_utf8", Text: invalidUTF8}}}
+	if err := store.Save(infoTextWithInvalidUTF8); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for invalid UTF-8 info text, got %v", err)
+	}
+	body := []byte(`{"definitions":[{"kind":"info","ref":"lore:invalid_utf8","text":"visible`)
+	body = append(body, 0xff)
+	body = append(body, []byte(`hidden"}]}`)...)
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("write invalid UTF-8 interaction snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for loaded invalid UTF-8 info text, got %v", err)
+	}
+	shopPreviewTitleWithInvalidUTF8 := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:invalid_utf8", Title: invalidUTF8, Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}}}
+	if err := store.Save(shopPreviewTitleWithInvalidUTF8); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for invalid UTF-8 shop preview title, got %v", err)
 	}
 	emptyShopPreviewCatalog := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant"}}}
 	if err := store.Save(emptyShopPreviewCatalog); !errors.Is(err, ErrInvalidSnapshot) {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
@@ -30,6 +31,33 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestFileStoreRejectsInvalidUTF8TemplateStrings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	invalid := string([]byte{'V', 'i', 's', 'i', 'b', 'l', 'e', 0xff, 'H', 'i', 'd', 'd', 'e', 'n'})
+	if utf8.ValidString(invalid) {
+		t.Fatal("test fixture must contain invalid UTF-8")
+	}
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: invalid, Stackable: true, MaxCount: 200}}}); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for invalid UTF-8 item template name, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	body := []byte(`{"templates":[{"vnum":27001,"name":"Visible`)
+	body = append(body, 0xff)
+	body = append(body, []byte(`Hidden","stackable":true,"max_count":200}]}`)...)
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("write invalid UTF-8 item template snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for invalid UTF-8 item template name on load, got %v", err)
+	}
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27002, Name: "Practice Elixir", Stackable: true, MaxCount: 200, UseEffect: &UseEffect{PointType: 7, PointIndex: 1, PointDelta: 25, Message: invalid}}}}); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for invalid UTF-8 use-effect message, got %v", err)
 	}
 }
 

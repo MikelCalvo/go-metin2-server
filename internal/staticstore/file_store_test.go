@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -109,6 +110,30 @@ func TestFileStoreRejectsNULStaticActorNames(t *testing.T) {
 	}
 	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for NUL static actor name on load, got %v", err)
+	}
+}
+
+func TestFileStoreRejectsInvalidUTF8StaticActorNames(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "static-actors.json")
+	store := NewFileStore(path)
+	invalid := string([]byte{'V', 'i', 's', 'i', 'b', 'l', 'e', 0xff, 'H', 'i', 'd', 'd', 'e', 'n'})
+	if utf8.ValidString(invalid) {
+		t.Fatal("test fixture must contain invalid UTF-8")
+	}
+	if err := store.Save(Snapshot{StaticActors: []StaticActor{{EntityID: 7, Name: invalid, MapIndex: 1, X: 469300, Y: 964200, RaceNum: 20355}}}); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for invalid UTF-8 static actor name on save, got %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir state dir: %v", err)
+	}
+	body := []byte(`{"static_actors":[{"entity_id":7,"name":"Visible`)
+	body = append(body, 0xff)
+	body = append(body, []byte(`Hidden","map_index":1,"x":469300,"y":964200,"race_num":20355}]}`)...)
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("write invalid UTF-8 static actor snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for invalid UTF-8 static actor name on load, got %v", err)
 	}
 }
 

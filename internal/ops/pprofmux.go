@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
@@ -1732,6 +1733,9 @@ func decodeLocalContentBundleRequest(r *http.Request) (contentbundle.Bundle, int
 	}
 	if len(raw) > maxContentBundleBodyBytes {
 		return contentbundle.Bundle{}, http.StatusRequestEntityTooLarge, false
+	}
+	if !utf8.Valid(raw) {
+		return contentbundle.Bundle{}, http.StatusBadRequest, false
 	}
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return contentbundle.Bundle{}, http.StatusBadRequest, false

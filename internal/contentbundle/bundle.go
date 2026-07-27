@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
@@ -1794,6 +1795,9 @@ func validateBundle(bundle Bundle) error {
 	itemTemplatesByVnum := make(map[uint32]itemcatalog.Template, len(bundle.ItemTemplates))
 	for _, template := range bundle.ItemTemplates {
 		normalizedTemplate := itemcatalog.NormalizeTemplate(template)
+		if !validItemTemplateStrings(normalizedTemplate) {
+			return ErrInvalidBundle
+		}
 		if !itemcatalog.ValidTemplate(normalizedTemplate) {
 			return ErrInvalidBundle
 		}
@@ -1825,6 +1829,10 @@ func validateBundle(bundle Bundle) error {
 	}
 	definitionsByKey := make(map[string]struct{}, len(bundle.InteractionDefinitions))
 	for _, definition := range bundle.InteractionDefinitions {
+		definition = interactionstore.NormalizeDefinition(definition)
+		if !validInteractionDefinitionStrings(definition) {
+			return ErrInvalidBundle
+		}
 		if !validDefinition(definition) {
 			return ErrInvalidBundle
 		}
@@ -1893,6 +1901,30 @@ func validateBundle(bundle Bundle) error {
 	return nil
 }
 
+func validInteractionDefinitionStrings(definition interactionstore.Definition) bool {
+	if !validAuthoredContentString(definition.Text) || !validAuthoredContentString(definition.Title) {
+		return false
+	}
+	return true
+}
+
+func validItemTemplateStrings(template itemcatalog.Template) bool {
+	if !validAuthoredContentString(template.Name) ||
+		!validAuthoredContentString(template.UseRejectText) ||
+		!validAuthoredContentString(template.BuyRejectText) ||
+		!validAuthoredContentString(template.DropRejectText) ||
+		!validAuthoredContentString(template.PickupRejectText) ||
+		!validAuthoredContentString(template.SellRejectText) ||
+		!validAuthoredContentString(template.EquipRejectText) ||
+		!validAuthoredContentString(template.UnequipRejectText) {
+		return false
+	}
+	if template.UseEffect != nil && (!validAuthoredContentString(template.UseEffect.Message) || !validAuthoredContentString(template.UseEffect.InfoMessage)) {
+		return false
+	}
+	return true
+}
+
 func validDefinition(definition interactionstore.Definition) bool {
 	return interactionstore.ValidDefinition(definition)
 }
@@ -1934,7 +1966,11 @@ func validAuthoredCombatProfile(profile string, profileSnapshots map[string]worl
 
 func validAuthoredContentName(name string) bool {
 	name = strings.TrimSpace(name)
-	return name != "" && !strings.ContainsRune(name, '\x00')
+	return name != "" && validAuthoredContentString(name)
+}
+
+func validAuthoredContentString(value string) bool {
+	return utf8.ValidString(value) && !strings.ContainsRune(value, '\x00')
 }
 
 func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSnapshot) bool {

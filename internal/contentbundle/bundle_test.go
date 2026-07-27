@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
@@ -2271,6 +2272,63 @@ func TestCanonicalizeRejectsNonCanonicalCustomCombatProfileSnapshotIdentities(t 
 			})
 			if !errors.Is(err, ErrInvalidBundle) {
 				t.Fatalf("expected ErrInvalidBundle for non-canonical combat profile snapshot identity %q, got %v", profile, err)
+			}
+		})
+	}
+}
+
+func TestCanonicalizeRejectsInvalidUTF8AuthoredContentStrings(t *testing.T) {
+	invalid := string([]byte{'v', 'i', 's', 'i', 'b', 'l', 'e', 0xff, 'h', 'i', 'd', 'd', 'e', 'n'})
+	if utf8.ValidString(invalid) {
+		t.Fatal("test fixture must contain invalid UTF-8")
+	}
+
+	cases := []struct {
+		name   string
+		bundle Bundle
+	}{
+		{
+			name:   "static_actor_name",
+			bundle: Bundle{StaticActors: []StaticActor{{Name: invalid, MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300}}},
+		},
+		{
+			name:   "spawn_group_name",
+			bundle: Bundle{SpawnGroups: []SpawnGroup{{Ref: "practice.invalid_utf8_mob", Name: invalid, MapIndex: 42, X: 1700, Y: 2800, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob}}},
+		},
+		{
+			name:   "info_text",
+			bundle: Bundle{InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:invalid_utf8", Text: invalid}}},
+		},
+		{
+			name:   "talk_text",
+			bundle: Bundle{InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:invalid_utf8", Text: invalid}}},
+		},
+		{
+			name:   "warp_text",
+			bundle: Bundle{InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:invalid_utf8", Text: invalid, MapIndex: 42, X: 1700, Y: 2800}}},
+		},
+		{
+			name: "shop_preview_title",
+			bundle: Bundle{
+				ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+				InteractionDefinitions: []interactionstore.Definition{{
+					Kind:    interactionstore.KindShopPreview,
+					Ref:     "npc:invalid_utf8",
+					Title:   invalid,
+					Catalog: []interactionstore.MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}},
+				}},
+			},
+		},
+		{
+			name:   "item_template_name",
+			bundle: Bundle{ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: invalid, Stackable: true, MaxCount: 200}}, SpawnGroups: []SpawnGroup{{Ref: "practice.invalid_utf8_drop", Name: "InvalidUTF8Drop", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 101, CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob, RewardDropVnums: []uint32{27001}}}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Canonicalize(tc.bundle)
+			if !errors.Is(err, ErrInvalidBundle) {
+				t.Fatalf("expected ErrInvalidBundle for invalid UTF-8 %s, got %v", tc.name, err)
 			}
 		})
 	}
