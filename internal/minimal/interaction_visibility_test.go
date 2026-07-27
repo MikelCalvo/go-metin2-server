@@ -1,7 +1,9 @@
 package minimal
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
@@ -152,6 +154,34 @@ func TestGameRuntimeInteractionVisibilityReturnsWarpDestinationPreviewWhenWarpTe
 	entry := snapshots[0].VisibleInteractableStaticActors[0]
 	if entry.Name != "Teleporter" || entry.Preview != "warp -> map 42 @ 1700,2800" || entry.ResolutionFailure != "" {
 		t.Fatalf("unexpected blank-text warp interaction visibility entry: %+v", entry)
+	}
+}
+
+func TestGameRuntimeInteractionVisibilityCompactsUnicodePreviewsOnRuneBoundaries(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	longText := strings.Repeat("界", 200)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:unicode_notice", Text: longText}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("UnicodeNotice", bootstrapMapIndex, 1250, 2250, 20301, interactionstore.KindInfo, "lore:unicode_notice"); !ok {
+		t.Fatal("expected unicode notice actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	snapshots := runtime.InteractionVisibility()
+	if len(snapshots) != 1 || len(snapshots[0].VisibleInteractableStaticActors) != 1 {
+		t.Fatalf("expected one visible unicode interactable, got %+v", snapshots)
+	}
+	preview := snapshots[0].VisibleInteractableStaticActors[0].Preview
+	want := strings.Repeat("界", 157) + "..."
+	if preview != want || !utf8.ValidString(preview) {
+		t.Fatalf("unexpected unicode compact preview valid_utf8=%v runes=%d preview=%q", utf8.ValidString(preview), len([]rune(preview)), preview)
 	}
 }
 

@@ -1356,6 +1356,24 @@ func TestSummarizeCompactsLongInteractionDefinitionPreviews(t *testing.T) {
 	}
 }
 
+func TestSummarizeCompactsUnicodeInteractionDefinitionPreviewsOnRuneBoundaries(t *testing.T) {
+	longText := strings.Repeat("界", 200)
+	summary, err := Summarize(Bundle{
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:notice_board", Text: longText}},
+	})
+	if err != nil {
+		t.Fatalf("summarize unicode interaction definition preview: %v", err)
+	}
+	if len(summary.InteractionDefinitionPreviews) != 1 {
+		t.Fatalf("expected one interaction definition preview, got %+v", summary.InteractionDefinitionPreviews)
+	}
+	want := strings.Repeat("界", 157) + "..."
+	preview := summary.InteractionDefinitionPreviews[0].Preview
+	if preview != want || !utf8.ValidString(preview) {
+		t.Fatalf("unexpected unicode compact preview valid_utf8=%v runes=%d preview=%q", utf8.ValidString(preview), len([]rune(preview)), preview)
+	}
+}
+
 func TestSummarizeReturnsDeterministicInteractableStaticActorDetails(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		StaticActors: []StaticActor{
@@ -2170,6 +2188,25 @@ func TestCanonicalizeRejectsDanglingInteractionReference(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for dangling interaction reference, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsStaticActorUnsupportedInteractionKinds(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors:           []StaticActor{{Name: "QuestBoard", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: "quest", InteractionRef: "quest:first_steps"}},
+		InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "quest:first_steps", Text: "Quest text should not make an unsupported actor kind importable."}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for static actor unsupported interaction kind, got %v", err)
+	}
+}
+
+func TestValidInteractionMetadataRejectsUnsupportedKinds(t *testing.T) {
+	if validInteractionMetadata("quest", "quest:first_steps") {
+		t.Fatal("expected unsupported static actor interaction kind to be invalid even when the ref is canonical")
+	}
+	if !validInteractionMetadata(interactionstore.KindShopPreview, "npc:merchant") {
+		t.Fatal("expected owned shop_preview interaction metadata to remain valid")
 	}
 }
 

@@ -6659,10 +6659,11 @@ func merchantCatalogEntryBySlot(definition InteractionDefinition, slot uint16) (
 func compactInteractionPreview(preview string) string {
 	preview = strings.TrimSpace(preview)
 	const maxPreviewLength = 160
-	if len(preview) <= maxPreviewLength {
+	previewRunes := []rune(preview)
+	if len(previewRunes) <= maxPreviewLength {
 		return preview
 	}
-	return preview[:maxPreviewLength-3] + "..."
+	return string(previewRunes[:maxPreviewLength-3]) + "..."
 }
 
 func (r *gameRuntime) interactionDefinitionExists(kind string, ref string) bool {

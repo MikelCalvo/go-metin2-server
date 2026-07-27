@@ -1671,10 +1671,11 @@ func warpDestinationPreview(definition interactionstore.Definition) string {
 func compactInteractionPreview(preview string) string {
 	preview = strings.TrimSpace(preview)
 	const maxPreviewLength = 160
-	if len(preview) <= maxPreviewLength {
+	previewRunes := []rune(preview)
+	if len(previewRunes) <= maxPreviewLength {
 		return preview
 	}
-	return preview[:maxPreviewLength-3] + "..."
+	return string(previewRunes[:maxPreviewLength-3]) + "..."
 }
 
 func shopCatalogSummary(definition interactionstore.Definition, itemTemplatesByVnum map[uint32]itemcatalog.Template) ShopCatalogSummary {
@@ -2007,7 +2008,7 @@ func validInteractionMetadata(kind string, ref string) bool {
 	if kind == "" && ref == "" {
 		return true
 	}
-	return kind != "" && ref != "" && interactionstore.ValidRef(ref)
+	return kind != "" && ref != "" && interactionstore.ValidKind(kind) && interactionstore.ValidRef(ref)
 }
 
 func validBootstrapRaceNum(raceNum uint32) bool {

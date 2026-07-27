@@ -377,6 +377,24 @@ func TestLocalContentBundleEndpointRejectsDuplicateStaticActorsBeforeImport(t *t
 	}
 }
 
+func TestLocalContentBundleEndpointRejectsUnsupportedInteractionKindBeforeImport(t *testing.T) {
+	importer := &stubContentBundleImporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle", strings.NewReader(`{"static_actors":[{"name":"QuestBoard","map_index":42,"x":1700,"y":2800,"race_num":20300,"interaction_kind":"quest","interaction_ref":"quest:first_steps"}],"interaction_definitions":[{"kind":"info","ref":"quest:first_steps","text":"Quest text should not make an unsupported actor kind importable."}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for unsupported interaction kind, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if importer.calls != 0 {
+		t.Fatalf("expected unsupported interaction kind bundle to be rejected before importer call, got %d calls", importer.calls)
+	}
+}
+
 func TestLocalContentBundleEndpointRejectsDuplicateCombatProfilesBeforeImport(t *testing.T) {
 	importer := &stubContentBundleImporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleEndpoint(NewPprofMux("gamed"), nil, importer.ImportContentBundle)
