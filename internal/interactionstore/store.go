@@ -152,17 +152,21 @@ func validDefinition(definition Definition) bool {
 	}
 	switch definition.Kind {
 	case KindInfo, KindTalk:
-		return definition.Text != "" && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0
 	case KindShopPreview:
-		if definition.Title == "" || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 {
+		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 {
 			return false
 		}
 		return validMerchantCatalog(definition.Catalog)
 	case KindWarp:
-		return definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0
 	default:
 		return false
 	}
+}
+
+func validDefinitionText(text string) bool {
+	return !strings.ContainsRune(text, '\x00')
 }
 
 func validMerchantCatalog(catalog []MerchantCatalogEntry) bool {

@@ -301,9 +301,31 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := store.Save(blankText); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for blank text, got %v", err)
 	}
+	infoTextWithNUL := Snapshot{Definitions: []Definition{{Kind: KindInfo, Ref: "lore:alchemist", Text: "visible\x00hidden"}}}
+	if err := store.Save(infoTextWithNUL); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL info text, got %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"definitions":[{"kind":"info","ref":"lore:alchemist","text":"visible\u0000hidden"}]}`), 0o644); err != nil {
+		t.Fatalf("write NUL info text snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for loaded NUL info text, got %v", err)
+	}
+	talkTextWithNUL := Snapshot{Definitions: []Definition{{Kind: KindTalk, Ref: "npc:village_guard", Text: "visible\x00hidden"}}}
+	if err := store.Save(talkTextWithNUL); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL talk text, got %v", err)
+	}
+	warpTextWithNUL := Snapshot{Definitions: []Definition{{Kind: KindWarp, Ref: "npc:teleporter", Text: "visible\x00hidden", MapIndex: 42, X: 1700, Y: 2800}}}
+	if err := store.Save(warpTextWithNUL); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL warp text, got %v", err)
+	}
 	blankShopPreviewTitle := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "   ", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}}}
 	if err := store.Save(blankShopPreviewTitle); !errors.Is(err, ErrInvalidSnapshot) {
 		t.Fatalf("expected ErrInvalidSnapshot for blank shop preview title, got %v", err)
+	}
+	shopPreviewTitleWithNUL := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village\x00Merchant", Catalog: []MerchantCatalogEntry{{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1}}}}}
+	if err := store.Save(shopPreviewTitleWithNUL); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL shop preview title, got %v", err)
 	}
 	emptyShopPreviewCatalog := Snapshot{Definitions: []Definition{{Kind: KindShopPreview, Ref: "npc:merchant", Title: "Village Merchant"}}}
 	if err := store.Save(emptyShopPreviewCatalog); !errors.Is(err, ErrInvalidSnapshot) {

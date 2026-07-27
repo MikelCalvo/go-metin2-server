@@ -136,6 +136,42 @@ func TestLocalInteractionDefinitionsEndpointRejectsPathAmbiguousRefBeforeCreate(
 	}
 }
 
+func TestLocalInteractionDefinitionsEndpointRejectsNULTextBeforeCreate(t *testing.T) {
+	creator := &stubInteractionDefinitionCreator{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionEndpoints(NewPprofMux("gamed"), nil, creator.CreateInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interactions", strings.NewReader(`{"kind":"info","ref":"lore:alchemist","text":"visible\u0000hidden"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for NUL interaction text, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if creator.calls != 0 {
+		t.Fatalf("expected interaction definition creator not to be called for NUL text, got %d calls", creator.calls)
+	}
+}
+
+func TestLocalInteractionDefinitionUpdateEndpointRejectsNULTitleBeforeUpdate(t *testing.T) {
+	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK}
+	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)
+
+	req := httptest.NewRequest(http.MethodPut, "/local/interactions/shop_preview/npc:merchant", strings.NewReader(`{"kind":"shop_preview","ref":"npc:merchant","title":"Village\u0000Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":1}]}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for NUL interaction title, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if updater.calls != 0 {
+		t.Fatalf("expected interaction definition updater not to be called for NUL title, got %d calls", updater.calls)
+	}
+}
+
 func TestLocalInteractionDefinitionUpdateEndpointRejectsOversizedBody(t *testing.T) {
 	updater := &stubInteractionDefinitionUpdater{status: http.StatusOK}
 	mux := RegisterLocalInteractionDefinitionUpdateEndpoint(NewPprofMux("gamed"), updater.UpsertInteractionDefinition)

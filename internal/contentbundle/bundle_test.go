@@ -2175,6 +2175,48 @@ func TestCanonicalizeRejectsInvalidWarpInteractionDefinition(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeRejectsEmbeddedNULInteractionDefinitionTextFields(t *testing.T) {
+	cases := []struct {
+		name   string
+		bundle Bundle
+	}{
+		{
+			name:   "info_text",
+			bundle: Bundle{InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindInfo, Ref: "lore:alchemist", Text: "visible\x00hidden"}}},
+		},
+		{
+			name:   "talk_text",
+			bundle: Bundle{InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "visible\x00hidden"}}},
+		},
+		{
+			name:   "warp_text",
+			bundle: Bundle{InteractionDefinitions: []interactionstore.Definition{{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", Text: "visible\x00hidden", MapIndex: 42, X: 1700, Y: 2800}}},
+		},
+		{
+			name: "shop_preview_title",
+			bundle: Bundle{
+				ItemTemplates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}},
+				InteractionDefinitions: []interactionstore.Definition{{
+					Kind:  interactionstore.KindShopPreview,
+					Ref:   "npc:merchant",
+					Title: "Village\x00Merchant",
+					Catalog: []interactionstore.MerchantCatalogEntry{
+						{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+					},
+				}},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Canonicalize(tc.bundle)
+			if !errors.Is(err, ErrInvalidBundle) {
+				t.Fatalf("expected ErrInvalidBundle for NUL %s, got %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestCanonicalizeAcceptsReferencedCustomCombatProfileSnapshot(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
 		ItemTemplates: []itemcatalog.Template{

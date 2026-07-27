@@ -74,6 +74,7 @@ At this stage, the repository owns metadata plus the first narrow interaction-re
 - visible static actors whose metadata resolves to `interaction_kind = "info"` now answer with a self-only informational chat-backed delivery
 - visible static actors whose metadata resolves to `interaction_kind = "talk"` now answer with a self-only speaker-prefixed multi-line chat-backed delivery
 - visible static actors whose metadata resolves to `interaction_kind = "shop_preview"` now carry the structured merchant catalog authoring seam that powers the current bootstrap merchant window open / buy / close flow
+- authored interaction definition text/title fields reject embedded NUL bytes at every owned authoring/load boundary before they can reach client-visible chat, merchant titles, or compact operator previews. The current fail-closed fields are `info.text`, `talk.text`, optional `warp.text`, and `shop_preview.title`.
 
 ## Owned interaction families
 
@@ -121,6 +122,7 @@ After this slice, the repository should be able to say:
 - that metadata survives create/update/list/persist/boot paths
 - invalid partial metadata is rejected consistently
 - a deterministic file-backed interaction-definition store now exists for minimal `info` / `talk` / `shop_preview` content plus the first `warp` destination payload keyed by `kind + ref`
+- interaction definition validation rejects embedded NUL bytes in the owned client-visible text/title fields, so local operator writes, content-bundle validation/import, and runtime startup cannot persist or load truncated authored strings
 - `gamed` now loads that catalog before boot-restoring persisted static actors and before accepting new interaction metadata on static-actor create/update paths
 - loopback-only CRUD endpoints now author that catalog while preserving stable `kind + ref` identity on update and rejecting deletes for referenced definitions
 - static actors that point at missing interaction definitions are now rejected fail closed at boot and on runtime create/update

@@ -1314,6 +1314,18 @@ func TestGameRuntimeFailsClosedForNULUseEffectItemTemplateTextAtStartup(t *testi
 	}
 }
 
+func TestGameRuntimeFailsClosedForNULInteractionDefinitionTextAtStartup(t *testing.T) {
+	interactionPath := filepath.Join(t.TempDir(), "interaction-definitions.json")
+	if err := os.WriteFile(interactionPath, []byte(`{"definitions":[{"kind":"info","ref":"lore:alchemist","text":"visible\u0000hidden"}]}`), 0o644); err != nil {
+		t.Fatalf("write NUL interaction definition snapshot: %v", err)
+	}
+
+	_, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, interactionstore.NewFileStore(interactionPath), nil, nil)
+	if !errors.Is(err, interactionstore.ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for NUL interaction definition text at runtime boot, got %v", err)
+	}
+}
+
 func (s staticItemTemplateStore) Load() (itemcatalog.Snapshot, error) {
 	return s.snapshot, nil
 }
