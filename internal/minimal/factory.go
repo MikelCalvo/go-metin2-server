@@ -4726,10 +4726,13 @@ func runtimeTemplateSellRejectText(template itemcatalog.Template, selectedPlayer
 	if template.AntiSell {
 		return itemSellRejectText(template), true
 	}
-	if template.SellRejectText == "" || selectedPlayer.CanUseTemplate(template) {
+	if template.SellRejectText == "" {
 		return "", false
 	}
-	return itemSellRejectText(template), true
+	if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiStack || !selectedPlayer.CanUseTemplate(template) {
+		return itemSellRejectText(template), true
+	}
+	return "", false
 }
 
 func runtimeTemplateEquipRejectText(template itemcatalog.Template, selectedPlayer *player.Runtime, equipSlot inventory.EquipmentSlot) (string, bool) {

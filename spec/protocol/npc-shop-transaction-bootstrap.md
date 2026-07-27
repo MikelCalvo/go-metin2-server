@@ -194,7 +194,7 @@ The first buy path must fail closed when any of these are true:
 - the player has insufficient gold
 - no valid carried inventory placement exists
 - the resolved template is marked with the acquisition guard `anti_get`
-- the resolved template carries a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
+- the resolved template carries a selected-character job/sex/empire/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, `anti_empire_a`, `anti_empire_b`, `anti_empire_c`, or `min_level` above the selected character's level)
 - persistence/writeback fails
 
 The first sell/sell2 path must fail closed when any of these are true:
@@ -205,8 +205,8 @@ The first sell/sell2 path must fail closed when any of these are true:
 - the item is currently equipped, malformed, or otherwise not in a plain carried state
 - the requested carried cell has duplicate live item occupancy
 - the carried item is marked runtime-locked
-- the template is marked with a transfer/sell restriction (`anti_get`, `anti_drop`, `anti_give`, or `anti_sell`)
-- the resolved template carries a selected-character job/sex/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, or `min_level` above the selected character's level)
+- the template is marked with a transfer/sell restriction (`anti_get`, `anti_drop`, `anti_give`, `anti_sell`, or `anti_stack`)
+- the resolved template carries a selected-character job/sex/empire/level restriction (`anti_warrior`, `anti_assassin`, `anti_sura`, `anti_shaman`, `anti_male`, `anti_female`, `anti_empire_a`, `anti_empire_b`, `anti_empire_c`, or `min_level` above the selected character's level)
 - the live carried stack already exceeds the resolved template-authored `max_count`
 - the template has no sell price
 - the template-authored sell credit or resulting selected-character gold value would exceed the current signed `PLAYER_POINT_CHANGE` carrier
@@ -222,6 +222,7 @@ Failure behavior in this bootstrap contract:
 - packet `SHOP BUY` unknown-slot failure now emits one bare self-only `GC::SHOP INVALID_POS`
 - packet `SHOP BUY` anti-get/template-acquisition failure emits the same self-only `GC::SHOP INVALID_POS` companion and then appends one self-only `CHAT_TYPE_INFO` rejection text sourced from template `buy_reject_message` when present or the deterministic fallback `"The merchant will not sell this item to you."` when omitted
 - packet `SHOP BUY` selected-character job/sex/empire/level restriction failure emits the same self-only `GC::SHOP INVALID_POS` companion and appends one self-only `CHAT_TYPE_INFO` rejection only when the template authors `buy_reject_message`; otherwise it preserves the older bare `INVALID_POS` rejection
+- packet `SHOP SELL` / `SELL2` transfer/sell guard failures emit the same self-only `GC::SHOP INVALID_POS` companion and append one self-only `CHAT_TYPE_INFO` rejection when the template authors `sell_reject_message`; `anti_sell` keeps the deterministic fallback text `"The merchant refuses to buy this item."` when omitted, while `anti_get`, `anti_drop`, `anti_give`, and `anti_stack` stay on the bare invalid-position companion when no text is authored
 - packet `SHOP SELL` / `SELL2` selected-character job/sex/empire/level restriction failure emits the same self-only `GC::SHOP INVALID_POS` companion and appends one self-only `CHAT_TYPE_INFO` rejection only when the template authors `sell_reject_message`; otherwise it preserves the older bare `INVALID_POS` rejection
 - packet `SHOP BUY` against a still-open merchant window whose live actor/context or bound catalog snapshot has gone stale now emits one self-only `GC::SHOP END`, clears the active merchant context immediately, and still leaves gold/inventory unchanged
 - a successful warp interaction or exact-position transfer trigger while that merchant window is still open now prepends one self-only `GC::SHOP END` before the self transfer rebootstrap burst and clears the active merchant context immediately, so later `SHOP BUY` requests on the destination side fail closed until the player opens a fresh merchant window again

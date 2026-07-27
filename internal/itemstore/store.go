@@ -526,7 +526,7 @@ func templateHasPickupRejectGuard(template Template) bool {
 }
 
 func templateHasSellRejectGuard(template Template) bool {
-	return templateHasSelectedCharacterGuard(template) || template.AntiSell
+	return templateHasSelectedCharacterGuard(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack
 }
 
 func templateHasSelectedCharacterGuard(template Template) bool {

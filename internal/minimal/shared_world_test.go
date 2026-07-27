@@ -25188,6 +25188,51 @@ func TestGameSessionFlowShopSellRejectsAntiStackTemplateWithoutMutation(t *testi
 	assertMerchantStateUnchanged(t, runtime, accounts, login, buyer, "anti-stack packet shop sell2")
 }
 
+func TestGameSessionFlowShopSellRejectsAntiStackTemplateWithAuthoredTextWithoutMutation(t *testing.T) {
+	buyer := merchantBuyerCharacter("MerchantSellerPacketAntiStackText", 0x01040133, 0x02050133, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
+		{Vnum: 27001, Name: "No Stack Sell Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 500, AntiStack: true, SellRejectText: "This merchant refuses bundled items."},
+	})
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{defaultMerchantCatalogDefinition()})
+	issuePeerTicket(t, ticketStore, "merchant-sell-anti-stack-text", 0x33333333, buyer)
+	if err := accounts.Save(accountstore.Account{Login: "merchant-sell-anti-stack-text", Empire: buyer.Empire, Characters: cloneCharacters([]loginticket.Character{buyer})}); err != nil {
+		t.Fatalf("seed anti-stack text merchant seller account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected anti-stack text merchant sell runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("Merchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, "npc:merchant")
+	if !ok {
+		t.Fatal("expected merchant static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "merchant-sell-anti-stack-text", 0x33333333)
+	defer closeSessionFlow(t, flow)
+
+	interactWithMerchantForBuy(t, flow, actor.EntityID)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected anti-stack text packet shop sell2 error: %v", err)
+	}
+	if len(sellOut) != 2 {
+		t.Fatalf("expected anti-stack text packet shop sell2 to emit invalid-pos plus authored info text, got %d", len(sellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, sellOut[0])); err != nil {
+		t.Fatalf("decode anti-stack text packet shop sell2 invalid-pos frame: %v", err)
+	}
+	info, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, sellOut[1]))
+	if err != nil {
+		t.Fatalf("decode anti-stack text packet shop sell2 rejection info: %v", err)
+	}
+	if info.Type != chatproto.ChatTypeInfo || info.VID != 0 || info.Empire != 0 || info.Message != "This merchant refuses bundled items." {
+		t.Fatalf("unexpected anti-stack text packet shop sell2 rejection info: %+v", info)
+	}
+	assertMerchantStateUnchanged(t, runtime, accounts, "merchant-sell-anti-stack-text", buyer, "anti-stack text packet shop sell2")
+}
+
 func TestGameSessionFlowShopSellRejectsTemplateCreditCarrierOverflowWithoutMutation(t *testing.T) {
 	buyer := merchantBuyerCharacter("MerchantSellerPacketCreditOverflow", 0x0104012e, 0x0205012e, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 200, Slot: 5}})
 	runtime, accounts, flow, actorID, login := setupMerchantBuySession(t, "merchant-sell-credit-overflow", 0x2e2e2e2e, buyer)

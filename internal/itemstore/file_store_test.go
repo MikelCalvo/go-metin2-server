@@ -1759,6 +1759,39 @@ func TestFileStoreSaveThenLoadRoundTripPreservesEquipRejectText(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesSellRejectTextForTransferGuard(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:           27031,
+		Name:           "No Stack Sell Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiStack:      true,
+		SellRejectText: "This merchant refuses bundled items.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with anti-stack sell reject message: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with anti-stack sell reject message: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with anti-stack sell reject message:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with anti-stack sell reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27031,\n      \"name\": \"No Stack Sell Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_stack\": true,\n      \"sell_reject_message\": \"This merchant refuses bundled items.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with anti-stack sell reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreRejectsInvalidSellRejectTextMetadata(t *testing.T) {
 	cases := []struct {
 		name     string
