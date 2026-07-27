@@ -526,6 +526,21 @@ func TestLocalContentBundleValidateEndpointRejectsConflictingRegisteredCombatPro
 	}
 }
 
+func TestLocalContentBundleValidateEndpointRejectsCombatProfileDuplicateRewardDrops(t *testing.T) {
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	body := `{"spawn_groups":[{"ref":"practice.ops_duplicate_reward_wolf","name":"Ops Duplicate Reward Wolf","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_ops_duplicate_reward_wolf"}],"item_templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200},{"vnum":27002,"name":"Small Blue Potion","stackable":true,"max_count":200}],"combat_profiles":[{"profile":"practice_ops_duplicate_reward_wolf","max_hp":24,"attack_value":8,"defense_value":3,"respawn_delay_ms":1500,"death_reward":{"drop_vnums":[27002,27001,27002]}}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for duplicate combat-profile reward drops, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
 func TestLocalContentBundleValidateEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
 

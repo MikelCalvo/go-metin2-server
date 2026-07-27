@@ -1955,6 +1955,36 @@ func TestCanonicalizeRejectsCombatProfileRewardDropWithoutBundledItemTemplates(t
 	}
 }
 
+func TestCanonicalizeRejectsCombatProfileRewardDuplicateDropVnums(t *testing.T) {
+	const profile = "practice_duplicate_reward_defaults"
+	_, err := Canonicalize(Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:           "practice.duplicate_reward_default_mob",
+			Name:          "Duplicate Reward Default Mob",
+			MapIndex:      42,
+			X:             1785,
+			Y:             2885,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+		ItemTemplates: []itemcatalog.Template{
+			{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+			{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:        profile,
+			MaxHP:          24,
+			AttackValue:    8,
+			DefenseValue:   3,
+			RespawnDelayMs: 1500,
+			DeathReward:    worldruntime.StaticActorDeathReward{DropVnums: []uint32{27002, 27001, 27002}},
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for duplicate combat-profile reward drop vnums, got %v", err)
+	}
+}
+
 func TestCanonicalizeAcceptsRewardDropsBackedByBundledItemTemplates(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
 		ItemTemplates: []itemcatalog.Template{

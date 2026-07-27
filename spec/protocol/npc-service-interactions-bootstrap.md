@@ -116,6 +116,7 @@ That import path is intentionally fail-closed:
 - duplicate profile snapshots are rejected
 - snapshots that conflict with an already-registered local profile are rejected
 - any item-shaped death reward in either `spawn_groups[].reward_drop_vnums` or `combat_profiles[].death_reward.drop_vnums` must be backed by a matching bundled `item_templates` entry; reward-drop bundles cannot depend on an implicit ambient item catalog
+- duplicate reward drop vnums in either spawn groups or bundled combat-profile defaults are rejected before canonical import; malformed profile-default drop lists must not be silently deduplicated into valid content
 - failed imports must not register the profile, materialize actors, persist content, or leak queued visibility frames
 
 This keeps `/local/content-bundle` from becoming a side-channel for unreferenced process-local combat profile mutation.

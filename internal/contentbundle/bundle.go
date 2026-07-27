@@ -2073,7 +2073,7 @@ func combatProfilesForAuthoredActors(staticActors []StaticActor, spawnGroups []S
 	profiles := make([]worldruntime.StaticActorCombatProfileSnapshot, 0)
 	for _, profile := range importedProfiles {
 		profile.Profile = strings.TrimSpace(profile.Profile)
-		profile.DeathReward = profile.DeathReward.Clone()
+		profile.DeathReward = cloneDeathRewardPreservingDropMultiplicity(profile.DeathReward)
 		profiles = append(profiles, profile)
 		seen[profile.Profile] = struct{}{}
 	}
@@ -2093,7 +2093,7 @@ func combatProfilesForAuthoredActors(staticActors []StaticActor, spawnGroups []S
 }
 
 func normalizeCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {
-	normalized := cloneCombatProfileSnapshots(profiles)
+	normalized := cloneCombatProfileSnapshotsPreservingRewardDropMultiplicity(profiles)
 	if len(normalized) == 0 {
 		return nil
 	}
@@ -2101,6 +2101,22 @@ func normalizeCombatProfiles(profiles []worldruntime.StaticActorCombatProfileSna
 		return normalized[i].Profile < normalized[j].Profile
 	})
 	return normalized
+}
+
+func cloneCombatProfileSnapshotsPreservingRewardDropMultiplicity(profiles []worldruntime.StaticActorCombatProfileSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {
+	if len(profiles) == 0 {
+		return nil
+	}
+	cloned := make([]worldruntime.StaticActorCombatProfileSnapshot, len(profiles))
+	copy(cloned, profiles)
+	for i := range cloned {
+		cloned[i].Profile = strings.TrimSpace(cloned[i].Profile)
+		if cloned[i].RetaliationPointDelta == worldruntime.PracticeMobBootstrapRetaliationPointDelta {
+			cloned[i].RetaliationPointDelta = 0
+		}
+		cloned[i].DeathReward = cloneDeathRewardPreservingDropMultiplicity(cloned[i].DeathReward)
+	}
+	return cloned
 }
 
 func cloneCombatProfileSnapshots(profiles []worldruntime.StaticActorCombatProfileSnapshot) []worldruntime.StaticActorCombatProfileSnapshot {
@@ -2153,6 +2169,17 @@ func appendCombatProfileSnapshot(profiles []worldruntime.StaticActorCombatProfil
 		return profiles
 	}
 	return profiles
+}
+
+func cloneDeathRewardPreservingDropMultiplicity(reward worldruntime.StaticActorDeathReward) worldruntime.StaticActorDeathReward {
+	cloned := worldruntime.StaticActorDeathReward{Experience: reward.Experience, Gold: reward.Gold}
+	if len(reward.DropVnums) > 0 {
+		cloned.DropVnums = append([]uint32(nil), reward.DropVnums...)
+		sort.Slice(cloned.DropVnums, func(i int, j int) bool {
+			return cloned.DropVnums[i] < cloned.DropVnums[j]
+		})
+	}
+	return cloned
 }
 
 func cloneUint32s(values []uint32) []uint32 {
