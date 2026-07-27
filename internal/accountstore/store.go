@@ -467,7 +467,11 @@ func (s *FileStore) ValidateBackupFrom(srcDir string) (SnapshotSummary, error) {
 	if err != nil {
 		return SnapshotSummary{}, err
 	}
-	return summarizeAccounts(accounts, nil), nil
+	crashTempFiles, err := NewFileStore(srcDir).crashTempFiles()
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	return summarizeAccounts(accounts, crashTempFiles), nil
 }
 
 func (s *FileStore) loadBackupAccountsForRestore(srcDir string) ([]Account, error) {

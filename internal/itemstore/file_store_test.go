@@ -344,6 +344,36 @@ func TestFileStoreValidateBackupFromValidatesManifestWithoutMutatingTarget(t *te
 	}
 }
 
+func TestFileStoreValidateBackupFromReportsIgnoredCrashTempFiles(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+	for _, name := range []string{".item-templates-zeta.json", ".item-templates-alpha.json"} {
+		if err := os.WriteFile(filepath.Join(backupDir, name), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write backup crash temp %s: %v", name, err)
+		}
+	}
+
+	summary, err := NewFileStore(filepath.Join(t.TempDir(), "target", "item-templates.json")).ValidateBackupFrom(backupDir)
+	if err != nil {
+		t.Fatalf("validate item template backup with crash temps: %v", err)
+	}
+	want := SnapshotSummary{
+		TemplateCount:  1,
+		Vnums:          []uint32{27001},
+		CrashTempCount: 2,
+		CrashTempFiles: []string{".item-templates-alpha.json", ".item-templates-zeta.json"},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected backup validation summary with crash temps: got %#v want %#v", summary, want)
+	}
+}
+
 func TestFileStoreValidateBackupFromRejectsChecksumMismatch(t *testing.T) {
 	store := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
 	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {

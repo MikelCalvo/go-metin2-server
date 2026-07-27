@@ -159,6 +159,33 @@ func TestGameRuntimeValidateAccountStoreBackupDryRunsRestoreSource(t *testing.T)
 	}
 }
 
+func TestGameRuntimeValidateAccountStoreBackupReportsCrashTemps(t *testing.T) {
+	source := accountstore.NewFileStore(t.TempDir())
+	if err := source.Save(accountstore.Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write backup crash temp: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, nil, accountstore.NewFileStore(filepath.Join(t.TempDir(), "active")))
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateAccountStoreBackup(backupDir)
+	if err != nil {
+		t.Fatalf("validate account store backup: %v", err)
+	}
+	want := accountstore.SnapshotSummary{AccountCount: 1, CharacterCount: 1, Logins: []string{"mkmk"}, CrashTempCount: 1, CrashTempFiles: []string{".account-crashed.json"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected backup crash-temp summary: got %#v want %#v", summary, want)
+	}
+}
+
 func TestGameRuntimeValidateAccountStoreBackupFailsClosedForInvalidManifest(t *testing.T) {
 	backupDir := t.TempDir()
 	backup := accountstore.NewFileStore(backupDir)
@@ -578,6 +605,35 @@ func TestGameRuntimeValidateItemTemplateStoreBackupDryRunsManifestedBackup(t *te
 	want := itemcatalog.SnapshotSummary{TemplateCount: 1, Vnums: []uint32{27001}}
 	if !reflect.DeepEqual(summary, want) {
 		t.Fatalf("unexpected item template backup validation summary: got %#v want %#v", summary, want)
+	}
+}
+
+func TestGameRuntimeValidateItemTemplateStoreBackupReportsCrashTemps(t *testing.T) {
+	itemDir := t.TempDir()
+	itemPath := filepath.Join(itemDir, "item-templates.json")
+	items := itemcatalog.NewFileStore(itemPath)
+	if err := items.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item templates: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := items.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item templates: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(backupDir, ".item-templates-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write backup crash temp: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, nil, nil, items, nil)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+
+	summary, err := runtime.ValidateItemTemplateStoreBackup(backupDir)
+	if err != nil {
+		t.Fatalf("validate item template store backup: %v", err)
+	}
+	want := itemcatalog.SnapshotSummary{TemplateCount: 1, Vnums: []uint32{27001}, CrashTempCount: 1, CrashTempFiles: []string{".item-templates-crashed.json"}}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected item-template backup crash-temp summary: got %#v want %#v", summary, want)
 	}
 }
 

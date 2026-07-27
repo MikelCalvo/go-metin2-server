@@ -945,6 +945,37 @@ func TestFileStoreValidateBackupFromValidatesManifestWithoutRestoring(t *testing
 	}
 }
 
+func TestFileStoreValidateBackupFromReportsIgnoredCrashTempFiles(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
+	if err := backup.Save(account); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := backup.writeBackupManifest([]Account{account}); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	for _, name := range []string{".account-zeta.json", ".account-alpha.json"} {
+		if err := os.WriteFile(filepath.Join(backup.dir, name), []byte(`{"not":"committed"}`), 0o644); err != nil {
+			t.Fatalf("write backup crash temp %s: %v", name, err)
+		}
+	}
+
+	summary, err := NewFileStore(filepath.Join(t.TempDir(), "restore-target")).ValidateBackupFrom(backup.dir)
+	if err != nil {
+		t.Fatalf("validate backup with crash temps: %v", err)
+	}
+	want := SnapshotSummary{
+		AccountCount:   1,
+		CharacterCount: 1,
+		Logins:         []string{"mkmk"},
+		CrashTempCount: 2,
+		CrashTempFiles: []string{".account-alpha.json", ".account-zeta.json"},
+	}
+	if !reflect.DeepEqual(summary, want) {
+		t.Fatalf("unexpected backup validation summary with crash temps: got %#v want %#v", summary, want)
+	}
+}
+
 func TestFileStoreValidateBackupFromRejectsManifestChecksumMismatch(t *testing.T) {
 	backup := NewFileStore(t.TempDir())
 	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}

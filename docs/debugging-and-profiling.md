@@ -193,7 +193,7 @@ Request body JSON fields:
 
 - `src_dir` — source backup directory; it must be non-empty after trimming and contain `item-template-backup-manifest.json` plus the committed item-template snapshot when the manifest lists one
 
-Successful responses are the deterministic item-template backup summary (`template_count`, sorted `vnums`) that was validated. Backup directories are required to be manifest-closed: every non-temp entry must be either `item-template-backup-manifest.json` or a snapshot file named in that manifest, while hidden `.item-templates-*.json` crash leftovers remain visible to operators but are not backup payload. This is a local recovery/audit primitive, not an online restore or live template reload API.
+Successful responses are the deterministic item-template backup summary (`template_count`, sorted `vnums`, plus optional `crash_temp_count` / `crash_temp_files`) that was validated. Backup directories are required to be manifest-closed: every non-temp entry must be either `item-template-backup-manifest.json` or a snapshot file named in that manifest, while hidden `.item-templates-*.json` crash leftovers remain visible in the preflight summary but are not backup payload. This is a local recovery/audit primitive, not an online restore or live template reload API.
 
 ### `POST /local/item-templates/restore`
 
@@ -223,7 +223,7 @@ Request body JSON fields:
 
 - `src_dir` — source backup directory; it must be non-empty after trimming and contain `account-backup-manifest.json` plus committed account snapshots that pass the strict account-store loader
 
-Successful responses are the deterministic backup summary (`account_count`, `character_count`, optional `empty_character_slot_count`, sorted `logins`) that would be restored. Use this endpoint as the preflight check before pointing a fresh replacement account-store path at `/local/account-store/restore`; manually assembled snapshot directories without the manifest are rejected instead of being treated as restorable backups. Backup directories are also required to be manifest-closed: every non-temp entry must be either `account-backup-manifest.json` or a snapshot file named in that manifest, while hidden `.account-*.json` crash-temp regular files remain visible to operators but are not restorable payload. Crash-temp-shaped directories are rejected as untracked entries instead of being silently ignored.
+Successful responses are the deterministic backup summary (`account_count`, `character_count`, optional `empty_character_slot_count`, sorted `logins`, plus optional `crash_temp_count` / `crash_temp_files`) that would be restored. Use this endpoint as the preflight check before pointing a fresh replacement account-store path at `/local/account-store/restore`; manually assembled snapshot directories without the manifest are rejected instead of being treated as restorable backups. Backup directories are also required to be manifest-closed: every non-temp entry must be either `account-backup-manifest.json` or a snapshot file named in that manifest, while hidden `.account-*.json` crash-temp regular files remain visible in the preflight summary but are not restorable payload. Crash-temp-shaped directories are rejected as untracked entries instead of being silently ignored.
 
 ### `POST /local/account-store/restore`
 

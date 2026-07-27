@@ -367,7 +367,7 @@ func TestLocalAccountStoreBackupEndpointRejectsWrongMethod(t *testing.T) {
 }
 
 func TestLocalAccountStoreBackupValidateEndpointDryRunsLoopbackRequestedSource(t *testing.T) {
-	validator := &stubAccountStoreBackupValidator{summary: map[string]any{"account_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}}}
+	validator := &stubAccountStoreBackupValidator{summary: map[string]any{"account_count": 2, "character_count": 3, "logins": []string{"alpha", "zeta"}, "crash_temp_count": 1, "crash_temp_files": []string{".account-crashed.json"}}}
 	mux := RegisterLocalAccountStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/account-store/backup/validate", strings.NewReader(`{"src_dir":"/tmp/account-backup"}`))
@@ -383,7 +383,7 @@ func TestLocalAccountStoreBackupValidateEndpointDryRunsLoopbackRequestedSource(t
 		t.Fatalf("expected validate callback once with requested src dir, calls=%d src=%q", validator.calls, validator.srcDir)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"account_count":2`, `"character_count":3`, `"logins":["alpha","zeta"]`} {
+	for _, want := range []string{`"account_count":2`, `"character_count":3`, `"logins":["alpha","zeta"]`, `"crash_temp_count":1`, `"crash_temp_files":[".account-crashed.json"]`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected response body to contain %s, got %s", want, body)
 		}
@@ -1755,7 +1755,7 @@ func TestLocalItemTemplateStoreBackupEndpointRejectsWrongMethod(t *testing.T) {
 }
 
 func TestLocalItemTemplateStoreBackupValidateEndpointDryRunsLoopbackRequestedSource(t *testing.T) {
-	validator := &stubItemTemplateStoreBackupValidator{summary: map[string]any{"template_count": 2, "vnums": []uint32{11200, 27001}}}
+	validator := &stubItemTemplateStoreBackupValidator{summary: map[string]any{"template_count": 2, "vnums": []uint32{11200, 27001}, "crash_temp_count": 1, "crash_temp_files": []string{".item-templates-crashed.json"}}}
 	mux := RegisterLocalItemTemplateStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/backup/validate", strings.NewReader(`{"src_dir":"/tmp/item-template-backup"}`))
@@ -1771,7 +1771,7 @@ func TestLocalItemTemplateStoreBackupValidateEndpointDryRunsLoopbackRequestedSou
 		t.Fatalf("expected validate callback once with requested src dir, calls=%d src=%q", validator.calls, validator.srcDir)
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`"template_count":2`, `"vnums":[11200,27001]`} {
+	for _, want := range []string{`"template_count":2`, `"vnums":[11200,27001]`, `"crash_temp_count":1`, `"crash_temp_files":[".item-templates-crashed.json"]`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected response body to contain %s, got %s", want, body)
 		}

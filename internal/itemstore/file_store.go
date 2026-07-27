@@ -133,7 +133,11 @@ func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
 }
 
 func (s *FileStore) crashTempFiles() ([]string, error) {
-	entries, err := os.ReadDir(filepath.Dir(s.path))
+	return crashTempFilesInDir(filepath.Dir(s.path), filepath.Base(s.path))
+}
+
+func crashTempFilesInDir(dir string, committedFilename string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -146,7 +150,7 @@ func (s *FileStore) crashTempFiles() ([]string, error) {
 			continue
 		}
 		name := entry.Name()
-		if name == filepath.Base(s.path) {
+		if name == committedFilename {
 			continue
 		}
 		if strings.HasPrefix(name, ".item-templates-") && strings.HasSuffix(name, ".json") {
@@ -317,7 +321,16 @@ func (s *FileStore) ValidateBackupFrom(srcDir string) (SnapshotSummary, error) {
 		return SnapshotSummary{}, ErrStorePathRequired
 	}
 	summary, _, _, err := s.loadBackupSnapshotForRestore(srcDir)
-	return summary, err
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	crashTempFiles, err := crashTempFilesInDir(srcDir, filepath.Base(s.path))
+	if err != nil {
+		return SnapshotSummary{}, err
+	}
+	summary.CrashTempCount = len(crashTempFiles)
+	summary.CrashTempFiles = crashTempFiles
+	return summary, nil
 }
 
 func (s *FileStore) RestoreFrom(srcDir string) error {
