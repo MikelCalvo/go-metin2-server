@@ -58,8 +58,10 @@ At this stage the repository owns a narrow but real first response vertical:
 - `internal/minimal/shared_world` now owns the first validated interaction-attempt seam, returning a structured result for the current subject/target pair before content resolution branches further
 - that validated runtime result now distinguishes at least:
   - `subject_not_found`
+  - `subject_dead`
   - `target_not_visible`
   - `target_out_of_range`
+  - `target_dead`
   - `target_has_no_interaction`
   - `warp_destination_invalid`
   - `warp_not_applied`
@@ -113,8 +115,10 @@ The current owned failure boundary is now explicit and split in two layers:
 - malformed payload size -> rejected
 - once the request is decoded, the bootstrap runtime can now reject resolution as:
   - `subject_not_found`
+  - `subject_dead`
   - `target_not_visible`
   - `target_out_of_range`
+  - `target_dead`
   - `target_has_no_interaction`
   - `warp_destination_invalid`
   - `warp_not_applied`
@@ -126,6 +130,7 @@ The current owned failure boundary is now explicit and split in two layers:
 - accepted `shop_preview` interaction currently produces exactly one self-only `GC::SHOP START` open response on the live game socket, built from the authored structured merchant catalog; that same catalog also keeps a deterministic compact preview render for loopback QA/debug and lower-level resolution surfaces
 - accepted `warp` interaction currently reuses the existing self-session transfer rebootstrap path; if authored `text` is present, one self-only `CHAT_TYPE_INFO` delivery is emitted before those transfer frames
 - repeated requests against the same target `VID` inside the current fixed `1s` per-session cooldown are consumed as a deliberate no-op with no outgoing frames
+- visible actors that are still in the runtime-owned dead interval now fail closed with `target_dead` before resolving authored `info` / `talk` / `warp` / `shop_preview` behavior; the self-only failure message is `That target is unavailable right now.`
 
 Future slices should freeze richer reporting only when dialog UI or later interaction families exist.
 
@@ -136,6 +141,6 @@ After this slice, the repository should be able to say:
 - the request is decoded deterministically from `target_vid`
 - the game flow can dispatch that request to a dedicated interaction handler
 - `internal/worldruntime` can resolve a visible bootstrap static actor by that `VID` under the active topology/AOI rules
-- `internal/minimal/shared_world` can now turn that subject/target pair into a structured validated interaction attempt before later content resolution exists
+- `internal/minimal/shared_world` can now turn that subject/target pair into a structured validated interaction attempt before later content resolution exists, including the fail-closed `target_dead` branch for otherwise visible/interactable actors still in their runtime-owned dead interval
 - `gamed` can now resolve authored `info`, `talk`, and structured `shop_preview` definitions behind visible static actors, answer `info` / `talk` with one self-only chat-backed delivery carrying the authored text, and open the current bootstrap merchant window for `shop_preview`
 - the same ingress and target-lookup contract now also powers the current service-style NPC families (`warp` and merchant `shop_preview`) without inventing a new client request packet first

@@ -44,6 +44,7 @@ The repository now implements this full bootstrap contract for the authored/runt
 - visible sessions receive `GC DEAD(vid)` on the death edge
 - sessions that still had that dummy selected receive the existing self-only `GC TARGET(0, 0)` clear companion in the same transition window
 - post-death `TARGET` / `ATTACK` requests fail closed while the dummy remains dead
+- post-death `INTERACT` requests against an otherwise interactable dead actor now also fail closed with `target_dead` and one self-only info-chat failure instead of resolving the authored interaction content
 - the first server-driven dead timer is now live as one fixed `2s` bootstrap delay for built-in bootstrap profiles
 - registered bootstrap combat profiles use their registered `respawn_delay` in the same pending server-frame path, and the respawn rebuild restores the actor to that profile's registered full HP
 - if a live session is shown that same still-dead dummy again before the timer expires through any later add-style visibility presentation — fresh bootstrap, visibility re-entry, or a retained delete-plus-rebootstrap refresh — it first receives the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` burst and then one `GC DEAD(vid)` replay so the actor does not silently look alive again
@@ -120,8 +121,10 @@ A dummy whose runtime HP reached `0` is now in the owned dead state.
 That dead state freezes these rules:
 - `TARGET` must fail closed for that dummy while it remains dead
 - `ATTACK` must fail closed for that dummy while it remains dead
+- `INTERACT` must fail closed for that dummy while it remains dead, even when the actor still carries otherwise valid `interaction_kind` / `interaction_ref` metadata
 - a stale pre-death selected target does not bypass the dead gate
 - dead state remains runtime-owned only; it is not character/account persistence
+- `INTERACT` dead-target failure returns one self-only `GC_CHAT` with `CHAT_TYPE_INFO`, `vid = 0`, and message `That target is unavailable right now.`
 - the dead dummy may remain visible to nearby sessions as a dead actor after `GC DEAD(vid)`
 - any later add-style visibility presentation before respawn should replay that same dead state with one trailing `GC DEAD(vid)` after the ordinary actor add/info/update burst
 - local runtime/operator snapshot surfaces should preserve that same dead interval explicitly with `dead: true` on the visible static-actor entries they return during preview, transfer, visibility, and static-actor inspection

@@ -86,6 +86,7 @@ The first owned interaction families stay intentionally narrow:
 The currently implemented bootstrap interaction families remain conservative:
 - the actor must already be visible to the player
 - the actor must also be within the current bootstrap interaction range on the same effective map; a nearby coordinate on a different map is rejected as out of range
+- the actor must not be in the runtime-owned dead interval; dead interactable actors remain visible/introspectable but resolve `INTERACT` as the fail-closed `target_dead` path until respawn
 - the runtime resolves `interaction_kind` + `interaction_ref`
 - `info` and `talk` remain self-facing chat-backed responses
 - `warp` reuses the existing self-session transfer / rebootstrap path instead of inventing a separate dialog or warp packet family

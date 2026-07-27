@@ -18957,6 +18957,34 @@ func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsDeadSubject(t *t
 	}
 }
 
+func TestSharedWorldRegistryAttemptStaticActorInteractionRejectsDeadTarget(t *testing.T) {
+	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
+	registry := newSharedWorldRegistryWithTopology(topology)
+	subject := peerVisibilityCharacter("Subject", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	subjectID, _ := registry.Join(subject, newPendingServerFrames(), nil)
+	if subjectID == 0 {
+		t.Fatal("expected subject join to return a live shared-world entity ID")
+	}
+	actor, ok := registry.registerStaticActor(0, "FallenGuard", bootstrapMapIndex, 1200, 2200, 20300, "talk", "npc:fallen_guard", worldruntime.StaticActorCombatKindTrainingDummy, "", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected dead-target interactable registration to succeed")
+	}
+	registry.mu.Lock()
+	registry.staticActorCombatHP[actor.EntityID] = 0
+	registry.mu.Unlock()
+
+	attempt := registry.AttemptStaticActorInteraction(subjectID, uint32(actor.EntityID))
+	if attempt.Accepted {
+		t.Fatalf("expected dead-target interaction attempt to fail, got %+v", attempt)
+	}
+	if attempt.Failure != StaticActorInteractionFailureTargetDead {
+		t.Fatalf("expected dead-target failure %q, got %+v", StaticActorInteractionFailureTargetDead, attempt)
+	}
+	if attempt.Actor.EntityID != actor.EntityID || attempt.Actor.Name != "FallenGuard" || !attempt.Actor.Dead {
+		t.Fatalf("expected dead-target interaction attempt to preserve dead actor snapshot, got %+v", attempt)
+	}
+}
+
 func TestSharedWorldRegistryGroundItemPickupRejectsDeadCollector(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)
@@ -26477,6 +26505,48 @@ func TestGameSessionFlowStaticActorOutOfRangeInteractionReturnsSelfOnlyChatDeliv
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for out-of-range self-only interaction, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowStaticActorDeadTargetInteractionReturnsSelfOnlyChatDelivery(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:fallen_guard", Text: "..."}})
+
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.registerStaticActor(0, "FallenGuard", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindTalk, "npc:fallen_guard", worldruntime.StaticActorCombatKindTrainingDummy, "", worldruntime.StaticActorDeathReward{})
+	if !ok {
+		t.Fatal("expected dead-target interactable registration to succeed")
+	}
+	runtime.sharedWorld.mu.Lock()
+	runtime.sharedWorld.staticActorCombatHP[actor.EntityID] = 0
+	runtime.sharedWorld.mu.Unlock()
+	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(enterOut) != 9 {
+		t.Fatalf("expected 9 bootstrap frames with visible dead interactable static actor, got %d", len(enterOut))
+	}
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected dead-target interaction error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only dead-target interaction frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode dead-target interaction chat delivery: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Empire != 0 || delivery.Message != "That target is unavailable right now." {
+		t.Fatalf("unexpected dead-target interaction chat delivery: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for dead-target self-only interaction, got %d", len(queued))
 	}
 }
 

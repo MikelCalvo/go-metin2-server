@@ -84,7 +84,7 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 
 | Name | Direction | Header | Phase | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `INTERACT` | client -> server | `0x0501` | game | documented | first owned client-originated interaction request for a visible bootstrap static actor target by `vid`; current payload is a little-endian `uint32 target_vid`; because this bootstrap header overlaps `ITEM_USE`, `internal/game` routes `0x0501` by payload length (`3` bytes for `ITEM_USE`, `4` bytes for `INTERACT`) until a later client-facing interaction packet contract replaces the temporary overlap; current owned responses include self-only `info` / `talk` / `shop_preview`, and the current service-style NPC families also include transfer-backed `warp` |
+| `INTERACT` | client -> server | `0x0501` | game | documented | first owned client-originated interaction request for a visible bootstrap static actor target by `vid`; current payload is a little-endian `uint32 target_vid`; because this bootstrap header overlaps `ITEM_USE`, `internal/game` routes `0x0501` by payload length (`3` bytes for `ITEM_USE`, `4` bytes for `INTERACT`) until a later client-facing interaction packet contract replaces the temporary overlap; current owned responses include self-only `info` / `talk` / `shop_preview`, the current service-style NPC families also include transfer-backed `warp`, and dead visible interactables fail closed with a self-only `target_dead` info-chat response before resolving authored content |
 
 ## Merchants / shops
 

@@ -6580,6 +6580,8 @@ func staticActorInteractionFailureMessage(failure string) (string, bool) {
 		return "You cannot interact with that target right now.", true
 	case StaticActorInteractionFailureTargetOutOfRange:
 		return "You are too far away to interact with that target.", true
+	case StaticActorInteractionFailureTargetDead:
+		return "That target is unavailable right now.", true
 	case StaticActorInteractionFailureTargetHasNoInteraction:
 		return "Nothing happens.", true
 	case staticActorInteractionFailureDefinitionNotFound:

@@ -96,6 +96,7 @@ const (
 	StaticActorInteractionFailureSubjectDead            = "subject_dead"
 	StaticActorInteractionFailureTargetNotVisible       = "target_not_visible"
 	StaticActorInteractionFailureTargetOutOfRange       = "target_out_of_range"
+	StaticActorInteractionFailureTargetDead             = "target_dead"
 	StaticActorInteractionFailureTargetHasNoInteraction = "target_has_no_interaction"
 
 	StaticActorCombatTargetFailureSubjectNotFound     = "subject_not_found"
@@ -2062,6 +2063,10 @@ func (r *sharedWorldRegistry) AttemptStaticActorInteraction(subjectID uint64, ta
 	}
 	if actor.InteractionKind == "" || actor.InteractionRef == "" {
 		attempt.Failure = StaticActorInteractionFailureTargetHasNoInteraction
+		return attempt
+	}
+	if r.staticActorDeadLocked(actor.Entity.ID) {
+		attempt.Failure = StaticActorInteractionFailureTargetDead
 		return attempt
 	}
 	attempt.Accepted = true
