@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -1295,7 +1296,7 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 }
 
 func validRewardOwnerMetadata(value string) bool {
-	if value == "" || strings.TrimSpace(value) != value {
+	if value == "" || strings.TrimSpace(value) != value || !utf8.ValidString(value) {
 		return false
 	}
 	for _, r := range value {

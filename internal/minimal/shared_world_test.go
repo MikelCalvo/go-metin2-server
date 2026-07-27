@@ -1551,6 +1551,49 @@ func TestSharedWorldRegistryRegisterGroundRewardsRejectsNULOwnerMetadata(t *test
 	}
 }
 
+func TestSharedWorldRegistryRegisterGroundRewardsRejectsInvalidUTF8OwnerMetadata(t *testing.T) {
+	invalidName := "InvalidUTF8" + string([]byte{0xff}) + "RewardOwner"
+	invalidLogin := "invalid-utf8-" + string([]byte{0xfe}) + "-reward-owner"
+
+	t.Run("owner name", func(t *testing.T) {
+		registry := newSharedWorldRegistry()
+		owner := peerVisibilityCharacter(invalidName, 0x010301a6, 0x020401a6, 1200, 2200, 0, 101, 201)
+		ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+		if ownerID == 0 {
+			t.Fatal("expected invalid-utf8-name reward owner join to allocate a shared-world entity id")
+		}
+
+		if registry.RegisterGroundItem(ownerID, "invalid-utf8-owner", owner, 0x07000029, inventory.ItemInstance{ID: 0x30010001, Vnum: 3001, Count: 1}) {
+			t.Fatal("expected invalid-utf8 owner-name ground-item reward registration to fail closed")
+		}
+		if registry.RegisterGroundGold(ownerID, "invalid-utf8-owner", owner, 0x0700002A, 250) {
+			t.Fatal("expected invalid-utf8 owner-name ground-gold reward registration to fail closed")
+		}
+		if registry.GroundItemExists(0x07000029) || registry.GroundItemExists(0x0700002A) {
+			t.Fatal("expected rejected invalid-utf8-name reward ground entries to stay absent")
+		}
+	})
+
+	t.Run("owner login", func(t *testing.T) {
+		registry := newSharedWorldRegistry()
+		owner := peerVisibilityCharacter("InvalidUTF8LoginRewardOwner", 0x010301a7, 0x020401a7, 1200, 2200, 1, 101, 201)
+		ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+		if ownerID == 0 {
+			t.Fatal("expected invalid-utf8-login reward owner join to allocate a shared-world entity id")
+		}
+
+		if registry.RegisterGroundItem(ownerID, invalidLogin, owner, 0x0700002B, inventory.ItemInstance{ID: 0x30010002, Vnum: 3001, Count: 1}) {
+			t.Fatal("expected invalid-utf8 owner-login ground-item reward registration to fail closed")
+		}
+		if registry.RegisterGroundGold(ownerID, invalidLogin, owner, 0x0700002C, 250) {
+			t.Fatal("expected invalid-utf8 owner-login ground-gold reward registration to fail closed")
+		}
+		if registry.GroundItemExists(0x0700002B) || registry.GroundItemExists(0x0700002C) {
+			t.Fatal("expected rejected invalid-utf8-login reward ground entries to stay absent")
+		}
+	})
+}
+
 func TestSharedWorldRegistryRegisterGroundRewardsRejectsStaleLiveOwnerSnapshotAfterOwnerDeath(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	owner := peerVisibilityCharacter("StaleLiveRewardOwner", 0x01030193, 0x02040193, 1200, 2200, 0, 101, 201)
