@@ -276,6 +276,9 @@ func (r *Runtime) SetQuickslot(position uint8, slot loginticket.Quickslot) (logi
 		if itemIndex < 0 || r.liveInventory[itemIndex].Locked {
 			return loginticket.Quickslot{}, false
 		}
+		if err := r.liveInventory[itemIndex].Validate(); err != nil {
+			return loginticket.Quickslot{}, false
+		}
 	}
 	updated := cloneQuickslots(r.liveQuickslots)
 	for i := 0; i < len(updated); {

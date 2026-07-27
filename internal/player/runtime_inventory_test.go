@@ -3428,6 +3428,38 @@ func TestRuntimeSellMerchantItemRejectsDuplicateSlotOccupancyWithoutMutatingStat
 	}
 }
 
+func TestRuntimeSetQuickslotRejectsMalformedItemBindingWithoutMutation(t *testing.T) {
+	cases := []struct {
+		name string
+		item inventory.ItemInstance
+	}{
+		{name: "zero item instance id", item: inventory.ItemInstance{ID: 0, Vnum: 27001, Count: 3, Slot: 5}},
+		{name: "zero item vnum", item: inventory.ItemInstance{ID: 31, Vnum: 0, Count: 3, Slot: 5}},
+		{name: "zero item count", item: inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 0, Slot: 5}},
+		{name: "unequipped item with stale equipment slot", item: inventory.ItemInstance{ID: 31, Vnum: 27001, Count: 3, Slot: 5, EquipSlot: inventory.EquipmentSlotWeapon}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := inventoryRuntimeCharacterFixture()
+			persisted.Inventory = []inventory.ItemInstance{tc.item}
+			persisted.Quickslots = []loginticket.Quickslot{{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5}}
+			runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+			beforeQuickslots := runtime.LiveQuickslots()
+			beforeInventory := runtime.LiveInventory()
+
+			if result, ok := runtime.SetQuickslot(2, loginticket.Quickslot{Type: quickslotproto.TypeItem, Slot: 5}); ok {
+				t.Fatalf("expected malformed item quickslot binding to fail closed, got %+v", result)
+			}
+			if got := runtime.LiveQuickslots(); !reflect.DeepEqual(got, beforeQuickslots) {
+				t.Fatalf("malformed item quickslot binding mutated quickslots: got %+v want %+v", got, beforeQuickslots)
+			}
+			if got := runtime.LiveInventory(); !reflect.DeepEqual(got, beforeInventory) {
+				t.Fatalf("malformed item quickslot binding mutated inventory: got %+v want %+v", got, beforeInventory)
+			}
+		})
+	}
+}
+
 func TestNilRuntimeInventoryEquipmentAndCurrencyHelpersAreSafe(t *testing.T) {
 	var runtime *Runtime
 
