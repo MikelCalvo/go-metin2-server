@@ -557,6 +557,24 @@ func TestFileStoreValidateFailsClosedOnCorruptTicket(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsInvalidUTF8Snapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"`)
+	raw = append(raw, 0xff)
+	raw = append(raw, []byte(`","inventory":[],"equipment":[],"quickslots":[]}]}`)...)
+	if err := os.WriteFile(store.ticketPath(0x01020304), raw, 0o644); err != nil {
+		t.Fatalf("write invalid-utf8 ticket snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for invalid UTF-8 ticket snapshot, got %v", err)
+	}
+	if _, err := store.Validate(); !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket when validating invalid UTF-8 ticket snapshot, got %v", err)
+	}
+}
+
 func TestFileStoreLoadRejectsZeroIssuedAtTicket(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	raw := mustJSON(t, Ticket{Login: "mkmk", LoginKey: 0x01020304})

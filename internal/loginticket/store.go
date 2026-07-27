@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
@@ -533,6 +534,9 @@ func decodeTicketFilenameLoginKey(filename string) (uint32, error) {
 }
 
 func decodeTicketStrict(raw []byte, ticket *Ticket) error {
+	if !utf8.Valid(raw) {
+		return errors.New("invalid utf-8")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(ticket); err != nil {

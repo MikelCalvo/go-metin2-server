@@ -338,6 +338,24 @@ func TestFileStoreLoadRejectsTrailingJSONValue(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsInvalidUTF8Snapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"`)
+	raw = append(raw, 0xff)
+	raw = append(raw, []byte(`","inventory":[],"equipment":[],"quickslots":[]}]}`)...)
+	if err := os.WriteFile(store.accountPath("mkmk"), raw, 0o644); err != nil {
+		t.Fatalf("write invalid-utf8 account snapshot: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for invalid UTF-8 account snapshot, got %v", err)
+	}
+	if _, err := store.Validate(); !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount when validating invalid UTF-8 account snapshot, got %v", err)
+	}
+}
+
 func TestFileStoreLoadRejectsEmptySnapshotLogin(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	raw := []byte(`{"login":"","empire":2,"characters":[]}`)

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -780,6 +781,9 @@ func decodeAccountFilenameLogin(filename string) (string, error) {
 }
 
 func decodeAccountStrict(raw []byte, account *Account) error {
+	if !utf8.Valid(raw) {
+		return errors.New("invalid utf-8")
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(account); err != nil {
