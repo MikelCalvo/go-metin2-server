@@ -1186,6 +1186,29 @@ func TestFileStoreValidateBackupFromRejectsManifestChecksumMismatch(t *testing.T
 	}
 }
 
+func TestFileStoreValidateBackupFromRejectsInvalidUTF8BackupManifest(t *testing.T) {
+	backup := NewFileStore(t.TempDir())
+	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}
+	if err := backup.Save(account); err != nil {
+		t.Fatalf("save backup account: %v", err)
+	}
+	if err := backup.writeBackupManifest([]Account{account}); err != nil {
+		t.Fatalf("write backup manifest: %v", err)
+	}
+	manifestPath := filepath.Join(backup.dir, BackupManifestFilename)
+	invalidManifest := []byte(`{"format":"go-metin2-account-backup-v1`)
+	invalidManifest = append(invalidManifest, 0xff)
+	invalidManifest = append(invalidManifest, []byte(`","summary":{"account_count":1,"character_count":1,"logins":["mkmk"]},"files":[]}`)...)
+	if err := os.WriteFile(manifestPath, invalidManifest, 0o644); err != nil {
+		t.Fatalf("write invalid UTF-8 backup manifest: %v", err)
+	}
+
+	_, err := NewFileStore(filepath.Join(t.TempDir(), "restore-target")).ValidateBackupFrom(backup.dir)
+	if !errors.Is(err, ErrInvalidBackupManifest) || !strings.Contains(strings.ToLower(err.Error()), "invalid utf-8") {
+		t.Fatalf("expected ErrInvalidBackupManifest with invalid utf-8 detail, got %v", err)
+	}
+}
+
 func TestFileStoreValidateBackupFromAllowsLegacyManifestWithoutEmptyCharacterSlotCount(t *testing.T) {
 	backup := NewFileStore(t.TempDir())
 	account := Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}, {}, {ID: 2, Name: "MkmkSura"}}}
