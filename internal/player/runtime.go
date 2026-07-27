@@ -1026,11 +1026,6 @@ func (r *Runtime) UseItemRejectText(slot inventory.SlotIndex, template itemcatal
 	if consumeCount == 0 || consumeCount > item.Count {
 		return "", false
 	}
-	currentPointValue := r.livePoints[effect.PointIndex]
-	nextPointValue := int64(currentPointValue) + int64(effect.PointDelta)
-	if nextPointValue < -1<<31 || nextPointValue > 1<<31-1 {
-		return "", false
-	}
 	if r.CanUseTemplate(template) && !template.ConfirmWhenUse && !template.QuestUse && !template.QuestUseMultiple && !template.Applicable && !template.AntiStack && !template.AntiGet && !template.AntiDrop && !template.AntiGive && !template.AntiSell {
 		return "", false
 	}
