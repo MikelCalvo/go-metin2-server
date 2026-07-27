@@ -160,6 +160,11 @@ func RegisterLocalAccountStoreValidateEndpoint(mux *http.ServeMux, validate func
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
 		summary, err := validate()
 		if err != nil {
 			slog.Warn("local account store validation failed", "err", err)
@@ -213,6 +218,11 @@ func RegisterLocalLoginTicketStoreValidateEndpoint(mux *http.ServeMux, validate 
 		}
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
 			return
 		}
 		summary, err := validate()
@@ -330,6 +340,11 @@ func RegisterLocalItemTemplateStoreValidateEndpoint(mux *http.ServeMux, validate
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
 		summary, err := validate()
 		if err != nil {
 			slog.Warn("local item template store validation failed", "err", err)
@@ -355,6 +370,11 @@ func RegisterLocalStaticActorStoreValidateEndpoint(mux *http.ServeMux, validate 
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
 		summary, err := validate()
 		if err != nil {
 			slog.Warn("local static actor store validation failed", "err", err)
@@ -378,6 +398,11 @@ func RegisterLocalInteractionStoreValidateEndpoint(mux *http.ServeMux, validate 
 		}
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
 			return
 		}
 		summary, err := validate()

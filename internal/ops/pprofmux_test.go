@@ -109,6 +109,42 @@ func TestLocalAccountStoreValidateEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalAccountStoreValidateEndpointRejectsUnexpectedBody(t *testing.T) {
+	validator := &stubAccountStoreValidator{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/validate", strings.NewReader(`{"confirm":true}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalAccountStoreValidateEndpointRejectsOversizedBody(t *testing.T) {
+	validator := &stubAccountStoreValidator{summary: map[string]any{"account_count": 1}}
+	mux := RegisterLocalAccountStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/account-store/validate", strings.NewReader(strings.Repeat(" ", maxLocalAccountStoreMutationBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
 func TestLocalAccountStoreValidateEndpointReportsValidationFailure(t *testing.T) {
 	validator := &stubAccountStoreValidator{err: errStubAccountStoreInvalid}
 	mux := RegisterLocalAccountStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
@@ -670,6 +706,42 @@ func TestLocalLoginTicketStoreValidateEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalLoginTicketStoreValidateEndpointRejectsUnexpectedBody(t *testing.T) {
+	validator := &stubLoginTicketStoreValidator{summary: map[string]any{"ticket_count": 1}}
+	mux := RegisterLocalLoginTicketStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/validate", strings.NewReader(`{"confirm":true}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalLoginTicketStoreValidateEndpointRejectsOversizedBody(t *testing.T) {
+	validator := &stubLoginTicketStoreValidator{summary: map[string]any{"ticket_count": 1}}
+	mux := RegisterLocalLoginTicketStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/login-tickets/validate", strings.NewReader(strings.Repeat(" ", maxLocalAccountStoreMutationBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
 func TestLocalLoginTicketStoreValidateEndpointReportsValidationFailure(t *testing.T) {
 	validator := &stubLoginTicketStoreValidator{err: errStubLoginTicketStoreInvalid}
 	mux := RegisterLocalLoginTicketStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
@@ -1120,6 +1192,42 @@ func TestLocalItemTemplateStoreValidateEndpointRejectsWrongMethod(t *testing.T) 
 	}
 }
 
+func TestLocalItemTemplateStoreValidateEndpointRejectsUnexpectedBody(t *testing.T) {
+	validator := &stubItemTemplateStoreValidator{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/validate", strings.NewReader(`{"confirm":true}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalItemTemplateStoreValidateEndpointRejectsOversizedBody(t *testing.T) {
+	validator := &stubItemTemplateStoreValidator{summary: map[string]any{"template_count": 1}}
+	mux := RegisterLocalItemTemplateStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/item-templates/validate", strings.NewReader(strings.Repeat(" ", maxLocalAccountStoreMutationBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
 func TestLocalItemTemplateStoreValidateEndpointReportsValidationFailure(t *testing.T) {
 	validator := &stubItemTemplateStoreValidator{err: errStubItemTemplateStoreInvalid}
 	mux := RegisterLocalItemTemplateStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
@@ -1201,6 +1309,42 @@ func TestLocalStaticActorStoreValidateEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalStaticActorStoreValidateEndpointRejectsUnexpectedBody(t *testing.T) {
+	validator := &stubStaticActorStoreValidator{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/validate", strings.NewReader(`{"confirm":true}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalStaticActorStoreValidateEndpointRejectsOversizedBody(t *testing.T) {
+	validator := &stubStaticActorStoreValidator{summary: map[string]any{"actor_count": 1}}
+	mux := RegisterLocalStaticActorStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/static-actor-store/validate", strings.NewReader(strings.Repeat(" ", maxLocalAccountStoreMutationBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
 func TestLocalStaticActorStoreValidateEndpointReportsValidationFailure(t *testing.T) {
 	validator := &stubStaticActorStoreValidator{err: errStubStaticActorStoreInvalid}
 	mux := RegisterLocalStaticActorStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
@@ -1276,6 +1420,42 @@ func TestLocalInteractionStoreValidateEndpointRejectsWrongMethod(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalInteractionStoreValidateEndpointRejectsUnexpectedBody(t *testing.T) {
+	validator := &stubInteractionStoreValidator{summary: map[string]any{"definition_count": 1}}
+	mux := RegisterLocalInteractionStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/validate", strings.NewReader(`{"confirm":true}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validator not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalInteractionStoreValidateEndpointRejectsOversizedBody(t *testing.T) {
+	validator := &stubInteractionStoreValidator{summary: map[string]any{"definition_count": 1}}
+	mux := RegisterLocalInteractionStoreValidateEndpoint(NewPprofMux("gamed"), validator.Validate)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/interaction-store/validate", strings.NewReader(strings.Repeat(" ", maxLocalAccountStoreMutationBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
 	}
 	if validator.calls != 0 {
 		t.Fatalf("expected validator not to be called, got %d", validator.calls)

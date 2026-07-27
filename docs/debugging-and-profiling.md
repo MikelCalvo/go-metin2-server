@@ -58,7 +58,7 @@ Unless noted otherwise, non-loopback callers are rejected with `403`.
 
 ### `POST /local/account-store/validate`
 
-Validates the durable bootstrap account snapshot store through the same strict loader used by runtime backup/restore primitives, without mutating any account files. This endpoint is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed account snapshot is corrupt, has an invalid filename/login pairing, uses a non-canonical case-variant filename, duplicates a login by case variant, uses an empty, whitespace-padded, or embedded-NUL account login, or violates the deterministic account snapshot invariants. Multiple all-zero character records are accepted as empty select-screen slots, but any zero-ID slot with leftover name, VID, location, stat, guild, gold, item, equipment, or quickslot state fails validation; non-zero character records must carry a non-empty, unpadded, NUL-free name and any persisted guild name must also be NUL-free.
+Validates the durable bootstrap account snapshot store through the same strict loader used by runtime backup/restore primitives, without mutating any account files. This endpoint is loopback-only, rejects non-`POST` methods with `405`, rejects non-empty request bodies with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if any committed account snapshot is corrupt, has an invalid filename/login pairing, uses a non-canonical case-variant filename, duplicates a login by case variant, uses an empty, whitespace-padded, or embedded-NUL account login, or violates the deterministic account snapshot invariants. Empty or whitespace-only bodies remain accepted so local scripts can issue a plain `POST` safely. Multiple all-zero character records are accepted as empty select-screen slots, but any zero-ID slot with leftover name, VID, location, stat, guild, gold, item, equipment, or quickslot state fails validation; non-zero character records must carry a non-empty, unpadded, NUL-free name and any persisted guild name must also be NUL-free.
 
 Successful responses are JSON summaries with:
 
@@ -78,7 +78,7 @@ The endpoint does not accept a request body: empty or whitespace-only bodies are
 
 ### `POST /local/login-tickets/validate`
 
-Validates the one-shot authd-to-gamed login-ticket handoff store without consuming or deleting any tickets. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if any committed ticket is corrupt, has unknown/trailing JSON, has an invalid or mismatched filename/login-key pairing, has an empty, whitespace-padded, or embedded-NUL login, has a zero login key, has a missing/zero `issued_at`, or violates the character/item/equipment/quickslot invariants shared with ticket load/consume. Multiple all-zero character records are accepted as empty select-screen slots, but any zero-ID slot with leftover persisted character state fails validation before the handoff can be consumed; non-zero character records must carry a non-empty, unpadded, NUL-free name and any persisted guild name must also be NUL-free.
+Validates the one-shot authd-to-gamed login-ticket handoff store without consuming or deleting any tickets. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-empty request bodies with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if any committed ticket is corrupt, has unknown/trailing JSON, has an invalid or mismatched filename/login-key pairing, has an empty, whitespace-padded, or embedded-NUL login, has a zero login key, has a missing/zero `issued_at`, or violates the character/item/equipment/quickslot invariants shared with ticket load/consume. Empty or whitespace-only bodies remain accepted so local scripts can issue a plain `POST` safely. Multiple all-zero character records are accepted as empty select-screen slots, but any zero-ID slot with leftover persisted character state fails validation before the handoff can be consumed; non-zero character records must carry a non-empty, unpadded, NUL-free name and any persisted guild name must also be NUL-free.
 
 Successful responses are JSON summaries with:
 
@@ -120,7 +120,7 @@ The cleanup path validates the whole committed ticket set through the same stric
 
 ### `POST /local/item-templates/validate`
 
-Validates the authored bootstrap item-template snapshot store without mutating item-template state. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed item-template snapshot is malformed, has unknown/trailing JSON, duplicates a vnum, or violates template policy such as invalid max counts, equipment slots, display metadata, use effects, or equip effects.
+Validates the authored bootstrap item-template snapshot store without mutating item-template state. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-empty request bodies with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the committed item-template snapshot is malformed, has unknown/trailing JSON, duplicates a vnum, or violates template policy such as invalid max counts, equipment slots, display metadata, use effects, or equip effects. Empty or whitespace-only bodies remain accepted so local scripts can issue a plain `POST` safely.
 
 Successful responses are JSON summaries with:
 
@@ -138,7 +138,7 @@ The endpoint does not accept a request body: empty or whitespace-only bodies are
 
 ### `POST /local/static-actor-store/validate`
 
-Validates the authored bootstrap static-actor snapshot store without mutating actor content. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed `static-actors.json` snapshot is malformed, has unknown/trailing JSON, duplicates actor IDs or spawn-group refs, or violates actor policy such as missing names, zero map indexes, invalid race numbers, invalid interaction refs, invalid combat profiles, or invalid reward descriptors.
+Validates the authored bootstrap static-actor snapshot store without mutating actor content. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-empty request bodies with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the committed `static-actors.json` snapshot is malformed, has unknown/trailing JSON, duplicates actor IDs or spawn-group refs, or violates actor policy such as missing names, zero map indexes, invalid race numbers, invalid interaction refs, invalid combat profiles, or invalid reward descriptors. Empty or whitespace-only bodies remain accepted so local scripts can issue a plain `POST` safely.
 
 Successful responses are JSON summaries with:
 
@@ -159,7 +159,7 @@ The endpoint does not accept a request body: empty or whitespace-only bodies are
 
 ### `POST /local/interaction-store/validate`
 
-Validates the authored bootstrap interaction-definition snapshot store without mutating interaction content. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, and returns `409` if the committed `interaction-definitions.json` snapshot is malformed, has unknown/trailing JSON, duplicates a `kind:ref`, or violates definition policy for supported `info`, `talk`, `shop_preview`, or `warp` definitions.
+Validates the authored bootstrap interaction-definition snapshot store without mutating interaction content. This endpoint is available only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects non-empty request bodies with `400`, rejects request bodies over 4 KiB with `413`, and returns `409` if the committed `interaction-definitions.json` snapshot is malformed, has unknown/trailing JSON, duplicates a `kind:ref`, or violates definition policy for supported `info`, `talk`, `shop_preview`, or `warp` definitions. Empty or whitespace-only bodies remain accepted so local scripts can issue a plain `POST` safely.
 
 Successful responses are JSON summaries with:
 
