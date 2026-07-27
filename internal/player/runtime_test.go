@@ -990,7 +990,7 @@ func TestRuntimeUseItemOnItemFullMergeDeletesSourceAndKeepsTarget(t *testing.T) 
 	if !ok {
 		t.Fatal("expected full item-use-to-item merge to succeed")
 	}
-	if !result.Changed || result.From != 5 || result.To != 6 || result.FromOccupied || !result.ToOccupied || result.CountOnly {
+	if !result.Changed || result.From != 5 || result.To != 6 || result.FromOccupied || !result.ToOccupied || !result.CountOnly {
 		t.Fatalf("unexpected full merge result flags: %+v", result)
 	}
 	if result.ToItem != (inventory.ItemInstance{ID: 12, Vnum: 27001, Count: 10, Slot: 6}) {
@@ -1767,7 +1767,7 @@ func TestRuntimeUseItemOnItemMergesCompatibleStacksWithoutPointEffect(t *testing
 	if !ok {
 		t.Fatal("expected compatible stack use-to-item merge to succeed")
 	}
-	if !result.Changed || result.CountOnly || result.FromOccupied {
+	if !result.Changed || !result.CountOnly || result.FromOccupied {
 		t.Fatalf("unexpected use-to-item merge result metadata: %+v", result)
 	}
 	if result.ToItem.ID != 12 || result.ToItem.Vnum != 27001 || result.ToItem.Count != 7 || result.ToItem.Slot != 6 {
@@ -1804,7 +1804,7 @@ func TestRuntimeUseItemOnItemFullMergeRemovesOnlySourceItemQuickslots(t *testing
 	if !ok {
 		t.Fatal("expected full use-to-item merge to succeed")
 	}
-	if !result.Changed || result.FromOccupied || result.CountOnly {
+	if !result.Changed || result.FromOccupied || !result.CountOnly {
 		t.Fatalf("unexpected full use-to-item result metadata: %+v", result)
 	}
 	deletedQuickslots, ok := runtime.SyncItemQuickslotsForItemRemoval(5)
@@ -1839,7 +1839,7 @@ func TestRuntimeUseItemOnItemFullMergeDeletesAllSourceItemQuickslotsInOrder(t *t
 	if !ok {
 		t.Fatal("expected full use-to-item merge to succeed")
 	}
-	if !result.Changed || result.FromOccupied || result.CountOnly {
+	if !result.Changed || result.FromOccupied || !result.CountOnly {
 		t.Fatalf("unexpected full use-to-item result metadata: %+v", result)
 	}
 	deletedQuickslots, ok := runtime.SyncItemQuickslotsForItemRemoval(5)
@@ -2208,7 +2208,7 @@ func TestRuntimeUseItemOnItemFullMergeDeletesAllSourceItemQuickslots(t *testing.
 	if !ok {
 		t.Fatal("expected full use-to-item merge to succeed")
 	}
-	if !result.Changed || result.FromOccupied || result.CountOnly {
+	if !result.Changed || result.FromOccupied || !result.CountOnly {
 		t.Fatalf("unexpected full use-to-item result metadata: %+v", result)
 	}
 	deletedQuickslots, ok := runtime.SyncItemQuickslotsForItemRemoval(5)

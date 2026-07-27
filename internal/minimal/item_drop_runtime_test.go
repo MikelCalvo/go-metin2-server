@@ -1290,7 +1290,7 @@ func TestGameRuntimeItemUseToItemMergesStacksAndPersistsQuickslotCleanup(t *test
 		t.Fatalf("unexpected use-to-item error: %v", err)
 	}
 	if len(out) != 4 {
-		t.Fatalf("expected use-to-item to emit ITEM_DEL, ITEM_SET, and two QUICKSLOT_DEL frames, got %d frames", len(out))
+		t.Fatalf("expected use-to-item to emit ITEM_DEL, ITEM_UPDATE, and two QUICKSLOT_DEL frames, got %d frames", len(out))
 	}
 	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -1299,12 +1299,12 @@ func TestGameRuntimeItemUseToItemMergesStacksAndPersistsQuickslotCleanup(t *test
 	if del.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected use-to-item source del: %+v", del)
 	}
-	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode use-to-item target set: %v", err)
+		t.Fatalf("decode use-to-item target update: %v", err)
 	}
-	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27001 || set.Count != 5 {
-		t.Fatalf("unexpected use-to-item target set: %+v", set)
+	if update.Position != itemproto.InventoryPosition(6) || update.Count != 5 {
+		t.Fatalf("unexpected use-to-item target update: %+v", update)
 	}
 	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {
@@ -1617,7 +1617,7 @@ func TestGameRuntimeItemUseToItemMergesCompatibleInventoryStacks(t *testing.T) {
 		t.Fatalf("unexpected use-to-item error: %v", err)
 	}
 	if len(out) != 2 {
-		t.Fatalf("expected use-to-item stack merge to emit ITEM_DEL and ITEM_SET, got %d frames", len(out))
+		t.Fatalf("expected use-to-item stack merge to emit ITEM_DEL and ITEM_UPDATE, got %d frames", len(out))
 	}
 	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -1626,12 +1626,12 @@ func TestGameRuntimeItemUseToItemMergesCompatibleInventoryStacks(t *testing.T) {
 	if del.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected use-to-item source del: %+v", del)
 	}
-	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode use-to-item target set: %v", err)
+		t.Fatalf("decode use-to-item target update: %v", err)
 	}
-	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27001 || set.Count != 7 {
-		t.Fatalf("unexpected use-to-item target set: %+v", set)
+	if update.Position != itemproto.InventoryPosition(6) || update.Count != 7 {
+		t.Fatalf("unexpected use-to-item target update: %+v", update)
 	}
 
 	account, err := accounts.Load("use-to-item-owner")
@@ -1679,7 +1679,7 @@ func TestGameRuntimeItemUseToItemDeletesSourceItemQuickslotOnFullMerge(t *testin
 		t.Fatalf("unexpected use-to-item quickslot error: %v", err)
 	}
 	if len(out) != 3 {
-		t.Fatalf("expected full use-to-item merge to emit ITEM_DEL, ITEM_SET, and QUICKSLOT_DEL, got %d frames", len(out))
+		t.Fatalf("expected full use-to-item merge to emit ITEM_DEL, ITEM_UPDATE, and QUICKSLOT_DEL, got %d frames", len(out))
 	}
 	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -1688,12 +1688,12 @@ func TestGameRuntimeItemUseToItemDeletesSourceItemQuickslotOnFullMerge(t *testin
 	if del.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected use-to-item quickslot source del: %+v", del)
 	}
-	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode use-to-item quickslot target set: %v", err)
+		t.Fatalf("decode use-to-item quickslot target update: %v", err)
 	}
-	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27001 || set.Count != 7 {
-		t.Fatalf("unexpected use-to-item quickslot target set: %+v", set)
+	if update.Position != itemproto.InventoryPosition(6) || update.Count != 7 {
+		t.Fatalf("unexpected use-to-item quickslot target update: %+v", update)
 	}
 	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {
@@ -2705,25 +2705,25 @@ func TestGameRuntimeItemUseToItemStaleSessionEmitsLocalFramesButDoesNotPersist(t
 		t.Fatalf("unexpected stale use-to-item error: %v", err)
 	}
 	if len(out) != 3 {
-		t.Fatalf("expected stale use-to-item to emit local ITEM_DEL, ITEM_SET, and QUICKSLOT_DEL frames, got %d", len(out))
+		t.Fatalf("expected stale use-to-item to emit local ITEM_DEL, ITEM_UPDATE, and QUICKSLOT_DEL frames, got %d", len(out))
 	}
-	var sawSourceDel, sawTargetSet, sawQuickslotDel bool
+	var sawSourceDel, sawTargetUpdate, sawQuickslotDel bool
 	for _, raw := range out {
 		fr := decodeSingleFrame(t, raw)
 		if del, err := itemproto.DecodeDel(fr); err == nil && del.Position == itemproto.InventoryPosition(5) {
 			sawSourceDel = true
 			continue
 		}
-		if set, err := itemproto.DecodeSet(fr); err == nil && set.Position == itemproto.InventoryPosition(6) && set.Vnum == 27001 && set.Count == 7 {
-			sawTargetSet = true
+		if update, err := itemproto.DecodeUpdate(fr); err == nil && update.Position == itemproto.InventoryPosition(6) && update.Count == 7 {
+			sawTargetUpdate = true
 			continue
 		}
 		if del, err := quickslotproto.DecodeDel(fr); err == nil && del.Position == 2 {
 			sawQuickslotDel = true
 		}
 	}
-	if !sawSourceDel || !sawTargetSet || !sawQuickslotDel {
-		t.Fatalf("expected stale use-to-item local frames to include source del, target set, and source quickslot del, got %d frames", len(out))
+	if !sawSourceDel || !sawTargetUpdate || !sawQuickslotDel {
+		t.Fatalf("expected stale use-to-item local frames to include source del, target update, and source quickslot del, got %d frames", len(out))
 	}
 
 	account, err := accounts.Load("use-to-item-stale")

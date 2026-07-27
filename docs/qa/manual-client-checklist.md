@@ -1035,7 +1035,7 @@ Expected result:
 
 - [ ] Enter `GAME` with a QA character that has two compatible carried stacks for a template-backed stackable item such as `27001`
 - [ ] Send one real client `ITEM_USE_TO_ITEM` request from the source carried slot onto the target carried slot
-- [ ] Confirm the selected session receives `ITEM_DEL(source)` then `ITEM_SET(target)` when the source fits completely into the target
+- [ ] Confirm the selected session receives `ITEM_DEL(source)` then count-only `ITEM_UPDATE(target)` when the source fits completely into the target; if the QA template authors display sockets/attributes for that stackable item, confirm the target update preserves those arrays while changing only the count
 - [ ] If one or more item quickslots point at the removed source slot, confirm each receives `QUICKSLOT_DEL` after the item refresh frames; skill/command quickslots with the same byte slot value must stay unchanged and persist across reconnect
 - [ ] Repeat with a target stack that has only partial room under the authored `max_count`
 - [ ] Confirm the selected session receives count-only refreshes for both carried cells and the source item quickslot remains

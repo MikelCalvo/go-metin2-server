@@ -1850,7 +1850,7 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlySourceItemQuickslotAndS
 		t.Fatalf("unexpected item-use-to-item full packet error: %v", err)
 	}
 	if len(out) != 3 {
-		t.Fatalf("expected full item-use-to-item to emit source delete, target set, and source quickslot delete only, got %d", len(out))
+		t.Fatalf("expected full item-use-to-item to emit source delete, target update, and source quickslot delete only, got %d", len(out))
 	}
 	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -1859,12 +1859,12 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlySourceItemQuickslotAndS
 	if sourceDel.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected full item-use-to-item source delete: %+v", sourceDel)
 	}
-	targetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode full item-use-to-item target set: %v", err)
+		t.Fatalf("decode full item-use-to-item target update: %v", err)
 	}
-	if targetSet.Position != itemproto.InventoryPosition(6) || targetSet.Vnum != 27001 || targetSet.Count != 15 {
-		t.Fatalf("unexpected full item-use-to-item target set: %+v", targetSet)
+	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 15 {
+		t.Fatalf("unexpected full item-use-to-item target update: %+v", targetUpdate)
 	}
 	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {
@@ -1890,6 +1890,95 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlySourceItemQuickslotAndS
 	}
 	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
 		t.Fatalf("expected drag-to-item to skip use_effect point mutation, got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowItemUseToItemFullMergeRefreshesTargetWithTemplateUpdateMetadata(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseToItemFullUpdate", 0x0103056d, 0x0204056d, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 211, Vnum: 27031, Count: 7, Slot: 5},
+		{ID: 212, Vnum: 27031, Count: 8, Slot: 6},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "item-use-to-item-full-update", 0x5050506d, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-to-item-full-update", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed full-update item-use-to-item account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:      27031,
+		Name:      "Socketed Merge Potion",
+		Stackable: true,
+		MaxCount:  15,
+		Sockets:   itemcatalog.SocketValues{17, -29, 41},
+		Attributes: itemcatalog.AttributeValues{
+			{Type: 6, Value: 77},
+			{Type: 12, Value: -13},
+		},
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected full-update item-use-to-item runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-to-item-full-update", 0x5050506d)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUseToItem(itemproto.ClientUseToItemPacket{Source: itemproto.InventoryPosition(5), Target: itemproto.InventoryPosition(6)})))
+	if err != nil {
+		t.Fatalf("unexpected full-update item-use-to-item packet error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected full item-use-to-item to emit source delete, target update, and source quickslot delete, got %d", len(out))
+	}
+	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode full-update item-use-to-item source delete: %v", err)
+	}
+	if sourceDel.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected full-update item-use-to-item source delete: %+v", sourceDel)
+	}
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode full-update item-use-to-item target update: %v", err)
+	}
+	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 15 {
+		t.Fatalf("unexpected full-update item-use-to-item target update: %+v", targetUpdate)
+	}
+	wantSockets := [itemproto.ItemSocketCount]int32{17, -29, 41}
+	if targetUpdate.Sockets != wantSockets {
+		t.Fatalf("expected template-authored full merge target update sockets %+v, got %+v", wantSockets, targetUpdate.Sockets)
+	}
+	wantAttributes := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 6, Value: 77}, {Type: 12, Value: -13}}
+	if targetUpdate.Attributes != wantAttributes {
+		t.Fatalf("expected template-authored full merge target update attributes %+v, got %+v", wantAttributes, targetUpdate.Attributes)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode full-update item-use-to-item quickslot delete: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("expected full-update item-use-to-item to delete only source item quickslot position 2, got %+v", quickslotDel)
+	}
+	persisted, err := accounts.Load("item-use-to-item-full-update")
+	if err != nil {
+		t.Fatalf("load persisted full-update item-use-to-item account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 212, Vnum: 27031, Count: 15, Slot: 6}}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted full-update item-use-to-item inventory: got %+v want %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeItem, Slot: 6},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("expected full-update item-use-to-item to delete only source item quickslot, got %+v", persisted.Characters[0].Quickslots)
 	}
 }
 
@@ -2264,7 +2353,7 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesAllSourceItemQuickslots(t *
 		t.Fatalf("unexpected multi-quickslot item-use-to-item packet error: %v", err)
 	}
 	if len(out) != 4 {
-		t.Fatalf("expected full item-use-to-item merge to emit source delete, target set, and two source quickslot deletes, got %d", len(out))
+		t.Fatalf("expected full item-use-to-item merge to emit source delete, target update, and two source quickslot deletes, got %d", len(out))
 	}
 	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -2273,12 +2362,12 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesAllSourceItemQuickslots(t *
 	if sourceDel.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected multi-quickslot item-use-to-item source delete: %+v", sourceDel)
 	}
-	targetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode multi-quickslot item-use-to-item target set: %v", err)
+		t.Fatalf("decode multi-quickslot item-use-to-item target update: %v", err)
 	}
-	if targetSet.Position != itemproto.InventoryPosition(6) || targetSet.Vnum != 27001 || targetSet.Count != 15 {
-		t.Fatalf("unexpected multi-quickslot item-use-to-item target set: %+v", targetSet)
+	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 15 {
+		t.Fatalf("unexpected multi-quickslot item-use-to-item target update: %+v", targetUpdate)
 	}
 	firstQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {
@@ -2434,7 +2523,7 @@ func TestGameSessionFlowItemUseToItemStaleAfterReclaimIsSelfLocalOnly(t *testing
 		t.Fatalf("unexpected stale item-use-to-item packet error: %v", err)
 	}
 	if len(staleOut) != 3 {
-		t.Fatalf("expected stale item-use-to-item to emit self-local source delete, target set, and source quickslot delete only, got %d", len(staleOut))
+		t.Fatalf("expected stale item-use-to-item to emit self-local source delete, target update, and source quickslot delete only, got %d", len(staleOut))
 	}
 	staleSourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, staleOut[0]))
 	if err != nil {
@@ -2443,12 +2532,12 @@ func TestGameSessionFlowItemUseToItemStaleAfterReclaimIsSelfLocalOnly(t *testing
 	if staleSourceDel.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected stale item-use-to-item source delete: %+v", staleSourceDel)
 	}
-	staleTargetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, staleOut[1]))
+	staleTargetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, staleOut[1]))
 	if err != nil {
-		t.Fatalf("decode stale item-use-to-item target set: %v", err)
+		t.Fatalf("decode stale item-use-to-item target update: %v", err)
 	}
-	if staleTargetSet.Position != itemproto.InventoryPosition(6) || staleTargetSet.Vnum != 27001 || staleTargetSet.Count != 15 {
-		t.Fatalf("unexpected stale item-use-to-item target set: %+v", staleTargetSet)
+	if staleTargetUpdate.Position != itemproto.InventoryPosition(6) || staleTargetUpdate.Count != 15 {
+		t.Fatalf("unexpected stale item-use-to-item target update: %+v", staleTargetUpdate)
 	}
 	staleQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, staleOut[2]))
 	if err != nil {
@@ -2475,12 +2564,12 @@ func TestGameSessionFlowItemUseToItemStaleAfterReclaimIsSelfLocalOnly(t *testing
 	if len(replacementOut) != 3 {
 		t.Fatalf("expected replacement owner to still see the original full merge after stale local use, got %d frames", len(replacementOut))
 	}
-	replacementTargetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, replacementOut[1]))
+	replacementTargetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, replacementOut[1]))
 	if err != nil {
-		t.Fatalf("decode replacement item-use-to-item target set: %v", err)
+		t.Fatalf("decode replacement item-use-to-item target update: %v", err)
 	}
-	if replacementTargetSet.Position != itemproto.InventoryPosition(6) || replacementTargetSet.Count != 15 {
-		t.Fatalf("expected replacement owner to merge from unchanged authoritative state, got %+v", replacementTargetSet)
+	if replacementTargetUpdate.Position != itemproto.InventoryPosition(6) || replacementTargetUpdate.Count != 15 {
+		t.Fatalf("expected replacement owner to merge from unchanged authoritative state, got %+v", replacementTargetUpdate)
 	}
 }
 
@@ -2520,7 +2609,7 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlySourceItemQuickslots(t 
 		t.Fatalf("unexpected item-use-to-item full quickslot packet error: %v", err)
 	}
 	if len(out) != 4 {
-		t.Fatalf("expected full merge to emit source delete, target set, and two source item quickslot deletes, got %d", len(out))
+		t.Fatalf("expected full merge to emit source delete, target update, and two source item quickslot deletes, got %d", len(out))
 	}
 	sourceDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -2529,12 +2618,12 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlySourceItemQuickslots(t 
 	if sourceDel.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected full merge source delete: %+v", sourceDel)
 	}
-	targetSet, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	targetUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode full merge target set: %v", err)
+		t.Fatalf("decode full merge target update: %v", err)
 	}
-	if targetSet.Position != itemproto.InventoryPosition(6) || targetSet.Vnum != 27001 || targetSet.Count != 10 {
-		t.Fatalf("unexpected full merge target set: %+v", targetSet)
+	if targetUpdate.Position != itemproto.InventoryPosition(6) || targetUpdate.Count != 10 {
+		t.Fatalf("unexpected full merge target update: %+v", targetUpdate)
 	}
 	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {

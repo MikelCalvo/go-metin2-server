@@ -1110,6 +1110,7 @@ func (r *Runtime) useItemOnItem(source inventory.SlotIndex, target inventory.Slo
 		updatedInventory[updatedTargetIndex] = targetItem
 		sortInventoryItems(updatedInventory)
 		r.liveInventory = updatedInventory
+		result.CountOnly = true
 		return result, true
 	}
 	sourceItem.Count -= mergeCount

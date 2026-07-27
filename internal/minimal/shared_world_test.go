@@ -15697,12 +15697,12 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleItemUseToItemMutationNonAuthoritat
 	if deleted.Position.WindowType != itemproto.WindowInventory || deleted.Position.Cell != 5 {
 		t.Fatalf("unexpected stale owner use-to-item source delete: %+v", deleted)
 	}
-	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useToItemOut[1]))
+	updatePacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useToItemOut[1]))
 	if err != nil {
-		t.Fatalf("decode stale owner use-to-item target set: %v", err)
+		t.Fatalf("decode stale owner use-to-item target update: %v", err)
 	}
-	if setPacket.Position.WindowType != itemproto.WindowInventory || setPacket.Position.Cell != 6 || setPacket.Vnum != 27001 || setPacket.Count != 9 {
-		t.Fatalf("unexpected stale owner use-to-item target set packet: %+v", setPacket)
+	if updatePacket.Position.WindowType != itemproto.WindowInventory || updatePacket.Position.Cell != 6 || updatePacket.Count != 9 {
+		t.Fatalf("unexpected stale owner use-to-item target update packet: %+v", updatePacket)
 	}
 	quickslotDelete, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useToItemOut[2]))
 	if err != nil {
@@ -22663,7 +22663,7 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlyItemQuickslots(t *testi
 		t.Fatalf("unexpected use-to-item full merge error: %v", err)
 	}
 	if len(out) != 4 {
-		t.Fatalf("expected full use-to-item merge to emit item delete, target set, and two source quickslot deletes, got %d", len(out))
+		t.Fatalf("expected full use-to-item merge to emit item delete, target update, and two source quickslot deletes, got %d", len(out))
 	}
 	deleted, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
 	if err != nil {
@@ -22672,12 +22672,12 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlyItemQuickslots(t *testi
 	if deleted.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected full-merge source delete: %+v", deleted)
 	}
-	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
 	if err != nil {
-		t.Fatalf("decode full-merge target item set: %v", err)
+		t.Fatalf("decode full-merge target item update: %v", err)
 	}
-	if set.Position != itemproto.InventoryPosition(8) || set.Vnum != 27001 || set.Count != 200 {
-		t.Fatalf("unexpected full-merge target set: %+v", set)
+	if update.Position != itemproto.InventoryPosition(8) || update.Count != 200 {
+		t.Fatalf("unexpected full-merge target update: %+v", update)
 	}
 	for index, wantPosition := range []uint8{2, 7} {
 		quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2+index]))
@@ -39301,7 +39301,7 @@ func TestGameRuntimeItemUseToItemFullStackMergeRemovesAllSourceItemQuickslots(t 
 		t.Fatalf("unexpected item use-to-item error: %v", err)
 	}
 	if len(useToItemOut) != 4 {
-		t.Fatalf("expected item-del + item-set + two quickslot-del frames for full-stack use-to-item merge, got %d", len(useToItemOut))
+		t.Fatalf("expected item-del + item-update + two quickslot-del frames for full-stack use-to-item merge, got %d", len(useToItemOut))
 	}
 	delPacket, err := itemproto.DecodeDel(decodeSingleFrame(t, useToItemOut[0]))
 	if err != nil {
@@ -39310,12 +39310,12 @@ func TestGameRuntimeItemUseToItemFullStackMergeRemovesAllSourceItemQuickslots(t 
 	if delPacket.Position != itemproto.InventoryPosition(5) {
 		t.Fatalf("unexpected use-to-item source delete packet: %+v", delPacket)
 	}
-	setPacket, err := itemproto.DecodeSet(decodeSingleFrame(t, useToItemOut[1]))
+	updatePacket, err := itemproto.DecodeUpdate(decodeSingleFrame(t, useToItemOut[1]))
 	if err != nil {
-		t.Fatalf("decode use-to-item target set: %v", err)
+		t.Fatalf("decode use-to-item target update: %v", err)
 	}
-	if setPacket.Position != itemproto.InventoryPosition(6) || setPacket.Vnum != 27001 || setPacket.Count != 7 {
-		t.Fatalf("unexpected use-to-item target set packet: %+v", setPacket)
+	if updatePacket.Position != itemproto.InventoryPosition(6) || updatePacket.Count != 7 {
+		t.Fatalf("unexpected use-to-item target update packet: %+v", updatePacket)
 	}
 	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useToItemOut[2]))
 	if err != nil {
