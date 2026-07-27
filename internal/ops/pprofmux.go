@@ -96,6 +96,34 @@ type localInteractionDefinitionRequest struct {
 	Y        int32                                   `json:"y"`
 }
 
+type localContentBundleRequest struct {
+	StaticActors           json.RawMessage `json:"static_actors"`
+	SpawnGroups            json.RawMessage `json:"spawn_groups"`
+	CombatProfiles         json.RawMessage `json:"combat_profiles"`
+	ItemTemplates          json.RawMessage `json:"item_templates"`
+	InteractionDefinitions json.RawMessage `json:"interaction_definitions"`
+}
+
+func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
+	var bundle contentbundle.Bundle
+	if !decodeLocalContentBundleCollection(request.StaticActors, &bundle.StaticActors) {
+		return contentbundle.Bundle{}, false
+	}
+	if !decodeLocalContentBundleCollection(request.SpawnGroups, &bundle.SpawnGroups) {
+		return contentbundle.Bundle{}, false
+	}
+	if !decodeLocalContentBundleCollection(request.CombatProfiles, &bundle.CombatProfiles) {
+		return contentbundle.Bundle{}, false
+	}
+	if !decodeLocalContentBundleCollection(request.ItemTemplates, &bundle.ItemTemplates) {
+		return contentbundle.Bundle{}, false
+	}
+	if !decodeLocalContentBundleCollection(request.InteractionDefinitions, &bundle.InteractionDefinitions) {
+		return contentbundle.Bundle{}, false
+	}
+	return bundle, true
+}
+
 const (
 	maxLocalAccountStoreMutationBodyBytes  = 4096
 	maxLocalInteractionDefinitionBodyBytes = 4096
@@ -1703,17 +1731,37 @@ func decodeLocalContentBundleRequest(r *http.Request) (contentbundle.Bundle, int
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return contentbundle.Bundle{}, http.StatusBadRequest, false
 	}
-	var bundle contentbundle.Bundle
+	var rawBundle localContentBundleRequest
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&bundle); err != nil {
+	if err := decoder.Decode(&rawBundle); err != nil {
 		return contentbundle.Bundle{}, http.StatusBadRequest, false
 	}
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return contentbundle.Bundle{}, http.StatusBadRequest, false
 	}
+	bundle, ok := rawBundle.bundle()
+	if !ok {
+		return contentbundle.Bundle{}, http.StatusBadRequest, false
+	}
 	return bundle, http.StatusOK, true
+}
+
+func decodeLocalContentBundleCollection[T any](raw json.RawMessage, dst *[]T) bool {
+	if raw == nil {
+		return true
+	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return false
+	}
+	var trailing struct{}
+	return decoder.Decode(&trailing) == io.EOF
 }
 
 func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {

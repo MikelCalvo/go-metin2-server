@@ -416,11 +416,22 @@ func CanonicalJSON(bundle Bundle) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	normalized = normalizeCanonicalJSONContractCollections(normalized)
 	encoded, err := json.MarshalIndent(normalized, "", "  ")
 	if err != nil {
 		return nil, err
 	}
 	return append(encoded, '\n'), nil
+}
+
+func normalizeCanonicalJSONContractCollections(bundle Bundle) Bundle {
+	if bundle.StaticActors == nil {
+		bundle.StaticActors = []StaticActor{}
+	}
+	if bundle.InteractionDefinitions == nil {
+		bundle.InteractionDefinitions = []interactionstore.Definition{}
+	}
+	return bundle
 }
 
 func Canonicalize(bundle Bundle) (Bundle, error) {

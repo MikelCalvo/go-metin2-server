@@ -75,6 +75,17 @@ func TestCanonicalJSONMatchesBootstrapNPCServiceExample(t *testing.T) {
 	}
 }
 
+func TestCanonicalJSONEmitsEmptyArraysForContractCollections(t *testing.T) {
+	got, err := CanonicalJSON(Bundle{})
+	if err != nil {
+		t.Fatalf("canonical JSON for empty content bundle: %v", err)
+	}
+	want := "{\n  \"static_actors\": [],\n  \"interaction_definitions\": []\n}\n"
+	if string(got) != want {
+		t.Fatalf("unexpected empty canonical JSON:\n got: %s\nwant: %s", string(got), want)
+	}
+}
+
 func TestSummarizeReturnsDeterministicCanonicalCounts(t *testing.T) {
 	summary, err := Summarize(Bundle{
 		StaticActors: []StaticActor{
