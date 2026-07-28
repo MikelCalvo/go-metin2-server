@@ -19,8 +19,8 @@ FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 WORKDIR /app
 COPY --from=build /out/authd /app/authd
 COPY --from=build /out/gamed /app/gamed
-ENV METIN2_PPROF_ADDR=:6060
-EXPOSE 6060 6061
+ENV METIN2_GAMED_PPROF_ADDR=127.0.0.1:6060 \
+    METIN2_AUTHD_PPROF_ADDR=127.0.0.1:6061
 USER nonroot:nonroot
 ENTRYPOINT ["/app/gamed"]
 
@@ -28,7 +28,7 @@ FROM gcr.io/distroless/static-debian12:debug-nonroot AS runtime-debug
 WORKDIR /app
 COPY --from=build /out/authd /app/authd
 COPY --from=build /out/gamed /app/gamed
-ENV METIN2_PPROF_ADDR=:6060
-EXPOSE 6060 6061
+ENV METIN2_GAMED_PPROF_ADDR=127.0.0.1:6060 \
+    METIN2_AUTHD_PPROF_ADDR=127.0.0.1:6061
 USER nonroot:nonroot
 ENTRYPOINT ["/app/gamed"]

@@ -55,6 +55,7 @@ When debugging the `LOADING -> GAME` boundary, the current expected server-owned
 These endpoints are intentionally loopback-only and exist to help inspect or steer the bootstrap runtime safely during development.
 They are not the gameplay protocol.
 Unless noted otherwise, non-loopback callers are rejected with `403`.
+The ops/pprof HTTP listener now defaults to `127.0.0.1` (`127.0.0.1:6061` for `authd`, `127.0.0.1:6060` for `gamed`) and daemon/service startup rejects wildcard or non-loopback pprof binds such as `:6060`, `0.0.0.0:6060`, `[::]:6060`, or a remote hostname. Keep remote access behind an explicit local transport such as SSH tunneling rather than exposing this mux directly.
 
 ### `POST /local/account-store/validate`
 

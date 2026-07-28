@@ -342,6 +342,9 @@ type liveCharacterRegistration struct {
 }
 
 func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
+	if err := config.ValidateOpsConfig(cfg); err != nil {
+		return nil, err
+	}
 	return newGameRuntimeWithStoresAndTransferTriggers(
 		cfg,
 		loginticket.NewFileStore(serviceLoginTicketStoreDir(cfg)),
@@ -1308,7 +1311,7 @@ func (r *gameRuntime) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, b
 }
 
 func NewAuthSessionFactory() service.SessionFactory {
-	cfg := config.LoadService("authd", ":6061", ":11002", "127.0.0.1")
+	cfg := config.LoadService("authd", "127.0.0.1:6061", ":11002", "127.0.0.1")
 	return NewAuthSessionFactoryWithConfig(cfg)
 }
 
@@ -1321,6 +1324,9 @@ func NewAuthSessionFactoryWithConfig(cfg config.Service) service.SessionFactory 
 }
 
 func NewAuthSessionFactoryWithValidatedConfig(cfg config.Service) (service.SessionFactory, error) {
+	if err := config.ValidateOpsConfig(cfg); err != nil {
+		return nil, err
+	}
 	cfg = servicePersistenceConfigWithDefaults(cfg)
 	if err := config.ValidateHandoffPersistenceConfig(cfg); err != nil {
 		return nil, err

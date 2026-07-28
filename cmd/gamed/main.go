@@ -31,7 +31,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfg := config.LoadService("gamed", ":6060", ":13000", "127.0.0.1")
+	cfg := config.LoadService("gamed", "127.0.0.1:6060", ":13000", "127.0.0.1")
 	gameRuntime, err := minimal.NewGameRuntime(cfg)
 	if err != nil {
 		logger.Error("invalid game runtime configuration", "err", err)

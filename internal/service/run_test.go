@@ -228,6 +228,26 @@ func TestRunStartsOpsAndLegacyServers(t *testing.T) {
 	}
 }
 
+func TestRunRejectsWildcardOpsBindBeforeStartingLegacyServer(t *testing.T) {
+	legacyAddr := reserveLocalAddr(t)
+
+	err := Run(context.Background(), config.Service{
+		Name:       "gamed",
+		PprofAddr:  ":6060",
+		LegacyAddr: legacyAddr,
+		PublicAddr: "127.0.0.1",
+	}, testLogger(), newTestSessionFlow)
+	if !errors.Is(err, config.ErrOpsAddrNotLoopback) {
+		t.Fatalf("expected ErrOpsAddrNotLoopback, got %v", err)
+	}
+
+	listener, listenErr := net.Listen("tcp", legacyAddr)
+	if listenErr != nil {
+		t.Fatalf("expected legacy listener %s not to start after rejected ops config: %v", legacyAddr, listenErr)
+	}
+	_ = listener.Close()
+}
+
 func TestRunWithOpsHandlerServesCustomOpsEndpoint(t *testing.T) {
 	pprofAddr := reserveLocalAddr(t)
 	legacyAddr := reserveLocalAddr(t)

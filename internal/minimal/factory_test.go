@@ -1429,6 +1429,7 @@ func TestGameRuntimeConfigSnapshotReportsRadiusPolicy(t *testing.T) {
 func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Service{
+		PprofAddr:             "127.0.0.1:6060",
 		LegacyAddr:            ":13000",
 		PublicAddr:            "127.0.0.1",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
@@ -1532,9 +1533,29 @@ func TestGameRuntimePersistenceStatusReportsActiveBackupManifestPresence(t *test
 	}
 }
 
+func TestNewGameRuntimeRejectsWildcardOpsBind(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Service{
+		PprofAddr:             ":6060",
+		LegacyAddr:            ":13000",
+		PublicAddr:            "127.0.0.1",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	_, err := NewGameRuntime(cfg)
+	if !errors.Is(err, config.ErrOpsAddrNotLoopback) {
+		t.Fatalf("expected ErrOpsAddrNotLoopback, got %v", err)
+	}
+}
+
 func TestNewGameRuntimeRejectsOverlappingPersistencePaths(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Service{
+		PprofAddr:             "127.0.0.1:6060",
 		LegacyAddr:            ":13000",
 		PublicAddr:            "127.0.0.1",
 		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
@@ -1550,9 +1571,24 @@ func TestNewGameRuntimeRejectsOverlappingPersistencePaths(t *testing.T) {
 	}
 }
 
+func TestNewAuthSessionFactoryWithValidatedConfigRejectsWildcardOpsBind(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Service{
+		PprofAddr:           ":6061",
+		LoginTicketStoreDir: filepath.Join(root, "tickets"),
+		AccountStoreDir:     filepath.Join(root, "accounts"),
+	}
+
+	_, err := NewAuthSessionFactoryWithValidatedConfig(cfg)
+	if !errors.Is(err, config.ErrOpsAddrNotLoopback) {
+		t.Fatalf("expected ErrOpsAddrNotLoopback, got %v", err)
+	}
+}
+
 func TestNewAuthSessionFactoryWithValidatedConfigRejectsOverlappingPersistencePaths(t *testing.T) {
 	root := t.TempDir()
 	cfg := config.Service{
+		PprofAddr:             "127.0.0.1:6061",
 		LoginTicketStoreDir:   filepath.Join(root, "state"),
 		AccountStoreDir:       filepath.Join(root, "state"),
 		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),

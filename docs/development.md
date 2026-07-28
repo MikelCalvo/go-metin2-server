@@ -53,11 +53,13 @@ The intent is simple: every small slice should be pushable and publicly re-check
 
 ## Runtime configuration
 
-### pprof
+### pprof / local ops
 
-- `authd`: `METIN2_AUTHD_PPROF_ADDR` (default `:6061`)
-- `gamed`: `METIN2_GAMED_PPROF_ADDR` (default `:6060`)
+- `authd`: `METIN2_AUTHD_PPROF_ADDR` (default `127.0.0.1:6061`)
+- `gamed`: `METIN2_GAMED_PPROF_ADDR` (default `127.0.0.1:6060`)
 - global override: `METIN2_PPROF_ADDR`
+
+The ops listener also carries loopback-only recovery/debug endpoints under `/local/*`, so startup rejects wildcard or non-loopback pprof binds such as `:6060`, `0.0.0.0:6060`, `[::]:6060`, or a remote hostname. If remote profiling is needed, keep the daemon bound to loopback and use an SSH tunnel or another explicit local transport instead of exposing the ops mux directly.
 
 ### Legacy TCP listeners
 

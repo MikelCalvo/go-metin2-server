@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,15 +16,85 @@ func TestLoadServiceUsesDefaultsWhenEnvIsMissing(t *testing.T) {
 	t.Setenv("METIN2_PUBLIC_ADDR", "")
 	t.Setenv("METIN2_GAMED_PUBLIC_ADDR", "")
 
-	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
-	if cfg.PprofAddr != ":6060" {
-		t.Fatalf("expected default pprof addr, got %q", cfg.PprofAddr)
+	cfg := LoadService("gamed", "127.0.0.1:6060", ":13000", "127.0.0.1")
+	if cfg.PprofAddr != "127.0.0.1:6060" {
+		t.Fatalf("expected loopback default pprof addr, got %q", cfg.PprofAddr)
 	}
 	if cfg.LegacyAddr != ":13000" {
 		t.Fatalf("expected default legacy addr, got %q", cfg.LegacyAddr)
 	}
 	if cfg.PublicAddr != "127.0.0.1" {
 		t.Fatalf("expected default public addr, got %q", cfg.PublicAddr)
+	}
+}
+
+func TestServiceDefaultOpsAddrIsLoopback(t *testing.T) {
+	cfg := Service{PprofAddr: "127.0.0.1:6060"}
+
+	if err := ValidateOpsConfig(cfg); err != nil {
+		t.Fatalf("expected loopback ops addr to validate, got %v", err)
+	}
+}
+
+func TestValidateOpsConfigRejectsWildcardPprofAddr(t *testing.T) {
+	for _, addr := range []string{":6060", "0.0.0.0:6060", "[::]:6060"} {
+		t.Run(addr, func(t *testing.T) {
+			err := ValidateOpsConfig(Service{PprofAddr: addr})
+			if !errors.Is(err, ErrOpsAddrNotLoopback) {
+				t.Fatalf("expected ErrOpsAddrNotLoopback for %q, got %v", addr, err)
+			}
+		})
+	}
+}
+
+func TestValidateOpsConfigAcceptsLocalhostLiteral(t *testing.T) {
+	if err := ValidateOpsConfig(Service{PprofAddr: "localhost:6060"}); err != nil {
+		t.Fatalf("expected localhost ops addr to validate, got %v", err)
+	}
+}
+
+func TestValidateOpsConfigRejectsNonLoopbackPprofAddr(t *testing.T) {
+	for _, addr := range []string{"192.0.2.10:6060", "example.com:6060"} {
+		t.Run(addr, func(t *testing.T) {
+			err := ValidateOpsConfig(Service{PprofAddr: addr})
+			if !errors.Is(err, ErrOpsAddrNotLoopback) {
+				t.Fatalf("expected ErrOpsAddrNotLoopback for %q, got %v", addr, err)
+			}
+		})
+	}
+}
+
+func TestValidateOpsConfigRejectsMissingOrMalformedPprofAddr(t *testing.T) {
+	for _, tc := range []struct {
+		addr    string
+		wantErr error
+	}{
+		{addr: "   ", wantErr: ErrOpsAddrRequired},
+		{addr: "127.0.0.1", wantErr: ErrOpsAddrInvalid},
+		{addr: "127.0.0.1:notaport", wantErr: ErrOpsAddrInvalid},
+		{addr: "127.0.0.1:0", wantErr: ErrOpsAddrInvalid},
+	} {
+		t.Run(tc.addr, func(t *testing.T) {
+			err := ValidateOpsConfig(Service{PprofAddr: tc.addr})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("expected %v for %q, got %v", tc.wantErr, tc.addr, err)
+			}
+		})
+	}
+}
+
+func TestValidateOpsConfigAcceptsReservedLoopbackAddr(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve loopback addr: %v", err)
+	}
+	addr := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close reserved listener: %v", err)
+	}
+
+	if err := ValidateOpsConfig(Service{PprofAddr: addr}); err != nil {
+		t.Fatalf("expected reserved loopback addr %q to validate, got %v", addr, err)
 	}
 }
 

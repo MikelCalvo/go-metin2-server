@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -27,6 +28,9 @@ type Service struct {
 var (
 	ErrPersistencePathRequired = errors.New("persistence path is required")
 	ErrPersistencePathOverlap  = errors.New("persistence paths overlap")
+	ErrOpsAddrRequired         = errors.New("ops bind address is required")
+	ErrOpsAddrInvalid          = errors.New("ops bind address is invalid")
+	ErrOpsAddrNotLoopback      = errors.New("ops bind address must be loopback")
 )
 
 type persistencePathRole string
@@ -40,6 +44,33 @@ type persistencePathSelection struct {
 	Name string
 	Role persistencePathRole
 	Path string
+}
+
+// ValidateOpsConfig fails closed when the local operations/pprof listener is
+// missing, malformed, or configured for a non-loopback bind address. Local-only
+// operator endpoints share the same mux as pprof, so a wildcard pprof bind
+// would also expose those sensitive recovery surfaces.
+func ValidateOpsConfig(cfg Service) error {
+	addr := strings.TrimSpace(cfg.PprofAddr)
+	if addr == "" {
+		return ErrOpsAddrRequired
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("%w: %q", ErrOpsAddrInvalid, cfg.PprofAddr)
+	}
+	parsedPort, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || parsedPort == 0 {
+		return fmt.Errorf("%w: %q", ErrOpsAddrInvalid, cfg.PprofAddr)
+	}
+	if strings.EqualFold(host, "localhost") {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return fmt.Errorf("%w: %q", ErrOpsAddrNotLoopback, cfg.PprofAddr)
+	}
+	return nil
 }
 
 // ValidatePersistenceConfig fails closed when bootstrap JSON stores are missing

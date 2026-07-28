@@ -357,7 +357,7 @@ Default legacy listener addresses are documented in [docs/development.md](docs/d
 
 - `authd`: `:11002`
 - `gamed`: `:13000`
-- pprof/debug: `:6061` for `authd`, `:6060` for `gamed`
+- pprof/debug/local ops: `127.0.0.1:6061` for `authd`, `127.0.0.1:6060` for `gamed`; wildcard/non-loopback ops binds are rejected at startup because `/local/*` operator endpoints share this mux
 
 Useful docs:
 

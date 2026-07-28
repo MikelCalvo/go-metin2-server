@@ -25,7 +25,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cfg := config.LoadService("authd", ":6061", ":11002", "127.0.0.1")
+	cfg := config.LoadService("authd", "127.0.0.1:6061", ":11002", "127.0.0.1")
 	authFactory, err := minimal.NewAuthSessionFactoryWithValidatedConfig(cfg)
 	if err != nil {
 		logger.Error("invalid auth runtime configuration", "err", err)

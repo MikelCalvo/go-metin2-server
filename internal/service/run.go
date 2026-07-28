@@ -18,6 +18,9 @@ func Run(ctx context.Context, cfg config.Service, logger *slog.Logger, newSessio
 }
 
 func RunWithOpsHandler(ctx context.Context, cfg config.Service, logger *slog.Logger, newSession SessionFactory, opsHandler http.Handler) error {
+	if err := config.ValidateOpsConfig(cfg); err != nil {
+		return err
+	}
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
