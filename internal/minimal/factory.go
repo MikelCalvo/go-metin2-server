@@ -2419,6 +2419,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			}
 			if pickup.GoldAmount != 0 {
 				if pickup.OwnerID != 0 && pickup.OwnerID != sharedWorldID && pickup.Owner.ID != 0 {
+					if message, ok := runtimeTemplateGoldPeerPickupRejectText(runtime, pickup.Item); ok {
+						return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}, true
+					}
 					ownerSelected := pickup.Owner
 					if ownerSelected.Gold > uint64(math.MaxInt32)-uint64(pickup.GoldAmount) {
 						return nil, false
@@ -4693,6 +4696,23 @@ func itemPickupRejectText(template itemcatalog.Template) string {
 		return template.PickupRejectText
 	}
 	return itemPickupInventoryFullInfoMessage
+}
+
+func runtimeTemplateGoldPeerPickupRejectText(runtime *gameRuntime, item inventory.ItemInstance) (string, bool) {
+	if runtime == nil || item.Vnum == 0 {
+		return "", false
+	}
+	template, ok := runtime.itemTemplates[item.Vnum]
+	if !ok {
+		return "", false
+	}
+	if !itemcatalog.ValidTemplate(template) || template.Vnum != item.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return itemPickupInventoryFullInfoMessage, true
+	}
+	if template.AntiGive {
+		return itemPickupRejectText(template), true
+	}
+	return "", false
 }
 
 func itemBuyRejectText(template itemcatalog.Template) string {

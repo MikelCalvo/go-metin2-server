@@ -1493,35 +1493,61 @@ func TestFileStoreRejectsInvalidDropRejectTextMetadata(t *testing.T) {
 }
 
 func TestFileStoreSaveThenLoadRoundTripPreservesPickupRejectText(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
-	store := NewFileStore(path)
-	want := Snapshot{Templates: []Template{{
-		Vnum:             27010,
-		Name:             "Sealed Pickup Potion",
-		Stackable:        true,
-		MaxCount:         200,
-		AntiGet:          true,
-		PickupRejectText: "The seal prevents picking up this item.",
-	}}}
+	cases := []struct {
+		name     string
+		want     Snapshot
+		wantJSON string
+	}{
+		{
+			name: "anti_get_guard",
+			want: Snapshot{Templates: []Template{{
+				Vnum:             27010,
+				Name:             "Sealed Pickup Potion",
+				Stackable:        true,
+				MaxCount:         200,
+				AntiGet:          true,
+				PickupRejectText: "The seal prevents picking up this item.",
+			}}},
+			wantJSON: "{\n  \"templates\": [\n    {\n      \"vnum\": 27010,\n      \"name\": \"Sealed Pickup Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_get\": true,\n      \"pickup_reject_message\": \"The seal prevents picking up this item.\"\n    }\n  ]\n}\n",
+		},
+		{
+			name: "anti_give_currency_guard",
+			want: Snapshot{Templates: []Template{{
+				Vnum:             1,
+				Name:             "Bound Gold Marker",
+				Stackable:        true,
+				MaxCount:         1,
+				AntiGive:         true,
+				PickupRejectText: "This gold cannot be collected by party members.",
+			}}},
+			wantJSON: "{\n  \"templates\": [\n    {\n      \"vnum\": 1,\n      \"name\": \"Bound Gold Marker\",\n      \"stackable\": true,\n      \"max_count\": 1,\n      \"anti_give\": true,\n      \"pickup_reject_message\": \"This gold cannot be collected by party members.\"\n    }\n  ]\n}\n",
+		},
+	}
 
-	if err := store.Save(want); err != nil {
-		t.Fatalf("save snapshot with pickup reject message: %v", err)
-	}
-	got, err := store.Load()
-	if err != nil {
-		t.Fatalf("load snapshot with pickup reject message: %v", err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected snapshot with pickup reject message:\n got: %#v\nwant: %#v", got, want)
-	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read persisted snapshot with pickup reject message: %v", err)
-	}
-	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27010,\n      \"name\": \"Sealed Pickup Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_get\": true,\n      \"pickup_reject_message\": \"The seal prevents picking up this item.\"\n    }\n  ]\n}\n"
-	if string(raw) != wantJSON {
-		t.Fatalf("unexpected deterministic snapshot with pickup reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+			if err := store.Save(tc.want); err != nil {
+				t.Fatalf("save snapshot with pickup reject message: %v", err)
+			}
+			got, err := store.Load()
+			if err != nil {
+				t.Fatalf("load snapshot with pickup reject message: %v", err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("unexpected snapshot with pickup reject message:\n got: %#v\nwant: %#v", got, tc.want)
+			}
+
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read persisted snapshot with pickup reject message: %v", err)
+			}
+			if string(raw) != tc.wantJSON {
+				t.Fatalf("unexpected deterministic snapshot with pickup reject message:\n got: %s\nwant: %s", string(raw), tc.wantJSON)
+			}
+		})
 	}
 }
 

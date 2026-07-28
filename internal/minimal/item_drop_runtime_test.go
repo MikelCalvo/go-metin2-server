@@ -3000,6 +3000,90 @@ func TestGameRuntimeItemDropWithGoldDropsCurrencyInsteadOfInventoryItem(t *testi
 	}
 }
 
+func TestGameRuntimeVisiblePeerGoldPickupHonorsAntiGiveCurrencyTemplate(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AntiGiveGoldOwner", 0x010301bc, 0x020401bc, 1300, 2300, 0, 101, 201)
+	owner.Gold = 5000
+	collector := peerVisibilityCharacter("AntiGiveGoldCollector", 0x010301bd, 0x020401bd, 1320, 2320, 0, 101, 201)
+	ownerLogin := "anti-give-gold-owner"
+	collectorLogin := "anti-give-gold-collector"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0xbcbc0001, owner)
+	issuePeerTicket(t, ticketStore, collectorLogin, 0xbcbc0002, collector)
+	for _, account := range []accountstore.Account{
+		{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+		{Login: collectorLogin, Empire: collector.Empire, Characters: cloneCharacters([]loginticket.Character{collector})},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("seed %s account: %v", account.Login, err)
+		}
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:             1,
+		Name:             "Bound Gold Marker",
+		Stackable:        true,
+		MaxCount:         1,
+		AntiGive:         true,
+		PickupRejectText: "This gold cannot be collected by party members.",
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected anti-give gold pickup runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+	ownerFlow, _ := enterGameWithLoginTicket(t, factory, ownerLogin, 0xbcbc0001)
+	collectorFlow, _ := enterGameWithLoginTicket(t, factory, collectorLogin, 0xbcbc0002)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, collectorFlow)
+
+	dropOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5), Elk: 1200})))
+	if err != nil {
+		t.Fatalf("unexpected anti-give gold drop error: %v", err)
+	}
+	if len(dropOut) != 3 {
+		t.Fatalf("expected anti-give gold drop to emit POINT_CHANGE, GROUND_ADD, and OWNERSHIP, got %d frames", len(dropOut))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, dropOut[1]))
+	if err != nil {
+		t.Fatalf("decode anti-give gold ground add: %v", err)
+	}
+	flushServerFrames(t, collectorFlow)
+
+	pickupOut := pickupGroundItem(t, collectorFlow, ground.VID)
+	if len(pickupOut) != 1 {
+		t.Fatalf("expected anti-give gold pickup to emit one rejection info frame, got %d", len(pickupOut))
+	}
+	rejection, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, pickupOut[0]))
+	if err != nil {
+		t.Fatalf("decode anti-give gold pickup rejection: %v", err)
+	}
+	if rejection.Type != chatproto.ChatTypeInfo || rejection.VID != 0 || rejection.Message != "This gold cannot be collected by party members." {
+		t.Fatalf("unexpected anti-give gold pickup rejection: %+v", rejection)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected rejected anti-give gold pickup to avoid owner frames, got %d", len(queued))
+	}
+	ownerAccount, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load anti-give gold owner account: %v", err)
+	}
+	if ownerAccount.Characters[0].Gold != 3800 {
+		t.Fatalf("expected rejected anti-give peer pickup to leave owner gold at dropped total 3800, got %d", ownerAccount.Characters[0].Gold)
+	}
+	collectorAccount, err := accounts.Load(collectorLogin)
+	if err != nil {
+		t.Fatalf("load anti-give gold collector account: %v", err)
+	}
+	if collectorAccount.Characters[0].Gold != collector.Gold {
+		t.Fatalf("expected rejected anti-give gold pickup to leave collector gold unchanged, got %d want %d", collectorAccount.Characters[0].Gold, collector.Gold)
+	}
+	runtime.itemTemplates[1] = itemcatalog.Template{Vnum: 1, Name: "Gold Marker", Stackable: true, MaxCount: 1}
+	ownerRetry := pickupGroundItem(t, ownerFlow, ground.VID)
+	if len(ownerRetry) != 3 {
+		t.Fatalf("expected owner retry after relaxing gold marker restriction to restore gold, got %d frames", len(ownerRetry))
+	}
+}
+
 func TestGameRuntimeItemDrop2WithGoldDropsCurrencyInsteadOfCountedItem(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
