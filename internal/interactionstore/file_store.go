@@ -1,6 +1,7 @@
 package interactionstore
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,15 +43,34 @@ func (s *FileStore) Load() (Snapshot, error) {
 	if !utf8.Valid(raw) {
 		return Snapshot{}, fmt.Errorf("%w: decode interaction snapshot: invalid utf-8", ErrInvalidSnapshot)
 	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return Snapshot{}, fmt.Errorf("%w: decode interaction snapshot: null root", ErrInvalidSnapshot)
+	}
 
-	var snapshot Snapshot
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	var rawSnapshot struct {
+		Definitions json.RawMessage `json:"definitions"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&snapshot); err != nil {
+	if err := decoder.Decode(&rawSnapshot); err != nil {
 		return Snapshot{}, fmt.Errorf("%w: decode interaction snapshot: %v", ErrInvalidSnapshot, err)
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
 		return Snapshot{}, fmt.Errorf("%w: trailing interaction snapshot content", ErrInvalidSnapshot)
+	}
+	var snapshot Snapshot
+	if rawSnapshot.Definitions != nil {
+		if bytes.Equal(bytes.TrimSpace(rawSnapshot.Definitions), []byte("null")) {
+			return Snapshot{}, fmt.Errorf("%w: decode interaction snapshot: null definitions collection", ErrInvalidSnapshot)
+		}
+		collectionDecoder := json.NewDecoder(bytes.NewReader(rawSnapshot.Definitions))
+		collectionDecoder.DisallowUnknownFields()
+		if err := collectionDecoder.Decode(&snapshot.Definitions); err != nil {
+			return Snapshot{}, fmt.Errorf("%w: decode interaction snapshot: %v", ErrInvalidSnapshot, err)
+		}
+		if err := collectionDecoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			return Snapshot{}, fmt.Errorf("%w: trailing interaction definitions content", ErrInvalidSnapshot)
+		}
 	}
 	normalized := normalizeSnapshot(snapshot)
 	if err := validateSnapshot(normalized); err != nil {

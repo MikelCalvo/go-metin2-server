@@ -42,7 +42,7 @@ Current rules:
 - update body `kind + ref` must match the path exactly
 - delete fails closed while any bootstrap static actor still references that definition
 - the backing catalog remains deterministic and file-backed under `internal/interactionstore`
-- the file-backed loader rejects unknown top-level JSON fields and trailing JSON instead of accepting a partial object silently
+- the file-backed interaction-definition loader rejects JSON `null` document roots, `null` `definitions` collections, unknown top-level JSON fields, and trailing JSON instead of accepting a lossy or partial object silently
 - the static-actor store accepts interaction metadata only for currently owned definition kinds (`info`, `talk`, `warp`, `shop_preview`); future content kinds must be added to the interaction definition catalog before static actors can reference them durably
 
 ## Interaction-focused QA visibility

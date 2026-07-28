@@ -52,6 +52,9 @@ type Store interface {
 
 func normalizeSnapshot(snapshot Snapshot) Snapshot {
 	normalized := Snapshot{StaticActors: cloneStaticActors(snapshot.StaticActors)}
+	if normalized.StaticActors == nil {
+		normalized.StaticActors = []StaticActor{}
+	}
 	for i := range normalized.StaticActors {
 		normalized.StaticActors[i] = normalizeStaticActor(normalized.StaticActors[i])
 	}

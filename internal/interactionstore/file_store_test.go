@@ -257,6 +257,18 @@ func TestFileStoreLoadRejectsMalformedOrInvalidSnapshot(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir state dir: %v", err)
 	}
+	if err := os.WriteFile(path, []byte("null"), 0o644); err != nil {
+		t.Fatalf("write null snapshot: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for null snapshot root, got %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"definitions":null}`), 0o644); err != nil {
+		t.Fatalf("write null interaction definition collection: %v", err)
+	}
+	if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for null interaction definition collection, got %v", err)
+	}
 	if err := os.WriteFile(path, []byte("{not-json"), 0o644); err != nil {
 		t.Fatalf("write malformed snapshot: %v", err)
 	}

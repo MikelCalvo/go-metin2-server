@@ -43,11 +43,16 @@ func (s *FileStore) Load() (Snapshot, error) {
 	if !utf8.Valid(raw) {
 		return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: invalid utf-8", ErrInvalidSnapshot)
 	}
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: null root", ErrInvalidSnapshot)
+	}
 
-	var snapshot Snapshot
+	var rawSnapshot struct {
+		StaticActors json.RawMessage `json:"static_actors"`
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&snapshot); err != nil {
+	if err := decoder.Decode(&rawSnapshot); err != nil {
 		return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
 	}
 	var trailing struct{}
@@ -56,6 +61,23 @@ func (s *FileStore) Load() (Snapshot, error) {
 			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: trailing json value", ErrInvalidSnapshot)
 		}
 		return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
+	}
+	var snapshot Snapshot
+	if rawSnapshot.StaticActors != nil {
+		if bytes.Equal(bytes.TrimSpace(rawSnapshot.StaticActors), []byte("null")) {
+			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: null static_actors collection", ErrInvalidSnapshot)
+		}
+		collectionDecoder := json.NewDecoder(bytes.NewReader(rawSnapshot.StaticActors))
+		collectionDecoder.DisallowUnknownFields()
+		if err := collectionDecoder.Decode(&snapshot.StaticActors); err != nil {
+			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
+		}
+		if err := collectionDecoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+			if err == nil {
+				return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: trailing static_actors value", ErrInvalidSnapshot)
+			}
+			return Snapshot{}, fmt.Errorf("%w: decode static actor snapshot: %v", ErrInvalidSnapshot, err)
+		}
 	}
 	normalized := normalizeSnapshot(snapshot)
 	if err := validateSnapshot(normalized); err != nil {

@@ -59,6 +59,9 @@ type Store interface {
 
 func normalizeSnapshot(snapshot Snapshot) Snapshot {
 	normalized := Snapshot{Definitions: cloneDefinitions(snapshot.Definitions)}
+	if normalized.Definitions == nil {
+		normalized.Definitions = []Definition{}
+	}
 	for i := range normalized.Definitions {
 		normalized.Definitions[i] = normalizeDefinition(normalized.Definitions[i])
 	}
