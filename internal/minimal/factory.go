@@ -2490,9 +2490,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 						if !itemcatalog.ValidTemplate(template) || template.Vnum != pickup.Item.Vnum {
 							return nil, false
 						}
-						if template.EquipSlot != "" {
-							return nil, false
-						}
 						if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || !ownerRuntime.CanUseTemplate(template) {
 							return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: itemPickupRejectText(template)})}, true
 						}
@@ -2579,9 +2576,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 			if runtime != nil {
 				if template, ok := runtime.itemTemplates[pickup.Item.Vnum]; ok {
 					if !itemcatalog.ValidTemplate(template) || template.Vnum != pickup.Item.Vnum {
-						return nil, false
-					}
-					if template.EquipSlot != "" {
 						return nil, false
 					}
 					if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || !selectedPlayer.CanUseTemplate(template) {

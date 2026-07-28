@@ -235,19 +235,26 @@ func TestPickupGroundItemSkipsLockedCompatibleStacks(t *testing.T) {
 	}
 }
 
-func TestPickupGroundItemWithTemplateRejectsAuthoredEquipSlotWithoutMutation(t *testing.T) {
+func TestPickupGroundItemWithTemplateAcceptsAuthoredEquipSlotAsCarriedItem(t *testing.T) {
 	runtime := NewRuntime(loginticket.Character{
 		Inventory: []inventory.ItemInstance{{ID: 11, Vnum: 27001, Count: 1, Slot: 2}},
 	}, SessionLink{})
-	before := runtime.LiveInventory()
 	template := itemcatalog.Template{Vnum: 27002, Name: "Ground Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
 	ground := inventory.ItemInstance{ID: 31, Vnum: 27002, Count: 1, Slot: 9}
 
-	if result, ok := runtime.PickupGroundItemWithTemplate(ground, 9, template); ok {
-		t.Fatalf("expected pickup of authored equipment-slot ground item to fail closed, got %+v", result)
+	result, ok := runtime.PickupGroundItemWithTemplate(ground, 9, template)
+	if !ok {
+		t.Fatalf("expected pickup of authored equipment-slot ground item to be accepted into carried inventory")
 	}
-	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, before) {
-		t.Fatalf("authored equipment-slot pickup mutated inventory: got %#v want %#v", got, before)
+	if result.Placed != (inventory.ItemInstance{ID: 31, Vnum: 27002, Count: 1, Slot: 9}) || result.Merged || result.Split {
+		t.Fatalf("unexpected authored equipment-slot pickup result: %+v", result)
+	}
+	want := []inventory.ItemInstance{
+		{ID: 11, Vnum: 27001, Count: 1, Slot: 2},
+		{ID: 31, Vnum: 27002, Count: 1, Slot: 9},
+	}
+	if got := runtime.LiveInventory(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("authored equipment-slot pickup inventory mismatch: got %#v want %#v", got, want)
 	}
 }
 

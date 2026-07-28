@@ -4305,7 +4305,7 @@ func TestGameRuntimeItemPickupRejectsOverTemplateMaxGroundStackWithoutRemovingGr
 	}
 }
 
-func TestGameRuntimeItemPickupRejectsAuthoredEquipSlotTemplateWithoutRemovingGroundItem(t *testing.T) {
+func TestGameRuntimeItemPickupAcceptsAuthoredEquipSlotTemplateAsCarriedItem(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PickupEquipTemplateOwner", 0x010301a4, 0x020401a4, 1400, 2400, 0, 101, 201)
@@ -4325,21 +4325,36 @@ func TestGameRuntimeItemPickupRejectsAuthoredEquipSlotTemplateWithoutRemovingGro
 	runtime.itemTemplates[27008] = itemcatalog.Template{Vnum: 27008, Name: "Authored Ground Armor", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotBody.String()}
 
 	pickupOut := pickupGroundItem(t, flow, ground.VID)
-	if len(pickupOut) != 0 {
-		t.Fatalf("expected authored equip-slot pickup template to reject without frames, got %d", len(pickupOut))
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected authored equip-slot pickup template to emit GROUND_DEL, ITEM_SET, ITEM_GET, got %d", len(pickupOut))
+	}
+	if groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0])); err != nil || groundDel.VID != ground.VID {
+		t.Fatalf("unexpected equip-template pickup ground delete: %+v err=%v", groundDel, err)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil {
+		t.Fatalf("decode equip-template pickup item set: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(6) || set.Vnum != 27008 || set.Count != 1 || set.Flags&itemproto.ItemFlagStackable != 0 {
+		t.Fatalf("unexpected equip-template pickup item set: %+v", set)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil {
+		t.Fatalf("decode equip-template pickup notice: %v", err)
+	}
+	if get != (itemproto.GetPacket{Vnum: 27008, Count: 1, Arg: itemproto.GetArgNormal}) {
+		t.Fatalf("unexpected equip-template pickup notice: %+v", get)
 	}
 	account, err := accounts.Load("pickup-equip-template-owner")
 	if err != nil {
 		t.Fatalf("load pickup equip-template owner account: %v", err)
 	}
-	if !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{}) {
-		t.Fatalf("expected rejected equip-template pickup to leave owner inventory dropped, got %#v", account.Characters[0].Inventory)
+	wantInventory := []inventory.ItemInstance{{ID: 1042, Vnum: 27008, Count: 1, Slot: 6}}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("expected accepted equip-template pickup to restore carried inventory, got %#v want %#v", account.Characters[0].Inventory, wantInventory)
 	}
-
-	runtime.itemTemplates[27008] = itemcatalog.Template{Vnum: 27008, Name: "Ground Test Item", Stackable: true, MaxCount: 200}
-	retryOut := pickupGroundItem(t, flow, ground.VID)
-	if len(retryOut) != 3 {
-		t.Fatalf("expected ground handle to remain pending after equip-template rejection, got %d frames", len(retryOut))
+	if retryOut := pickupGroundItem(t, flow, ground.VID); len(retryOut) != 0 {
+		t.Fatalf("expected accepted equip-template pickup to remove ground handle, got retry frames=%d", len(retryOut))
 	}
 }
 
