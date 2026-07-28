@@ -12173,6 +12173,109 @@ func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeScalarRewardRefreshesLiveWorldSnapshotWithoutPersistingRetaliationHP(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x0105021A, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105021A, Name: "RetaliatedRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.retaliated_reward_mob",
+	}
+	killer := peerVisibilityCharacter("RetaliatedRewardKiller", 0x0103011A, 0x0204011A, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapPlayerPointValueIndex] = 20
+	killer.Points[bootstrapExperiencePointType] = 25
+	killer.Gold = 40
+	issuePeerTicket(t, store, "retaliated-reward-killer", 0x1A1A1A1A, killer)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "retaliated-reward-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed retaliated reward killer account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_420, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected retaliated reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: 75, Gold: 60}) {
+		t.Fatal("expected retaliated reward override to apply")
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "retaliated-reward-killer", 0x1A1A1A1A)
+	defer closeSessionFlow(t, flow)
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before retaliated reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected attack error on retaliated reward hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 4 {
+		t.Fatalf("expected killing hit to return dead, clear target, exp, and gold frames, got %d", len(killOut))
+	}
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	if err != nil {
+		t.Fatalf("decode retaliated reward exp point-change: %v", err)
+	}
+	if expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
+		t.Fatalf("unexpected retaliated reward exp point-change: %+v", expChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	if err != nil {
+		t.Fatalf("decode retaliated reward gold point-change: %v", err)
+	}
+	if goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 60 || goldChange.Value != 100 {
+		t.Fatalf("unexpected retaliated reward gold point-change: %+v", goldChange)
+	}
+
+	pointsSnapshot, ok := runtime.PointsSnapshot(killer.Name)
+	if !ok {
+		t.Fatalf("expected live points snapshot after scalar reward")
+	}
+	if pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != 11 || pointsSnapshot.Points[bootstrapExperiencePointType] != 100 {
+		t.Fatalf("expected live points to keep retaliated HP=11 and reward EXP=100, got hp=%d exp=%d", pointsSnapshot.Points[bootstrapPlayerPointValueIndex], pointsSnapshot.Points[bootstrapExperiencePointType])
+	}
+	currencySnapshot, ok := runtime.CurrencySnapshot(killer.Name)
+	if !ok {
+		t.Fatalf("expected live currency snapshot after scalar reward")
+	}
+	if currencySnapshot.Gold != 100 {
+		t.Fatalf("expected live gold snapshot to include scalar reward 100, got %d", currencySnapshot.Gold)
+	}
+
+	playerEntity, ok := runtime.sharedWorld.entities.PlayerByName(killer.Name)
+	if !ok {
+		t.Fatal("expected rewarded killer to remain in shared world")
+	}
+	if playerEntity.Character.Points[bootstrapPlayerPointValueIndex] != 11 || playerEntity.Character.Points[bootstrapExperiencePointType] != 100 || playerEntity.Character.Gold != 100 {
+		t.Fatalf("expected shared-world snapshot to keep retaliated HP=11 and rewarded exp/gold=100, got hp=%d exp=%d gold=%d", playerEntity.Character.Points[bootstrapPlayerPointValueIndex], playerEntity.Character.Points[bootstrapExperiencePointType], playerEntity.Character.Gold)
+	}
+
+	account, err := accounts.Load("retaliated-reward-killer")
+	if err != nil {
+		t.Fatalf("load retaliated reward account: %v", err)
+	}
+	if len(account.Characters) != 1 {
+		t.Fatalf("expected one persisted retaliated reward character, got %+v", account.Characters)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != killer.Points[bootstrapPlayerPointValueIndex] || account.Characters[0].Points[bootstrapExperiencePointType] != 100 || account.Characters[0].Gold != 100 {
+		t.Fatalf("expected persisted scalar reward to keep pre-retaliation HP=%d while saving exp/gold=100, got hp=%d exp=%d gold=%d", killer.Points[bootstrapPlayerPointValueIndex], account.Characters[0].Points[bootstrapPlayerPointValueIndex], account.Characters[0].Points[bootstrapExperiencePointType], account.Characters[0].Gold)
+	}
+}
+
 func TestGameRuntimeScalarRewardPersistenceFailureRollsBackLiveScalarsWithoutClobberingPosition(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{

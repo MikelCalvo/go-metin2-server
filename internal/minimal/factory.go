@@ -3699,6 +3699,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 									sessionTicket.Characters = updatedCharacters
 									selectedPlayer.SetPersistedSnapshot(persistedSelected)
 									refreshLiveCharacterRegistration()
+									if ownsLiveSharedWorldSession() {
+										sharedWorld.UpdateCharacter(sharedWorldID, updatedSelected)
+									}
 									if reward.Experience != 0 {
 										frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
 											VID:    previousSelected.VID,
