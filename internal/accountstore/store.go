@@ -173,7 +173,7 @@ func (s *FileStore) validateActiveBackupManifestForAccounts(accounts []Account) 
 		return ErrStoreDirRequired
 	}
 	manifestPath := filepath.Join(s.dir, BackupManifestFilename)
-	if _, err := os.Stat(manifestPath); err != nil {
+	if _, err := os.Lstat(manifestPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
@@ -517,6 +517,9 @@ func (s *FileStore) validateBackupManifest(accounts []Account) error {
 
 func (s *FileStore) validateBackupManifestForAccounts(accounts []Account, requireClosedDirectory bool) error {
 	manifestPath := filepath.Join(s.dir, BackupManifestFilename)
+	if err := rejectBackupEntrySymlink(manifestPath, "account backup manifest"); err != nil {
+		return err
+	}
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -570,7 +573,11 @@ func (s *FileStore) validateBackupManifestForAccounts(accounts []Account, requir
 		}
 		seenFiles[file.Filename] = struct{}{}
 
-		raw, err := os.ReadFile(filepath.Join(s.dir, file.Filename))
+		snapshotPath := filepath.Join(s.dir, file.Filename)
+		if err := rejectBackupEntrySymlink(snapshotPath, fmt.Sprintf("account backup snapshot %q", file.Filename)); err != nil {
+			return err
+		}
+		raw, err := os.ReadFile(snapshotPath)
 		if err != nil {
 			return fmt.Errorf("%w: read manifest account %q: %v", ErrInvalidBackupManifest, file.Login, err)
 		}
@@ -603,6 +610,9 @@ func (s *FileStore) validateBackupDirectoryEntries(manifestFiles map[string]stru
 		if _, ok := manifestFiles[name]; ok {
 			continue
 		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: backup contains symlink entry %q", ErrInvalidBackupManifest, name)
+		}
 		if entry.IsDir() {
 			return fmt.Errorf("%w: backup contains untracked directory %q", ErrInvalidBackupManifest, name)
 		}
@@ -610,6 +620,17 @@ func (s *FileStore) validateBackupDirectoryEntries(manifestFiles map[string]stru
 			continue
 		}
 		return fmt.Errorf("%w: backup contains untracked entry %q", ErrInvalidBackupManifest, name)
+	}
+	return nil
+}
+
+func rejectBackupEntrySymlink(path string, context string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %s is a symlink", ErrInvalidBackupManifest, context)
 	}
 	return nil
 }

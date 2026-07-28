@@ -414,6 +414,9 @@ func (s *FileStore) validateBackupManifest(srcDir string) (SnapshotSummary, Snap
 
 func (s *FileStore) validateBackupManifestWithCoverage(srcDir string, requireClosedDirectory bool) (SnapshotSummary, Snapshot, bool, error) {
 	manifestPath := filepath.Join(srcDir, BackupManifestFilename)
+	if err := rejectBackupEntrySymlink(manifestPath, "item template backup manifest"); err != nil {
+		return SnapshotSummary{}, Snapshot{}, false, err
+	}
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -448,6 +451,9 @@ func (s *FileStore) validateBackupManifestWithCoverage(srcDir string, requireClo
 		}
 		committedFiles[file.Filename] = struct{}{}
 		snapshotPath := filepath.Join(srcDir, file.Filename)
+		if err := rejectBackupEntrySymlink(snapshotPath, fmt.Sprintf("item template backup snapshot %q", file.Filename)); err != nil {
+			return SnapshotSummary{}, Snapshot{}, false, err
+		}
 		rawSnapshot, err := os.ReadFile(snapshotPath)
 		if err != nil {
 			return SnapshotSummary{}, Snapshot{}, false, fmt.Errorf("%w: read manifest item template snapshot: %v", ErrInvalidBackupManifest, err)
@@ -493,6 +499,9 @@ func validateBackupDirectoryEntries(srcDir string, manifestFiles map[string]stru
 		if _, ok := manifestFiles[name]; ok {
 			continue
 		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("%w: backup contains symlink entry %q", ErrInvalidBackupManifest, name)
+		}
 		if entry.IsDir() {
 			return fmt.Errorf("%w: backup contains untracked directory %q", ErrInvalidBackupManifest, name)
 		}
@@ -500,6 +509,17 @@ func validateBackupDirectoryEntries(srcDir string, manifestFiles map[string]stru
 			continue
 		}
 		return fmt.Errorf("%w: backup contains untracked entry %q", ErrInvalidBackupManifest, name)
+	}
+	return nil
+}
+
+func rejectBackupEntrySymlink(path string, context string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %s is a symlink", ErrInvalidBackupManifest, context)
 	}
 	return nil
 }

@@ -1449,6 +1449,103 @@ func TestFileStoreValidateBackupFromRejectsCrashTempDirectory(t *testing.T) {
 	}
 }
 
+func TestFileStoreValidateBackupFromRejectsBackupManifestSymlink(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	manifestPath := filepath.Join(backupDir, BackupManifestFilename)
+	manifestRaw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read backup manifest: %v", err)
+	}
+	externalManifest := filepath.Join(t.TempDir(), BackupManifestFilename)
+	if err := os.WriteFile(externalManifest, manifestRaw, 0o644); err != nil {
+		t.Fatalf("write external backup manifest: %v", err)
+	}
+	if err := os.Remove(manifestPath); err != nil {
+		t.Fatalf("remove in-place backup manifest: %v", err)
+	}
+	if err := os.Symlink(externalManifest, manifestPath); err != nil {
+		t.Fatalf("symlink backup manifest: %v", err)
+	}
+	restoreTarget := NewFileStore(filepath.Join(t.TempDir(), "restore-target"))
+
+	_, err = restoreTarget.ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for symlinked backup manifest, got %v", err)
+	}
+	if _, statErr := os.Stat(restoreTarget.dir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected dry-run manifest-symlink validation not to create restore target dir, stat err=%v", statErr)
+	}
+}
+
+func TestFileStoreValidateBackupFromRejectsManifestedSnapshotSymlink(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	snapshotPath := filepath.Join(backupDir, filepath.Base(source.accountPath("mkmk")))
+	snapshotRaw, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		t.Fatalf("read backup snapshot: %v", err)
+	}
+	externalSnapshot := filepath.Join(t.TempDir(), filepath.Base(snapshotPath))
+	if err := os.WriteFile(externalSnapshot, snapshotRaw, 0o644); err != nil {
+		t.Fatalf("write external backup snapshot: %v", err)
+	}
+	if err := os.Remove(snapshotPath); err != nil {
+		t.Fatalf("remove in-place backup snapshot: %v", err)
+	}
+	if err := os.Symlink(externalSnapshot, snapshotPath); err != nil {
+		t.Fatalf("symlink backup snapshot: %v", err)
+	}
+	restoreTarget := NewFileStore(filepath.Join(t.TempDir(), "restore-target"))
+
+	_, err = restoreTarget.ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for symlinked manifested snapshot, got %v", err)
+	}
+	if _, statErr := os.Stat(restoreTarget.dir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected dry-run snapshot-symlink validation not to create restore target dir, stat err=%v", statErr)
+	}
+}
+
+func TestFileStoreValidateBackupFromRejectsCrashTempSymlink(t *testing.T) {
+	source := NewFileStore(t.TempDir())
+	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {
+		t.Fatalf("save source account: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "backup")
+	if err := source.BackupTo(backupDir); err != nil {
+		t.Fatalf("create validated backup: %v", err)
+	}
+	externalTemp := filepath.Join(t.TempDir(), ".account-crashed.json")
+	if err := os.WriteFile(externalTemp, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write external crash temp: %v", err)
+	}
+	if err := os.Symlink(externalTemp, filepath.Join(backupDir, ".account-crashed.json")); err != nil {
+		t.Fatalf("symlink crash-temp-shaped backup entry: %v", err)
+	}
+	restoreTarget := NewFileStore(filepath.Join(t.TempDir(), "restore-target"))
+
+	_, err := restoreTarget.ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for crash-temp-shaped symlink, got %v", err)
+	}
+	if _, statErr := os.Stat(restoreTarget.dir); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected dry-run crash-temp-symlink validation not to create restore target dir, stat err=%v", statErr)
+	}
+}
+
 func TestFileStoreRestoreFromRejectsCrashTempDirectory(t *testing.T) {
 	source := NewFileStore(t.TempDir())
 	if err := source.Save(Account{Login: "mkmk", Empire: 2, Characters: []loginticket.Character{{ID: 1, Name: "MkmkWar"}}}); err != nil {

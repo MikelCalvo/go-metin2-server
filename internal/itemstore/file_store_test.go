@@ -609,6 +609,91 @@ func TestFileStoreValidateBackupFromRejectsUntrackedBackupEntries(t *testing.T) 
 	}
 }
 
+func TestFileStoreValidateBackupFromRejectsBackupManifestSymlink(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+	manifestPath := filepath.Join(backupDir, BackupManifestFilename)
+	manifestRaw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read backup manifest: %v", err)
+	}
+	externalManifest := filepath.Join(t.TempDir(), BackupManifestFilename)
+	if err := os.WriteFile(externalManifest, manifestRaw, 0o644); err != nil {
+		t.Fatalf("write external backup manifest: %v", err)
+	}
+	if err := os.Remove(manifestPath); err != nil {
+		t.Fatalf("remove in-place backup manifest: %v", err)
+	}
+	if err := os.Symlink(externalManifest, manifestPath); err != nil {
+		t.Fatalf("symlink backup manifest: %v", err)
+	}
+
+	_, err = NewFileStore(filepath.Join(t.TempDir(), "target", "item-templates.json")).ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for symlinked backup manifest, got %v", err)
+	}
+}
+
+func TestFileStoreValidateBackupFromRejectsManifestedSnapshotSymlink(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+	snapshotPath := filepath.Join(backupDir, filepath.Base(store.path))
+	snapshotRaw, err := os.ReadFile(snapshotPath)
+	if err != nil {
+		t.Fatalf("read backup snapshot: %v", err)
+	}
+	externalSnapshot := filepath.Join(t.TempDir(), filepath.Base(snapshotPath))
+	if err := os.WriteFile(externalSnapshot, snapshotRaw, 0o644); err != nil {
+		t.Fatalf("write external backup snapshot: %v", err)
+	}
+	if err := os.Remove(snapshotPath); err != nil {
+		t.Fatalf("remove in-place backup snapshot: %v", err)
+	}
+	if err := os.Symlink(externalSnapshot, snapshotPath); err != nil {
+		t.Fatalf("symlink backup snapshot: %v", err)
+	}
+
+	_, err = NewFileStore(filepath.Join(t.TempDir(), "target", "item-templates.json")).ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for symlinked manifested snapshot, got %v", err)
+	}
+}
+
+func TestFileStoreValidateBackupFromRejectsCrashTempSymlink(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
+	if err := store.Save(Snapshot{Templates: []Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}}}); err != nil {
+		t.Fatalf("save item template snapshot: %v", err)
+	}
+	backupDir := filepath.Join(t.TempDir(), "item-template-backup")
+	if err := store.BackupTo(backupDir); err != nil {
+		t.Fatalf("backup item template store: %v", err)
+	}
+	externalTemp := filepath.Join(t.TempDir(), ".item-templates-crashed.json")
+	if err := os.WriteFile(externalTemp, []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write external crash temp: %v", err)
+	}
+	if err := os.Symlink(externalTemp, filepath.Join(backupDir, ".item-templates-crashed.json")); err != nil {
+		t.Fatalf("symlink crash-temp-shaped backup entry: %v", err)
+	}
+
+	_, err := NewFileStore(filepath.Join(t.TempDir(), "target", "item-templates.json")).ValidateBackupFrom(backupDir)
+	if !errors.Is(err, ErrInvalidBackupManifest) {
+		t.Fatalf("expected ErrInvalidBackupManifest for crash-temp-shaped symlink, got %v", err)
+	}
+}
+
 func TestFileStoreRestoreFromRestoresManifestedBackupIntoEmptyStore(t *testing.T) {
 	source := NewFileStore(filepath.Join(t.TempDir(), "state", "item-templates.json"))
 	snapshot := Snapshot{Templates: []Template{
