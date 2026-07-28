@@ -3049,6 +3049,105 @@ func TestLocalVisibilityEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalMapOccupancyEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
+	lookup := &stubMapOccupancyLookup{snapshots: map[uint32]any{
+		42: map[string]any{"map_index": uint32(42), "character_count": 1, "characters": []map[string]any{{"name": "Alpha"}}, "static_actor_count": 1, "static_actors": []map[string]any{{"entity_id": uint64(77), "name": "TrainingDummy"}}},
+	}}
+	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), lookup.MapOccupancy)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map occupancy lookup for map 42 once, got calls=%d map_index=%d", lookup.calls, lookup.lastMapIndex)
+	}
+	if contentType := rec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json content type, got %q", contentType)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"map_index":42`) || !strings.Contains(body, `"character_count":1`) || !strings.Contains(body, `"name":"Alpha"`) || !strings.Contains(body, `"static_actors":[`) {
+		t.Fatalf("unexpected JSON response body %q", body)
+	}
+}
+
+func TestLocalMapOccupancyEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	lookup := &stubMapOccupancyLookup{}
+	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), lookup.MapOccupancy)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42", nil)
+	req.RemoteAddr = "198.51.100.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map occupancy lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancyEndpointRejectsInvalidMapIndex(t *testing.T) {
+	lookup := &stubMapOccupancyLookup{}
+	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), lookup.MapOccupancy)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/not-a-map", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map occupancy lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
+func TestLocalMapOccupancyEndpointReturnsNotFoundForMissingMap(t *testing.T) {
+	lookup := &stubMapOccupancyLookup{snapshots: map[uint32]any{}}
+	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), lookup.MapOccupancy)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/maps/42", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, rec.Code)
+	}
+	if lookup.calls != 1 || lookup.lastMapIndex != 42 {
+		t.Fatalf("expected map occupancy lookup for map 42 once, got calls=%d map_index=%d", lookup.calls, lookup.lastMapIndex)
+	}
+}
+
+func TestLocalMapOccupancyEndpointRejectsWrongMethod(t *testing.T) {
+	lookup := &stubMapOccupancyLookup{}
+	mux := RegisterLocalMapOccupancyEndpoint(NewPprofMux("gamed"), lookup.MapOccupancy)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/maps/42", strings.NewReader("ignored"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if lookup.calls != 0 {
+		t.Fatalf("expected map occupancy lookup not to be called, got %d calls", lookup.calls)
+	}
+}
+
 func TestLocalRuntimeConfigEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshotter := &stubRuntimeConfigSnapshotter{snapshot: map[string]any{"local_channel_id": 1, "visibility_mode": "radius", "visibility_radius": int32(400), "visibility_sector_size": int32(200), "persistence": map[string]any{"account_store_dir": "/state/accounts", "login_ticket_store_dir": "/state/tickets"}}}
 	mux := RegisterLocalRuntimeConfigEndpoint(NewPprofMux("gamed"), snapshotter.RuntimeConfig)
@@ -4652,6 +4751,19 @@ type stubMapOccupancySnapshotter struct {
 func (s *stubMapOccupancySnapshotter) MapOccupancy() any {
 	s.calls++
 	return s.snapshots
+}
+
+type stubMapOccupancyLookup struct {
+	snapshots    map[uint32]any
+	calls        int
+	lastMapIndex uint32
+}
+
+func (s *stubMapOccupancyLookup) MapOccupancy(mapIndex uint32) (any, bool) {
+	s.calls++
+	s.lastMapIndex = mapIndex
+	value, ok := s.snapshots[mapIndex]
+	return value, ok
 }
 
 type stubRuntimeConfigSnapshotter struct {

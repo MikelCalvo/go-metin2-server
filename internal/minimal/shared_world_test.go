@@ -11813,6 +11813,41 @@ func TestGameRuntimeMapOccupancyReflectsRelocatedCharacter(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeMapOccupancySnapshotReturnsSpecificMapByIndex(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	peerTwo := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	peerTwo.MapIndex = 42
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peerOne)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, peerTwo)
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	_, _ = enterGameWithLoginTicket(t, factory, "peer-two", 0x22222222)
+	actor, ok := runtime.RegisterStaticActor("DestinationDummy", 42, 1800, 2800, 20350)
+	if !ok {
+		t.Fatal("expected static actor registration on destination map to succeed")
+	}
+
+	snapshot, ok := runtime.MapOccupancySnapshot(42)
+	if !ok {
+		t.Fatal("expected exact destination map occupancy snapshot")
+	}
+	if snapshot.MapIndex != 42 || snapshot.CharacterCount != 1 || len(snapshot.Characters) != 1 || snapshot.Characters[0].Name != "PeerTwo" || snapshot.StaticActorCount != 1 || len(snapshot.StaticActors) != 1 || snapshot.StaticActors[0].EntityID != actor.EntityID {
+		t.Fatalf("unexpected exact map occupancy snapshot: %+v", snapshot)
+	}
+	if missing, ok := runtime.MapOccupancySnapshot(77); ok || missing.MapIndex != 0 {
+		t.Fatalf("expected missing map occupancy lookup to fail closed, got ok=%v snapshot=%+v", ok, missing)
+	}
+	if zero, ok := runtime.MapOccupancySnapshot(0); ok || zero.MapIndex != 0 {
+		t.Fatalf("expected zero map occupancy lookup to fail closed, got ok=%v snapshot=%+v", ok, zero)
+	}
+}
+
 func TestGameRuntimeMapOccupancyReflectsDisconnectedCharacter(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)

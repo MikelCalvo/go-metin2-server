@@ -1742,6 +1742,20 @@ func (r *sharedWorldRegistry) MapOccupancy() []MapOccupancySnapshot {
 	return r.mapOccupancySnapshots()
 }
 
+func (r *sharedWorldRegistry) MapOccupancySnapshot(mapIndex uint32) (MapOccupancySnapshot, bool) {
+	if r == nil || mapIndex == 0 {
+		return MapOccupancySnapshot{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, snapshot := range r.mapOccupancySnapshotsLocked() {
+		if snapshot.MapIndex == mapIndex {
+			return snapshot, true
+		}
+	}
+	return MapOccupancySnapshot{}, false
+}
+
 func (r *sharedWorldRegistry) NextStaticActorEntityID() uint64 {
 	if r == nil || r.entities == nil {
 		return 0

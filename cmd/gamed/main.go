@@ -167,6 +167,16 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalMapOccupancyEndpoint(
+		opsHandler,
+		func(mapIndex uint32) (any, bool) {
+			snapshot, ok := gameRuntime.MapOccupancySnapshot(mapIndex)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalInventoryEndpoint(
 		opsHandler,
 		func(name string) (any, bool) {

@@ -822,6 +822,30 @@ func RegisterLocalGroundItemEndpoint(mux *http.ServeMux, groundItem func(uint32)
 	return mux
 }
 
+func RegisterLocalMapOccupancyEndpoint(mux *http.ServeMux, mapOccupancy func(uint32) (any, bool)) *http.ServeMux {
+	if mux == nil || mapOccupancy == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/maps/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		mapIndex, ok := decodeLocalMapIndex(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := mapOccupancy(mapIndex)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalInventoryEndpoint(mux *http.ServeMux, inventorySnapshot func(string) (any, bool)) *http.ServeMux {
 	return registerLocalNamedSnapshotEndpoint(mux, "GET /local/inventory/", "/local/inventory/", inventorySnapshot)
 }
@@ -1858,6 +1882,19 @@ func decodeLocalGroundItemVID(r *http.Request) (uint32, bool) {
 		return 0, false
 	}
 	return uint32(vid), true
+}
+
+func decodeLocalMapIndex(r *http.Request) (uint32, bool) {
+	mapIndexRaw := strings.TrimPrefix(r.URL.Path, "/local/maps/")
+	mapIndexRaw = strings.TrimSpace(mapIndexRaw)
+	if mapIndexRaw == "" || strings.Contains(mapIndexRaw, "/") {
+		return 0, false
+	}
+	mapIndex, err := strconv.ParseUint(mapIndexRaw, 0, 32)
+	if err != nil || mapIndex == 0 {
+		return 0, false
+	}
+	return uint32(mapIndex), true
 }
 
 func decodeLocalCharacterName(r *http.Request, prefix string) (string, bool) {

@@ -832,6 +832,13 @@ func (r *gameRuntime) MapOccupancy() []MapOccupancySnapshot {
 	return r.sharedWorld.MapOccupancy()
 }
 
+func (r *gameRuntime) MapOccupancySnapshot(mapIndex uint32) (MapOccupancySnapshot, bool) {
+	if r == nil || r.sharedWorld == nil {
+		return MapOccupancySnapshot{}, false
+	}
+	return r.sharedWorld.MapOccupancySnapshot(mapIndex)
+}
+
 func (r *gameRuntime) GroundItems() []GroundItemSnapshot {
 	if r == nil || r.sharedWorld == nil {
 		return nil

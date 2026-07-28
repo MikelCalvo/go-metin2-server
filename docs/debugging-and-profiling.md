@@ -485,6 +485,11 @@ Those static-actor entries now also expose `dead: true` while a runtime-owned pr
 `spawn_group_count` and `spawn_groups` provide the deterministic per-map subset of those static actors whose `spawn_group_ref` is non-empty, using the same spawn-backed static-actor snapshot shape as `/local/spawn-groups`. This keeps attackable authored spawn presence inspectable from map occupancy without removing the actor from the full `static_actors` array.
 Temporary pending ground items are surfaced with their visible `vid`, `vnum`, optional `count`, optional display `owner_name`, owner identity (`owner_login`, `owner_character_id`, `owner_vid`), optional `gold_amount`, effective `map_index`, and `x/y/z` position so operator map snapshots show both connected actors and transient ground occupancy without losing the owned ground-entry identity used by stale-pickup guards.
 
+### `GET /local/maps/{map_index}`
+
+Returns one current map-occupancy snapshot by effective `map_index`, using the same JSON shape as a single row from `/local/maps`.
+This endpoint is loopback-only and read-only. Decimal and `0x`-prefixed hexadecimal map indexes are accepted for consistency with other local runtime lookups. Invalid, zero, or missing map indexes return `400`; well-formed but currently unoccupied maps return `404`.
+
 ### `GET /local/ground-items`
 
 Returns a flat JSON snapshot of all currently pending bootstrap ground entries, sorted by visible ground `vid`.
