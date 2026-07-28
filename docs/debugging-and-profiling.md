@@ -349,7 +349,9 @@ Use this as an on-box dry-run check before applying a larger content bundle or b
 
 ### `POST /local/notice`
 
-- request body: raw plain-text notice message
+Queues a server-originated `CHAT_TYPE_NOTICE` system message through the running `gamed` shared-world runtime. This endpoint is registered only on `gamed`, is loopback-only, rejects non-`POST` methods with `405`, rejects empty or whitespace-only messages with `400`, rejects invalid UTF-8 request bodies with `400`, rejects bodies over 4 KiB with `413`, and trims leading/trailing whitespace before broadcasting. It is a local operator/debugging surface, not a gameplay chat path and not a remote admin API.
+
+- request body: raw UTF-8 plain-text notice message
 - success response: `queued N`
 
 ### `POST /local/relocate`

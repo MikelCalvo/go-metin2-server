@@ -2481,11 +2481,11 @@ func (s *stubItemTemplateStoreRestorer) Restore(srcDir string) (any, error) {
 	return s.summary, s.err
 }
 
-func TestLocalNoticeEndpointQueuesBroadcastForLoopbackPost(t *testing.T) {
+func TestLocalNoticeEndpointQueuesTrimmedLoopbackNotice(t *testing.T) {
 	broadcaster := &stubNoticeBroadcaster{delivered: 2}
 	mux := NewPprofMuxWithLocalNotice("gamed", broadcaster.BroadcastNotice)
 
-	req := httptest.NewRequest(http.MethodPost, "/local/notice", strings.NewReader("server maintenance"))
+	req := httptest.NewRequest(http.MethodPost, "/local/notice", strings.NewReader("  server maintenance  "))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -2495,23 +2495,22 @@ func TestLocalNoticeEndpointQueuesBroadcastForLoopbackPost(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 	if broadcaster.calls != 1 || broadcaster.lastMessage != "server maintenance" {
-		t.Fatalf("unexpected broadcaster call state: %+v", broadcaster)
+		t.Fatalf("expected broadcaster once with trimmed message, calls=%d message=%q", broadcaster.calls, broadcaster.lastMessage)
 	}
-	body, err := io.ReadAll(rec.Body)
-	if err != nil {
-		t.Fatalf("read response body: %v", err)
+	if got := rec.Body.String(); got != "queued 2\n" {
+		t.Fatalf("unexpected notice response body %q", got)
 	}
-	if string(body) != "queued 2\n" {
-		t.Fatalf("unexpected response body %q", string(body))
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/plain") {
+		t.Fatalf("expected text/plain content type, got %q", got)
 	}
 }
 
 func TestLocalNoticeEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
-	broadcaster := &stubNoticeBroadcaster{delivered: 2}
+	broadcaster := &stubNoticeBroadcaster{delivered: 1}
 	mux := NewPprofMuxWithLocalNotice("gamed", broadcaster.BroadcastNotice)
 
 	req := httptest.NewRequest(http.MethodPost, "/local/notice", strings.NewReader("server maintenance"))
-	req.RemoteAddr = "198.51.100.10:12345"
+	req.RemoteAddr = "203.0.113.10:12345"
 	rec := httptest.NewRecorder()
 
 	mux.ServeHTTP(rec, req)
@@ -2520,15 +2519,33 @@ func TestLocalNoticeEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
 	}
 	if broadcaster.calls != 0 {
-		t.Fatalf("expected broadcaster not to be called, got %d calls", broadcaster.calls)
+		t.Fatalf("expected broadcaster not to be called, got %d", broadcaster.calls)
 	}
 }
 
-func TestLocalNoticeEndpointRejectsEmptyMessage(t *testing.T) {
-	broadcaster := &stubNoticeBroadcaster{delivered: 2}
+func TestLocalNoticeEndpointRejectsWrongMethod(t *testing.T) {
+	broadcaster := &stubNoticeBroadcaster{delivered: 1}
 	mux := NewPprofMuxWithLocalNotice("gamed", broadcaster.BroadcastNotice)
 
-	req := httptest.NewRequest(http.MethodPost, "/local/notice", strings.NewReader("   \n"))
+	req := httptest.NewRequest(http.MethodGet, "/local/notice", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if broadcaster.calls != 0 {
+		t.Fatalf("expected broadcaster not to be called, got %d", broadcaster.calls)
+	}
+}
+
+func TestLocalNoticeEndpointRejectsEmptyBody(t *testing.T) {
+	broadcaster := &stubNoticeBroadcaster{delivered: 1}
+	mux := NewPprofMuxWithLocalNotice("gamed", broadcaster.BroadcastNotice)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/notice", strings.NewReader(" \n	 "))
 	req.RemoteAddr = "127.0.0.1:12345"
 	rec := httptest.NewRecorder()
 
@@ -2538,7 +2555,43 @@ func TestLocalNoticeEndpointRejectsEmptyMessage(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
 	}
 	if broadcaster.calls != 0 {
-		t.Fatalf("expected broadcaster not to be called, got %d calls", broadcaster.calls)
+		t.Fatalf("expected broadcaster not to be called, got %d", broadcaster.calls)
+	}
+}
+
+func TestLocalNoticeEndpointRejectsOversizedBody(t *testing.T) {
+	broadcaster := &stubNoticeBroadcaster{delivered: 1}
+	mux := NewPprofMuxWithLocalNotice("gamed", broadcaster.BroadcastNotice)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/notice", strings.NewReader(strings.Repeat("x", maxLocalNoticeBodyBytes+1)))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if broadcaster.calls != 0 {
+		t.Fatalf("expected broadcaster not to be called, got %d", broadcaster.calls)
+	}
+}
+
+func TestLocalNoticeEndpointRejectsInvalidUTF8Body(t *testing.T) {
+	broadcaster := &stubNoticeBroadcaster{delivered: 1}
+	mux := NewPprofMuxWithLocalNotice("gamed", broadcaster.BroadcastNotice)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/notice", bytes.NewReader([]byte{0xff, 'n', 'o', 't', 'i', 'c', 'e'}))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+	if broadcaster.calls != 0 {
+		t.Fatalf("expected broadcaster not to be called, got %d", broadcaster.calls)
 	}
 }
 

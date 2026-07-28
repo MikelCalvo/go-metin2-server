@@ -126,6 +126,7 @@ func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
 }
 
 const (
+	maxLocalNoticeBodyBytes                   = 4096
 	maxLocalAccountStoreMutationBodyBytes     = 4096
 	maxLocalInteractionDefinitionBodyBytes    = 4096
 	maxLocalStaticActorCombatProfileBodyBytes = 4096
@@ -1384,8 +1385,16 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
-			body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+			body, err := io.ReadAll(io.LimitReader(r.Body, maxLocalNoticeBodyBytes+1))
 			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if len(body) > maxLocalNoticeBodyBytes {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
+			if !utf8.Valid(body) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
