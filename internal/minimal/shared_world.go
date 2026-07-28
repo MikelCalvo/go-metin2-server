@@ -2543,26 +2543,31 @@ func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldrun
 	}
 	var combatLevel uint16
 	var combatRank uint8
+	var retaliationPointDelta int32
 	if defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatProfile); ok {
 		combatLevel = defaults.Level
 		combatRank = defaults.Rank
+		if defaults.RetaliationPointDelta != worldruntime.PracticeMobBootstrapRetaliationPointDelta {
+			retaliationPointDelta = defaults.RetaliationPointDelta
+		}
 	}
 	return StaticActorSnapshot{
-		EntityID:         actor.Entity.ID,
-		Name:             actor.Entity.Name,
-		MapIndex:         topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
-		X:                actor.Position.X,
-		Y:                actor.Position.Y,
-		RaceNum:          actor.RaceNum,
-		CombatProfile:    combatProfile,
-		CombatLevel:      combatLevel,
-		CombatRank:       combatRank,
-		InteractionKind:  actor.InteractionKind,
-		InteractionRef:   actor.InteractionRef,
-		SpawnGroupRef:    actor.SpawnGroupRef,
-		RewardExperience: actor.DeathReward.Experience,
-		RewardGold:       actor.DeathReward.Gold,
-		RewardDropVnums:  actor.DeathReward.Clone().DropVnums,
+		EntityID:              actor.Entity.ID,
+		Name:                  actor.Entity.Name,
+		MapIndex:              topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
+		X:                     actor.Position.X,
+		Y:                     actor.Position.Y,
+		RaceNum:               actor.RaceNum,
+		CombatProfile:         combatProfile,
+		CombatLevel:           combatLevel,
+		CombatRank:            combatRank,
+		RetaliationPointDelta: retaliationPointDelta,
+		InteractionKind:       actor.InteractionKind,
+		InteractionRef:        actor.InteractionRef,
+		SpawnGroupRef:         actor.SpawnGroupRef,
+		RewardExperience:      actor.DeathReward.Experience,
+		RewardGold:            actor.DeathReward.Gold,
+		RewardDropVnums:       actor.DeathReward.Clone().DropVnums,
 	}
 }
 

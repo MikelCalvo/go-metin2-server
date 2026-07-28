@@ -942,11 +942,12 @@ func TestGameRuntimeUpdateSpawnGroupActorSnapshotKeepsCombatLevelAndRank(t *test
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
 	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
 	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
-		MaxHP:        24,
-		AttackValue:  7,
-		Level:        19,
-		Rank:         4,
-		RespawnDelay: 1500 * time.Millisecond,
+		MaxHP:                 24,
+		AttackValue:           7,
+		Level:                 19,
+		Rank:                  4,
+		RespawnDelay:          1500 * time.Millisecond,
+		RetaliationPointDelta: -2,
 	}) {
 		t.Fatalf("expected combat profile %q to register", profile)
 	}
@@ -978,20 +979,20 @@ func TestGameRuntimeUpdateSpawnGroupActorSnapshotKeepsCombatLevelAndRank(t *test
 	if len(actors) != 1 {
 		t.Fatalf("expected one runtime actor after import, got %d", len(actors))
 	}
-	if actors[0].CombatLevel != 19 || actors[0].CombatRank != 4 {
-		t.Fatalf("expected imported actor snapshot to expose combat level/rank, got %+v", actors[0])
+	if actors[0].CombatLevel != 19 || actors[0].CombatRank != 4 || actors[0].RetaliationPointDelta != -2 {
+		t.Fatalf("expected imported actor snapshot to expose combat level/rank/retaliation metadata, got %+v", actors[0])
 	}
 
 	updated, ok := runtime.UpdateStaticActor(actors[0].EntityID, "Ranked Practice Mob Moved", 42, 1800, 2900, 20351)
 	if !ok {
 		t.Fatal("expected spawn-backed actor update to succeed")
 	}
-	if updated.CombatProfile != profile || updated.CombatLevel != 19 || updated.CombatRank != 4 {
-		t.Fatalf("expected updated spawn actor snapshot to preserve combat profile level/rank, got %+v", updated)
+	if updated.CombatProfile != profile || updated.CombatLevel != 19 || updated.CombatRank != 4 || updated.RetaliationPointDelta != -2 {
+		t.Fatalf("expected updated spawn actor snapshot to preserve combat profile level/rank/retaliation metadata, got %+v", updated)
 	}
 	refreshed := runtime.StaticActors()
-	if len(refreshed) != 1 || refreshed[0].CombatLevel != 19 || refreshed[0].CombatRank != 4 {
-		t.Fatalf("expected runtime actor snapshots to preserve combat level/rank after update, got %+v", refreshed)
+	if len(refreshed) != 1 || refreshed[0].CombatLevel != 19 || refreshed[0].CombatRank != 4 || refreshed[0].RetaliationPointDelta != -2 {
+		t.Fatalf("expected runtime actor snapshots to preserve combat level/rank/retaliation metadata after update, got %+v", refreshed)
 	}
 }
 

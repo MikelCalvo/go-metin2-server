@@ -830,12 +830,13 @@ func TestScopesStaticActorSnapshotsExposeCombatProfilePresentationMetadata(t *te
 	UnregisterStaticActorCombatProfileForTest(profile)
 	defer UnregisterStaticActorCombatProfileForTest(profile)
 	if ok := RegisterStaticActorCombatProfile(profile, StaticActorCombatProfileDefaults{
-		MaxHP:        12,
-		AttackValue:  5,
-		DefenseValue: 1,
-		Level:        7,
-		Rank:         3,
-		RespawnDelay: TrainingDummyBootstrapRespawnDelay,
+		MaxHP:                 12,
+		AttackValue:           5,
+		DefenseValue:          1,
+		Level:                 7,
+		Rank:                  3,
+		RespawnDelay:          TrainingDummyBootstrapRespawnDelay,
+		RetaliationPointDelta: -2,
 	}); !ok {
 		t.Fatal("expected registered rank probe profile")
 	}
@@ -862,6 +863,9 @@ func TestScopesStaticActorSnapshotsExposeCombatProfilePresentationMetadata(t *te
 	}
 	if snapshots[0].CombatLevel != 7 || snapshots[0].CombatRank != 3 {
 		t.Fatalf("expected combat presentation metadata level=7 rank=3, got level=%d rank=%d in %+v", snapshots[0].CombatLevel, snapshots[0].CombatRank, snapshots[0])
+	}
+	if snapshots[0].RetaliationPointDelta != -2 {
+		t.Fatalf("expected combat retaliation point delta -2 in static actor snapshot, got %+v", snapshots[0])
 	}
 }
 

@@ -61,22 +61,23 @@ type CharacterInteractionVisibilitySnapshot struct {
 }
 
 type StaticActorSnapshot struct {
-	EntityID         uint64   `json:"entity_id"`
-	Name             string   `json:"name"`
-	MapIndex         uint32   `json:"map_index"`
-	X                int32    `json:"x"`
-	Y                int32    `json:"y"`
-	RaceNum          uint32   `json:"race_num"`
-	Dead             bool     `json:"dead,omitempty"`
-	CombatProfile    string   `json:"combat_profile,omitempty"`
-	CombatLevel      uint16   `json:"combat_level,omitempty"`
-	CombatRank       uint8    `json:"combat_rank,omitempty"`
-	InteractionKind  string   `json:"interaction_kind,omitempty"`
-	InteractionRef   string   `json:"interaction_ref,omitempty"`
-	SpawnGroupRef    string   `json:"spawn_group_ref,omitempty"`
-	RewardExperience uint64   `json:"reward_experience,omitempty"`
-	RewardGold       uint64   `json:"reward_gold,omitempty"`
-	RewardDropVnums  []uint32 `json:"reward_drop_vnums,omitempty"`
+	EntityID              uint64   `json:"entity_id"`
+	Name                  string   `json:"name"`
+	MapIndex              uint32   `json:"map_index"`
+	X                     int32    `json:"x"`
+	Y                     int32    `json:"y"`
+	RaceNum               uint32   `json:"race_num"`
+	Dead                  bool     `json:"dead,omitempty"`
+	CombatProfile         string   `json:"combat_profile,omitempty"`
+	CombatLevel           uint16   `json:"combat_level,omitempty"`
+	CombatRank            uint8    `json:"combat_rank,omitempty"`
+	RetaliationPointDelta int32    `json:"retaliation_point_delta,omitempty"`
+	InteractionKind       string   `json:"interaction_kind,omitempty"`
+	InteractionRef        string   `json:"interaction_ref,omitempty"`
+	SpawnGroupRef         string   `json:"spawn_group_ref,omitempty"`
+	RewardExperience      uint64   `json:"reward_experience,omitempty"`
+	RewardGold            uint64   `json:"reward_gold,omitempty"`
+	RewardDropVnums       []uint32 `json:"reward_drop_vnums,omitempty"`
 }
 
 type GroundItemSnapshot struct {
@@ -485,26 +486,31 @@ func staticActorSnapshot(topology BootstrapTopology, actor StaticEntity) StaticA
 	combatProfile := staticActorCombatProfile(actor.CombatProfile, actor.CombatKind)
 	var combatLevel uint16
 	var combatRank uint8
+	var retaliationPointDelta int32
 	if defaults, ok := BootstrapStaticActorCombatProfileDefaults(combatProfile); ok {
 		combatLevel = defaults.Level
 		combatRank = defaults.Rank
+		if defaults.RetaliationPointDelta != PracticeMobBootstrapRetaliationPointDelta {
+			retaliationPointDelta = defaults.RetaliationPointDelta
+		}
 	}
 	return StaticActorSnapshot{
-		EntityID:         actor.Entity.ID,
-		Name:             actor.Entity.Name,
-		MapIndex:         topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
-		X:                actor.Position.X,
-		Y:                actor.Position.Y,
-		RaceNum:          actor.RaceNum,
-		CombatProfile:    combatProfile,
-		CombatLevel:      combatLevel,
-		CombatRank:       combatRank,
-		InteractionKind:  actor.InteractionKind,
-		InteractionRef:   actor.InteractionRef,
-		SpawnGroupRef:    actor.SpawnGroupRef,
-		RewardExperience: actor.DeathReward.Experience,
-		RewardGold:       actor.DeathReward.Gold,
-		RewardDropVnums:  actor.DeathReward.Clone().DropVnums,
+		EntityID:              actor.Entity.ID,
+		Name:                  actor.Entity.Name,
+		MapIndex:              topology.EffectiveMapIndex(loginticket.Character{MapIndex: actor.Position.MapIndex}),
+		X:                     actor.Position.X,
+		Y:                     actor.Position.Y,
+		RaceNum:               actor.RaceNum,
+		CombatProfile:         combatProfile,
+		CombatLevel:           combatLevel,
+		CombatRank:            combatRank,
+		RetaliationPointDelta: retaliationPointDelta,
+		InteractionKind:       actor.InteractionKind,
+		InteractionRef:        actor.InteractionRef,
+		SpawnGroupRef:         actor.SpawnGroupRef,
+		RewardExperience:      actor.DeathReward.Experience,
+		RewardGold:            actor.DeathReward.Gold,
+		RewardDropVnums:       actor.DeathReward.Clone().DropVnums,
 	}
 }
 
