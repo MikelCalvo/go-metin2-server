@@ -35925,6 +35925,90 @@ func TestGameSessionFlowPracticeMobRestartTownOverPlainTCP(t *testing.T) {
 	h.client.expectNoFrame(t, "stale restart-town attack before fresh target")
 }
 
+func TestGameSessionFlowPracticeMobRestartTownOwnedEmpireRowsOverPlainTCP(t *testing.T) {
+	tests := []struct {
+		name                string
+		login               string
+		loginKey            uint32
+		spawnRef            string
+		empire              uint8
+		wantMapIndex        uint32
+		wantX               int32
+		wantY               int32
+		wantSourceMobDelete bool
+	}{
+		{name: "empire_one", login: "tcp-restart-town-empire-one", loginKey: 0x919191a1, spawnRef: "practice.mob_tcp_restart_town_empire_one", empire: 1, wantMapIndex: bootstrapMapIndex, wantX: 459800, wantY: 953900},
+		{name: "empire_three", login: "tcp-restart-town-empire-three", loginKey: 0x919191a3, spawnRef: "practice.mob_tcp_restart_town_empire_three", empire: 3, wantMapIndex: 41, wantX: 957300, wantY: 255200, wantSourceMobDelete: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newPracticeMobTCPAccountHarness(t, tt.login, tt.loginKey, tt.spawnRef, 1, tt.empire)
+			defer h.close(t)
+
+			h.driveOwnerDeathFromImmediateRetaliation(t, "restart_town "+tt.name)
+
+			h.client.writeFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_town"}))
+			restartAdd, err := worldproto.DecodeCharacterAdd(h.client.readFrame(t))
+			if err != nil {
+				t.Fatalf("decode tcp %s restart-town self character add: %v", tt.name, err)
+			}
+			if restartAdd.VID != 0x02040131 || restartAdd.X != tt.wantX || restartAdd.Y != tt.wantY {
+				t.Fatalf("expected tcp %s restart-town self add to rebuild selected character at map=%d x=%d y=%d, got %+v", tt.name, tt.wantMapIndex, tt.wantX, tt.wantY, restartAdd)
+			}
+			restartInfo, err := worldproto.DecodeCharacterAdditionalInfo(h.client.readFrame(t))
+			if err != nil {
+				t.Fatalf("decode tcp %s restart-town self additional info: %v", tt.name, err)
+			}
+			if restartInfo.VID != 0x02040131 || restartInfo.Name != "PeerTCP" || restartInfo.Empire != tt.empire {
+				t.Fatalf("expected tcp %s restart-town self additional info for PeerTCP empire %d, got %+v", tt.name, tt.empire, restartInfo)
+			}
+			restartUpdate, err := worldproto.DecodeCharacterUpdate(h.client.readFrame(t))
+			if err != nil {
+				t.Fatalf("decode tcp %s restart-town self update: %v", tt.name, err)
+			}
+			if restartUpdate.VID != 0x02040131 {
+				t.Fatalf("expected tcp %s restart-town self update for selected character, got %+v", tt.name, restartUpdate)
+			}
+			restartPoints, err := worldproto.DecodePlayerPointChange(h.client.readFrame(t))
+			if err != nil {
+				t.Fatalf("decode tcp %s restart-town self point refresh: %v", tt.name, err)
+			}
+			if restartPoints.VID != 0x02040131 || restartPoints.Type != bootstrapPlayerPointValueIndex || restartPoints.Value != 1 {
+				t.Fatalf("expected tcp %s restart-town to rebuild persisted HP value 1, got %+v", tt.name, restartPoints)
+			}
+			if tt.wantSourceMobDelete {
+				sourceMobDelete, err := worldproto.DecodeCharacterDeleteNotice(h.client.readFrame(t))
+				if err != nil {
+					t.Fatalf("decode tcp %s restart-town source practice-mob delete: %v", tt.name, err)
+				}
+				if sourceMobDelete.VID != h.targetID {
+					t.Fatalf("expected tcp %s restart-town to delete source-map practice mob %d from self visibility, got %+v", tt.name, h.targetID, sourceMobDelete)
+				}
+			} else {
+				h.client.expectNoFrame(t, "same-map restart-town source visibility delta for "+tt.name)
+			}
+
+			persisted, err := h.accountStore.Load(tt.login)
+			if err != nil {
+				t.Fatalf("load tcp %s restart-town account after recovery: %v", tt.name, err)
+			}
+			if len(persisted.Characters) != 1 {
+				t.Fatalf("expected one persisted tcp %s character after restart-town, got %+v", tt.name, persisted)
+			}
+			if persisted.Characters[0].MapIndex != tt.wantMapIndex || persisted.Characters[0].X != tt.wantX || persisted.Characters[0].Y != tt.wantY {
+				t.Fatalf("expected tcp %s restart-town to persist map=%d x=%d y=%d, got %+v", tt.name, tt.wantMapIndex, tt.wantX, tt.wantY, persisted.Characters[0])
+			}
+			if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+				t.Fatalf("expected tcp %s restart-town to keep retaliation HP loss runtime-only in persisted snapshot, got %+v", tt.name, persisted.Characters[0])
+			}
+
+			h.client.writeFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: h.targetID}))
+			h.client.expectNoFrame(t, "stale restart-town attack before fresh target for "+tt.name)
+		})
+	}
+}
+
 func drivePracticeMobOwnerKill(t *testing.T, ownerFlow service.SessionFlow, targetVID uint32, context string, advance func(time.Duration)) [][]byte {
 	t.Helper()
 

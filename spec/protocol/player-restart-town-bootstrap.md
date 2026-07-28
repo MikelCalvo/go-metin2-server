@@ -65,6 +65,7 @@ The current bootstrap fallback rule is also explicit now:
 - if that fallback empire is also `0` or otherwise outside the owned table, the current legacy create-position helper falls back to the empire-`1` coordinates above
 
 Runtime regression coverage now exercises all three owned empire table rows plus the `0`/unknown fallback path through the full same-socket `/restart_town` recovery seam, not only through the standalone helper.
+The plain TCP/service harness also covers the non-empire-2 table rows across the real socket framing path, so socket-level restart-town coverage no longer proves only the empire-2 target.
 
 This keeps the slice honest:
 - the repo already owns those positions as deterministic create positions
