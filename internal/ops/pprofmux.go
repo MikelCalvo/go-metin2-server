@@ -126,8 +126,9 @@ func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
 }
 
 const (
-	maxLocalAccountStoreMutationBodyBytes  = 4096
-	maxLocalInteractionDefinitionBodyBytes = 4096
+	maxLocalAccountStoreMutationBodyBytes     = 4096
+	maxLocalInteractionDefinitionBodyBytes    = 4096
+	maxLocalStaticActorCombatProfileBodyBytes = 4096
 )
 
 func NewPprofMux(serviceName string) *http.ServeMux {
@@ -1043,8 +1044,12 @@ func RegisterLocalStaticActorCombatProfileEndpoint(mux *http.ServeMux) *http.Ser
 				w.WriteHeader(http.StatusInternalServerError)
 			}
 		case http.MethodPost:
-			profile, defaults, ok := decodeLocalStaticActorCombatProfileRequest(r)
-			if !ok || !worldruntime.RegisterStaticActorCombatProfile(profile, defaults) {
+			profile, defaults, decodeStatus, ok := decodeLocalStaticActorCombatProfileRequest(r)
+			if !ok {
+				w.WriteHeader(decodeStatus)
+				return
+			}
+			if !worldruntime.RegisterStaticActorCombatProfile(profile, defaults) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -1581,20 +1586,30 @@ func validLocalStaticActorName(name string) bool {
 	return name != "" && utf8.ValidString(name) && !strings.ContainsRune(name, '\x00')
 }
 
-func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldruntime.StaticActorCombatProfileDefaults, bool) {
+func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldruntime.StaticActorCombatProfileDefaults, int, bool) {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxLocalStaticActorCombatProfileBodyBytes+1))
+	if err != nil {
+		return "", worldruntime.StaticActorCombatProfileDefaults{}, http.StatusBadRequest, false
+	}
+	if len(raw) > maxLocalStaticActorCombatProfileBodyBytes {
+		return "", worldruntime.StaticActorCombatProfileDefaults{}, http.StatusRequestEntityTooLarge, false
+	}
+	if len(bytes.TrimSpace(raw)) == 0 || !utf8.Valid(raw) {
+		return "", worldruntime.StaticActorCombatProfileDefaults{}, http.StatusBadRequest, false
+	}
 	var request localStaticActorCombatProfileRequest
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 4096))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&request); err != nil {
-		return "", worldruntime.StaticActorCombatProfileDefaults{}, false
+		return "", worldruntime.StaticActorCombatProfileDefaults{}, http.StatusBadRequest, false
 	}
 	var trailing struct{}
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return "", worldruntime.StaticActorCombatProfileDefaults{}, false
+		return "", worldruntime.StaticActorCombatProfileDefaults{}, http.StatusBadRequest, false
 	}
 	profile := request.Profile
 	if strings.TrimSpace(profile) == "" || request.RespawnDelayMs <= 0 {
-		return "", worldruntime.StaticActorCombatProfileDefaults{}, false
+		return "", worldruntime.StaticActorCombatProfileDefaults{}, http.StatusBadRequest, false
 	}
 	defaults := worldruntime.StaticActorCombatProfileDefaults{
 		MaxHP:                 request.MaxHP,
@@ -1611,7 +1626,7 @@ func decodeLocalStaticActorCombatProfileRequest(r *http.Request) (string, worldr
 			DropVnums:  request.DeathReward.DropVnums,
 		},
 	}
-	return profile, defaults, true
+	return profile, defaults, http.StatusOK, true
 }
 
 func decodeLocalAccountStoreBackupRequest(r *http.Request) (localAccountStoreBackupRequest, int, bool) {

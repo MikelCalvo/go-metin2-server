@@ -307,7 +307,7 @@ Lists and registers process-local bootstrap static-actor combat profiles for lat
 - `respawn_delay_ms`
 - optional `death_reward` with `experience`, `gold`, and `drop_vnums`
 
-On success `POST` returns the canonicalized profile defaults, including any derived `damage_per_normal_attack` and sorted reward drop vnums. Invalid JSON, unknown fields, invalid formulas, invalid reward descriptors, non-loopback callers, and methods other than `GET` / `POST` fail closed.
+On success `POST` returns the canonicalized profile defaults, including any derived `damage_per_normal_attack` and sorted reward drop vnums. Request bodies are bounded to 4 KiB, oversized bodies return `413`, and invalid UTF-8 is rejected before JSON decoding or profile registration. Empty bodies, invalid JSON, unknown fields, trailing JSON, invalid formulas, invalid reward descriptors, non-loopback callers, and methods other than `GET` / `POST` fail closed.
 
 ### `GET` / `POST /local/content-bundle`
 
