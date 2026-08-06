@@ -498,7 +498,11 @@ func (s *FileStore) read(login string, loginKey uint32, consume bool) (Ticket, e
 }
 
 func (s *FileStore) readTicketFile(loginKey uint32) (Ticket, error) {
-	raw, err := os.ReadFile(s.ticketPath(loginKey))
+	path := s.ticketPath(loginKey)
+	if err := rejectCommittedTicketSnapshotSymlink(path); err != nil {
+		return Ticket{}, err
+	}
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Ticket{}, ErrTicketNotFound
@@ -531,6 +535,20 @@ func decodeTicketFilenameLoginKey(filename string) (uint32, error) {
 		return 0, fmt.Errorf("%w: login ticket filename %q is not 8-digit hex JSON", ErrInvalidTicket, filename)
 	}
 	return uint32(loginKey), nil
+}
+
+func rejectCommittedTicketSnapshotSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat login ticket: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: login ticket snapshot %q is a symlink", ErrInvalidTicket, filepath.Base(path))
+	}
+	return nil
 }
 
 func decodeTicketStrict(raw []byte, ticket *Ticket) error {

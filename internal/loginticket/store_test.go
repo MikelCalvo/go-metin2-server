@@ -121,6 +121,40 @@ func TestFileStoreLoadRejectsDuplicateInventorySlots(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsSymlinkedCommittedTicketSnapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	target := filepath.Join(t.TempDir(), "outside-ticket.json")
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(target, raw, 0o644); err != nil {
+		t.Fatalf("write outside ticket snapshot: %v", err)
+	}
+	if err := os.Symlink(target, store.ticketPath(0x01020304)); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Load("mkmk", 0x01020304)
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for symlinked ticket snapshot, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsSymlinkedCommittedTicketSnapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	target := filepath.Join(t.TempDir(), "outside-ticket.json")
+	raw := []byte(`{"login":"mkmk","login_key":16909060,"issued_at":"2026-04-17T10:21:00Z","characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(target, raw, 0o644); err != nil {
+		t.Fatalf("write outside ticket snapshot: %v", err)
+	}
+	if err := os.Symlink(target, store.ticketPath(0x01020304)); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidTicket) {
+		t.Fatalf("expected ErrInvalidTicket for symlinked committed ticket snapshot, got %v", err)
+	}
+}
+
 func TestFileStoreIssueDoesNotOverwriteTicketCommittedAfterPreflight(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	loginKey := uint32(0x01020304)

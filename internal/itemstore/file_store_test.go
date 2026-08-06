@@ -108,6 +108,46 @@ func TestFileStoreLoadRejectsNullTemplateCollection(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsSymlinkedCommittedItemTemplateSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-item-templates.json")
+	if err := os.WriteFile(target, []byte(`{"templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200}]}`), 0o644); err != nil {
+		t.Fatalf("write outside item-template snapshot: %v", err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Load()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked item-template snapshot, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsSymlinkedCommittedItemTemplateSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create item template test dir: %v", err)
+	}
+	target := filepath.Join(t.TempDir(), "outside-item-templates.json")
+	if err := os.WriteFile(target, []byte(`{"templates":[{"vnum":27001,"name":"Small Red Potion","stackable":true,"max_count":200}]}`), 0o644); err != nil {
+		t.Fatalf("write outside item-template snapshot: %v", err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected ErrInvalidSnapshot for symlinked committed item-template snapshot, got %v", err)
+	}
+}
+
 func TestFileStoreLoadRejectsMissingTemplateCollection(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)

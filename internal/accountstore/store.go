@@ -261,7 +261,11 @@ func (s *FileStore) Load(login string) (Account, error) {
 		return Account{}, fmt.Errorf("%w: account login contains NUL", ErrInvalidAccount)
 	}
 
-	raw, err := os.ReadFile(s.accountPath(login))
+	path := s.accountPath(login)
+	if err := rejectCommittedAccountSnapshotSymlink(path); err != nil {
+		return Account{}, err
+	}
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Account{}, ErrAccountNotFound
@@ -503,6 +507,9 @@ func (s *FileStore) loadBackupAccountsForRestore(srcDir string) ([]Account, erro
 	source := NewFileStore(srcDir)
 	accounts, err := source.List()
 	if err != nil {
+		if errors.Is(err, ErrInvalidAccount) {
+			return nil, errors.Join(fmt.Errorf("%w: load backup account snapshots", ErrInvalidBackupManifest), err)
+		}
 		return nil, err
 	}
 	if err := source.validateBackupManifest(accounts); err != nil {
@@ -631,6 +638,20 @@ func rejectBackupEntrySymlink(path string, context string) error {
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("%w: %s is a symlink", ErrInvalidBackupManifest, context)
+	}
+	return nil
+}
+
+func rejectCommittedAccountSnapshotSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat account snapshot: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: account snapshot %q is a symlink", ErrInvalidAccount, filepath.Base(path))
 	}
 	return nil
 }

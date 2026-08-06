@@ -35,6 +35,9 @@ func (s *FileStore) Load() (Snapshot, error) {
 		return Snapshot{}, ErrStorePathRequired
 	}
 
+	if err := rejectCommittedSnapshotSymlink(s.path); err != nil {
+		return Snapshot{}, err
+	}
 	raw, err := os.ReadFile(s.path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -135,6 +138,20 @@ func (s *FileStore) CleanupCrashTempFiles() (SnapshotSummary, error) {
 
 func (s *FileStore) crashTempFiles() ([]string, error) {
 	return crashTempFilesInDir(filepath.Dir(s.path), filepath.Base(s.path))
+}
+
+func rejectCommittedSnapshotSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat item template snapshot: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: item template snapshot %q is a symlink", ErrInvalidSnapshot, filepath.Base(path))
+	}
+	return nil
 }
 
 func crashTempFilesInDir(dir string, committedFilename string) ([]string, error) {

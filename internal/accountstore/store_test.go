@@ -46,6 +46,40 @@ func TestFileStoreLoadRejectsZeroCountInventoryItem(t *testing.T) {
 	}
 }
 
+func TestFileStoreLoadRejectsSymlinkedCommittedAccountSnapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	target := filepath.Join(t.TempDir(), "outside-account.json")
+	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(target, raw, 0o644); err != nil {
+		t.Fatalf("write outside account snapshot: %v", err)
+	}
+	if err := os.Symlink(target, store.accountPath("mkmk")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Load("mkmk")
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for symlinked account snapshot, got %v", err)
+	}
+}
+
+func TestFileStoreValidateRejectsSymlinkedCommittedAccountSnapshot(t *testing.T) {
+	store := NewFileStore(t.TempDir())
+	target := filepath.Join(t.TempDir(), "outside-account.json")
+	raw := []byte(`{"login":"mkmk","empire":2,"characters":[{"id":1,"name":"MkmkWar","inventory":[],"equipment":[],"quickslots":[]}]}`)
+	if err := os.WriteFile(target, raw, 0o644); err != nil {
+		t.Fatalf("write outside account snapshot: %v", err)
+	}
+	if err := os.Symlink(target, store.accountPath("mkmk")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+
+	_, err := store.Validate()
+	if !errors.Is(err, ErrInvalidAccount) {
+		t.Fatalf("expected ErrInvalidAccount for symlinked committed account snapshot, got %v", err)
+	}
+}
+
 func TestFileStoreRejectsDuplicateItemInstanceIDs(t *testing.T) {
 	store := NewFileStore(t.TempDir())
 	cases := []struct {
