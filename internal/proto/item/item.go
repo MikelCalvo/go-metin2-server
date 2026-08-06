@@ -14,6 +14,7 @@ const (
 	HeaderClientMove      uint16 = 0x0504
 	HeaderClientPickup    uint16 = 0x0505
 	HeaderClientUseToItem uint16 = 0x0506
+	HeaderClientGive      uint16 = 0x0507
 	HeaderDel             uint16 = 0x0510
 	HeaderSet             uint16 = 0x0511
 	HeaderUse             uint16 = 0x0512
@@ -45,6 +46,7 @@ const (
 	clientMovePayloadSize      = positionSize + positionSize + 1
 	clientPickupPayloadSize    = 4
 	clientUseToItemPayloadSize = positionSize + positionSize
+	clientGivePayloadSize      = 4 + positionSize + 1
 	delPayloadSize             = positionSize
 	setPayloadSize             = positionSize + 4 + 1 + 4 + 4 + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 	usePayloadSize             = positionSize + 4 + 4 + 4
@@ -174,6 +176,12 @@ type ClientMovePacket struct {
 
 type ClientPickupPacket struct {
 	VID uint32
+}
+
+type ClientGivePacket struct {
+	TargetVID uint32
+	Position  Position
+	Count     uint8
 }
 
 type GroundAddPacket struct {
@@ -332,6 +340,28 @@ func DecodeClientPickup(f frame.Frame) (ClientPickupPacket, error) {
 		return ClientPickupPacket{}, ErrInvalidPayload
 	}
 	return ClientPickupPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
+}
+
+func EncodeClientGive(packet ClientGivePacket) []byte {
+	payload := make([]byte, clientGivePayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:], packet.TargetVID)
+	encodePosition(payload[4:4+positionSize], packet.Position)
+	payload[4+positionSize] = packet.Count
+	return frame.Encode(HeaderClientGive, payload)
+}
+
+func DecodeClientGive(f frame.Frame) (ClientGivePacket, error) {
+	if f.Header != HeaderClientGive {
+		return ClientGivePacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientGivePayloadSize {
+		return ClientGivePacket{}, ErrInvalidPayload
+	}
+	return ClientGivePacket{
+		TargetVID: binary.LittleEndian.Uint32(f.Payload[0:]),
+		Position:  decodePosition(f.Payload[4 : 4+positionSize]),
+		Count:     f.Payload[4+positionSize],
+	}, nil
 }
 
 func EncodeSet(packet SetPacket) []byte {

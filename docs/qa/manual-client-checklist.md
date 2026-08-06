@@ -392,6 +392,17 @@ Expected result:
 - carried sell-back stacks whose live count already exceeds the resolved template-authored `max_count` fail with the same invalid-position companion before inventory, item quickslot, gold, or persisted account mutation
 - partial-stack `SHOP SELL2` success refreshes the remaining stack with `ITEM_UPDATE`, preserves the authored display socket/attribute arrays while changing only the count, credits gold, and keeps item quickslots for the still-occupied cell unchanged
 
+### 4.5.11 Unsupported item give guard (`ITEM_GIVE`)
+
+Run this only if packet tooling or the client build can emit an item-give attempt.
+
+- [ ] Attempt to give a carried item stack to a visible actor or player using the `ITEM_GIVE` path
+- [ ] Repeat with a non-inventory source cell or zero/oversized count if packet tooling can construct it
+
+Expected result:
+- `ITEM_GIVE` is parsed by the game socket but remains unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot state changes, no ground actor appears, no peer receives item-transfer frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- this is a fail-closed guard, not a completed transfer/exchange feature
+
 ---
 
 ## 5. Single-client movement

@@ -304,6 +304,42 @@ func TestDecodeClientPickupReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeClientGiveBuildsAFrame(t *testing.T) {
+	position, err := CarriedInventoryPosition(5)
+	if err != nil {
+		t.Fatalf("unexpected carried inventory position error: %v", err)
+	}
+	want := frame.Encode(HeaderClientGive, []byte{0x78, 0x56, 0x34, 0x12, WindowInventory, 5, 0, 7})
+	got := EncodeClientGive(ClientGivePacket{TargetVID: 0x12345678, Position: position, Count: 7})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected item give frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientGiveReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientGive(decodeSingleFrame(t, frame.Encode(HeaderClientGive, []byte{0x78, 0x56, 0x34, 0x12, WindowInventory, 5, 0, 7})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientGivePacket{TargetVID: 0x12345678, Position: Position{WindowType: WindowInventory, Cell: 5}, Count: 7}) {
+		t.Fatalf("unexpected item-give packet: %+v", packet)
+	}
+}
+
+func TestDecodeClientGiveRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientGive(frame.Frame{Header: HeaderClientGive + 1, Length: 12, Payload: make([]byte, clientGivePayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientGiveRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeClientGive(frame.Frame{Header: HeaderClientGive, Length: 11, Payload: make([]byte, clientGivePayloadSize-1)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestEncodeGroundAddBuildsAFrame(t *testing.T) {
 	want := frame.Encode(HeaderGroundAdd, []byte{0x10, 0x27, 0, 0, 0x30, 0xf8, 0xff, 0xff, 0x40, 0x1f, 0, 0, 0x78, 0x56, 0x34, 0x12, 0x44, 0x33, 0x22, 0x11})
 	got := EncodeGroundAdd(GroundAddPacket{VID: 0x12345678, Vnum: 0x11223344, X: 10000, Y: -2000, Z: 8000})

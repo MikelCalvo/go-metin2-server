@@ -179,6 +179,55 @@ func TestHandleClientFrameAcceptsItemPickupInGameAndReturnsHandlerFrames(t *test
 	}
 }
 
+func TestHandleClientFrameAcceptsItemGiveInGameAndReturnsHandlerFrames(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	wantFrame := []byte("item-give")
+	flow := NewFlow(machine, Config{
+		HandleItemGive: func(packet itemproto.ClientGivePacket) ItemGiveResult {
+			if packet.TargetVID != 0x01020304 || packet.Position != itemproto.InventoryPosition(5) || packet.Count != 3 {
+				t.Fatalf("unexpected item give packet: %+v", packet)
+			}
+			return ItemGiveResult{Accepted: true, Frames: [][]byte{wantFrame}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: 0x01020304, Position: itemproto.InventoryPosition(5), Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected item give error: %v", err)
+	}
+	if len(out) != 1 || !bytes.Equal(out[0], wantFrame) {
+		t.Fatalf("expected handler item-give frame, got %#v", out)
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
+func TestHandleClientFrameRejectsDeniedItemGiveInGame(t *testing.T) {
+	machine := session.NewStateMachineAt(session.PhaseGame)
+	called := false
+	flow := NewFlow(machine, Config{
+		HandleItemGive: func(packet itemproto.ClientGivePacket) ItemGiveResult {
+			called = true
+			return ItemGiveResult{Accepted: false, Frames: [][]byte{[]byte("must-not-send")}}
+		},
+	})
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: 0x01020304, Position: itemproto.InventoryPosition(5), Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected denied item give error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected item give handler to be called")
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected denied item give to emit no frames, got %d", len(out))
+	}
+	if machine.Current() != session.PhaseGame {
+		t.Fatalf("expected phase %q, got %q", session.PhaseGame, machine.Current())
+	}
+}
+
 func TestHandleClientFrameAcceptsItemUseToItemInGameAndReturnsHandlerFrames(t *testing.T) {
 	machine := session.NewStateMachineAt(session.PhaseGame)
 	wantFrame := []byte("item-use-to-item")
