@@ -1035,6 +1035,27 @@ func (r *Runtime) UseItemRejectText(slot inventory.SlotIndex, template itemcatal
 	return template.UseRejectText, true
 }
 
+func (r *Runtime) GiveRejectText(slot inventory.SlotIndex, template itemcatalog.Template) (string, bool) {
+	if r == nil || template.GiveRejectText == "" || !template.AntiGive || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+		return "", false
+	}
+	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {
+		return "", false
+	}
+	index := findInventorySlot(r.liveInventory, slot)
+	if index < 0 {
+		return "", false
+	}
+	item := r.liveInventory[index]
+	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return "", false
+	}
+	if err := item.Validate(); err != nil {
+		return "", false
+	}
+	return template.GiveRejectText, true
+}
+
 func useEffectInfoMessage(effect *itemcatalog.UseEffect) string {
 	if effect == nil {
 		return ""

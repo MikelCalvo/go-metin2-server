@@ -1898,6 +1898,39 @@ func TestFileStoreSaveThenLoadRoundTripPreservesUseRejectText(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveThenLoadRoundTripPreservesGiveRejectText(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+	store := NewFileStore(path)
+	want := Snapshot{Templates: []Template{{
+		Vnum:           27042,
+		Name:           "Bound Gift Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiGive:       true,
+		GiveRejectText: "You cannot give this item.",
+	}}}
+
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save snapshot with give reject message: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load snapshot with give reject message: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected snapshot with give reject message:\n got: %#v\nwant: %#v", got, want)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read persisted snapshot with give reject message: %v", err)
+	}
+	wantJSON := "{\n  \"templates\": [\n    {\n      \"vnum\": 27042,\n      \"name\": \"Bound Gift Potion\",\n      \"stackable\": true,\n      \"max_count\": 200,\n      \"anti_give\": true,\n      \"give_reject_message\": \"You cannot give this item.\"\n    }\n  ]\n}\n"
+	if string(raw) != wantJSON {
+		t.Fatalf("unexpected deterministic snapshot with give reject message:\n got: %s\nwant: %s", string(raw), wantJSON)
+	}
+}
+
 func TestFileStoreSaveThenLoadRoundTripPreservesUnequipRejectText(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "item-templates.json")
 	store := NewFileStore(path)
@@ -2168,6 +2201,60 @@ func TestFileStoreRejectsInvalidUseRejectTextMetadata(t *testing.T) {
 			}
 			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
 				t.Fatalf("write invalid use reject message snapshot: %v", err)
+			}
+			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot when loading %s, got %v", tc.wantText, err)
+			}
+		})
+	}
+}
+
+func TestFileStoreRejectsInvalidGiveRejectTextMetadata(t *testing.T) {
+	cases := []struct {
+		name     string
+		invalid  Template
+		rawJSON  string
+		wantText string
+	}{
+		{
+			name: "nul message",
+			invalid: Template{
+				Vnum:           27042,
+				Name:           "Broken Give Message Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				AntiGive:       true,
+				GiveRejectText: "bad\x00message",
+			},
+			rawJSON:  `{"templates":[{"vnum":27042,"name":"Broken Give Message Potion","stackable":true,"max_count":200,"anti_give":true,"give_reject_message":"bad\u0000message"}]}`,
+			wantText: "NUL give reject message",
+		},
+		{
+			name: "without anti-give guard",
+			invalid: Template{
+				Vnum:           27043,
+				Name:           "Unguarded Give Message Potion",
+				Stackable:      true,
+				MaxCount:       200,
+				GiveRejectText: "This item has no owned give rejection guard.",
+			},
+			rawJSON:  `{"templates":[{"vnum":27043,"name":"Unguarded Give Message Potion","stackable":true,"max_count":200,"give_reject_message":"This item has no owned give rejection guard."}]}`,
+			wantText: "give reject message without anti-give guard",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "state", "item-templates.json")
+			store := NewFileStore(path)
+			if err := store.Save(Snapshot{Templates: []Template{tc.invalid}}); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected ErrInvalidSnapshot for %s, got %v", tc.wantText, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("create item template test dir: %v", err)
+			}
+			if err := os.WriteFile(path, []byte(tc.rawJSON), 0o644); err != nil {
+				t.Fatalf("write invalid give reject message snapshot: %v", err)
 			}
 			if _, err := store.Load(); !errors.Is(err, ErrInvalidSnapshot) {
 				t.Fatalf("expected ErrInvalidSnapshot when loading %s, got %v", tc.wantText, err)

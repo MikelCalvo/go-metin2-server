@@ -2841,6 +2841,56 @@ func TestRuntimeDropInventoryItemWithTemplateRejectsAuthoredRestrictionsWithoutM
 	}
 }
 
+func TestRuntimeGiveRejectTextComesFromTemplateAntiGiveGuardWithoutMutation(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030102,
+		VID:   0x02040102,
+		Name:  "PeerTwo",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 101, Vnum: 27042, Count: 3, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-two", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:           27042,
+		Name:           "Bound Gift Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiGive:       true,
+		GiveRejectText: "You cannot give this item.",
+	}
+
+	text, ok := runtime.GiveRejectText(8, template)
+	if !ok {
+		t.Fatal("expected anti-give template to provide item-give rejection text")
+	}
+	if text != template.GiveRejectText {
+		t.Fatalf("expected template-authored give reject text %q, got %q", template.GiveRejectText, text)
+	}
+	live := runtime.LiveCharacter()
+	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) {
+		t.Fatalf("give reject text mutated live inventory: got %#v want %#v", live.Inventory, persisted.Inventory)
+	}
+	if !reflect.DeepEqual(live.Quickslots, persisted.Quickslots) {
+		t.Fatalf("give reject text mutated live quickslots: got %#v want %#v", live.Quickslots, persisted.Quickslots)
+	}
+	if live.Gold != persisted.Gold || live.Points != persisted.Points {
+		t.Fatalf("give reject text mutated live scalars: gold=%d points[1]=%d", live.Gold, live.Points[1])
+	}
+	persistedAfter := runtime.PersistedSnapshot()
+	if !reflect.DeepEqual(persistedAfter.Inventory, persisted.Inventory) {
+		t.Fatalf("give reject text mutated persisted inventory: got %#v want %#v", persistedAfter.Inventory, persisted.Inventory)
+	}
+	if !reflect.DeepEqual(persistedAfter.Quickslots, persisted.Quickslots) {
+		t.Fatalf("give reject text mutated persisted quickslots: got %#v want %#v", persistedAfter.Quickslots, persisted.Quickslots)
+	}
+	if persistedAfter.Gold != persisted.Gold || persistedAfter.Points != persisted.Points {
+		t.Fatalf("give reject text mutated persisted scalars: gold=%d points[1]=%d", persistedAfter.Gold, persistedAfter.Points[1])
+	}
+}
+
 func TestRuntimeEquipItemWithTemplateRejectsAntiGetWithoutMutation(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:   0x01030102,

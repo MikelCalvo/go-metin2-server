@@ -3456,6 +3456,23 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 					frames, accepted := executeSelectedItemPickup(packet.VID)
 					return gameflow.ItemPickupResult{Accepted: accepted, Frames: frames}
 				},
+				HandleItemGive: func(packet itemproto.ClientGivePacket) gameflow.ItemGiveResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
+						return gameflow.ItemGiveResult{Accepted: false}
+					}
+					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position.Cell))
+					if !ok {
+						return gameflow.ItemGiveResult{Accepted: false}
+					}
+					if message, ok := selectedPlayer.GiveRejectText(inventory.SlotIndex(packet.Position.Cell), template); ok {
+						return gameflow.ItemGiveResult{Accepted: true, Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}}
+					}
+					return gameflow.ItemGiveResult{Accepted: false}
+				},
 				HandleQuickslotAdd: func(packet quickslotproto.ClientAddPacket) gameflow.QuickslotResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()

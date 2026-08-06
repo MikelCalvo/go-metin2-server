@@ -58,6 +58,7 @@ type Template struct {
 	AntiSell          bool            `json:"anti_sell,omitempty"`
 	AntiDrop          bool            `json:"anti_drop,omitempty"`
 	AntiGive          bool            `json:"anti_give,omitempty"`
+	GiveRejectText    string          `json:"give_reject_message,omitempty"`
 	AntiStack         bool            `json:"anti_stack,omitempty"`
 	AntiGet           bool            `json:"anti_get,omitempty"`
 	AntiMale          bool            `json:"anti_male,omitempty"`
@@ -122,6 +123,7 @@ type templateJSON struct {
 	AntiSell          bool             `json:"anti_sell,omitempty"`
 	AntiDrop          bool             `json:"anti_drop,omitempty"`
 	AntiGive          bool             `json:"anti_give,omitempty"`
+	GiveRejectText    string           `json:"give_reject_message,omitempty"`
 	AntiStack         bool             `json:"anti_stack,omitempty"`
 	AntiGet           bool             `json:"anti_get,omitempty"`
 	AntiMale          bool             `json:"anti_male,omitempty"`
@@ -178,6 +180,7 @@ func (template Template) MarshalJSON() ([]byte, error) {
 		AntiSell:          template.AntiSell,
 		AntiDrop:          template.AntiDrop,
 		AntiGive:          template.AntiGive,
+		GiveRejectText:    template.GiveRejectText,
 		AntiStack:         template.AntiStack,
 		AntiGet:           template.AntiGet,
 		AntiMale:          template.AntiMale,
@@ -246,6 +249,7 @@ func (template *Template) UnmarshalJSON(raw []byte) error {
 		AntiSell:          jsonTemplate.AntiSell,
 		AntiDrop:          jsonTemplate.AntiDrop,
 		AntiGive:          jsonTemplate.AntiGive,
+		GiveRejectText:    jsonTemplate.GiveRejectText,
 		AntiStack:         jsonTemplate.AntiStack,
 		AntiGet:           jsonTemplate.AntiGet,
 		AntiMale:          jsonTemplate.AntiMale,
@@ -376,6 +380,7 @@ func normalizeTemplate(template Template) Template {
 	template.UseRejectText = strings.TrimSpace(template.UseRejectText)
 	template.BuyRejectText = strings.TrimSpace(template.BuyRejectText)
 	template.DropRejectText = strings.TrimSpace(template.DropRejectText)
+	template.GiveRejectText = strings.TrimSpace(template.GiveRejectText)
 	template.PickupRejectText = strings.TrimSpace(template.PickupRejectText)
 	template.SellRejectText = strings.TrimSpace(template.SellRejectText)
 	template.EquipRejectText = strings.TrimSpace(template.EquipRejectText)
@@ -452,6 +457,9 @@ func validTemplate(template Template) bool {
 	if !validTemplateMessage(template.DropRejectText) {
 		return false
 	}
+	if !validTemplateMessage(template.GiveRejectText) {
+		return false
+	}
 	if !validTemplateMessage(template.PickupRejectText) {
 		return false
 	}
@@ -474,6 +482,9 @@ func validTemplate(template Template) bool {
 		return false
 	}
 	if template.DropRejectText != "" && !templateHasDropRejectGuard(template) {
+		return false
+	}
+	if template.GiveRejectText != "" && !templateHasGiveRejectGuard(template) {
 		return false
 	}
 	if template.PickupRejectText != "" && !templateHasPickupRejectGuard(template) {
@@ -527,6 +538,10 @@ func templateHasBuyRejectGuard(template Template) bool {
 
 func templateHasDropRejectGuard(template Template) bool {
 	return templateHasSelectedCharacterGuard(template) || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack
+}
+
+func templateHasGiveRejectGuard(template Template) bool {
+	return template.AntiGive
 }
 
 func templateHasPickupRejectGuard(template Template) bool {

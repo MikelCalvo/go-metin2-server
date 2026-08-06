@@ -7,6 +7,7 @@ The goal is intentionally conservative:
 - own the client packet layout before broader player-to-player item transfer is implemented
 - route the packet through the `GAME` phase without treating it as an unknown-header disconnect edge
 - keep the shipped runtime fail-closed with no inventory, quickslot, ground-item, or persistence mutation until a later exchange/trade slice owns recipient semantics
+- allow one template-authored guard response for already-owned `anti_give` metadata without implementing recipient transfer
 
 This is not a completed item-give, exchange, trade, or NPC handoff system.
 
@@ -32,7 +33,7 @@ The layout is frozen from the TMP4-compatible client packet struct shape in proj
 
 `internal/game` decodes `ITEM_GIVE` while the session is already in `GAME` and routes it to a dedicated handler hook. The default handler denies the request with no response.
 
-The shipped minimal runtime intentionally leaves `ITEM_GIVE` unsupported for now. For every target, source cell, window, and count:
+The shipped minimal runtime intentionally leaves `ITEM_GIVE` unsupported for now. For ordinary attempts, every target, source cell, window, and count still fail closed:
 
 - no server frames are emitted
 - no carried inventory or equipment state is mutated
@@ -41,7 +42,26 @@ The shipped minimal runtime intentionally leaves `ITEM_GIVE` unsupported for now
 - no peer-facing frames are queued
 - no selected-character account snapshot is persisted
 
-This keeps accidental client attempts fail-closed instead of falling into incomplete item-transfer behavior.
+There is one owned guard-feedback exception. When all of these are true:
+
+- the selected character is already in `GAME` and above the bootstrap zero-HP floor
+- the source position is a carried inventory cell (`window = INVENTORY`, `cell < 90`)
+- the carried item resolves through the loaded item-template snapshot
+- the template `vnum` matches the carried item and validates normally
+- the live carried item is unlocked, well-formed, unique in that carried cell, and its live count does not exceed `template.max_count`
+- the template authors `anti_give = true`
+- the template authors non-empty `give_reject_message`
+
+then the minimal runtime accepts only the guard response and returns one self-only `CHAT_TYPE_INFO` frame:
+
+- `vid = 0`
+- `message = template.give_reject_message`
+
+That response is deliberately not a transfer attempt. It still performs no inventory, equipment, quickslot, ground-handle, peer, or persistence mutation.
+
+Templates that author `give_reject_message` without `anti_give` are invalid at the item-template store boundary, and embedded NUL bytes in the message fail closed before runtime boot.
+
+This keeps accidental client attempts fail-closed instead of falling into incomplete item-transfer behavior while allowing authored `anti_give` items to explain the rejection.
 
 ## Deferred behavior
 
@@ -53,11 +73,13 @@ Later slices must write a new contract before broadening this packet into real g
 - exchange/trade window choreography
 - partial-stack transfer behavior
 - recipient inventory placement and quickslot side effects
-- template-authored acceptance/rejection text for item-give attempts
+- item-give acceptance text or recipient-facing rejection text beyond the self-only `anti_give` guard message
 - ownership, audit, or rollback policy for two-party mutations
 
 ## Current coverage
 
 - `internal/proto/item` freezes `ITEM_GIVE` encode/decode round trips plus unexpected-header and invalid-payload rejection.
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
-- `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory and quickslots unchanged after an `ITEM_GIVE` packet.
+- `internal/itemstore` freezes `give_reject_message` round-trip and fail-closed validation: it is valid only with `anti_give` and rejects embedded NUL bytes.
+- `internal/player` freezes the metadata-driven, no-mutation `anti_give` rejection lookup.
+- `internal/minimal` freezes the shipped runtime fail-closed behavior with persisted inventory and quickslots unchanged after an `ITEM_GIVE` packet, plus the self-only `CHAT_TYPE_INFO` rejection frame when the carried item's template authors `anti_give` and `give_reject_message`.

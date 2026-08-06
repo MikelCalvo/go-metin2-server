@@ -396,11 +396,14 @@ Expected result:
 
 Run this only if packet tooling or the client build can emit an item-give attempt.
 
-- [ ] Attempt to give a carried item stack to a visible actor or player using the `ITEM_GIVE` path
+- [ ] Attempt to give a normal carried item stack to a visible actor or player using the `ITEM_GIVE` path
+- [ ] Repeat with a carried item whose loaded template authors `anti_give = true` and non-empty `give_reject_message`
 - [ ] Repeat with a non-inventory source cell or zero/oversized count if packet tooling can construct it
 
 Expected result:
-- `ITEM_GIVE` is parsed by the game socket but remains unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot state changes, no ground actor appears, no peer receives item-transfer frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- ordinary `ITEM_GIVE` attempts are parsed by the game socket but remain unsupported in the shipped bootstrap runtime: no response frames are visible, no carried inventory/equipment/quickslot state changes, no ground actor appears, no peer receives item-transfer frames, and reconnect/operator inspection shows the selected-character snapshot unchanged
+- an `anti_give` carried item with `give_reject_message` returns exactly one self-only `CHAT_TYPE_INFO` message using that authored text, while still leaving inventory, equipment, quickslots, peers, ground handles, and persistence unchanged
+- item-template validation rejects `give_reject_message` if it contains embedded NUL bytes or is authored without `anti_give`, so malformed give-rejection text should fail before gameplay testing starts
 - this is a fail-closed guard, not a completed transfer/exchange feature
 
 ---
