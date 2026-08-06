@@ -26,11 +26,12 @@ type Service struct {
 }
 
 var (
-	ErrPersistencePathRequired = errors.New("persistence path is required")
-	ErrPersistencePathOverlap  = errors.New("persistence paths overlap")
-	ErrOpsAddrRequired         = errors.New("ops bind address is required")
-	ErrOpsAddrInvalid          = errors.New("ops bind address is invalid")
-	ErrOpsAddrNotLoopback      = errors.New("ops bind address must be loopback")
+	ErrPersistencePathRequired     = errors.New("persistence path is required")
+	ErrPersistencePathOverlap      = errors.New("persistence paths overlap")
+	ErrPersistencePathRoleConflict = errors.New("persistence path role conflicts with existing filesystem entry")
+	ErrOpsAddrRequired             = errors.New("ops bind address is required")
+	ErrOpsAddrInvalid              = errors.New("ops bind address is invalid")
+	ErrOpsAddrNotLoopback          = errors.New("ops bind address must be loopback")
 )
 
 type persistencePathRole string
@@ -128,7 +129,31 @@ func canonicalPersistencePath(selection persistencePathSelection) (string, error
 	if err != nil {
 		return "", fmt.Errorf("resolve %s symlinks: %w", selection.Name, err)
 	}
+	if err := validatePersistencePathRole(selection, resolved); err != nil {
+		return "", err
+	}
 	return resolved, nil
+}
+
+func validatePersistencePathRole(selection persistencePathSelection, resolved string) error {
+	info, err := os.Stat(resolved)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat %s: %w", selection.Name, err)
+	}
+	switch selection.Role {
+	case persistencePathRoleDir:
+		if !info.IsDir() {
+			return fmt.Errorf("%w: %s %q is not a directory", ErrPersistencePathRoleConflict, selection.Name, resolved)
+		}
+	case persistencePathRoleFile:
+		if info.IsDir() {
+			return fmt.Errorf("%w: %s %q is a directory", ErrPersistencePathRoleConflict, selection.Name, resolved)
+		}
+	}
+	return nil
 }
 
 func resolvePersistencePath(path string) (string, error) {

@@ -308,6 +308,48 @@ func TestValidatePersistenceConfigRejectsFileStorePathAtDirectoryStore(t *testin
 	}
 }
 
+func TestValidatePersistenceConfigRejectsDirectoryStorePathThatIsExistingFile(t *testing.T) {
+	root := t.TempDir()
+	accountPath := filepath.Join(root, "accounts")
+	if err := os.WriteFile(accountPath, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("create regular file at account store path: %v", err)
+	}
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       accountPath,
+		StaticActorStorePath:  filepath.Join(root, "static-actors.json"),
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathRoleConflict) {
+		t.Fatalf("expected ErrPersistencePathRoleConflict for directory store path that is a file, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsFileStorePathThatIsExistingDirectory(t *testing.T) {
+	root := t.TempDir()
+	staticActorDir := filepath.Join(root, "static-actors.json")
+	if err := os.MkdirAll(staticActorDir, 0o755); err != nil {
+		t.Fatalf("create directory at static actor store path: %v", err)
+	}
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       filepath.Join(root, "accounts"),
+		StaticActorStorePath:  staticActorDir,
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathRoleConflict) {
+		t.Fatalf("expected ErrPersistencePathRoleConflict for file store path that is a directory, got %v", err)
+	}
+}
+
 func TestValidatePersistenceConfigRejectsSymlinkResolvedFileStoreInsideDirectoryStore(t *testing.T) {
 	root := t.TempDir()
 	accountsDir := filepath.Join(root, "accounts")
@@ -330,6 +372,35 @@ func TestValidatePersistenceConfigRejectsSymlinkResolvedFileStoreInsideDirectory
 	err := ValidatePersistenceConfig(cfg)
 	if !errors.Is(err, ErrPersistencePathOverlap) {
 		t.Fatalf("expected ErrPersistencePathOverlap for symlinked file store inside account dir, got %v", err)
+	}
+}
+
+func TestValidatePersistenceConfigRejectsFileStoreSymlinkPathInsideDirectoryStoreEvenWhenTargetIsOutside(t *testing.T) {
+	root := t.TempDir()
+	accountsDir := filepath.Join(root, "accounts")
+	outsideDir := filepath.Join(root, "outside")
+	linkPath := filepath.Join(accountsDir, "static-actors-link.json")
+	if err := os.MkdirAll(accountsDir, 0o755); err != nil {
+		t.Fatalf("create accounts dir: %v", err)
+	}
+	if err := os.MkdirAll(outsideDir, 0o755); err != nil {
+		t.Fatalf("create outside dir: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(outsideDir, "static-actors.json"), linkPath); err != nil {
+		t.Fatalf("create static actor symlink inside account dir: %v", err)
+	}
+	cfg := Service{
+		Name:                  "gamed",
+		LoginTicketStoreDir:   filepath.Join(root, "tickets"),
+		AccountStoreDir:       accountsDir,
+		StaticActorStorePath:  linkPath,
+		InteractionStorePath:  filepath.Join(root, "interactions.json"),
+		ItemTemplateStorePath: filepath.Join(root, "item-templates.json"),
+	}
+
+	err := ValidatePersistenceConfig(cfg)
+	if !errors.Is(err, ErrPersistencePathOverlap) {
+		t.Fatalf("expected ErrPersistencePathOverlap for file store symlink path inside account dir, got %v", err)
 	}
 }
 
