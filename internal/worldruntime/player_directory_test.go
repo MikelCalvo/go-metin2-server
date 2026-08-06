@@ -69,6 +69,44 @@ func TestPlayerDirectoryRejectsMalformedPlayerNames(t *testing.T) {
 	}
 }
 
+func TestPlayerDirectoryRejectsMismatchedEntityAndCharacterVID(t *testing.T) {
+	directory := NewPlayerDirectory()
+	player := newPlayerEntity(1, entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
+	player.Entity.VID = 0x02040999
+
+	if directory.Register(player) {
+		t.Fatal("expected player directory to reject mismatched entity and character VIDs")
+	}
+	if _, ok := directory.ByVID(player.Entity.VID); ok {
+		t.Fatal("expected mismatched player entity VID not to be indexed")
+	}
+	if characters := directory.PlayerCharacters(); len(characters) != 0 {
+		t.Fatalf("expected mismatched player not to enter directory snapshots, got %+v", characters)
+	}
+}
+
+func TestPlayerDirectoryUpdateRejectsMismatchedEntityAndCharacterVID(t *testing.T) {
+	directory := NewPlayerDirectory()
+	player := newPlayerEntity(1, entityRegistryCharacter("Alpha", 0x02040101, 1, 1100, 2100))
+	if !directory.Register(player) {
+		t.Fatal("expected initial player directory registration to succeed")
+	}
+
+	updated := player
+	updated.Entity.VID = 0x02040999
+	updated.Character.X = 1900
+	if directory.Update(updated) {
+		t.Fatal("expected player directory update to reject mismatched entity and character VIDs")
+	}
+	lookup, ok := directory.ByVID(player.Entity.VID)
+	if !ok || lookup.Character.X != 1100 || lookup.Entity.VID != player.Entity.VID || lookup.Character.VID != player.Character.VID {
+		t.Fatalf("expected original player to remain after rejected VID mismatch, got player=%+v ok=%v", lookup, ok)
+	}
+	if _, ok := directory.ByVID(updated.Entity.VID); ok {
+		t.Fatal("expected mismatched update VID not to be indexed")
+	}
+}
+
 func TestPlayerDirectoryAllowsInternalWhitespaceInPlayerNames(t *testing.T) {
 	directory := NewPlayerDirectory()
 	player := newPlayerEntity(1, entityRegistryCharacter("Invalid Owner", 0x02040101, 1, 1100, 2100))

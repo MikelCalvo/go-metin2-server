@@ -550,6 +550,44 @@ func TestMapIndexRegisterRejectsStaticBucketCollisionWhenStaticEntityIndexMissin
 	}
 }
 
+func TestMapIndexRegisterRejectsMismatchedEntityAndCharacterVID(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(17, entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	player.Entity.VID = 0x02040999
+
+	if index.Register(player) {
+		t.Fatal("expected map index to reject mismatched entity and character VIDs")
+	}
+	if characters := index.PlayerCharacters(42); len(characters) != 0 {
+		t.Fatalf("expected mismatched player not to enter map occupancy, got %+v", characters)
+	}
+	if lookup, ok := index.PlayerByVID(player.Entity.VID); ok {
+		t.Fatalf("expected mismatched player entity VID not to be indexed, got %+v", lookup)
+	}
+}
+
+func TestMapIndexUpdateRejectsMismatchedEntityAndCharacterVID(t *testing.T) {
+	index := NewMapIndex(NewBootstrapTopology(0))
+	player := newPlayerEntity(18, entityRegistryCharacter("Alpha", 0x02040101, 42, 1700, 2800))
+	if !index.Register(player) {
+		t.Fatal("expected initial player registration to succeed")
+	}
+
+	updated := player
+	updated.Entity.VID = 0x02040999
+	updated.Character.X = 1900
+	if index.Update(updated) {
+		t.Fatal("expected map index update to reject mismatched entity and character VIDs")
+	}
+	characters := index.PlayerCharacters(42)
+	if len(characters) != 1 || characters[0].VID != player.Character.VID || characters[0].X != 1700 {
+		t.Fatalf("expected original map occupancy to remain after rejected VID mismatch, got %+v", characters)
+	}
+	if lookup, ok := index.PlayerByVID(updated.Entity.VID); ok {
+		t.Fatalf("expected rejected mismatched VID not to be indexed, got %+v", lookup)
+	}
+}
+
 func TestMapIndexRegisterRejectsStaticEntityIndexCollisionWhenStaticMapBucketMissing(t *testing.T) {
 	index := NewMapIndex(NewBootstrapTopology(0))
 	actor := StaticEntity{Entity: Entity{ID: 15, Kind: EntityKindStaticActor, Name: "VillageGuard"}, Position: NewPosition(42, 1700, 2800), RaceNum: 20300}

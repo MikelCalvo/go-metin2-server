@@ -126,7 +126,7 @@ Status: `[~]` real in-process runtime, not production world architecture.
 Already present:
 
 - connected session registry,
-- player directory and map index, including tolerant player/static partial-teardown repair when one owned index is cleared before another and direct per-map or connected-player scope readers need to prune, rehome, or repair ghost buckets before returning occupancy/visibility; duplicate map-only repairs preserve remembered effective-map buckets before older stale source buckets when that effective-map memory survived primary-index loss,
+- player directory and map index, including fail-closed player identity checks that keep entity `VID` and selected-character snapshot `VID` aligned, tolerant player/static partial-teardown repair when one owned index is cleared before another and direct per-map or connected-player scope readers need to prune, rehome, or repair ghost buckets before returning occupancy/visibility; duplicate map-only repairs preserve remembered effective-map buckets before older stale source buckets when that effective-map memory survived primary-index loss,
 - topology model,
 - AOI/radius-style visibility boundaries,
 - visibility rebuild helpers,

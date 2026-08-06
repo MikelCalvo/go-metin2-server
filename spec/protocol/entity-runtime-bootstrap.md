@@ -67,6 +67,7 @@ The current owned responsibilities are:
 - index connected player entities by client-visible `VID`
 - index connected player entities by exact character name
 - reject malformed live player names before they enter the runtime directory or map index: names must be non-empty, have no leading/trailing whitespace, be valid UTF-8, contain no embedded NUL, and match the selected character snapshot name used for the entity
+- reject live player entries whose entity `VID` does not match the selected character snapshot `VID`, so map occupancy, exact `VID` lookup, visibility, and packet fanout cannot diverge on two different client-visible identities for the same runtime player
 - keep deterministic player snapshot output for higher-level scope helpers
 - prune stale secondary `VID` / name index entries when the primary entity entry is already gone, including lookup and removal paths, so partial teardown does not leave ghost lookup ownership that can block reconnect, replacement registration, or later cleanup
 - prune stale secondary `VID` / name aliases that still point at a surviving player entity but no longer match that entity's current canonical `VID` / exact name; lookup fails closed for the stale alias while leaving the current canonical indexes intact, and register/update paths remove every old alias for the entity before writing the current keys

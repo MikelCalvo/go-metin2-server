@@ -185,7 +185,7 @@ func clonePlayerEntity(player PlayerEntity) PlayerEntity {
 }
 
 func validPlayerDirectoryEntity(player PlayerEntity) bool {
-	return player.Entity.ID != 0 && player.Entity.Kind == EntityKindPlayer && player.Entity.VID != 0 && ValidPlayerName(player.Entity.Name) && player.Character.Name == player.Entity.Name && ValidPlayerName(player.Character.Name)
+	return player.Entity.ID != 0 && player.Entity.Kind == EntityKindPlayer && player.Entity.VID != 0 && player.Character.VID == player.Entity.VID && ValidPlayerName(player.Entity.Name) && player.Character.Name == player.Entity.Name && ValidPlayerName(player.Character.Name)
 }
 
 func ValidPlayerName(name string) bool {
