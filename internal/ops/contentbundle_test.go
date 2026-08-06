@@ -1373,6 +1373,77 @@ func TestLocalContentBundleSummaryEndpointReturnsMerchantAntiFlagMetadataForLoop
 	}
 }
 
+func TestLocalContentBundleSummaryEndpointReturnsTransferGuardMetadataForLoopbackPost(t *testing.T) {
+	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
+	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)
+
+	body := `{"spawn_groups":[{"ref":"practice.bound_reward","name":"Bound Reward","map_index":42,"x":1800,"y":2900,"race_num":101,"combat_profile":"practice_mob","reward_drop_vnums":[27001]}],"item_templates":[{"vnum":27001,"name":"Bound Potion","stackable":true,"max_count":200,"shop_buy_price":5,"anti_drop":true,"anti_give":true,"give_reject_message":"You cannot give this bound potion.","anti_stack":true,"drop_reject_message":"You cannot drop this bound potion.","pickup_reject_message":"You cannot pick up this bound potion."}],"interaction_definitions":[{"kind":"shop_preview","ref":"npc:bound_merchant","title":"Bound Merchant","catalog":[{"slot":0,"item_vnum":27001,"price":50,"count":2}]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/summary", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if summaryer.calls != 0 {
+		t.Fatalf("expected dry-run summary not to call live exporter, got %d calls", summaryer.calls)
+	}
+	var got contentbundle.Summary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode transfer-guard summary response body: %v", err)
+	}
+	for label, template := range map[string]struct {
+		AntiDrop            bool
+		AntiGive            bool
+		AntiStack           bool
+		DropRejectMessage   string
+		GiveRejectMessage   string
+		PickupRejectMessage string
+	}{
+		"item template": {
+			AntiDrop:            got.ItemTemplates[0].AntiDrop,
+			AntiGive:            got.ItemTemplates[0].AntiGive,
+			AntiStack:           got.ItemTemplates[0].AntiStack,
+			DropRejectMessage:   got.ItemTemplates[0].DropRejectMessage,
+			GiveRejectMessage:   got.ItemTemplates[0].GiveRejectMessage,
+			PickupRejectMessage: got.ItemTemplates[0].PickupRejectMessage,
+		},
+		"shop catalog": {
+			AntiDrop:            got.ShopCatalogs[0].Entries[0].AntiDrop,
+			AntiGive:            got.ShopCatalogs[0].Entries[0].AntiGive,
+			AntiStack:           got.ShopCatalogs[0].Entries[0].AntiStack,
+			DropRejectMessage:   got.ShopCatalogs[0].Entries[0].DropRejectMessage,
+			GiveRejectMessage:   got.ShopCatalogs[0].Entries[0].GiveRejectMessage,
+			PickupRejectMessage: got.ShopCatalogs[0].Entries[0].PickupRejectMessage,
+		},
+		"spawn reward drop": {
+			AntiDrop:            got.SpawnGroups[0].RewardDropItems[0].AntiDrop,
+			AntiGive:            got.SpawnGroups[0].RewardDropItems[0].AntiGive,
+			AntiStack:           got.SpawnGroups[0].RewardDropItems[0].AntiStack,
+			DropRejectMessage:   got.SpawnGroups[0].RewardDropItems[0].DropRejectMessage,
+			GiveRejectMessage:   got.SpawnGroups[0].RewardDropItems[0].GiveRejectMessage,
+			PickupRejectMessage: got.SpawnGroups[0].RewardDropItems[0].PickupRejectMessage,
+		},
+		"aggregate reward drop": {
+			AntiDrop:            got.RewardDrops[0].AntiDrop,
+			AntiGive:            got.RewardDrops[0].AntiGive,
+			AntiStack:           got.RewardDrops[0].AntiStack,
+			DropRejectMessage:   got.RewardDrops[0].DropRejectMessage,
+			GiveRejectMessage:   got.RewardDrops[0].GiveRejectMessage,
+			PickupRejectMessage: got.RewardDrops[0].PickupRejectMessage,
+		},
+	} {
+		if !template.AntiDrop || !template.AntiGive || !template.AntiStack {
+			t.Fatalf("expected %s transfer guard flags, got %+v", label, template)
+		}
+		if template.DropRejectMessage != "You cannot drop this bound potion." || template.GiveRejectMessage != "You cannot give this bound potion." || template.PickupRejectMessage != "You cannot pick up this bound potion." {
+			t.Fatalf("unexpected %s transfer guard messages: %+v", label, template)
+		}
+	}
+}
+
 func TestLocalContentBundleSummaryEndpointRejectsInvalidDryRunBundle(t *testing.T) {
 	summaryer := &stubContentBundleSummaryExporter{status: http.StatusOK}
 	mux := RegisterLocalContentBundleSummaryEndpoint(NewPprofMux("gamed"), summaryer.ExportContentBundleSummary)

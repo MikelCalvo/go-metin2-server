@@ -445,6 +445,85 @@ func TestSummarizeExposesMerchantRejectMessagesInTemplateBackedContentSummaries(
 	}
 }
 
+func TestSummarizeExposesItemTransferGuardsInTemplateBackedContentSummaries(t *testing.T) {
+	const dropRejectMessage = "You cannot drop this bound potion."
+	const giveRejectMessage = "You cannot give this bound potion."
+	const pickupRejectMessage = "You cannot pick up this bound potion."
+	bundle := Bundle{
+		SpawnGroups: []SpawnGroup{{
+			Ref:             "practice.bound_reward",
+			Name:            "Bound Reward",
+			MapIndex:        42,
+			X:               1800,
+			Y:               2900,
+			RaceNum:         101,
+			CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+			RewardDropVnums: []uint32{27001},
+		}},
+		ItemTemplates: []itemcatalog.Template{{
+			Vnum:             27001,
+			Name:             "Bound Potion",
+			Stackable:        true,
+			MaxCount:         200,
+			ShopBuyPrice:     5,
+			AntiDrop:         true,
+			AntiGive:         true,
+			AntiStack:        true,
+			DropRejectText:   dropRejectMessage,
+			GiveRejectText:   giveRejectMessage,
+			PickupRejectText: pickupRejectMessage,
+		}},
+		InteractionDefinitions: []interactionstore.Definition{{
+			Kind:  interactionstore.KindShopPreview,
+			Ref:   "npc:bound_merchant",
+			Title: "Bound Merchant",
+			Catalog: []interactionstore.MerchantCatalogEntry{
+				{Slot: 0, ItemVnum: 27001, Price: 50, Count: 2},
+			},
+		}},
+	}
+
+	summary, err := Summarize(bundle)
+	if err != nil {
+		t.Fatalf("summarize item-transfer-guard bundle: %v", err)
+	}
+
+	wantTemplates := []ItemTemplateReferenceSummary{{Vnum: 27001, Name: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage}}
+	if !reflect.DeepEqual(summary.ItemTemplates, wantTemplates) {
+		t.Fatalf("unexpected item-template transfer-guard summary:\n got: %#v\nwant: %#v", summary.ItemTemplates, wantTemplates)
+	}
+	wantCatalogs := []ShopCatalogSummary{{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:bound_merchant",
+		Title:      "Bound Merchant",
+		EntryCount: 1,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Bound Potion", Count: 2, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage},
+		},
+	}}
+	if !reflect.DeepEqual(summary.ShopCatalogs, wantCatalogs) {
+		t.Fatalf("unexpected shop-catalog transfer-guard summary:\n got: %#v\nwant: %#v", summary.ShopCatalogs, wantCatalogs)
+	}
+	wantSpawnGroups := []SpawnGroupReferenceSummary{{
+		Ref:             "practice.bound_reward",
+		Name:            "Bound Reward",
+		MapIndex:        42,
+		X:               1800,
+		Y:               2900,
+		RaceNum:         101,
+		CombatProfile:   worldruntime.StaticActorCombatProfilePracticeMob,
+		RewardDropVnums: []uint32{27001},
+		RewardDropItems: []RewardDropItemSummary{{ItemVnum: 27001, ItemName: "Bound Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage}},
+	}}
+	if !reflect.DeepEqual(summary.SpawnGroups, wantSpawnGroups) {
+		t.Fatalf("unexpected spawn-group transfer-guard summary:\n got: %#v\nwant: %#v", summary.SpawnGroups, wantSpawnGroups)
+	}
+	wantRewardDrops := []RewardDropAggregateSummary{{ItemVnum: 27001, ItemName: "Bound Potion", SourceCount: 1, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, AntiDrop: true, AntiGive: true, AntiStack: true, DropRejectMessage: dropRejectMessage, GiveRejectMessage: giveRejectMessage, PickupRejectMessage: pickupRejectMessage}}
+	if !reflect.DeepEqual(summary.RewardDrops, wantRewardDrops) {
+		t.Fatalf("unexpected reward-drop transfer-guard summary:\n got: %#v\nwant: %#v", summary.RewardDrops, wantRewardDrops)
+	}
+}
+
 func TestBuildImportPreviewReturnsDeterministicSummaryDeltas(t *testing.T) {
 	preview, err := BuildImportPreview(
 		Bundle{
